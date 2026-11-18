@@ -267,6 +267,29 @@ async def test_net_worth_navigation_and_history(
             }
         )
 
+    # Compare the actual x coordinates of the date labels Chart.js paints.
+    await page.add_init_script(
+        """(() => {
+            const ticks = new WeakMap();
+            window.readDateTicks = (canvas) => [...(ticks.get(canvas) ?? [])];
+            const context = CanvasRenderingContext2D.prototype;
+            const { clearRect, fillText } = context;
+            context.clearRect = function (...args) {
+                ticks.delete(this.canvas);
+                return clearRect.apply(this, args);
+            };
+            context.fillText = function (text, x, y, ...args) {
+                if (/^(Sep|Oct) [0-9]{1,2}(, 2026)?$/.test(text)) {
+                    const labels = ticks.get(this.canvas) ?? new Map();
+                    const point = this.getTransform().transformPoint(new DOMPoint(x, y));
+                    labels.set(text, this.canvas.getBoundingClientRect().left + point.x / devicePixelRatio);
+                    ticks.set(this.canvas, labels);
+                }
+                return fillText.call(this, text, x, y, ...args);
+            };
+        })()"""
+    )
+
     await page.set_viewport_size({"width": width, "height": height})
     await page.route("**/api/v1/net-worth", serve_balances)
     await page.goto(dashboard_url, wait_until="domcontentloaded")
@@ -283,14 +306,32 @@ async def test_net_worth_navigation_and_history(
     await expect(page.get_by_text("Gaps mark days", exact=False)).to_be_visible()
     chart = page.get_by_role("img", name="Net worth over time in US dollars")
     await expect(chart).to_be_visible()
-    await view.capture(f"linked-net-worth-{width}")
     account_chart = page.get_by_role("img", name="Daily changes in net worth by account in US dollars")
     await expect(account_chart).to_be_visible()
     account_section = page.get_by_role("region", name="Daily change by account")
-    await expect(account_section.get_by_role("radio", name="30 days")).to_be_checked()
+
+    async def expect_aligned_axes(first_date: str) -> None:
+        await page.wait_for_function(
+            """firstDate => {
+                const canvases = [...document.querySelectorAll("canvas")];
+                return canvases.length === 2 && canvases.every(
+                    canvas => window.readDateTicks(canvas)[0]?.[0].split(",")[0] === firstDate
+                );
+            }""",
+            arg=first_date,
+        )
+        net_ticks = await chart.evaluate("canvas => window.readDateTicks(canvas)")
+        account_ticks = await account_chart.evaluate("canvas => window.readDateTicks(canvas)")
+        assert [label for label, _ in account_ticks] == [label for label, _ in net_ticks]
+        assert [x for _, x in account_ticks] == pytest.approx([x for _, x in net_ticks], abs=0.5)
+
+    await expect(page.get_by_role("radio", name="30 days")).to_be_checked()
+    await expect_aligned_axes("Sep 14")
+    await view.capture(f"linked-net-worth-{width}")
     await view.capture(f"linked-net-worth-account-changes-{width}", target=account_section)
-    await account_section.get_by_text("All history", exact=True).click()
-    await expect(account_section.get_by_role("radio", name="All history")).to_be_checked()
+    await page.get_by_text("All history", exact=True).click()
+    await expect(page.get_by_role("radio", name="All history")).to_be_checked()
+    await expect_aligned_axes("Sep 10")
     view.errors.assert_none(context="Linked net worth")
 
 

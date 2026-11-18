@@ -11,7 +11,7 @@ import {
   Title,
   useComputedColorScheme,
 } from "@mantine/core";
-import { Legend } from "chart.js";
+import { Legend, type Scale } from "chart.js";
 
 import { chartPalette, mountChart, seriesColor } from "./chart";
 import type { NetWorthHistory } from "./schema";
@@ -25,12 +25,34 @@ const dayLabel = (day: string) => {
   return (date.getUTCFullYear() === new Date().getFullYear() ? shortDay : datedDay).format(date);
 };
 const observedTime = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-const RECENT_CHANGE_DAYS = 30;
+const RECENT_DAYS = 30;
+const DOLLAR_AXIS_WIDTH = 64;
+type NetWorthDay = NetWorthHistory["days"][number];
+
+function dateChartScales(color: (token: string) => string) {
+  return {
+    x: {
+      // Center the line points in the same date slots as the bars.
+      offset: true,
+      grid: { display: false },
+      ticks: { color: color("dimmed"), maxRotation: 0, maxTicksLimit: 8 },
+    },
+    y: {
+      // The two dollar axes have different magnitudes but share the same gutter.
+      afterFit: (scale: Scale) => {
+        scale.width = DOLLAR_AXIS_WIDTH;
+      },
+      grid: { color: color("default-border") },
+      ticks: { color: color("dimmed"), callback: (value: string | number) => usd.format(Number(value) / 100) },
+    },
+  };
+}
+
 const signedUsd = (minorUnits: number | null) => {
   return minorUnits != null && minorUnits > 0 ? `+${money(minorUnits, "USD")}` : money(minorUnits, "USD");
 };
 
-function NetWorthChart({ days }: NetWorthHistory) {
+function NetWorthChart({ days }: { days: NetWorthDay[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useComputedColorScheme("light");
 
@@ -39,6 +61,7 @@ function NetWorthChart({ days }: NetWorthHistory) {
     if (!canvas) return;
     const css = getComputedStyle(canvas);
     const color = (token: string) => css.getPropertyValue(`--mantine-color-${token}`).trim();
+    const scales = dateChartScales(color);
     return mountChart(canvas, {
       type: "line",
       data: {
@@ -54,6 +77,7 @@ function NetWorthChart({ days }: NetWorthHistory) {
         ],
       },
       options: {
+        layout: { autoPadding: false },
         elements: { point: { radius: days.length < 3 ? 3 : 1, hoverRadius: 4 } },
         plugins: {
           tooltip: {
@@ -78,13 +102,8 @@ function NetWorthChart({ days }: NetWorthHistory) {
           },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: color("dimmed"), maxRotation: 0, maxTicksLimit: 8 } },
-          y: {
-            beginAtZero: false,
-            grace: "5%",
-            grid: { color: color("default-border") },
-            ticks: { color: color("dimmed"), callback: (value) => usd.format(Number(value) / 100) },
-          },
+          x: scales.x,
+          y: { ...scales.y, beginAtZero: false, grace: "5%" },
         },
       },
     });
@@ -97,31 +116,38 @@ function NetWorthChart({ days }: NetWorthHistory) {
   );
 }
 
-function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["days"]; accountLabels: string[] }) {
+function AccountChangesChart({
+  days,
+  accountLabels,
+  previousDay,
+}: {
+  days: NetWorthDay[];
+  accountLabels: string[];
+  previousDay: NetWorthDay | undefined;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useComputedColorScheme("light");
-  const [range, setRange] = useState("recent");
-  const firstVisibleIndex = range === "all" ? 0 : Math.max(0, days.length - RECENT_CHANGE_DAYS);
-  const visibleDays = useMemo(() => days.slice(firstVisibleIndex), [days, firstVisibleIndex]);
-  const hasChanges = visibleDays.some((day) => day.account_changes_minor_units != null);
+  const hasChanges = days.some((day) => day.account_changes_minor_units != null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const css = getComputedStyle(canvas);
     const color = (token: string) => css.getPropertyValue(`--mantine-color-${token}`).trim();
+    const scales = dateChartScales(color);
     return mountChart(canvas, {
       type: "bar",
       plugins: [Legend],
       data: {
-        labels: visibleDays.map((day) => dayLabel(day.date)),
+        labels: days.map((day) => dayLabel(day.date)),
         datasets: accountLabels.map((label, index) => ({
           label,
           backgroundColor: seriesColor(scheme, index),
-          data: visibleDays.map((day) => day.account_changes_minor_units?.[index] ?? null),
+          data: days.map((day) => day.account_changes_minor_units?.[index] ?? null),
         })),
       },
       options: {
+        layout: { autoPadding: false },
         plugins: {
           legend: { position: "bottom", onClick: () => {}, labels: { color: color("text"), boxWidth: 12 } },
           tooltip: {
@@ -131,8 +157,8 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
               footer: (items) => {
                 const index = items[0]?.dataIndex;
                 if (index == null) return "";
-                const current = visibleDays[index].totals;
-                const previous = days[firstVisibleIndex + index - 1]?.totals;
+                const current = days[index].totals;
+                const previous = (index === 0 ? previousDay : days[index - 1])?.totals;
                 return current && previous
                   ? `Net change ${signedUsd(current.net_minor_units - previous.net_minor_units)}`
                   : "";
@@ -141,41 +167,18 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
           },
         },
         scales: {
-          x: {
-            stacked: true,
-            grid: { display: false },
-            ticks: { color: color("dimmed"), maxRotation: 0, maxTicksLimit: 8 },
-          },
-          y: {
-            stacked: true,
-            beginAtZero: true,
-            grid: { color: color("default-border") },
-            ticks: { color: color("dimmed"), callback: (value) => usd.format(Number(value) / 100) },
-          },
+          x: { ...scales.x, stacked: true },
+          y: { ...scales.y, stacked: true, beginAtZero: true },
         },
       },
     });
-  }, [accountLabels, days, firstVisibleIndex, scheme, visibleDays]);
+  }, [accountLabels, days, previousDay, scheme]);
 
   return (
     <Stack component="section" aria-labelledby="account-changes-title" gap="xs">
-      <Group justify="space-between">
-        <Title id="account-changes-title" order={2} size="h3">
-          Daily change by account
-        </Title>
-        {days.length > RECENT_CHANGE_DAYS && (
-          <SegmentedControl
-            aria-label="Account change history"
-            size="xs"
-            value={range}
-            onChange={setRange}
-            data={[
-              { value: "recent", label: `${RECENT_CHANGE_DAYS} days` },
-              { value: "all", label: "All history" },
-            ]}
-          />
-        )}
-      </Group>
+      <Title id="account-changes-title" order={2} size="h3">
+        Daily change by account
+      </Title>
       <Text size="sm" c="dimmed">
         Changes use consecutive days with complete balances. Transfers can show up on both sides of zero.
       </Text>
@@ -195,6 +198,7 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
 export function NetWorthPage() {
   const [history, setHistory] = useState<NetWorthHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState("recent");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -218,7 +222,10 @@ export function NetWorthPage() {
   }, []);
 
   const days = history?.days;
-  const first = days?.[0];
+  const firstVisibleIndex = range === "all" ? 0 : Math.max(0, (days?.length ?? 0) - RECENT_DAYS);
+  const visibleDays = useMemo(() => days?.slice(firstVisibleIndex) ?? [], [days, firstVisibleIndex]);
+  const first = visibleDays[0];
+  const last = visibleDays.at(-1);
   const latest = days?.filter((day) => day.totals != null).at(-1);
   return (
     <Paper
@@ -238,24 +245,43 @@ export function NetWorthPage() {
           </Alert>
         ) : days == null ? (
           <Skeleton h={280} role="status" aria-label="Loading net worth" />
-        ) : history && first && latest?.totals ? (
+        ) : history && first && last && latest?.totals ? (
           <>
-            <div>
-              <Text size="xl" fw={700}>
-                {money(latest.totals.net_minor_units, "USD")}
-              </Text>
-              <Text size="sm" c="dimmed">
-                {first === latest ? dayLabel(latest.date) : `${dayLabel(first.date)} – ${dayLabel(latest.date)}`}
-              </Text>
-            </div>
-            <NetWorthChart days={days} />
-            {days.some((day) => day.totals == null) && (
+            <Group justify="space-between">
+              <div>
+                <Text size="xl" fw={700}>
+                  {money(latest.totals.net_minor_units, "USD")}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {latest !== last && `Latest balance ${dayLabel(latest.date)} · `}
+                  {first === last ? dayLabel(last.date) : `${dayLabel(first.date)} – ${dayLabel(last.date)}`}
+                </Text>
+              </div>
+              {days.length > RECENT_DAYS && (
+                <SegmentedControl
+                  aria-label="Net worth date range"
+                  size="xs"
+                  value={range}
+                  onChange={setRange}
+                  data={[
+                    { value: "recent", label: `${RECENT_DAYS} days` },
+                    { value: "all", label: "All history" },
+                  ]}
+                />
+              )}
+            </Group>
+            <NetWorthChart days={visibleDays} />
+            {visibleDays.some((day) => day.totals == null) && (
               <Text size="sm" c="dimmed">
                 Gaps mark days with missing balances or observations more than an hour apart.
               </Text>
             )}
             {Boolean(history.account_labels?.length) && days.some((day) => day.account_changes_minor_units != null) && (
-              <AccountChangesChart days={days} accountLabels={history.account_labels ?? []} />
+              <AccountChangesChart
+                days={visibleDays}
+                accountLabels={history.account_labels ?? []}
+                previousDay={days[firstVisibleIndex - 1]}
+              />
             )}
           </>
         ) : (
