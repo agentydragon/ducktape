@@ -223,7 +223,7 @@ __LOG__
 fn assert_unsafe_cut_rejected(
     stage: &debundle_e2e_support::saved_analysis::Staged,
     original: &str,
-    deliberately_unsafe_emission: &str,
+    expected_error: &str,
 ) {
     assert_node_output(&stage.root().join("snapshot/static/app.js"), original, "");
     let fresh = stage.run(&["--emit-on-rejection"]);
@@ -235,10 +235,9 @@ fn assert_unsafe_cut_rejected(
             "{kind} unsafe member-projection cut was accepted:\n{}",
             invocation.result.stderr
         );
-        assert_node_output(
+        assert_node_error(
             &invocation.output_root().join("app/static/app/entry.js"),
-            deliberately_unsafe_emission,
-            "",
+            expected_error,
         );
     }
     assert_same_invocation_trees(&fresh, &saved);
@@ -253,5 +252,9 @@ fn getter_payload_that_returns_the_callback_keeps_the_unsafe_alias() {
         "wrapped.invoke();\nconst observed = wrapped.invoke.extra();",
         "",
     );
-    assert_unsafe_cut_rejected(&getter, "0 42\n", "42 42\n");
+    assert_unsafe_cut_rejected(
+        &getter,
+        "0 42\n",
+        "Cannot access 'later' before initialization",
+    );
 }
