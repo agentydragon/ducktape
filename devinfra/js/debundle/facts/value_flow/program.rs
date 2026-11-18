@@ -605,6 +605,7 @@ impl ChunkProgramFlow {
             },
             &mut |key| self.shared.values.get(&key).cloned(),
             &mut |_| {},
+            None,
         );
         self.project(&result.finish(), flow)
     }

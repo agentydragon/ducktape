@@ -1,23 +1,18 @@
 //! Opt-in, bounded selected-origin producer journal for source-flow diagnosis.
 //!
-//! This is diagnostic-only. It records values already observed by the solver
-//! and reads the completed fact map without registering subscriptions. It
-//! reports a reverse slice of selected outputs rather than formatting the
-//! whole fact graph.
+//! This is diagnostic-only. It records connected value-source witnesses at
+//! existing transfer points, then checks selected targets against the
+//! completed fact map without registering subscriptions. Witnesses are
+//! first-recorded may-sources, not execution causality.
 
-use super::{
-    FlowEvent, FlowFact, FlowKey, FlowValueExpr, Kind, OriginId, OriginTable, ReturnInputs,
-    ReturnSummary, Value, Values, ValuesBuilder,
-};
+use super::{FlowEvent, FlowFact, FlowKey, Kind, OriginId, OriginTable, Value, Values};
+use roaring::RoaringBitmap;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
-const MAX_JOURNAL_GROUPS: usize = 250_000;
-const MAX_JOURNAL_OUTPUTS: usize = 400_000;
 const MAX_JOURNAL_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
-const MAX_SLICE_NODES: usize = 100_000;
-const MAX_EXPRESSION_EVALUATIONS: usize = 25_000;
+const MAX_JOURNAL_ESTIMATED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SELECTOR_BYTES: usize = 4 * 1024;
 const MAX_SELECTORS: usize = 32;
 
@@ -103,76 +98,170 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct TransferKey {
+#[derive(Default)]
+struct JournalState {
+    connected: ConnectedState,
+}
+
+const MAX_CONNECTED_GROUPS: usize = 250_000;
+const ESTIMATED_WITNESS_BYTES: usize = 1_024;
+const ESTIMATED_BITMAP_CONTAINER_BYTES: usize = 8_256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+enum InputWitness {
+    Seed(Value),
+    Parent { witness: usize, key: FlowKey },
+}
+
+#[derive(Clone, Default)]
+pub(super) struct InputSnapshot {
+    sources: Vec<Option<InputWitness>>,
+}
+
+pub(super) struct SourceCapture<'a> {
+    trace: &'a OriginTrace,
+    sources: Vec<Option<InputWitness>>,
+}
+
+impl SourceCapture<'_> {
+    pub(super) fn fact(&mut self, key: FlowKey, values: &Values) {
+        for (index, origin) in self.trace.origins.iter().enumerate() {
+            if self.sources[index].is_some() || !self.trace.contains(values, *origin) {
+                continue;
+            }
+            if let Some(output) = self.trace.connected_output(key, *origin) {
+                self.sources[index] = Some(InputWitness::Parent {
+                    witness: output.witness,
+                    key: output.key,
+                });
+            }
+        }
+    }
+
+    pub(super) fn seed(&mut self, value: Value) {
+        if let Some(origin) = self.trace.origin_table.ids.get(&value)
+            && let Some(index) = self.trace.origin_indices.get(origin)
+            && self.sources[*index].is_none()
+        {
+            self.sources[*index] = Some(InputWitness::Seed(value));
+        }
+    }
+
+    pub(super) fn merge(&mut self, other: &InputSnapshot) {
+        for (source, incoming) in self.sources.iter_mut().zip(&other.sources) {
+            if source.is_none() {
+                *source = *incoming;
+            }
+        }
+    }
+
+    pub(super) fn child(&self) -> Self {
+        Self {
+            trace: self.trace,
+            sources: vec![None; self.sources.len()],
+        }
+    }
+
+    pub(super) fn finish(self, values: &Values) -> InputSnapshot {
+        InputSnapshot {
+            sources: self
+                .sources
+                .into_iter()
+                .zip(&self.trace.origins)
+                .map(|(source, origin)| {
+                    self.trace
+                        .contains(values, *origin)
+                        .then_some(source)
+                        .flatten()
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct ConnectedState {
+    witnesses: Vec<ConnectedWitness>,
+    direct: HashMap<SliceNode, usize>,
+    property_groups: Vec<PropertyGroup>,
+    property_index: HashMap<(OriginId, super::PropertySlot), Vec<usize>>,
+    property_groups_by_origin: HashMap<OriginId, Vec<usize>>,
+    property_group_ids: HashMap<PropertyGroupKey, usize>,
+    estimated_bytes: usize,
+    saturated_at: Option<&'static str>,
+    unresolved_inputs: usize,
+    omitted_duplicate_outputs: usize,
+}
+
+struct ConnectedWitness {
     origin: OriginId,
     event: usize,
     kind: &'static str,
-    argument: Option<usize>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct OutputWitness {
-    key: FlowKey,
     target: Option<u32>,
+    source: InputWitness,
 }
 
-#[derive(Default)]
-struct JournalCounts {
-    groups: usize,
-    outputs: usize,
-    duplicate_observations: usize,
-    omitted_alternatives: usize,
-    truncated_at: Option<&'static str>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+struct PropertyGroupKey {
+    origin: OriginId,
+    event: usize,
+    property: super::PropertySlot,
+    source: InputWitness,
 }
 
-#[derive(Default)]
-struct JournalState {
-    // Keep only the first dynamic producer per selected-origin/output pair.
-    // This is a best-effort witness candidate, not an inventory of all
-    // contributing producers; final-fact reevaluation can still fail or cycle.
-    transfers: HashSet<TransferKey>,
-    outputs: HashMap<SliceNode, (TransferKey, OutputWitness)>,
-    counts: JournalCounts,
+struct PropertyGroup {
+    witness: usize,
+    property: super::PropertySlot,
+    numeric: bool,
+    receivers: RoaringBitmap,
+    high_containers: HashSet<u16>,
+}
+
+#[derive(Clone, Copy)]
+struct ConnectedOutput {
+    witness: usize,
+    key: FlowKey,
+}
+
+fn lookup_connected(
+    connected: &ConnectedState,
+    key: FlowKey,
+    origin: OriginId,
+) -> Option<ConnectedOutput> {
+    if let Some(witness) = connected.direct.get(&SliceNode { origin, key }) {
+        return Some(ConnectedOutput {
+            witness: *witness,
+            key,
+        });
+    }
+    let (receiver, property, numeric_only) = match key {
+        FlowKey::Property(receiver, property) => (receiver, Some(property), false),
+        FlowKey::Properties(receiver) => (receiver, None, false),
+        FlowKey::NumericProperties(receiver) => (receiver, None, true),
+        _ => return None,
+    };
+    let mut find = |candidates: &[usize]| {
+        candidates.iter().find_map(|group_index| {
+            let group = &connected.property_groups[*group_index];
+            (group.receivers.contains(receiver) && (!numeric_only || group.numeric)).then_some(
+                ConnectedOutput {
+                    witness: group.witness,
+                    key: FlowKey::Property(receiver, group.property),
+                },
+            )
+        })
+    };
+    if let Some(property) = property {
+        find(connected.property_index.get(&(origin, property))?)
+    } else {
+        find(connected.property_groups_by_origin.get(&origin)?)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 struct SliceNode {
     origin: OriginId,
     key: FlowKey,
-}
-
-#[derive(Clone, Copy)]
-struct ProducerWitness {
-    event: usize,
-    target: Option<u32>,
-    kind: &'static str,
-}
-
-#[derive(Clone, Copy)]
-struct SliceParent {
-    parent: SliceNode,
-    producer: ProducerWitness,
-}
-
-#[derive(Clone, Copy)]
-enum TraceDestination {
-    Key(FlowKey),
-    Seed(Value),
-}
-
-#[derive(Clone, Copy)]
-struct TraceStep {
-    output: SliceNode,
-    producer: ProducerWitness,
-    destination: TraceDestination,
-}
-
-#[derive(Clone)]
-struct SourceEvaluation {
-    keys: Vec<FlowKey>,
-    seeds: Vec<Value>,
-    matched: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -199,12 +288,12 @@ pub(super) struct ProjectionReport<'a> {
 
 pub(super) struct OriginTrace {
     origins: BTreeSet<OriginId>,
+    origin_indices: HashMap<OriginId, usize>,
     origin_sources: BTreeMap<OriginId, (String, u32)>,
     origin_table: Arc<OriginTable>,
     targets: Vec<Target>,
     key_labels: KeyLabels,
-    /// Dynamic output targets are captured while transfer caches are live;
-    /// source expressions are evaluated later from completed facts on demand.
+    /// Captures connected sources at the exact value-contribution sites.
     state: RefCell<JournalState>,
 }
 
@@ -217,11 +306,201 @@ impl OriginTrace {
     ) -> Self {
         Self {
             origins: origins.keys().copied().collect(),
+            origin_indices: origins
+                .keys()
+                .copied()
+                .enumerate()
+                .map(|(index, origin)| (origin, index))
+                .collect(),
             origin_sources: origins,
             origin_table,
             targets,
             key_labels,
             state: RefCell::default(),
+        }
+    }
+
+    pub(super) fn begin_capture(&self) -> SourceCapture<'_> {
+        SourceCapture {
+            trace: self,
+            sources: vec![None; self.origins.len()],
+        }
+    }
+
+    fn connected_output(&self, key: FlowKey, origin: OriginId) -> Option<ConnectedOutput> {
+        let state = self.state.borrow();
+        lookup_connected(&state.connected, key, origin)
+    }
+
+    pub(super) fn record_value_output(
+        &self,
+        event: usize,
+        kind: &'static str,
+        target: Option<u32>,
+        key: FlowKey,
+        values: &Values,
+        sources: &InputSnapshot,
+    ) {
+        let mut state = self.state.borrow_mut();
+        let connected = &mut state.connected;
+        if connected.saturated_at.is_some() {
+            return;
+        }
+        for (index, origin) in self.origins.iter().enumerate() {
+            if !self.contains(values, *origin) {
+                continue;
+            }
+            let Some(source) = sources.sources.get(index).copied().flatten() else {
+                connected.unresolved_inputs = connected.unresolved_inputs.saturating_add(1);
+                continue;
+            };
+            let node = SliceNode {
+                origin: *origin,
+                key,
+            };
+            if connected.direct.contains_key(&node) {
+                connected.omitted_duplicate_outputs =
+                    connected.omitted_duplicate_outputs.saturating_add(1);
+                continue;
+            }
+            if connected.witnesses.len() >= MAX_CONNECTED_GROUPS
+                || connected.estimated_bytes + ESTIMATED_WITNESS_BYTES > MAX_JOURNAL_ESTIMATED_BYTES
+            {
+                connected.saturated_at = Some("witness_budget");
+                eprintln!(
+                    "origin-journal connected_capture_incomplete cap=witness_budget witnesses={} estimated_bytes={}",
+                    connected.witnesses.len(),
+                    connected.estimated_bytes
+                );
+                return;
+            }
+            let witness = connected.witnesses.len();
+            if let InputWitness::Parent {
+                witness: parent, ..
+            } = source
+                && parent >= witness
+            {
+                connected.unresolved_inputs = connected.unresolved_inputs.saturating_add(1);
+                continue;
+            }
+            connected.witnesses.push(ConnectedWitness {
+                origin: *origin,
+                event,
+                kind,
+                target,
+                source,
+            });
+            connected.direct.insert(node, witness);
+            connected.estimated_bytes += ESTIMATED_WITNESS_BYTES;
+        }
+    }
+
+    pub(super) fn record_property_output(
+        &self,
+        event: usize,
+        receiver: u32,
+        property: super::PropertySlot,
+        numeric: bool,
+        values: &Values,
+        sources: &InputSnapshot,
+    ) {
+        let mut state = self.state.borrow_mut();
+        let connected = &mut state.connected;
+        if connected.saturated_at.is_some() {
+            return;
+        }
+        for (index, origin) in self.origins.iter().enumerate() {
+            if !self.contains(values, *origin) {
+                continue;
+            }
+            let Some(source) = sources.sources.get(index).copied().flatten() else {
+                connected.unresolved_inputs = connected.unresolved_inputs.saturating_add(1);
+                continue;
+            };
+            let group_key = PropertyGroupKey {
+                origin: *origin,
+                event,
+                property,
+                source,
+            };
+            let group_index = if let Some(group) = connected.property_group_ids.get(&group_key) {
+                *group
+            } else {
+                if connected.witnesses.len() >= MAX_CONNECTED_GROUPS
+                    || connected.estimated_bytes + ESTIMATED_WITNESS_BYTES
+                        > MAX_JOURNAL_ESTIMATED_BYTES
+                {
+                    connected.saturated_at = Some("group_budget");
+                    eprintln!(
+                        "origin-journal connected_capture_incomplete cap=group_budget groups={} estimated_bytes={}",
+                        connected.property_groups.len(),
+                        connected.estimated_bytes
+                    );
+                    return;
+                }
+                let witness = connected.witnesses.len();
+                if let InputWitness::Parent {
+                    witness: parent, ..
+                } = source
+                    && parent >= witness
+                {
+                    connected.unresolved_inputs = connected.unresolved_inputs.saturating_add(1);
+                    continue;
+                }
+                connected.witnesses.push(ConnectedWitness {
+                    origin: *origin,
+                    event,
+                    kind: "property_write",
+                    target: None,
+                    source,
+                });
+                let group = connected.property_groups.len();
+                connected.property_groups.push(PropertyGroup {
+                    witness,
+                    property,
+                    numeric,
+                    receivers: RoaringBitmap::new(),
+                    high_containers: HashSet::new(),
+                });
+                connected.property_group_ids.insert(group_key, group);
+                connected
+                    .property_index
+                    .entry((*origin, property))
+                    .or_default()
+                    .push(group);
+                connected
+                    .property_groups_by_origin
+                    .entry(*origin)
+                    .or_default()
+                    .push(group);
+                connected.estimated_bytes += ESTIMATED_WITNESS_BYTES;
+                group
+            };
+            let high = (receiver >> 16) as u16;
+            let needs_container = {
+                let group = &connected.property_groups[group_index];
+                !group.receivers.contains(receiver) && !group.high_containers.contains(&high)
+            };
+            if needs_container {
+                if connected.estimated_bytes + ESTIMATED_BITMAP_CONTAINER_BYTES
+                    > MAX_JOURNAL_ESTIMATED_BYTES
+                {
+                    connected.saturated_at = Some("bitmap_budget");
+                    eprintln!(
+                        "origin-journal connected_capture_incomplete cap=bitmap_budget groups={} estimated_bytes={}",
+                        connected.property_groups.len(),
+                        connected.estimated_bytes
+                    );
+                    return;
+                }
+                connected.property_groups[group_index]
+                    .high_containers
+                    .insert(high);
+                connected.estimated_bytes += ESTIMATED_BITMAP_CONTAINER_BYTES;
+            }
+            connected.property_groups[group_index]
+                .receivers
+                .insert(receiver);
         }
     }
 
@@ -304,90 +583,6 @@ impl OriginTrace {
         }
     }
 
-    fn add_output(
-        state: &mut JournalState,
-        key: TransferKey,
-        output: OutputWitness,
-        origin: OriginId,
-    ) -> bool {
-        if state.counts.truncated_at.is_some() {
-            return false;
-        }
-        let node = SliceNode {
-            origin,
-            key: output.key,
-        };
-        if let Some((existing_transfer, existing_output)) = state.outputs.get(&node) {
-            if *existing_transfer == key && *existing_output == output {
-                state.counts.duplicate_observations =
-                    state.counts.duplicate_observations.saturating_add(1);
-            } else {
-                state.counts.omitted_alternatives =
-                    state.counts.omitted_alternatives.saturating_add(1);
-            }
-            return true;
-        }
-        if state.counts.outputs >= MAX_JOURNAL_OUTPUTS {
-            state.counts.truncated_at = Some("outputs");
-            eprintln!(
-                "origin-journal capture_incomplete cap=outputs groups={} outputs={} limit={MAX_JOURNAL_OUTPUTS}",
-                state.counts.groups, state.counts.outputs
-            );
-            return false;
-        }
-        if !state.transfers.contains(&key) && state.counts.groups >= MAX_JOURNAL_GROUPS {
-            state.counts.truncated_at = Some("groups");
-            eprintln!(
-                "origin-journal capture_incomplete cap=groups groups={} outputs={} limit={MAX_JOURNAL_GROUPS}",
-                state.counts.groups, state.counts.outputs
-            );
-            return false;
-        }
-        state.transfers.insert(key);
-        state.outputs.insert(node, (key, output));
-        state.counts.groups = state.transfers.len();
-        state.counts.outputs += 1;
-        true
-    }
-
-    /// Register one output target without rescanning the expression inputs.
-    pub(super) fn record_cached_output(
-        &self,
-        event: usize,
-        kind: &'static str,
-        argument: Option<usize>,
-        target: Option<u32>,
-        output: FlowKey,
-        values: &Values,
-    ) {
-        let mut state = self.state.borrow_mut();
-        if state.counts.truncated_at.is_some() {
-            return;
-        }
-        for origin in &self.origins {
-            if !self.contains(values, *origin) {
-                continue;
-            }
-            let transfer = TransferKey {
-                origin: *origin,
-                event,
-                kind,
-                argument,
-            };
-            if !Self::add_output(
-                &mut state,
-                transfer,
-                OutputWitness {
-                    key: output,
-                    target,
-                },
-                *origin,
-            ) {
-                return;
-            }
-        }
-    }
-
     pub(super) fn report_global(&self, facts: &BTreeMap<FlowKey, FlowFact>) {
         for target in &self.targets {
             let fact = facts.get(&target.key);
@@ -421,819 +616,191 @@ impl OriginTrace {
         }
     }
 
-    pub(super) fn report_slice(
+    pub(super) fn report_connected(
         &self,
         facts: &BTreeMap<FlowKey, FlowFact>,
         events: &[FlowEvent],
-        returns: &ReturnInputs,
-        declared: &[bool],
-        numeric_properties: &[bool],
     ) {
         let state = self.state.borrow();
-        let mut static_by_output: HashMap<FlowKey, Vec<usize>> = HashMap::new();
-        for (index, event) in events.iter().enumerate() {
-            let output = match event {
-                FlowEvent::FunctionDeclaration { id, .. }
-                | FlowEvent::ClassDeclaration { id, .. }
-                | FlowEvent::Variable { id, .. }
-                | FlowEvent::AssignBinding { id, .. } => Some(FlowKey::Binding(*id)),
-                FlowEvent::Return { function, .. } => Some(FlowKey::Return(*function)),
-                FlowEvent::WritePropertyExpr {
-                    object, property, ..
-                }
-                | FlowEvent::WritePropertyBinding {
-                    object, property, ..
-                }
-                | FlowEvent::WritePropertyValue {
-                    object, property, ..
-                } => {
-                    static_by_output
-                        .entry(FlowKey::Properties(*object))
-                        .or_default()
-                        .push(index);
-                    if numeric_properties.get(property.0 as usize) == Some(&true) {
-                        static_by_output
-                            .entry(FlowKey::NumericProperties(*object))
-                            .or_default()
-                            .push(index);
-                    }
-                    Some(FlowKey::Property(*object, *property))
-                }
-                _ => None,
+        let connected = &state.connected;
+        let mut output_bytes = 0usize;
+        let mut emitted_steps = 0usize;
+        let mut output_truncated = false;
+        'targets: for target in &self.targets {
+            let Some(FlowFact::Values(values)) = facts.get(&target.key) else {
+                continue;
             };
-            if let Some(output) = output {
-                static_by_output.entry(output).or_default().push(index);
-            }
-        }
-
-        let mut pending = Vec::new();
-        let mut root_targets = HashMap::new();
-        let mut discovery_limit_hit = false;
-        for (target_index, target) in self.targets.iter().enumerate() {
-            if let Some(FlowFact::Values(values)) = facts.get(&target.key) {
-                for origin in &self.origins {
-                    if self.contains(values, *origin) {
-                        let node = SliceNode {
-                            origin: *origin,
-                            key: target.key,
-                        };
-                        if root_targets.contains_key(&node) {
-                            continue;
-                        }
-                        if root_targets.len() >= MAX_SLICE_NODES {
-                            discovery_limit_hit = true;
-                            break;
-                        }
-                        root_targets.insert(node, target_index);
-                        pending.push(node);
-                    }
-                }
-            }
-        }
-        pending.reverse();
-
-        let mut seen = HashSet::new();
-        let mut predecessors: HashMap<SliceNode, SliceParent> = HashMap::new();
-        let mut dynamic_sources: HashMap<TransferKey, SourceEvaluation> = HashMap::new();
-        let mut evaluated = 0usize;
-        let mut unresolved = 0usize;
-        let mut missing_samples = Vec::new();
-        let mut stop_reason = discovery_limit_hit.then_some("slice_nodes");
-        let mut found_seed = None;
-        while let Some(node) = pending.pop() {
-            if discovery_limit_hit {
-                break;
-            }
-            if seen.contains(&node) {
-                continue;
-            }
-            seen.insert(node);
-            if !fact_has_origin(facts, node.key, node.origin, self) {
-                continue;
-            }
-
-            let mut sources = Vec::new();
-            let mut matched_producer = false;
-            if let Some(indexes) = static_by_output.get(&node.key) {
-                for index in indexes {
-                    let event = &events[*index];
-                    let producer = ProducerWitness {
-                        event: *index,
-                        target: None,
-                        kind: "static_source",
-                    };
-                    match static_event_source(event) {
-                        StaticSource::Expression(expr) => {
-                            if !self.expression_has_origin(
-                                expr,
-                                node.origin,
-                                facts,
-                                returns,
-                                declared,
-                                &mut evaluated,
-                            ) {
-                                continue;
-                            }
-                            matched_producer = true;
-                            let mut keys = Vec::new();
-                            let mut seeds = Vec::new();
-                            self.source_keys_for_expr(
-                                expr,
-                                node.origin,
-                                facts,
-                                returns,
-                                declared,
-                                &mut evaluated,
-                                &mut keys,
-                                &mut seeds,
-                            );
-                            if let Some(seed) = seeds.first() {
-                                found_seed = Some((node, producer, *seed));
-                                break;
-                            }
-                            if keys.is_empty() {
-                                unresolved += 1;
-                                if missing_samples.len() < 16 {
-                                    missing_samples.push((
-                                        node,
-                                        "unattributed_static_source",
-                                        Some(*index),
-                                    ));
-                                }
-                            } else {
-                                sources.extend(keys.into_iter().map(|key| (key, producer)));
-                            }
-                        }
-                        StaticSource::Value(value)
-                            if *value == self.origin_table.origin(node.origin) =>
-                        {
-                            matched_producer = true;
-                            found_seed = Some((node, producer, *value));
-                            break;
-                        }
-                        StaticSource::Binding(slot) => {
-                            let key = FlowKey::Binding(slot);
-                            if fact_has_origin(facts, key, node.origin, self) {
-                                matched_producer = true;
-                                sources.push((key, producer));
-                            }
-                        }
-                        StaticSource::Value(_) | StaticSource::None => {}
-                    }
-                    if found_seed.is_some() {
-                        break;
-                    }
-                }
-            }
-            if found_seed.is_some() {
-                break;
-            }
-
-            if let Some((transfer, witness)) = state.outputs.get(&node) {
-                let event = events.get(transfer.event);
-                if let Some(event) = event {
-                    let source = if let Some(cached) = dynamic_sources.get(transfer) {
-                        cached.clone()
-                    } else {
-                        let result = match dynamic_event_source(event, *transfer) {
-                            Some(expr)
-                                if self.expression_has_origin(
-                                    expr,
-                                    node.origin,
-                                    facts,
-                                    returns,
-                                    declared,
-                                    &mut evaluated,
-                                ) =>
-                            {
-                                let mut keys = Vec::new();
-                                let mut seeds = Vec::new();
-                                self.source_keys_for_expr(
-                                    expr,
-                                    node.origin,
-                                    facts,
-                                    returns,
-                                    declared,
-                                    &mut evaluated,
-                                    &mut keys,
-                                    &mut seeds,
-                                );
-                                SourceEvaluation {
-                                    keys,
-                                    seeds,
-                                    matched: true,
-                                }
-                            }
-                            _ => SourceEvaluation {
-                                keys: Vec::new(),
-                                seeds: Vec::new(),
-                                matched: false,
-                            },
-                        };
-                        dynamic_sources.insert(*transfer, result.clone());
-                        result
-                    };
-                    matched_producer |= source.matched;
-                    if source.matched {
-                        let producer = ProducerWitness {
-                            event: transfer.event,
-                            target: witness.target,
-                            kind: transfer.kind,
-                        };
-                        if let Some(seed) = source.seeds.first() {
-                            found_seed = Some((node, producer, *seed));
-                        } else if source.keys.is_empty() {
-                            unresolved += 1;
-                            if missing_samples.len() < 16 {
-                                missing_samples.push((
-                                    node,
-                                    "unattributed_dynamic_source",
-                                    Some(transfer.event),
-                                ));
-                            }
-                        } else {
-                            sources.extend(source.keys.into_iter().map(|key| (key, producer)));
-                        }
-                    } else {
-                        unresolved += 1;
-                        if missing_samples.len() < 16 {
-                            missing_samples.push((
-                                node,
-                                "cached_output_not_reproduced",
-                                Some(transfer.event),
-                            ));
-                        }
-                    }
-                } else {
-                    unresolved += 1;
-                    if missing_samples.len() < 16 {
-                        missing_samples.push((node, "missing_dynamic_event", Some(transfer.event)));
-                    }
-                }
-            }
-
-            if found_seed.is_some() {
-                break;
-            }
-            if !matched_producer {
-                unresolved += 1;
-                if missing_samples.len() < 16 {
-                    missing_samples.push((node, "no_selected_value_producer", None));
-                }
-            }
-            sources.sort_unstable_by_key(|(key, producer)| (*key, producer.event));
-            sources.dedup_by_key(|(key, _)| *key);
-            for (key, producer) in sources.into_iter().rev() {
-                let child = SliceNode {
-                    origin: node.origin,
-                    key,
-                };
-                if root_targets.contains_key(&child)
-                    || seen.contains(&child)
-                    || predecessors.contains_key(&child)
-                {
+            for origin in &self.origins {
+                if !self.contains(values, *origin) {
                     continue;
                 }
-                if root_targets.len() + predecessors.len() >= MAX_SLICE_NODES {
-                    discovery_limit_hit = true;
-                    stop_reason = Some("slice_nodes");
-                    break;
-                }
-                predecessors.insert(
-                    child,
-                    SliceParent {
-                        parent: node,
-                        producer,
-                    },
-                );
-                pending.push(child);
-            }
-            if discovery_limit_hit {
-                break;
-            }
-            if evaluated >= MAX_EXPRESSION_EVALUATIONS {
-                stop_reason = Some("expression_evaluations");
-                break;
-            }
-        }
-
-        let mut steps = Vec::new();
-        let mut witness_root = None;
-        if let Some((seed_node, seed_producer, seed)) = found_seed {
-            steps.push(TraceStep {
-                output: seed_node,
-                producer: seed_producer,
-                destination: TraceDestination::Seed(seed),
-            });
-            let mut cursor = seed_node;
-            while !root_targets.contains_key(&cursor) {
-                let Some(parent) = predecessors.get(&cursor) else {
-                    stop_reason = Some("missing_predecessor");
-                    break;
+                let Some(mut cursor) = lookup_connected(connected, target.key, *origin) else {
+                    let line = format!(
+                        "origin-journal connected_target module={} binding={:?} key={:?} key_label={:?} origin={:?} witness=false cause=not_recorded_or_capture_saturated\n",
+                        target.module,
+                        target.name,
+                        target.key,
+                        self.key_label(target.key),
+                        self.origin_sources.get(origin),
+                    );
+                    if !emit_limited_line(&line, &mut output_bytes) {
+                        output_truncated = true;
+                        break 'targets;
+                    }
+                    continue;
                 };
-                steps.push(TraceStep {
-                    output: parent.parent,
-                    producer: parent.producer,
-                    destination: TraceDestination::Key(cursor.key),
-                });
-                cursor = parent.parent;
-                if steps.len() > MAX_SLICE_NODES {
-                    stop_reason = Some("path_nodes");
-                    break;
+                let root = cursor;
+                let mut path = Vec::new();
+                let mut seen = HashSet::new();
+                let mut seed = None;
+                let mut invalid_parent = false;
+                loop {
+                    if !seen.insert(cursor.witness) {
+                        invalid_parent = true;
+                        break;
+                    }
+                    let Some(witness) = connected.witnesses.get(cursor.witness) else {
+                        invalid_parent = true;
+                        break;
+                    };
+                    if witness.origin != *origin {
+                        invalid_parent = true;
+                        break;
+                    }
+                    path.push(cursor);
+                    match witness.source {
+                        InputWitness::Seed(value) => {
+                            seed = Some(value);
+                            break;
+                        }
+                        InputWitness::Parent { witness, key } => {
+                            if witness >= cursor.witness {
+                                invalid_parent = true;
+                                break;
+                            }
+                            cursor = ConnectedOutput { witness, key };
+                        }
+                    }
                 }
-            }
-            if root_targets.contains_key(&cursor) {
-                witness_root = Some((cursor, root_targets[&cursor]));
-                steps.reverse();
-            } else {
-                steps.clear();
-            }
-        }
-
-        if found_seed.is_some() && stop_reason.is_none() {
-            stop_reason = Some("first_connected_witness_only");
-        }
-        let witness_found = witness_root.is_some();
-        let mut output_bytes = 0usize;
-        let mut witness_emitted_complete = false;
-        if let Some((root, target_index)) = witness_root {
-            let target = &self.targets[target_index];
-            let header = format!(
-                "origin-journal connected_witness module={} binding={:?} context={} root={:?} root_label={:?} source_origin={:?} steps={} alternatives_omitted={} duplicate_observations={}\n",
-                target.module,
-                target.name,
-                target.context,
-                root.key,
-                self.key_label(root.key),
-                self.origin_sources.get(&root.origin),
-                steps.len(),
-                state.counts.omitted_alternatives,
-                state.counts.duplicate_observations,
-            );
-            let mut path_text = String::new();
-            let mut path_fits = append_bounded_path_line(&mut path_text, &header);
-            for step in &steps {
-                if !path_fits {
-                    break;
-                }
-                let Some(event) = events.get(step.producer.event) else {
-                    stop_reason = Some("witness_event_missing");
-                    path_fits = false;
-                    break;
+                let Some(seed) = seed else {
+                    let line = format!(
+                        "origin-journal connected_witness_incomplete module={} binding={:?} origin={:?} cause={}\n",
+                        target.module,
+                        target.name,
+                        self.origin_sources.get(origin),
+                        if invalid_parent {
+                            "invalid_or_cyclic_parent"
+                        } else {
+                            "missing_seed"
+                        },
+                    );
+                    if !emit_limited_line(&line, &mut output_bytes) {
+                        output_truncated = true;
+                        break 'targets;
+                    }
+                    continue;
                 };
-                let source_line = self.event_line(
-                    step.producer.event,
-                    event,
-                    step.output.key,
-                    step.output.origin,
-                    step.producer.target,
-                    step.producer.kind,
+                path.reverse();
+                let mut text = String::new();
+                let header = format!(
+                    "origin-journal connected_witness module={} binding={:?} context={} root={:?} root_label={:?} source_origin={:?} steps={} semantics=connected_recorded_may_source_not_execution_causality;omitted_alternatives_and_unrecorded_producers_remain_possible\n",
+                    target.module,
+                    target.name,
+                    target.context,
+                    root.key,
+                    self.key_label(root.key),
+                    self.origin_sources.get(origin),
+                    path.len(),
                 );
-                if !append_bounded_path_line(&mut path_text, &source_line) {
-                    path_fits = false;
-                    break;
-                }
-                match step.destination {
-                    TraceDestination::Key(key) => {
-                        let edge_line = self.edge_line(
-                            step.producer.event,
-                            event,
-                            step.output.key,
+                let mut complete = append_bounded_path_line(&mut text, &header);
+                for link in &path {
+                    if !complete {
+                        break;
+                    }
+                    let Some(witness) = connected.witnesses.get(link.witness) else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(event) = events.get(witness.event) else {
+                        complete = false;
+                        break;
+                    };
+                    let (receiver, property, reported_target, target_site) = match link.key {
+                        FlowKey::Property(receiver, property) => {
+                            (Some(receiver), Some(property), None, None)
+                        }
+                        _ => (None, None, witness.target, witness.target),
+                    };
+                    let line = format!(
+                        "origin-journal source event={} event_kind={} kind={} output={:?} output_label={:?} receiver={:?} property={:?} property_label={:?} target={:?} target_site={:?} origin={:?}\n",
+                        witness.event,
+                        event_kind(event),
+                        witness.kind,
+                        link.key,
+                        self.key_label(link.key),
+                        receiver,
+                        property,
+                        property.map(|property| self
+                            .key_labels
+                            .properties
+                            .get(property.0 as usize)
+                            .map(String::as_str)
+                            .unwrap_or("<property>")),
+                        reported_target,
+                        target_site.map(|site| self.site_label(site)),
+                        self.origin_sources.get(origin),
+                    );
+                    complete = append_bounded_path_line(&mut text, &line);
+                    if !complete {
+                        break;
+                    }
+                    if let InputWitness::Parent { key, .. } = witness.source {
+                        let edge = format!(
+                            "origin-journal witness_input from={:?} from_label={:?} to={:?} to_label={:?} event={} origin={:?}\n",
+                            link.key,
+                            self.key_label(link.key),
                             key,
-                            step.output.origin,
-                            step.producer.target,
-                            "witness_input",
+                            self.key_label(key),
+                            witness.event,
+                            self.origin_sources.get(origin),
                         );
-                        if !append_bounded_path_line(&mut path_text, &edge_line) {
-                            path_fits = false;
-                        }
-                    }
-                    TraceDestination::Seed(value) => {
-                        let line = format!(
-                            "origin-journal witness_seed output={:?} output_label={:?} value={:?} source_origin={:?}\n",
-                            step.output.key,
-                            self.key_label(step.output.key),
-                            value,
-                            self.origin_sources.get(&step.output.origin),
-                        );
-                        if !append_bounded_path_line(&mut path_text, &line) {
-                            path_fits = false;
-                        }
+                        complete = append_bounded_path_line(&mut text, &edge);
                     }
                 }
-            }
-            if path_fits {
-                output_bytes = path_text.len();
-                eprint!("{path_text}");
-                witness_emitted_complete = true;
-            } else if stop_reason.is_none() || stop_reason == Some("first_connected_witness_only") {
-                stop_reason = Some("output_bytes");
-            }
-        }
-        for (node, reason, event) in &missing_samples {
-            if stop_reason == Some("output_bytes") {
-                break;
-            }
-            let line = format!(
-                "origin-journal missing_sample key={:?} label={:?} source_origin={:?} event={:?} reason={}\n",
-                node.key,
-                self.key_label(node.key),
-                self.origin_sources.get(&node.origin),
-                event,
-                reason,
-            );
-            if !emit_limited_line(&line, &mut output_bytes) {
-                stop_reason = Some("output_bytes");
-                break;
+                if complete {
+                    let line = format!(
+                        "origin-journal witness_seed value={:?} origin={:?}\n",
+                        seed,
+                        self.origin_sources.get(origin),
+                    );
+                    complete = append_bounded_path_line(&mut text, &line);
+                }
+                if !complete || output_bytes.saturating_add(text.len()) > MAX_JOURNAL_OUTPUT_BYTES {
+                    output_truncated = true;
+                    break 'targets;
+                }
+                output_bytes += text.len();
+                eprint!("{text}");
+                emitted_steps += path.len();
             }
         }
-        let capture_complete = state.counts.truncated_at.is_none();
         eprintln!(
-            "origin-journal demand_slice targets={} origins={} unique_dynamic_outputs={} duplicate_observations={} duplicate_observations_complete={} omitted_dynamic_alternatives_observed={} omitted_alternatives_complete={} discovered_keys={} reached_keys={} witness_found={} witness_emitted_complete={} witness_steps={} expression_evaluations={} unresolved={} capture_truncated_at={:?} stop_reason={:?} frontier_keys={} missing_samples={} hard_caps=groups:{MAX_JOURNAL_GROUPS},outputs:{MAX_JOURNAL_OUTPUTS},slice_nodes:{MAX_SLICE_NODES},expression_evaluations:{MAX_EXPRESSION_EVALUATIONS},output_bytes:{MAX_JOURNAL_OUTPUT_BYTES} semantics=one_connected_final_fact_may_source_witness_not_execution_causality;unseen_alternatives_are_not_ruled_out",
+            "origin-journal connected_summary targets={} selected_origins={} witnesses={} property_groups={} estimated_bytes={} estimated_bytes_scope=journal_witness_indexes_and_receiver_containers_only group_cap={} byte_cap={} saturated_at={:?} unresolved_input_observations={} duplicate_outputs={} emitted_steps={} output_bytes={} output_truncated={} hard_output_bytes={} semantics=first_connected_recorded_may_source_witness;not_an_execution_trace;absence_of_witness_is_not_absence_of_flow",
             self.targets.len(),
             self.origins.len(),
-            state.counts.outputs,
-            state.counts.duplicate_observations,
-            capture_complete,
-            state.counts.omitted_alternatives,
-            capture_complete,
-            root_targets.len() + predecessors.len(),
-            seen.len(),
-            witness_found,
-            witness_emitted_complete,
-            steps.len(),
-            evaluated,
-            unresolved,
-            state.counts.truncated_at,
-            stop_reason.unwrap_or("frontier_exhausted_no_absence_claim"),
-            pending.len(),
-            missing_samples.len(),
+            connected.witnesses.len(),
+            connected.property_groups.len(),
+            connected.estimated_bytes,
+            MAX_CONNECTED_GROUPS,
+            MAX_JOURNAL_ESTIMATED_BYTES,
+            connected.saturated_at,
+            connected.unresolved_inputs,
+            connected.omitted_duplicate_outputs,
+            emitted_steps,
+            output_bytes,
+            output_truncated,
+            MAX_JOURNAL_OUTPUT_BYTES,
         );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn event_line(
-        &self,
-        index: usize,
-        event: &FlowEvent,
-        output: FlowKey,
-        origin: OriginId,
-        target: Option<u32>,
-        kind: &str,
-    ) -> String {
-        format!(
-            "origin-journal source event={} kind={} output={:?} output_label={:?} target={:?} target_site={:?} source_origin={:?} event_kind={:?}\n",
-            index,
-            kind,
-            output,
-            self.key_label(output),
-            target,
-            target.map(|site| self.site_label(site)),
-            self.origin_sources.get(&origin),
-            event_kind(event),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn edge_line(
-        &self,
-        event_index: usize,
-        event: &FlowEvent,
-        from: FlowKey,
-        to: FlowKey,
-        origin: OriginId,
-        target: Option<u32>,
-        kind: &str,
-    ) -> String {
-        format!(
-            "origin-journal edge event={} kind={} from={:?} from_label={:?} to={:?} to_label={:?} target={:?} target_site={:?} source_origin={:?} event_kind={:?}\n",
-            event_index,
-            kind,
-            from,
-            self.key_label(from),
-            to,
-            self.key_label(to),
-            target,
-            target.map(|site| self.site_label(site)),
-            self.origin_sources.get(&origin),
-            event_kind(event),
-        )
-    }
-
-    fn expression_has_origin(
-        &self,
-        expr: &FlowValueExpr,
-        origin: OriginId,
-        facts: &BTreeMap<FlowKey, FlowFact>,
-        returns: &ReturnInputs,
-        declared: &[bool],
-        evaluations: &mut usize,
-    ) -> bool {
-        let Some(values) = self.evaluate_expr(expr, facts, returns, declared, evaluations) else {
-            return false;
-        };
-        self.contains(&values, origin)
-    }
-
-    fn evaluate_expr(
-        &self,
-        expr: &FlowValueExpr,
-        facts: &BTreeMap<FlowKey, FlowFact>,
-        returns: &ReturnInputs,
-        declared: &[bool],
-        evaluations: &mut usize,
-    ) -> Option<Values> {
-        if *evaluations >= MAX_EXPRESSION_EVALUATIONS {
-            return None;
-        }
-        *evaluations += 1;
-        let mut values = ValuesBuilder::new(self.origin_table.clone());
-        super::append_value_expr(
-            expr,
-            &mut values,
-            declared,
-            returns,
-            &mut |key| match facts.get(&key) {
-                Some(FlowFact::Values(values)) => Some(values.clone()),
-                _ => None,
-            },
-            &mut |_| {},
-        );
-        Some(values.finish())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn source_keys_for_expr(
-        &self,
-        expr: &FlowValueExpr,
-        origin: OriginId,
-        facts: &BTreeMap<FlowKey, FlowFact>,
-        returns: &ReturnInputs,
-        declared: &[bool],
-        evaluations: &mut usize,
-        keys: &mut Vec<FlowKey>,
-        seeds: &mut Vec<Value>,
-    ) {
-        if !self.expression_has_origin(expr, origin, facts, returns, declared, evaluations) {
-            return;
-        }
-        match expr {
-            FlowValueExpr::Binding(slot) => keys.push(FlowKey::Binding(*slot)),
-            FlowValueExpr::Value(value) if *value == self.origin_table.origin(origin) => {
-                seeds.push(*value)
-            }
-            FlowValueExpr::Value(_) | FlowValueExpr::Empty | FlowValueExpr::Unknown(_) => {}
-            FlowValueExpr::Union(left, right) => {
-                self.source_keys_for_expr(
-                    left,
-                    origin,
-                    facts,
-                    returns,
-                    declared,
-                    evaluations,
-                    keys,
-                    seeds,
-                );
-                self.source_keys_for_expr(
-                    right,
-                    origin,
-                    facts,
-                    returns,
-                    declared,
-                    evaluations,
-                    keys,
-                    seeds,
-                );
-            }
-            FlowValueExpr::Member { object, property } => {
-                let Some(objects) =
-                    self.evaluate_expr(object, facts, returns, declared, evaluations)
-                else {
-                    return;
-                };
-                for value in &objects {
-                    if let Value::Alloc(Kind::Object | Kind::Set, site) = value {
-                        let key = match property {
-                            Some(property) => FlowKey::Property(site, *property),
-                            None => FlowKey::Properties(site),
-                        };
-                        if fact_has_origin(facts, key, origin, self) {
-                            keys.push(key);
-                        }
-                    }
-                }
-            }
-            FlowValueExpr::NumericMember { object } => {
-                let Some(objects) =
-                    self.evaluate_expr(object, facts, returns, declared, evaluations)
-                else {
-                    return;
-                };
-                for value in &objects {
-                    if let Value::Alloc(Kind::Object | Kind::Set, site) = value {
-                        let key = FlowKey::NumericProperties(site);
-                        if fact_has_origin(facts, key, origin, self) {
-                            keys.push(key);
-                        }
-                    }
-                }
-            }
-            FlowValueExpr::Call {
-                callee,
-                argument: Some(argument),
-                factory_importer,
-            } => {
-                let Some(targets) =
-                    self.evaluate_expr(callee, facts, returns, declared, evaluations)
-                else {
-                    return;
-                };
-                let actual = &returns.arguments[*argument];
-                for target in &targets {
-                    let Value::Alloc(Kind::Function, function) = target else {
-                        continue;
-                    };
-                    let target_call = FlowValueExpr::Call {
-                        callee: Box::new(FlowValueExpr::Value(Value::Alloc(
-                            Kind::Function,
-                            function,
-                        ))),
-                        argument: Some(*argument),
-                        factory_importer: *factory_importer,
-                    };
-                    if !self.expression_has_origin(
-                        &target_call,
-                        origin,
-                        facts,
-                        returns,
-                        declared,
-                        evaluations,
-                    ) {
-                        continue;
-                    }
-                    match returns.summaries.get(&function) {
-                        Some(ReturnSummary::Argument) => self.source_keys_for_expr(
-                            actual,
-                            origin,
-                            facts,
-                            returns,
-                            declared,
-                            evaluations,
-                            keys,
-                            seeds,
-                        ),
-                        Some(ReturnSummary::ArgumentProperty(property)) => self.property_sources(
-                            actual,
-                            Some(*property),
-                            origin,
-                            facts,
-                            returns,
-                            declared,
-                            evaluations,
-                            keys,
-                        ),
-                        Some(ReturnSummary::ArgumentOrDefault) => {
-                            self.source_keys_for_expr(
-                                actual,
-                                origin,
-                                facts,
-                                returns,
-                                declared,
-                                evaluations,
-                                keys,
-                                seeds,
-                            );
-                            self.property_sources(
-                                actual,
-                                returns.default_property,
-                                origin,
-                                facts,
-                                returns,
-                                declared,
-                                evaluations,
-                                keys,
-                            );
-                        }
-                        Some(ReturnSummary::ForwardChoices(helpers)) => {
-                            for helper in helpers {
-                                if let Some(FlowFact::Values(helper_targets)) =
-                                    facts.get(&FlowKey::Binding(*helper))
-                                {
-                                    for helper_target in helper_targets {
-                                        if let Value::Alloc(Kind::Function, helper_function) =
-                                            helper_target
-                                        {
-                                            match returns.summaries.get(&helper_function) {
-                                                Some(ReturnSummary::Argument) => self
-                                                    .source_keys_for_expr(
-                                                        actual,
-                                                        origin,
-                                                        facts,
-                                                        returns,
-                                                        declared,
-                                                        evaluations,
-                                                        keys,
-                                                        seeds,
-                                                    ),
-                                                Some(ReturnSummary::ArgumentProperty(property)) => {
-                                                    self.property_sources(
-                                                        actual,
-                                                        Some(*property),
-                                                        origin,
-                                                        facts,
-                                                        returns,
-                                                        declared,
-                                                        evaluations,
-                                                        keys,
-                                                    )
-                                                }
-                                                _ => {
-                                                    let key = FlowKey::Return(helper_function);
-                                                    if fact_has_origin(facts, key, origin, self) {
-                                                        keys.push(key);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        None => {
-                            let key = FlowKey::Return(function);
-                            if fact_has_origin(facts, key, origin, self) {
-                                keys.push(key);
-                            }
-                        }
-                    }
-                }
-            }
-            FlowValueExpr::Call {
-                callee,
-                argument: None,
-                factory_importer,
-            } => {
-                let Some(targets) =
-                    self.evaluate_expr(callee, facts, returns, declared, evaluations)
-                else {
-                    return;
-                };
-                for target in &targets {
-                    if let Value::Alloc(Kind::Function, function) = target {
-                        let target_call = FlowValueExpr::Call {
-                            callee: Box::new(FlowValueExpr::Value(Value::Alloc(
-                                Kind::Function,
-                                function,
-                            ))),
-                            argument: None,
-                            factory_importer: *factory_importer,
-                        };
-                        if self.expression_has_origin(
-                            &target_call,
-                            origin,
-                            facts,
-                            returns,
-                            declared,
-                            evaluations,
-                        ) {
-                            let key = FlowKey::Return(function);
-                            if fact_has_origin(facts, key, origin, self) {
-                                keys.push(key);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        keys.sort_unstable();
-        keys.dedup();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn property_sources(
-        &self,
-        actual: &FlowValueExpr,
-        property: Option<super::PropertySlot>,
-        origin: OriginId,
-        facts: &BTreeMap<FlowKey, FlowFact>,
-        returns: &ReturnInputs,
-        declared: &[bool],
-        evaluations: &mut usize,
-        keys: &mut Vec<FlowKey>,
-    ) {
-        let Some(objects) = self.evaluate_expr(actual, facts, returns, declared, evaluations)
-        else {
-            return;
-        };
-        for value in &objects {
-            if let Value::Alloc(Kind::Object | Kind::Set, site) = value {
-                let key =
-                    property.map_or(FlowKey::Properties(site), |p| FlowKey::Property(site, p));
-                if fact_has_origin(facts, key, origin, self) {
-                    keys.push(key);
-                }
-            }
-        }
     }
 
     pub(super) fn report_projection(&self, report: ProjectionReport<'_>) {
@@ -1296,46 +863,6 @@ fn append_bounded_path_line(path: &mut String, line: &str) -> bool {
     }
     path.push_str(line);
     true
-}
-
-enum StaticSource<'a> {
-    Expression(&'a FlowValueExpr),
-    Value(&'a Value),
-    Binding(super::BindingSlot),
-    None,
-}
-
-fn static_event_source(event: &FlowEvent) -> StaticSource<'_> {
-    match event {
-        FlowEvent::FunctionDeclaration { origin, .. }
-        | FlowEvent::ClassDeclaration { origin, .. }
-        | FlowEvent::WritePropertyValue { value: origin, .. } => StaticSource::Value(origin),
-        FlowEvent::Variable { init, .. }
-        | FlowEvent::AssignBinding { right: init, .. }
-        | FlowEvent::AssignProperty { right: init, .. }
-        | FlowEvent::WritePropertyExpr { value: init, .. }
-        | FlowEvent::Return { value: init, .. } => StaticSource::Expression(init),
-        FlowEvent::WritePropertyBinding { binding, .. } => StaticSource::Binding(*binding),
-        _ => StaticSource::None,
-    }
-}
-
-fn dynamic_event_source(event: &FlowEvent, transfer: TransferKey) -> Option<&FlowValueExpr> {
-    match (event, transfer.kind) {
-        (FlowEvent::Invoke { args, .. }, "invoke_argument") => args.get(transfer.argument?),
-        (FlowEvent::AssignProperty { right, .. }, "property_rhs")
-        | (FlowEvent::WritePropertyExpr { value: right, .. }, "property_rhs") => Some(right),
-        _ => None,
-    }
-}
-
-fn fact_has_origin(
-    facts: &BTreeMap<FlowKey, FlowFact>,
-    key: FlowKey,
-    origin: OriginId,
-    trace: &OriginTrace,
-) -> bool {
-    matches!(facts.get(&key), Some(FlowFact::Values(values)) if trace.contains(values, origin))
 }
 
 pub(super) fn event_kind(event: &FlowEvent) -> &'static str {
