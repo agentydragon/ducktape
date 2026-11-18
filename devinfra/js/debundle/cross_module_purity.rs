@@ -1202,6 +1202,10 @@ pub struct CallableSummaryInputs<'a> {
     /// Ordinary imports with a complete, dynamically closed provider dependency
     /// closure excluding the importer. This proves allocation ownership only.
     pub closed_factory_imports: &'a BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    /// Full importer-local namespace family; empty member sets retain roots
+    /// configured by other namespace contracts without asserting independence.
+    pub namespace_privacy_members:
+        &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
     /// Exact original exports selected by audited initializer call inputs.
     pub requested_original_provider_exports: &'a BTreeSet<(SourceModuleKey, String)>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
@@ -1233,6 +1237,7 @@ pub fn resolve_imported_callable_summaries(
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
         closed_factory_imports,
+        namespace_privacy_members,
         requested_original_provider_exports,
         selected_value_inputs,
         selected_native_operation_inputs,
@@ -1314,6 +1319,10 @@ pub fn resolve_imported_callable_summaries(
                         .unwrap_or_default(),
                     predefined_globals,
                     bundle_globals.clone(),
+                    namespace_privacy_members
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
                 );
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
@@ -1520,6 +1529,11 @@ pub fn resolve_imported_callable_summaries(
     // Author declarations are available before flow. Inferred wrapper proofs
     // depend on the completed flow and must never feed this solve back into itself.
     // Stability comes from raw source declarations, not purity assertions.
+    // Diagnostic only: observe the already prepared source-only receipt. This
+    // does not admit any additional call shape or alter source transfers.
+    for (module, facts) in &prepared {
+        facts.trace_namespace_privacy_preflight(module);
+    }
     let source_stable = resolve_stable_imports(bindings, modules, &BTreeMap::new());
     let declared_imports = solve_callable_import_projections(bindings, export_summaries.clone());
     let fresh_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
@@ -2685,6 +2699,7 @@ mod tests {
             &BTreeMap::new(),
             CallableSummaryInputs {
                 closed_factory_imports: &BTreeMap::new(),
+                namespace_privacy_members: &BTreeMap::new(),
                 requested_original_provider_exports: &BTreeSet::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
