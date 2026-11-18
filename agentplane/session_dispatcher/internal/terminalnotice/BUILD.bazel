@@ -8,9 +8,7 @@ go_library(
     deps = [
         "//agentplane/proto:identity_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
-        "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
         "//agentplane/session_dispatcher/internal/notification:dispatcher_notification_go_proto",
-        "@com_github_google_uuid//:uuid",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -20,7 +18,9 @@ go_test(
     srcs = ["terminalnotice_test.go"],
     embed = [":terminalnotice"],
     deps = [
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/session_dispatcher/internal/notification:dispatcher_notification_go_proto",
         "@org_golang_google_protobuf//proto",
     ],
 )
