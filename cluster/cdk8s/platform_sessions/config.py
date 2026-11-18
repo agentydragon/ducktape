@@ -6,6 +6,25 @@ from typing import NotRequired, TypedDict
 # session renewal and rotation. Captures include credentials and private data.
 RECORD_UPSTREAM_TRAFFIC = True
 
+# Switch only the comparison instance between direct browser traffic and the
+# existing mitmproxy recorder. Keep the production MyQuest setting above.
+MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC = False
+
+
+def myquest_canary_state_dir(record_upstream_traffic: bool) -> str:
+    # Keep cookies and challenge state from one arm out of the other arm.
+    mode = "proxy" if record_upstream_traffic else "direct"
+    return f"/data/session/myquest-canary-{mode}"
+
+
+def myquest_canary_integration(record_upstream_traffic: bool) -> dict[str, str | int]:
+    return {
+        "id": "myquest-canary",
+        "type": "myquest",
+        "state_dir": myquest_canary_state_dir(record_upstream_traffic),
+        "poll_interval_seconds": 300,
+    }
+
 
 class BearerConfig(TypedDict):
     role: str
@@ -60,6 +79,7 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
             "poll_interval_seconds": 300,
         },
         {"id": "myquest", "type": "myquest", "state_dir": "/data/session/myquest", "poll_interval_seconds": 300},
+        myquest_canary_integration(MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC),
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }

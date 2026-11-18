@@ -54,6 +54,8 @@ GATEWAY = "platform-sessions-gateway"
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
+BASE_INTEGRATIONS = [item for item in config.INTEGRATIONS["integrations"] if item["id"] != "myquest-canary"]
+BASE_PROVIDERS = tuple(str(item["id"]) for item in BASE_INTEGRATIONS)
 BEARER_FILES = (
     "owner",
     "aiquota",
@@ -83,6 +85,8 @@ def _provider_dns(instance: str) -> str:
 
 
 def _provider_image(instance: str) -> str:
+    if instance == "myquest-canary":
+        return _provider_name("myquest")
     if instance in {"openai", "anthropic", "thrive"}:
         return SHARED_PROVIDERS_IMAGE
     return _provider_name(instance)
@@ -91,19 +95,33 @@ def _provider_image(instance: str) -> str:
 PROVIDER_IMAGES = tuple(sorted({_provider_image(instance) for instance in PROVIDERS}))
 
 
+def _connections_json(instances: tuple[str, ...]) -> str:
+    return json.dumps(
+        {
+            instance: {
+                "origin": f"https://{_provider_dns(instance)}:8443",
+                "control_target": f"{_provider_dns(instance)}:8444",
+                "control_token_file": f"{_TOKEN_DIR}/{instance}/control",
+                "owner_token_file": f"{_TOKEN_DIR}/{instance}/owner",
+                "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
+                "control_ca_file": _TRUST,
+                "http_ca_file": _TRUST,
+            }
+            for instance in instances
+        }
+    )
+
+
 # A separate ConfigMap prevents preparing the new deployment from rolling the live service.
 CONFIG = ConfigMapArgs(
     name="remote-config",
     namespace=NAMESPACE,
     data={
         "gateway-integrations.json": json.dumps(
-            {"integrations": [{"id": item["id"], "type": item["type"]} for item in config.INTEGRATIONS["integrations"]]}
+            {"integrations": [{"id": item["id"], "type": item["type"]} for item in BASE_INTEGRATIONS]}
         ),
         "bearers.json": json.dumps(config.BEARERS),
-        **{
-            f"{item['id']}-integration.json": json.dumps({"integrations": [item]})
-            for item in config.INTEGRATIONS["integrations"]
-        },
+        **{f"{item['id']}-integration.json": json.dumps({"integrations": [item]}) for item in BASE_INTEGRATIONS},
         **{
             f"{instance}-routes.json": json.dumps(
                 [
@@ -113,24 +131,36 @@ CONFIG = ConfigMapArgs(
                     if route["instance"] == instance
                 ]
             )
-            for instance in PROVIDERS
+            for instance in BASE_PROVIDERS
         },
-        "connections.json": json.dumps(
-            {
-                instance: {
-                    "origin": f"https://{_provider_dns(instance)}:8443",
-                    "control_target": f"{_provider_dns(instance)}:8444",
-                    "control_token_file": f"{_TOKEN_DIR}/{instance}/control",
-                    "owner_token_file": f"{_TOKEN_DIR}/{instance}/owner",
-                    "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
-                    "control_ca_file": _TRUST,
-                    "http_ca_file": _TRUST,
-                }
-                for instance in PROVIDERS
-            }
-        ),
+        "connections.json": _connections_json(BASE_PROVIDERS),
     },
 )
+
+
+# The gateway and canary use this ConfigMap. The original ConfigMap stays
+# byte-identical, so its content-hashed name does not roll existing providers.
+def canary_config(record_upstream_traffic: bool) -> ConfigMapArgs:
+    return ConfigMapArgs(
+        name="remote-canary-config",
+        namespace=NAMESPACE,
+        data={
+            "gateway-integrations.json": json.dumps(
+                {
+                    "integrations": [
+                        {"id": item["id"], "type": item["type"]} for item in config.INTEGRATIONS["integrations"]
+                    ]
+                }
+            ),
+            "connections.json": _connections_json(PROVIDERS),
+            "myquest-canary-integration.json": json.dumps(
+                {"integrations": [config.myquest_canary_integration(record_upstream_traffic)]}
+            ),
+        },
+    )
+
+
+CANARY_CONFIG = canary_config(config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC)
 
 
 def _secret_projection(name: str, path: str) -> k8s.VolumeProjection:
@@ -196,9 +226,10 @@ def _deployment(
     pod_policy.harden(deployment)
 
 
-def _config_env(name: str, key: str) -> k8s.EnvVar:
+def _config_env(name: str, key: str, *, config_map: ConfigMapArgs = CONFIG) -> k8s.EnvVar:
     return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(config_map_key_ref=k8s.ConfigMapKeySelector(name=CONFIG.name, key=key))
+        name=name,
+        value_from=k8s.EnvVarSource(config_map_key_ref=k8s.ConfigMapKeySelector(name=config_map.name, key=key)),
     )
 
 
@@ -295,7 +326,10 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             sources=[_secret_projection(f"{name}-{role}", role) for role in ("control", "owner", "route")],
         ),
     )
-    config_volume = k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG.name))
+    config_volume = k8s.Volume(
+        name="config",
+        config_map=k8s.ConfigMapVolumeSource(name=CANARY_CONFIG.name if instance == "myquest-canary" else CONFIG.name),
+    )
     tmp = k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource())
     provider_health = k8s.Probe(
         http_get=k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
@@ -429,10 +463,25 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             ]
             + (
                 []
-                if instance in {"blueshield", "myquest"}
+                if instance in {"blueshield", "myquest", "myquest-canary"}
                 else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
             ),
-            env=[k8s.EnvVar(name="HOME", value="/tmp"), *recorder_env],
+            env=[
+                k8s.EnvVar(name="HOME", value="/tmp"),
+                *recorder_env,
+                *(
+                    [
+                        k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true"),
+                        *(
+                            []
+                            if record_upstream_traffic
+                            else [k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false")]
+                        ),
+                    ]
+                    if instance == "myquest-canary"
+                    else []
+                ),
+            ],
             ports=[
                 k8s.ContainerPort(name="https", container_port=8443),
                 k8s.ContainerPort(name="grpc", container_port=8444),
@@ -440,7 +489,11 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             ],
             readiness_probe=provider_health,
             liveness_probe=provider_health,
-            resources=(_resources(memory_request="1Gi", memory_limit="2Gi") if instance == "myquest" else _resources()),
+            resources=(
+                _resources(memory_request="1Gi", memory_limit="2Gi")
+                if instance in {"myquest", "myquest-canary"}
+                else _resources()
+            ),
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="config", mount_path="/etc/platform-sessions", read_only=True),
@@ -499,7 +552,15 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         )
     for instance in PROVIDERS:
         _add_provider(chart, instance)
-        _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic)
+        _provider_workload(
+            chart,
+            instance,
+            record_upstream_traffic=(
+                config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
+                if instance == "myquest-canary"
+                else record_upstream_traffic
+            ),
+        )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
     provider_credentials = k8s.Volume(
@@ -524,9 +585,11 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             env=[
                 k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value="https://platform-sessions.allegedly.works"),
                 k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
-                _config_env("PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json"),
+                _config_env(
+                    "PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json", config_map=CANARY_CONFIG
+                ),
                 _config_env("PLATFORM_SESSIONS_BEARERS", "bearers.json"),
-                _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json"),
+                _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json", config_map=CANARY_CONFIG),
             ],
             ports=[k8s.ContainerPort(name="http", container_port=8080)],
             readiness_probe=gateway_health,

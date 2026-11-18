@@ -2531,6 +2531,323 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: platform-sessions-myquest-canary-control
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-myquest-canary-control
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-myquest-canary-control
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-myquest-canary-control
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-myquest-canary-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-myquest-canary-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-myquest-canary-owner
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-myquest-canary-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-myquest-canary-route
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-myquest-canary-route
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-myquest-canary-route
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-myquest-canary-route
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: myquest-canary
+  namespace: platform-sessions
+spec:
+  dnsNames:
+    - myquest-canary.platform-sessions.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  secretName: platform-sessions-myquest-canary-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-myquest-canary-piraeus
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: platform-sessions-myquest-canary-captures
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: piraeus-hdd-local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myquest-canary
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions-myquest-canary
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions-myquest-canary
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --integration-config
+            - /etc/platform-sessions/myquest-canary-integration.json
+            - --instance-id
+            - myquest-canary
+            - --control-address
+            - 0.0.0.0:8444
+            - --control-token-file
+            - /var/run/provider-credentials/control
+            - --owner-token-file
+            - /var/run/provider-credentials/owner
+            - --route-token-file
+            - /var/run/provider-credentials/route
+            - --http-port
+            - "8443"
+            - --metrics-port
+            - "9091"
+            - --tls-cert
+            - /var/run/provider-tls/tls.crt
+            - --tls-key
+            - /var/run/provider-tls/tls.key
+          env:
+            - name: HOME
+              value: /tmp
+            - name: MYQUEST_BROWSER_RECORD_HAR
+              value: "true"
+            - name: PLATFORM_SESSIONS_PROXY_ENABLED
+              value: "false"
+          image: git.allegedly.works/ducktape-ci/platform-sessions-myquest:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          name: provider
+          ports:
+            - containerPort: 8443
+              name: https
+            - containerPort: 8444
+              name: grpc
+            - containerPort: 9091
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 50m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/platform-sessions
+              name: config
+              readOnly: true
+            - mountPath: /var/run/provider-credentials
+              name: provider-credentials
+              readOnly: true
+            - mountPath: /var/run/provider-tls
+              name: tls
+              readOnly: true
+            - mountPath: /data
+              name: data
+              subPath: state
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers: []
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: remote-canary-config
+          name: config
+        - name: provider-credentials
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: control
+                  name: platform-sessions-myquest-canary-control
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-myquest-canary-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: route
+                  name: platform-sessions-myquest-canary-route
+        - name: tls
+          secret:
+            secretName: platform-sessions-myquest-canary-tls
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-sessions-myquest-canary-piraeus
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myquest-canary
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+    - name: grpc
+      port: 8444
+      targetPort: grpc
+  selector:
+    app: platform-sessions-myquest-canary
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: myquest-canary
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions-myquest-canary
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: platform-sessions-thrive-control
   namespace: platform-sessions
 spec:
@@ -3095,7 +3412,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: gateway-integrations.json
-                  name: remote-config
+                  name: remote-canary-config
             - name: PLATFORM_SESSIONS_BEARERS
               valueFrom:
                 configMapKeyRef:
@@ -3105,7 +3422,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: connections.json
-                  name: remote-config
+                  name: remote-canary-config
           envFrom:
             - secretRef:
                 name: platform-sessions-oidc
@@ -3256,6 +3573,21 @@ spec:
                     - key: token
                       path: myquest/route
                   name: platform-sessions-myquest-route
+              - secret:
+                  items:
+                    - key: token
+                      path: myquest-canary/control
+                  name: platform-sessions-myquest-canary-control
+              - secret:
+                  items:
+                    - key: token
+                      path: myquest-canary/owner
+                  name: platform-sessions-myquest-canary-owner
+              - secret:
+                  items:
+                    - key: token
+                      path: myquest-canary/route
+                  name: platform-sessions-myquest-canary-route
               - secret:
                   items:
                     - key: token
