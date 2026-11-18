@@ -169,7 +169,7 @@ pub(super) fn with_source_module<T>(module: &str, collect: impl FnOnce() -> T) -
     }
     let previous = SOURCE_MODULE.replace(Some(module.to_owned()));
     let result = collect();
-    SOURCE_MODULE.replace(previous);
+    let _ = SOURCE_MODULE.replace(previous);
     result
 }
 
