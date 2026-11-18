@@ -1895,22 +1895,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 				_, err := store.NewStore(db, 3).EnqueueForCaller(ctx, sessionID, "test-deletion", sandboxUID, input(uuid.NewString(), "input"), nil, admission)
 				result <- err
 			}()
-			ticker := time.NewTicker(10 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				var blocked bool
-				if err := queueStore.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", admissionPID, deletionPID).Scan(&blocked); err != nil {
-					t.Fatal(err)
-				}
-				if blocked {
-					break
-				}
-				select {
-				case <-ctx.Done():
-					t.Fatal(ctx.Err())
-				case <-ticker.C:
-				}
-			}
+			postgres.WaitForBlocker(t, ctx, queueStore.DB, admissionPID, deletionPID)
 			if err := deletion.Commit(); err != nil {
 				t.Fatal(err)
 			}

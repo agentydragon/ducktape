@@ -497,14 +497,14 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 		_, err := createSession(openingStore, ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
 		opened <- err
 	}()
-	waitForPostgresBlocker(t, ctx, store.DB, openingPID, gatePID)
+	postgres.WaitForBlocker(t, ctx, store.DB, openingPID, gatePID)
 	cleaned := make(chan error, 1)
 	go func() {
 		_, err := cleanupStore.EndSandbox(ctx, uid)
 		cleaned <- err
 	}()
 	// Cleanup must wait for the transaction whose opening has not yet been inserted.
-	waitForPostgresBlocker(t, ctx, store.DB, cleanupPID, openingPID)
+	postgres.WaitForBlocker(t, ctx, store.DB, cleanupPID, openingPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -562,14 +562,14 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 		_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
 		admitted <- err
 	}()
-	waitForPostgresBlocker(t, ctx, store.DB, admitterPID, gatePID)
+	postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
 	rejected := make(chan error, 1)
 	go func() {
 		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
 		rejected <- err
 	}()
 	// Admission has the Session lock but has not inserted the command yet.
-	waitForPostgresBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
+	postgres.WaitForBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -636,14 +636,14 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			// Queue the real transactions in both lock orders before opening the gate.
 			if markFirst {
 				go mark()
-				waitForPostgresBlocker(t, ctx, store.DB, markerPID, gatePID)
+				postgres.WaitForBlocker(t, ctx, store.DB, markerPID, gatePID)
 				go deleteEnvironment()
-				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, markerPID)
+				postgres.WaitForBlocker(t, ctx, store.DB, deleterPID, markerPID)
 			} else {
 				go deleteEnvironment()
-				waitForPostgresBlocker(t, ctx, store.DB, deleterPID, gatePID)
+				postgres.WaitForBlocker(t, ctx, store.DB, deleterPID, gatePID)
 				go mark()
-				waitForPostgresBlocker(t, ctx, store.DB, markerPID, deleterPID)
+				postgres.WaitForBlocker(t, ctx, store.DB, markerPID, deleterPID)
 			}
 			if err := gate.Commit(); err != nil {
 				t.Fatal(err)

@@ -3,11 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
-	"runtime"
 	"testing"
 	"time"
 
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/session"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -64,21 +64,7 @@ func TestSessionWatchVersionsFollowSerializedCommitOrder(t *testing.T) {
 		_, err := second.ExecContext(secondCtx, "UPDATE session SET reason='writer-b' WHERE session_id=$1", ids[1])
 		secondDone <- err
 	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var blocked bool
-		if err := store.DB.QueryRowContext(ctx, `SELECT EXISTS (
-			SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND wait_event_type='Lock' AND $2=ANY(pg_blocking_pids(pid)))`, secondPID, firstPID).Scan(&blocked); err != nil {
-			t.Fatal(err)
-		}
-		if blocked {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("second Session writer did not wait on the first writer's version lock")
-		}
-		runtime.Gosched()
-	}
+	postgres.WaitForBlocker(t, secondCtx, store.DB, secondPID, firstPID)
 	if _, err := first.ExecContext(ctx, "COMMIT"); err != nil {
 		t.Fatal(err)
 	}
