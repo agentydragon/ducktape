@@ -2002,8 +2002,8 @@ Related to `SANDBOX_GENERIC_SPLIT`: that separates the resource, this separates 
 The disk split and Firecracker are not alternatives to each other: splitting disks is additive on the
 runtime we have, and Firecracker is a new runtime added beside it.
 
-The [Firecracker primitive spike](../debug/2026_11_02_firecracker_spike.md) has since landed in
-#13957, and the opt-in environment backend in #14029; its
+The Firecracker primitive spike landed in #13957 and the opt-in environment backend in #14029.
+For current behavior use the backend's
 [contract](../docs/firecracker_sandboxes.md) and
 [system-test scenario](../system_tests/scenarios/firecracker.py) define the checked same-Pod behavior.
 It reuses the separate runner disk and preserves RAM within the same retained launcher Pod.
