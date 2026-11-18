@@ -2001,10 +2001,11 @@ mod tests {
 
     #[test]
     fn call_argument_uses_tolerates_unmodeled_statement() {
-        // The private class member discards the call already projected in
-        // this statement. The next statement still contributes its call.
+        // The unsupported index signature discards an earlier registration
+        // in the same statement. The next statement still contributes its call.
         let facts = call_args(
-            "function f() { r.register(Dropped); class C { #x = 1; } }\nr.register(Kept);\n",
+            "function f() { r.register(Dropped); class C { [k: string]: number; } }\n\
+             r.register(Kept);",
         );
         assert_eq!(
             facts,
@@ -2089,9 +2090,10 @@ mod tests {
 
     #[test]
     fn decorate_call_uses_tolerates_unmodeled_statement() {
-        // A statement with an unmodeled construct yields no rows but does not abort
-        // the scan — the sibling decorate application still contributes.
-        let facts = decorate_calls("class C { #x = 1; }\nH([d], C.prototype, \"kept\", 2);\n");
+        let facts = decorate_calls(
+            "function f() { H([d], C.prototype, \"dropped\", 2); class C { [k: string]: number; } }\n\
+             H([d], C.prototype, \"kept\", 2);",
+        );
         assert_eq!(
             facts,
             vec![DecorateCallFact {
@@ -2223,10 +2225,10 @@ mod tests {
 
     #[test]
     fn intrinsic_alias_uses_tolerates_unmodeled_statement() {
-        // A statement with an unmodeled construct yields no rows but does not abort
-        // the scan — the sibling intrinsic alias still contributes. (The unsupported
-        // statement does not bind `Object`, so the chunk-level guard stays open.)
-        let facts = intrinsic_aliases("class C { #x = 1; }\nvar p = Object.defineProperty;\n");
+        let facts = intrinsic_aliases(
+            "function f() { var dropped = Object.create; class C { [k: string]: number; } }\n\
+             var p = Object.defineProperty;",
+        );
         assert_eq!(
             facts,
             vec![IntrinsicAliasFact {
