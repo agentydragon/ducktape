@@ -7,46 +7,24 @@
 //   element's name (`Object.getOwnPropertyDescriptor(Node.prototype, "nodeName").get.call(
 //   document.createElement("table"))` is "TABLE"), then drop jsdom from `package.json` and from this
 //   package's `vitest_config`.
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { Markdown, STREAMING_CURSOR } from "./markdown";
+import { cleanupMounted, type Mounted, mountWithMantine } from "./testing/react";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let root: ReturnType<typeof createRoot>;
-let container: HTMLDivElement;
+let mounted: Mounted;
 
 async function render(source: string, streaming = false, singleLine = false): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <Markdown source={source} streaming={streaming} singleLine={singleLine} />
-      </MantineProvider>
-    )
-  );
-  return container;
+  mounted = await mountWithMantine(<Markdown source={source} streaming={streaming} singleLine={singleLine} />);
+  return mounted.container;
 }
 
 async function rerender(source: string, streaming = false, singleLine = false): Promise<HTMLDivElement> {
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <Markdown source={source} streaming={streaming} singleLine={singleLine} />
-      </MantineProvider>
-    )
-  );
-  return container;
+  await mounted.rerender(<Markdown source={source} streaming={streaming} singleLine={singleLine} />);
+  return mounted.container;
 }
 
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-});
+afterEach(cleanupMounted);
 
 describe("Markdown", () => {
   it("leaves plain prose -- headings, lists, links -- unaffected", async () => {
@@ -142,7 +120,7 @@ describe("Markdown", () => {
 
     await rerender(`\`\`\`python\n${initialCode}${"b".repeat(20)}`, true);
 
-    const code = container.querySelector<HTMLElement>(".ui-code-block");
+    const code = mounted.container.querySelector<HTMLElement>(".ui-code-block");
     const content = code?.querySelector(".cm-content");
     const cursor = code?.querySelector(".ui-streaming-cursor");
     const range = document.createRange();

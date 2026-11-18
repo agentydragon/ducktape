@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../../../util/frontend/testing/deferred";
+import {
+  cleanupMounted,
+  flushQueryNotifications,
+  type Mounted,
+  mountWithMantine,
+} from "../../../../util/frontend/testing/react";
 import type { AgentRunDetail, FileContentResponse, LlmRequestInfo, SnapshotDetailResponse } from "../lib/schema";
 import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
@@ -24,8 +28,6 @@ vi.mock("../lib/api/client", () => ({
 }));
 
 vi.mock("../lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type RunResponse = Awaited<ReturnType<typeof fetchRun>>;
 type SnapshotResponse = Awaited<ReturnType<typeof fetchSnapshotDetail>>;
@@ -106,7 +108,7 @@ function snapshotResponse(slug = "test/snapshot"): SnapshotResponse {
   } satisfies SnapshotDetailResponse;
 }
 
-let root: Root | null = null;
+let mounted: Mounted;
 let queryClient: ReturnType<typeof createPropsQueryClient> | null = null;
 let container: HTMLDivElement;
 
@@ -119,41 +121,30 @@ async function mount(
     initialLLMRequests?: LlmRequestInfo[];
   } = {}
 ): Promise<void> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
   const client = createPropsQueryClient();
   queryClient = client;
-  await act(async () => {
-    root?.render(
-      <QueryClientProvider client={client}>
-        <MantineProvider env="test">
-          <MemoryRouter>
-            <RunDetail runId={runId} {...seed} />
-          </MemoryRouter>
-        </MantineProvider>
-      </QueryClientProvider>
-    );
-  });
+  mounted = await mountWithMantine(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <RunDetail runId={runId} {...seed} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  container = mounted.container;
 }
 
 async function switchRun(runId: string): Promise<void> {
-  await act(async () => {
-    root?.render(
-      <QueryClientProvider client={queryClient!}>
-        <MantineProvider env="test">
-          <MemoryRouter>
-            <RunDetail runId={runId} />
-          </MemoryRouter>
-        </MantineProvider>
-      </QueryClientProvider>
-    );
-  });
+  await mounted.rerender(
+    <QueryClientProvider client={queryClient!}>
+      <MemoryRouter>
+        <RunDetail runId={runId} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
 }
 
 async function unmount(): Promise<void> {
-  await act(async () => root?.unmount());
-  root = null;
+  await cleanupMounted();
   queryClient?.clear();
   queryClient = null;
 }
@@ -166,18 +157,11 @@ async function clickLogs(): Promise<void> {
   await act(async () => button.click());
 }
 
-async function flushQueryNotifications(): Promise<void> {
-  await act(async () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
 });
 
-afterEach(async () => {
-  if (root) await unmount();
-  container?.remove();
-});
+afterEach(unmount);
 
 it("keeps run metadata and LLM requests scoped to the selected run after older requests settle", async () => {
   const oldRun = deferred<RunResponse>();
