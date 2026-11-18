@@ -1,4 +1,6 @@
+import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -433,6 +435,28 @@ async def test_sync_all_keeps_going_past_a_failing_link() -> None:
 
     assert storage.begun_items == ["item-bad", "item-good"]
     assert [(status, err is None) for _, status, err in storage.finished] == [("failed", False), ("succeeded", True)]
+
+
+@pytest.mark.parametrize("sync", [sync_link, sync_transactions_only])
+async def test_sync_records_cancellation_before_propagating(sync: Callable[..., Awaitable[UUID]]) -> None:
+    class CancelledRead(_FakeSecrets):
+        async def read_access_token(self, secret_name: str) -> str:
+            raise asyncio.CancelledError
+
+    link = _stored_link("item-cancelled", ["transactions"])
+    storage = _FakeStorage()
+
+    with pytest.raises(asyncio.CancelledError):
+        await sync(
+            api=PlaidClient(api=_FakeApi()),
+            storage=cast(PlaidLinkStorage, storage),
+            secrets=CancelledRead(),
+            link=link,
+            trigger="test",
+        )
+
+    assert storage.begun_items == [link.item_id]
+    assert [(status, summary) for _, status, summary in storage.finished] == [("failed", "sync task was cancelled")]
 
 
 async def test_transaction_sync_accumulates_pages_before_advancing_cursor() -> None:
