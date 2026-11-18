@@ -1,11 +1,13 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   WatchEnvironmentsResponseSchema,
   WatchEnvironmentResponseSchema,
+  type EnvironmentChunk,
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
+import { WatchCollection } from "../transport/watch_collection";
 import { followWatch } from "../transport/watch_stream";
 import { type StreamConnection } from "../transport/stream_reader";
 import { useStreamStatus } from "../transport/stream_status";
@@ -24,62 +26,26 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
   const [ready, setReady] = useState(false);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
-    const key = (namespace: string, name: string): string => `${namespace}\0${name}`;
-    let pending: Map<string, EnvironmentDescriptor> | null = new Map();
-    let current = new Map<string, EnvironmentDescriptor>();
-    const publish = (): void => {
-      const sandboxes = Array.from(current.values()).sort(
-        (a, b) => a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
-      );
-      setSnapshot(sandboxes);
-    };
+    const collection = new WatchCollection<EnvironmentDescriptor, EnvironmentTarget>(
+      "Environment inventory",
+      (sandbox) => sandbox.target,
+      (target) => (target.namespace && target.name ? `${target.namespace}\0${target.name}` : undefined)
+    );
     return followWatch(liveSandboxesUrl(), {
       onOpen: () => {
-        pending = new Map();
+        collection.beginSnapshot();
         setReady(false);
       },
       onFrame: (result) => {
-        const frame = fromJson(WatchEnvironmentsResponseSchema, result as JsonValue);
-        switch (frame.frame.case) {
-          case "snapshot":
-            if (pending === null) throw new Error("Unexpected inventory snapshot chunk");
-            for (const sandbox of frame.frame.value.environments) {
-              const target = sandbox.target;
-              if (!target?.namespace || !target.name || !target.uid)
-                throw new Error("Environment missing target identity");
-              pending.set(key(target.namespace, target.name), sandbox);
-            }
-            break;
-          case "snapshotComplete":
-            if (pending === null) throw new Error("Unexpected inventory snapshot completion");
-            current = pending;
-            pending = null;
-            publish();
-            setReady(true);
-            break;
-          case "upsert": {
-            if (pending !== null) throw new Error("Inventory update before snapshot completion");
-            const sandbox = frame.frame.value;
-            const target = sandbox.target;
-            if (!target?.namespace || !target.name || !target.uid)
-              throw new Error("Environment missing target identity");
-            current.set(key(target.namespace, target.name), sandbox);
-            publish();
-            break;
-          }
-          case "removed": {
-            if (pending !== null) throw new Error("Inventory removal before snapshot completion");
-            const removed = frame.frame.value;
-            const itemKey = key(removed.namespace, removed.name);
-            if (current.get(itemKey)?.target?.uid === removed.uid) {
-              current.delete(itemKey);
-              publish();
-            }
-            break;
-          }
-          default:
-            throw new Error("EnvironmentService returned an empty watch frame");
-        }
+        const { frame } = fromJson(WatchEnvironmentsResponseSchema, result);
+        const sandboxes = collection.apply<EnvironmentChunk>(frame, (chunk) => chunk.environments);
+        if (sandboxes === null) return;
+        sandboxes.sort(
+          (a, b) =>
+            a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
+        );
+        setSnapshot(sandboxes);
+        if (frame.case === "snapshotComplete") setReady(true);
       },
       onConnection: (next) => {
         setConnection(next);
@@ -137,7 +103,7 @@ export function useEnvironmentWatch(target: EnvironmentTarget | undefined): {
         },
         onFrame: (result) => {
           if (!active) return;
-          const environment = fromJson(WatchEnvironmentResponseSchema, result as JsonValue).environment;
+          const environment = fromJson(WatchEnvironmentResponseSchema, result).environment;
           if (
             environment?.target?.namespace !== namespace ||
             environment.target.name !== name ||

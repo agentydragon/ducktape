@@ -26,6 +26,7 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend/transport:watch_collection",
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/policy/v1:policy_service_pb",
     ],

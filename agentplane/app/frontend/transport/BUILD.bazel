@@ -101,6 +101,12 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "watch_collection",
+    srcs = ["watch_collection.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
     name = "watch_stream",
     srcs = ["watch_stream.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
