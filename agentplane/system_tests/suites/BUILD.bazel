@@ -30,8 +30,11 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
-# The experimental KVM variant under x/vm_kvm runs this file.
-exports_files(["test_vm.py"])
+# Manual hardware and fixture-lifetime comparisons run the same scenario bodies.
+exports_files([
+    "test_firecracker.py",
+    "test_vm.py",
+])
 
 image_manifest(
     name = "probe_image_manifest",

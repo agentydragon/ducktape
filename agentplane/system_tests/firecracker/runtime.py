@@ -99,7 +99,25 @@ class FirecrackerGuestLifecycle:
         return k3s.kubectl("get", "sandboxes,pods,pvc", "-n", namespace, "-o", "yaml", check=False)
 
     def clean(self, k3s: K3s) -> None:
-        return None
+        # The device plugin is per-action setup, outside the fixture's namespaces.
+        namespace = json.loads(k3s.kubectl("get", "namespace", "kvm-device-plugin", "-o", "json"))
+        daemonset = json.loads(
+            k3s.kubectl("get", "daemonset", "kvm-device-plugin", "-n", "kvm-device-plugin", "-o", "json")
+        )
+        pods = json.loads(k3s.kubectl("get", "pods", "-n", "kvm-device-plugin", "-o", "json"))["items"]
+        receipt = {
+            "namespace_uid": namespace["metadata"]["uid"],
+            "daemonset_uid": daemonset["metadata"]["uid"],
+            "pod_uids": [pod["metadata"]["uid"] for pod in pods],
+            "cleanup": "pending",
+        }
+        output = undeclared_outputs_dir() / "firecracker-runtime.json"
+        output.write_text(json.dumps(receipt))
+        k3s.kubectl("delete", "namespace", "kvm-device-plugin", "--wait=true", "--timeout=60s")
+        if k3s.kubectl("get", "namespace", "kvm-device-plugin", "--ignore-not-found=true", "-o", "name"):
+            raise RuntimeError("the per-action KVM device plugin survived cleanup")
+        receipt["cleanup"] = "complete"
+        output.write_text(json.dumps(receipt))
 
 
 def runtime(_work: Path) -> RuntimeCapabilities:

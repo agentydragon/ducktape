@@ -24,6 +24,7 @@ _CGROUP = Path("/sys/fs/cgroup")
 def _memory() -> dict[str, object]:
     return {
         "current": int((_CGROUP / "memory.current").read_text()),
+        "peak": int((_CGROUP / "memory.peak").read_text()),
         "stat": dict(line.split() for line in (_CGROUP / "memory.stat").read_text().splitlines()),
         "events": dict(line.split() for line in (_CGROUP / "memory.events").read_text().splitlines()),
     }
@@ -34,7 +35,7 @@ def _reclaim_file_cache() -> int | None:
     # controllers. Both paths are relative to this action's private cgroup namespace.
     if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() not in {"0::/", "0::/init"}:
         raise RuntimeError("cache reclamation requires this Docker runner's private cgroup")
-    # The pinned executor counts v2 file cache against its 2 GB retention cap. Reclaim only
+    # The pinned executor counts v2 file cache against its retention cap. Reclaim only
     # this cgroup, leaving the kernel's anonymous-memory policy and the pool cap unchanged.
     amount = max(0, int((_CGROUP / "memory.current").read_text()) - 1_500_000_000)
     if amount:
