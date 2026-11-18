@@ -1,10 +1,19 @@
 //! Repeated independent identity calls expose shared-return projection fanout.
+//! Bodies the call-return recognizer does not admit (docs/inference.md
+//! "Bounded call-return relationships") still read one pooled return cell, so N
+//! independent projections repeat the receiver walk (N^2); the recognizer keeps
+//! this family linear.
 
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
 fn source(calls: usize, shared_identity: bool) -> String {
+    // One declaration per call, each with its own object literal: a JavaScript
+    // loop would reuse one allocation site and not reproduce the relation. The
+    // object-valued field is deliberate: primitive fields keep the N^2
+    // subscriptions but lose the large result bitmaps, and no fields leave only
+    // N^2 missing-property decisions.
     let mut source = String::from("function identity(value) { return value; }\n");
     for index in 0..calls {
         let receiver = if shared_identity {
