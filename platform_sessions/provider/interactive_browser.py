@@ -30,6 +30,7 @@ from playwright.sync_api import (
     Error as PlaywrightError,
     Page,
     Playwright,
+    Route,
     WebSocketRoute,
     sync_playwright,
 )
@@ -307,7 +308,9 @@ class InteractiveBrowserRuntime:
                     raise RuntimeError("owner viewer is no longer admitted")
             if self._viewer_page is None or self._viewer_page.is_closed():
                 self._viewer_page = context.new_page()
-                self._viewer_page.route_web_socket("**/*", self._viewer_websocket)
+                if self._launch_mode == "cdp":
+                    self._viewer_page.route("**/*", self._viewer_request)
+                    self._viewer_page.route_web_socket("**/*", self._viewer_websocket)
             for page in context.pages:
                 if page is not self._viewer_page:
                     page.close()
@@ -317,9 +320,13 @@ class InteractiveBrowserRuntime:
 
         return self.run_sync(run, allow_during_viewer=True)
 
-    def _allow_viewer_page(self, page: Page) -> bool:
+    def _viewer_request(self, route: Route) -> None:
         with self._state_lock:
-            return self._viewer_connected and self._viewer_network_allowed and page is self._viewer_page
+            allowed = self._viewer_connected and self._viewer_network_allowed
+        if allowed:
+            route.continue_()
+        else:
+            route.abort()
 
     def _viewer_websocket(self, route: WebSocketRoute) -> None:
         with self._state_lock:
@@ -453,7 +460,6 @@ class InteractiveBrowserRuntime:
                             display=self._display or "",
                             options=self._launch_options,
                             timeout_seconds=self._startup_timeout_seconds,
-                            allow_viewer_page=self._allow_viewer_page,
                         )
                         context = resources.enter_context(self._cdp_browser)
                     else:

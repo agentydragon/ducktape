@@ -8,13 +8,13 @@ import signal
 import socket
 import subprocess
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from concurrent.futures import Future
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Browser, BrowserContext, Page, Playwright, Route
+from playwright.sync_api import Browser, BrowserContext, Playwright
 
 
 def validate_options(options: Mapping[str, Any]) -> None:
@@ -51,7 +51,6 @@ class CdpBrowser:
         display: str,
         options: Mapping[str, Any],
         timeout_seconds: float,
-        allow_viewer_page: Callable[[Page], bool],
     ) -> None:
         validate_options(options)
         self._playwright = playwright
@@ -59,7 +58,6 @@ class CdpBrowser:
         self._display = display
         self._options = options
         self._timeout_seconds = timeout_seconds
-        self._allow_viewer_page = allow_viewer_page
         self._process: subprocess.Popen[bytes] | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
@@ -143,19 +141,12 @@ class CdpBrowser:
             "if (navigator.serviceWorker) navigator.serviceWorker.register = async () => {"
             "throw new Error('Service Worker registration blocked'); };"
         )
-        context.route("**/*", self._guard_request)
+        # Restored navigation requests can arrive before Playwright has a Frame.
+        # Page-specific guards grant viewer access; this fallback never needs one.
+        context.route("**/*", lambda route: route.abort())
         # An unconnected route mocks the socket without contacting its upstream.
         # Calling close() in the synchronous route callback wedges Playwright 1.62.
         context.route_web_socket("**/*", lambda _: None)
-
-    def _guard_request(self, route: Route) -> None:
-        request = route.request
-        if request.service_worker is None and self._allow_viewer_page(request.frame.page):
-            route.continue_()
-        else:
-            # A provider's explicitly allowed page routes use continue_(), which skips
-            # this fallback guard. fallback() deliberately remains denied.
-            route.abort()
 
     def __exit__(self, *exc: object) -> None:
         try:
