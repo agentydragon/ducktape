@@ -63,13 +63,6 @@ oci_load(
     repo_tags = ["agentplane-firecracker-launcher:proof"],
 )
 
-filegroup(
-    name = "load_tarball",
-    srcs = [":load"],
-    output_group = "tarball",
-    visibility = ["//visibility:public"],
-)
-
 oci_layout_py(
     name = "launcher_test_image",
     testonly = True,
