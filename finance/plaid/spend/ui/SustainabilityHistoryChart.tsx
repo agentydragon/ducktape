@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title } from "@mantine/core";
+import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title, useComputedColorScheme } from "@mantine/core";
 import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 import Decimal from "decimal.js";
 
@@ -24,11 +24,9 @@ type HistoryTooltip = {
   references: string | null;
 };
 
-function windowColor(windowDays: number, shortestWindowDays: number, longestWindowDays: number): string {
-  // Log spacing keeps month, quarter and year windows visually distinguishable.
-  const span = Math.log(longestWindowDays / shortestWindowDays);
-  const position = span === 0 ? 0.5 : Math.log(windowDays / shortestWindowDays) / span;
-  return `hsl(210 75% ${(54 - position * 24).toFixed(1)}%)`;
+function windowColor(index: number, count: number, dark: boolean): string {
+  const hue = (210 + (index * 360) / count) % 360;
+  return `hsl(${hue} 78% ${dark ? 70 : 34}%)`;
 }
 
 function percent(value: string | number): string {
@@ -184,17 +182,18 @@ export function SustainabilityHistoryChart({
   const showTaxes = includeTaxes && effectiveTaxRate != null;
   const amountLabel = showTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
-  const historyWindows = useMemo(() => {
-    const shortestWindowDays = Math.min(...windows.map((view) => view.window_days));
-    const longestWindowDays = Math.max(...windows.map((view) => view.window_days));
-    return [...windows]
-      .sort((left, right) => left.window_days - right.window_days)
-      .map((view) => ({
-        view,
-        color: windowColor(view.window_days, shortestWindowDays, longestWindowDays),
-        pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
-      }));
-  }, [windows]);
+  const colorScheme = useComputedColorScheme("light");
+  const historyWindows = useMemo(
+    () =>
+      [...windows]
+        .sort((left, right) => left.window_days - right.window_days)
+        .map((view, index) => ({
+          view,
+          color: windowColor(index, windows.length, colorScheme === "dark"),
+          pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
+        })),
+    [colorScheme, windows]
+  );
   const visibleWindows = useMemo(
     () => historyWindows.filter(({ view }) => !hiddenWindowDays.has(view.window_days)),
     [historyWindows, hiddenWindowDays]
