@@ -22,7 +22,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -47,11 +46,7 @@ func TestMain(m *testing.M) {
 func newTestStore(t testing.TB) *sessionstore.Store {
 	t.Helper()
 	dsn := rpcIntegrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return sessionstore.New(db, 30*time.Second)
 }
 

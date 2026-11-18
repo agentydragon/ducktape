@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,7 +26,7 @@ import (
 func newHostFixture(t *testing.T) (*HarnessHost, string) {
 	t.Helper()
 	dsn := rpcIntegrationDatabase.Clone(t)
-	store := sessionstore.New(openHostDB(t, dsn), 30*time.Second)
+	store := sessionstore.New(postgres.Open(t, dsn), 30*time.Second)
 	hub, err := wakeups.Listen(t.Context(), dsn, sessionstore.OutboxChannel, sessionstore.WorkChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -217,16 +217,6 @@ func TestHarnessHostWatchSnapshotChangesAndReconnect(t *testing.T) {
 	<-done
 }
 
-func openHostDB(t *testing.T, dsn string) *sql.DB {
-	t.Helper()
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
 func TestHarnessHostRejectsUnadmittedService(t *testing.T) {
 	h, _ := newHostFixture(t)
 	ctx := serviceContext(t, peertls.HistoryIngressURI)
@@ -257,7 +247,7 @@ func TestHarnessHostWatchEndsOnWakeupConnectionLoss(t *testing.T) {
 	}
 	// Losing LISTEN may lose committed changes. End the stream even if the
 	// listener reconnects before its buffered wakeup is consumed.
-	db := openHostDB(t, dsn)
+	db := postgres.Open(t, dsn)
 	var terminated bool
 	if err := db.QueryRowContext(t.Context(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
  WHERE datname=current_database() AND pid<>pg_backend_pid() AND query LIKE 'LISTEN %'`).Scan(&terminated); err != nil {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -330,17 +331,12 @@ func newOIDCIntegration(t *testing.T, replicas int, policy oidcSessionPolicy) *o
 	for index := 0; index < replicas; index++ {
 		db := baseDB
 		if index > 0 {
-			var err error
-			db, err = sql.Open("postgres", dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
+			db = postgres.Open(t, dsn)
 			db.SetMaxOpenConns(8)
 			if err := db.PingContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			dbs = append(dbs, db)
-			t.Cleanup(func() { _ = db.Close() })
 		}
 		config := Config{
 			OIDC: &OIDCConfig{

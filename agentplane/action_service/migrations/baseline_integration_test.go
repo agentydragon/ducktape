@@ -13,7 +13,6 @@ import (
 
 	postgresmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -33,12 +32,7 @@ func TestMain(m *testing.M) {
 
 func cloneDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return postgres.Open(t, integrationDatabase.Clone(t))
 }
 
 func exec(t *testing.T, db *sql.DB, query string) {

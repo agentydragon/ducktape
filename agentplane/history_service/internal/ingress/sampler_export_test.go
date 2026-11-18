@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -163,22 +164,12 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	t.Helper()
 	ctx := t.Context()
 
-	historyURL := integrationDatabase.Clone(t)
-	historyDB, err := sql.Open("postgres", historyURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = historyDB.Close() })
+	historyDB := postgres.Open(t, integrationDatabase.Clone(t))
 	history := storage.NewStore(historyDB, storage.Options{SettleDeltas: true})
 
 	// The package fixture is migrated for History. Give Sampler its own clone and remove that clone's
 	// public schema so its clean-database migration does not mistake History relations for old Sampler data.
-	samplerURL := integrationDatabase.Clone(t)
-	samplerDB, err := sql.Open("postgres", samplerURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = samplerDB.Close() })
+	samplerDB := postgres.Open(t, integrationDatabase.Clone(t))
 	if _, err := samplerDB.ExecContext(ctx, "DROP SCHEMA public CASCADE"); err != nil {
 		t.Fatal(err)
 	}

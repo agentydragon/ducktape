@@ -12,6 +12,7 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -33,11 +34,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	g := fixture{db: db, state: New(db, transaction.New(db), testFreshness, publication.Adapter{}), app: 1, installation: 2, repository: 3}
 	if err := g.state.Grant(t.Context(), g.access(), testRepositoryName); err != nil {
 		t.Fatal(err)
