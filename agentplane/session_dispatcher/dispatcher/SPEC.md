@@ -249,7 +249,7 @@ a new Session UUID. Runtime admission reserves a Session, not a running native h
 A native owner `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
 `SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
-`session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
+`session_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
 settlement serialize on the Session ID, and settlement checks the current Session lease holder.
 A command admitted first is included; a later new queued command is refused with
 `FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
@@ -259,7 +259,7 @@ original receipt after ordinary caller authorization.
 and backoff. Runtime recovers the durable reservation before native preparation; these retries are
 not permission to replay uncertain native harness effects. Other native opening errors, including
 `INTERNAL`, `UNKNOWN`, `RESOURCE_EXHAUSTED` and unproven preconditions, become `UNKNOWN`. Their
-pending commands remain queued with `session_opening_unconfirmed`; they do not wake the environment
+pending commands remain queued with `session_unconfirmed`; they do not wake the environment
 or reach Runtime. New queued commands are refused as above. Older `FAILED` openings lack proof of
 rejection and receive the same hold without rewriting their stored outcome. Held commands remain
 cancellable. Automatic resolution of those held openings is not provided.
