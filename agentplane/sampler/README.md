@@ -390,256 +390,35 @@ read Sessions owned by an old account or another service. Before the Sessions ca
 SVID, existing account-owned Sessions need an explicit ownership cutover; no certificate is implicitly
 mapped to a Kubernetes UID.
 
-This change adds one-off ownership commands to the existing central-sampler binary. The currently
-shipped image does not contain maintenance mode. Do not create the example CiliumNetworkPolicy,
-Jobs, or manifest ConfigMap until this change has merged, the central-sampler Deployment is pinned
-to an image that contains it, and that Deployment is Ready. This change has submitted no Job,
-ConfigMap, or CiliumNetworkPolicy. These staging-first examples apply only to `agentplane-staging`;
-they do not cover the `system` namespace. After Migration 18 is applied and those rollout conditions
-are met, use that same image for inventory and rewrite Jobs; no second image or manual SQL is needed.
-The inventory mode prints one JSON array to stdout, ordered by Session ID:
+The `central-sampler` image carries the ownership cutover as one-off commands, so no second image or
+manual SQL is needed. Run one as a Job from the `central-sampler` Deployment's image, with
+`AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` taken from that Deployment's Secret (staging:
+`postgres-central-sampler`, key `uri`). `--account-uid` is the legacy ServiceAccount's UID, not its name.
 
 ```text
-central-sampler ownership inventory --account-uid <legacy-service-account-uid>
+central-sampler ownership inventory --account-uid <account-uid>
+central-sampler ownership forward --account-uid <account-uid> --manifest <session-ids.json>
+central-sampler ownership reverse --account-uid <account-uid> --manifest <session-ids.json>
 ```
 
-The UID is required explicitly. For staging, identify the legacy Gateway ServiceAccount UID with
-`kubernetes_admin/resources_get` and confirm it is the owner UID for this cutover; do not substitute
-the account name. The Job reads the database URL from the existing Secret-backed
-`AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` environment variable. The relevant staging Secret is
-`postgres-central-sampler`, key `uri`.
+- `inventory` prints one JSON array of the account's Session IDs, ordered by ID; `[]` means there is
+  nothing to forward. Review the array and retain it as the manifest (the rollback scope), for example
+  in a uniquely named ConfigMap mounted as the `--manifest` file.
+- `forward` assigns exactly the manifest's Sessions to the Sessions service
+  (`spiffe://agentplane/sessions`). Under a `sampler_session` table lock (other writers can wait
+  briefly) it requires the manifest to equal the complete account-owned set and otherwise fails before
+  changing anything. Repeating a committed `forward` is a no-op while the account owns no Sessions and
+  every manifest Session is still service-owned. Afterwards `inventory` for the same UID must print
+  `[]`: a listed ID was created after the lock was released and is outside the manifest.
+- `reverse` is the rollback. It validates every listed owner, restores only the manifest's Sessions to
+  the account, and is safe to repeat. Sessions created under the SVID after the switch are outside the
+  manifest and need their own reviewed manifest before a bearer-only caller is restored.
 
-The central-sampler Service and its PDB have different selectors: the Service matches the
-Deployment's `cdk8s.io/metadata.addr`, while the PDB and sampler CiliumNetworkPolicy match
-`app.kubernetes.io/name: central-sampler`. Keep maintenance Pods outside both by labeling them
-`app.kubernetes.io/name: sampler-owner-maintenance` and giving each run a unique
-`app.kubernetes.io/instance: sampler-owner-<run-id>`. Before creating the Job, create this matching
-run-scoped CiliumNetworkPolicy with `kubernetes_admin/resources_create_or_update`. It allows only
-cluster DNS and PostgreSQL traffic to the staging CNPG Pods; it does not reuse the sampler's broader
-runtime egress policy. The rendered staging configuration has no separate CNPG ingress
-CiliumNetworkPolicy:
+Both rewrites change only `account_uid` and `service_spiffe_id`; they never delete Sessions or
+conversation data.
 
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: sampler-owner-maintenance-<run-id>
-  namespace: agentplane-staging
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: sampler-owner-maintenance
-      app.kubernetes.io/instance: sampler-owner-<run-id>
-  ingress: []
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            k8s:cnpg.io/cluster: postgres
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
-```
-
-Create a uniquely named inventory Job with `kubernetes_admin/resources_create_or_update`. Copy the
-exact image reference from the Ready `central-sampler` Deployment so the Job uses the image that
-contains these commands. Its pod template is:
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: sampler-owner-inventory-<run-id>
-  namespace: agentplane-staging
-spec:
-  backoffLimit: 0
-  activeDeadlineSeconds: 600
-  ttlSecondsAfterFinished: 3600
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: sampler-owner-maintenance
-        app.kubernetes.io/instance: sampler-owner-<run-id>
-    spec:
-      automountServiceAccountToken: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      restartPolicy: Never
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: inventory
-          image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:<deployed-tag>
-          imagePullPolicy: IfNotPresent
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 1Gi
-          args:
-            - ownership
-            - inventory
-            - --account-uid
-            - <legacy-service-account-uid>
-          env:
-            - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-central-sampler
-                  key: uri
-            - name: SSL_CERT_FILE
-              value: /var/run/public-web-pki/ca-certificates.crt
-          volumeMounts:
-            - name: public-web-pki
-              mountPath: /var/run/public-web-pki
-              readOnly: true
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-      volumes:
-        - name: public-web-pki
-          configMap:
-            name: public-web-pki
-```
-
-Replace `<deployed-tag>`, `<legacy-service-account-uid>`, and `<run-id>` before submitting. Read the
-completed Pod logs with `kubernetes_admin/resources_list` (`apiVersion: v1`, `kind: Pod`, namespace
-`agentplane-staging`, label selector `job-name=sampler-owner-inventory-<run-id>`), then
-`kubernetes_admin/pods_log`. Review the entire JSON array and save it in a uniquely named
-ConfigMap as `data.session-ids.json`. If inventory prints `[]` (count `0`), there is nothing to
-rewrite; confirm the same account UID still has no account-owned Sessions before switching callers.
-
-For a nonempty inventory, create the manifest ConfigMap and then this uniquely named forward Job
-through `kubernetes_admin/resources_create_or_update`. Put the reviewed JSON array under the key
-`session-ids.json`. The complete Job resource is:
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: sampler-owner-forward-<run-id>
-  namespace: agentplane-staging
-spec:
-  backoffLimit: 0
-  activeDeadlineSeconds: 600
-  ttlSecondsAfterFinished: 3600
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: sampler-owner-maintenance
-        app.kubernetes.io/instance: sampler-owner-<run-id>
-    spec:
-      automountServiceAccountToken: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      restartPolicy: Never
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: rewrite
-          image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:<deployed-tag>
-          imagePullPolicy: IfNotPresent
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 1Gi
-          args:
-            - ownership
-            - forward
-            - --account-uid
-            - <legacy-service-account-uid>
-            - --manifest
-            - /etc/sampler-owner/session-ids.json
-          env:
-            - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-central-sampler
-                  key: uri
-            - name: SSL_CERT_FILE
-              value: /var/run/public-web-pki/ca-certificates.crt
-          volumeMounts:
-            - name: manifest
-              mountPath: /etc/sampler-owner
-              readOnly: true
-            - name: public-web-pki
-              mountPath: /var/run/public-web-pki
-              readOnly: true
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-      volumes:
-        - name: manifest
-          configMap:
-            name: sampler-owner-manifest-<run-id>
-            items:
-              - key: session-ids.json
-                path: session-ids.json
-        - name: public-web-pki
-          configMap:
-            name: public-web-pki
-```
-
-Use the same `<run-id>` in the policy, manifest ConfigMap, and Jobs. Submit the CiliumNetworkPolicy,
-manifest ConfigMap, and Jobs through `kubernetes_admin/resources_create_or_update`; the current
-Action policy has no auto-approval rule for these resource writes, so expect operator approval.
-Replace each remaining placeholder before submitting. Read Job status and logs through
-`resources_get`, `resources_list`, and `pods_log`.
-Do not submit another Job until the first Job's outcome is known. If it committed but its receipt or
-logs were lost, repeating the same forward manifest is safe: the transaction accepts it only when
-the account has no remaining Sessions and every manifest ID is already Sessions-service-owned. If
-the inventory became stale, the Job fails before changing ownership; rerun inventory, review the new
-array, and submit a new manifest and Job.
-
-The forward transaction locks `sampler_session` against inserts and owner changes while it checks
-that the manifest equals the complete current account-owned set and updates ownership. The success
-message `ownership forward verified for <N> manifest Sessions` reports the reviewed inventory
-length; the transaction verified those manifest rows against the complete account-owned set before
-updating them. Other writers can wait briefly for that table lock and deliveries may retry. This is
-a transaction-scoped lock: after commit, an old Gateway caller can still create a new account-owned
-Session until every Sessions caller has switched to its SVID. That new row is outside the completed
-manifest. After the Job succeeds, run inventory again for the same account UID. It must return `[]`
-(count `0`) before switching callers. If any account-owned rows remain, that is a post-commit race;
-do not switch callers yet. Pause only new Gateway account-owned `CreateSession` admissions from
-commit until all Sessions callers use SVID. This is not a full-writer stop, and delivery attempts
-may retry during the transition. No supported create-only pause mechanism has been identified for
-the currently deployed Gateway; resolve how to operationalize that pause before execution.
-
-The forward and reverse operations change only `account_uid` and `service_spiffe_id`; they never
-delete Sessions or conversation data. Integration tests compare every other Session column and
-linked conversation and intent data before and after the rewrite. Retain the reviewed manifest as
-the rollback scope. To restore the pre-switch Sessions, create another uniquely named Job from the
-same image, Secret, and ConfigMap, changing `forward` to `reverse`. Reverse validates every listed
-owner and restores only those manifest IDs; it is safe to repeat. Sessions created under the SVID
-after the switch are outside the original manifest and require their own separately reviewed
-manifest before restoring a bearer-only caller.
+Keep the Job's Pod outside the sampler's selectors: the Service matches the Deployment's
+`cdk8s.io/metadata.addr`, while the PDB and the sampler's `CiliumNetworkPolicy` match
+`app.kubernetes.io/name: central-sampler`. Label it `app.kubernetes.io/name: sampler-owner-maintenance`
+with a unique `app.kubernetes.io/instance: sampler-owner-<run-id>`, and give it a run-scoped
+`CiliumNetworkPolicy` that allows only cluster DNS and the CNPG `postgres` cluster's port 5432.
