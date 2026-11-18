@@ -24,6 +24,8 @@ import (
 var loaderRlocation, postgresImage, postgresRlocation, ryukImage, ryukRlocation string
 
 const (
+	startupTimeout = 3 * time.Minute
+
 	postgresUser = "postgres"
 	postgresPass = "postgres"
 	postgresDB   = "postgres"
@@ -37,7 +39,7 @@ type Database struct {
 	container testcontainers.Container
 
 	mu sync.Mutex
-	// admin creates and drops the clones; nil until the first Clone.
+	// admin creates and drops clones once the template is ready.
 	admin  *sql.DB
 	clones int
 }
@@ -45,7 +47,7 @@ type Database struct {
 // RunIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
 // Startup and migrations share a three-minute bound; tests run without that startup deadline.
 func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 	database, err := Start(ctx, migrate)
 	cancel()
 	if err != nil {
@@ -66,6 +68,22 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 // RunIntegrationTestsWithDatabase sets the package fixture before running its tests.
 func RunIntegrationTestsWithDatabase(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
 	return RunIntegrationTests(migrate, func(database *Database) int {
+		*destination = database
+		return m.Run()
+	})
+}
+
+// RunIntegrationTestsWithCloneTemplate snapshots the migrated database before running tests.
+// Use it when tests share the migrated database and also need pristine clones.
+func RunIntegrationTestsWithCloneTemplate(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
+	return RunIntegrationTests(migrate, func(database *Database) int {
+		ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
+		err := database.prepareCloneTemplate(ctx)
+		cancel()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "prepare PostgreSQL clone template:", err)
+			return 1
+		}
 		*destination = database
 		return m.Run()
 	})
@@ -120,9 +138,7 @@ func (db *Database) Close() error {
 	return errors.Join(closeAdmin, terminate(db.container))
 }
 
-// PrepareCloneTemplate snapshots the migrated database before tests can write to it.
-// Clone also prepares the template lazily for packages that do not use a shared database.
-func (db *Database) PrepareCloneTemplate(ctx context.Context) error {
+func (db *Database) prepareCloneTemplate(ctx context.Context) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	return db.prepareCloneTemplateLocked(ctx)
@@ -130,8 +146,8 @@ func (db *Database) PrepareCloneTemplate(ctx context.Context) error {
 
 // Clone returns the URL of a database of the test's own, copied from the migrated one, which the test's cleanup
 // drops: it starts with the schema and no rows, so queries that span every row see only the test's, and its NOTIFY
-// channels reach only its own connections. A test package that clones connects to the migrated database only
-// through clones, since a copy needs it idle.
+// channels reach only its own connections. Preparing the template on the first clone requires the migrated
+// database to be idle. Use RunIntegrationTestsWithCloneTemplate when tests also use that database directly.
 func (db *Database) Clone(t testing.TB) string {
 	t.Helper()
 	db.mu.Lock()

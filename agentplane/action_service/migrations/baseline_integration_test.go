@@ -1,7 +1,6 @@
 package migrations
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"io/fs"
@@ -9,7 +8,6 @@ import (
 	"path"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	postgresmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -18,16 +16,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(Up, func(database *postgres.Database) int {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		if err := database.PrepareCloneTemplate(ctx); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		integrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, Up, &integrationDatabase))
 }
 
 func cloneDatabase(t *testing.T) *sql.DB {
