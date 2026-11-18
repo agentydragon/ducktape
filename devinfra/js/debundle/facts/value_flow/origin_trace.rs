@@ -10,7 +10,7 @@ use super::{
     ReturnSummary, Value, Values, ValuesBuilder,
 };
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 const MAX_JOURNAL_GROUPS: usize = 250_000;
@@ -118,21 +118,61 @@ struct OutputWitness {
 }
 
 #[derive(Default)]
-struct TransferGroup {
-    outputs: HashSet<OutputWitness>,
-}
-
-#[derive(Default)]
 struct JournalCounts {
     groups: usize,
     outputs: usize,
+    duplicate_observations: usize,
+    omitted_alternatives: usize,
     truncated_at: Option<&'static str>,
 }
 
 #[derive(Default)]
 struct JournalState {
-    groups: HashMap<TransferKey, TransferGroup>,
+    // Keep only the first dynamic producer per selected-origin/output pair.
+    // This is a best-effort witness candidate, not an inventory of all
+    // contributing producers; final-fact reevaluation can still fail or cycle.
+    transfers: HashSet<TransferKey>,
+    outputs: HashMap<SliceNode, (TransferKey, OutputWitness)>,
     counts: JournalCounts,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+struct SliceNode {
+    origin: OriginId,
+    key: FlowKey,
+}
+
+#[derive(Clone, Copy)]
+struct ProducerWitness {
+    event: usize,
+    target: Option<u32>,
+    kind: &'static str,
+}
+
+#[derive(Clone, Copy)]
+struct SliceParent {
+    parent: SliceNode,
+    producer: ProducerWitness,
+}
+
+#[derive(Clone, Copy)]
+enum TraceDestination {
+    Key(FlowKey),
+    Seed(Value),
+}
+
+#[derive(Clone, Copy)]
+struct TraceStep {
+    output: SliceNode,
+    producer: ProducerWitness,
+    destination: TraceDestination,
+}
+
+#[derive(Clone)]
+struct SourceEvaluation {
+    keys: Vec<FlowKey>,
+    seeds: Vec<Value>,
+    matched: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -264,34 +304,27 @@ impl OriginTrace {
         }
     }
 
-    fn ensure_group(state: &mut JournalState, key: TransferKey) -> bool {
+    fn add_output(
+        state: &mut JournalState,
+        key: TransferKey,
+        output: OutputWitness,
+        origin: OriginId,
+    ) -> bool {
         if state.counts.truncated_at.is_some() {
             return false;
         }
-        if !state.groups.contains_key(&key) {
-            if state.counts.groups >= MAX_JOURNAL_GROUPS {
-                state.counts.truncated_at = Some("groups");
-                eprintln!(
-                    "origin-journal capture_incomplete cap=groups groups={} outputs={} limit={MAX_JOURNAL_GROUPS}",
-                    state.counts.groups, state.counts.outputs
-                );
-                return false;
+        let node = SliceNode {
+            origin,
+            key: output.key,
+        };
+        if let Some((existing_transfer, existing_output)) = state.outputs.get(&node) {
+            if *existing_transfer == key && *existing_output == output {
+                state.counts.duplicate_observations =
+                    state.counts.duplicate_observations.saturating_add(1);
+            } else {
+                state.counts.omitted_alternatives =
+                    state.counts.omitted_alternatives.saturating_add(1);
             }
-            state.groups.insert(key, TransferGroup::default());
-            state.counts.groups += 1;
-        }
-        true
-    }
-
-    fn add_output(state: &mut JournalState, key: TransferKey, output: OutputWitness) -> bool {
-        if state.counts.truncated_at.is_some() {
-            return false;
-        }
-        if state
-            .groups
-            .get(&key)
-            .is_some_and(|group| group.outputs.contains(&output))
-        {
             return true;
         }
         if state.counts.outputs >= MAX_JOURNAL_OUTPUTS {
@@ -302,10 +335,17 @@ impl OriginTrace {
             );
             return false;
         }
-        if !Self::ensure_group(state, key) {
+        if !state.transfers.contains(&key) && state.counts.groups >= MAX_JOURNAL_GROUPS {
+            state.counts.truncated_at = Some("groups");
+            eprintln!(
+                "origin-journal capture_incomplete cap=groups groups={} outputs={} limit={MAX_JOURNAL_GROUPS}",
+                state.counts.groups, state.counts.outputs
+            );
             return false;
         }
-        state.groups.get_mut(&key).unwrap().outputs.insert(output);
+        state.transfers.insert(key);
+        state.outputs.insert(node, (key, output));
+        state.counts.groups = state.transfers.len();
         state.counts.outputs += 1;
         true
     }
@@ -334,16 +374,15 @@ impl OriginTrace {
                 kind,
                 argument,
             };
-            if !Self::ensure_group(&mut state, transfer)
-                || !Self::add_output(
-                    &mut state,
-                    transfer,
-                    OutputWitness {
-                        key: output,
-                        target,
-                    },
-                )
-            {
+            if !Self::add_output(
+                &mut state,
+                transfer,
+                OutputWitness {
+                    key: output,
+                    target,
+                },
+                *origin,
+            ) {
                 return;
             }
         }
@@ -391,19 +430,6 @@ impl OriginTrace {
         numeric_properties: &[bool],
     ) {
         let state = self.state.borrow();
-        let mut dynamic_by_output: HashMap<(OriginId, FlowKey), Vec<(TransferKey, OutputWitness)>> =
-            HashMap::new();
-        for (transfer, group) in &state.groups {
-            for output in &group.outputs {
-                dynamic_by_output
-                    .entry((transfer.origin, output.key))
-                    .or_default()
-                    .push((*transfer, *output));
-            }
-        }
-        for producers in dynamic_by_output.values_mut() {
-            producers.sort_unstable();
-        }
         let mut static_by_output: HashMap<FlowKey, Vec<usize>> = HashMap::new();
         for (index, event) in events.iter().enumerate() {
             let output = match event {
@@ -440,61 +466,151 @@ impl OriginTrace {
             }
         }
 
-        let mut pending = VecDeque::new();
-        for target in &self.targets {
+        let mut pending = Vec::new();
+        let mut root_targets = HashMap::new();
+        let mut discovery_limit_hit = false;
+        for (target_index, target) in self.targets.iter().enumerate() {
             if let Some(FlowFact::Values(values)) = facts.get(&target.key) {
                 for origin in &self.origins {
                     if self.contains(values, *origin) {
-                        pending.push_back((*origin, target.key));
+                        let node = SliceNode {
+                            origin: *origin,
+                            key: target.key,
+                        };
+                        if root_targets.contains_key(&node) {
+                            continue;
+                        }
+                        if root_targets.len() >= MAX_SLICE_NODES {
+                            discovery_limit_hit = true;
+                            break;
+                        }
+                        root_targets.insert(node, target_index);
+                        pending.push(node);
                     }
                 }
             }
         }
+        pending.reverse();
+
         let mut seen = HashSet::new();
-        let mut visited_events = BTreeSet::new();
-        let mut dynamic_sources: HashMap<TransferKey, (Vec<FlowKey>, Vec<Value>, bool)> =
-            HashMap::new();
+        let mut predecessors: HashMap<SliceNode, SliceParent> = HashMap::new();
+        let mut dynamic_sources: HashMap<TransferKey, SourceEvaluation> = HashMap::new();
         let mut evaluated = 0usize;
         let mut unresolved = 0usize;
-        let mut output_bytes = 0usize;
-        let mut truncated = None;
-        let mut seed_found = false;
-        let mut unexplored_producers = 0usize;
-        while let Some((origin, output)) = pending.pop_front() {
-            if !seen.insert((origin, output)) {
-                continue;
-            }
-            if !fact_has_origin(facts, output, origin, self) {
-                continue;
-            }
-            if seen.len() > MAX_SLICE_NODES {
-                truncated = Some("slice_nodes");
+        let mut missing_samples = Vec::new();
+        let mut stop_reason = discovery_limit_hit.then_some("slice_nodes");
+        let mut found_seed = None;
+        while let Some(node) = pending.pop() {
+            if discovery_limit_hit {
                 break;
             }
-            let mut traced_output = false;
-            if let Some(indexes) = static_by_output.get(&output) {
-                for (position, index) in indexes.iter().enumerate() {
-                    if visited_events.insert((origin, *index, output, None, "static")) {
-                        let event = &events[*index];
-                        let source = static_event_source(event);
-                        match source {
-                            StaticSource::Expression(expr) => {
-                                if !self.expression_has_origin(
+            if seen.contains(&node) {
+                continue;
+            }
+            seen.insert(node);
+            if !fact_has_origin(facts, node.key, node.origin, self) {
+                continue;
+            }
+
+            let mut sources = Vec::new();
+            let mut matched_producer = false;
+            if let Some(indexes) = static_by_output.get(&node.key) {
+                for index in indexes {
+                    let event = &events[*index];
+                    let producer = ProducerWitness {
+                        event: *index,
+                        target: None,
+                        kind: "static_source",
+                    };
+                    match static_event_source(event) {
+                        StaticSource::Expression(expr) => {
+                            if !self.expression_has_origin(
+                                expr,
+                                node.origin,
+                                facts,
+                                returns,
+                                declared,
+                                &mut evaluated,
+                            ) {
+                                continue;
+                            }
+                            matched_producer = true;
+                            let mut keys = Vec::new();
+                            let mut seeds = Vec::new();
+                            self.source_keys_for_expr(
+                                expr,
+                                node.origin,
+                                facts,
+                                returns,
+                                declared,
+                                &mut evaluated,
+                                &mut keys,
+                                &mut seeds,
+                            );
+                            if let Some(seed) = seeds.first() {
+                                found_seed = Some((node, producer, *seed));
+                                break;
+                            }
+                            if keys.is_empty() {
+                                unresolved += 1;
+                                if missing_samples.len() < 16 {
+                                    missing_samples.push((
+                                        node,
+                                        "unattributed_static_source",
+                                        Some(*index),
+                                    ));
+                                }
+                            } else {
+                                sources.extend(keys.into_iter().map(|key| (key, producer)));
+                            }
+                        }
+                        StaticSource::Value(value)
+                            if *value == self.origin_table.origin(node.origin) =>
+                        {
+                            matched_producer = true;
+                            found_seed = Some((node, producer, *value));
+                            break;
+                        }
+                        StaticSource::Binding(slot) => {
+                            let key = FlowKey::Binding(slot);
+                            if fact_has_origin(facts, key, node.origin, self) {
+                                matched_producer = true;
+                                sources.push((key, producer));
+                            }
+                        }
+                        StaticSource::Value(_) | StaticSource::None => {}
+                    }
+                    if found_seed.is_some() {
+                        break;
+                    }
+                }
+            }
+            if found_seed.is_some() {
+                break;
+            }
+
+            if let Some((transfer, witness)) = state.outputs.get(&node) {
+                let event = events.get(transfer.event);
+                if let Some(event) = event {
+                    let source = if let Some(cached) = dynamic_sources.get(transfer) {
+                        cached.clone()
+                    } else {
+                        let result = match dynamic_event_source(event, *transfer) {
+                            Some(expr)
+                                if self.expression_has_origin(
                                     expr,
-                                    origin,
+                                    node.origin,
                                     facts,
                                     returns,
                                     declared,
                                     &mut evaluated,
-                                ) {
-                                    continue;
-                                }
-                                traced_output = true;
+                                ) =>
+                            {
                                 let mut keys = Vec::new();
                                 let mut seeds = Vec::new();
                                 self.source_keys_for_expr(
                                     expr,
-                                    origin,
+                                    node.origin,
                                     facts,
                                     returns,
                                     declared,
@@ -502,257 +618,261 @@ impl OriginTrace {
                                     &mut keys,
                                     &mut seeds,
                                 );
-                                if keys.is_empty() && seeds.is_empty() {
-                                    unresolved += 1;
-                                    if !self.emit_event(
-                                        *index,
-                                        event,
-                                        output,
-                                        origin,
-                                        None,
-                                        "unattributed",
-                                        &mut output_bytes,
-                                    ) {
-                                        truncated = Some("output_bytes");
-                                        break;
-                                    }
-                                } else {
-                                    if !self.emit_event(
-                                        *index,
-                                        event,
-                                        output,
-                                        origin,
-                                        None,
-                                        "value_source",
-                                        &mut output_bytes,
-                                    ) {
-                                        truncated = Some("output_bytes");
-                                        break;
-                                    }
-                                    self.emit_sources(
-                                        *index,
-                                        event,
-                                        output,
-                                        origin,
-                                        None,
-                                        &keys,
-                                        &seeds,
-                                        &mut output_bytes,
-                                        &mut truncated,
-                                    );
-                                    pending.extend(keys.into_iter().map(|key| (origin, key)));
-                                    seed_found |= !seeds.is_empty();
+                                SourceEvaluation {
+                                    keys,
+                                    seeds,
+                                    matched: true,
                                 }
                             }
-                            StaticSource::Value(value) => {
-                                if *value == self.origin_table.origin(origin) {
-                                    traced_output = true;
-                                    if !self.emit_event(
-                                        *index,
-                                        event,
-                                        output,
-                                        origin,
-                                        None,
-                                        "literal_seed",
-                                        &mut output_bytes,
-                                    ) {
-                                        truncated = Some("output_bytes");
-                                        break;
-                                    }
-                                    seed_found = true;
-                                }
-                            }
-                            StaticSource::Binding(slot) => {
-                                let key = FlowKey::Binding(slot);
-                                if fact_has_origin(facts, key, origin, self) {
-                                    traced_output = true;
-                                    if !self.emit_edge(
-                                        *index,
-                                        event,
-                                        output,
-                                        key,
-                                        origin,
-                                        None,
-                                        "binding_source",
-                                        &mut output_bytes,
-                                    ) {
-                                        truncated = Some("output_bytes");
-                                        break;
-                                    }
-                                    pending.push_back((origin, key));
-                                }
-                            }
-                            StaticSource::None => {}
-                        }
-                        if seed_found || truncated.is_some() {
-                            unexplored_producers += indexes.len() - position - 1;
-                            break;
-                        }
-                    }
-                }
-            }
-            if seed_found {
-                unexplored_producers +=
-                    dynamic_by_output.get(&(origin, output)).map_or(0, Vec::len);
-                truncated = Some("first_seed_witness_only");
-                break;
-            }
-            if truncated.is_some() {
-                break;
-            }
-            if let Some(producers) = dynamic_by_output.get(&(origin, output)) {
-                for (position, (transfer, witness)) in producers.iter().enumerate() {
-                    let Some(event) = events.get(transfer.event) else {
-                        unresolved += 1;
-                        continue;
-                    };
-                    let source = dynamic_sources.get(transfer).cloned().or_else(|| {
-                        let Some(expr) = dynamic_event_source(event, *transfer) else {
-                            let result = (Vec::new(), Vec::new(), false);
-                            dynamic_sources.insert(*transfer, result.clone());
-                            return Some(result);
+                            _ => SourceEvaluation {
+                                keys: Vec::new(),
+                                seeds: Vec::new(),
+                                matched: false,
+                            },
                         };
-                        if !self.expression_has_origin(
-                            expr,
-                            origin,
-                            facts,
-                            returns,
-                            declared,
-                            &mut evaluated,
-                        ) {
-                            let result = (Vec::new(), Vec::new(), false);
-                            dynamic_sources.insert(*transfer, result.clone());
-                            return Some(result);
-                        }
-                        let mut keys = Vec::new();
-                        let mut seeds = Vec::new();
-                        self.source_keys_for_expr(
-                            expr,
-                            origin,
-                            facts,
-                            returns,
-                            declared,
-                            &mut evaluated,
-                            &mut keys,
-                            &mut seeds,
-                        );
-                        let result = (keys, seeds, true);
                         dynamic_sources.insert(*transfer, result.clone());
-                        Some(result)
-                    });
-                    let Some((keys, seeds, expression_matched)) = source else {
-                        continue;
+                        result
                     };
-                    if !expression_matched {
-                        unresolved += 1;
-                        traced_output = true;
-                        if !self.emit_event(
-                            transfer.event,
-                            event,
-                            witness.key,
-                            origin,
-                            witness.target,
-                            "cached_output_not_reproduced",
-                            &mut output_bytes,
-                        ) {
-                            truncated = Some("output_bytes");
-                            break;
+                    matched_producer |= source.matched;
+                    if source.matched {
+                        let producer = ProducerWitness {
+                            event: transfer.event,
+                            target: witness.target,
+                            kind: transfer.kind,
+                        };
+                        if let Some(seed) = source.seeds.first() {
+                            found_seed = Some((node, producer, *seed));
+                        } else if source.keys.is_empty() {
+                            unresolved += 1;
+                            if missing_samples.len() < 16 {
+                                missing_samples.push((
+                                    node,
+                                    "unattributed_dynamic_source",
+                                    Some(transfer.event),
+                                ));
+                            }
+                        } else {
+                            sources.extend(source.keys.into_iter().map(|key| (key, producer)));
                         }
-                        continue;
-                    }
-                    traced_output = true;
-                    visited_events.insert((
-                        origin,
-                        transfer.event,
-                        witness.key,
-                        witness.target,
-                        transfer.kind,
-                    ));
-                    let kind = if keys.is_empty() && seeds.is_empty() {
-                        "unattributed_dynamic_source"
                     } else {
-                        "value_source"
-                    };
-                    if keys.is_empty() && seeds.is_empty() {
                         unresolved += 1;
+                        if missing_samples.len() < 16 {
+                            missing_samples.push((
+                                node,
+                                "cached_output_not_reproduced",
+                                Some(transfer.event),
+                            ));
+                        }
                     }
-                    if !self.emit_event(
-                        transfer.event,
-                        event,
-                        witness.key,
-                        origin,
-                        witness.target,
-                        kind,
-                        &mut output_bytes,
-                    ) {
-                        truncated = Some("output_bytes");
-                        break;
-                    }
-                    self.emit_sources(
-                        transfer.event,
-                        event,
-                        witness.key,
-                        origin,
-                        witness.target,
-                        &keys,
-                        &seeds,
-                        &mut output_bytes,
-                        &mut truncated,
-                    );
-                    pending.extend(keys.into_iter().map(|key| (origin, key)));
-                    seed_found |= !seeds.is_empty();
-                    if truncated.is_some() {
-                        unexplored_producers += producers.len() - position - 1;
-                        break;
-                    }
-                    if seed_found {
-                        unexplored_producers += producers.len() - position - 1;
-                        break;
+                } else {
+                    unresolved += 1;
+                    if missing_samples.len() < 16 {
+                        missing_samples.push((node, "missing_dynamic_event", Some(transfer.event)));
                     }
                 }
             }
-            if !traced_output {
+
+            if found_seed.is_some() {
+                break;
+            }
+            if !matched_producer {
                 unresolved += 1;
-                let line = format!(
-                    "origin-journal unattributed_key key={:?} label={:?} source_origin={:?} reason=no_selected_value_producer_indexed\n",
-                    output,
-                    self.key_label(output),
-                    self.origin_sources.get(&origin),
-                );
-                if !emit_limited_line(&line, &mut output_bytes) {
-                    truncated = Some("output_bytes");
+                if missing_samples.len() < 16 {
+                    missing_samples.push((node, "no_selected_value_producer", None));
                 }
             }
-            if seed_found && truncated.is_none() {
-                truncated = Some("first_seed_witness_only");
+            sources.sort_unstable_by_key(|(key, producer)| (*key, producer.event));
+            sources.dedup_by_key(|(key, _)| *key);
+            for (key, producer) in sources.into_iter().rev() {
+                let child = SliceNode {
+                    origin: node.origin,
+                    key,
+                };
+                if root_targets.contains_key(&child)
+                    || seen.contains(&child)
+                    || predecessors.contains_key(&child)
+                {
+                    continue;
+                }
+                if root_targets.len() + predecessors.len() >= MAX_SLICE_NODES {
+                    discovery_limit_hit = true;
+                    stop_reason = Some("slice_nodes");
+                    break;
+                }
+                predecessors.insert(
+                    child,
+                    SliceParent {
+                        parent: node,
+                        producer,
+                    },
+                );
+                pending.push(child);
             }
-            if truncated.is_some() {
+            if discovery_limit_hit {
                 break;
             }
             if evaluated >= MAX_EXPRESSION_EVALUATIONS {
-                truncated = Some("expression_evaluations");
+                stop_reason = Some("expression_evaluations");
                 break;
             }
         }
+
+        let mut steps = Vec::new();
+        let mut witness_root = None;
+        if let Some((seed_node, seed_producer, seed)) = found_seed {
+            steps.push(TraceStep {
+                output: seed_node,
+                producer: seed_producer,
+                destination: TraceDestination::Seed(seed),
+            });
+            let mut cursor = seed_node;
+            while !root_targets.contains_key(&cursor) {
+                let Some(parent) = predecessors.get(&cursor) else {
+                    stop_reason = Some("missing_predecessor");
+                    break;
+                };
+                steps.push(TraceStep {
+                    output: parent.parent,
+                    producer: parent.producer,
+                    destination: TraceDestination::Key(cursor.key),
+                });
+                cursor = parent.parent;
+                if steps.len() > MAX_SLICE_NODES {
+                    stop_reason = Some("path_nodes");
+                    break;
+                }
+            }
+            if root_targets.contains_key(&cursor) {
+                witness_root = Some((cursor, root_targets[&cursor]));
+                steps.reverse();
+            } else {
+                steps.clear();
+            }
+        }
+
+        if found_seed.is_some() && stop_reason.is_none() {
+            stop_reason = Some("first_connected_witness_only");
+        }
+        let witness_found = witness_root.is_some();
+        let mut output_bytes = 0usize;
+        let mut witness_emitted_complete = false;
+        if let Some((root, target_index)) = witness_root {
+            let target = &self.targets[target_index];
+            let header = format!(
+                "origin-journal connected_witness module={} binding={:?} context={} root={:?} root_label={:?} source_origin={:?} steps={} alternatives_omitted={} duplicate_observations={}\n",
+                target.module,
+                target.name,
+                target.context,
+                root.key,
+                self.key_label(root.key),
+                self.origin_sources.get(&root.origin),
+                steps.len(),
+                state.counts.omitted_alternatives,
+                state.counts.duplicate_observations,
+            );
+            let mut path_text = String::new();
+            let mut path_fits = append_bounded_path_line(&mut path_text, &header);
+            for step in &steps {
+                if !path_fits {
+                    break;
+                }
+                let Some(event) = events.get(step.producer.event) else {
+                    stop_reason = Some("witness_event_missing");
+                    path_fits = false;
+                    break;
+                };
+                let source_line = self.event_line(
+                    step.producer.event,
+                    event,
+                    step.output.key,
+                    step.output.origin,
+                    step.producer.target,
+                    step.producer.kind,
+                );
+                if !append_bounded_path_line(&mut path_text, &source_line) {
+                    path_fits = false;
+                    break;
+                }
+                match step.destination {
+                    TraceDestination::Key(key) => {
+                        let edge_line = self.edge_line(
+                            step.producer.event,
+                            event,
+                            step.output.key,
+                            key,
+                            step.output.origin,
+                            step.producer.target,
+                            "witness_input",
+                        );
+                        if !append_bounded_path_line(&mut path_text, &edge_line) {
+                            path_fits = false;
+                        }
+                    }
+                    TraceDestination::Seed(value) => {
+                        let line = format!(
+                            "origin-journal witness_seed output={:?} output_label={:?} value={:?} source_origin={:?}\n",
+                            step.output.key,
+                            self.key_label(step.output.key),
+                            value,
+                            self.origin_sources.get(&step.output.origin),
+                        );
+                        if !append_bounded_path_line(&mut path_text, &line) {
+                            path_fits = false;
+                        }
+                    }
+                }
+            }
+            if path_fits {
+                output_bytes = path_text.len();
+                eprint!("{path_text}");
+                witness_emitted_complete = true;
+            } else if stop_reason.is_none() || stop_reason == Some("first_connected_witness_only") {
+                stop_reason = Some("output_bytes");
+            }
+        }
+        for (node, reason, event) in &missing_samples {
+            if stop_reason == Some("output_bytes") {
+                break;
+            }
+            let line = format!(
+                "origin-journal missing_sample key={:?} label={:?} source_origin={:?} event={:?} reason={}\n",
+                node.key,
+                self.key_label(node.key),
+                self.origin_sources.get(&node.origin),
+                event,
+                reason,
+            );
+            if !emit_limited_line(&line, &mut output_bytes) {
+                stop_reason = Some("output_bytes");
+                break;
+            }
+        }
+        let capture_complete = state.counts.truncated_at.is_none();
         eprintln!(
-            "origin-journal demand_slice targets={} origins={} dynamic_groups={} dynamic_outputs={} reached_keys={} source_events={} expression_evaluations={} unattributed={} capture_truncated_at={:?} stop_reason={:?} unexplored_frontier_keys={} unexplored_producers={} hard_caps=groups:{MAX_JOURNAL_GROUPS},outputs:{MAX_JOURNAL_OUTPUTS},slice_nodes:{MAX_SLICE_NODES},expression_evaluations:{MAX_EXPRESSION_EVALUATIONS},output_bytes:{MAX_JOURNAL_OUTPUT_BYTES} semantics=exact_final_fact_value_may_sources_not_execution_causality summary_sources=argument,argument_property,argument_or_default,one_forwarder_else_return_fact unsupported_or_unattributed_are_explicit=true",
+            "origin-journal demand_slice targets={} origins={} unique_dynamic_outputs={} duplicate_observations={} duplicate_observations_complete={} omitted_dynamic_alternatives_observed={} omitted_alternatives_complete={} discovered_keys={} reached_keys={} witness_found={} witness_emitted_complete={} witness_steps={} expression_evaluations={} unresolved={} capture_truncated_at={:?} stop_reason={:?} frontier_keys={} missing_samples={} hard_caps=groups:{MAX_JOURNAL_GROUPS},outputs:{MAX_JOURNAL_OUTPUTS},slice_nodes:{MAX_SLICE_NODES},expression_evaluations:{MAX_EXPRESSION_EVALUATIONS},output_bytes:{MAX_JOURNAL_OUTPUT_BYTES} semantics=one_connected_final_fact_may_source_witness_not_execution_causality;unseen_alternatives_are_not_ruled_out",
             self.targets.len(),
             self.origins.len(),
-            state.counts.groups,
             state.counts.outputs,
+            state.counts.duplicate_observations,
+            capture_complete,
+            state.counts.omitted_alternatives,
+            capture_complete,
+            root_targets.len() + predecessors.len(),
             seen.len(),
-            visited_events.len(),
+            witness_found,
+            witness_emitted_complete,
+            steps.len(),
             evaluated,
             unresolved,
             state.counts.truncated_at,
-            truncated,
+            stop_reason.unwrap_or("frontier_exhausted_no_absence_claim"),
             pending.len(),
-            unexplored_producers,
+            missing_samples.len(),
         );
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn emit_event(
+    fn event_line(
         &self,
         index: usize,
         event: &FlowEvent,
@@ -760,9 +880,8 @@ impl OriginTrace {
         origin: OriginId,
         target: Option<u32>,
         kind: &str,
-        output_bytes: &mut usize,
-    ) -> bool {
-        let line = format!(
+    ) -> String {
+        format!(
             "origin-journal source event={} kind={} output={:?} output_label={:?} target={:?} target_site={:?} source_origin={:?} event_kind={:?}\n",
             index,
             kind,
@@ -772,12 +891,11 @@ impl OriginTrace {
             target.map(|site| self.site_label(site)),
             self.origin_sources.get(&origin),
             event_kind(event),
-        );
-        emit_limited_line(&line, output_bytes)
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn emit_edge(
+    fn edge_line(
         &self,
         event_index: usize,
         event: &FlowEvent,
@@ -786,9 +904,8 @@ impl OriginTrace {
         origin: OriginId,
         target: Option<u32>,
         kind: &str,
-        output_bytes: &mut usize,
-    ) -> bool {
-        let line = format!(
+    ) -> String {
+        format!(
             "origin-journal edge event={} kind={} from={:?} from_label={:?} to={:?} to_label={:?} target={:?} target_site={:?} source_origin={:?} event_kind={:?}\n",
             event_index,
             kind,
@@ -800,53 +917,7 @@ impl OriginTrace {
             target.map(|site| self.site_label(site)),
             self.origin_sources.get(&origin),
             event_kind(event),
-        );
-        emit_limited_line(&line, output_bytes)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn emit_sources(
-        &self,
-        event_index: usize,
-        event: &FlowEvent,
-        from: FlowKey,
-        origin: OriginId,
-        target: Option<u32>,
-        keys: &[FlowKey],
-        seeds: &[Value],
-        output_bytes: &mut usize,
-        truncated: &mut Option<&'static str>,
-    ) {
-        for key in keys {
-            if !self.emit_edge(
-                event_index,
-                event,
-                from,
-                *key,
-                origin,
-                target,
-                "value_source",
-                output_bytes,
-            ) {
-                *truncated = Some("output_bytes");
-                return;
-            }
-        }
-        for seed in seeds {
-            let line = format!(
-                "origin-journal seed event={} output={:?} output_label={:?} target={:?} value={:?} source_origin={:?}\n",
-                event_index,
-                from,
-                self.key_label(from),
-                target,
-                seed,
-                self.origin_sources.get(&origin),
-            );
-            if !emit_limited_line(&line, output_bytes) {
-                *truncated = Some("output_bytes");
-                return;
-            }
-        }
+        )
     }
 
     fn expression_has_origin(
@@ -1216,6 +1287,14 @@ fn emit_limited_line(line: &str, output_bytes: &mut usize) -> bool {
     }
     *output_bytes += line.len();
     eprint!("{line}");
+    true
+}
+
+fn append_bounded_path_line(path: &mut String, line: &str) -> bool {
+    if path.len().saturating_add(line.len()) > MAX_JOURNAL_OUTPUT_BYTES {
+        return false;
+    }
+    path.push_str(line);
     true
 }
 
