@@ -14,7 +14,6 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
-    ClusterSpecEnv,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
@@ -121,8 +120,6 @@ def cluster(
     managed: ClusterSpecManaged | None = None,
     postgresql: ClusterSpecPostgresql | None = None,
     resources: ClusterSpecResources | None = None,
-    env: list[ClusterSpecEnv] | None = None,
-    enable_pod_monitor: bool = True,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
@@ -148,7 +145,6 @@ def cluster(
             image_name=image_name,
             bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
             affinity=profile.affinity,
-            env=env,
             managed=managed,
             postgresql=postgresql,
             plugins=(
@@ -167,6 +163,6 @@ def cluster(
                 )
             ),
             # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=enable_pod_monitor),
+            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
         ),
     )

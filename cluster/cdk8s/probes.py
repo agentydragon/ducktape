@@ -26,22 +26,14 @@ def http_probe(
 
 
 def grpc_probe(
-    *,
-    port: int,
-    initial_delay_seconds: int,
-    period_seconds: int = 10,
-    service: str | None = None,
-    failure_threshold: int | None = None,
-    timeout_seconds: int | None = None,
+    *, port: int, initial_delay_seconds: int, period_seconds: int = 10, failure_threshold: int | None = None
 ) -> Probe:
-    """Calls the standard `grpc.health.v1.Health/Check` for `service`, the whole server when unset."""
+    """Calls the standard `grpc.health.v1.Health/Check` for the whole server."""
     return Probe.from_grpc(
         port=port,
-        service=service,
         initial_delay_seconds=Duration.seconds(initial_delay_seconds),
         period_seconds=Duration.seconds(period_seconds),
         failure_threshold=failure_threshold,
-        timeout_seconds=Duration.seconds(timeout_seconds) if timeout_seconds is not None else None,
     )
 
 
@@ -54,7 +46,6 @@ def tls_grpc_probe(
     period_seconds: int = 10,
     service: str | None = None,
     failure_threshold: int | None = None,
-    timeout_seconds: int = 5,
 ) -> Probe:
     """Calls the standard gRPC health service while verifying the server's SPIFFE identity."""
     command = ["/healthprobe", "--target", f"127.0.0.1:{port}", "--ca-file", ca_file, "--server-uri", server_uri]
@@ -65,5 +56,5 @@ def tls_grpc_probe(
         initial_delay_seconds=Duration.seconds(initial_delay_seconds),
         period_seconds=Duration.seconds(period_seconds),
         failure_threshold=failure_threshold,
-        timeout_seconds=Duration.seconds(timeout_seconds),
+        timeout_seconds=Duration.seconds(5),
     )

@@ -18,13 +18,9 @@ from external_secrets_clusterexternalsecret_crds.io.external_secrets import (
     ClusterExternalSecretSpecExternalSecretSpecDataFrom,
     ClusterExternalSecretSpecExternalSecretSpecDataFromExtract,
     ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef,
-    ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy,
     ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
     ClusterExternalSecretSpecExternalSecretSpecSecretStoreRefKind,
     ClusterExternalSecretSpecExternalSecretSpecTarget,
-    ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy,
-    ClusterExternalSecretSpecExternalSecretSpecTargetDeletionPolicy,
-    ClusterExternalSecretSpecExternalSecretSpecTargetTemplate,
 )
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret as _ExternalSecret,
@@ -157,18 +153,16 @@ class ExternalSecret(_ExternalSecret):
         )
 
 
-def cluster_remote_data(
-    key: str, property: str, *, secret_key: str | None = None
-) -> ClusterExternalSecretSpecExternalSecretSpecData:
-    """Copy `property` of the store's `key` into the target, under `secret_key` or else the same name.
+def cluster_remote_data(key: str, property: str) -> ClusterExternalSecretSpecExternalSecretSpecData:
+    """Copy `property` of the store's `key` into the target, under the same name.
 
-    Mirrors `remote_data`, for `ClusterExternalSecret`'s embedded, `ExternalSecretSpec`-shaped
+    Like `remote_data`, for `ClusterExternalSecret`'s embedded, `ExternalSecretSpec`-shaped
     target: `cdk8s_import` generates a distinct Python type per CRD it's pointed at, so this
     identically-shaped embedded field (`ClusterExternalSecretSpecExternalSecretSpecData`, not
     `ExternalSecretSpecData`) isn't the same class and needs its own builder.
     """
     return ClusterExternalSecretSpecExternalSecretSpecData(
-        secret_key=secret_key or property,
+        secret_key=property,
         remote_ref=ClusterExternalSecretSpecExternalSecretSpecDataRemoteRef(key=key, property=property),
     )
 
@@ -201,8 +195,7 @@ class ClusterDataFrom:
 
 class ClusterExternalSecret(_ClusterExternalSecret):
     """Adds `namespaces`: which namespaces get the mirrored `ExternalSecret`. Its target Secret is
-    `target_name`, else `metadata.name`. Cluster-scoped, unlike `ExternalSecret`: `metadata`
-    carries no `namespace`.
+    `metadata.name`. Cluster-scoped, unlike `ExternalSecret`: `metadata` carries no `namespace`.
 
     Exactly one of `data` and `data_from` is given. `None` leaves a field unset, so ESO's own
     default applies.
@@ -217,14 +210,8 @@ class ClusterExternalSecret(_ClusterExternalSecret):
         namespaces: Sequence[str],
         secret_store_ref: ClusterExternalSecretSpecExternalSecretSpecSecretStoreRef,
         refresh_interval: str | None = None,
-        refresh_policy: ClusterExternalSecretSpecExternalSecretSpecRefreshPolicy | None = None,
         data: Sequence[ClusterExternalSecretSpecExternalSecretSpecData] = (),
         data_from: Sequence[ClusterExternalSecretSpecExternalSecretSpecDataFrom] = (),
-        creation_policy: ClusterExternalSecretSpecExternalSecretSpecTargetCreationPolicy | None = None,
-        deletion_policy: ClusterExternalSecretSpecExternalSecretSpecTargetDeletionPolicy | None = None,
-        template: ClusterExternalSecretSpecExternalSecretSpecTargetTemplate | None = None,
-        immutable: bool | None = None,
-        target_name: str | None = None,
     ) -> None:
         if bool(data) == bool(data_from):
             raise ValueError(f"{metadata.name=}: give exactly one of data and data_from")
@@ -236,17 +223,10 @@ class ClusterExternalSecret(_ClusterExternalSecret):
                 namespaces=list(namespaces),
                 external_secret_spec=ClusterExternalSecretSpecExternalSecretSpec(
                     refresh_interval=refresh_interval,
-                    refresh_policy=refresh_policy,
                     secret_store_ref=secret_store_ref,
                     data=list(data) or None,
                     data_from=list(data_from) or None,
-                    target=ClusterExternalSecretSpecExternalSecretSpecTarget(
-                        name=target_name or metadata.name,
-                        creation_policy=creation_policy,
-                        deletion_policy=deletion_policy,
-                        template=template,
-                        immutable=immutable,
-                    ),
+                    target=ClusterExternalSecretSpecExternalSecretSpecTarget(name=metadata.name),
                 ),
             ),
         )
