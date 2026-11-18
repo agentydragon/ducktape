@@ -979,6 +979,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         app_authentication, app_pod, app_pod_uid = await service_caller(
             cluster, "app", certificate_secret="app-workload-tls"
         )
+        # This is the Dispatcher submission-authorization case, not a Runtime-proxy reader.
         notification_authentication, notification_pod, notification_pod_uid = await service_caller(
             cluster, "notifications", certificate_secret="notifications-workload-tls"
         )

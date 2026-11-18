@@ -282,6 +282,7 @@ def environment_chart(
             delegation_actor=sandbox_controller.action_delegation_actor(env),
             extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
         ),
+        runtime_proxy_readers=(),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

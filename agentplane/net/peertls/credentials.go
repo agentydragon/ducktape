@@ -73,10 +73,13 @@ const PolicyControllerURI = "spiffe://agentplane/policy-controller"
 // CentralSamplerURI is the Central Sampler's server-authentication identity.
 const CentralSamplerURI = "spiffe://agentplane/central-sampler"
 
+// SystemTestRuntimeProxyReaderURI is the isolated Runtime-proxy reader for the k3s system-test fixture.
+const SystemTestRuntimeProxyReaderURI = "spiffe://agentplane/system-test-runtime-proxy-reader"
+
 func isWorkloadServiceURI(uri string) bool {
 	switch uri {
 	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI,
-		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI, SandboxControllerURI:
+		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI, SandboxControllerURI, SystemTestRuntimeProxyReaderURI:
 		return true
 	default:
 		return false

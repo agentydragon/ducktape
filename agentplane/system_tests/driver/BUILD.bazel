@@ -322,6 +322,7 @@ py_library(
         ":cleanup_diagnostics",
         ":cluster",
         ":identity",
+        ":native_auth",
         ":sandbox_cleanup",
         ":sandbox_ownership",
         ":tls",
