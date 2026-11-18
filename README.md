@@ -25,7 +25,7 @@ bb run //devinfra/lint:buildifier
 
 ### Lint/Format Exclusions
 
-`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `terraform/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
+`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
 
 ## CI
 

@@ -30,7 +30,6 @@ cluster/k8s/flux/flux-system/**
 cluster/k8s/**/*.k8s.yaml
 cluster/parked/**/*.k8s.yaml
 cluster/generated/**
-cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
 # The retired Python thread fold generated these golden vectors; internal/threadfold/golden_test.go holds the Go fold to them.
