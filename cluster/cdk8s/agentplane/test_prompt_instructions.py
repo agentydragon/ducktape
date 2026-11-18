@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from more_itertools import one
 
 from cluster.cdk8s.agentplane import kubernetes_account_ref, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -22,6 +21,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY
 from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_ducktape_pr_instructions_are_shared_once() -> None:
@@ -55,12 +55,8 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     """The Haku preset covers every Action set the `haku-agent` binding names, plus Haku's one
     write. The binding is the reviewed bundle; a launch's Identity has its own binding, so the
     preset spells out what that Sandbox receives."""
-    binding = one(
-        doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent"
-    )
-    app_config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
+    binding = find_resource(staging_manifests, "PolicyBinding", "haku-agent")
+    app_config = find_resource(staging_manifests, "ConfigMap", "app-config")
     preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
     action_sets = {
@@ -86,13 +82,9 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
 @pytest.mark.parametrize("policy_set", ["quest-scheduler-read", "thrive-read"])
 def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set: str) -> None:
     for name in ("haku-agent", "claude-ai"):
-        binding = one(
-            doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
-        )
+        binding = find_resource(staging_manifests, "PolicyBinding", name)
         assert policy_set in binding["spec"]["policySets"]
-    app_config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
+    app_config = find_resource(staging_manifests, "ConfigMap", "app-config")
     presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
     assert policy_set in presets["haku"]["policy_sets"]
     assert all(policy_set not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
