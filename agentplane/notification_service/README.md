@@ -11,9 +11,10 @@ It does not depend on the integration app or connect directly to runners.
 Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-Creating a subscription resolves the existing Dispatcher Session and records its exact execution
-Identity. Placement does not select the inbox or gate subscription, read, or acknowledgement. A
-Session created only through Runtime has no Dispatcher record and cannot create a subscription.
+Creating a subscription resolves the Dispatcher Session and records its exact execution Identity.
+Once Dispatcher has admitted the Session, the matching Identity can subscribe, read and
+acknowledge even before the host creates the Session. A Session created only through Runtime has
+no Dispatcher record and cannot create a subscription.
 Message sends still resolve the Session placement and evaluate the sender's current scoped grant
 against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain intact through
 the placement migration.

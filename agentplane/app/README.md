@@ -18,8 +18,6 @@ Actions, operator decisions and Connection consent. The staging instance lives i
 
 Diagnostics use the `environment_service` target and pin `spiffe://agentplane/sandbox-controller`.
 The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
-The App has no raw Runtime-proxy grant. The old raw-proxy target setting remains rendered and decoded
-until its manifest omission has rolled.
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.

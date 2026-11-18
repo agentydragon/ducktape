@@ -179,21 +179,15 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                      | Operator release (UTC) | Node                         | State                                                                         |
-| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------- |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | Remaining caller dispositions await operator review                           |
-| Versioned dispatch watch   | 2026-11-16 06:40       | none (`CLEANUP` tombstone)   | Chunked-notice cleanup awaits the rollback window                             |
-| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it |
+| Track                    | Operator release (UTC) | Node                        | State                                                                         |
+| ------------------------ | ---------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| Versioned dispatch watch | 2026-11-16 06:40       | none (`CLEANUP` tombstone)  | Chunked-notice cleanup awaits the rollback window                             |
+| Leftover settings keys   | 2026-11-16 06:40       | none (`CLEANUP` tombstones) | In flight; manifests stop setting each key before the code stops accepting it |
 
 Not released:
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
 `SAMPLER_STABLE_PROVIDER_PREFIX` waits for the operator to review its design (20:04 on 2026-11-14:
 "I would want to see the design"), in #16401.
-
-```mermaid
-flowchart LR
-    RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-```
 
 ### Sandbox-free central Sessions
 
@@ -3848,23 +3842,9 @@ evidence and line-level steps for every track below; its stages are ordered by c
 
 ```mermaid
 flowchart LR
-    RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
-
-### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
-
-**Review; audit released by operator, 2026-11-15.** The
-[caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
-exact methods and grants, direct Runtime channels and test-only clients. Session delivery uses
-HarnessHost. The App's dead raw-proxy target setting has
-its separate manifest-omission/config-rollout gate. The audit does not choose canonical Session
-status or require a Sandbox attachment on a Session.
-
-**Exit:** reviewed remaining caller dispositions, with migration work dispatched separately. The audit
-does not block the agreed physical proxy move, authorize new grants or require a Sandbox/single
-attachment on a Session.
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time
 
