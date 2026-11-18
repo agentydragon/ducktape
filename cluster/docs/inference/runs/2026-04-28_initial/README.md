@@ -192,8 +192,7 @@ kubectl -n ollama exec ollama-764d8ffbdf-8hbgf -c ollama -- \
 ```
 
 (The `--noproxy '*'` and zeroed `HTTP_PROXY` env vars work around the
-mitmproxy auto-injection in `claude-sandbox`. See
-<../../../../k8s/TODO.md#reconsider-mitmproxy-auto-injection-in-claude-sandbox>.)
+mitmproxy auto-injection in `claude-sandbox`.)
 
 ## Next pass
 

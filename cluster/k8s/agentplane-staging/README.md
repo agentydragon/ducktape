@@ -19,7 +19,7 @@ markers. The runner-owned lifecycle promotion and deployed acceptance are comple
 all service and runner image families have their markers restored. The Go Actions cutover
 promotes the Go service and Goose migrator with its generated-client app, Notification
 Service, runner disk, and Sandbox images. No staging starts hold remains. See the
-[lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#runner-owned-harness-lifecycle).
+[lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#rollout-and-rollback).
 
 The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source. A template update affects future Sandbox
