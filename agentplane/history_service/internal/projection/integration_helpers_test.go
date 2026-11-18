@@ -134,12 +134,3 @@ func bodyOf(t *testing.T, db *sql.DB, threadID uuid.UUID, reference historypb.Th
 	}
 	return body.String()
 }
-
-func count(t *testing.T, db *sql.DB, query string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := db.QueryRow(query, args...).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
-}

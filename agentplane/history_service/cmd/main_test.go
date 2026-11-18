@@ -224,10 +224,7 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 				}
 			}
 			db := postgres.Open(t, integrationDatabase.URL)
-			var blocks int
-			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID).Scan(&blocks); err != nil {
-				t.Fatal(err)
-			}
+			blocks := postgres.Count(t, db, "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID)
 			if (blocks > 0) != compact {
 				t.Fatalf("compact=%t created %d blocks", compact, blocks)
 			}

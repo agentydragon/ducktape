@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
@@ -72,10 +73,10 @@ func TestCycleFoldsRetainedSessionsAPageAtATimeUntilCaughtUp(t *testing.T) {
 	if sourceID, through := checkpointOf(t, f.db, folded); through != total || sourceID == nil {
 		t.Fatalf("checkpoint through %d, want %d", through, total)
 	}
-	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", empty) != 0 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", empty) != 0 {
 		t.Fatal("a Session with no Events got a checkpoint")
 	}
-	if count(t, f.db, "SELECT count(*) FROM thread_history_summary WHERE thread_id = $1", empty) != 1 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM thread_history_summary WHERE thread_id = $1", empty) != 1 {
 		t.Fatal("discovery gave the empty Session no summary row")
 	}
 }
@@ -101,7 +102,7 @@ func TestReplicasSplitSessionsByLease(t *testing.T) {
 
 func leases(t *testing.T, db *sql.DB, sessionID uuid.UUID) int {
 	t.Helper()
-	return count(t, db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID)
+	return postgres.Count(t, db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID)
 }
 
 func TestCycleFoldsOnlySessionsWhoseHistoryChanged(t *testing.T) {
@@ -171,7 +172,7 @@ func TestConcurrentReplicasFoldEachChangedSessionOnce(t *testing.T) {
 	}
 	// Each Session takes one page, so a claim of a Session another replica folded would show as an extra one.
 	var claimed atomic.Int64
-	for count(t, f.db, "SELECT count(*) FROM session_fold_pending") > 0 {
+	for postgres.Count(t, f.db, "SELECT count(*) FROM session_fold_pending") > 0 {
 		var group errgroup.Group
 		for _, runner := range runners {
 			group.Go(func() error {
@@ -187,7 +188,7 @@ func TestConcurrentReplicasFoldEachChangedSessionOnce(t *testing.T) {
 	if got := claimed.Load(); got != sessions {
 		t.Fatalf("replicas folded %d Sessions, want each of %d once", got, sessions)
 	}
-	if got := count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE through_cursor = 1"); got != sessions {
+	if got := postgres.Count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE through_cursor = 1"); got != sessions {
 		t.Fatalf("%d Sessions folded through their history, want %d", got, sessions)
 	}
 }
@@ -207,7 +208,7 @@ func TestCycleHandsBackTheLeaseOfASessionNoLongerRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.cycle(t, runner)
-	if count(t, f.db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID) != 0 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM session_projection_lease WHERE session_id = $1", sessionID) != 0 {
 		t.Fatal("the fold kept its lease on a Session that is no longer retained")
 	}
 }
@@ -342,7 +343,7 @@ func TestPermanentAttachmentFailureParksOnlyItsPendingVersion(t *testing.T) {
 	if _, through := checkpointOf(t, f.db, healthy); through != 1 {
 		t.Fatalf("healthy checkpoint=%d, want 1", through)
 	}
-	if count(t, f.db, "SELECT count(*) FROM session_event WHERE session_id=$1", failed) != 2 || count(t, f.db, "SELECT count(*) FROM session_fold_pending WHERE session_id=$1", failed) != 1 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM session_event WHERE session_id=$1", failed) != 2 || postgres.Count(t, f.db, "SELECT count(*) FROM session_fold_pending WHERE session_id=$1", failed) != 1 {
 		t.Fatal("permanent failure removed retained history or its pending mark")
 	}
 	if !strings.Contains(logs.String(), "executionPrincipal") {
