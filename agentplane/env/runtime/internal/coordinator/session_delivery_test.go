@@ -3,7 +3,6 @@ package coordinator
 import (
 	"context"
 	"errors"
-	"net"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
@@ -12,25 +11,10 @@ import (
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
-
-func loopbackGRPCServer(t *testing.T, register func(*grpc.Server)) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return listener.Addr().String()
-}
 
 func firstString(values []string) string {
 	if len(values) == 0 {
@@ -122,7 +106,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 		authorization: make(chan string, 1),
 		result:        make(chan error, 1),
 	}
-	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
+	endpoint := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	loopDone := make(chan error, 1)

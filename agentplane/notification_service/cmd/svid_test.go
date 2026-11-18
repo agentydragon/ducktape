@@ -16,12 +16,12 @@ import (
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -201,13 +201,13 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 	setSandboxIdentity(t, &recipient)
 	setSandboxIdentity(t, &sender)
 	setSandboxIdentity(t, &stranger)
-	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	dispatcherAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(s, identityRunDispatcher{sandbox: recipient.Sandbox, identity: recipient.Identity})
 	})
-	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	historyAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, sandboxHistory{sandbox: recipient.Sandbox})
 	})
-	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	actionAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		actionpb.RegisterActionServiceServer(s, identityActions{identity: recipient.Identity})
 	})
 	ca := peertlstesting.NewCA(t)

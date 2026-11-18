@@ -10,7 +10,6 @@ go_library(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/proto:session_go_proto",
-        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],
 )
