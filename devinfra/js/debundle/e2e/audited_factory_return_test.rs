@@ -167,6 +167,104 @@ fn provider_reexport_backedge_declines_fresh_result_refinement() {
     assert_factory_cut(false, true, ProviderShape::ReexportBackedge, false, false);
 }
 
+fn assert_named_factory_cut(conditional_identity_helper: bool, write_second_metadata: bool) {
+    let second_write = if write_second_metadata {
+        "second.displayName = 'second';\n"
+    } else {
+        ""
+    };
+    let identity_helper = if conditional_identity_helper {
+        "function identityAfterSetup(value) { const marker = 0; return (marker, value); }\n"
+    } else {
+        ""
+    };
+    let factory_body = if conditional_identity_helper {
+        "return typeof callback !== 'function' ? identityAfterSetup(callback) : wrap(callback);"
+    } else {
+        "return wrap(callback);"
+    };
+    let writes = if write_second_metadata {
+        vec![
+            "callback.displayName = 'callback';",
+            "second.displayName = 'second';",
+        ]
+    } else {
+        vec!["callback.displayName = 'callback';"]
+    };
+    let source = format!(
+        "import {{ factory, api }} from './peer.js';\n\
+         function callback() {{ return 0; }}\n\
+         callback.displayName = 'callback';\n\
+         const first = factory(() => later);\n\
+         const second = factory(callback);\n\
+         {second_write}\
+         const wrapped = api.make(first, () => other);\n\
+         const later = 42;\nconst other = 7;\n\
+         console.log(wrapped.invoke(), wrapped.compare());\n"
+    );
+    let provider = format!(
+        "{identity_helper}\
+         function wrap(value) {{ return (...args) => value(...args); }}\n\
+         export function factory(callback) {{\n  {factory_body}\n}}\n\
+         export const api = {{ make(callback, compare) {{ return {{ invoke: callback, compare }}; }} }};\n"
+    );
+    let (staged, _fixture) = stage(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &binding_members(["callback", "first", "second", "wrapped"]),
+                    &writes,
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("other")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", &provider)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
+            .with_callback_factory_members("api", &["make"])
+            .with_namespace_independent_members("api", &["make"])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "named callback factory split rejected (conditional_identity_helper={conditional_identity_helper}, write_second_metadata={write_second_metadata}):\n{}",
+            invocation.result.stderr,
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 7\n",
+            "",
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}
+
+#[test]
+fn conditional_identity_helper_preserves_named_callback_factory_cut() {
+    assert_named_factory_cut(true, true);
+}
+
+#[test]
+fn conditional_identity_helper_without_second_metadata_write_keeps_cut_valid() {
+    assert_named_factory_cut(true, false);
+}
+
+#[test]
+fn always_fresh_named_callback_factory_keeps_metadata_cut_valid() {
+    assert_named_factory_cut(false, true);
+}
+
 fn assert_unsafe_cut(source: &str, provider: &str, members: &[&'static str], setup: &[&str]) {
     let (staged, _fixture) = stage(
         FixtureOpts::new(

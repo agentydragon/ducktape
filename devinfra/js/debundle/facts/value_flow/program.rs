@@ -566,6 +566,9 @@ impl Rekey<'_> {
             ReturnSummary::ArgumentProperty(property) => {
                 ReturnSummary::ArgumentProperty(self.property(property))
             }
+            ReturnSummary::ForwardChoices(helpers) => {
+                ReturnSummary::ForwardChoices(helpers.map(|helper| self.binding(helper)))
+            }
             other => other,
         }
     }
@@ -976,6 +979,7 @@ pub(crate) fn program_value_flows<'a>(
         };
         let mut flow = ChunkValueFlow {
             property_names_by_slot: Arc::new(program.symbols.properties.clone()),
+            binding_ids_by_slot: Arc::new(program.symbols.bindings.clone()),
             origin_table: program.origin_table,
             declared_ids: program.declared_ids,
             canonical: program.canonical,

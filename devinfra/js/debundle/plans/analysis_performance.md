@@ -32,6 +32,12 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
 
+Validate the finite source call-return extension: unchanged first-parameter
+identity leaves and a two-helper conditional forwarding relation, with both
+branches, ordinary effects and conservative helper fallback retained. Check
+captured/declaration/loop writes, dynamic scope, strict-module arguments semantics,
+coordinate rekeying and fresh/saved CLI behavior before attributing consumer improvement.
+
 1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
    default-wrapper returns creating unrelated call targets, JSX parameter
    reassignment contaminating ref fields, and dynamic member reads spreading
@@ -122,19 +128,19 @@ Remaining work:
    cap to reach and attribute a later phase. It cannot satisfy the 300-second
    completion requirement or substitute saved analysis for the fresh pipeline.
 
-2. Finish the remaining precision repair after static-property returns and
-   direct audited-factory root refinement. Trace the surviving producer, rather
-   than inferring it from the same final rejection. Immediate nested factory
-   calls need source-only namespace identity, declared factory contracts and
-   closed provider ownership before refining their direct roots. Check these
-   premises on the actual consumer and retain the neutral nested-factory CLI
-   regression, its no-write/always-fresh controls and unsafe alias refusals.
-   A separate named-callback route needs an unmutated ordinary graph proof;
-   binding immutability alone does not justify it. Preserve unknown-property
-   and true-alias refusals, ordinary getter/write effects and fresh/saved parity.
-   Run the fresh private normal gate after each scoped repair. Historical
-   comparisons and source witnesses belong in performance reports or the
-   private repository, not as a completion history in this active plan.
+2. Validate the remaining precision repair after static-property returns and
+   direct audited-factory root refinement. Trace the surviving producer rather
+   than infer it from the same final rejection. The immediate nested-factory
+   refinement is landed; retain its source-only namespace/closed-provider proofs,
+   neutral CLI controls and private normal-gate validation. For surviving named
+   inputs, validate finite argument/return correlation instead of broadening
+   fresh-only factory admission: preserve both conditional helper branches,
+   instantiate only proved leaf relations and keep ordinary Return/Top fallback
+   for all other helper targets. Check parameter writes, dynamic scope and
+   coordinate rekeying. Preserve unknown-property and true-alias refusals,
+   ordinary getter/write effects and fresh/saved parity. Historical comparisons
+   and private source witnesses belong in performance reports or the private
+   repository, not as a completion history in this active plan.
 3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.

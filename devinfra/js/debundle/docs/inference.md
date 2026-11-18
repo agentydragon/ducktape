@@ -1072,17 +1072,38 @@ rejecting; a successful corpus run alone is insufficient evidence for a rule.
 
 ### Bounded call-return relationships
 
-The source collector recognizes bounded normal-return relationships for
-synchronous functions and arrows with one plain identifier parameter: a single
-return of that parameter, a single static property read from that parameter,
-and the exact `value && value.__esModule &&
+The source collector recognizes bounded normal-return relationships through
+two kinds of proof. Immediate-expression bodies of synchronous functions and
+arrows with one plain identifier parameter admit a return of that parameter,
+a static property read from it, and the exact
+`value && value.__esModule &&
 Object.prototype.hasOwnProperty.call(value, "default") ? value.default : value`
-interop shape. Async/generator functions, parameter defaults/destructuring,
-extra statements and other bodies retain the ordinary pooled return relation.
-Recognition uses resolved parameter identity, not a library or binding name.
-The property-return form also admits a sequence prefix of zero-argument calls
-through identifier callees (excluding direct `eval`); those calls remain in
-the ordinary invocation/effect analysis.
+interop shape. The property-return form also admits a sequence prefix of
+zero-argument calls through identifier callees (excluding direct `eval`).
+Those calls remain in the ordinary invocation/effect analysis. Recognition
+uses resolved parameter identity, not a library or binding name.
+
+The source lowering pass also prepares finite normal-return candidates for
+ordinary synchronous functions with plain parameters. A candidate has one final owned
+return, whose sequence tail is either its unchanged first parameter or a
+conditional of two direct helper calls on that parameter. The same lowering
+walk checks canonical binding writes, including captured writes, declaration
+initializers and loop targets, and rejects dynamic scope. Sources parse as strict
+modules, so arguments writes do not alias parameters. Property writes and other call effects remain ordinary; this relation grants no
+purity, successful-return or native-integrity proof.
+
+At a forwarding call, both helper target sets are retained. Only leaf argument
+or argument-property relations are instantiated with this call's actual input;
+forwarding, recursive and unsupported helper targets use their ordinary global
+return facts, and unknown targets remain unknown. The query never recursively
+expands forwarding summaries. Global returns, formal transfers, containment and
+all effects are unchanged. Provider helper binding coordinates are rekeyed with
+the program, and local/completed queries use the same finite interpretation.
+
+Async/generator functions, parameter defaults/destructuring and other bodies
+retain the ordinary pooled return relation. Census-certified bodies may read
+captured cells and perform arbitrary prefix effects; their proof establishes
+that none of those operations can rebind the returned parameter cell.
 
 Each recognized function allocation has one constant-size certificate. A call
 with an actual first argument and no spreads instantiates its relationship with
@@ -1093,11 +1114,12 @@ missing properties, accessors and unsupported receivers. First-argument
 expressions are interned once per source call; nested calls reference the arena
 instead of copying nested argument trees into every expression consumer.
 
-The proof is a restricted substitution argument. The admitted body cannot rebind
-or expose its parameter cell. On normal completion it returns that call's actual
-argument, the result of reading a named property from that argument, or the
-result of reading its `default` property. Property projections use the ordinary
-property transfer, retaining its known producer values and its unknown result
+The proof is a restricted substitution argument. Immediate-expression bodies
+cannot expose their parameter cell; census-certified bodies may capture it but
+have no canonical rebinding or dynamic scope. On normal completion a leaf
+returns that call's actual argument, the result of reading a named property
+from that argument, or the result of reading its `default` property. Property
+projections use the ordinary property transfer, retaining its known producer values and its unknown result
 for missing or unsupported properties. A static property name is only a
 value-origin relation: it does not establish that the property is an own data
 field or that a getter is harmless. The guard can select either interop branch,
