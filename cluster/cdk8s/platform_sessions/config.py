@@ -6,6 +6,10 @@ from typing import NotRequired, TypedDict
 # session renewal and rotation. Captures include credentials and private data.
 RECORD_UPSTREAM_TRAFFIC = True
 
+# Switch only the comparison instance between direct browser traffic and the
+# existing mitmproxy recorder. Keep the production MyQuest setting above.
+MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC = False
+
 
 class BearerConfig(TypedDict):
     role: str
@@ -60,6 +64,12 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
             "poll_interval_seconds": 300,
         },
         {"id": "myquest", "type": "myquest", "state_dir": "/data/session/myquest", "poll_interval_seconds": 300},
+        {
+            "id": "myquest-canary",
+            "type": "myquest",
+            "state_dir": "/data/session/myquest-canary",
+            "poll_interval_seconds": 300,
+        },
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }

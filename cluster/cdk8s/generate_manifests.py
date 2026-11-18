@@ -1833,7 +1833,7 @@ def generate_manifests(root: Path) -> None:
             platform_sessions_remote_artifact,
             platform_sessions_remote.chart,
             components=[posixpath.relpath(platform_sessions_remote.PINS_DIR, platform_sessions_remote.OUTPUT_DIR)],
-            config_map_generator=[platform_sessions_remote.CONFIG],
+            config_map_generator=[platform_sessions_remote.CONFIG, platform_sessions_remote.CANARY_CONFIG],
         ),
         platform_sessions_kustomization,
         cert_manager_environment_kustomization,
