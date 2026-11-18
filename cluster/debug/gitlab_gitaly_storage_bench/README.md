@@ -1,6 +1,6 @@
 # GitLab + Gitaly storage bench
 
-Companion to <../git_storage_latency_and_ha.md>. That trial showed the
+Companion to <../git_storage_latency/README.md>. That trial showed the
 Forgejo git-write penalty is a **shared-RWX** problem: multiple Forgejo replicas mount
 one git PVC `RWX`, and that shared mount tanks git push (badly on SeaweedFS, and even on
 CephFS via MDS cap coordination). GitLab's architecture avoids the shared mount — stateless
@@ -8,7 +8,7 @@ webservice replicas proxy to a single **Gitaly** that owns the repos on one `RWO
 harness benches whether that single-writer design keeps git push fast on network-backed
 storage across `{rook, seaweedfs} x {hdd, ssd}`.
 
-Same four operations and sample counts as the Forgejo bench (`../git_storage_latency_and_ha.md`):
+Same four operations and sample counts as the Forgejo bench (`../git_storage_latency/README.md`):
 20x API `version`, 20x contents read, 20x contents write, 20 tiny git pushes over HTTP.
 
 ## Design
@@ -63,7 +63,7 @@ kubectl -n gitlab-bench logs -l app.kubernetes.io/name=gitlab-storage-bench --ta
 Repeat steps 1–5 per cell. `rook-ssd` reuses the live trial Ceph cluster
 (`rook-cephfs-trial-ssd`). `rook-hdd` needs a **sequential rebuild** of the trial Ceph
 cluster onto the HDD hosts, because a single CephCluster can't mix `dataDirHostPath` roots
-per node (see <../git_storage_latency_and_ha.md>).
+per node (see <../git_storage_latency/README.md>).
 
 ### Rook HDD arm rebuild
 
