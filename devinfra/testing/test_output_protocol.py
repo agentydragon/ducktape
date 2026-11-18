@@ -46,6 +46,23 @@ def test_record_accepts_protocol_paths_without_writer_naming_conventions() -> No
     assert record.path == "files/non-python-producer/trace.tar.gz"
 
 
+@pytest.mark.parametrize(
+    ("field", "value"), [("case_id", ""), ("role", ""), ("checkpoint", ""), ("label", " \t"), ("title", " \t")]
+)
+def test_record_rejects_empty_identity_and_blank_display_text(field: str, value: str) -> None:
+    record = {
+        "schema": "ducktape.test-output.v1",
+        "case_id": "example",
+        "checkpoint": None,
+        "role": "diagnostics",
+        "path": "files/trace.json",
+    }
+    record[field] = value
+    with pytest.raises(ValidationError) as exc:
+        OutputRecord.model_validate(record)
+    assert exc.value.errors()[0]["loc"] == (field,)
+
+
 def test_record_requires_the_protocol_schema_version() -> None:
     with pytest.raises(ValidationError):
         OutputRecord.model_validate(
