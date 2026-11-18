@@ -329,6 +329,7 @@ py_test(
         ":private_equity_fit",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -345,6 +346,7 @@ py_test(
         ":private_equity_fit",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -381,6 +383,7 @@ py_library(
     srcs = ["bayes_dilution.py"],
     deps = [
         ":private_equity_fit",
+        "//finance/augur:dates",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -392,6 +395,7 @@ py_library(
     srcs = ["bayes_mint_streams.py"],
     deps = [
         ":private_equity_fit",
+        "//finance/augur:dates",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
