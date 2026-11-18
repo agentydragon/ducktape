@@ -131,12 +131,11 @@ def test_background_websocket_is_blocked(
     page.route(origin + "/allowed", lambda route: route.continue_())
     page.goto(origin + "/allowed")
     page.evaluate(
-        "url => {globalThis.socketClosed = false; const socket = new WebSocket(url);"
-        "socket.onclose = () => {globalThis.socketClosed = true;};"
-        "socket.onerror = () => {globalThis.socketClosed = true;}; }",
+        "url => {globalThis.socketOpened = false; const socket = new WebSocket(url);"
+        "socket.onopen = () => {globalThis.socketOpened = true; socket.close();}; }",
         origin.replace("http://", "ws://") + "/socket",
     )
-    page.wait_for_function("globalThis.socketClosed", timeout=5000)
+    page.wait_for_function("globalThis.socketOpened", timeout=5000)
     assert hits == ["/allowed"]
 
 

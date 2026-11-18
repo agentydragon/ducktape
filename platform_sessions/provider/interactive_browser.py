@@ -326,8 +326,6 @@ class InteractiveBrowserRuntime:
             allowed = self._viewer_connected and self._viewer_network_allowed
         if allowed:
             route.connect_to_server()
-        else:
-            route.close()
 
     async def close(self) -> None:
         """Stop admitting browser work and disconnect the viewer before process teardown."""

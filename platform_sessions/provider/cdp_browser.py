@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import socket
 import subprocess
 import threading
@@ -93,6 +94,7 @@ class CdpBrowser:
             env={**os.environ, "DISPLAY": self._display},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             ready: Future[str] = Future()
@@ -142,7 +144,9 @@ class CdpBrowser:
             "throw new Error('Service Worker registration blocked'); };"
         )
         context.route("**/*", self._guard_request)
-        context.route_web_socket("**/*", lambda route: route.close())
+        # An unconnected route mocks the socket without contacting its upstream.
+        # Calling close() in the synchronous route callback wedges Playwright 1.62.
+        context.route_web_socket("**/*", lambda _: None)
 
     def _guard_request(self, route: Route) -> None:
         request = route.request
@@ -168,14 +172,26 @@ class CdpBrowser:
 
     def stop_process(self) -> None:
         """Also callable by teardown if the Playwright worker has wedged."""
-        if self._process is not None and self._process.poll() is None:
-            self._process.terminate()
+        if self._process is None:
+            return
+        # Chromium children can retain the pipe and profile after a browser crash.
+        # The process owns a new session so teardown can reap the entire group.
+        with suppress(ProcessLookupError):
+            os.killpg(self._process.pid, signal.SIGTERM)
+        if self._process.poll() is None:
             try:
                 self._process.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                self._process.kill()
+                with suppress(ProcessLookupError):
+                    os.killpg(self._process.pid, signal.SIGKILL)
                 self._process.wait(timeout=3)
         if self._stderr_thread is not None:
             self._stderr_thread.join(timeout=3)
-        if self._process is not None and self._process.stderr is not None:
+            if self._stderr_thread.is_alive():
+                with suppress(ProcessLookupError):
+                    os.killpg(self._process.pid, signal.SIGKILL)
+                self._stderr_thread.join(timeout=3)
+                if self._stderr_thread.is_alive():
+                    raise RuntimeError("Chromium stderr reader did not stop")
+        if self._process.stderr is not None:
             self._process.stderr.close()
