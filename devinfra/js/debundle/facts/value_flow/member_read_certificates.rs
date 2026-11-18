@@ -1,9 +1,9 @@
-//! Per-expression evidence for numeric computed reads through a counted loop.
+//! Per-expression evidence for counted-loop and guarded snapshot reads.
 //!
 //! This is a source-shape proof only. It does not assign a type to a binding,
 //! infer a loop bound, or make claims about purity or completion.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
@@ -14,14 +14,21 @@ use binding_targets::{
     record_update_target,
 };
 
+use super::guarded_member_reads::{GuardedSnapshotUse, guarded_snapshot_uses};
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct NumericLoopReads {
+pub(super) struct MemberReadCertificates {
     spans: BTreeSet<(u32, u32)>,
+    guarded: BTreeMap<(u32, u32), (Id, String)>,
 }
 
-impl NumericLoopReads {
+impl MemberReadCertificates {
     pub(super) fn contains(&self, span: Span) -> bool {
         self.spans.contains(&(span.lo.0, span.hi.0))
+    }
+
+    pub(super) fn guarded_projection(&self, span: Span) -> Option<&(Id, String)> {
+        self.guarded.get(&(span.lo.0, span.hi.0))
     }
 
     pub(super) fn collect(body: &[super::super::TopLevelItemView<'_>]) -> Self {
@@ -54,6 +61,7 @@ struct FunctionFacts {
     nested_dynamic_scope: bool,
     loops: Vec<CountedLoop>,
     member_reads: std::collections::HashMap<Id, Vec<Span>>,
+    guarded_uses: Vec<GuardedSnapshotUse>,
 }
 
 #[derive(Clone)]
@@ -115,8 +123,9 @@ impl FunctionCensus {
         }
     }
 
-    fn certificates(mut self) -> NumericLoopReads {
+    fn certificates(mut self) -> MemberReadCertificates {
         let mut spans = BTreeSet::new();
+        let mut guarded = BTreeMap::new();
         let mut owners: std::collections::HashMap<Id, BTreeSet<usize>> =
             std::collections::HashMap::new();
         for (function_index, function) in self.functions.iter().enumerate() {
@@ -169,6 +178,23 @@ impl FunctionCensus {
             {
                 continue;
             }
+            if function.certifiable_loops {
+                for use_ in &function.guarded_uses {
+                    if [&use_.receiver, &use_.key, &use_.snapshot]
+                        .into_iter()
+                        .all(|id| {
+                            function.declarations.contains_key(id)
+                                && !function.captured_bindings.contains(id)
+                                && !ambiguous.contains(id)
+                        })
+                    {
+                        guarded.insert(
+                            (use_.span.lo.0, use_.span.hi.0),
+                            (use_.receiver.clone(), use_.property.clone()),
+                        );
+                    }
+                }
+            }
             for loop_ in &function.loops {
                 let declarations = function.declarations.get(&loop_.binding);
                 if !function.certifiable_loops
@@ -202,7 +228,7 @@ impl FunctionCensus {
                 add_member_reads(reads, loop_.body, &mut spans);
             }
         }
-        NumericLoopReads { spans }
+        MemberReadCertificates { spans, guarded }
     }
 }
 
@@ -403,6 +429,9 @@ impl Visit for FunctionCensus {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let Some(function) = self.current_mut() {
+            function.guarded_uses.extend(guarded_snapshot_uses(node));
+        }
         let mut writes = WriteIds::default();
         if let ForHead::Pat(pattern) = &node.left {
             record_pat_write(pattern, &mut writes);
@@ -484,6 +513,59 @@ mod tests {
     use super::*;
     use crate::facts::top_level_item_views;
 
+    #[test]
+    fn guarded_snapshot_proof_is_per_use_and_per_region() {
+        let module = raw_js_test_support::parse(
+            r#"
+function choose(record) {
+  var key, value, result;
+  for (key in record)
+    if (record.hasOwnProperty(key) && ((value = record[key]), value != null))
+      switch (key) {
+        case "ignored": result = value; break;
+        case "payload": result = value; break;
+        default: result = value;
+      }
+  key = "elsewhere";
+  record = {};
+  value = null;
+  return result;
+}
+"#,
+        );
+        let certificates = MemberReadCertificates::collect(&top_level_item_views(&module.body));
+        let properties: BTreeSet<_> = certificates
+            .guarded
+            .values()
+            .map(|(_, property)| property.as_str())
+            .collect();
+        assert_eq!(properties, BTreeSet::from(["ignored", "payload"]));
+        assert_eq!(certificates.guarded.len(), 2);
+    }
+
+    #[test]
+    fn guarded_snapshot_proof_rejects_interference_and_fallthrough() {
+        let cases = [
+            // A getter can mutate captured locals before the switch.
+            r#"function f(record) { let value, result; let key; function capture() { key = 'payload'; } for (key in record) { value = record[key]; switch (key) { case 'payload': result = value; break; } } }"#,
+            r#"function f(record) { let value, result; for (const key in record) { value = record[key]; value = record.compare; switch (key) { case 'payload': result = value; break; } } }"#,
+            r#"function f(record) { let value, result; for (const key in record) { value = record[key]; switch (key) { case 'compare': result = value; case 'payload': result = value; break; } } }"#,
+            r#"function f(record) { let value, result; for (const key in record) { value = record[key]; switch (key) { case mutate(): break; case 'payload': result = value; break; } } }"#,
+            r#"function f(record) { let value, result; for (const key in record) { value = record[key]; switch (key) { case 'payload': mutate(); result = value; break; } } }"#,
+            r#"function f(record) { let value, result; for (const key in record) { value = record[key]; switch (key) { case 'payload': result = value; break; } } eval('record = other'); }"#,
+            r#"async function f(record) { let value, result; for (const key in record) { value = record[key]; switch (key) { case 'payload': result = value; break; } } }"#,
+            r#"function f(record) { let result; for (const key in record) { record = record[key]; switch (key) { case 'payload': result = record; break; } } }"#,
+        ];
+        for source in cases {
+            let module = raw_js_test_support::parse(source);
+            let certificates = MemberReadCertificates::collect(&top_level_item_views(&module.body));
+            assert!(
+                certificates.guarded.is_empty(),
+                "unsafe guarded read: {source}"
+            );
+        }
+    }
+
     #[derive(Default)]
     struct ComputedIdentifierReads(Vec<Span>);
 
@@ -497,10 +579,10 @@ mod tests {
         }
     }
 
-    fn certified_reads(source: &str) -> (NumericLoopReads, Vec<Span>) {
+    fn certified_reads(source: &str) -> (MemberReadCertificates, Vec<Span>) {
         let module = raw_js_test_support::parse(source);
         let body = top_level_item_views(&module.body);
-        let certificates = NumericLoopReads::collect(&body);
+        let certificates = MemberReadCertificates::collect(&body);
         let mut reads = ComputedIdentifierReads::default();
         module.visit_with(&mut reads);
         (certificates, reads.0)

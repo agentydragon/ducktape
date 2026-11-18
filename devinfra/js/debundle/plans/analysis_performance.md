@@ -32,12 +32,16 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
 
-Reduce the surviving retained-callback refusal to a neutral CLI regression.
-The selected-origin trace reaches the mutation receiver through a computed
-property snapshot followed by a literal-key switch. Preserve the key/value
-relationship at the guarded use; do not treat a smaller unrelated origin set as
-proof that this path is repaired. Keep raw traces and complete private-pipeline
-receipts in the private report.
+Validate the [guarded snapshot certificates](../docs/inference.md#guarded-snapshot-read-certificates)
+against the complete private passing-spec pipeline. The neutral regression in
+<../e2e/guarded_member_projection_test.rs> pins the previously rejected cut,
+direct callback-mutation refusal and a getter-backed unsafe cut. A selected-origin
+trace reaches the private mutation receiver through the same computed snapshot
+and literal-key switch shape. Verify the actual source use satisfies the local
+ownership/capture premises; do not treat a smaller unrelated origin set or a
+passing synthetic fixture as proof that every route is repaired. Preserve unknown
+property and getter effects through the ordinary conservative gate. Keep raw
+traces and complete private-pipeline receipts in the private report.
 
 1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
    default-wrapper returns creating unrelated call targets, JSX parameter
