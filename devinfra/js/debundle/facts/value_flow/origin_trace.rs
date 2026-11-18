@@ -779,6 +779,7 @@ impl OriginTrace {
         emit_limited_line(&line, output_bytes)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_edge(
         &self,
         event_index: usize,
@@ -806,6 +807,7 @@ impl OriginTrace {
         emit_limited_line(&line, output_bytes)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_sources(
         &self,
         event_index: usize,
@@ -892,6 +894,7 @@ impl OriginTrace {
         Some(values.finish())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn source_keys_for_expr(
         &self,
         expr: &FlowValueExpr,
@@ -1138,6 +1141,7 @@ impl OriginTrace {
         keys.dedup();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn property_sources(
         &self,
         actual: &FlowValueExpr,
