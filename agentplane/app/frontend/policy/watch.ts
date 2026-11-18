@@ -11,6 +11,7 @@ import {
   type PolicySet,
   type WatchPolicyBindingsRequest,
 } from "../../../policy/v1/policy_service_pb";
+import { WatchCollection, type CollectionFrame } from "../transport/watch_collection";
 import { followWatch } from "../transport/watch_stream";
 
 /** The two independently owned resource collections shown together by the policy UI. */
@@ -19,14 +20,6 @@ export type PolicyResources = { bindings: PolicyBinding[]; sets: PolicySet[] };
 /** Which bindings to watch: the generated request's selector, never its unset case. */
 export type BindingSelector = Exclude<WatchPolicyBindingsRequest["selector"], { case: undefined }>;
 
-/** One PolicyService watch frame, whatever kind of resource the collection holds. */
-type CollectionFrame<T> =
-  | { case: "snapshot"; items: T[] }
-  | { case: "snapshotComplete" }
-  | { case: "upsert"; item: T }
-  | { case: "removed"; removed: PolicyResourceIdentity }
-  | { case: undefined };
-
 /** A collection's state: its items once a snapshot completed and the stream is live, else null. */
 type CollectionState<T> = { items: T[] | null; error: string | null };
 
@@ -34,112 +27,35 @@ type CollectionState<T> = { items: T[] | null; error: string | null };
  * Follows one PolicyService resource watch: a snapshot committed on completion, then upserts and
  * UID-fenced removals. A reconnect discards the old snapshot until the new one completes.
  */
-function followCollection<T extends { identity?: PolicyResourceIdentity }>(
+function followCollection<T extends { identity?: PolicyResourceIdentity }, S>(
   url: string,
   kind: string,
-  decode: (json: JsonValue) => CollectionFrame<T>,
+  decode: (json: JsonValue) => CollectionFrame<T, S, PolicyResourceIdentity>,
+  snapshotItems: (chunk: S) => T[],
   onChange: (state: CollectionState<T>) => void
 ): () => void {
-  let items = new Map<string, T>();
-  let pending: Map<string, T> | null = new Map();
-  let ready = false;
-  let error: string | null = null;
-  const publish = (): void => onChange({ items: ready ? [...items.values()] : null, error });
+  const collection = new WatchCollection<T, PolicyResourceIdentity>(
+    kind,
+    (item) => item.identity,
+    (identity) => identity.name
+  );
   return followWatch(url, {
     onOpen: () => {
-      pending = new Map();
-      ready = false;
-      error = null;
-      publish();
+      collection.beginSnapshot();
+      onChange({ items: null, error: null });
     },
     onConnection: (connection) => {
       if (connection.phase !== "live") {
-        ready = false;
-        error = connection.phase === "reconnecting" ? (connection.lastError ?? `${kind} watch disconnected`) : null;
-        publish();
+        const error =
+          connection.phase === "reconnecting" ? (connection.lastError ?? `${kind} watch disconnected`) : null;
+        onChange({ items: null, error });
       }
     },
     onFrame: (json) => {
-      const frame = decode(json as JsonValue);
-      switch (frame.case) {
-        case "snapshot":
-          if (pending === null) throw new Error(`Unexpected ${kind} snapshot`);
-          for (const item of frame.items) {
-            if (!item.identity?.name || !item.identity.uid) throw new Error(`${kind} missing identity`);
-            pending.set(item.identity.name, item);
-          }
-          break;
-        case "snapshotComplete":
-          if (pending === null) throw new Error(`Unexpected ${kind} snapshot completion`);
-          items = pending;
-          pending = null;
-          ready = true;
-          publish();
-          break;
-        case "upsert":
-          if (pending !== null || !frame.item.identity?.name || !frame.item.identity.uid)
-            throw new Error(`Invalid ${kind} upsert`);
-          items.set(frame.item.identity.name, frame.item);
-          publish();
-          break;
-        case "removed":
-          if (pending !== null) throw new Error(`${kind} removal before snapshot completion`);
-          if (items.get(frame.removed.name)?.identity?.uid === frame.removed.uid) items.delete(frame.removed.name);
-          publish();
-          break;
-        default:
-          throw new Error(`Empty ${kind} watch frame`);
-      }
+      const items = collection.apply(decode(json), snapshotItems);
+      if (items !== null) onChange({ items, error: null });
     },
   });
-}
-
-function bindingFrame(json: JsonValue): CollectionFrame<PolicyBinding> {
-  const frame = fromJson(WatchPolicyBindingsResponseSchema, json).frame;
-  switch (frame.case) {
-    case "snapshot":
-      return { case: "snapshot", items: frame.value.bindings };
-    case "snapshotComplete":
-      return { case: "snapshotComplete" };
-    case "upsert":
-      return { case: "upsert", item: frame.value };
-    case "removed":
-      return { case: "removed", removed: frame.value };
-    default:
-      return { case: undefined };
-  }
-}
-
-function setFrame(json: JsonValue): CollectionFrame<PolicySet> {
-  const frame = fromJson(WatchPolicySetsResponseSchema, json).frame;
-  switch (frame.case) {
-    case "snapshot":
-      return { case: "snapshot", items: frame.value.policySets };
-    case "snapshotComplete":
-      return { case: "snapshotComplete" };
-    case "upsert":
-      return { case: "upsert", item: frame.value };
-    case "removed":
-      return { case: "removed", removed: frame.value };
-    default:
-      return { case: undefined };
-  }
-}
-
-function identityFrame(json: JsonValue): CollectionFrame<Identity> {
-  const frame = fromJson(WatchIdentitiesResponseSchema, json).frame;
-  switch (frame.case) {
-    case "snapshot":
-      return { case: "snapshot", items: frame.value.identities };
-    case "snapshotComplete":
-      return { case: "snapshotComplete" };
-    case "upsert":
-      return { case: "upsert", item: frame.value };
-    case "removed":
-      return { case: "removed", removed: frame.value };
-    default:
-      return { case: undefined };
-  }
 }
 
 /** The binding watch's query parameters, as gRPC-Gateway reads the request's selector. */
@@ -185,16 +101,23 @@ export function usePolicyResources(
     const stopBindings = followCollection(
       `${BASE}/policy-bindings:watch?${query}`,
       "PolicyBinding",
-      bindingFrame,
+      (json) => fromJson(WatchPolicyBindingsResponseSchema, json).frame,
+      (chunk) => chunk.bindings,
       (next) => {
         bindings = next;
         publish();
       }
     );
-    const stopSets = followCollection(`${BASE}/policy-sets:watch`, "PolicySet", setFrame, (next) => {
-      sets = next;
-      publish();
-    });
+    const stopSets = followCollection(
+      `${BASE}/policy-sets:watch`,
+      "PolicySet",
+      (json) => fromJson(WatchPolicySetsResponseSchema, json).frame,
+      (chunk) => chunk.policySets,
+      (next) => {
+        sets = next;
+        publish();
+      }
+    );
     return () => {
       active = false;
       stopBindings();
@@ -209,9 +132,15 @@ export function useIdentities(): { identities: Identity[] | null; error: string 
   const [state, setState] = useState<CollectionState<Identity>>({ items: null, error: null });
   useEffect(() => {
     let active = true;
-    const stop = followCollection(`${BASE}/identities:watch`, "Identity", identityFrame, (next) => {
-      if (active) setState(next);
-    });
+    const stop = followCollection(
+      `${BASE}/identities:watch`,
+      "Identity",
+      (json) => fromJson(WatchIdentitiesResponseSchema, json).frame,
+      (chunk) => chunk.identities,
+      (next) => {
+        if (active) setState(next);
+      }
+    );
     return () => {
       active = false;
       stop();

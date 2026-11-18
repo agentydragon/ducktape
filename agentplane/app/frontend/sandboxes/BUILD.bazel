@@ -370,6 +370,7 @@ ts_library(
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:stream_status",
+        "//agentplane/app/frontend/transport:watch_collection",
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:identity_pb",
