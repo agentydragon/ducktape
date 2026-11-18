@@ -1,0 +1,2 @@
+$ python3 scaling/peak.py --limit-mb 12000 --timeout 900 -- lake env lean Lodash.lean   # decide +kernel, 670 statements
+61.7 s, peak 12036 MB, killed: memory

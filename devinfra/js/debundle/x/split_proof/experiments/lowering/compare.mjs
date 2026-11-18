@@ -1,0 +1,194 @@
+// Run the Lean footprint analysis on dumped bundles and compare with eslint-scope (and extract.mjs).
+//
+//   node compare.mjs <bundle.json>... [--example]
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { footprints } from "../../extract/extract.mjs";
+
+const LOWER = process.env.LOWER ?? new URL("../../lean/.lake/build/bin/lower", import.meta.url).pathname;
+const files = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const set = (a) => new Set(a);
+const missing = (need, have) => [...need].filter((x) => !have.has(x));
+
+const shape = (s) => {
+  if (s.type === "VariableDeclaration")
+    return `${s.kind} ${[...new Set(s.declarations.map((d) => d.init?.type ?? "none"))].join("|")}`;
+  if (s.type === "ExpressionStatement") {
+    const e = s.expression;
+    if (e.type === "AssignmentExpression") return `assign ${e.left.type}=${e.right.type}`;
+    if (e.type === "CallExpression") return `call ${e.callee.type}`;
+    return e.type;
+  }
+  return s.type;
+};
+
+function closureSizes(fps) {
+  const owners = new Map();
+  fps.forEach((f, i) => f.defs.forEach((d) => owners.set(d, [...(owners.get(d) ?? []), i])));
+  return fps.map((f) => {
+    if (f.hoisted) return 0;
+    const seen = new Set(f.eager),
+      queue = [...f.eager];
+    while (queue.length) {
+      const u = queue.pop();
+      for (const j of owners.get(u) ?? [])
+        for (const w of [...fps[j].eager, ...fps[j].lazy])
+          if (!seen.has(w)) {
+            seen.add(w);
+            queue.push(w);
+          }
+    }
+    return seen.size;
+  });
+}
+
+const median = (a) => {
+  const s = [...a].sort((x, y) => x - y);
+  return s.length ? s[s.length >> 1] : 0;
+};
+
+const rows = [];
+for (const file of files) {
+  const dump = JSON.parse(readFileSync(file, "utf8"));
+  const t0 = performance.now();
+  const out = execFileSync(LOWER, [file], { maxBuffer: 1 << 30, encoding: "utf8" });
+  const ms = performance.now() - t0;
+  const fps = out
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const n = fps.length;
+  let unsound = 0,
+    unsoundEager = 0,
+    exact = 0,
+    extraNames = 0,
+    withFallback = 0,
+    assigns = 0;
+  const examples = [];
+  const fallbackTypes = new Map();
+  const effShapes = new Map();
+  dump.statements.forEach((s, i) => {
+    const f = fps[i];
+    const lean = set([...f.rawEager, ...f.rawLazy]);
+    const free = set(s.oracle.free);
+    const miss = missing(free, lean);
+    if (miss.length) {
+      unsound++;
+      if (examples.length < 3)
+        examples.push(`stmt ${i} (${s.ast.type}): lean misses ${miss.slice(0, 4)} :: ${s.src.slice(0, 60)}`);
+    }
+    const missE = missing(set(s.oracle.eager), set(f.rawEager)).filter((x) => !s.oracle.ambiguous.includes(x));
+    if (missE.length) {
+      unsoundEager++;
+      if (examples.length < 3)
+        examples.push(`stmt ${i}: lean calls eager ${missE.slice(0, 4)} lazy :: ${s.src.slice(0, 60)}`);
+    }
+    const extra = missing(lean, free);
+    if (!miss.length && !extra.length) exact++;
+    extraNames += extra.length;
+    if (f.fallback.length) {
+      withFallback++;
+      f.fallback.forEach((t) => fallbackTypes.set(t, (fallbackTypes.get(t) ?? 0) + 1));
+    }
+    if (f.assigned.length) assigns++;
+    if (f.effect) effShapes.set(shape(s.ast), (effShapes.get(shape(s.ast)) ?? 0) + 1);
+  });
+  const eff = fps.filter((f) => f.effect).length;
+  const hoisted = fps.filter((f) => f.hoisted).length;
+  const cl = closureSizes(fps);
+  rows.push({
+    name: basename(file, ".json"),
+    n,
+    eff,
+    inert: n - eff,
+    hoisted,
+    unsound,
+    unsoundEager,
+    exactPct: ((100 * exact) / n).toFixed(1),
+    extraNames,
+    withFallback,
+    assigns,
+    ms: ms.toFixed(0),
+    medClosure: median(cl),
+    maxClosure: Math.max(...cl),
+  });
+  console.log(
+    `\n${basename(file)}: top effect shapes: ${[...effShapes]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([k, v]) => `${v} ${k}`)
+      .join(" ; ")}`
+  );
+  if (fallbackTypes.size)
+    console.log(`  fallback node types: ${[...fallbackTypes].map(([k, v]) => `${k}×${v}`).join(", ")}`);
+  examples.forEach((e) => console.log("  !!", e));
+}
+console.table(
+  rows.map(
+    ({
+      name,
+      n,
+      inert,
+      eff,
+      hoisted,
+      unsound,
+      unsoundEager,
+      exactPct,
+      withFallback,
+      assigns,
+      ms,
+      medClosure,
+      maxClosure,
+    }) => ({
+      bundle: name,
+      stmts: n,
+      inert,
+      effect: eff,
+      hoistedFn: hoisted,
+      "unsound(free)": unsound,
+      "unsound(eager)": unsoundEager,
+      "exact%": exactPct,
+      "w/ fallback": withFallback,
+      "assigns top-level": assigns,
+      "lean ms": ms,
+      "closure med": medClosure,
+      "closure max": maxClosure,
+    })
+  )
+);
+
+if (process.argv.includes("--example")) {
+  const dump = JSON.parse(readFileSync(files[0], "utf8"));
+  const mine = footprints(dump.statements.map((s) => s.src).join("\n"));
+  const fps = execFileSync(LOWER, [files[0]], { encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  let diffs = 0;
+  mine.forEach((m, i) => {
+    const f = fps[i];
+    const same = (a, b) => JSON.stringify([...new Set(a)].sort()) === JSON.stringify([...new Set(b)].sort());
+    if (!(
+      same(m.defs, f.defs) &&
+      same(m.eager, f.eager) &&
+      same(m.lazy, f.lazy) &&
+      m.hoisted === f.hoisted &&
+      m.effect === f.effect
+    )) {
+      diffs++;
+      console.log(
+        "DIFF",
+        i,
+        m.src,
+        "\n  js  :",
+        JSON.stringify({ ...m, src: undefined }),
+        "\n  lean:",
+        JSON.stringify(f)
+      );
+    }
+  });
+  console.log(
+    `\nextract.mjs vs Lean on the example: ${mine.length - diffs}/${mine.length} statements identical footprints`
+  );
+}

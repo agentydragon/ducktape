@@ -1,0 +1,6 @@
+CAUGHT                 drop effect-effect conflict          {'rejected': 203, 'rejected_and_broken': 195, 'valid': 163, 'rejected_but_harmless': 8, 'UNSOUND': 18}
+CAUGHT                 drop read-after-declare conflict     {'rejected': 149, 'rejected_and_broken': 126, 'valid': 217, 'UNSOUND': 87, 'rejected_but_harmless': 23}
+SURVIVED               drop declare-after-read conflict     {'rejected': 243, 'rejected_and_broken': 213, 'valid': 123, 'rejected_but_harmless': 30}
+CAUGHT by a proof      no transitive reads                  build fails: error: EsmSplit/Bundle.lean:223:62: unsolved goals
+CAUGHT                 imports run in reverse order         {'rejected': 246, 'rejected_and_broken': 209, 'valid': 120, 'rejected_but_harmless': 37, 'UNSOUND': 4}
+SURVIVED               cycle cut after the module runs      {'rejected': 331, 'rejected_and_broken': 213, 'rejected_but_harmless': 118, 'valid': 35}
