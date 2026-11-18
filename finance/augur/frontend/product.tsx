@@ -8,6 +8,7 @@ import {
   fetchProductRollout,
   type fetchAugurDeployment,
 } from "./client";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
 import { toastFetchError } from "./lib/toast";
@@ -80,17 +81,6 @@ type ProjectionSnapshot = {
   metricFan: ProjectionSummaryResponse["metric_fan"];
   terminalDistribution: ProjectionSummaryResponse["terminal_distribution"];
 };
-
-function errorMessage(error: unknown): string {
-  if (typeof error === "object" && error !== null && "message" in error && error.message) {
-    return String(error.message);
-  }
-  return String(error);
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
-}
 
 function metricOption(value: string): MetricOption {
   const option = METRIC_OPTIONS.find((candidate) => candidate.value === value);
