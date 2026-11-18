@@ -47,6 +47,26 @@ templates without starting a service. It is not an extra deployment step or sepa
   binary or an explicitly reviewed forward repair/restore procedure; do not claim a comment-only
   `Down` block reverses retained state.
 
+### Sampler and History audit rewrite
+
+On existing databases, [Sampler baseline 15](../../sampler/migrations/schema/0015_baseline.sql)
+requires completed audit rewrite 14, and
+[History baseline 18](../../history_service/internal/migrations/history/00018_baseline.sql)
+requires completed audit rewrite 17. For an older predecessor, run the previous image's
+rewrite with writers stopped before adopting the baseline. The baselines validate and adopt the
+rewritten schema without scanning legacy audit JSON. They also support empty databases and preserve
+the deployed Goose history tables and advisory-lock identities.
+
+### Writer cutovers under Flux
+
+For maintenance that requires a temporary writer hold, Flux can restore the Deployment's declared
+settings. Annotate the owning Kustomization with `kustomize.toolkit.fluxcd.io/reconcile: disabled`
+to keep its parent from overwriting the hold, then suspend that Kustomization before pausing or
+scaling down the writers. Restore the writer settings, suspension state and original annotation
+after maintenance. See [Flux suspension and resource reconciliation](https://fluxcd.io/flux/components/kustomize/kustomizations/#suspending-and-resuming).
+
+## Other migration lifecycles
+
 MCP edge's cross-database Connection/OAuth transfer is a separate ownership handoff with explicit
 source/destination writer fencing. It is not ordinary schema initialization. Runner's per-path
 SQLite journal applies its SQLite Goose migrations when opened, before journal recovery; it

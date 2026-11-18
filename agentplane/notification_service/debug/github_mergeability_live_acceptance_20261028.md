@@ -1,10 +1,23 @@
-# GitHub mergeability freshness live acceptance — 2026-10-28
+# GitHub mergeability freshness live acceptance — October 27–28, 2026
 
-Follow-up to the [2026-10-27 exercise](../../debug/github_mergeability_live_acceptance_20261027.md)
-after [PR #12343](https://github.com/agentydragon/ducktape/pull/12343), merged as
+## October 27 baseline
+
+The base-only push webhook arrived and triggered a successful refresh that accepted GitHub's stale
+definite `MERGEABLE` result without scheduling an early retry. A diagnostic REST read returned
+`mergeable: false` / `dirty` about three minutes after the push. The service emitted one conflict notice on its
+ordinary refresh 600.854 seconds after webhook receipt, with no intervening PR change or forced
+refresh. Both REST and GraphQL PR base fields still reported the old base SHA, while the branch ref
+and GraphQL `baseRef.target.oid` showed the new tip. The conflict notice carried the old base SHA.
+
+An advanced head that stayed conflicting produced no duplicate transition. A late subscriber got
+one independent snapshot with the new head and the old base SHA. The resolution notice carried
+current refs and matched both subscriptions. The first notice woke the dormant harness, which
+confirmed all three notices and completed their model turns. [October 27 fixture, controls and cleanup](https://github.com/agentydragon/ducktape/blob/7477a95239eb49a5587462c99b51b7a51c6b1edd/agentplane/debug/github_mergeability_live_acceptance_20261027.md).
+
+## October 28 environment and fixture
+
+This follow-up ran after [PR #12343](https://github.com/agentydragon/ducktape/pull/12343), merged as
 `29962b7eb37d82e63f326b19451112bc79e24564`.
-
-## Environment and fixture
 
 Both staging notification replicas run `devel-20261028005206-29962b7`, are ready with no
 restarts, and completed their migration init containers with exit 0. Deployment generation and
