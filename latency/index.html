@@ -64,7 +64,11 @@
         Title,
       } from "@mantine/core";
       import { BarChart, LineChart } from "@mantine/charts";
-      import { html, mount, ManifestStamp } from "../report.js";
+      import {
+        html,
+        mount,
+        ManifestStamp,
+      } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch("./evidence.json");
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const e = await response.json(),
@@ -1391,12 +1395,15 @@
         const q = backendGraph;
         if (!q) return null;
         const executed = q.arms.filter(
-          (arm) => arm.state !== "not-run" && arm.feedback_seconds != null,
+          (arm) =>
+            arm.state !== "not-run" &&
+            arm.feedback_seconds != null &&
+            !arm.feedback_censored,
         );
         const caseSummary = (counts) =>
           counts == null
             ? "Unknown"
-            : `Passed ${counts.passed}; failed ${counts.failed}; errors ${counts.errors}; skipped ${counts.skipped}`;
+            : `Passed ${counts.passed}; failed ${counts.failed}; errors ${counts.errors}; skipped ${counts.skipped}${counts.unknown ? `; unobserved ${counts.unknown}` : ""}`;
         const duration = (seconds) =>
           seconds == null ? "Unobserved" : `${fmt(seconds)} (${num(seconds)}s)`;
         const rows = q.arms.map(
@@ -1408,11 +1415,15 @@
                   color=${arm.state === "passed" ? "green" : arm.state === "failed" ? "red" : "gray"}
                   variant="light"
                   >${arm.state}<//
-                ><//
+                >${arm.status_note ? html`<${Text} size="xs" c="dimmed">${arm.status_note}<//>` : null}<//
               >
               <${Table.Td}>${duration(arm.feedback_seconds)}<//>
-              <${Table.Td}>${arm.test_targets ?? "Unknown"}<//>
-              <${Table.Td}>${arm.test_actions ?? "Unknown"}<//>
+              <${Table.Td} style=${{ whiteSpace: "nowrap" }}
+                >${arm.test_targets ?? "Unknown"}<//
+              >
+              <${Table.Td} style=${{ whiteSpace: "nowrap" }}
+                >${arm.test_actions ?? "Unknown"}<//
+              >
               <${Table.Td}>${caseSummary(arm.case_counts)}<//>
               <${Table.Td}>${duration(arm.firecracker_setup_seconds)}<//>
               <${Table.Td}>${arm.firecracker_reuse || "Unknown"}<//>
@@ -1435,19 +1446,25 @@
             ${`Observation window (UTC): ${q.observation_window_utc.join(" → ")}`}
           <//>
           <${Group} gap="md" my="sm">
-            <${Text}> ${"Source: "}<${Code}>${q.source_commit}<//> <//>
+            <${Text}>
+              ${"Source: "}<${Code}
+                >${link(`${gh}/commit/${q.source_commit}`, q.source_commit)}<//
+              >
+            <//>
             ${link(q.source_pr_url, "Source PR")}
+            ${q.repair_pr_url ? link(q.repair_pr_url, "Readiness repair") : null}
             ${link(q.reference_invocation_url, "Reference invocation")}
           <//>
+          ${q.source_note ? html`<${Text} size="sm" my="sm">${q.source_note}<//>` : null}
           <${Text} size="sm" c="dimmed" my="sm">
-            The bars show observed feedback duration for executed arms with a
-            measured value. Failed-arm durations remain visible and are labeled
-            by outcome in the table; they are not successful latency results.
+            The bars show observed command completion durations. Arms stopped by
+            operator cancellation appear only in the table. Failed-arm durations
+            do not establish successful latency.
           <//>
           <${Box}
             data-chart="backend-graph-feedback"
             role=${executed.length ? "img" : "status"}
-            aria-label=${`Observed feedback duration in seconds for executed arms, including failed outcomes: ${executed.map((arm) => `${arm.name} ${arm.state}`).join(", ") || "no measured executed arms"}`}
+            aria-label=${`Observed feedback duration in seconds for arms without operator cancellation, including failed outcomes: ${executed.map((arm) => `${arm.name} ${arm.state}`).join(", ") || "no measured executed arms"}`}
             my="lg"
           >
             ${
@@ -1500,6 +1517,7 @@
               <${Accordion.Panel}>
                 <${Stack} gap="sm">
                   <${Title} order=${3}>Findings<//>
+                  ${q.failure_analysis?.curated_log ? link(q.failure_analysis.curated_log, "Managed executor panic excerpt") : null}
                   ${q.findings.map((finding) => html`<${Text}>${finding}<//>`)}
                   <${Title} order=${3}>Recommendations<//>
                   ${q.recommendations.map((recommendation) => html`<${Text}>${recommendation}<//>`)}

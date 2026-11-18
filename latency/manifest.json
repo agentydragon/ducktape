@@ -1,18 +1,18 @@
 {
-  "source_devel_commit": "5a0ccc77e106bf22ae018d4f6e18843ef93439e9",
-  "window_start_utc": "2026-11-18T04:44:45.863727+00:00",
-  "window_end_utc": "2026-11-18T05:03:39.793883+00:00",
+  "source_devel_commit": "984f833dc6c1ae973826e84e0c5e9fd6bace898f",
+  "window_start_utc": "2026-11-18T06:06:56.073924+00:00",
+  "window_end_utc": "2026-11-18T06:45:17.374332+00:00",
   "published_at_utc": null,
   "attribution": "Native stage clocks, nested fixture spans and local selected-batch feedback; no population critical-path or Shapley attribution",
-  "snapshot_prepared_at_utc": "2026-11-18T05:13:50.949714+00:00",
-  "audited_at_utc": "2026-11-18T05:13:50.949743+00:00",
+  "snapshot_prepared_at_utc": "2026-11-18T07:08:59.452832+00:00",
+  "audited_at_utc": "2026-11-18T07:08:59.452881+00:00",
   "publication_status": "Validated snapshot; Git history records the publication commit",
-  "previous_report_commit": "0d775929ab12d348c9e5864f05787081e2365509",
-  "history_base_gh_pages_commit": "0d775929ab12d348c9e5864f05787081e2365509",
-  "population": "Two complete 57-target / 75-action backend graph test exposures; 483 passes and 1 failure. Three later arms not run. A collection-only disposal attempt ran zero tests after worker removal; it is separate.",
-  "feedback_clock": "Local manual bb remote submission to completion; failed seed skipped build. No GitHub required-result/auto-merge clock.",
-  "report_sha256": "5f8be990bf9543779655e42a8b93f8b3b7a09bc98989d2f1c0b55f13f11b369e",
-  "evidence_sha256": "c17b36838991873fb6368603e07c56c4940fea01d4066361e4a95690c127571c",
+  "previous_report_commit": "b73d7c7b38588fbb9ce05567dc2a31a26cd91522",
+  "history_base_gh_pages_commit": "b73d7c7b38588fbb9ce05567dc2a31a26cd91522",
+  "population": "Three submitted graph arms; 224 exact JUnit joins / 724 observed passing verdicts. Interrupted repeat has two unobserved planned VM case verdicts and an extra failed provider attempt. Two later arms not run. Disposal is separate.",
+  "feedback_clock": "Local submission to command completion; interrupted repeat is censored by cancellation. No GitHub required-result or auto-merge clock.",
+  "report_sha256": "1a75341f33f9ca465036025e20aea5800ace515440333f3c5f0a3a65860aba6d",
+  "evidence_sha256": "2f7525bdeea93388e8abee31a3b25ef17ca97db60ef84bfc6975887c01af18ad",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "874ac282defa6b10d91ac2a4c577130f9afe44aff87eec89777507c31948ca98",
+  "evidence_index_sha256": "517d6304d27c0aa01342cf02155b654a6591ed2a057947fc18c02daf0bfab9c4",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -68,7 +68,7 @@
   ],
   "postfix_qualification_test_source": "6593034a7b491fa1651f455bc0f8e843ca34200e",
   "postfix_qualification_source_pr": 17371,
-  "source_note": "Current graph source is PR #17529 tested synthetic merge. Earlier populations retain their own source pins.",
+  "source_note": "Manual replay of PR #17529 with merged readiness repair #17553 applied identically to the frozen base, PR head and merge trees. Other files retain their original contents.",
   "postfix_qualification_source_merge": "daffbb842abfc625da909e4fc58dcba08390f195",
   "postfix_qualification_population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
   "postfix_qualification_passed": false,
@@ -312,9 +312,10 @@
     "2026-11-18T02:41:11.760623+00:00"
   ],
   "backend_graph_comparison_window_utc": [
-    "2026-11-18T04:44:45.863727+00:00",
-    "2026-11-18T05:03:39.793883+00:00"
+    "2026-11-18T06:06:56.073924+00:00",
+    "2026-11-18T06:45:17.374332+00:00"
   ],
-  "backend_graph_comparison_source": "5a0ccc77e106bf22ae018d4f6e18843ef93439e9",
-  "backend_graph_comparison_status": "Stopped after first candidate failed one History snapshot assertion; no warm repeats"
+  "backend_graph_comparison_source": "984f833dc6c1ae973826e84e0c5e9fd6bace898f",
+  "backend_graph_comparison_status": "Stopped on managed executor kernel panic and provider reschedule; one warm Firecracker repeat verified.",
+  "source_label": "replay"
 }

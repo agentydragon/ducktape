@@ -1,8 +1,8 @@
 {
-  "validated_at_utc": "2026-11-18T05:36:50.202168+00:00",
+  "validated_at_utc": "2026-11-18T07:32:57.765653+00:00",
   "validation_scope": "Exact-artifact RBE preview; canonical deployment and live rendering verified separately on publication PR.",
-  "invocation": "5b3feece-e657-496b-a76f-fa6e2349a7ec",
-  "invocation_url": "https://app.buildbuddy.io/invocation/5b3feece-e657-496b-a76f-fa6e2349a7ec",
+  "invocation": "844b88bf-f051-47e1-9bb2-033cd71c11ba",
+  "invocation_url": "https://app.buildbuddy.io/invocation/844b88bf-f051-47e1-9bb2-033cd71c11ba",
   "execution": "Uncached RBE Chromium with deterministic_browser_context and VisualPage.capture",
   "target": "//devinfra/ci/x/latency_preview:test_preview",
   "browser_cases": 4,
@@ -19,43 +19,38 @@
   "screenshots_byte_verified": 40,
   "screenshots_published": 24,
   "rendered_sha256": {
-    "latency/index.html": "5f8be990bf9543779655e42a8b93f8b3b7a09bc98989d2f1c0b55f13f11b369e",
-    "latency/evidence.json": "c17b36838991873fb6368603e07c56c4940fea01d4066361e4a95690c127571c",
-    "latency/evidence.md": "874ac282defa6b10d91ac2a4c577130f9afe44aff87eec89777507c31948ca98",
-    "index.html": "2fb14da481f043ecd312260d0089814d5cb27906ed00814553f643d5582c8f1a",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+    "latency/index.html": "1a75341f33f9ca465036025e20aea5800ace515440333f3c5f0a3a65860aba6d",
+    "latency/evidence.json": "2f7525bdeea93388e8abee31a3b25ef17ca97db60ef84bfc6975887c01af18ad",
+    "latency/evidence.md": "517d6304d27c0aa01342cf02155b654a6591ed2a057947fc18c02daf0bfab9c4",
+    "index.html": "acc478f0c025ddae6ea581ead1b9664fc8077a4218a7bf972de1c5dfd1fc9921",
+    "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "latency/managed-executor-panic.txt": "a5b36d1f9fcc1de6a43b3978a870d9e98efb760db72e77a7f71647a2cd6760bc"
   },
-  "harness_sha256": "2f37dcd91ff526b64a1504e5726166e89ecd0a7d85f711fba4e00f77d131e727",
+  "harness_sha256": "4119a015d2ddfa16344e9e1328cdeb46be3396db87fec58557a307cb41365791",
   "checks": [
     "Report and evidence match frozen SHA256 inputs",
-    "Five planned arm rows show two measured executions and three unrun arms; only two observed-feedback bars",
-    "Failed seed is labeled failed; values, source, links, case inventory and stop reason match evidence",
+    "Five planned arm rows show three submitted arms and two unrun arms; only two uncensored completion bars",
+    "Cancelled repeat is marked failed with two unobserved case verdicts; censored duration is retained only in the table; replay source and panic excerpt links verified",
     "Both new disclosures and historical charts/disclosures operate",
     "Cached older evidence and JavaScript-disabled fallback remain usable",
     "Desktop/mobile initial light/dark and live preference changes; real CDN assets and no document overflow",
     "Current root navigation summary and all selected screenshot bytes verified"
   ],
   "manual_review": {
-    "reviewed_at_utc": "2026-11-18T05:36:50.172271+00:00",
-    "invocation": "5b3feece-e657-496b-a76f-fa6e2349a7ec",
     "approved_for_publication": true,
-    "reviewed_screenshots": [
+    "reviewed_at_utc": "2026-11-18T07:32:57.292987+00:00",
+    "invocation": "844b88bf-f051-47e1-9bb2-033cd71c11ba",
+    "reviewed_images": [
       "desktop-light-backend-graph-section.png",
-      "mobile-light-backend-graph-section.png",
       "desktop-dark-backend-graph-section.png",
+      "mobile-light-backend-graph-section.png",
       "mobile-dark-backend-graph-section.png",
       "desktop-light-header.png",
       "mobile-dark-navigation.png",
-      "desktop-dark-natural-section.png",
-      "mobile-light-natural-batch-feedback.png"
+      "desktop-dark-natural-section.png"
     ],
-    "observations": [
-      "PASSED, FAILED and NOT-RUN badges are fully visible at both viewports and themes",
-      "Both observed bars render; failed seed and three unrun arms are clearly distinguished",
-      "Source and observation-window labels render with correct whitespace; evidence and methods disclosures remain present",
-      "Current header/navigation and preserved historical scheduling section/charts render clearly; wide tables scroll inside their containers"
-    ]
+    "findings": "Readable light and dark desktop/mobile rendering. Two completed-arm bars; cancelled repeat has explicit status note and two unobserved case verdicts. Unknown labels remain intact. Wide results table scrolls inside its container; source provenance wraps. Replay stamps and preserved historical section render correctly."
   },
   "selected_screenshots": [
     {
@@ -64,7 +59,7 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/d09d02f9fd2c28fdff7fa4064aeabbbdd4a9777585dcb46411f58eebe5cae680/10889",
       "sha256": "d09d02f9fd2c28fdff7fa4064aeabbbdd4a9777585dcb46411f58eebe5cae680",
       "bytes": 10889,
-      "file": "visuals/backend-desktop-light-natural-batch-feedback.png"
+      "file": "visuals/repaired-desktop-light-natural-batch-feedback.png"
     },
     {
       "case": "mobile-dark",
@@ -72,55 +67,55 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/3c3e742a861c994535109b5ed25f68f82180c2f61673c21a80e096134afd02c6/7932",
       "sha256": "3c3e742a861c994535109b5ed25f68f82180c2f61673c21a80e096134afd02c6",
       "bytes": 7932,
-      "file": "visuals/backend-mobile-dark-natural-batch-feedback.png"
+      "file": "visuals/repaired-mobile-dark-natural-batch-feedback.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/a1f0b5d5d610b23430c09d8b0f65a564f125c7bcaaea2f62b032719961d14aa2/8419",
-      "sha256": "a1f0b5d5d610b23430c09d8b0f65a564f125c7bcaaea2f62b032719961d14aa2",
-      "bytes": 8419,
-      "file": "visuals/backend-desktop-light-backend-graph-feedback.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d4f5be2b696df594778d53fa292df7d98e441560dc0036a3d81313f3fa2b00ec/8378",
+      "sha256": "d4f5be2b696df594778d53fa292df7d98e441560dc0036a3d81313f3fa2b00ec",
+      "bytes": 8378,
+      "file": "visuals/repaired-desktop-light-backend-graph-feedback.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4ade9e68b31a44cbf0c82f042f2c416d2c949bb1bdfb0270deff4fae201c0859/25114",
-      "sha256": "4ade9e68b31a44cbf0c82f042f2c416d2c949bb1bdfb0270deff4fae201c0859",
-      "bytes": 25114,
-      "file": "visuals/backend-desktop-light-navigation.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/65428c9075d205396bb330a97b53fd069b071a0b44a1195b21208bb0ec923b98/26067",
+      "sha256": "65428c9075d205396bb330a97b53fd069b071a0b44a1195b21208bb0ec923b98",
+      "bytes": 26067,
+      "file": "visuals/repaired-desktop-light-navigation.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e1f89021de7407fe503f8ed8c2a472d9f42d26cf900e3350896fce92a65dbb95/44188",
-      "sha256": "e1f89021de7407fe503f8ed8c2a472d9f42d26cf900e3350896fce92a65dbb95",
-      "bytes": 44188,
-      "file": "visuals/backend-desktop-dark-header.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f4a6d6dbbf6bf55a4e4547dec2c484e15f80305b6b003004e25fdb999f347e71/48134",
+      "sha256": "f4a6d6dbbf6bf55a4e4547dec2c484e15f80305b6b003004e25fdb999f347e71",
+      "bytes": 48134,
+      "file": "visuals/repaired-desktop-dark-header.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d88c4b758208d0170a2401f7ac8a37d496ce92515122c1b42ecca6f36c607d6a/6913",
-      "sha256": "d88c4b758208d0170a2401f7ac8a37d496ce92515122c1b42ecca6f36c607d6a",
-      "bytes": 6913,
-      "file": "visuals/backend-mobile-light-backend-graph-feedback.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/624b35bbe4c7c7931fdcb69832284de5c46a5d87f0157c3190d82c5ba72521ed/6899",
+      "sha256": "624b35bbe4c7c7931fdcb69832284de5c46a5d87f0157c3190d82c5ba72521ed",
+      "bytes": 6899,
+      "file": "visuals/repaired-mobile-light-backend-graph-feedback.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/46ce0c85e3d1aa2e6f4b49858bea0ed0b1ddd71a03b6a27af4e1b0e73527ad7e/86459",
-      "sha256": "46ce0c85e3d1aa2e6f4b49858bea0ed0b1ddd71a03b6a27af4e1b0e73527ad7e",
-      "bytes": 86459,
-      "file": "visuals/backend-mobile-dark-backend-graph-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/64e4766ca0366fb8e7dba3c17ca10d803b15f7e11bb9cdbff7336cdbace16412/102164",
+      "sha256": "64e4766ca0366fb8e7dba3c17ca10d803b15f7e11bb9cdbff7336cdbace16412",
+      "bytes": 102164,
+      "file": "visuals/repaired-mobile-dark-backend-graph-section.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/3a7de1ee23ef268d1cc8b7f1aaceb9d41d545920e75abb19d58835e522dd6813/310817",
-      "sha256": "3a7de1ee23ef268d1cc8b7f1aaceb9d41d545920e75abb19d58835e522dd6813",
-      "bytes": 310817,
-      "file": "visuals/backend-mobile-dark-natural-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b5c9a49b4904a83c9a882116f2ffdaac212f970f50c1a71da697c366091af724/310791",
+      "sha256": "b5c9a49b4904a83c9a882116f2ffdaac212f970f50c1a71da697c366091af724",
+      "bytes": 310791,
+      "file": "visuals/repaired-mobile-dark-natural-section.png"
     },
     {
       "case": "desktop-dark",
@@ -128,47 +123,47 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/cfc722f22998534699e74ede812225365cad1ed2c87796cbe1bc21030602e25f/9754",
       "sha256": "cfc722f22998534699e74ede812225365cad1ed2c87796cbe1bc21030602e25f",
       "bytes": 9754,
-      "file": "visuals/backend-desktop-dark-natural-batch-feedback.png"
+      "file": "visuals/repaired-desktop-dark-natural-batch-feedback.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f64d692e74c20cde854b4b7806da1cb220833c6edc688c8536c8e79a3cf7ca7e/6446",
-      "sha256": "f64d692e74c20cde854b4b7806da1cb220833c6edc688c8536c8e79a3cf7ca7e",
-      "bytes": 6446,
-      "file": "visuals/backend-mobile-dark-backend-graph-feedback.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4433ff93b06efd067934d1d5713b456a25a44558275ed19234cd72da90fe2385/6430",
+      "sha256": "4433ff93b06efd067934d1d5713b456a25a44558275ed19234cd72da90fe2385",
+      "bytes": 6430,
+      "file": "visuals/repaired-mobile-dark-backend-graph-feedback.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c4a82abfb046c5df01307ee832d94757f6b9b3cba44676febe0dc7adfaee6b50/49694",
-      "sha256": "c4a82abfb046c5df01307ee832d94757f6b9b3cba44676febe0dc7adfaee6b50",
-      "bytes": 49694,
-      "file": "visuals/backend-mobile-dark-header.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6e01ce074e74e45fe3ad26d851f673b37c31ad6d12a8abc5d60fd2e1658eec16/52880",
+      "sha256": "6e01ce074e74e45fe3ad26d851f673b37c31ad6d12a8abc5d60fd2e1658eec16",
+      "bytes": 52880,
+      "file": "visuals/repaired-mobile-dark-header.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4266eedae8bae9a2e6246aed9ab68b820ad81341886cc7e350e82fdc33e09c98/125312",
-      "sha256": "4266eedae8bae9a2e6246aed9ab68b820ad81341886cc7e350e82fdc33e09c98",
-      "bytes": 125312,
-      "file": "visuals/backend-desktop-dark-backend-graph-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ed826fd106ce80b131f25a902c82c186709357c3b189d5db98ae1db819ca84d5/140552",
+      "sha256": "ed826fd106ce80b131f25a902c82c186709357c3b189d5db98ae1db819ca84d5",
+      "bytes": 140552,
+      "file": "visuals/repaired-desktop-dark-backend-graph-section.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/dc0693d8a985485c27572d6bfb83965bf3d6e08e98831c7357b51c81d2508ac4/25876",
-      "sha256": "dc0693d8a985485c27572d6bfb83965bf3d6e08e98831c7357b51c81d2508ac4",
-      "bytes": 25876,
-      "file": "visuals/backend-mobile-light-navigation.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/551e5504c6bff87ff749d1618b8c287c8f54b00fd942fa20e52503dacccdbefb/26213",
+      "sha256": "551e5504c6bff87ff749d1618b8c287c8f54b00fd942fa20e52503dacccdbefb",
+      "bytes": 26213,
+      "file": "visuals/repaired-mobile-light-navigation.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b9452d48d3b960d3837827d74cab31964246b86164bfbb1f16148d81354f9c23/53511",
-      "sha256": "b9452d48d3b960d3837827d74cab31964246b86164bfbb1f16148d81354f9c23",
-      "bytes": 53511,
-      "file": "visuals/backend-mobile-light-header.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b1cb7e6c3b2e2297b455b4a4f41fa0b3c37fab821ea82ee3fd3c2b9cb451e5e0/56751",
+      "sha256": "b1cb7e6c3b2e2297b455b4a4f41fa0b3c37fab821ea82ee3fd3c2b9cb451e5e0",
+      "bytes": 56751,
+      "file": "visuals/repaired-mobile-light-header.png"
     },
     {
       "case": "mobile-light",
@@ -176,88 +171,88 @@
       "uri": "bytestream://remote.buildbuddy.io/blobs/46ccfc0cb15eb67376d39c81edc2e1e6407781925ca6d2c8ec20ae795cf34a06/9126",
       "sha256": "46ccfc0cb15eb67376d39c81edc2e1e6407781925ca6d2c8ec20ae795cf34a06",
       "bytes": 9126,
-      "file": "visuals/backend-mobile-light-natural-batch-feedback.png"
+      "file": "visuals/repaired-mobile-light-natural-batch-feedback.png"
     },
     {
       "case": "mobile-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/53d4e86351726f1094c2675bae3fd50ae0db651edca13a86620d7fd57e942bd3/26737",
-      "sha256": "53d4e86351726f1094c2675bae3fd50ae0db651edca13a86620d7fd57e942bd3",
-      "bytes": 26737,
-      "file": "visuals/backend-mobile-dark-navigation.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/696e9cee074b92ad0e26f980eaa2cd4d4c30e7a065d477e92517a77de2d45790/26929",
+      "sha256": "696e9cee074b92ad0e26f980eaa2cd4d4c30e7a065d477e92517a77de2d45790",
+      "bytes": 26929,
+      "file": "visuals/repaired-mobile-dark-navigation.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4510d605f5a3adbca87afe7722eeb6dcd1db35a9d54422f472a80cb883d87e4b/26178",
-      "sha256": "4510d605f5a3adbca87afe7722eeb6dcd1db35a9d54422f472a80cb883d87e4b",
-      "bytes": 26178,
-      "file": "visuals/backend-desktop-dark-navigation.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/38f2a2683aac9605e38e73372cc8cd1e6fe14407a1e4363caf170e945819d23f/27056",
+      "sha256": "38f2a2683aac9605e38e73372cc8cd1e6fe14407a1e4363caf170e945819d23f",
+      "bytes": 27056,
+      "file": "visuals/repaired-desktop-dark-navigation.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/04bf4088b9c73c78648505ec75ae56ae736b7e06a2bb4de303d68f834e8f27c0/48305",
-      "sha256": "04bf4088b9c73c78648505ec75ae56ae736b7e06a2bb4de303d68f834e8f27c0",
-      "bytes": 48305,
-      "file": "visuals/backend-desktop-light-header.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/53551a6cfa7b20017553b541fdb46d3100a6b2bf7a75dc93de5bd14d0136e97b/52047",
+      "sha256": "53551a6cfa7b20017553b541fdb46d3100a6b2bf7a75dc93de5bd14d0136e97b",
+      "bytes": 52047,
+      "file": "visuals/repaired-desktop-light-header.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/db71290abb81cd5711241a93541d16bf65c8210a9682d7f8041bc7469f3e9d64/7932",
-      "sha256": "db71290abb81cd5711241a93541d16bf65c8210a9682d7f8041bc7469f3e9d64",
-      "bytes": 7932,
-      "file": "visuals/backend-desktop-dark-backend-graph-feedback.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/75c5cebc383ba0a9858cba463b4642d1fb8d45716ca3b95f6f5a31b875d3f9df/7894",
+      "sha256": "75c5cebc383ba0a9858cba463b4642d1fb8d45716ca3b95f6f5a31b875d3f9df",
+      "bytes": 7894,
+      "file": "visuals/repaired-desktop-dark-backend-graph-feedback.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/6490a7f3b7da0232fe371a81b74805f1af33ffd00aace64f2c3091efd9d0fd35/89350",
-      "sha256": "6490a7f3b7da0232fe371a81b74805f1af33ffd00aace64f2c3091efd9d0fd35",
-      "bytes": 89350,
-      "file": "visuals/backend-mobile-light-backend-graph-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/619dbdd8bfc1b9c8804accb0843e97362ddd056661f5ea380ef37da2dd3eefd5/104109",
+      "sha256": "619dbdd8bfc1b9c8804accb0843e97362ddd056661f5ea380ef37da2dd3eefd5",
+      "bytes": 104109,
+      "file": "visuals/repaired-mobile-light-backend-graph-section.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f8de864bccae3abe1178fe003d02682ac07358c1dd8175ce63effe3c88d8205a/333487",
-      "sha256": "f8de864bccae3abe1178fe003d02682ac07358c1dd8175ce63effe3c88d8205a",
-      "bytes": 333487,
-      "file": "visuals/backend-desktop-light-natural-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d79f0a569f99754526c7f3553969da889d69604c9645a00a10e4dcc8c7b23457/333455",
+      "sha256": "d79f0a569f99754526c7f3553969da889d69604c9645a00a10e4dcc8c7b23457",
+      "bytes": 333455,
+      "file": "visuals/repaired-desktop-light-natural-section.png"
     },
     {
       "case": "mobile-light",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/bde840a93cf75a98679acc3594aff596d0063d78acba6c6ae5c51e28e56fbb14/315044",
-      "sha256": "bde840a93cf75a98679acc3594aff596d0063d78acba6c6ae5c51e28e56fbb14",
-      "bytes": 315044,
-      "file": "visuals/backend-mobile-light-natural-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2be9fef3d7808ced8752eb29c2dbf09dc45a4004ba76ba5e7488f0118b97f004/315013",
+      "sha256": "2be9fef3d7808ced8752eb29c2dbf09dc45a4004ba76ba5e7488f0118b97f004",
+      "bytes": 315013,
+      "file": "visuals/repaired-mobile-light-natural-section.png"
     },
     {
       "case": "desktop-dark",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e55a1691351ec0bc7de67e366e7490b583ed8673be846ea02c61d140b5374596/320166",
-      "sha256": "e55a1691351ec0bc7de67e366e7490b583ed8673be846ea02c61d140b5374596",
-      "bytes": 320166,
-      "file": "visuals/backend-desktop-dark-natural-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/3bdf84596cc88c84689393a42c1938f4feb04383bc5492b255efef396faa372e/320169",
+      "sha256": "3bdf84596cc88c84689393a42c1938f4feb04383bc5492b255efef396faa372e",
+      "bytes": 320169,
+      "file": "visuals/repaired-desktop-dark-natural-section.png"
     },
     {
       "case": "desktop-light",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/cb7039b4853062cc90f0b9724391a315865019c2ed879b9a9a8cca54db452351/130867",
-      "sha256": "cb7039b4853062cc90f0b9724391a315865019c2ed879b9a9a8cca54db452351",
-      "bytes": 130867,
-      "file": "visuals/backend-desktop-light-backend-graph-section.png"
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c164a5170ebfeff6763190d11d1559d6281fd1e0ead150c96db8a562f6787777/146838",
+      "sha256": "c164a5170ebfeff6763190d11d1559d6281fd1e0ead150c96db8a562f6787777",
+      "bytes": 146838,
+      "file": "visuals/repaired-desktop-light-backend-graph-section.png"
     }
   ],
   "byte_verified_screenshots": [
     {
       "case": "mobile-light",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/41a4a27ae50547c4086583694320d2479a511de23e1b88a21cfda770204244aa/356604",
-      "sha256": "41a4a27ae50547c4086583694320d2479a511de23e1b88a21cfda770204244aa",
-      "bytes": 356604
+      "uri": "bytestream://remote.buildbuddy.io/blobs/aca90f5a30814f1559000cb156ba4ae926473d4136ddc68c4a3bf422267a66b5/356847",
+      "sha256": "aca90f5a30814f1559000cb156ba4ae926473d4136ddc68c4a3bf422267a66b5",
+      "bytes": 356847
     },
     {
       "case": "desktop-light",
@@ -276,44 +271,44 @@
     {
       "case": "desktop-light",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/a1f0b5d5d610b23430c09d8b0f65a564f125c7bcaaea2f62b032719961d14aa2/8419",
-      "sha256": "a1f0b5d5d610b23430c09d8b0f65a564f125c7bcaaea2f62b032719961d14aa2",
-      "bytes": 8419
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d4f5be2b696df594778d53fa292df7d98e441560dc0036a3d81313f3fa2b00ec/8378",
+      "sha256": "d4f5be2b696df594778d53fa292df7d98e441560dc0036a3d81313f3fa2b00ec",
+      "bytes": 8378
     },
     {
       "case": "desktop-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4ade9e68b31a44cbf0c82f042f2c416d2c949bb1bdfb0270deff4fae201c0859/25114",
-      "sha256": "4ade9e68b31a44cbf0c82f042f2c416d2c949bb1bdfb0270deff4fae201c0859",
-      "bytes": 25114
+      "uri": "bytestream://remote.buildbuddy.io/blobs/65428c9075d205396bb330a97b53fd069b071a0b44a1195b21208bb0ec923b98/26067",
+      "sha256": "65428c9075d205396bb330a97b53fd069b071a0b44a1195b21208bb0ec923b98",
+      "bytes": 26067
     },
     {
       "case": "desktop-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e1f89021de7407fe503f8ed8c2a472d9f42d26cf900e3350896fce92a65dbb95/44188",
-      "sha256": "e1f89021de7407fe503f8ed8c2a472d9f42d26cf900e3350896fce92a65dbb95",
-      "bytes": 44188
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f4a6d6dbbf6bf55a4e4547dec2c484e15f80305b6b003004e25fdb999f347e71/48134",
+      "sha256": "f4a6d6dbbf6bf55a4e4547dec2c484e15f80305b6b003004e25fdb999f347e71",
+      "bytes": 48134
     },
     {
       "case": "mobile-light",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d88c4b758208d0170a2401f7ac8a37d496ce92515122c1b42ecca6f36c607d6a/6913",
-      "sha256": "d88c4b758208d0170a2401f7ac8a37d496ce92515122c1b42ecca6f36c607d6a",
-      "bytes": 6913
+      "uri": "bytestream://remote.buildbuddy.io/blobs/624b35bbe4c7c7931fdcb69832284de5c46a5d87f0157c3190d82c5ba72521ed/6899",
+      "sha256": "624b35bbe4c7c7931fdcb69832284de5c46a5d87f0157c3190d82c5ba72521ed",
+      "bytes": 6899
     },
     {
       "case": "mobile-dark",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/46ce0c85e3d1aa2e6f4b49858bea0ed0b1ddd71a03b6a27af4e1b0e73527ad7e/86459",
-      "sha256": "46ce0c85e3d1aa2e6f4b49858bea0ed0b1ddd71a03b6a27af4e1b0e73527ad7e",
-      "bytes": 86459
+      "uri": "bytestream://remote.buildbuddy.io/blobs/64e4766ca0366fb8e7dba3c17ca10d803b15f7e11bb9cdbff7336cdbace16412/102164",
+      "sha256": "64e4766ca0366fb8e7dba3c17ca10d803b15f7e11bb9cdbff7336cdbace16412",
+      "bytes": 102164
     },
     {
       "case": "mobile-dark",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/3a7de1ee23ef268d1cc8b7f1aaceb9d41d545920e75abb19d58835e522dd6813/310817",
-      "sha256": "3a7de1ee23ef268d1cc8b7f1aaceb9d41d545920e75abb19d58835e522dd6813",
-      "bytes": 310817
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b5c9a49b4904a83c9a882116f2ffdaac212f970f50c1a71da697c366091af724/310791",
+      "sha256": "b5c9a49b4904a83c9a882116f2ffdaac212f970f50c1a71da697c366091af724",
+      "bytes": 310791
     },
     {
       "case": "desktop-dark",
@@ -325,23 +320,23 @@
     {
       "case": "mobile-dark",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f64d692e74c20cde854b4b7806da1cb220833c6edc688c8536c8e79a3cf7ca7e/6446",
-      "sha256": "f64d692e74c20cde854b4b7806da1cb220833c6edc688c8536c8e79a3cf7ca7e",
-      "bytes": 6446
+      "uri": "bytestream://remote.buildbuddy.io/blobs/4433ff93b06efd067934d1d5713b456a25a44558275ed19234cd72da90fe2385/6430",
+      "sha256": "4433ff93b06efd067934d1d5713b456a25a44558275ed19234cd72da90fe2385",
+      "bytes": 6430
     },
     {
       "case": "mobile-dark",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/c4a82abfb046c5df01307ee832d94757f6b9b3cba44676febe0dc7adfaee6b50/49694",
-      "sha256": "c4a82abfb046c5df01307ee832d94757f6b9b3cba44676febe0dc7adfaee6b50",
-      "bytes": 49694
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6e01ce074e74e45fe3ad26d851f673b37c31ad6d12a8abc5d60fd2e1658eec16/52880",
+      "sha256": "6e01ce074e74e45fe3ad26d851f673b37c31ad6d12a8abc5d60fd2e1658eec16",
+      "bytes": 52880
     },
     {
       "case": "desktop-dark",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4266eedae8bae9a2e6246aed9ab68b820ad81341886cc7e350e82fdc33e09c98/125312",
-      "sha256": "4266eedae8bae9a2e6246aed9ab68b820ad81341886cc7e350e82fdc33e09c98",
-      "bytes": 125312
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ed826fd106ce80b131f25a902c82c186709357c3b189d5db98ae1db819ca84d5/140552",
+      "sha256": "ed826fd106ce80b131f25a902c82c186709357c3b189d5db98ae1db819ca84d5",
+      "bytes": 140552
     },
     {
       "case": "desktop-dark",
@@ -360,23 +355,23 @@
     {
       "case": "mobile-light",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/dc0693d8a985485c27572d6bfb83965bf3d6e08e98831c7357b51c81d2508ac4/25876",
-      "sha256": "dc0693d8a985485c27572d6bfb83965bf3d6e08e98831c7357b51c81d2508ac4",
-      "bytes": 25876
+      "uri": "bytestream://remote.buildbuddy.io/blobs/551e5504c6bff87ff749d1618b8c287c8f54b00fd942fa20e52503dacccdbefb/26213",
+      "sha256": "551e5504c6bff87ff749d1618b8c287c8f54b00fd942fa20e52503dacccdbefb",
+      "bytes": 26213
     },
     {
       "case": "desktop-dark",
       "checkpoint": "latest-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/d2fec20da7bb59abb819e921405b1dc1db04a2206a38d87bd36d4aa24a254969/398379",
-      "sha256": "d2fec20da7bb59abb819e921405b1dc1db04a2206a38d87bd36d4aa24a254969",
-      "bytes": 398379
+      "uri": "bytestream://remote.buildbuddy.io/blobs/53fced117d8f28286e7f11ed5f5b425da8c2b9055d8428637b8373eb71e9f633/398377",
+      "sha256": "53fced117d8f28286e7f11ed5f5b425da8c2b9055d8428637b8373eb71e9f633",
+      "bytes": 398377
     },
     {
       "case": "mobile-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/b9452d48d3b960d3837827d74cab31964246b86164bfbb1f16148d81354f9c23/53511",
-      "sha256": "b9452d48d3b960d3837827d74cab31964246b86164bfbb1f16148d81354f9c23",
-      "bytes": 53511
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b1cb7e6c3b2e2297b455b4a4f41fa0b3c37fab821ea82ee3fd3c2b9cb451e5e0/56751",
+      "sha256": "b1cb7e6c3b2e2297b455b4a4f41fa0b3c37fab821ea82ee3fd3c2b9cb451e5e0",
+      "bytes": 56751
     },
     {
       "case": "mobile-light",
@@ -388,16 +383,16 @@
     {
       "case": "mobile-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/53d4e86351726f1094c2675bae3fd50ae0db651edca13a86620d7fd57e942bd3/26737",
-      "sha256": "53d4e86351726f1094c2675bae3fd50ae0db651edca13a86620d7fd57e942bd3",
-      "bytes": 26737
+      "uri": "bytestream://remote.buildbuddy.io/blobs/696e9cee074b92ad0e26f980eaa2cd4d4c30e7a065d477e92517a77de2d45790/26929",
+      "sha256": "696e9cee074b92ad0e26f980eaa2cd4d4c30e7a065d477e92517a77de2d45790",
+      "bytes": 26929
     },
     {
       "case": "desktop-dark",
       "checkpoint": "navigation",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/4510d605f5a3adbca87afe7722eeb6dcd1db35a9d54422f472a80cb883d87e4b/26178",
-      "sha256": "4510d605f5a3adbca87afe7722eeb6dcd1db35a9d54422f472a80cb883d87e4b",
-      "bytes": 26178
+      "uri": "bytestream://remote.buildbuddy.io/blobs/38f2a2683aac9605e38e73372cc8cd1e6fe14407a1e4363caf170e945819d23f/27056",
+      "sha256": "38f2a2683aac9605e38e73372cc8cd1e6fe14407a1e4363caf170e945819d23f",
+      "bytes": 27056
     },
     {
       "case": "mobile-dark",
@@ -409,9 +404,9 @@
     {
       "case": "desktop-light",
       "checkpoint": "header",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/04bf4088b9c73c78648505ec75ae56ae736b7e06a2bb4de303d68f834e8f27c0/48305",
-      "sha256": "04bf4088b9c73c78648505ec75ae56ae736b7e06a2bb4de303d68f834e8f27c0",
-      "bytes": 48305
+      "uri": "bytestream://remote.buildbuddy.io/blobs/53551a6cfa7b20017553b541fdb46d3100a6b2bf7a75dc93de5bd14d0136e97b/52047",
+      "sha256": "53551a6cfa7b20017553b541fdb46d3100a6b2bf7a75dc93de5bd14d0136e97b",
+      "bytes": 52047
     },
     {
       "case": "desktop-light",
@@ -430,51 +425,51 @@
     {
       "case": "desktop-dark",
       "checkpoint": "backend-graph-feedback",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/db71290abb81cd5711241a93541d16bf65c8210a9682d7f8041bc7469f3e9d64/7932",
-      "sha256": "db71290abb81cd5711241a93541d16bf65c8210a9682d7f8041bc7469f3e9d64",
-      "bytes": 7932
+      "uri": "bytestream://remote.buildbuddy.io/blobs/75c5cebc383ba0a9858cba463b4642d1fb8d45716ca3b95f6f5a31b875d3f9df/7894",
+      "sha256": "75c5cebc383ba0a9858cba463b4642d1fb8d45716ca3b95f6f5a31b875d3f9df",
+      "bytes": 7894
     },
     {
       "case": "mobile-light",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/6490a7f3b7da0232fe371a81b74805f1af33ffd00aace64f2c3091efd9d0fd35/89350",
-      "sha256": "6490a7f3b7da0232fe371a81b74805f1af33ffd00aace64f2c3091efd9d0fd35",
-      "bytes": 89350
+      "uri": "bytestream://remote.buildbuddy.io/blobs/619dbdd8bfc1b9c8804accb0843e97362ddd056661f5ea380ef37da2dd3eefd5/104109",
+      "sha256": "619dbdd8bfc1b9c8804accb0843e97362ddd056661f5ea380ef37da2dd3eefd5",
+      "bytes": 104109
     },
     {
       "case": "desktop-light",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/f8de864bccae3abe1178fe003d02682ac07358c1dd8175ce63effe3c88d8205a/333487",
-      "sha256": "f8de864bccae3abe1178fe003d02682ac07358c1dd8175ce63effe3c88d8205a",
-      "bytes": 333487
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d79f0a569f99754526c7f3553969da889d69604c9645a00a10e4dcc8c7b23457/333455",
+      "sha256": "d79f0a569f99754526c7f3553969da889d69604c9645a00a10e4dcc8c7b23457",
+      "bytes": 333455
     },
     {
       "case": "mobile-dark",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/bc248a95d7849fe530e37ce834a8c9e8af666bb54ad9ffa6997b8e0711fecc24/358839",
-      "sha256": "bc248a95d7849fe530e37ce834a8c9e8af666bb54ad9ffa6997b8e0711fecc24",
-      "bytes": 358839
+      "uri": "bytestream://remote.buildbuddy.io/blobs/d6cfe62a9ce85e2941e45ba1f9366172f8511aa6970592c1154fefa502450504/359117",
+      "sha256": "d6cfe62a9ce85e2941e45ba1f9366172f8511aa6970592c1154fefa502450504",
+      "bytes": 359117
     },
     {
       "case": "mobile-light",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/bde840a93cf75a98679acc3594aff596d0063d78acba6c6ae5c51e28e56fbb14/315044",
-      "sha256": "bde840a93cf75a98679acc3594aff596d0063d78acba6c6ae5c51e28e56fbb14",
-      "bytes": 315044
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2be9fef3d7808ced8752eb29c2dbf09dc45a4004ba76ba5e7488f0118b97f004/315013",
+      "sha256": "2be9fef3d7808ced8752eb29c2dbf09dc45a4004ba76ba5e7488f0118b97f004",
+      "bytes": 315013
     },
     {
       "case": "desktop-dark",
       "checkpoint": "natural-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/e55a1691351ec0bc7de67e366e7490b583ed8673be846ea02c61d140b5374596/320166",
-      "sha256": "e55a1691351ec0bc7de67e366e7490b583ed8673be846ea02c61d140b5374596",
-      "bytes": 320166
+      "uri": "bytestream://remote.buildbuddy.io/blobs/3bdf84596cc88c84689393a42c1938f4feb04383bc5492b255efef396faa372e/320169",
+      "sha256": "3bdf84596cc88c84689393a42c1938f4feb04383bc5492b255efef396faa372e",
+      "bytes": 320169
     },
     {
       "case": "mobile-light",
       "checkpoint": "latest-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/50d8314ebe38cd432b261f95da32681272a874756ce4fefde559d479f1513eb6/375831",
-      "sha256": "50d8314ebe38cd432b261f95da32681272a874756ce4fefde559d479f1513eb6",
-      "bytes": 375831
+      "uri": "bytestream://remote.buildbuddy.io/blobs/24f5d5f6960e6e3428b489a3ef2bea7b8bffcba2deb78205c1d8bc94b2359727/375863",
+      "sha256": "24f5d5f6960e6e3428b489a3ef2bea7b8bffcba2deb78205c1d8bc94b2359727",
+      "bytes": 375863
     },
     {
       "case": "mobile-light",
@@ -486,23 +481,23 @@
     {
       "case": "desktop-dark",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/027bbca90f3dd33e0ba0d6c324eee13776e5a2c1fc15178be53b8c010e01ca03/456606",
-      "sha256": "027bbca90f3dd33e0ba0d6c324eee13776e5a2c1fc15178be53b8c010e01ca03",
-      "bytes": 456606
+      "uri": "bytestream://remote.buildbuddy.io/blobs/5e501716e18641dc5fc48ce0c4ccfd90f9b467b6dfd5846c1e12a0838739f2ea/456935",
+      "sha256": "5e501716e18641dc5fc48ce0c4ccfd90f9b467b6dfd5846c1e12a0838739f2ea",
+      "bytes": 456935
     },
     {
       "case": "desktop-light",
       "checkpoint": "backend-graph-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/cb7039b4853062cc90f0b9724391a315865019c2ed879b9a9a8cca54db452351/130867",
-      "sha256": "cb7039b4853062cc90f0b9724391a315865019c2ed879b9a9a8cca54db452351",
-      "bytes": 130867
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c164a5170ebfeff6763190d11d1559d6281fd1e0ead150c96db8a562f6787777/146838",
+      "sha256": "c164a5170ebfeff6763190d11d1559d6281fd1e0ead150c96db8a562f6787777",
+      "bytes": 146838
     },
     {
       "case": "desktop-light",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/2b7918ba3ed471dfc3da9d3cbe6325d7db537f98bf129dcf9f90ea6b2c3d84c1/471487",
-      "sha256": "2b7918ba3ed471dfc3da9d3cbe6325d7db537f98bf129dcf9f90ea6b2c3d84c1",
-      "bytes": 471487
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ecb85b2acf6bc43131efa69de8598e2d2648bd49af1e48721ac33f5a0a462248/471768",
+      "sha256": "ecb85b2acf6bc43131efa69de8598e2d2648bd49af1e48721ac33f5a0a462248",
+      "bytes": 471768
     },
     {
       "case": "mobile-light",
@@ -514,9 +509,9 @@
     {
       "case": "desktop-light",
       "checkpoint": "latest-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/9634a390f4878351de1f2dad6b5c46421ab13a9eeb6b7d058f62560092f6ae62/404152",
-      "sha256": "9634a390f4878351de1f2dad6b5c46421ab13a9eeb6b7d058f62560092f6ae62",
-      "bytes": 404152
+      "uri": "bytestream://remote.buildbuddy.io/blobs/3a7e9e9aaa789f92bae01fa90ebf7d48d2e5095e2051d4874165c180875547d1/404155",
+      "sha256": "3a7e9e9aaa789f92bae01fa90ebf7d48d2e5095e2051d4874165c180875547d1",
+      "bytes": 404155
     },
     {
       "case": "mobile-dark",
@@ -528,37 +523,19 @@
     {
       "case": "mobile-dark",
       "checkpoint": "latest-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/99fe7e6740f0dfede4d2e5608ee7da79e81b55bf1990b12a2ca03558ae13caf8/381430",
-      "sha256": "99fe7e6740f0dfede4d2e5608ee7da79e81b55bf1990b12a2ca03558ae13caf8",
-      "bytes": 381430
+      "uri": "bytestream://remote.buildbuddy.io/blobs/791375dc989bfe6fa17f07eb0256333734e3479488be25291882707a7c50a49c/381477",
+      "sha256": "791375dc989bfe6fa17f07eb0256333734e3479488be25291882707a7c50a49c",
+      "bytes": 381477
     }
   ],
   "preparatory_attempts": [
     {
-      "invocation": "1d06d2af-d504-4fa0-a611-848bff01fe71",
-      "stage": "temporary harness mypy validation",
-      "result": "Unsupported object comparison in numeric helper; no test results",
-      "resolution": "Added explicit isinstance guard and resubmitted corrected harness; benchmark populations unaffected"
-    },
-    {
-      "invocation": "b5a7a940-7442-41d6-8358-89d2a5ec2f8b",
-      "status": "Superseded harness preview; cancellation requested after correcting old-title expectation",
-      "resolution": "Final current-source preview below supplies publication evidence; benchmark populations unchanged"
-    },
-    {
-      "invocation": "9f3323da-0ad3-4bda-ad68-5d7f9fc55fbc",
-      "status": "Four browser cases failed on a missing rendered label space",
-      "resolution": "Rendered label spacing corrected before the accepted preview"
-    },
-    {
-      "invocation": "a3a80953-3c1d-434d-9af6-6a7ebe31ae10",
-      "status": "Superseded preview; cancellation requested",
-      "resolution": "Final current-source preview supplies publication evidence"
-    },
-    {
-      "invocation": "6102cb89-e44a-4272-8daf-c743abae57ea",
-      "status": "Four browser cases passed; manual visual review rejected clipped state badges",
-      "resolution": "State column width corrected and all four cases rerun on the final artifact"
+      "invocation": "61e967b0-8c55-4860-95ad-9180d8f30b7a",
+      "browser_cases_passed": 4,
+      "screenshots_captured": 104,
+      "selected_screenshots_byte_verified": 40,
+      "status": "Superseded after manual visual review",
+      "resolution": "Keep the operator-cancelled duration in the table and exclude it from bars; prevent Unknown column wrapping and add a direct panic-excerpt link."
     }
   ]
 }

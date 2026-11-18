@@ -1,3 +1,33 @@
+# Repaired-source graph stopped on a managed executor kernel panic
+
+The control and cold seed passed 242 cases each in 8m22s and 9m44s. The first repeat verified 38.6s warm Firecracker setup, but a managed executor kernel panic stopped the comparison. Two remaining arms were not run. Full-graph speedup remains unqualified.
+
+Source: `984f833dc6c1ae973826e84e0c5e9fd6bace898f`. Window: 2026-11-18T06:06:56.073924+00:00 → 2026-11-18T06:45:17.374332+00:00.
+
+The History readiness repair merged as #17553. Its gated one-shot-read negative control reproduced the original assertion; all five bounded-wait cases, the changed library checks and all 42 CI-selected targets passed. Both launch/restart harness cases passed in each of the three new graph exposures: six observed case passes. This does not estimate a fleet flake rate.
+
+The normal control passed test and build in 8m22s; the cold recycling seed passed in 9m44s. Each preserved the original 94 build roots, 57 runnable targets, 75 fresh native executions, 75 exact native/BES JUnit joins and all 242 original case identities, with no skips. The control and seed had identical inputs, commands and platforms for all 74 non-Firecracker actions.
+
+The first repeat verified one warm Firecracker chain from the seed: same native runner, executor registration, Docker container, K3s process/node and PKI controllers; fresh action, workload, credential, storage and plugin identities; complete fixture cleanup and zero recorded cgroup OOMs. Setup was 38.6s versus 107.3s in the cold seed; Firecracker process time was 278.4s versus 335.1s. This is one verified repeat, not a fleet hit rate or full-graph speedup.
+
+The managed VM action in that repeat failed with UNAVAILABLE and exit -2. Its recovered executor log shows a general protection fault in update_blocked_averages on CPU 9 / PID 0, kernel banner 5.15.0 #1, then a panic attempting to kill the idle task and a reboot. The executor Firecracker process stopped, explaining the refused control socket. The cause of the invalid kernel pointer is not established; the observed crash is in the BuildBuddy-managed executor, separate from our in-cluster Firecracker test runner.
+
+BuildBuddy automatically created a replacement execution although Bazel test retries were disabled. The repeat therefore has 76 native execution records for the planned 75 actions. It was cancelled at 06:45:17 UTC after the provider failure: its 15m09 submission-to-cancellation duration includes waiting for the replacement and is not a successful latency sample or a time-to-first-failure clock. Two later arms were not submitted.
+
+Across the three submitted arms, 224 JUnit artifacts have exact native/BES hash, size and path joins, containing 724 observed passing case verdicts. The interrupted repeat has 240 passing verdicts; its two planned managed-VM case identities have no JUnit verdict. The failed provider attempt has empty stdout/stderr and an empty declared output tree, so its additional scenario exposure and teardown are also unknown. Only the first two arms establish all four strict managed-guest shutdowns; none is claimed for the interrupted repeat.
+
+The control was last finished by managed VM (373.1s native process). The cold seed was last finished by Firecracker after 129.0s native queueing and 42.7s worker preparation, with the 8.9s input fetch nested inside preparation. Pool samples showed one registered busy worker while desired capacity rose to two. The warm-repeat Firecracker queue clock is inverted and remains unknown. Queueing, preparation, setup and action process time are separate clocks.
+
+Fresh/current guest memory samples reached a minimum MemAvailable of 4.90GiB; observed self-hosted guest OOM counters stayed zero. Registered workers ranged 1–5. Samples include ambient activity and do not establish peak memory or safe replica counts.
+
+The separate collection-only disposal matched the exact last native runner, executor, Docker container and previous-action receipt and ran no scenarios. Original-kernel inventory observed zero owned containers and loop mappings at 06:54:17 UTC. The pool removed that worker at 06:54:18; its VM/VMI, DataVolume, PVC and associated PV are absent, with Delete policy. The subsequent backing-file check could not observe individual unlink on the removed worker; that limit is explicit.
+
+Next: Keep required routing, pool sizing and retention settings unchanged. The predefined comparison stopped at its failure rule; no full-graph latency winner is established. Use the recovered managed-executor kernel trace and exact failed execution as the next reliability investigation. The trace identifies the crashing scheduler path, not the underlying corruption mechanism or a proven snapshot fix. The presence of a restored provider snapshot is evidence to investigate, not causal proof.
+
+The kernel excerpt is in `managed-executor-panic.txt`; full curated source, invocation, native/JUnit, gate and disposal evidence is under `backend_graph_comparison` in `evidence.json`. The previous failed exposure is preserved separately under `backend_graph_comparison_before_readiness_fix`.
+
+Earlier evidence retains its original observation window below.
+
 # Backend graph comparison stopped at the reliability gate
 
 Source: `5a0ccc77e106bf22ae018d4f6e18843ef93439e9` (PR #17529 tested merge). Window: 2026-11-18T04:44:45.863727+00:00 to 2026-11-18T05:03:39.793883+00:00.
