@@ -1541,6 +1541,28 @@ pub fn resolve_imported_callable_summaries(
             (module.clone(), eligible)
         })
         .collect();
+    if let Ok(local) = std::env::var("DUCKTAPE_DEBUNDLE_DIAGNOSTIC_FACTORY_IMPORT") {
+        for (module, facts) in modules {
+            if facts.imports.contains_key(&local) {
+                eprintln!(
+                    "[debundle factory diagnostic] module={module:?} local={local:?} source_stable={} closed={} author_contract={} eligible={}",
+                    source_stable[module].contains(&local),
+                    closed_factory_imports
+                        .get(module)
+                        .is_some_and(|imports| imports.contains(&local)),
+                    declared_imports[module]
+                        .get(&local)
+                        .is_some_and(|summary| summary.callback_factory_evidence().iter().any(
+                            |evidence| matches!(
+                                evidence,
+                                CallbackFactoryEvidence::AuthorAssertion { .. }
+                            )
+                        )),
+                    fresh_factory_imports[module].contains(&local),
+                );
+            }
+        }
+    }
     // All source identities are qualified once, then the existing flow rules
     // close imports, calls and object carriers in one program-wide store.
     // These are possible values, not imported execution/availability proofs.

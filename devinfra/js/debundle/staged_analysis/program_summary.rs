@@ -667,6 +667,8 @@ pub fn collect_program_summary(
     // A fresh result cannot be allocated at an importer AST site when all
     // provider code is in this complete static closure, which excludes that
     // importer. Dynamic scope cannot supply the missing identity proof.
+    let diagnostic_factory_local =
+        std::env::var("DUCKTAPE_DEBUNDLE_DIAGNOSTIC_FACTORY_IMPORT").ok();
     let closed_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
         .iter()
         .map(|(module, facts)| {
@@ -675,6 +677,18 @@ pub fn collect_program_summary(
                 .imports
                 .iter()
                 .filter_map(|(local, target)| {
+                    if diagnostic_factory_local.as_deref() == Some(local.as_str()) {
+                        let closure = resolved_closure_precedes_importer(
+                            module, &target.module, &target.source_specifier, &static_dependencies,
+                        );
+                        eprintln!(
+                            "[debundle factory diagnostic] module={module:?} local={local:?} provider={:?} export={:?} importer_lexically_closed={} provider_lexically_closed={} declared_factory={} closure={closure:?}",
+                            target.module, target.export,
+                            lexically_closed_modules.contains(module),
+                            lexically_closed_modules.contains(&target.module),
+                            chunk_export_purity.get(&target.module).is_some_and(|policy| policy.callback_factory_exports.contains(&target.export)),
+                        );
+                    }
                     if !lexically_closed_modules.contains(module)
                         || !chunk_export_purity
                             .get(&target.module)
