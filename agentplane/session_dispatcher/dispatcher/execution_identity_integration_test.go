@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"context"
 	"crypto/x509"
-	"net"
 	"testing"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -95,18 +95,13 @@ func serveIdentitySVIDsWithPolicy(
 	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second),
 		grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	netListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(netListener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	dial := func(uri string) dispatcherpb.SessionDispatcherClient {
 		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(peertls.SessionDispatcherURI)
 		if err != nil {
 			t.Fatal(err)
 		}
-		connection, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+		connection, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
 		if err != nil {
 			t.Fatal(err)
 		}
