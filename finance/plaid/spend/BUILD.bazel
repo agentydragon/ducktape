@@ -103,7 +103,10 @@ py_library(
     name = "net_worth",
     srcs = ["net_worth.py"],
     deps = [
+        ":allowance",
         ":plaid_valuation",
+        ":policy_queries",
+        ":sustainability",
         "//finance/plaid/db:models",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",

@@ -1,6 +1,7 @@
 """Historical USD net worth from complete sets of linked Plaid balances."""
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -11,7 +12,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance.plaid.db.models import AccountRow, BalanceSnapshotRow, LinkRow
+from finance.plaid.spend.allowance import Transaction
 from finance.plaid.spend.plaid_valuation import usd_minor_units
+from finance.plaid.spend.policy_queries import select_policy_transactions
+from finance.plaid.spend.sustainability import AccountHistory
 
 _DEBT_TYPES = {"credit", "loan"}
 _ACCOUNT_TYPES = {"depository", "investment"} | _DEBT_TYPES
@@ -24,6 +28,7 @@ class NetWorthTotals(BaseModel):
     net_minor_units: int
     observed_from: datetime
     observed_through: datetime
+    inferred_zero_account_count: int = 0
 
 
 class NetWorthDay(BaseModel):
@@ -43,16 +48,20 @@ class _Balance:
     amount: Decimal
 
 
-def _latest_aligned_balances(observations: list[_Balance], account_count: int) -> NetWorthTotals | None:
+def _latest_aligned_balances(
+    observations: list[_Balance], required_accounts: set[str], account_count: int
+) -> NetWorthTotals | None:
     latest_by_account: dict[str, _Balance] = {}
     latest_window: tuple[_Balance, ...] = ()
     for observation in observations:
         latest_by_account[observation.account_id] = observation
-        if len(latest_by_account) != account_count:
-            continue
-        observed_from = min(balance.captured_at for balance in latest_by_account.values())
-        if observation.captured_at - observed_from <= _MAX_CAPTURE_SPREAD:
-            latest_window = tuple(latest_by_account.values())
+        in_window = {
+            account: balance
+            for account, balance in latest_by_account.items()
+            if observation.captured_at - balance.captured_at <= _MAX_CAPTURE_SPREAD
+        }
+        if required_accounts <= in_window.keys():
+            latest_window = tuple(in_window.values())
     if not latest_window:
         return None
 
@@ -64,15 +73,34 @@ def _latest_aligned_balances(observations: list[_Balance], account_count: int) -
         net_minor_units=assets - debt,
         observed_from=min(balance.captured_at for balance in latest_window),
         observed_through=max(balance.captured_at for balance in latest_window),
+        inferred_zero_account_count=account_count - len(latest_window),
     )
 
 
-async def read_net_worth(session: AsyncSession, *, time_zone: ZoneInfo, now: datetime) -> NetWorthHistory:
-    """Use a fixed cohort of currently attached USD accounts and one total per report day.
+def _zero_before(evidence: AccountHistory, *, account_type: str, first_activity: date | None) -> date | None:
+    """Find the first day that requires a balance, using applicable account evidence."""
+    opening = evidence.opening
+    if opening is None or (first_activity is not None and first_activity < opening.earliest):
+        return None
 
-    A day's values come from its latest complete observation window. Missing accounts
-    and account link problems leave gaps without changing the cohort or filling with zero.
-    """
+    coverage = evidence.coverage
+    if (
+        account_type == "credit"
+        and coverage is not None
+        and coverage.complete_from <= opening.earliest <= coverage.as_of
+        and first_activity is not None
+        and first_activity > opening.earliest
+    ):
+        # A credit account with complete history from opening has no
+        # balance before its first activity, through the evidence date.
+        return min(first_activity - timedelta(days=1), coverage.as_of) + timedelta(days=1)
+    return opening.earliest
+
+
+async def read_net_worth(
+    session: AsyncSession, *, time_zone: ZoneInfo, now: datetime, account_history: Mapping[str, AccountHistory]
+) -> NetWorthHistory:
+    """Value currently attached USD accounts from aligned balances and dated opening evidence."""
     rows = await session.execute(
         select(AccountRow.account_id, AccountRow.type, BalanceSnapshotRow.captured_at, BalanceSnapshotRow.current)
         .join(LinkRow, LinkRow.item_id == AccountRow.item_id)
@@ -94,17 +122,50 @@ async def read_net_worth(session: AsyncSession, *, time_zone: ZoneInfo, now: dat
         )
         .order_by(BalanceSnapshotRow.captured_at, BalanceSnapshotRow.id)
     )
-    account_ids: set[str] = set()
+    account_types: dict[str, str] = {}
+    first_activity: dict[str, date] = {}
     by_day: dict[date, list[_Balance]] = defaultdict(list)
     for account_id, account_type, captured_at, amount in rows:
-        account_ids.add(account_id)
+        account_types[account_id] = account_type
         if captured_at is not None and amount is not None:
             day = captured_at.astimezone(time_zone).date()
             by_day[day].append(_Balance(account_id, account_type in _DEBT_TYPES, captured_at, amount))
+            if account_id in account_history and amount:
+                first_activity.setdefault(account_id, day)
 
+    dated_accounts = sorted(
+        account
+        for account in account_types
+        if account in account_history and account_history[account].opening is not None
+    )
+    if dated_accounts:
+        ledger = await session.execute(
+            select_policy_transactions(dated_accounts, include_raw_json=False, active_only=False)
+        )
+        for row in ledger.mappings():
+            transaction = Transaction.model_validate(dict(row))
+            # Either an earlier authorization or an earlier posting conflicts
+            # with a zero inferred from account opening or first activity.
+            day = min(transaction.date, transaction.report_day(time_zone))
+            account = transaction.account_id
+            first_activity[account] = min(day, first_activity.get(account, day))
+
+    zero_before = {
+        account: cutoff
+        for account in dated_accounts
+        if (
+            cutoff := _zero_before(
+                account_history[account],
+                account_type=account_types[account],
+                first_activity=first_activity.get(account),
+            )
+        )
+        is not None
+    }
     totals_by_day = {}
     for day, observations in by_day.items():
-        totals = _latest_aligned_balances(observations, len(account_ids))
+        required_accounts = account_types.keys() - {account for account, cutoff in zero_before.items() if day < cutoff}
+        totals = _latest_aligned_balances(observations, required_accounts, len(account_types))
         if totals is not None:
             totals_by_day[day] = totals
     if not totals_by_day:

@@ -19,8 +19,11 @@ def select_policy_accounts(account_ids: Sequence[str]) -> Select[Any]:
     )
 
 
-def select_policy_transactions(account_ids: Sequence[str], *, include_raw_json: bool) -> Select[Any]:
+def select_policy_transactions(
+    account_ids: Sequence[str], *, include_raw_json: bool, active_only: bool = True
+) -> Select[Any]:
     """Select unbounded current transaction history for the configured policy accounts."""
+    link_status = LinkRow.status == "active" if active_only else LinkRow.status != "revoked"
     return (
         select(
             TransactionRow.account_id,
@@ -59,6 +62,6 @@ def select_policy_transactions(account_ids: Sequence[str], *, include_raw_json: 
             TransactionRow.account_id.in_(account_ids),
             TransactionRow.removed.is_(False),
             AccountRow.detached_at.is_(None),
-            LinkRow.status == "active",
+            link_status,
         )
     )
