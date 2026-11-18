@@ -114,9 +114,8 @@ propagation time or assert that Dispatcher acceptance alone proves harness confi
 
 ## Service identities
 
-Workers use the Notifications service SVID for Actions, Dispatcher and History Service. The Session-keyed
-image no longer calls the Runtime proxy; its reader grant remains only for rollback until a later config
-PR removes it after this image is pinned.
+Workers use the Notifications service SVID for Actions, Dispatcher and History Service.
+Dispatcher owns Session lookup for notification subscriptions.
 Actions service-reader access does not confer operator or execution rights. The receiver verifies workload
 SVIDs against live WorkloadCredentials and Identities and admits exact service SVID diagnostic grants.
 It performs no TokenReview. Kubernetes reads cover those records, the Sandboxes used for existing message

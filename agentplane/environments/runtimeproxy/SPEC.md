@@ -1,15 +1,10 @@
 # Runtime proxy connection and authorization contracts
 
-Every Environments replica serves the EnvironmentRuntime proxy, HarnessHost and Executor on
-`sandbox-controller:8082`, pinning `spiffe://agentplane/sandbox-controller`. The outbound Runtime peer
-is `spiffe://agentplane/runtime-proxy`, separate from the leader's incarnation-binding observer.
-The Environments binary owns `environments/runtimeproxy`. The Sessions binary at
-`agentplane/session_dispatcher/` has no Runtime proxy or Executor receiver and makes no direct Runtime
-connection.
-
-Admission uses shared service-only rules without a TokenReview resolver or proxy bearer audience.
-Bearer metadata is refused even alongside an admitted service SVID. Workload Identity SVIDs and
-delegation grant no proxy admission.
+Environments replicas serve EnvironmentRuntime and HarnessHost on `sandbox-controller:8082`.
+Executor registers when its own grant is configured. Callers pin
+`spiffe://agentplane/sandbox-controller`. The outbound proxy uses `spiffe://agentplane/runtime-proxy`,
+separate from the leader's incarnation-binding observer. Sessions reaches hosted HarnessHost
+through this proxy.
 
 ## Runtime observation and independent replica connections
 
@@ -28,22 +23,35 @@ process boot before admitting work. Loss of one replica's observation closes tha
 connection; it does not revoke another replica's connection or cancel Runtime-owned admitted work.
 An uncertain mutation is never replayed after reconnect or failover.
 
-Callers connect through the stable `sandbox-controller:8082` Service. The route does not use a
-per-Sandbox `<sandbox>-control` EndpointSlice, connection Lease or proxy epoch. Dispatcher delivery
-Leases continue to coordinate queue delivery independently.
+A replacement observer waits for its predecessor to exit before publishing the new connection.
+Dispatcher delivery Leases coordinate queue delivery independently of proxy connectivity.
 
-Runtime call authorization uses the Controller-bound Sandbox UID, workload UID and Runtime boot ID,
-independently of proxy observer lifetime. Losing one replica's observation does not revoke another
-replica's calls or cancel Runtime-owned admitted work.
+## Destination and deadline
+
+EnvironmentRuntime and HarnessHost callers send each of these metadata keys exactly once, with
+a non-empty value:
+
+- `x-agentplane-sandbox`
+- `x-agentplane-sandbox-namespace`
+- `x-agentplane-sandbox-uid`
+- `x-agentplane-sandbox-owner-namespace`
+- `x-agentplane-sandbox-owner-name`
+
+The proxy returns `INVALID_ARGUMENT` for missing, repeated or empty values, and `NOT_FOUND` for
+a missing Sandbox or a mismatched destination or owner. It checks for a matching ready workload
+and callable local connection. Unavailable routing returns `UNAVAILABLE`.
+
+Callers can also supply one non-empty `x-agentplane-incarnation-uid`. An empty or duplicate
+value returns `INVALID_ARGUMENT`. After validating the destination, a changed incarnation
+returns `ABORTED` before forwarding. Executor carries destination and incarnation in its
+[typed request](../../env/runtime/execution/SPEC.md#ownership-and-admission).
+Forwarded calls retain the caller's deadline.
 
 ## Environment Runtime proxy authorization
 
-The Environments receiver authenticates exact service SVIDs. Kubernetes bearer tokens and delegated
-envelopes grant no proxy or Executor admission. All calls retain Sandbox UID/owner and current
-Runtime incarnation and boot fencing. Callers may additionally provide one non-empty
-`x-agentplane-incarnation-uid` metadata value to require a specific Runtime incarnation. The proxy
-resolves and validates the current Sandbox and Pod first, then returns `Aborted` without forwarding
-if that incarnation differs. A duplicate or empty value is `InvalidArgument`.
+Admission uses exact service SVIDs with no TokenReview resolver or proxy bearer audience.
+Bearer metadata is refused even alongside an admitted service certificate. Workload Identity
+SVIDs and delegation grant no proxy admission.
 
 - `environment_service.runtime_proxy.session_callers` grants HarnessHost `CreateSession`, `SubmitInput`, `ChangeModel`,
   `ChangeReasoningEffort`, `InterruptTurn`, `ListSessions` and `WatchSessions`,
@@ -88,14 +96,6 @@ EnvironmentService uses `RuntimeStatus` internally with the exact Environment an
 from an uncached Sandbox read. This reuses the existing ready-Pod route and authenticated watch,
 replaces outgoing metadata with the transport fence, and rejects a mismatched response boot ID or
 an observation replaced/lost during the read. It grants no extra Runtime method to external callers.
-
-## Service certificate callers
-
-The Runtime proxy has independent exact-service allowlists for diagnostics readers, Sessions
-operations, and Controller lifecycle operations. Executor has its own service allowlist. No shared
-service identity grants all four roles. Sessions clients pin the Sandbox Controller server identity;
-the proxy authenticates to Runtime with its separate Runtime-proxy identity. Verified service certificates carry neither Kubernetes account nor Pod
-proof, and method denial never falls back to bearer verification. All lists default empty.
 
 ## HarnessHost status version
 
