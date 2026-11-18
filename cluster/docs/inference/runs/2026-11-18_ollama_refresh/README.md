@@ -101,12 +101,14 @@ Thin-pool usage is from `lvs` and ZFS availability is from `zfs list -p`.
 | Wyrm2 `/games`                       | 500 GiB disk, **317.4 GiB filesystem space available**               | Live VM 110 `virtio1`, Proxmox `local-zfs` on Atlas NVMe       |
 | Atlas `rpool/data`                   | **1.31 TiB available**                                               | Parent SSD dataset shared by the two wyrm2 disks above         |
 
-Use a dedicated directory on `/games` for a host-side pilot and serve through
-the trial runtime on wyrm2. The
+Use `/games/llm-models/` for a host-side pilot on wyrm2. Atlas reports that
+`rpool` is backed by one Sabrent Rocket 5 NVMe. Put both the August IQ4_XS
+shards and the trial EXL3 files on this same filesystem for the comparison.
+They total about 179 GiB before draft artifacts. The
 [pinned 2.68-bit EXL3 release](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/2.68bpw_h6_ng8)
-is 98.4 GB (91.6 GiB), including a 51.8 GB n-gram table. That fits on `/games`
-with room for GGUF comparisons. Wyrm2's `/tmp` is HDD-backed and cleaned by
-tmpfiles.
+takes 91.6 GiB, including a 51.8 GB n-gram table. Its runtime can read the
+table during generation, so storage matters beyond model load. Wyrm2's
+`/tmp` is HDD-backed and cleaned by tmpfiles.
 
 For a persistent cluster route, plan to grow wyrm2's existing Piraeus SSD
 backing disk from 150 to 300 GiB, then give the candidate its own 128 GiB
@@ -120,12 +122,14 @@ and the [Ollama mount layout](../../../../cdk8s/ollama/README.md#ssd-weights-alo
 
 ## Local comparison
 
-Compare the August GGUF on Ollama, the same GGUF on current llama.cpp with and
-without MTP, and EXL3 with native verification and one active session. Use a
-few fixed coding transcripts with 32K and 128K cold prompts, a cached
-tool-result continuation, and a near-240K prompt with output headroom. Record
-time to first token, cached input tokens, decode rate, reasoning tokens, peak
-VRAM/RAM, and wall time to a passing result. Verify the LiteLLM tool-call
+Keep the live Ollama result as the deployment reference. For the matched
+storage run, compare the August GGUF on current llama.cpp with and without MTP
+and EXL3 with native verification and one active session. Use fixed coding
+transcripts with 32K and 128K cold prompts, a cached tool-result continuation,
+and a near-240K prompt with output headroom. Report model-load time, cold-prefix
+prefill, and warm decode separately, recording whether model files were already
+cached by the host. Record cached input tokens, reasoning tokens, peak VRAM/RAM,
+and wall time to a passing result. Verify the LiteLLM tool-call
 round trip, structured output, and mid-conversation system reminders with the
 actual clients. Then probe a short request arriving during one long prefill.
 Use published quality evaluations for the full suites.
