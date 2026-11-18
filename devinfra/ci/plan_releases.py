@@ -256,24 +256,16 @@ def main(argv: list[str] | None = None) -> None:
     by_label = evidence.outputs.by_label() if evidence.outputs is not None else {}
 
     decided = plan(releases, by_label, gh_tag_exists, args.workers)
-    reusable_tests = set()
-    blocked_tests = set()
-    for release, published in decided:
-        if published or not release.tests:
-            continue
-        blocked, why = evidence.tests.already_failed(release.tests)
-        if blocked:
-            blocked_tests.add(release.tests)
-            print(f"::warning::{release.pkg}: not released, {why}", file=sys.stderr)
-            continue
-        if not release.uses_default_config:
-            continue
-        covered, reason = evidence.tests.is_covered(release.tests)
-        if covered:
-            reusable_tests.add(release.tests)
-            print(f"::notice::{release.pkg}: reusing the verified bazel-ci test verdict", file=sys.stderr)
-        else:
-            print(f"::notice::{release.pkg}: retaining its test gate ({reason})", file=sys.stderr)
+    reusable_tests, blocked_tests = evidence.test_gates(
+        (
+            publication_evidence.TestGateCandidate(
+                release.pkg, release.tests, uses_default_config=release.uses_default_config
+            )
+            for release, published in decided
+            if not published
+        ),
+        action="released",
+    )
     include = matrix_include(decided, reusable_tests, blocked_tests)
 
     for release, published in sorted(decided, key=lambda d: d[0].pkg):
