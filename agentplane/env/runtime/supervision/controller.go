@@ -326,10 +326,6 @@ func applyProcessFacts(current Status, snapshot processHostSnapshot) Status {
 	}
 	if snapshot.startErr != nil {
 		current.StartError = snapshot.startErr.Error()
-		var refusal *LaunchRefusal
-		if errors.As(snapshot.startErr, &refusal) {
-			current.StartRefusal = refusal.Reason
-		}
 	}
 	if snapshot.exitObserved && snapshot.exitErr != nil {
 		current.ExitError = snapshot.exitErr.Error()
