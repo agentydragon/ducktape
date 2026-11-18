@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
@@ -98,11 +97,7 @@ func TestIncarnationReplacementFencesExecutionBeforeStartingSuccessor(t *testing
 	r.mu.Unlock()
 	done := make(chan error, 1)
 	go func() { done <- r.adoptIncarnation(context.Background(), "successor") }()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("prior Execution fence was not requested")
-	}
+	waitSignal(t, entered, "prior Execution fence was not requested")
 	mu.Lock()
 	before := append([]string(nil), events...)
 	mu.Unlock()
@@ -163,11 +158,7 @@ func TestCanceledAdoptionReconcilesExactDrainBeforeSuccessor(t *testing.T) {
 	epoch, cancelEpoch := context.WithCancel(context.Background())
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- r.adoptIncarnation(epoch, "successor") }()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("old generation did not start its fence")
-	}
+	waitSignal(t, entered, "old generation did not start its fence")
 	r.mu.Lock()
 	previousGeneration := r.desired.Generation
 	r.mu.Unlock()
@@ -257,11 +248,7 @@ func TestCanceledInitialStartupCanResumeSameIncarnationAfterFence(t *testing.T) 
 	defer cancel()
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- r.adoptIncarnation(ctx, "initial") }()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("initial startup did not begin")
-	}
+	waitSignal(t, entered, "initial startup did not begin")
 	cancel()
 	<-canceled
 	retryDone := make(chan error, 1)

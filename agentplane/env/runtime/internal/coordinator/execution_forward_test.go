@@ -224,11 +224,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("OpenSession before supersession = %v, err=%v", response, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("local execution session did not initialize")
-	}
+	waitSignal(t, opened, "local execution session did not initialize")
 	second, err := client.open(client.callCtx, "second-session", "second-open-before-supersession")
 	if err != nil {
 		t.Fatalf("second OpenSession RPC: %v", err)
@@ -237,11 +233,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err != nil || secondResponse.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("second OpenSession before supersession = %v, err=%v", secondResponse, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("second local execution session did not initialize")
-	}
+	waitSignal(t, opened, "second local execution session did not initialize")
 
 	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
 		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
@@ -258,11 +250,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if _, err := client.open(client.callCtx, "third-session", "third-open-after-observer-loss"); err != nil {
 		t.Fatalf("OpenSession after Gateway observer loss: %v", err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("new local execution session did not initialize after observer loss")
-	}
+	waitSignal(t, opened, "new local execution session did not initialize after observer loss")
 	r.mu.Lock()
 	activeCalls = r.activeExecutionCalls
 	r.mu.Unlock()

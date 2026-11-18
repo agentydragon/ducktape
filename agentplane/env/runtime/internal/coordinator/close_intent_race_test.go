@@ -140,11 +140,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	store.armed.Store(true)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
-	select {
-	case <-store.entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Running revision did not reach Session demand reset")
-	}
+	waitSignal(t, store.entered, "successor Running revision did not reach Session demand reset")
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, func() bool { return r.isClosing() }, "Close to revoke admission while Running preparation settles")
@@ -167,11 +163,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		t.Fatal("environment owner released while Running preparation was unsettled")
 	}
 	releaseDemand.Do(func() { close(store.release) })
-	select {
-	case <-successor.started:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Execution fence did not start")
-	}
+	waitSignal(t, successor.started, "successor Execution fence did not start")
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned before Execution fence completed: %v", err)
@@ -234,11 +226,7 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 	store.armed.Store(true)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
-	select {
-	case <-store.entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Running preparation did not block")
-	}
+	waitSignal(t, store.entered, "successor Running preparation did not block")
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, r.isClosing, "Close to revoke admission")
@@ -249,11 +237,7 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	failWatch := make(chan struct{})
 	scenario := startBlockedSuccessorClose(t, failWatch)
 	close(failWatch)
-	select {
-	case <-scenario.operationCoordinator.stopped:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("engine watch failure did not stop operation owner")
-	}
+	waitSignal(t, scenario.operationCoordinator.stopped, "engine watch failure did not stop operation owner")
 	if err := waitClose(t, scenario.adoptionDone); err == nil {
 		t.Fatal("adoption succeeded after engine watch failure")
 	}
@@ -266,11 +250,7 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	default:
 	}
 	scenario.release()
-	select {
-	case <-scenario.lifecycleDone:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("engine did not join operation owner after blocked worker settled")
-	}
+	waitSignal(t, scenario.lifecycleDone, "engine did not join operation owner after blocked worker settled")
 	scenario.mu.Lock()
 	runErr := scenario.lifecycleRunErr
 	scenario.mu.Unlock()
@@ -282,16 +262,8 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing.T) {
 	scenario := startBlockedSuccessorClose(t, nil)
 	scenario.failCloseDesiredRead(t)
-	select {
-	case <-scenario.lifecycleCoordinator.stopped:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Close controller did not exit after desired read failure")
-	}
-	select {
-	case <-scenario.operationCoordinator.stopped:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Close controller exit did not stop operation owner")
-	}
+	waitSignal(t, scenario.lifecycleCoordinator.stopped, "Close controller did not exit after desired read failure")
+	waitSignal(t, scenario.operationCoordinator.stopped, "Close controller exit did not stop operation owner")
 	if err := waitClose(t, scenario.adoptionDone); err == nil {
 		t.Fatal("adoption succeeded after Close controller failure")
 	}
@@ -304,11 +276,7 @@ func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing
 	default:
 	}
 	scenario.release()
-	select {
-	case <-scenario.lifecycleDone:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("engine did not join operation owner after Close controller failure")
-	}
+	waitSignal(t, scenario.lifecycleDone, "engine did not join operation owner after Close controller failure")
 	scenario.mu.Lock()
 	controllerErr := scenario.lifecycleControllerErr
 	scenario.mu.Unlock()

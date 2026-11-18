@@ -221,6 +221,15 @@ func waitForFile(t *testing.T, path string) {
 	eventually.PathExists(t, path, time.Millisecond, lifecycleTestTimeout)
 }
 
+func waitSignal[T any](t *testing.T, ch <-chan T, failure string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal(failure)
+	}
+}
+
 func waitClose(t *testing.T, done <-chan error) error {
 	t.Helper()
 	select {

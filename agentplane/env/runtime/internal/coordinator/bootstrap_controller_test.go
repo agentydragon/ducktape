@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
@@ -225,11 +224,7 @@ func TestCloseObservesBootstrapCompletionDuringStatusRead(t *testing.T) {
 	resources.interrupt.Store(true)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	select {
-	case <-resources.entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Close did not read pending bootstrap status")
-	}
+	waitSignal(t, resources.entered, "Close did not read pending bootstrap status")
 	if err := os.WriteFile(releaseScript, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -314,11 +309,7 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 		return progress.Stage == runtimeCloseBootstrapSettling
 	}, "Runtime bootstrap settlement barrier")
 	r.lifecycleCancel()
-	select {
-	case <-r.lifecycleDone:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Close worker held the canceled COSI engine waiting for bootstrap status")
-	}
+	waitSignal(t, r.lifecycleDone, "Close worker held the canceled COSI engine waiting for bootstrap status")
 	if err := waitClose(t, closeDone); err == nil {
 		t.Fatal("Close succeeded after its lifecycle engine was canceled")
 	}

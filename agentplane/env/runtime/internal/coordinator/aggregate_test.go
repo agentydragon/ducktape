@@ -131,11 +131,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 			err     error
 		}{settled, err}
 	}()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Close did not enter aggregate status read")
-	}
+	waitSignal(t, entered, "Close did not enter aggregate status read")
 	probe.value.(interface{ TypedSpec() *lifecycle.Status }).TypedSpec().NativeStopped = true
 	close(release)
 	select {
@@ -314,11 +310,7 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-execution.started:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("automatic Execution fence did not start")
-	}
+	waitSignal(t, execution.started, "automatic Execution fence did not start")
 	r.mu.Lock()
 	generation := r.desired.Generation
 	r.mu.Unlock()
@@ -707,11 +699,7 @@ func TestCloseCancelsBlockedAdoptionWithoutStartingSuccessor(t *testing.T) {
 	r := newLifecycleRuntime(t, config)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("old incarnation fence was not requested")
-	}
+	waitSignal(t, entered, "old incarnation fence was not requested")
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, r.isClosing, "Close admission gate")
@@ -764,20 +752,12 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 			r := newLifecycleRuntime(t, config)
 			adoptionDone := make(chan error, 1)
 			go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
-			select {
-			case <-entered:
-			case <-time.After(lifecycleTestTimeout):
-				t.Fatal("successor Execution start was not admitted")
-			}
+			waitSignal(t, entered, "successor Execution start was not admitted")
 			closed := make(chan error, 1)
 			go func() { closed <- r.Close(context.Background()) }()
 			waitRuntime(t, r, r.isClosing, "Close to cancel accepted adoption")
 			r.lifecycleCancel()
-			select {
-			case <-r.operationCoordinator.stopped:
-			case <-time.After(lifecycleTestTimeout):
-				t.Fatal("Runtime coordinator did not announce exit before joining workers")
-			}
+			waitSignal(t, r.operationCoordinator.stopped, "Runtime coordinator did not announce exit before joining workers")
 			if err := waitClose(t, adoptionDone); err == nil {
 				t.Fatal("adoption succeeded after lifecycle engine exit")
 			}
@@ -785,18 +765,10 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 				t.Fatal("Close succeeded with unsettled Execution startup")
 			}
 			releaseOnce.Do(func() { close(release) })
-			select {
-			case <-r.lifecycleDone:
-			case <-time.After(lifecycleTestTimeout):
-				t.Fatal("Runtime lifecycle engine did not join its transition worker")
-			}
+			waitSignal(t, r.lifecycleDone, "Runtime lifecycle engine did not join its transition worker")
 			workersDone := make(chan struct{})
 			go func() { r.lifecycleWorkers.Wait(); close(workersDone) }()
-			select {
-			case <-workersDone:
-			case <-time.After(lifecycleTestTimeout):
-				t.Fatal("accepted Execution start did not settle after engine exit")
-			}
+			waitSignal(t, workersDone, "accepted Execution start did not settle after engine exit")
 			if lateHandle && !orphan.stopRequested() {
 				t.Fatal("late Execution start escaped native fencing after engine exit")
 			}
