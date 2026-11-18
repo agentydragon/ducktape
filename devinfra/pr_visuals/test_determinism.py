@@ -490,42 +490,31 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
     assert "--noremote_accept_cached" not in seen[0]
 
 
-def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None:
+def test_the_fleet_reads_test_labels_amid_runner_progress() -> None:
     stdout = (
         "Waiting for available remote runner...\n"
         "\x1b[90m2026-09-12 15:28:14.665 UTC \x1b[mSyncing existing repo...\n"
-        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"py_test"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
+        "Finishing query output...\x1b[0mpy_test rule //aiquota/frontend:screenshots\n"
+        "source file //props/frontend:harness.mjs\n"
+        "py_test rule //props/frontend:visual\n"
         "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
         "Remote run completed at 2026-09-12 15:28:20 UTC\n"
     )
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         flags = [str(part) for part in command]
-        assert "--output=streamed_jsonproto" in flags
-        assert "attr(tags, visual, //...)" in flags
+        assert "--output=label_kind" in flags
+        assert flags[-1] == 'kind(".*_test rule", attr(tags, visual, //...))'
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
     assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//aiquota/frontend:screenshots", "//props/frontend:visual"]
-
-
-def test_a_source_file_in_the_query_output_is_not_a_target_to_run() -> None:
-    stdout = (
-        '{"type":"SOURCE_FILE","sourceFile":{"name":"//props/frontend:harness.mjs"}}\n'
-        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"py_test"}}\n'
-    )
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(command, 0, stdout, "")
-
-    assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//props/frontend:visual"]
 
 
 def test_a_fleet_query_that_matches_nothing_is_an_error_not_an_empty_sweep() -> None:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, "Loading: 0 packages loaded\n", "")
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match="matched nothing"):
         visual_fleet(bbr=Path("bbr"), run=fake_run)
 
 
@@ -537,16 +526,16 @@ def test_positional_patterns_resolve_to_canonical_test_labels() -> None:
         asked.append(words)
         pattern = words[-1]
         if "//ui:" in pattern:
-            stdout = '{"type":"RULE","rule":{"name":"//ui:visual","ruleClass":"py_test"}}\n'
+            stdout = "py_test rule //ui:visual\n"
         else:
-            stdout = '{"type":"RULE","rule":{"name":"//browser:smoke","ruleClass":"py_test"}}\n'
+            stdout = "py_test rule @@browser+//browsers:smoke\npy_test rule //ui:visual\n"
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
-    assert resolve_test_targets(["//ui:visual", "//browser/..."], bbr=Path("bbr"), run=fake_run) == [
-        "//browser:smoke",
+    assert resolve_test_targets(["//ui:visual", "@browser//..."], bbr=Path("bbr"), run=fake_run) == [
         "//ui:visual",
+        "@@browser+//browsers:smoke",
     ]
-    assert all(command[2] == "--output=streamed_jsonproto" for command in asked)
+    assert all(command[2] == "--output=label_kind" for command in asked)
     assert all(command[-1].startswith('kind(".*_test rule", ') for command in asked)
 
 

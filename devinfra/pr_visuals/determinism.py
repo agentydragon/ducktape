@@ -9,7 +9,6 @@ incomplete runs are reported on their own and never count as missing images.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import shlex
 import subprocess
@@ -36,11 +35,12 @@ from devinfra.pr_visuals.targets import TestRun, list_test_runs
 # The BuildBuddy collection scope is explicit and shared with the visual publisher.
 REPOSITORY = "agentydragon/ducktape"
 
-# Every target that drives a browser carries this tag -- `visual_test` applies it, and the
-# screenshot macros set it directly -- so the fleet is a question for Bazel rather than a list
-# somebody has to remember to update. It has already gone stale once: four per-scenario airlock
-# targets outlived their collapse into one sweep.
+# Screenshot producers carry this tag, so Bazel owns the fleet roster.
 VISUAL_FLEET = "attr(tags, visual, //...)"
+
+_TEST_QUERY_LINE = re.compile(
+    r"(?:^|\x1b\[[0-9;]*m)\w+_test rule ((?:@@?[^/\s]+)?//[^:\s]*:[^\s\x1b]+)(?:\x1b\[[0-9;]*m)*$", re.MULTILINE
+)
 
 
 @dataclass(frozen=True)
@@ -103,47 +103,29 @@ class TargetObservations:
     unavailable_invocations: list[str]
 
 
-def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
-    """Every browser target in the repo, asked of Bazel.
-
-    Run from the workspace, like every `bbr` call here: `bbr` reads the git repository at its
-    working directory, and under `bazel run` that is this binary's runfiles tree, which is not one.
-
-    `streamed_jsonproto` rather than the default label output, because the runner's own progress
-    shares this stdout: one target per line as JSON is a payload a log line cannot imitate, so a
-    line either parses into a rule record or is not one. Reading labels as text would instead need
-    a rule for telling them from log lines -- and the obvious one, a leading "//", is already wrong:
-    the runner closes its last coloured line without a newline, so the first target arrives with an
-    escape sequence glued to its front and no leading "//" at all.
-    """
+def _query_test_labels(expression: str, *, bbr: Path, run: Runner) -> set[str]:
+    # Label-kind output carries the test rule and canonical label. Full rule JSON also
+    # carries environment and execution properties, which the runner can redact mid-record.
+    # The runner can attach a final ANSI escape sequence to the first result.
     result = run(
-        [bbr, "query", "--output=streamed_jsonproto", VISUAL_FLEET],
+        [bbr, "query", "--output=label_kind", "--noshow_progress", f'kind(".*_test rule", {expression})'],
         check=False,
         text=True,
         capture_output=True,
         cwd=get_build_workspace_directory(),
     )
     if result.returncode != 0:
-        # Captured, so nothing `bbr` said has reached the log on its own: repeat it here, or the
-        # failure reads as a bare exit status with no cause.
-        raise SystemExit(f"`bbr query` exited {result.returncode}:\n{result.stderr}")
-    labels = sorted({name for line in result.stdout.splitlines() if (name := _rule_label(line)) is not None})
+        details = (result.stdout + result.stderr)[-4000:]
+        raise SystemExit(f"`bbr query` for `{expression}` exited {result.returncode}:\n{details}")
+    return set(_TEST_QUERY_LINE.findall(result.stdout))
+
+
+def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
+    """Discover the repository's screenshot-producing test targets."""
+    labels = _query_test_labels(VISUAL_FLEET, bbr=bbr, run=run)
     if not labels:
         raise SystemExit(f"`{VISUAL_FLEET}` matched nothing -- that tag is how the fleet is found")
-    return labels
-
-
-def _rule_label(line: str) -> str | None:
-    """The label in one `streamed_jsonproto` line, or None if the line is not a rule record."""
-    brace = line.find("{")
-    if brace < 0:
-        return None
-    try:
-        record = json.loads(line[brace:])
-    except ValueError:
-        return None
-    rule = record.get("rule")
-    return rule.get("name") if isinstance(rule, dict) and isinstance(rule.get("name"), str) else None
+    return sorted(labels)
 
 
 def resolve_test_targets(patterns: list[str], *, bbr: Path, run: Runner) -> list[str]:
@@ -155,17 +137,7 @@ def resolve_test_targets(patterns: list[str], *, bbr: Path, run: Runner) -> list
     """
     labels: set[str] = set()
     for pattern in patterns:
-        expression = f'kind(".*_test rule", {pattern})'
-        result = run(
-            [bbr, "query", "--output=streamed_jsonproto", expression],
-            check=False,
-            text=True,
-            capture_output=True,
-            cwd=get_build_workspace_directory(),
-        )
-        if result.returncode != 0:
-            raise SystemExit(f"`bbr query` for `{pattern}` exited {result.returncode}:\n{result.stderr}")
-        matches = {name for line in result.stdout.splitlines() if (name := _rule_label(line)) is not None}
+        matches = _query_test_labels(pattern, bbr=bbr, run=run)
         if not matches:
             raise SystemExit(f"Bazel test pattern `{pattern}` matched no test targets")
         labels.update(matches)
