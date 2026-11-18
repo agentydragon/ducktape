@@ -3804,7 +3804,7 @@ lowering. Shapes with no live rewrite — `import * as M` namespace
 imports of the chunk, `export *` from the chunk, re-exports of
 `kind: member` symbols or bundled-swap symbols — are rejected by
 the **plan-time consumer gate**
-(`vendor/plan.rs::validate_consumer_shapes`) before any output is
+(`vendor/validate.rs::check_partial_swap_consumers`) before any output is
 written.
 
 A second, post-strip scan (`validate_partial_swap_consumers` in
