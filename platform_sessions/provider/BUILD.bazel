@@ -243,7 +243,6 @@ py_test(
         "//util/testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//websockets",
     ],
 )

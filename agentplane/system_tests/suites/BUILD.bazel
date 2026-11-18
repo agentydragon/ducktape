@@ -233,7 +233,6 @@ py_test(
         "//util:net",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )
 
