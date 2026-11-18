@@ -56,7 +56,7 @@ their heading, never by position — positions change as entries come and go.
 
 Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
 authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp_config.py>, <../../cluster/cdk8s/haku/console_config.py>,
+Source of truth: <../console/identity/config.py>, <../../cluster/cdk8s/haku/console_config.py>,
 Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
