@@ -1655,3 +1655,37 @@ files record build provenance and binary hashes. The focused tests include
 analysis, whole-program flow, retained factories/constructors, local records,
 retained-instance publication and contract-audit CLI behavior. The fresh large
 private passing-subset completion requirement remains open.
+
+### Paired heap-content value queries: public Excalidraw check
+
+[#17436](https://github.com/agentydragon/ducktape/pull/17436) shares one exact
+expression evaluation across paired heap-content classifiers. Its lifetime and
+semantic contract is in <../docs/inference.md#heap-content-value-query-reuse>.
+The [optimized build](https://app.buildbuddy.io/invocation/7ba49e01-bd55-42d5-9c0a-098a50b2e93a)
+is commit `4e26d6c33181b645a91709a08eec3d8e2d48a67e`; analyzer SHA-256:
+`acfd2d82d8e27efeecb2ade01593b9bb09006a2ef1654e9118dcabeb75320133`.
+The baseline is the activation-local property-join build above. Intervening
+Debundle changes in this candidate's base affect tests/documentation only.
+
+Three adjacent pairs per metrics mode use identical staged public inputs and
+four workers, alternate execution order and run without another local consumer.
+Metrics export every second when enabled. Timings include fresh projection,
+analysis and application; compilation and input staging are excluded.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Median peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ----------------------------------------- |
+| Off     | 13.96 → 14.04 s                   | 20.91 → 20.93 s                  | 1.0113                   | 0.9713–1.0233      | 713,676 → 712,492                         |
+| On      | 13.61 → 14.40 s                   | 20.49 → 21.61 s                  | 1.0218                   | 1.0155–1.0860      | 713,400 → 714,332                         |
+
+Every pair stays below the 10% slowdown threshold. All 12 normal gates pass and
+all 156 emitted JavaScript files are byte-identical. These measurements do not
+establish an Excalidraw speedup or a memory reduction. Raw GNU time outputs,
+commands, OTLP JSONL and manifests are in `excalidraw-heap-query-reuse-paired/`,
+with binary identities in `source-join-tools/identity.json` and
+`heap-query-reuse-tools/identity.json` under the task scratch root.
+
+[Focused validation](https://app.buildbuddy.io/invocation/369e99ce-1f31-40c8-94c6-87339ea5e033)
+passes the analysis library's Clippy check, analysis tests, and the unresolved
+callee, foreign-call summary, candidate-object escape, program-value flow and
+ordered-own-data-field CLI tests. The fresh private passing-subset completion
+target remains separate.
