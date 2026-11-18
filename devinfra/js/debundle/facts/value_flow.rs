@@ -887,6 +887,7 @@ impl ChunkValueFlow {
             },
             &mut |key| flow.values_for_key(&symbols, key),
             &mut |_| {},
+            None,
         );
         (values.finish(), work.get())
     }
@@ -928,6 +929,8 @@ impl ChunkValueFlow {
                 _ => unreachable!("return summaries read only value facts"),
             },
             &mut |_| {},
+            None,
+            None,
         );
         values.finish()
     }
@@ -1605,6 +1608,7 @@ fn append_value_expr(
     returns: &ReturnInputs,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
 ) {
     let mut pending = vec![expr];
     while let Some(expr) = pending.pop() {
@@ -1617,6 +1621,9 @@ fn append_value_expr(
         match expr {
             FlowValueExpr::Binding(slot) => {
                 if let Some(found) = read_values(FlowKey::Binding(*slot)) {
+                    if let Some(source) = source.as_deref_mut() {
+                        source.fact(FlowKey::Binding(*slot), &found);
+                    }
                     values.extend(&found);
                 } else if !declared[slot.0 as usize] {
                     unknown(SourceUnknownCause::UndeclaredBinding);
@@ -1625,10 +1632,30 @@ fn append_value_expr(
             }
             FlowValueExpr::NonFunction(inner) => {
                 let mut result = values.child();
-                append_value_expr(inner, &mut result, declared, returns, read_values, unknown);
-                values.extend(&result.finish().without_function_class());
+                let mut filtered_source = source.as_deref().map(|source| source.child());
+                append_value_expr(
+                    inner,
+                    &mut result,
+                    declared,
+                    returns,
+                    read_values,
+                    unknown,
+                    filtered_source.as_mut(),
+                );
+                let filtered = result.finish().without_function_class();
+                if let (Some(source), Some(filtered_source)) =
+                    (source.as_deref_mut(), filtered_source)
+                {
+                    source.merge(&filtered_source.finish(&filtered));
+                }
+                values.extend(&filtered);
             }
-            FlowValueExpr::Value(value) => values.push(*value),
+            FlowValueExpr::Value(value) => {
+                if let Some(source) = source.as_deref_mut() {
+                    source.seed(*value);
+                }
+                values.push(*value);
+            }
             FlowValueExpr::Member { object, property } => {
                 let mut objects = values.child();
                 append_value_expr(
@@ -1638,8 +1665,16 @@ fn append_value_expr(
                     returns,
                     read_values,
                     unknown,
+                    None,
                 );
-                append_property_values(&objects.finish(), *property, values, read_values, unknown);
+                append_property_values(
+                    &objects.finish(),
+                    *property,
+                    values,
+                    read_values,
+                    unknown,
+                    source.as_deref_mut(),
+                );
             }
             FlowValueExpr::NumericMember { object } => {
                 let mut objects = values.child();
@@ -1650,8 +1685,15 @@ fn append_value_expr(
                     returns,
                     read_values,
                     unknown,
+                    None,
                 );
-                append_numeric_property_values(&objects.finish(), values, read_values, unknown);
+                append_numeric_property_values(
+                    &objects.finish(),
+                    values,
+                    read_values,
+                    unknown,
+                    source.as_deref_mut(),
+                );
             }
             FlowValueExpr::Call {
                 callee,
@@ -1660,6 +1702,7 @@ fn append_value_expr(
             } => {
                 if let Some(module) = factory_importer {
                     let mut result = values.child();
+                    let mut call_source = source.as_deref().map(|source| source.child());
                     append_call_result(
                         callee,
                         *argument,
@@ -1668,12 +1711,17 @@ fn append_value_expr(
                         returns,
                         read_values,
                         unknown,
+                        call_source.as_mut(),
                     );
                     let mut result = result.finish();
                     // Only direct result identities are refined. Top is separate
                     // from this bitmap and all ordinary invocation/retained facts
                     // survive; no purity or successful-return proof follows.
                     *Arc::make_mut(&mut result.bitmap) -= &returns.importer_allocations[*module];
+                    if let (Some(source), Some(call_source)) = (source.as_deref_mut(), call_source)
+                    {
+                        source.merge(&call_source.finish(&result));
+                    }
                     values.extend(&result);
                 } else {
                     append_call_result(
@@ -1684,6 +1732,7 @@ fn append_value_expr(
                         returns,
                         read_values,
                         unknown,
+                        source.as_deref_mut(),
                     );
                 }
             }
@@ -1707,6 +1756,7 @@ fn append_call_result(
     returns: &ReturnInputs,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
 ) {
     let mut targets = values.child();
     append_value_expr(
@@ -1716,8 +1766,10 @@ fn append_call_result(
         returns,
         read_values,
         unknown,
+        None,
     );
     let mut actual = None;
+    let mut actual_source = None;
     for origin in targets.finish() {
         if let Value::Alloc(Kind::Function, function) = origin {
             if let Some(argument) = argument
@@ -1725,6 +1777,7 @@ fn append_call_result(
             {
                 let argument = actual.get_or_insert_with(|| {
                     let mut result = values.child();
+                    let mut capture = source.as_deref().map(|source| source.child());
                     append_value_expr(
                         &returns.arguments[argument],
                         &mut result,
@@ -1732,8 +1785,11 @@ fn append_call_result(
                         returns,
                         read_values,
                         unknown,
+                        capture.as_mut(),
                     );
-                    result.finish()
+                    let result = result.finish();
+                    actual_source = capture.map(|capture| capture.finish(&result));
+                    result
                 });
                 append_summary_result(
                     *summary,
@@ -1744,8 +1800,13 @@ fn append_call_result(
                     returns.default_property,
                     read_values,
                     unknown,
+                    source.as_deref_mut(),
+                    actual_source.as_ref(),
                 );
             } else if let Some(found) = read_values(FlowKey::Return(function)) {
+                if let Some(source) = source.as_deref_mut() {
+                    source.fact(FlowKey::Return(function), &found);
+                }
                 values.extend(&found);
             }
         } else {
@@ -1767,6 +1828,8 @@ fn append_summary_result(
     default_property: Option<PropertySlot>,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
+    actual_source: Option<&origin_trace::InputSnapshot>,
 ) {
     if append_leaf_summary(
         summary,
@@ -1775,6 +1838,8 @@ fn append_summary_result(
         default_property,
         read_values,
         unknown,
+        source.as_deref_mut(),
+        actual_source,
     ) {
         return;
     }
@@ -1800,10 +1865,15 @@ fn append_summary_result(
                             default_property,
                             read_values,
                             unknown,
+                            source.as_deref_mut(),
+                            actual_source,
                         );
                     }
                     _ => {
                         if let Some(found) = read_values(FlowKey::Return(function)) {
+                            if let Some(source) = source.as_deref_mut() {
+                                source.fact(FlowKey::Return(function), &found);
+                            }
                             values.extend(&found);
                         }
                     }
@@ -1823,15 +1893,32 @@ fn append_leaf_summary(
     default_property: Option<PropertySlot>,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
+    actual_source: Option<&origin_trace::InputSnapshot>,
 ) -> bool {
     match summary {
-        ReturnSummary::Argument => values.extend(actual),
+        ReturnSummary::Argument => {
+            if let (Some(source), Some(actual_source)) = (source, actual_source) {
+                source.merge(actual_source);
+            }
+            values.extend(actual);
+        }
         ReturnSummary::ArgumentProperty(property) => {
-            append_property_values(actual, Some(property), values, read_values, unknown);
+            append_property_values(actual, Some(property), values, read_values, unknown, source);
         }
         ReturnSummary::ArgumentOrDefault => {
+            if let (Some(source), Some(actual_source)) = (source.as_deref_mut(), actual_source) {
+                source.merge(actual_source);
+            }
             values.extend(actual);
-            append_property_values(actual, default_property, values, read_values, unknown);
+            append_property_values(
+                actual,
+                default_property,
+                values,
+                read_values,
+                unknown,
+                source,
+            );
         }
         ReturnSummary::ForwardChoices(_) => return false,
     }
@@ -1844,12 +1931,16 @@ fn append_property_values(
     values: &mut ValuesBuilder,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
 ) {
     for origin in objects {
         if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
             if let Some(property) = property {
                 // Unknown is durable even when a later write adds a value.
                 if let Some(found) = read_values(FlowKey::Property(object, property)) {
+                    if let Some(source) = source.as_deref_mut() {
+                        source.fact(FlowKey::Property(object, property), &found);
+                    }
                     values.extend(&found);
                 } else {
                     unknown(SourceUnknownCause::MissingProperty);
@@ -1857,6 +1948,9 @@ fn append_property_values(
                 }
             } else {
                 if let Some(found) = read_values(FlowKey::Properties(object)) {
+                    if let Some(source) = source.as_deref_mut() {
+                        source.fact(FlowKey::Properties(object), &found);
+                    }
                     values.extend(&found);
                 }
                 unknown(SourceUnknownCause::DynamicProperty);
@@ -1874,10 +1968,14 @@ fn append_numeric_property_values(
     values: &mut ValuesBuilder,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
+    mut source: Option<&mut origin_trace::SourceCapture<'_>>,
 ) {
     for origin in objects {
         if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
             if let Some(found) = read_values(FlowKey::NumericProperties(object)) {
+                if let Some(source) = source.as_deref_mut() {
+                    source.fact(FlowKey::NumericProperties(object), &found);
+                }
                 values.extend(&found);
             }
             unknown(SourceUnknownCause::DynamicProperty);
@@ -2681,7 +2779,6 @@ fn solve_flow_observed(
     } = constraints;
     let returns = Arc::new(returns);
     let producer_count = events.len();
-    let trace_numeric_properties = numeric_properties.clone();
     let property_producers = PropertyProducerCensus::from_events(&events);
     #[cfg(test)]
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
@@ -2780,13 +2877,7 @@ fn solve_flow_observed(
     };
     facts.extend(call_effects);
     if let Some(trace) = &trace {
-        trace.report_slice(
-            &facts,
-            &events,
-            &returns,
-            &declared,
-            &trace_numeric_properties,
-        );
+        trace.report_connected(&facts, &events);
     }
     drop(events);
     #[cfg(test)]
@@ -3312,6 +3403,7 @@ type FlowWorkStats = ();
 struct CachedExpression {
     values: Values,
     dependencies: BTreeSet<FlowKey>,
+    sources: origin_trace::InputSnapshot,
 }
 
 /// Event-local target/argument coordinates preserve the old transfer order.
@@ -3573,13 +3665,16 @@ impl FlowRules {
             }
             let parameter = formal.parameter;
             if let Some(trace) = &self.trace {
-                trace.record_cached_output(
+                trace.record_value_output(
                     index,
                     "invoke_argument",
-                    Some(argument),
                     Some(edge.function),
                     FlowKey::Binding(parameter),
                     values,
+                    &invocation.arguments[argument]
+                        .as_ref()
+                        .expect("ordered argument evaluated")
+                        .sources,
                 );
             }
             // Keep only the compact Values frontier in the edge index; the
@@ -3629,12 +3724,23 @@ impl FlowRules {
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         dependencies: Option<&mut FxHashSet<FlowKey>>,
     ) -> Values {
+        self.values_of_expr_tracking_with_sources(expr, context, dependencies)
+            .0
+    }
+
+    fn values_of_expr_tracking_with_sources(
+        &self,
+        expr: &FlowValueExpr,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+        dependencies: Option<&mut FxHashSet<FlowKey>>,
+    ) -> (Values, origin_trace::InputSnapshot) {
         let mut unknowns = self
             .metrics
             .enabled()
             .then(work_metrics::SourceUnknownCounts::default);
         let mut dependencies = dependencies;
         let mut values = ValuesBuilder::new(self.origin_table.clone());
+        let mut source = self.trace.as_ref().map(|trace| trace.begin_capture());
         append_value_expr(
             expr,
             &mut values,
@@ -3687,11 +3793,14 @@ impl FlowRules {
                     unknowns.record(cause);
                 }
             },
+            source.as_mut(),
         );
         if let Some(unknowns) = &unknowns {
             self.metrics.source_unknowns(unknowns);
         }
-        values.finish()
+        let values = values.finish();
+        let sources = source.map_or_else(Default::default, |source| source.finish(&values));
+        (values, sources)
     }
 
     fn cached_expression(
@@ -3700,10 +3809,12 @@ impl FlowRules {
         context: &mut impl FactContext<FlowKey, FlowFact>,
     ) -> CachedExpression {
         let mut dependencies = FxHashSet::default();
-        let values = self.values_of_expr_tracking(expr, context, Some(&mut dependencies));
+        let (values, sources) =
+            self.values_of_expr_tracking_with_sources(expr, context, Some(&mut dependencies));
         CachedExpression {
             values,
             dependencies: dependencies.into_iter().collect(),
+            sources,
         }
     }
 
@@ -3737,13 +3848,22 @@ impl FlowRules {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!("dynamic write has state")
             };
-            let values = self.values_of_expr_tracking(right, context, None);
+            let (values, sources) = self.values_of_expr_tracking_with_sources(right, context, None);
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_direct_evaluations += 1;
             }
             if !values.is_empty() {
-                self.trace_property_outputs(index, object, property, &values);
+                if let Some(trace) = &self.trace {
+                    trace.record_property_output(
+                        index,
+                        object,
+                        property,
+                        self.numeric_properties[property.0 as usize],
+                        &values,
+                        &sources,
+                    );
+                }
                 self.propose_property(context, object, property, &values);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
@@ -3785,15 +3905,25 @@ impl FlowRules {
         } else {
             false
         };
-        let current = &write.right.as_ref().expect("ordered RHS evaluated").values;
+        let cached_right = write.right.as_ref().expect("ordered RHS evaluated");
+        let current = &cached_right.values;
         #[cfg(test)]
         let current_count = current.len();
         let PropertyTarget::Expression(object) = object else {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!()
             };
-            self.trace_property_outputs(index, object, property, current);
             if right_grew {
+                if let Some(trace) = &self.trace {
+                    trace.record_property_output(
+                        index,
+                        object,
+                        property,
+                        self.numeric_properties[property.0 as usize],
+                        current,
+                        &cached_right.sources,
+                    );
+                }
                 self.propose_property(context, object, property, current);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
@@ -3835,21 +3965,21 @@ impl FlowRules {
             }
             receivers.expression = Some(cached);
         }
-        if self.trace.is_some() {
-            for receiver in receivers
-                .receivers
-                .iter()
-                .copied()
-                .chain(new_receivers.iter().copied())
-            {
-                self.trace_property_outputs(index, receiver, property, current);
-            }
-        }
         // Full-current proposals let every subset destination adopt the same
         // immutable bitmap. Delta joins would COW-clone the old shared bitmap
         // separately for every receiver, retaining receiver-by-origin payloads.
         if right_grew {
             for receiver in &receivers.receivers {
+                if let Some(trace) = &self.trace {
+                    trace.record_property_output(
+                        index,
+                        *receiver,
+                        property,
+                        self.numeric_properties[property.0 as usize],
+                        current,
+                        &cached_right.sources,
+                    );
+                }
                 self.propose_property(context, *receiver, property, current);
                 #[cfg(test)]
                 {
@@ -3865,6 +3995,16 @@ impl FlowRules {
                 self.work.borrow_mut().property_receiver_activations += 1;
             }
             if !current.is_empty() {
+                if let Some(trace) = &self.trace {
+                    trace.record_property_output(
+                        index,
+                        receiver,
+                        property,
+                        self.numeric_properties[property.0 as usize],
+                        current,
+                        &cached_right.sources,
+                    );
+                }
                 self.propose_property(context, receiver, property, current);
                 #[cfg(test)]
                 {
@@ -3908,38 +4048,6 @@ impl FlowRules {
                 FlowKey::NumericProperties(object),
                 FlowFact::Values(values.clone()),
             );
-        }
-    }
-
-    fn trace_property_outputs(
-        &self,
-        event: usize,
-        object: u32,
-        property: PropertySlot,
-        values: &Values,
-    ) {
-        let Some(trace) = &self.trace else {
-            return;
-        };
-        if !matches!(
-            self.events.get(event),
-            Some(FlowEvent::AssignProperty { .. })
-        ) {
-            // Fixed receiver writes can be indexed directly from their static
-            // events after solving; only dynamic receiver targets need a
-            // compact target witness while the transfer cache is alive.
-            return;
-        }
-        for key in [
-            FlowKey::Property(object, property),
-            FlowKey::Properties(object),
-        ]
-        .into_iter()
-        .chain(
-            self.numeric_properties[property.0 as usize]
-                .then_some(FlowKey::NumericProperties(object)),
-        ) {
-            trace.record_cached_output(event, "property_rhs", None, Some(object), key, values);
         }
     }
 
@@ -4113,14 +4221,49 @@ impl IterativeRules for FlowRules {
             FlowEvent::FunctionDeclaration { id, origin }
             | FlowEvent::ClassDeclaration { id, origin } => {
                 let values = self.singleton_value(*origin);
+                if let Some(trace) = &self.trace {
+                    let mut source = trace.begin_capture();
+                    source.seed(*origin);
+                    let sources = source.finish(&values);
+                    trace.record_value_output(
+                        *index,
+                        "declaration_seed",
+                        None,
+                        FlowKey::Binding(*id),
+                        &values,
+                        &sources,
+                    );
+                }
                 Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::Variable { id, init } => {
-                let values = self.values_of_expr_tracking(init, context, None);
+                let (values, sources) =
+                    self.values_of_expr_tracking_with_sources(init, context, None);
+                if let Some(trace) = &self.trace {
+                    trace.record_value_output(
+                        *index,
+                        "variable",
+                        None,
+                        FlowKey::Binding(*id),
+                        &values,
+                        &sources,
+                    );
+                }
                 Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::AssignBinding { id, right } => {
-                let values = self.values_of_expr_tracking(right, context, None);
+                let (values, sources) =
+                    self.values_of_expr_tracking_with_sources(right, context, None);
+                if let Some(trace) = &self.trace {
+                    trace.record_value_output(
+                        *index,
+                        "assign_binding",
+                        None,
+                        FlowKey::Binding(*id),
+                        &values,
+                        &sources,
+                    );
+                }
                 Self::propose_values(context, FlowKey::Binding(*id), values);
             }
             FlowEvent::AssignProperty {
@@ -4190,7 +4333,18 @@ impl IterativeRules for FlowRules {
                 }
             }
             FlowEvent::Return { function, value } => {
-                let values = self.values_of_expr_tracking(value, context, None);
+                let (values, sources) =
+                    self.values_of_expr_tracking_with_sources(value, context, None);
+                if let Some(trace) = &self.trace {
+                    trace.record_value_output(
+                        *index,
+                        "return",
+                        Some(*function),
+                        FlowKey::Return(*function),
+                        &values,
+                        &sources,
+                    );
+                }
                 Self::propose_values(context, FlowKey::Return(*function), values);
             }
             FlowEvent::Invoke { callee, args } => {
