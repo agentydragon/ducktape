@@ -385,7 +385,9 @@ Service scans a Session's raw history from the History Service for its own comma
 the one service besides the History Service fold that derives state from Session events. A command's
 `CommandAdmitted` entry says the runner admitted it, but not that the harness executed it or that
 the message reached the model's context; today that needs the history. Decide where that
-outcome is recorded before the Notification Service stops reading history.
+outcome is recorded before the Notification Service stops reading history. If the design still
+requires a raw event scan, consider moving it to `FollowSession` while keeping receipt
+reconciliation bounded per claim.
 
 ### `NOTIFICATION_SERVICE_SPLIT` — split, move or rename the Notification Service's responsibilities
 
@@ -2319,8 +2321,9 @@ flowchart TD
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
 ```
 
-[`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
-which other consumers may move to it. Automatic titles remain deferred under
+Revisit replacing `ReadSessionEvents` with `FollowSession` and `follow = false` once callers can
+preserve bounded reads and the browser's raw observation detail through the HTTP facade.
+Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
 
 ### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
