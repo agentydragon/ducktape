@@ -539,17 +539,19 @@ async def _expect_shipping_plaid_fields(original: Locator) -> None:
 
     panel = await _open_plaid_fields(original)
     await expect(panel.get_by_text("in major currency units", exact=False)).to_be_visible()
-    source = panel.locator(".cm-content")
+    source = panel.get_by_role("textbox")
     for field in (
         '"amount": "18.50"',
         '"original_description": "EXAMPLE SHIPPING PAYMENT"',
-        '"city": "Example City"',
         '"reference_number": "synthetic-reference"',
-        '"detailed": "TRANSPORTATION_SHIPPING"',
         '"pending_transaction_id": null',
         '"category": []',
     ):
         await expect(source).to_contain_text(field)
+    # CodeMirror only renders the lines near the viewport.
+    await source.evaluate('editor => editor.scrollIntoView({block: "end"})')
+    await expect(source).to_contain_text('"city": "Example City"')
+    await expect(source).to_contain_text('"detailed": "TRANSPORTATION_SHIPPING"')
 
 
 async def _capture_pending_empty_plaid_fields(page: Page, view: VisualPage, *, theme: str) -> None:
