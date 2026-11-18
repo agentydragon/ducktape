@@ -1,3 +1,45 @@
+# Ordinary Firecracker scheduling with parallel VM tests
+
+Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1–41.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured.
+
+18 November 2026 UTC · 2026-11-18T03:17:08.312343+00:00 → 2026-11-18T04:03:50.414784+00:00 · frozen source dd10e9c5d4136810db10c48b936f46244e85b17f.
+
+| Batch          | Firecracker fixtures (run1/2) | FC setup        | FC process      | VM process      | Batch feedback | Outcomes                        |
+| -------------- | ----------------------------- | --------------- | --------------- | --------------- | -------------- | ------------------------------- |
+| Cold control 1 | cold / cold                   | 133.4s / 104.0s | 391.6s / 339.3s | 250.7s / 258.4s | 8m08s          | 4 NEW / 8 passed; 4/4 shutdowns |
+| Candidate seed | cold / cold                   | 110.4s / 116.3s | 354.6s / 377.0s | 243.1s / 216.7s | 7m59s          | 4 NEW / 8 passed; 4/4 shutdowns |
+| Warm repeat 1  | warm / warm                   | 41.1s / 40.2s   | 309.8s / 294.9s | 235.1s / 217.1s | 6m45s          | 4 NEW / 8 passed; 4/4 shutdowns |
+| Warm repeat 2  | warm / warm                   | 36.1s / 36.7s   | 309.1s / 280.2s | 214.2s / 220.9s | 6m13s          | 4 NEW / 8 passed; 4/4 shutdowns |
+| Cold control 2 | cold / cold                   | 105.2s / 123.2s | 348.4s / 426.1s | 224.3s / 214.9s | 8m36s          | 4 NEW / 8 passed; 4/4 shutdowns |
+
+The two cold controls had Firecracker setup 104.0–133.4s. The candidate seed created two cold baselines; each subsequent repeat returned to the corresponding observed runner/container. All four warm chains preserve K3s process/node/PKI identity while replacing every recorded fixture and device-plugin identity; all per-action persistence/runtime cleanups completed.
+
+All 20 selected TestRunner actions were distinct NEW uncached executions, joined to exact BES JUnit CAS digests: 40 passing case executions, no retries/skips/failures. The 10 ordinary VM actions independently passed all 20 strict guest shutdown checks. Each batch recorded four overlapping action processes; the Firecracker/VM process overlap is retained per batch, rather than inferred from --jobs=4.
+
+The sampled pool grew from 3 to 8 registered workers. Fresh/current-object guest memory samples reached 2.26GiB MemAvailable; 9 guest Pod series recorded zero OOM counter values. These samples include ambient work and do not qualify additional replicas. Runner cgroup peaks include file cache and may predate the current action; before/after reclaim values are retained per action.
+
+The inspected BuildBuddy archive predicts best-effort executor affinity for a stable first output and platform, followed by a local paused-runner lookup. It does not track paused baselines centrally. The hosted service revision/affinity flags were not verified; native runner and receipt chains establish these warm hits. A 5s recycling wait is a scheduler preference delay, not a wait for a busy local runner.
+
+Maximum 8 workers, worker 8GiB, advertised 7GiB, configured 10GB retention/effective 7GiB clamp, CPU requests and host placement are unchanged. The live work StorageClass uses Delete; no destructive volume deletion was used as a test.
+
+Both retained baselines were explicitly discarded by separate collection-only actions, each matching the last observed native runner, executor, Docker container and previous-action receipt. The following 8-worker inventory observed both original kernels, no owned containers or loop mappings, and both recorded backing files absent. Disposal ran no scenario bodies and is excluded from batch timings and case counts.
+
+Next, prepare an explicitly manual comparison of the complete required test graph at one frozen source. Require a fresh passing managed baseline, then alternate matched baseline/candidate arms with failure and cleanup gates. Keep the required VM route managed; a routing PR is not the canary. The recorded managed TCG timer stall still needs diagnosis; profile Runtime shutdown before simplifying runner lifecycle ownership.
+
+Five sequential four-action manual batches at one frozen source; two baselines and four warm exposures. This is neither a representative fleet hit rate nor a reliability/p90 estimate.
+
+Batch feedback is local bbr submission → completion, including outer setup, Bazel work and queues. It does not measure GitHub required checks or auto-merge. Native queue clocks with inverted timestamps stay Unknown.
+
+Pool growth, one other worker VMI replacement, dependency caches, idle intervals and ambient traffic confound timing comparisons. Controls bracket the candidates; the order was preplanned, not randomized.
+
+The manual Firecracker control uses the same disk-backed K3s persistence as the candidate and then discards it. The normal required Firecracker route uses a fresh baseline/in-memory database, so this is not its before/after treatment.
+
+[Cold control 1 invocation](https://app.buildbuddy.io/invocation/9b139f79-2cc3-4b77-8031-913731e725c6) · [Candidate seed invocation](https://app.buildbuddy.io/invocation/bfcdc737-676f-482b-8835-dcb0cf210f7d) · [Warm repeat 1 invocation](https://app.buildbuddy.io/invocation/ae87cf9f-4c5f-4d00-8b5a-45faf07c216e) · [Warm repeat 2 invocation](https://app.buildbuddy.io/invocation/560fbbc5-1154-4ab4-9c60-cb01bef6e401) · [Cold control 2 invocation](https://app.buildbuddy.io/invocation/aa0544cd-42dd-440a-b6bb-88b64686285d)
+
+Native clocks, CAS joins, every action/run, four complete identity chains, memory/reclaim observations, bounded pool metrics, source-review limits and disposal receipts are in `evidence.json → natural_firecracker_scheduling`. Earlier populations below retain their own source, windows and outcomes.
+
+---
+
 # Tooling and Firecracker follow-up · 18 November 2026 UTC
 
 The 115-second Nix delay did not recur. Firecracker warm setup took 38.7s; a worker pin added 200.1s of queueing. Ordinary scheduling chose a fresh baseline and finished its pair in 5m51s. All 22 manual case executions passed; broad CI savings remain unqualified.

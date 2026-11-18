@@ -163,7 +163,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" The 115-second Nix delay did not recur. Firecracker warm setup took 38.7s; a worker pin added 200.1s of queueing. Ordinary scheduling chose a fresh baseline and finished its pair in 5m51s. All 22 manual case executions passed; broad CI savings remain unqualified."}
+                ${" Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1–41.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
