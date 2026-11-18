@@ -1152,7 +1152,7 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
-The landed [SessionSpec placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover)
+The landed [SessionSpec placement contract](../session_dispatcher/dispatcher/SPEC.md#session-binding)
 makes the owner variant explicit: `environment_hosted` carries the exact native environment and
 harness, and `central_sampler_v1` carries one exact required executor environment. #14314 retains
 the Dispatcher Session row when that required Environment is deleted, but central V1 still has no
@@ -1201,7 +1201,7 @@ transition proposal. Recording the broader model does not dispatch a worker or a
 
 ### `AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT` — try an authored conversation in a CLI
 
-**Follow-up in review, 2026-11-12.** The implementation merged as
+**Follow-ups merged, 2026-11-12.** The implementation merged as
 [#15896](https://github.com/agentydragon/ducktape/pull/15896), providing the
 [bounded CLI experiment](authored_conversation_experiment.md): our own agent loop with Qwen through
 LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, separate working
@@ -2161,11 +2161,6 @@ schemas for the fields it exposes to the browser. Start from the
 The shared strict YAML loader is the interim improvement. Choose the schema and file format before
 planning the service migrations.
 
-## 9. Legacy burn-down
-
-Folded into [Cleanups](#15-cleanups) on 2026-11-10; the number stays so later sections keep their
-anchors.
-
 ## 10. Runner ingress and control split
 
 The runner pushes its journal's Events to the History ingress. For control, the Runner Gateway dials
@@ -2308,7 +2303,7 @@ a feature such as driver-hosted tools crosses the common set.
 "might be better", "to be looked into"; it costs a separate container.
 
 Electric replicates two History tables, `thread_entity` and `thread_payload_chunk`, per Thread and
-projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
+projection epoch, through the app's authorizing [proxy](../app/internal/electricproxy/electric.go), for
 the thread view alone ([`electric_sync.tsx`](../app/frontend/sessions/electric_sync.tsx)). Every
 other live browser view already follows gRPC watches through the app facade
 ([`watch_stream.ts`](../app/frontend/transport/watch_stream.ts)). Its costs are:
@@ -2333,18 +2328,6 @@ electric" ([`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--his
 watch facade, and build it once against whichever History representation is chosen rather than
 first over the fold tables. **Question for review:** build the replacement now over the fold, or
 after the History representation decision, over journal records?
-
-## Scope and retirement of stale gates
-
-- Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
-  optimization and new-source wiring are frozen with triggers, not hidden release prerequisites.
-- Broad provider-matrix exploration is frozen; ordinary auth/signature denial regression coverage
-  belongs with the implementation, not an unbounded production checklist.
-- Native subsessions and runner durability/thin-adapter redesign remain frozen. Neither the runner
-  channel nor multiagent design unfreezes the broader runner-state redesign.
-- Existing security boundaries, data-preserving migration checks and representative deployment
-  integration checks remain requirements. The freezer is not a waiver for a known data-loss or
-  unauthorized-access bug; promote one when evidence makes it concrete.
 
 ## 13. Delivery boundaries, APIs and harness identity
 
@@ -3445,14 +3428,16 @@ evidence exists.
 
 ### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
 
-Identity `CreateSession` remains denied. Existing operator-provisioned same-Identity child steering
+Identity `CreateSession` is admitted only for an `environment_hosted` Session under a current
+`bind_session` grant ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding));
+central placement stays refused. Existing operator-provisioned same-Identity child steering
 and the approved `orchestration_v1` broker flow continue to work; this node is separate from the
 completed Sandbox workload cutover.
 
 **Design, not started (operator, 2026-11-10).** Decide how a Session asks Agentplane to create a
-child Session and then message it. Dispatcher refuses an Identity caller at `CreateSession`
-(`PermissionDenied`); privileged platform components retain their creation path, and an Identity
-can read, steer, interrupt and cancel its own Identity-recorded Sessions. Build on the existing
+child Session and then message it. Without that grant Dispatcher refuses an Identity caller at
+`CreateSession` (`PermissionDenied`); privileged platform components retain their creation path,
+and an Identity can read, steer, interrupt and cancel its own Identity-recorded Sessions. Build on the existing
 [delegated authorization](../docs/delegated_authorization.md) contract and the messaging path that
 landed in #15437 and #15438. The Sandbox launch Identity sequence is settled in the identity plan
 and does not determine the child-Session design. The environment rule's `bind_session` operation
@@ -3466,9 +3451,9 @@ with its implementation slices; no authority change is selected by this tracking
 
 Inbox ownership and History workload reads now use the recorded Session Identity. Notification's
 same-Identity send path also passes without a grant. Cross-Identity sends still require
-`session_inbox_access`, whose current binding is on the sender and whose targets are Sandboxes/tags;
-component senders and their ServiceAccount provenance remain supported. The target/group model and
-grant lifetime remain unresolved under
+`session_inbox_access` (`notification_service/internal/rpc/messages.go`), whose current binding is on
+the sender and whose targets are Sandboxes/tags; component senders and their ServiceAccount
+provenance remain supported. The target/group model and grant lifetime remain unresolved under
 [`SESSION_ACCESS_GROUPING_DESIGN`](#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
 Preserve the current enforcement while that design is reviewed. Broader cross-principal History
 reads remain held by `THREAD_READ_POLICY_DESIGN`. **Exit:** resolve target/group ownership, target
@@ -3547,7 +3532,7 @@ Deletions and simplifications that exist only because of a transition, a migrati
 design or a track that has landed: dead code, met gates, compatibility shims, stale names, redundant
 tests and docs. Census of 2026-11-10 over the `CLEANUP(added …)` tombstones, component `TODO.md`
 files, `TODO` comments, sections 13 and 14, the identity plans, open PRs and the freezer; it absorbs
-the 2026-10-10 legacy burn-down (section 9) and the 2026-10-21 census of the lanes. **Unblocked**
+the 2026-10-10 legacy burn-down and the 2026-10-21 census of the lanes. **Unblocked**
 has no gate, or a gate met on devel; **Blocked** names the node, PR or merge it waits for;
 **Future** waits on an undecided design or a track not started. Each entry says what goes, where,
 the gate and the source; a removal a track's own node lists is linked, not copied, and feature or
@@ -3619,9 +3604,7 @@ which would settle the name instead; check that before dispatch.
 
 ### Blocked
 
-Grouped by the node, PR or merge each waits for. Completed workload-Identity source lanes are
-removed; remaining deployment observations and rollback windows stay here only when they still have
-a specific stopping condition.
+Grouped by the node, PR or merge each waits for.
 
 #### By gate
 
@@ -3630,8 +3613,6 @@ a specific stopping condition.
   network-policy identities. The remaining check is the staging proxy decision log naming the
   `haku-ci` relay's Identity for the expected egress decision; this does not imply that rollout is
   blocked today.
-- **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
-  per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records
   (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/sessions/local_commands.ts`)
   are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
@@ -3670,33 +3651,19 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   `session_dispatcher/dispatcher/testing_client.py`, `sampler/testing.py` and
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
-- **`SESSION_IDENTITY_AUTHZ`:** `notification_service/internal/rpc/messages.go` still authorizes
-  cross-Identity sends through sender-bound `session_inbox_access` Sandbox/tag targets. Inbox
-  ownership and History workload reads already use the recorded Session Identity. The remaining
-  target/group/lifetime decision and its consumer/grant migration are described above and follow
-  `SESSION_ACCESS_GROUPING_DESIGN`.
-- **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name
-  `HISTORY_SERVICE_RENAME` (section 8) decides.
 - **The observation naming layer** (`Event.observation`, Runtime's observation handling, History's
   `ReadSessionObservations` and `ReadNativeFrames`, the debug UI): squash to "Event" if the operator
   agrees it is not a deliberate distinction. Source: [frontend TODO](../app/frontend/TODO.md#thread-view-ux).
 - **One result shape for executors:** the MCP edge's per-executor result rendering
   (`mcp_edge/internal/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
   [Action Service TODO](../action_service/TODO.md#executors-that-answer-as-mcp-tools).
-- **Frozen:** [`WORKLOAD_AUDIENCE_RENAME`](task_freezer.md#workload_audience_rename--rename-the-agentplane-egress-audience)
-  (the `agentplane-egress` audience name; tokens retire under the service SVID decision) and
-  [`HAKU_ACTION_NATIVE_CLIENT`](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client)
-  (Haku UI's client off the retired Action HTTP facade) stay in the freezer with their triggers.
-- **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
-  when a direction is chosen and its parts land in owning docs.
 
 #### Authentication: waiting on a decision
 
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
-  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
-  (`history_service/internal/rpc/service.go`), EnvironmentService management and the lifecycle manager
-  (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
-  of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
+  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`) and the lifecycle manager
+  (`environments/lifecycle/policy.go`), and the resolver's `RequirePod` is step 7 of SVID
+  resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
   route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
