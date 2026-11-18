@@ -73,5 +73,10 @@ manager nevertheless grants provider pods cluster-wide access to Secrets and
 other core resources; these checks limit what a managed resource can request,
 not what a compromised provider process can access.
 
-The cluster's `litellm/live-tests` `Secret`, its `ProviderConfig` and their
-management policies are declared in `cluster/cdk8s/litellm/buildbuddy_crossplane.py`.
+## LiteLLM ownership handoff
+
+The cluster manages `litellm/live-tests` with `Observe`, `Create`, and `Update`
+policies. The former `litellm-buildbuddy-sync` Terraform state was emptied using
+a `removed` block with `destroy = false`. Both retired state schemas were then
+removed without running their former destroy provisioners. The BuildBuddy admin
+credential remains independently owned.
