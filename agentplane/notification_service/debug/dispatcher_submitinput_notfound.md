@@ -2,7 +2,7 @@
 
 ## Observation
 
-After [#17416](https://github.com/agentydragon/ducktape/pull/17416) rolled out, both Notifications replicas continued to log `ServiceError: NotFound` for one inbox. The operator confirmed Dispatcher `GetSession` and History reads succeed for its Session and `SubmitInput` returns NotFound. This identifies `SubmitInput` as the live failing RPC; **#17416 did not cover the live source**. Its longer retry covered only NotFound from `GetSession` and `ReadSessionEvents`.
+After [#17416](https://github.com/agentydragon/ducktape/pull/17416) rolled out, both Notifications replicas continued to log `ServiceError: NotFound` for one inbox. The source is inferred from the cause name and the #17416 logging/code paths: NotFound from Dispatcher `GetSession` or History reads is logged as `SessionNotFoundError` or `HistoryNotFoundError`, while the plain `ServiceError: NotFound` corresponds to the plain `unavailable(err)` around `SubmitInput`. No read observed the `GetSession` or History results. **#17416 did not cover the live source**; its longer retry covered only NotFound from `GetSession` and `ReadSessionEvents`.
 
 ## Dispatcher path
 
@@ -18,4 +18,4 @@ The fix classifies `SubmitInput` NotFound separately and carries the configured 
 
 ## Evidence limits
 
-Read-only logs established the repeated `SubmitInput` NotFound signature, and the operator's reads established that `GetSession` and History succeed. Source inspection establishes the possible Dispatcher NotFound sites and the retry behavior. This investigation's current Identity could read pod logs but was denied Sandbox reads and could not read the target inbox through the caller-scoped Notification API. The exact live Sandbox state remains unverified here; no staging data was read or changed through a database or alternate identity.
+Read-only logs established the repeated plain `ServiceError: NotFound` signature. The attribution to `SubmitInput` is an inference from that cause name and the #17416 logging/code paths; no read observed the `GetSession` or History results. Source inspection establishes the possible Dispatcher NotFound sites and the retry behavior. This investigation's current Identity could read pod logs but was denied Sandbox reads and could not read the target inbox through the caller-scoped Notification API. The target Sandbox's absence remains unverified; no staging data was read or changed through a database or alternate identity.
