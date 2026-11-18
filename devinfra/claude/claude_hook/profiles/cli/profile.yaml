@@ -1,6 +1,7 @@
 # CLEANUP(added 2026-05-30): `otel:` removed — ignored by the Rust daemon (config.rs
-# drops unknown fields; OTLP export is a Python-daemon parity gap tracked in
-# devinfra/claude/TODO.md). Endpoint was https://alloy-otlp.allegedly.works/v1/traces;
+# drops unknown fields; the daemon emits no OTLP, Claude Code's native exporter
+# does — devinfra/claude/README.md § Claude Code Telemetry). Endpoint was
+# https://alloy-otlp.allegedly.works/v1/traces;
 # DUCKTAPE_OTEL_BEARER_TOKEN still comes from .envrc (cli_env.sh) regardless.
 git_shim:
   block_amend: true
