@@ -113,7 +113,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
-        "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
         "@pypi//pydantic",
