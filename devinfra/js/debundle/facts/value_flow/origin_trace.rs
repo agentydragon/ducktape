@@ -708,7 +708,9 @@ impl OriginTrace {
             seen.insert((origin, output));
             if let Some(producers) = by_output.get(&(origin, output)) {
                 for index in producers {
-                    selected.insert(*index);
+                    if !selected.insert(*index) {
+                        continue;
+                    }
                     let (_, group) = groups[*index];
                     for input in &group.inputs {
                         let Some(input_key) = input.key else {
