@@ -27,14 +27,12 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) error {
 			ORDER BY session_id ON CONFLICT (session_id) DO UPDATE SET session_id=EXCLUDED.session_id`, sandboxUID, uuid.Nil); err != nil {
 			return err
 		}
-		for _, change := range []struct{ State, Predicate string }{
-			{FailedState, "state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND NOT delivery_attempted"},
-			{UnknownState, "(state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND delivery_attempted) OR (state='RUNNER_ADMITTED' AND operation='submit_input')"},
-		} {
-			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
-				WHERE sandbox_uid=$1 AND (`+change.Predicate+`)`, sandboxUID, change.State); err != nil {
-				return err
-			}
+		if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET
+			state=CASE WHEN delivery_attempted OR state=$4 THEN $5 ELSE $6 END,
+			reason='sandbox_deleted',updated_at=now()
+			WHERE sandbox_uid=$1 AND (state IN ($2,$3) OR (state=$4 AND operation='submit_input'))`,
+			sandboxUID, QueueState, DeliveringState, AdmittedState, UnknownState, FailedState); err != nil {
+			return err
 		}
 		deleted, err := tx.ExecContext(ctx, "DELETE FROM dispatch WHERE sandbox_uid=$1", sandboxUID)
 		if err != nil {
