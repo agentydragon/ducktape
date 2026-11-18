@@ -56,22 +56,8 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
-Listener settings accept ordinary TCP `host:port` addresses and `fd:N`, where `N`
-is the descriptor number **in the child process** (at least 3). An inherited
-socket must already be bound and listening on TCP. Invalid descriptors fail startup without
-falling back to another address.
-
-Startup follows Go's `ListenAndServe`/`Serve` separation: `listenAndServe` obtains
-and owns the listener, while `serve` takes a `net.Listener`. FD parsing and conversion stay at the process
-boundary; serving code never handles descriptor numbers. `net.FileListener`
-duplicates the descriptor, so startup closes the inherited descriptor after
-conversion and closes the resulting listener on exit, including setup failure.
-The parent closes its own socket copy after spawning the child.
-
-For Go parents, `exec.Cmd.ExtraFiles` assigns child descriptors `3+i`; Python's
-`pass_fds` preserves descriptor numbers. The launcher supplies the corresponding
-`fd:N` values. Client addresses come from the parent's held listener, without
-startup files or log parsing.
+`rpc.listen_address` accepts a TCP address or an inherited `fd:N` as documented by
+[`agentplane/net/listener`](../net/listener/README.md).
 
 Build `//agentplane/session_dispatcher/cmd:runner-gateway` or `//agentplane/session_dispatcher:image`.
 The same binary embeds Goose migrations and applies them before request handling or workers start.
