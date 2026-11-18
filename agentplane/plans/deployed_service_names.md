@@ -365,7 +365,8 @@ SPECs/authentication/operations docs first.
 
 ## Reference census
 
-File-level census at the baseline above. `G` = Runner Gateway spellings, `C` = Sandbox Controller
+File-level census at the baseline above, with relocated diagnostic paths updated.
+`G` = Runner Gateway spellings, `C` = Sandbox Controller
 spellings, `R` = egress sidecar spellings (hyphen, underscore, spaces, case-insensitive and CamelCase).
 Paths are repository-relative. Includes source, BUILD, generated/parked manifests, docs, fixtures,
 active plans and diagnostic evidence; wire/stored/history/evidence matches remain intentionally.
@@ -425,7 +426,6 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/cli/internal/actions/wait.go`                                                                     | R       |
 | `agentplane/cli/internal/invocation/errors.go`                                                                | R       |
 | `agentplane/debug/2026_10_30_kubernetes_ownership_review.md`                                                  | G, C    |
-| `agentplane/debug/actions_service_grants_vm_boot.md`                                                          | C       |
 | `agentplane/debug/dispatcher_cleanup_timeout.md`                                                              | C       |
 | `agentplane/debug/firecracker_spike_2026_11_02/artifact_sha256sums.txt`                                       | R       |
 | `agentplane/debug/resume_credentials_valid.md`                                                                | C       |
@@ -619,6 +619,7 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/system_tests/debug/idle_resume_precondition.md`                                                   | C       |
 | `agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md`                              | C       |
 | `agentplane/system_tests/debug/vm_native_startup_tracing.md`                                                  | G       |
+| `agentplane/system_tests/debug/vm_runtime_connection_2026_11_17.md`                                           | C       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/five_run_full_suite_rcu.md`                                 | G       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/guest_only_reproduction.md`                                 | C       |
 | `agentplane/system_tests/debug/vm_shutdown_stalls/rbe_200_flakiness.md`                                       | G       |

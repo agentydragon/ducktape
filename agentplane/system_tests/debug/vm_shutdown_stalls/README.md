@@ -30,13 +30,23 @@ and [the historical census](historical_census.md).
   CPU 0 stopped taking timer ticks before userspace. A later exact-probe
   recurrence retained QEMU returning from interrupt dispatch and subsequent
   EOIs leaving timer vector 236 in service. Confirm guest interrupt entry and
-  acknowledgement with verified CPU 0 retention. Distinct captures show early
-  PCI/ACPI silence, a QEMU IOTLB boot assertion, and PID 1 waiting in cgroup/RCU
-  code after ACPI during cleanup of a guest that had never become Ready. See
+  acknowledgement with verified CPU 0 retention. Earlier evidence includes a
+  CPU 1 stall and a paired grants control with no recurrence. Separate captures
+  show early PCI/ACPI silence and PID 1 waiting in cgroup/RCU code after ACPI
+  during cleanup of a guest that had never become Ready. See
   [the managed timer recurrence](../vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes),
+  [the earlier timer stalls and paired control](../vm_runtime_connection_2026_11_17.md#earlier-managed-tcg-failures),
   [early PCI/ACPI silence](../vm_boot_before_userspace_2026_11_09.md),
-  [the IOTLB assertion](mixed_kvm_teardown_2026_11_17.md#pr-ci-qemu-boot-assertion-reported-by-the-teardown-gate)
   and [the readiness-cleanup RCU wait](five_run_full_suite_rcu.md).
+- **QEMU boot assertion.** An original launcher aborted in
+  `iotlb_to_section` before userspace. Its replacement completed the scenario
+  and powered down. The original crash still fails the teardown gate. The
+  trace shows a map-generation mismatch with incomplete fill/flush provenance.
+  See [the IOTLB assertion](mixed_kvm_teardown_2026_11_17.md#pr-ci-qemu-boot-assertion-reported-by-the-teardown-gate).
+- **Suspend request cleanup.** In [development invocation `5f545d80`](https://app.buildbuddy.io/invocation/5f545d80-51a7-4573-a0a3-b059e18eb9c8),
+  the cleanup request to `/upstream/environments/v1/environments/systest/systest-vm-1:suspend`
+  received HTTP 503, then teardown reported an Identity still referenced.
+  This happened before APIC probe attachment. The cause remains unexplained.
 - **Host fixture teardown.** The November 17 managed TCG guest never connected
   Runtime. Its deleting Sandbox stayed in `Quiescing`, baseline certification
   rejected it, and fixture storage cleanup left a raw loop attached. The
