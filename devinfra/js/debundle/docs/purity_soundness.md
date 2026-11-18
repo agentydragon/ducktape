@@ -1118,6 +1118,11 @@ source-backed read or rebind beyond the asserted footprint rejects it.
 For that initializer, the assertion completes dynamic lexical read/rebind
 coverage while preserving its syntax-derived dependencies.
 
+Unknown heap frontiers stay ordered around that initializer even with no modeled
+local heap cells (SPEC § Initializer binding effects). Ordering them around every
+opaque invocation, not only around such initializers, rejected every
+stateless-provider case of `foreign_state_node_differential_sweep_test`.
+
 `initializer_external_effects: isolated` independently promises that the selected
 simple initializer observes no mutable pre-existing heap, global-property or
 host/environment state, writes only its own fresh allocations, and performs no
