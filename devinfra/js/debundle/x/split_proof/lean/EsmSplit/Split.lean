@@ -54,6 +54,8 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
     e.2.foldl (fun acc i => if acc.contains i then acc else acc.insert i e.1) acc) ∅
   let owner (u : Name) : Option Nat := (decl[u]?).bind (·.head?)
   let first (m : ModName) : Nat := (stmtsOf.getD m []).headD 0
+  let ordered := !S.order.isEmpty
+  let rank (m : ModName) : Nat := if ordered then S.order.idxOf m else first m
   -- `import` declarations of `m`: one per module that holds a name `m` mentions
   let imports (m : ModName) : List (ModName × List Name) :=
     let uses := dedup ((stmtsOf.getD m []).flatMap fun i => let s := arr.getD i default; s.eager ++ s.lazy)
@@ -61,7 +63,11 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
       ((owner u).bind fun k => modOf[k]?).filter (· != m) |>.map (·, u)
     let byName : Std.TreeMap ModName (List Name) :=
       needs.foldl (fun acc e => acc.insert e.1 (e.2 :: acc.getD e.1 [])) ∅
-    (sortBy first (dedup (needs.map (·.1)))).map fun src => (src, (byName.getD src []).reverse)
+    let names (src : ModName) := (byName.getD src []).reverse
+    if ordered && m == S.entry then
+      -- the entry imports every other module, in priority order
+      (S.order.filter fun o => o != m && stmtsOf.contains o).map fun o => (o, names o)
+    else (sortBy rank (dedup (needs.map (·.1)))).map fun src => (src, names src)
   let base : List Module := S.modules.map fun (m, _) =>
     { name := m, stmts := stmtsOf.getD m [], imports := imports m, exports := [] }
   -- a module exports exactly the names other modules import from it
@@ -70,11 +76,11 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
   let withExports := base.map fun md => { md with exports := dedup (imported.getD md.name []).reverse }
   let p1 : Plan := { entry := S.entry, mods := withExports }
   -- a module nobody imports still has to run: the entry imports it for its effects
-  let order := p1.evalOrder
-  let orphans := withExports.filter fun md => !order.contains md.name
+  let evalOrder := p1.evalOrder
+  let orphans := withExports.filter fun md => !evalOrder.contains md.name
   { p1 with mods := withExports.map fun md =>
       if md.name == S.entry then
-        { md with imports := sortBy (first ∘ (·.1)) (md.imports ++ orphans.map fun o => (o.name, [])) }
+        { md with imports := sortBy (rank ∘ (·.1)) (md.imports ++ orphans.map fun o => (o.name, [])) }
       else md }
 
 end EsmSplit

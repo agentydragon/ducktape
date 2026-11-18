@@ -27,6 +27,10 @@ inductive Selector
 structure Spec where
   entry   : ModName
   modules : List (ModName × List Selector)
+  /-- Import priority. When given, the entry imports every other module in this order and
+  every module orders its imports by it. When empty, imports follow where each module's code
+  first appeared in the bundle. -/
+  order   : List ModName := []
   deriving Repr
 
 def Selector.claims (B : Bundle) (i : Nat) : Selector → Bool

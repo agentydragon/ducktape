@@ -282,7 +282,8 @@ partial def topDefs (s : Json) : List String :=
   | "ExportDefaultDeclaration" =>
     let d := fld s "declaration"
     if typ d == "FunctionDeclaration" || typ d == "ClassDeclaration" then binders (fld d "id") else []
-  | _ => []
+  -- a `var` inside a block, loop or `try` at the top level still declares a module-scope binding
+  | _ => varNames s
 
 def isHoisted (s : Json) : Bool :=
   typ s == "FunctionDeclaration"

@@ -53,7 +53,7 @@ def spec : Spec := \{
   entry := {q S.entry}
   modules := [
 {mods}
-  ]
+  ]{if S.order.isEmpty then "" else s!"\n  order := {qs S.order}"}
 }
 
 def plan : Plan := mkPlan bundle spec
@@ -79,6 +79,16 @@ def takeFlag (name : String) : List String → Option String × List String
   | a :: v :: rest =>
     if a == name then (some v, rest) else let (r, l) := takeFlag name (v :: rest); (r, a :: l)
   | l => (none, l)
+
+/-- Names a top-level `export` statement publishes. -/
+def exportedNames (s : Json) : List String :=
+  match Lower.typ s with
+  | "ExportNamedDeclaration" =>
+    if Lower.isNull (Lower.fld s "declaration") then
+      (Lower.items (Lower.fld s "specifiers")).toList.map fun sp => Lower.str (Lower.fld (Lower.fld sp "exported") "name")
+    else Lower.topDefs (Lower.fld s "declaration")
+  | "ExportDefaultDeclaration" => ["default"]
+  | _ => []
 
 /-- Statement types the model does not cover. -/
 def unsupported (t : String) : Bool := t == "ImportDeclaration" || t == "ExportAllDeclaration"
@@ -111,7 +121,7 @@ def main (args : List String) : IO UInt32 := do
   let S ← loadSpec specPath
   let t3 ← lap "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} effects; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
-  -- Two rules Lean does not check. They talk about the original statements, so `--replicate` skips them.
+  -- Three rules Lean does not check. They talk about the original statements, so `--replicate` skips them.
   let mut bad := false
   if replicate?.isNone then
     -- ES imports are read-only: a statement may only assign to names its own module declares.
@@ -128,6 +138,15 @@ def main (args : List String) : IO UInt32 := do
         IO.println s!"  FAIL  statement {i} is an `{t}` outside the entry module"; bad := true
   let P ← IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
+  if replicate?.isNone then
+    -- The entry's own `export` statements keep their names. A name they publish cannot also be a glue export:
+    -- that is a duplicate export, or the name of a different binding (`export { X as av }` next to a local `av`).
+    let published := (stmts.toList.zipIdx.filter fun (_, i) => S.moduleOf B i == some S.entry).flatMap
+      fun (st, _) => exportedNames (Lower.fld st "ast")
+    for n in ((P.mods.find? (·.name == S.entry)).map (·.exports)).getD [] do
+      if published.contains n then
+        IO.println s!"  FAIL  ExportNames  the entry module's `export` statements already publish `{n}`, which other modules import from it"
+        bad := true
   let t4 ← lap "mkPlan" t3
   let ok ← report B S P
   let t5 ← lap "all seven checks" t4
