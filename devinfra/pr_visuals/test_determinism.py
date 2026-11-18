@@ -159,7 +159,6 @@ def test_output_absence_is_reported_only_across_complete_successful_rosters() ->
     assert analyze(observed) == Findings([], [missing_screenshot])
     assert observed.screenshots[Render(_TARGET, "dialog/mobile", "expanded", "screenshot")].runs_present == 2
     assert len(observed.complete_rosters[_TARGET]) == 2
-    assert len(observed.complete_rosters[_TARGET]) == 2
 
 
 def test_failed_target_is_reported_separately_and_not_counted_as_missing() -> None:
