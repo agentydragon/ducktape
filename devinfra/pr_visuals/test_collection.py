@@ -13,10 +13,11 @@ import pytest_bazel
 from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import (
     ResultKey,
+    SourceFile,
+    SourceResult,
     SourceSummary,
     collect_materialized_outputs,
     collect_outputs,
-    local_output_result,
 )
 from devinfra.pr_visuals.testing.outputs import Blob, result_artifact
 from devinfra.testing.output_records import SCHEMA, OutputRecord
@@ -344,33 +345,36 @@ def test_failed_bulk_download_preserves_partial_records_without_selecting_them(t
     assert not repeated.complete
 
 
-def _direct_record(root: Path, case_id: str, *, checkpoint: str | None = None) -> None:
-    """Write the documented JSON wire format directly, without a pytest adapter."""
-    outputs = root / "test-outputs"
-    (outputs / "records").mkdir(parents=True)
-    (outputs / "files").mkdir()
-    (outputs / "files" / "capture.png").write_bytes(b"local PNG payload")
-    (outputs / "records" / "capture.json").write_text(
-        json.dumps(
-            {
-                "schema": "ducktape.test-output.v1",
-                "case_id": case_id,
-                "checkpoint": checkpoint,
-                "role": "screenshot",
-                "path": "files/capture.png",
-            }
-        )
+def _materialized_source() -> SourceResult:
+    payload = Blob(b"local PNG payload")
+    record = Blob(
+        b'{"schema":"ducktape.test-output.v1","case_id":"dialog/mobile","checkpoint":"expanded",'
+        b'"role":"screenshot","path":"files/capture.png"}'
+    )
+    return SourceResult(
+        ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
+        "PASSED",
+        SourceSummary("PASSED", 1, 1, 1, 1),
+        (
+            SourceFile(
+                "test.outputs/test-outputs/files/capture.png",
+                "file:///visual-results/files/capture.png",
+                payload.digest,
+                len(payload.contents),
+            ),
+            SourceFile(
+                "test.outputs/test-outputs/records/capture.json",
+                "file:///visual-results/records/capture.json",
+                record.digest,
+                len(record.contents),
+                record.contents,
+            ),
+        ),
     )
 
 
-def test_direct_non_pytest_record_uses_same_collection_and_digest_rules(tmp_path: Path) -> None:
-    root = tmp_path / "direct"
-    _direct_record(root, "dialog/mobile", checkpoint="expanded")
-    result = ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1)
-    summary = SourceSummary("PASSED", 1, 1, 1, 1)
-    collected = collect_materialized_outputs(
-        [local_output_result(root, result=result, status="PASSED", summary=summary)], "agentydragon/ducktape"
-    )
+def test_collects_handwritten_record_from_materialized_source() -> None:
+    collected = collect_materialized_outputs([_materialized_source()], "agentydragon/ducktape")
     assert collected.complete
     assert len(collected.selected) == 1
     observation = collected.selected[0]
@@ -388,15 +392,8 @@ def test_direct_non_pytest_record_uses_same_collection_and_digest_rules(tmp_path
 @pytest.mark.parametrize(
     ("digest", "size"), [("A" * 64, 17), ("not-a-digest", 17), (42, 17), ("0" * 64, -1), ("0" * 64, True)]
 )
-def test_materialized_source_rejects_untrusted_payload_digest(tmp_path: Path, digest: str, size: int | bool) -> None:
-    root = tmp_path / "direct"
-    _direct_record(root, "dialog/mobile")
-    source = local_output_result(
-        root,
-        result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
-        status="PASSED",
-        summary=SourceSummary("PASSED", 1, 1, 1, 1),
-    )
+def test_materialized_source_rejects_untrusted_payload_digest(digest: str, size: int | bool) -> None:
+    source = _materialized_source()
     files = tuple(
         replace(file, digest=digest, size=size) if file.name.endswith("capture.png") else file for file in source.files
     )
@@ -406,15 +403,8 @@ def test_materialized_source_rejects_untrusted_payload_digest(tmp_path: Path, di
     assert any("no trusted content digest and size" in issue.message for issue in collected.issues)
 
 
-def test_materialized_source_verifies_advertised_record_digest(tmp_path: Path) -> None:
-    root = tmp_path / "direct"
-    _direct_record(root, "dialog/mobile")
-    source = local_output_result(
-        root,
-        result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
-        status="PASSED",
-        summary=SourceSummary("PASSED", 1, 1, 1, 1),
-    )
+def test_materialized_source_verifies_advertised_record_digest() -> None:
+    source = _materialized_source()
     files = tuple(
         replace(file, contents=b"tampered") if file.name.endswith("capture.json") else file for file in source.files
     )
@@ -422,80 +412,6 @@ def test_materialized_source_verifies_advertised_record_digest(tmp_path: Path) -
     assert not collected.complete
     assert not collected.selected
     assert any("does not match its advertised digest or size" in issue.message for issue in collected.issues)
-
-
-def test_local_source_rejects_symlinked_payload(tmp_path: Path) -> None:
-    root = tmp_path / "direct"
-    _direct_record(root, "dialog/mobile")
-    payload = root / "test-outputs" / "files" / "capture.png"
-    payload.unlink()
-    outside = tmp_path / "outside.png"
-    outside.write_bytes(b"outside")
-    payload.symlink_to(outside)
-    with pytest.raises(ValueError, match="symlink"):
-        local_output_result(
-            root,
-            result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
-            status="PASSED",
-            summary=SourceSummary("PASSED", 1, 1, 1, 1),
-        )
-
-
-def test_local_source_rejects_symlinked_root(tmp_path: Path) -> None:
-    root = tmp_path / "direct"
-    _direct_record(root, "dialog/mobile")
-    linked_root = tmp_path / "linked"
-    linked_root.symlink_to(root, target_is_directory=True)
-    with pytest.raises(ValueError, match="symlink"):
-        local_output_result(
-            linked_root,
-            result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
-            status="PASSED",
-            summary=SourceSummary("PASSED", 1, 1, 1, 1),
-        )
-
-
-def test_local_results_share_retry_shard_and_failed_coverage_rules(tmp_path: Path) -> None:
-    summary = SourceSummary("FLAKY", 1, 2, 2, 3)
-    specs = [
-        ("failed", "first", 1, 1, "FAILED"),
-        ("retry", "first", 1, 2, "PASSED"),
-        ("other", "second", 2, 1, "PASSED"),
-    ]
-    sources = []
-    for folder, case_id, shard, attempt, status in specs:
-        root = tmp_path / folder
-        _direct_record(root, case_id)
-        sources.append(
-            local_output_result(
-                root,
-                result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, shard, attempt),
-                status=status,
-                summary=summary,
-            )
-        )
-    collected = collect_materialized_outputs(sources, "agentydragon/ducktape")
-    assert collected.complete
-    assert {(item.result.shard, item.result.attempt) for item in collected.selected} == {(1, 2), (2, 1)}
-
-    failed_other = local_output_result(
-        tmp_path / "other",
-        result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 2, 1),
-        status="FAILED",
-        summary=SourceSummary("FAILED", 1, 2, 2, 3),
-    )
-    failed_first = [
-        local_output_result(
-            tmp_path / folder,
-            result=ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, attempt),
-            status=status,
-            summary=SourceSummary("FAILED", 1, 2, 2, 3),
-        )
-        for folder, _, _, attempt, status in specs[:2]
-    ]
-    partial = collect_materialized_outputs([*failed_first, failed_other], "agentydragon/ducktape")
-    assert not partial.complete
-    assert [(item.result.shard, item.result.attempt) for item in partial.selected] == [(1, 2)]
 
 
 if __name__ == "__main__":

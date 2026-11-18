@@ -20,13 +20,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
-from devinfra.testing.output_records import (
-    FILES_DIR,
-    RECORDS_DIR,
-    TEST_OUTPUTS_DIR,
-    OutputRecord,
-    is_canonical_output_path,
-)
+from devinfra.testing.output_records import RECORDS_DIR, TEST_OUTPUTS_DIR, OutputRecord, is_canonical_output_path
 
 logger = logging.getLogger(__name__)
 
@@ -296,47 +290,6 @@ def collect_listed_outputs(
             )
         )
     return collect_materialized_outputs(sources, repository, targets=targets)
-
-
-def local_output_result(root: Path, *, result: ResultKey, status: str | None, summary: SourceSummary) -> SourceResult:
-    """Read one completed undeclared-output tree without Bazel or pytest imports.
-
-    The caller supplies execution provenance and status explicitly. File URIs point
-    to local materialized payloads, while digest and size come from their bytes.
-    """
-    if root.is_symlink():
-        raise ValueError("output root must not be a symlink")
-    output_root = root / TEST_OUTPUTS_DIR
-    if output_root.is_symlink() or not output_root.is_dir():
-        raise ValueError(f"{TEST_OUTPUTS_DIR}/ must be a real directory")
-    files: list[SourceFile] = []
-    for part in (RECORDS_DIR, FILES_DIR):
-        folder = output_root / part
-        if folder.is_symlink():
-            raise ValueError(f"{part}/ must not be a symlink")
-        if not folder.exists():
-            continue
-        if not folder.is_dir():
-            raise ValueError(f"{part}/ must be a directory")
-        for file in sorted(folder.rglob("*")):
-            if file.is_symlink() or any(parent.is_symlink() for parent in file.parents if parent != output_root):
-                raise ValueError(f"symlink in test output path: {file}")
-            if not file.is_file():
-                continue
-            relative = file.relative_to(output_root).as_posix()
-            if not is_canonical_output_path(relative):
-                raise ValueError(f"invalid output path {relative!r}")
-            data = file.read_bytes()
-            files.append(
-                SourceFile(
-                    _PREFIX + relative,
-                    file.resolve().as_uri(),
-                    hashlib.sha256(data).hexdigest(),
-                    len(data),
-                    data if part == RECORDS_DIR else None,
-                )
-            )
-    return SourceResult(result, status, summary, tuple(files))
 
 
 def collect_materialized_outputs(
