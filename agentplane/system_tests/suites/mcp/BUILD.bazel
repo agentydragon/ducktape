@@ -1,3 +1,7 @@
+# gazelle:exclude test_gateway_budget.py
+# gazelle:exclude test_history_outage.py
+# gazelle:exclude test_sampler_roll.py
+
 load(
     "//agentplane/system_tests/k3s:defs.bzl",
     "APP_IMAGES",
@@ -17,6 +21,7 @@ load(
     "k3s_recycling_key",
 )
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load(":recovery_test.bzl", "mcp_recovery_test")
 
 package(
     default_testonly = True,
@@ -185,120 +190,24 @@ py_test(
     ],
 )
 
-py_test(
+mcp_recovery_test(
     name = "test_gateway_budget",
-    size = "enormous",
-    srcs = ["test_gateway_budget.py"],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":central_native_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:recovery_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:recovery_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :central_native_image_manifest)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = False),
-    },
-    tags = K3S_TAGS,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    fixture_manifest = "//agentplane/system_tests/suites:recovery_manifests.json",
+    image_manifest = ":central_native_image_manifest",
 )
 
 # Replacing the central sampler Pod must not affect the services suite's other cases.
-py_test(
+mcp_recovery_test(
     name = "test_sampler_roll",
-    size = "enormous",
-    srcs = ["test_sampler_roll.py"],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":central_native_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:recovery_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:recovery_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :central_native_image_manifest)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = False),
-    },
-    tags = K3S_TAGS,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    fixture_manifest = "//agentplane/system_tests/suites:recovery_manifests.json",
+    image_manifest = ":central_native_image_manifest",
 )
 
 # The History outage is isolated so a failed recovery assertion cannot leave another case without History.
-py_test(
+mcp_recovery_test(
     name = "test_history_outage",
-    size = "enormous",
-    srcs = ["test_history_outage.py"],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":central_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:history_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:history_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :central_image_manifest)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = False),
-    },
-    tags = K3S_TAGS,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    fixture_manifest = "//agentplane/system_tests/suites:history_manifests.json",
+    image_manifest = ":central_image_manifest",
 )
 
 # External delegation acceptance scales App to zero after OAuth consent, independently from the other suites.
