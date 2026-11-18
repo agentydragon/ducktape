@@ -56,8 +56,11 @@ export function canonicalDispatchCommandIds(commandIds: readonly string[]): stri
   return [...new Set(commandIds)].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
-function decode(text: string): LocalCommand {
-  const value = JSON.parse(text) as Record<string, unknown>;
+function parseRecord(text: string): Record<string, unknown> {
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
+function decode(value: Record<string, unknown>): LocalCommand {
   if (typeof value.submittedAt !== "number") {
     throw new Error("Invalid locally retained command submission time");
   }
@@ -120,21 +123,7 @@ function decode(text: string): LocalCommand {
   };
 }
 
-function encode(value: LocalCommand): string {
-  // Keep the storage format readable by older tabs. Legacy reads leave the original bytes alone.
-  return JSON.stringify({
-    submittedAt: value.submittedAt,
-    attempted: value.attempted,
-    command: value.command,
-    sessionAddressed: value.destination.kind === "session",
-    target: value.destination.kind === "reconcile-only" ? value.destination.target : null,
-    admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
-    dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
-    interruptResult: value.interruptResult ? toJson(DispatchSchema, value.interruptResult) : null,
-  });
-}
-
-export function checkAdmission(command: PendingCommand, admission: EventEntry): void {
+function checkAdmission(command: PendingCommand, admission: EventEntry): void {
   const observation = admission.event?.observation;
   if (
     admission.cursor < 1n ||
@@ -191,7 +180,7 @@ export class LocalCommands {
     if (this.snapshot.error) throw new Error(this.snapshot.error);
     const stored = localStorage.getItem(this.key(command.commandId));
     if (stored !== null) {
-      const existing = decode(stored);
+      const existing = decode(parseRecord(stored));
       if (!sameCommand(existing.command, command)) {
         throw new Error("A local command id cannot be reused with a different payload");
       }
@@ -202,18 +191,20 @@ export class LocalCommands {
         `Wait for retained commands to finish before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
       );
     }
-    const value: LocalCommand = {
+    const value = {
       command,
-      destination: { kind: "session" },
       submittedAt: Date.now(),
       attempted: false,
       admission: null,
       dispatch: null,
       interruptResult: null,
     };
-    localStorage.setItem(this.key(command.commandId), encode(value));
+    localStorage.setItem(
+      this.key(command.commandId),
+      JSON.stringify({ ...value, sessionAddressed: true, target: null })
+    );
     this.reload();
-    return value;
+    return { ...value, destination: { kind: "session" } };
   }
 
   /** Record the attempt *before* sending: a lost response can never become a cancellable draft. */
@@ -221,12 +212,13 @@ export class LocalCommands {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
-    const value = decode(raw);
+    const record = parseRecord(raw);
+    const value = decode(record);
     if (value.destination.kind === "reconcile-only" || value.admission || value.dispatch || value.interruptResult) {
       return false;
     }
     if (!value.attempted) {
-      localStorage.setItem(key, encode({ ...value, attempted: true }));
+      localStorage.setItem(key, JSON.stringify({ ...record, attempted: true }));
       this.reload();
     }
     return true;
@@ -237,42 +229,11 @@ export class LocalCommands {
     const key = this.key(id);
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
-    const value = decode(raw);
+    const value = decode(parseRecord(raw));
     if (value.destination.kind === "reconcile-only" || value.attempted) return false;
     localStorage.removeItem(key);
     this.reload();
     return true;
-  }
-
-  acknowledge(command: PendingCommand, admission: EventEntry): void {
-    checkAdmission(command, admission);
-    this.checkKnownAdmission(command, admission);
-    const stored = localStorage.getItem(this.key(command.commandId));
-    // Replay may already have removed it while this HTTP request was outstanding. A late HTTP
-    // completion must not resurrect a command the Event projection now owns.
-    if (stored === null) return;
-    const existing = decode(stored);
-    if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
-    if (existing.admission && !equals(EventEntrySchema, existing.admission, admission)) {
-      throw new Error("Conflicting command admission evidence");
-    }
-    // Admission is already a server fact even if caching that receipt fails. Keep it visible
-    // in this page; the original persisted command and server replay still support reload.
-    try {
-      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission }));
-    } catch (error) {
-      this.snapshot = {
-        ...this.snapshot,
-        commands: this.snapshot.commands.map((value) =>
-          value.command.commandId === command.commandId ? { ...value, admission } : value
-        ),
-        inputEchoes: this.snapshot.inputEchoes,
-        error: String(error),
-      };
-      for (const listener of this.listeners) listener();
-      return;
-    }
-    this.reload();
   }
 
   acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): boolean {
@@ -285,7 +246,8 @@ export class LocalCommands {
     const stored = localStorage.getItem(this.key(command.commandId));
     // A replayed server row may already own the command while an HTTP status read is in flight.
     if (stored === null) return true;
-    const existing = decode(stored);
+    const record = parseRecord(stored);
+    const existing = decode(record);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
     const target = existing.destination.kind === "reconcile-only" ? existing.destination.target : null;
     const hasSandbox = normalizedDispatch.sandbox !== "";
@@ -313,7 +275,12 @@ export class LocalCommands {
     try {
       localStorage.setItem(
         this.key(command.commandId),
-        encode({ ...existing, admission, dispatch: normalizedDispatch })
+        // Other tabs still read the authored command and destination in their original format.
+        JSON.stringify({
+          ...record,
+          admission: admission ? toJson(EventEntrySchema, admission) : null,
+          dispatch: toJson(DispatchSchema, normalizedDispatch),
+        })
       );
     } catch (error) {
       this.snapshot = {
@@ -334,7 +301,7 @@ export class LocalCommands {
   updateDispatch(commandId: string, dispatch: Dispatch): boolean {
     const stored = localStorage.getItem(this.key(commandId));
     if (stored === null) return true;
-    return this.acknowledgeDispatch(decode(stored).command, dispatch);
+    return this.acknowledgeDispatch(decode(parseRecord(stored)).command, dispatch);
   }
 
   /** A cursor is stored per effective Session and canonical command filter. */
@@ -385,28 +352,6 @@ export class LocalCommands {
     }
   }
 
-  /** A matching admission transfers command ownership to the Event fold; input text stays until echoed. */
-  observePrefix(entries: readonly EventEntry[]): void {
-    let changed = false;
-    for (const entry of entries) {
-      const observation = entry.event?.observation;
-      if (observation?.case !== "commandAdmitted" || !observation.value.command) continue;
-      const command = observation.value.command;
-      const stored = localStorage.getItem(this.key(command.commandId));
-      if (stored === null) continue;
-      const existing = decode(stored);
-      checkAdmission(existing.command, entry);
-      this.checkKnownAdmission(existing.command, entry);
-      if (existing.admission && !equals(EventEntrySchema, existing.admission, entry)) {
-        throw new Error("Replayed admission conflicts with saved HTTP evidence");
-      }
-      if (!this.retainInputEcho(existing)) continue;
-      localStorage.removeItem(this.key(command.commandId));
-      changed = true;
-    }
-    if (changed) this.reload();
-  }
-
   /** A projected command row takes delivery ownership; local input text stays until its body is fetched. */
   observeCommandIds(ids: ReadonlySet<string>): void {
     let changed = false;
@@ -416,7 +361,7 @@ export class LocalCommands {
       if (stored === null) continue;
       let value: LocalCommand;
       try {
-        value = decode(stored);
+        value = decode(parseRecord(stored));
       } catch (error) {
         this.snapshot = { ...this.snapshot, error: String(error) };
         for (const listener of this.listeners) listener();
@@ -548,7 +493,7 @@ export class LocalCommands {
         if (!key?.startsWith(this.prefix)) continue;
         const text = localStorage.getItem(key);
         if (text !== null) {
-          const value = decode(text);
+          const value = decode(parseRecord(text));
           const receipt = known.get(value.command.commandId)?.admission;
           if (receipt) {
             checkAdmission(value.command, receipt);
