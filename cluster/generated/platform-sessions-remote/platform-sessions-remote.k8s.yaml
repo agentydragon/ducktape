@@ -1921,8 +1921,6 @@ spec:
               name: grpc
             - containerPort: 9091
               name: metrics
-            - containerPort: 9090
-              name: quest-metrics
           readinessProbe:
             httpGet:
               path: /healthz
@@ -2114,9 +2112,6 @@ spec:
     - interval: 1m
       path: /metrics
       port: metrics
-    - interval: 1m
-      path: /metrics
-      port: quest-metrics
   selector:
     matchLabels:
       app: platform-sessions-quest-scheduler

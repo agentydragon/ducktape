@@ -437,8 +437,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 k8s.ContainerPort(name="https", container_port=8443),
                 k8s.ContainerPort(name="grpc", container_port=8444),
                 k8s.ContainerPort(name="metrics", container_port=9091),
-            ]
-            + ([k8s.ContainerPort(name="quest-metrics", container_port=9090)] if instance == "quest-scheduler" else []),
+            ],
             readiness_probe=provider_health,
             liveness_probe=provider_health,
             resources=(_resources(memory_request="1Gi", memory_limit="2Gi") if instance == "myquest" else _resources()),
@@ -482,12 +481,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         spec=PodMonitorSpec(
             selector=PodMonitorSpecSelector(match_labels={"app": name}),
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
-            + (
-                [PodMonitorSpecPodMetricsEndpoints(port="quest-metrics", path="/metrics", interval="1m")]
-                if instance == "quest-scheduler"
-                else []
-            ),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
         ),
     )
 
