@@ -1,12 +1,9 @@
-"""Critic development CLI and shared types.
-
-Shared infrastructure for critic developer agents (optimize and improve modes).
-"""
+"""Shared infrastructure for critic developer agents (optimize and improve modes)."""
 
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
 
@@ -110,52 +107,6 @@ py_library(
         "//props/db:snapshot_io",
         "@pypi//httpx",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "display",
-    srcs = ["display.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = ["@pypi//rich"],
-)
-
-py_library(
-    name = "cli_helpers",
-    srcs = ["cli_helpers.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":display",
-        "//props/core:agent_types",
-        "//props/core:ids",
-        "//props/db:database",
-        "//props/db:models",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "cli",
-    srcs = ["cli.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":cli_helpers",
-        ":display",
-        "//props/agents:runtime",
-        "//props/db:database",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_binary(
-    name = "critic_dev",
-    main_module = "props.agents.critic_dev.cli",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":cli",
     ],
 )
 
