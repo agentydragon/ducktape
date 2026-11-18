@@ -5,8 +5,8 @@ Agent workflow: [Session delegation](../docs/agents/session_delegation.md), avai
 
 The `session_delegation` executor forwards the Identity incarnation retained with an Action request
 to Environment Service, Session Dispatcher and History. These APIs enforce their normal caller-scoped
-target and Session checks. Actions authenticates as its own service actor with a destination-audience
-token; it carries the original Identity name and UID plus the durable Action request and execution
+target and Session checks. Actions authenticates as its own service actor with its service SVID;
+it carries the original Identity name and UID plus the durable Action request and execution
 UUIDs in the shared delegation envelope. Tool arguments never select the caller. A missing or
 replaced Identity fails closed. Legacy Action records attributed to ServiceAccounts remain intact for
 receipt and audit reads, but execution refuses them without re-attribution or backend calls.
