@@ -1,8 +1,12 @@
 # VM shutdown probe, 2026-10-27
 
-The minimal CI guest does not respond to KubeVirt's graceful shutdown request. KubeVirt waits for
-its grace period, destroys the domain, then removes the launcher. The observed cleanup tail is
-mostly this shutdown path; changing Sandbox finalizer or live-update sequencing would not remove it.
+The minimal CI guest did not respond to KubeVirt's graceful shutdown request: its initramfs lacked
+the `button` and `evdev` modules (`CONFIG_ACPI_BUTTON=m`, `CONFIG_INPUT_EVDEV=m`) and its shell PID1
+had no ACPI listener. KubeVirt waited for its grace period, destroyed the domain, then removed the
+launcher. The observed cleanup tail was mostly this shutdown path; changing Sandbox finalizer or
+live-update sequencing would not have removed it. The baseline probe establishes the failure, not an
+end-to-end savings measurement. The guest now loads both modules and runs `acpid` under systemd as
+PID1 ([shutdown path](../../deployment/README.md#vm-sandboxes)).
 
 The `test_vm_sandbox_vm` command below is the historical target name used for this measurement;
 the current VM suite target is `//agentplane/system_tests/suites:test_vm`.
@@ -62,51 +66,13 @@ and 41.324 seconds across the three VM cases. Its consoles still emitted runner 
 and Sandbox absence followed within one second. Those artifacts lacked handler/compute logs,
 which is why the additional probe was necessary.
 
-## Guest defect and intervention
-
-`guest/boot_files.py` includes only `virtio_blk`, `virtio_net`, `isofs`, `erofs` and `overlay`.
-The pinned Debian cloud kernel (`35da0f2338242760a9dcde72340bf063601c1a8507402ddf3e88bf154fbc1d06`)
-has `CONFIG_ACPI=y`, but `CONFIG_ACPI_BUTTON=m` and `CONFIG_INPUT_EVDEV=m`. The `button` and `evdev`
-modules exist in the package and are absent from the generated initramfs. There is no udev/module
-autoload in this guest. Its shell PID1 also has no ACPI listener or shutdown sequence.
-
-The pinned Debian BusyBox static package, version `1:1.37.0-6+b5`, includes `acpid`, `poweroff`,
-`init`, `ash`, `sync` and `umount`; no additional package is needed. Package SHA256:
-`c3515c5b108f5af20ab8d80e05d1c2c60ad0b17fde3615cffb296a2d3fc4347e`.
-
-The guest shutdown implementation follows these steps:
-
-1. Package/load `button` and `evdev`, and verify the actual power-button input device. Do not assume
-   it is `event0`; the guest already has a keyboard.
-2. Install an ACPI action and start BusyBox `acpid`, forwarding power-button events to PID1.
-3. PID1 marks shutdown once, stops runner restarts, signals its tracked runner child with SIGTERM,
-   and waits for the child's actual exit. A signal-interrupted shell `wait` is not drain completion.
-4. Stop/reap owned helpers, sync, unmount the workspace before `/state`, then power off.
-
-Runner SIGTERM already invokes `Runner.Close()`, which stops native processes and closes journals
-before releasing state ownership. Preserve that sequencing. Normal BusyBox `poweroff` only sends
-SIGUSR2 to PID1, so the current shell cannot use it as a shutdown supervisor. The final kernel
-poweroff call must follow successful drain/unmount; it must not replace them. Make repeated ACPI
-events idempotent, and log drain/unmount failures rather than silently bypass them.
-
-Keep the existing external grace period and wait for actual Sandbox deletion. Production's NixOS
-systemd guest is a different image; its service stop timeout does not govern this minimal CI guest.
-
-Validation for a candidate: retain these lifecycle logs; observe guest power-button reception,
-runner exit and orderly guest poweroff; verify that grace-expiry/domain-destroy messages disappear;
-run both harness cases and the Codex OOM case, plus suspend/resume and storage preservation tests.
-The baseline probe establishes the failure, not an end-to-end savings measurement. Successful VM
-stack teardown now requires the exact guest shutdown-complete console payload for each retained
-launcher incarnation. The marker follows runner exit and both successful unmounts; existing test
-failures retain diagnostics without adding another teardown assertion. Launcher compute and
-virt-handler logs are retained alongside consoles to distinguish orderly shutdown from a forced kill.
-
 ## Journal close after ACPI reception
 
-Adding ACPI handling alone exposes a second shutdown dependency. With the correct action installed
-at `/etc/acpi/poweroff`, PID1 receives the event and SIGTERM reaches the runner, but its journal
-close blocks until the external grace period expires. The scenario assertions still pass; the new
-shutdown assertion correctly rejects this forced cleanup.
+Adding ACPI handling alone exposed a second shutdown dependency. With the correct action installed
+at `/etc/acpi/poweroff`, PID1 received the event and SIGTERM reached the runner, but its journal
+close blocked until the external grace period expired. The scenario assertions still passed; the
+[teardown check for the guest's shutdown-complete marker](../../deployment/README.md#vm-sandboxes)
+correctly rejected this forced cleanup.
 
 A temporary Go `runtime/pprof` goroutine dump in
 [invocation `58f790a6`](https://app.buildbuddy.io/invocation/58f790a6-5d13-4592-8360-68a57d0da653)
