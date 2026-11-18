@@ -102,6 +102,62 @@ fn distinct_context_reads_without_write_keep_a_valid_retained_cut() {
 }
 
 #[test]
-fn actual_context_callback_alias_write_remains_conservative() {
+fn actual_context_wrapper_alias_write_remains_conservative() {
     assert_context_read_cut(true, true);
+}
+
+#[test]
+fn context_read_alias_to_original_callback_keeps_an_unsafe_cut_rejected() {
+    let source = "import { factory, read } from './peer.js';\n\
+                  let later = 0;\n\
+                  function callback() { return 1; }\n\
+                  const context = { value: callback };\n\
+                  const alias = read(context);\n\
+                  function install() { alias.extra = () => later; }\n\
+                  install();\n\
+                  const wrapped = factory(callback);\n\
+                  const observed = wrapped.invoke.extra();\n\
+                  later = 42;\n\
+                  console.log(observed, later);\n";
+    let provider = "export function factory(callback) { return { invoke: callback }; }\n\
+                    export function read(context) { return context.value; }\n";
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory("factory", 1, &[0])
+        .build()];
+    let callbacks = binding_members([
+        "callback", "context", "alias", "install", "wrapped", "observed",
+    ]);
+    let (staged, _fixture) = stage(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("callbacks/wrapped", &callbacks, &["install();"]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&contracts)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    eprintln!(
+        "original-callback context alias: original=0 42 direct={:?} saved={:?}",
+        direct.result.status.code(),
+        saved.result.status.code()
+    );
+    for invocation in [&direct, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 42\n",
+            "",
+        );
+    }
 }
