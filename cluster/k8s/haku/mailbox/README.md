@@ -24,10 +24,10 @@ Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.
 Stalwart keeps almost all settings in its database; the file surface is
 deliberately tiny (its documented declarative-deployments workflow):
 
-- `app/config.json` — the DataStore object only (Postgres via the
+- `config.json` — the DataStore object only (Postgres via the
   CNPG-generated `haku-mailbox-db-app` credentials; password injected as an
   env var).
-- `app/mailbox-plan.ndjson` — everything else, as an idempotent
+- `mailbox-plan.ndjson` — everything else, as an idempotent
   `stalwart-cli apply` plan: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the SPF-gated
@@ -47,7 +47,7 @@ deliberately tiny (its documented declarative-deployments workflow):
   (`/tls/tls.{crt,key}`), so the plan is fully static and the upsert is
   idempotent across renewals — a renewal just restarts the pod (reloader)
   and the server re-reads the PEMs.
-- `app/initialize.sh` runs in the Pod's init container on every creation. It
+- `initialize.sh` runs in the Pod's init container on every creation. It
   starts Stalwart in normal mode with a temporary fallback admin, waits for
   the local API, applies the plan, then terminates and waits for that exact
   process. On an empty database, normal startup first creates SQL tables and
@@ -93,7 +93,7 @@ kubectl-sandbox JWT) are rejected. The `authentik-jwt-rotation` CronJob
 less remaining (about every 44 days), and re-mints if the configured
 authentication probe returns 401 or 403 for its published Secret. It publishes the JWT as the
 `haku-mail-token` Secret (`flux-system`), and the `ClusterExternalSecret` in
-`app/` mirrors it into `haku-sandbox`.
+`mailbox.k8s.yaml` mirrors it into `haku-sandbox`.
 agentplane-staging's egress proxy also holds a copy and presents it to
 `claude-ai` sandboxes for the `agentplane-credential-haku-mailbox`
 placeholder, on JMAP paths only
