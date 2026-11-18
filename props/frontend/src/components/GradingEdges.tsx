@@ -4,18 +4,8 @@ import type { GradingEdgeInfo } from "../lib/schema";
 import CritiqueIssueLink from "../lib/CritiqueIssueLink";
 import OccurrenceLink from "../lib/OccurrenceLink";
 
-interface MissedOccurrence {
-  tp_id: string;
-  occurrence_id: string;
-  tp_rationale: string;
-  occ_note?: string;
-}
-
 interface Props {
   edges: GradingEdgeInfo[];
-  missedOccurrences?: MissedOccurrence[];
-  totalCredit?: number;
-  recallDenominator?: number;
   defaultOpen?: boolean;
   runId?: string;
   snapshotSlug?: string;
@@ -26,17 +16,7 @@ function edgeKey(edge: GradingEdgeInfo): string {
   return `${edge.critique_issue_id}-${targetId}-${edge.target.occurrence_id}`;
 }
 
-export default function GradingEdges({
-  edges,
-  missedOccurrences = [],
-  totalCredit,
-  recallDenominator,
-  defaultOpen = false,
-  runId,
-  snapshotSlug,
-}: Props) {
-  const creditSummary =
-    totalCredit != null && recallDenominator != null ? `${totalCredit.toFixed(1)}/${recallDenominator} recall` : null;
+export default function GradingEdges({ edges, defaultOpen = false, runId, snapshotSlug }: Props) {
   const nonZeroEdges = useMemo(
     () => edges.filter((edge) => edge.target.credit > 0).sort((a, b) => b.target.credit - a.target.credit),
     [edges]
@@ -44,13 +24,12 @@ export default function GradingEdges({
   const zeroEdges = useMemo(() => edges.filter((edge) => edge.target.credit === 0), [edges]);
   const [showZeroEdges, setShowZeroEdges] = useState(false);
 
-  if (edges.length === 0 && missedOccurrences.length === 0) return null;
+  if (edges.length === 0) return null;
 
   return (
     <details open={defaultOpen}>
       <summary className="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-xs">
         Grading ({nonZeroEdges.length} matches, {zeroEdges.length} non-matches)
-        {creditSummary ? <span className="text-gray-400 dark:text-gray-500"> — {creditSummary}</span> : null}
       </summary>
       <div className="mt-2 space-y-2">
         {nonZeroEdges.length > 0 ? (
@@ -153,40 +132,6 @@ export default function GradingEdges({
                 })}
               </div>
             ) : null}
-          </div>
-        ) : null}
-
-        {missedOccurrences.length > 0 ? (
-          <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <div className="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
-              Missed ({missedOccurrences.length}):
-            </div>
-            {missedOccurrences.map((missed) => (
-              <div
-                key={`${missed.tp_id}-${missed.occurrence_id}`}
-                className="p-2 rounded border text-xs bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800"
-              >
-                <div className="flex items-center gap-2">
-                  {snapshotSlug ? (
-                    <span className="font-mono font-medium text-red-700 dark:text-red-300">
-                      <OccurrenceLink
-                        snapshotSlug={snapshotSlug}
-                        issueId={missed.tp_id}
-                        occurrenceId={missed.occurrence_id}
-                      />
-                    </span>
-                  ) : (
-                    <span className="font-mono font-medium text-red-700 dark:text-red-300">
-                      {missed.tp_id}/{missed.occurrence_id}
-                    </span>
-                  )}
-                </div>
-                <div className="text-gray-600 dark:text-gray-400 mt-1">{missed.tp_rationale}</div>
-                {missed.occ_note ? (
-                  <div className="text-gray-500 dark:text-gray-400 italic mt-1">{missed.occ_note}</div>
-                ) : null}
-              </div>
-            ))}
           </div>
         ) : null}
       </div>
