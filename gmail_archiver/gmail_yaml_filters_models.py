@@ -101,8 +101,3 @@ class FilterRuleSet(BaseModel):
 
     def to_yaml_list(self) -> list[dict[str, Any]]:
         return [rule.model_dump(by_alias=True, exclude_none=True) for rule in self.rules]
-
-
-# Update forward refs for recursive types
-FilterRule.model_rebuild()
-CompoundCondition.model_rebuild()
