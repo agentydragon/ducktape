@@ -20,7 +20,7 @@ This experiment tests language models' ability to learn from raw numerical feedb
 2. **Quick test** (verify all models work):
 
    ```bash
-   python oneoff__llm_rl_quick_test.py
+   python llm_rl_quick_test.py
    ```
 
    - Tests all 3 models on 2 environments with minimal runs
@@ -28,11 +28,11 @@ This experiment tests language models' ability to learn from raw numerical feedb
 3. **Run full experiment**:
 
    ```bash
-   python oneoff__llm_rl_experiment.py
+   python llm_rl_experiment.py
    ```
 
    - Runs 180 experiments total (3 models × 6 environments × 10 runs)
-   - Parallelized with concurrency limit of 10 to avoid API overload
+   - Parallelized up to `MAX_CONCURRENT_EXPERIMENTS` at once to avoid API overload
    - Each environment uses appropriate episode length (100-500 steps)
    - Shows progress as [current/total] for each experiment
 
@@ -50,7 +50,7 @@ This experiment tests language models' ability to learn from raw numerical feedb
 To analyze action distributions and state visitation patterns:
 
 ```bash
-python oneoff__analyze_trajectories.py llm_rl_trajectories_TIMESTAMP.jsonl
+python analyze_trajectories.py llm_rl_trajectories_TIMESTAMP.jsonl
 ```
 
 This generates:
