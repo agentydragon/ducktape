@@ -134,7 +134,7 @@ removing placement, loader, replacement or privacy checks. Unsupported cases
 can retain explicit havoc/refusal; precision is justified by real boundaries.
 
 The statement-class prototype's low cost does not establish soundness; its
-[independent audit](../debug/2026_11_10_statement_class_independent_audit.md)
+[independent audit](../debug/summary_effects/2026_11_10_statement_class_independent_audit.md)
 contains counterexamples. Preserve those behavioral controls. Do not revive a
 prototype solely because it is fast or assume that a generic summary solver
 will be near-linear. The new plan requires an input-size bound and completed
@@ -198,8 +198,8 @@ empty at the end.
 
 ## Known open problems
 
-Historical evidence: <../debug/2026_10_31_tana_scc_pessimism.md> and
-<../debug/2026_10_31_pure_call_heap_frontier.md>. Current gate outcomes require
+Historical evidence: <../debug/tana_scc/README.md> and
+<../debug/tana_scc/2026_10_31_pure_call_heap_frontier.md>. Current gate outcomes require
 replay of the canonical inputs in gaffer-private.
 
 - **Heap locality for vendor callees.** Opaque write-capable callees retain

@@ -22,7 +22,7 @@ exec configuration. The intervening source differences concern Agentplane,
 cluster configuration and Nix artifact pins.
 
 Use the frozen workload recorded in
-[the pipeline investigation](2026_11_14_excalidraw_pipeline_performance.md):
+[the pipeline investigation](README.md):
 79 chunks, 118 emitted JS files, source/spec manifest SHA-256
 `8154a3c4ce085b8cd0279f9473a56fa6ca84c622749bdf810781daa3220abfc3`.
 Three alternating pairs each run fresh projection, analysis and full application;

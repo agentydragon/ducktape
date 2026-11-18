@@ -8,7 +8,7 @@ scoping can exclude.
 
 ## Method
 
-[`havoc_reach_pool_probe/probe.patch`](havoc_reach_pool_probe/probe.patch)
+[`probe.patch`](probe.patch)
 applies on #13151 (`f986bf0af3`). It is diagnostic only, gated on
 `DEBUNDLE_HAVOC_PROBE_DIR`. It records:
 
@@ -22,7 +22,7 @@ applies on #13151 (`f986bf0af3`). It is diagnostic only, gated on
   assignments) or the escape site (global-object write, untracked-receiver
   write, bounded fallback).
 
-[`pool_regions.py`](havoc_reach_pool_probe/pool_regions.py) recomputes each
+[`pool_regions.py`](pool_regions.py) recomputes each
 pool under three scopings. Exports and the call's own arguments always stay in
 the pool. An escaped member stays when its route's scope overlaps the call's.
 A route or call that does not resolve to an import of an import-acyclic

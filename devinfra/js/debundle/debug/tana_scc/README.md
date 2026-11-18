@@ -11,6 +11,9 @@ remains. The fallback edges decide which Pass-2 SCCs survive once Pass 1 is
 clean. Edges the engine labels observed leave two Pass-2 TDZ arcs, and only
 one of them is a real ordering requirement.
 
+Related probes cover the [asserted pure-call heap frontier](2026_10_31_pure_call_heap_frontier.md)
+and the [array iteration taint chain](2026_10_31_tana_lv_iteration_taint.md).
+
 ## Inputs and method
 
 - Engine: `-c opt` debundle at ducktape `e1f145dd8f`. Spec: gaffer-private

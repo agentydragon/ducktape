@@ -35,8 +35,8 @@ through the graph encoding even when a candidate order could preserve all
 actual conflicts. Translation validation checks the reordered pairs directly;
 it still needs conservative effect coverage and an acceptable candidate order.
 
-Historical investigations live in <../debug/2026_10_31_tana_scc_pessimism.md>
-and <../debug/2026_10_31_pure_call_heap_frontier.md>. Their counts describe the
+Historical investigations live in <../debug/tana_scc/README.md>
+and <../debug/tana_scc/2026_10_31_pure_call_heap_frontier.md>. Their counts describe the
 recorded inputs and engines, not current canonical outcomes.
 
 ## Semantics
