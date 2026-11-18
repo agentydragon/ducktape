@@ -46,12 +46,13 @@ one configured run conflict even when their payload bytes match.
 
 Python tests can use the `test_outputs` pytest fixture to bind the full
 repository-relative node ID automatically. `VisualPage.capture()` uses that
-binding and takes an optional checkpoint. Python code outside pytest can call
-`devinfra.testing.output_writer.publish_output` with an explicit case ID. Other
-frameworks and languages may implement the same record format; no pytest naming
-convention is required by the collector.
-Use `publish_file` (or the fixture's `publish_file` method) for an existing
-file; it retains the source suffix and uses the same duplicate-claim checks.
+binding and takes an optional checkpoint. Python code outside pytest can
+construct `BoundTestOutputs(output_dir, case_id)` from
+`devinfra.testing.output_writer` and use the same methods.
+Other frameworks and languages may implement the same record format with their
+own case IDs.
+The `publish_file` method retains an existing file's suffix and uses the same
+duplicate-claim checks.
 
 For already-materialized undeclared outputs, `local_output_result` reads a
 completed output tree with caller-supplied result provenance and summary;
