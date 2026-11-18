@@ -348,9 +348,9 @@ writes remain witnesses under the explicit premise; sibling writes are not
 assumed inert because an inherited setter or Proxy trap could indirectly change
 the required slots.
 
-This input only resolves native callee identity. The existing `FreshDataRecord`
-guard must separately establish an ordinary fresh plain-data argument before
-the native `Object.freeze` return and no-reentry model can be used. It does not
+This input only resolves native callee identity. The `Object.freeze` row's
+`Integrity` proof must separately establish an ordinary fresh plain-data
+argument before the native return and no-reentry model can be used. It does not
 assert call purity, suppress argument effects or throws, or establish
 whole-family native integrity. For the selected call with a fresh plain-data
 object literal argument, the native freeze body cannot observe an earlier
@@ -618,10 +618,10 @@ non-pure, while a statically primitive key can be admitted.
 Trap execution remains observable when the proxy is later used. The rule
 classifies only construction; it does not make reads, writes, calls, or
 other operations through the resulting proxy pure. This boundary is pinned
-by `fresh_proxy_object_literals_are_pure`,
+by `fresh_proxy_object_literals_have_no_effects`,
 `proxy_constructor_rejects_unproved_args`,
-`shadowed_proxy_constructor_falls_back_to_unknown`, and the E2E test
-`proxy_traps_run_only_after_property_access`.
+`shadowed_proxy_constructor_constructs_the_user_binding`, and the
+`emission/proxy_constructor/trap_timing` corpus case.
 
 See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
 and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
@@ -1048,9 +1048,8 @@ heap frontier.
 getter per ECMA-262, so the read itself is pure. The **call** of the resolved
 value is summarized only by its row, if any: a function with no row, or whose
 row constrains its operands, stays unknown on arbitrary arguments.
-`function_valued_property_calls_remain_unknown` pins that direction for every
-function-valued entry, so a read entry is never mistaken for a call
-admission.
+`function_valued_property_calls_with_opaque_arguments_invoke` pins that
+direction, so a read entry is never mistaken for a call admission.
 
 ## Global-object member call targets
 
