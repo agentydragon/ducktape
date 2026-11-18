@@ -1,6 +1,6 @@
 //! A call's return relationship must not import another call's callback.
 
-use analysis::{reports::schema::EdgeRoleReport, DependencyGraphReport};
+use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::source_unit_for_binding;
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
