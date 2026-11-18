@@ -3,7 +3,6 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -25,16 +24,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(Up, func(database *postgres.Database) int {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		if err := database.PrepareCloneTemplate(ctx); err != nil {
-			fmt.Fprintln(os.Stderr, "prepare migrated PostgreSQL clone template:", err)
-			return 1
-		}
-		integrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, Up, &integrationDatabase))
 }
 
 func cloneDatabase(t *testing.T) *sql.DB {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-	"time"
 
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
@@ -35,19 +34,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(database *postgres.Database) int {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-			if err := database.PrepareCloneTemplate(ctx); err != nil {
-				fmt.Fprintln(os.Stderr, "prepare pristine PostgreSQL clone template:", err)
-				return 1
-			}
-			fanoutIntegrationDatabase = database
-			return m.Run()
-		},
-	))
+	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, migrations.Up, &fanoutIntegrationDatabase))
 }
 
 func defaultQuotas() inboxstore.Quotas {
