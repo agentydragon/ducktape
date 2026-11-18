@@ -18,7 +18,7 @@ The manual queue, replica and wake probes are documented in the
   `CreateSession`, `GetSession`, and `ListSessions` create and read logical Session records; the
   other Session RPCs operate on them. `GetDispatch`, `ListDispatches`, `WatchDispatches`, and
   `CancelDispatch` read or cancel command receipts
-  ([proto](session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
+  ([proto](api/session/session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
   A broker with an incarnation-scoped grant supplies `expected_sandbox_uid` as an authorization
   precondition. `command_id` is the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the current Dispatches and retained deletion receipts in scope,
