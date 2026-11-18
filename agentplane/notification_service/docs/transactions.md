@@ -1,8 +1,7 @@
 # Source and inbox transaction contract
 
 This contract governs combined source and inbox writes and the matching and
-projection boundaries inside the Notification Service. The service, database,
-protobufs and deployed names stay as they are.
+projection boundaries inside the Notification Service.
 
 ## Authority and participants
 
@@ -65,8 +64,7 @@ message sender identity. Source-owned codecs produce it before
 `inbox.Store.AppendTx(ctx, tx, inboxID, subscriptionID, input)`; generic storage persists
 it without interpreting GitHub payloads. Existing JSON bytes, protobuf bytes, native
 values and nanosecond timestamp residuals retain their encodings. Read adapters reconstruct
-the explicitly typed source variants from the existing columns. No key column,
-SQL migration, protobuf change or new uniqueness rule is part of this extraction.
+the explicitly typed source variants from the existing columns.
 
 Common storage codecs scan the existing physical identity columns. GitHub codecs
 reconstruct GitHub identities and interpret GitHub summary fields; the typed
@@ -92,15 +90,3 @@ including facts, entries, schedule changes and transactional notifications.
 A successful refresh settles `next_attempt` to SQL NULL. Changed facts publish
 wakeups before commit. Quiet workers wait on committed notifications or a real due
 deadline; retry timers cover storage failures only.
-
-## Validation and rollback
-
-Keep existing golden values unchanged. Run state, fanout, inbox, source and service
-integration targets, model tests and golden tests with `bbr`; retain
-coverage for rollback after publication failure, fence expiry during writes,
-multiple matches, replay after expiry and quiet refreshes.
-
-Rollback reverts the implementation commits and rolls the previous service image.
-Existing rows and both protobuf contracts remain readable without conversion.
-After rollout, check readiness, a fresh Action subscription, GitHub ingestion,
-inbox reads, replay dedupe and notice delivery.
