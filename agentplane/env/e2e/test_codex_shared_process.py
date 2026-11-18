@@ -28,7 +28,11 @@ SESSION_IDS = ("shared-first", "shared-second")
 
 @pytest.fixture
 async def runner_gateway(sandbox: SandboxCluster, tmp_path: Path) -> AsyncIterator[Gateway]:
-    """Reoccupy the released default-loopback port before the production Runtime starts."""
+    """Reoccupy the released default-loopback port before the production Runtime starts.
+
+    A port picked by bind-then-close is free for another listener before the Runtime binds it (CI failed with
+    `address already in use`). A Gateway on `127.0.0.1` fails here; `serve_gateway` uses a Sandbox-derived address.
+    """
     async with serve_gateway(sandbox, tmp_path) as gateway:
         _, port = gateway.target.rsplit(":", 1)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
