@@ -41,11 +41,6 @@ def mount_trust_bundle(scope: Construct, container: Container) -> Path:
     return Path(TRUST_BUNDLE_FILE)
 
 
-def client_tls(server_uri: str) -> ClientTLS:
-    """Build the server-verifying client settings that use the shared trust mount."""
-    return ClientTLS(ca_file=Path(TRUST_BUNDLE_FILE), server_uri=server_uri)
-
-
 def service_client_tls(server_uri: str, *, client_uri: str) -> ClientTLS:
     """Use the service SVID mounted by `service_certificate` and verify an exact receiver."""
     return ClientTLS(
@@ -97,20 +92,6 @@ def mount_service_certificate(scope: Construct, *, container: Container, name: s
     container.mount(_CERT_PATH, volume, read_only=True)
     ca_file = mount_trust_bundle(scope, container)
     return TLS(cert_file=CERT_FILE, key_file=KEY_FILE, ca_file=str(ca_file))
-
-
-def client_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
-    """Mount a service client SVID and workload-CA trust bundle for a direct mTLS connection."""
-    secret_name = f"{name}-client-workload-tls"
-    certificate(
-        scope,
-        f"{name}-client-workload-certificate",
-        env,
-        name=f"{name}-client-workload",
-        secret_name=secret_name,
-        uri=uri,
-    )
-    return mount_client_certificate(scope, container=container, name=name)
 
 
 def mount_client_certificate(scope: Construct, *, container: Container, name: str) -> TLS:
