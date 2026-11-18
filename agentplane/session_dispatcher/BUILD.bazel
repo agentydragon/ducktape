@@ -167,12 +167,11 @@ py_test(
         ":client",
         "//:conftest",  # keep: root pytest config without the package conftest
         "//agentplane:subjects",
-        "//agentplane/env:config",
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:gateway",
-        "//agentplane/env/e2e/testing:history_tunnel",
         "//agentplane/env/e2e/testing:process",
+        "//agentplane/env/e2e/testing:runtime_with_history",
         "//agentplane/env/runtime/execution:executor_pb2",
         "//agentplane/env/runtime/execution:executor_pb2_grpc",
         "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
