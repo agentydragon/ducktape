@@ -301,11 +301,8 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:
-    session = ActionSession({0: compose(tax_character=QUALIFIED_DIVIDENDS)}, ALICE)
-    try:
+    with ActionSession({0: compose(tax_character=QUALIFIED_DIVIDENDS)}, ALICE) as session:
         batch = session.start()
-    finally:
-        session.close()
     assert not isinstance(batch, Finished)
     [decision] = batch
     assert decision.observation.tax_records is not None

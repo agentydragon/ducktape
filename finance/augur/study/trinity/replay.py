@@ -404,14 +404,11 @@ def drive(
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
     """Python owns the monthly batch loop; the worlds own every financial effect."""
-    session = ActionSession(worlds, RETIREE, capture=capture)
-    try:
+    with ActionSession(worlds, RETIREE, capture=capture) as session:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(fund_claims(batch, targets=targets, cash_account_id=CHECKING))
         return batch.rollouts
-    finally:
-        session.close()
 
 
 def execute(

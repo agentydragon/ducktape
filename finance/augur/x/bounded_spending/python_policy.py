@@ -253,8 +253,7 @@ def run(
     """Python owns the loop over a fresh world per path; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    session = ActionSession({id_: compose(id_) for id_ in rollout_ids}, AgentId("retiree"), capture=capture)
-    try:
+    with ActionSession({id_: compose(id_) for id_ in rollout_ids}, AgentId("retiree"), capture=capture) as session:
         batch = session.start()
         while not isinstance(batch, Finished):
             if reverse:
@@ -266,8 +265,6 @@ def run(
             ]
             batch = session.advance(responses)
         return batch
-    finally:
-        session.close()
 
 
 def consumption(output: Finished) -> tuple[list[list[int | None]], list[list[int]]]:

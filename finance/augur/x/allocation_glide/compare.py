@@ -116,14 +116,11 @@ def execute(
     rollout_ids: list[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
-    session = ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, RETIREE, capture=capture)
-    try:
+    with ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, RETIREE, capture=capture) as session:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(decide(batch, annual_step=annual_step))
         return batch.rollouts
-    finally:
-        session.close()
 
 
 def compare(output_dir: Path) -> None:

@@ -77,10 +77,9 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
 
 
 def run(ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
-    live = session(ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
-    try:
+    with session(ids) as live:
         batch = live.start()
         while not isinstance(batch, Finished):
             responses = []
@@ -110,8 +109,6 @@ def run(ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]
                 responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
             batch = live.advance(responses)
         return batch.rollouts, observed
-    finally:
-        live.close()
 
 
 def test_current_facts_receipt_memory_and_original_replay() -> None:
@@ -317,6 +314,13 @@ def test_extraction_error_and_explicit_close_release_the_session() -> None:
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         closed.start()
+
+
+def test_leaving_the_with_block_closes_the_session() -> None:
+    with session([0]) as scoped:
+        scoped.start()
+    with pytest.raises(ValueError, match="finished, aborted or closed"):
+        scoped.advance([])
 
 
 if __name__ == "__main__":
