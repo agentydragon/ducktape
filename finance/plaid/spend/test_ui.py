@@ -20,6 +20,7 @@ from finance.plaid.spend.models import (
     SpendView,
     TransactionPeriodSummary,
 )
+from finance.plaid.spend.net_worth import NetWorthHistory
 from finance.plaid.spend.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.service import SpendService
@@ -63,6 +64,9 @@ class _Reader:
 
     async def read_pace_history(self, history_days: int) -> PaceHistory | None:
         return None
+
+    async def read_net_worth(self) -> NetWorthHistory:
+        return NetWorthHistory(days=[])
 
     async def read_sustainability(self, window_days: int | None = None) -> SustainabilityView:
         if window_days is not None and window_days not in (30, 90, 365):
@@ -111,6 +115,7 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         "/api/v1/transactions",
         "/api/v1/pace-history",
         "/api/v1/spending-history?history_days=90",
+        "/api/v1/net-worth",
         "/api/v1/sustainability",
         "/api/v1/sustainability/windows",
     )
@@ -123,6 +128,9 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         assert (await client.get("/api/v1/sustainability?window_days=7", headers=cookie)).status_code == 422
         assert (await client.get("/api/v1/spending-history", headers=cookie)).status_code == 422
         assert (await client.get("/api/v1/spending-history?history_days=42", headers=cookie)).status_code == 422
+        history = await client.get("/api/v1/net-worth", headers=cookie)
+        assert history.headers["Cache-Control"] == "no-store"
+        assert history.json() == {"days": []}
         assert (await client.get("/api/v1/events")).status_code == 401
         assert (await client.get("/api/v1/web/view", headers=cookie)).status_code == 404
 

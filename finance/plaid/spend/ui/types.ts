@@ -8,4 +8,4 @@ export type AllowancePeriodId = Period["id"];
 export type EstimatePeriodId = Extract<AllowancePeriodId, "rolling_7d" | "rolling_30d">;
 export type RuleCondition = Rule["condition"];
 export type RuleKind = Rule["kind"];
-export type SpendTab = "spending" | "transactions" | "configuration" | "sustainability";
+export type SpendTab = "spending" | "transactions" | "configuration" | "sustainability" | "net-worth";

@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.configuration import load_configuration
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
+from finance.plaid.spend.net_worth import NetWorthHistory
 from finance.plaid.spend.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
@@ -91,6 +92,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
             "/api/v1/transactions",
             "/api/v1/pace-history",
             "/api/v1/spending-history",
+            "/api/v1/net-worth",
             "/api/v1/sustainability",
             "/api/v1/sustainability/windows",
         },
@@ -164,6 +166,11 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         if history_days not in (7, 30, 90, 365):
             raise HTTPException(status_code=422, detail="history_days must be 7, 30, 90, or 365")
         return await reader.read_pace_history(history_days=history_days)
+
+    @app.get("/api/v1/net-worth", response_model=NetWorthHistory)
+    async def get_net_worth(_access: SpendAccess, reader: SpendReader, response: Response) -> NetWorthHistory:
+        response.headers["Cache-Control"] = "no-store"
+        return await reader.read_net_worth()
 
     @app.get("/api/v1/sustainability", response_model=SustainabilityView)
     async def get_sustainability(

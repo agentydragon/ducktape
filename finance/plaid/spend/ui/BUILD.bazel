@@ -263,6 +263,20 @@ spend_vitest_test(
 )
 
 ts_library(
+    name = "net_worth",
+    srcs = ["net_worth.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":schema",
+        ":spend_display",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/chart.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "main",
     srcs = [
         "main.tsx",
@@ -270,6 +284,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":configuration",
+        ":net_worth",
         ":spending",
         ":styles",
         ":sustainability",

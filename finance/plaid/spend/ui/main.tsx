@@ -5,6 +5,7 @@ import "@mantine/core/styles.css";
 import "./styles.css";
 
 import { ConfigurationPage } from "./configuration";
+import { NetWorthPage } from "./net_worth";
 import { SpendingPage } from "./spending";
 import { SustainabilityPage } from "./sustainability";
 import { TransactionsPage } from "./transactions";
@@ -16,6 +17,7 @@ const spendTabs: { value: SpendTab; label: string }[] = [
   { value: "transactions", label: "Transactions" },
   { value: "configuration", label: "Configuration" },
   { value: "sustainability", label: "Sustainability" },
+  { value: "net-worth", label: "Net Worth" },
 ];
 
 function tabForHash(hash: string): SpendTab {
@@ -23,6 +25,7 @@ function tabForHash(hash: string): SpendTab {
   if (path === "#/transactions") return "transactions";
   if (path === "#/configuration") return "configuration";
   if (path === "#/sustainability") return "sustainability";
+  if (path === "#/net-worth") return "net-worth";
   return "spending";
 }
 
@@ -145,6 +148,9 @@ function App() {
           </Tabs.Panel>
           <Tabs.Panel value="sustainability">
             <SustainabilityPage />
+          </Tabs.Panel>
+          <Tabs.Panel value="net-worth">
+            <NetWorthPage />
           </Tabs.Panel>
         </Container>
       </Tabs>

@@ -57,6 +57,7 @@ from finance.plaid.spend.models import (
     StatementReason,
     UnavailableCardPeriod,
 )
+from finance.plaid.spend.net_worth import NetWorthHistory, read_net_worth
 from finance.plaid.spend.pace_history import pace_history
 from finance.plaid.spend.pace_history_models import PaceHistory
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
@@ -559,6 +560,11 @@ class SpendService:
                 prepared=prepared,
             )
         )
+
+    async def read_net_worth(self) -> NetWorthHistory:
+        sessions = self._require_read_sessions()
+        async with sessions() as session:
+            return await read_net_worth(session, time_zone=self._configuration.time_zone, now=datetime.now(UTC))
 
     async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
         policy = self._configuration.sustainability
