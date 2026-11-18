@@ -474,7 +474,10 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                         *(
                             []
                             if record_upstream_traffic
-                            else [k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false")]
+                            else [
+                                k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
+                                k8s.EnvVar(name="MYQUEST_BROWSER_LAUNCH_MODE", value="cdp"),
+                            ]
                         ),
                     ]
                     if instance == "myquest-canary"

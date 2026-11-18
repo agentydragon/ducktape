@@ -2730,6 +2730,8 @@ spec:
               value: "true"
             - name: PLATFORM_SESSIONS_PROXY_ENABLED
               value: "false"
+            - name: MYQUEST_BROWSER_LAUNCH_MODE
+              value: cdp
           image: git.allegedly.works/ducktape-ci/platform-sessions-myquest:unset
           livenessProbe:
             httpGet:
