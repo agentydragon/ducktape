@@ -24,6 +24,8 @@ For each assertion, ask what could break while someone was making an otherwise r
 
 ## Send changes for review
 
-Pick a bounded area for each pass and prioritize changes that make it easier to find information, change code, or trust behavior. Open PRs directly for clear low-risk wins, including documentation-only changes and pure refactors. Use a PR stack when it helps avoid conflicts or expresses a dependency. [PR workflow](AGENTS.md#splitting-work-into-prs)
+Pick a bounded area for each pass and prioritize changes that make it easier to find information, change code, or trust behavior. Keep going across passes until you can no longer find changes the repository owner is likely to want or accept.
+
+Open PRs directly for clear low-risk wins, including documentation-only changes and pure refactors. Use a PR stack when it helps avoid conflicts or expresses a dependency. [PR workflow](AGENTS.md#splitting-work-into-prs)
 
 Open a PR for a promising change with material risk, too. Put the risk or requirement in the title and near the top of the description. Use explicit wording such as `[Migration required]` or `[Ordered rollout]`. Describe the affected consumers and the conditions for merging or deploying. For a protocol change that requires a stack, give the rollout order and when each step is safe to deploy.
