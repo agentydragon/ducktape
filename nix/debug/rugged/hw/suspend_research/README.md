@@ -341,9 +341,11 @@ tracked in the 2026-06-24 recurrence section.
 
 ## Code mechanism (evidence, with line references)
 
-Source captured in `upstream_*.c` beside this report and full
-`~/code/linux` clone at v6.19 (= `mhi_pci_*` code is identical to
-current torvalds/linux master, verified by diff).
+Source: torvalds/linux v6.19,
+`drivers/bus/mhi/host/{boot,init,main,pm,pci_generic}.c` and `internal.h`
+(<https://github.com/torvalds/linux/tree/v6.19/drivers/bus/mhi/host>). Line
+references into these files are against that tag; the `mhi_pci_*` code was
+identical to master when checked by diff.
 
 ### `mhi_foxconn_dw5934e_info` (`pci_generic.c` ~line 644)
 
@@ -778,7 +780,7 @@ hid-sensor-hub debug spam is a separate side-todo.
 - Capture script: `nix/debug/rugged/modem.sh` (`dump`, `status`, `recover`).
 - BIOS toggle script: `nix/debug/rugged/hw/suspend_research/flip_wwan_autosense.sh`.
 - Snapshots: `nix/debug/rugged/hw/suspend_research/snapshots/<TS>/`.
-- Captured upstream sources: `nix/debug/rugged/hw/suspend_research/upstream_*.c`.
+- Upstream sources: <https://github.com/torvalds/linux/tree/v6.19/drivers/bus/mhi/host>.
 - Local clones (read-only for reference):
   - `~/code/linux` — torvalds/linux v6.19 (kernel sources).
   - `~/code/modemmanager` — MM 1.24.2 (sleep handler verified).
