@@ -1,6 +1,7 @@
 # App TODOs
 
-- [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
+- [ ] Choose a [shared settings framework](../plans/task_dag.md#service_settings_rethink--how-agentplane-services-are-configured)
+      before changing the App config schema.
 
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens
       its own watches and relists resources on changes. Preserve authorization and stale-data fencing.
