@@ -81,8 +81,8 @@ BACKEND_SERVICE_IMAGES = {
     "//agentplane/llm_ingress:image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
     "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
     "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
-    "//agentplane/session_dispatcher:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
-    "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+    "//agentplane/session_dispatcher:image": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+    "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
 }
 APP_IMAGES = {

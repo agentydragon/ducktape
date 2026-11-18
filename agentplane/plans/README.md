@@ -62,8 +62,10 @@ improvements alongside. Component TODOs and research plans do not set a competin
   documented in [Session delegation](../action_service/session_delegation/README.md)
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
-- [Deployed service names](deployed_service_names.md) — renaming the `runner-gateway` and
-  `sandbox-controller` Deployments, Services and images to `sessions` and `environments` (in flight)
+- [Deployed service names](deployed_service_names.md) — staging verification and rollback for
+  retiring the legacy Sessions and Environments deployments
+- [Egress relay rename](egress_relay_rename.md) — deferred rollout for the relay binary,
+  image, settings and template names
 - [Notification Service split](notification_service_split.md) — the seam considered for
   `NOTIFICATION_SERVICE_SPLIT`; not released
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan

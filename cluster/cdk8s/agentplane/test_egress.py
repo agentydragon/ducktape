@@ -35,7 +35,6 @@ from cluster.cdk8s.agentplane import (
     notifications,
     platform_routes,
     runner_gateway,
-    session_dispatcher,
     staging,
     staging_grants,
 )
@@ -342,28 +341,23 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     namespace = staging.ENV.namespace
     sessions = runner_gateway.sessions_service(namespace)
     sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
-    legacy_origin = session_dispatcher.service(namespace)
-    legacy_destination = runner_gateway.service(namespace)
-    legacy_authority = f"{legacy_origin.fqdn}:{legacy_origin.port.number}"
+    legacy_authority = f"session-dispatcher.{namespace}.svc.cluster.local:8080"
     history = history_service.service(namespace)
     history_origin = f"{history.fqdn}:{history.port.number}"
     history_route = platform_routes.history_grpc(namespace)
     history_url = f"http://{history_route.local_target}"
     environments = environment_service.environments_service(namespace)
-    legacy_environments = environment_service.service(namespace)
     environments_route = platform_routes.environments_grpc(namespace)
     basic = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)
-    assert all({legacy_origin.fqdn, sessions.fqdn}.isdisjoint(rule.get("hosts", [])) for rule in basic["spec"]["rules"])
+    assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
     assert "projected_token_audiences" not in proxy_settings
     assert {
         sessions_authority,
-        f"{legacy_destination.fqdn}:{legacy_destination.port.number}",
         f"{history.fqdn}:{history.pod_port}",
         f"{environments.fqdn}:{environments.pod_port}",
-        f"{legacy_environments.fqdn}:{legacy_environments.pod_port}",
     } <= set(proxy_settings["tls_passthrough_targets"])
 
     configured: list[dict[str, Any]] = []
@@ -415,7 +409,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     assert pod_env["AGENTPLANE_ENVIRONMENTS_URL"] == f"http://{environments_route.local_target}"
     assert not any(name.startswith("AGENTPLANE_") and name.endswith("_CREDENTIAL") for name in pod_env)
     assert all(
-        source.get("serviceAccountToken", {}).get("audience") != session_dispatcher.TOKEN_AUDIENCE
+        source.get("serviceAccountToken", {}).get("audience") != "session-dispatcher"
         for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
         for source in volume.get("projected", {}).get("sources", [])
     )

@@ -43,12 +43,10 @@ from cluster.cdk8s.agentplane import (
     actions,
     database,
     egress,
-    environment_service,
     history_service,
     notifications,
     policy_controller,
     runner_gateway,
-    session_dispatcher,
     telemetry,
     workload_tls,
 )
@@ -279,7 +277,7 @@ class App(Construct):
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, Runner Gateway, Session Dispatcher, History Service, the egress
+        # API server, the OIDC provider, Sessions, History Service, the egress
         # proxy's admin port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
@@ -291,15 +289,12 @@ class App(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                runner_gateway.service(namespace).egress(),
-                # Old App Pods and rollback images still use this authority during the roll.
-                environment_service.service(namespace).egress(),
+                runner_gateway.sessions_service(namespace).egress(),
                 *(
                     [self.environment_service_endpoint.egress()]
                     if self.environment_service_endpoint is not None
                     else []
                 ),
-                session_dispatcher.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 policy_controller.tls_service(namespace).egress(),

@@ -40,7 +40,7 @@ integration app presents the operator UI ([consent UI](../app/README.md)). See t
 [ConnectionService implementation](../mcp_edge/internal/connections/service.go) and
 [authorization server](../mcp_edge/internal/authserver/authserver.go).
 
-EnvironmentService calls use the Sandbox Controller's every-replica `sandbox-controller:8082`
+EnvironmentService calls use the Sandbox Controller's every-replica `environments:8082`
 listener, presenting the Actions service SVID and verifying the Controller SVID. Delegated
 list/get/resume keep their typed effective-Identity envelope; reviewed orchestration launch uses
 the separate direct launcher grant and validated launch origin. Session Dispatcher and History

@@ -185,17 +185,16 @@ One PostgreSQL 18 Deployment uses the pinned published CNPG minimal image and an
 volume. [`postgres_entrypoint.sh`](postgres_entrypoint.sh) runs bootstrap SQL assembled by
 [`fixture_database.py`](fixture_database.py) to create the service-owned databases. Unsupported
 Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
-construction. VM stacks install Kyverno for the launcher relay. The chart instantiates the Go Runner Gateway
-directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
-Service names remain. The serving process applies the embedded Dispatcher migrations before opening
-the listener, using the Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
+construction. VM stacks install Kyverno for the launcher relay. The chart instantiates Sessions
+with one gRPC listener on port 8080. The serving process applies the embedded Dispatcher migrations
+before opening the listener, using the Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so no action downloads K3s at runtime.
 
 Every stack explicitly uses mTLS for runner control and installs real cert-manager and trust-manager from pinned upstream manifests/charts and
 Bazel-pulled OCI layouts. Startup probes admission through both webhooks before applying the fixture.
-A self-signed bootstrap ClusterIssuer issues the test root CA; the production runner Certificate/Issuer
-constructs issue the intermediate CA and Gateway leaf. Sandbox Controller creates each runner's
+A self-signed bootstrap ClusterIssuer issues the test root CA. The production workload issuer issues
+the Sessions and Environments certificates, and the Environments controller creates each runner's
 Certificate. trust-manager distributes the root through a Bundle into the workload namespace;
 startup waits for certificate readiness and Bundle synchronization. Controller logs and PKI resource
 status are retained under `certificates/` in undeclared test outputs. Optional insecure transport is

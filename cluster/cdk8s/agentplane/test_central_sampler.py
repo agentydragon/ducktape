@@ -68,7 +68,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "type": "RollingUpdate",
         "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0},
     }
-    assert _resource(staging_manifests, "Deployment", "runner-gateway")["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert _resource(staging_manifests, "Deployment", "sessions")["spec"]["strategy"]["type"] == "RollingUpdate"
     assert _resource(staging_manifests, "PodDisruptionBudget", central_sampler.NAME)["spec"]["minAvailable"] == 1
     assert pod["serviceAccountName"] == central_sampler.NAME
     assert not pod.get("initContainers")
@@ -240,11 +240,15 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
 
     sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
     assert not _admits(sampler_policy, source=runner_gateway.NAME, port=8080)
-    assert _admits(sampler_policy, source=runner_gateway.NAME, port=central_sampler.PORT)
+    assert _admits(
+        _resource(staging_manifests, "CiliumNetworkPolicy", "sessions-sampler")["spec"],
+        source=runner_gateway.NAME,
+        port=central_sampler.PORT,
+    )
     assert not _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],
         source=central_sampler.NAME,
-        port=runner_gateway.service(namespace).pod_port,
+        port=runner_gateway.sessions_service(namespace).pod_port,
     )
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", history_service.NAME)["spec"],

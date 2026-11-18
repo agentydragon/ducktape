@@ -13,7 +13,7 @@ from agentplane.system_tests.driver.port_forward import PortForward, async_port_
 from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 
-SERVICE = "session-dispatcher"
+SERVICE = "sessions"
 TOKEN_AUDIENCE = "session-dispatcher"
 
 
@@ -87,7 +87,7 @@ async def native_client(cluster: Cluster) -> AsyncIterator[SessionDispatcherClie
             token_file=None,
             request_timeout_s=30,
             channel_credentials=caller.channel_credentials,
-            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as client,
     ):
         yield client

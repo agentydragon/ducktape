@@ -26,21 +26,19 @@ def crictl_command(deployment: Stack) -> tuple[str, ...]:
     return (str(deployment.k3s.binary), "crictl")
 
 
-@pytest.mark.parametrize("service", ["runner-gateway", "session-dispatcher", "sessions"])
-async def test_public_services_preserve_dispatcher_authentication(cluster: Cluster, service: str) -> None:
+async def test_sessions_service_authenticates_dispatcher_calls(cluster: Cluster) -> None:
     request = session_dispatcher_pb2.GetSessionRequest(session_id=str(uuid4()))
     async with (
-        forward(cluster, f"service/{service}") as target,
+        forward(cluster) as target,
         dial(
             target,
             channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-            # Fixture Python TLS verifies this DNS SAN regardless of the Service alias.
-            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as authorized,
         dial(
             target,
             channel_credentials=await service_credentials(cluster),
-            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as anonymous,
     ):
         with pytest.raises(grpc.aio.AioRpcError) as absent_session:

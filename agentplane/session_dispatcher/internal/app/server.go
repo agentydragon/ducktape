@@ -262,12 +262,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 // Main loads deployment settings, runs migrations and serves until ctx is canceled.
 // Its return value preserves the command's configuration and runtime exit codes.
 func Main(ctx context.Context, args []string) int {
-	databaseEnv, err := bootstrapEnvName("DISPATCHER_DATABASE_URL")
-	if err != nil {
-		slog.Error("invalid Runner Gateway configuration", "error", err)
-		return 2
-	}
-	if handled, err := migrate.RunOnly(ctx, args, databaseEnv, migrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, args, dispatcherDatabaseURLEnv, migrations.Up); handled {
 		if err != nil {
 			slog.Error("Runner Gateway migration failed", "error", err)
 			return 1

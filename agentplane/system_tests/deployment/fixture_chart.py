@@ -152,9 +152,6 @@ from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateK
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
 
-RUNNER_GATEWAY = "runner-gateway"
-SESSION_DISPATCHER = "session-dispatcher"
-
 
 @dataclass(frozen=True)
 class AppFixture:
@@ -543,11 +540,9 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     """Give port-forwarded Python gRPC clients DNS SANs to verify in the k3s-only fixture."""
     names_by_certificate = {
         "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
-        "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
-        "sessions-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
+        "sessions-workload": runner_gateway.sessions_service(NAMESPACE).fqdn,
         "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
-        "environments-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
-        "sandbox-controller-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
+        "environments-client-workload": environment_service.environments_service(NAMESPACE).fqdn,
     }
     certificates = {
         document["metadata"]["name"]: document["spec"]
@@ -556,7 +551,6 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     }
     for certificate_name, dns_name in names_by_certificate.items():
         certificates[certificate_name]["dnsNames"] = [dns_name]
-    certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
     certificates["sessions-workload"]["ipAddresses"] = ["127.0.0.1"]
     if sampler := certificates.get("central-sampler-workload"):
         sampler["dnsNames"] = [f"central-sampler.{NAMESPACE}.svc.cluster.local"]
@@ -664,9 +658,7 @@ def add_backend_services(
             history_service.service(env.namespace),
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
-            runner_gateway.service(env.namespace),
             runner_gateway.sessions_service(env.namespace),
-            environment_service.service(env.namespace),
             environment_service.environments_service(env.namespace),
             actions.service(NAMESPACE),
         ],
@@ -684,10 +676,10 @@ def add_backend_services(
         else ()
     )
     gateway_callers = platform_callers | notifications_caller
-    runner_gateway_workload.add_stable_services(chart, env)
+    runner_gateway_workload.add_service(chart, env)
     runner_gateway_workload.RunnerGateway(
         chart,
-        "runner-gateway",
+        "sessions",
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
         orchestration_callers=orchestration_caller,
@@ -695,10 +687,7 @@ def add_backend_services(
         delegation_actor=environment_service_delegation_actor,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
-        # Both deployment names import the same freshly built binary in this fixture.
-        sessions_image="git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
-        # Start on the renamed workload; failover scenarios activate old rollback capacity.
-        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
+        sessions_image="git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
         registry_secret_name=None,
         placement=None,
         container_env=database_env,
@@ -724,10 +713,9 @@ def add_backend_services(
     )
     sandbox_controller.SandboxController(
         chart,
-        "sandbox-controller",
+        "environments",
         env,
-        environments_image="git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
-        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
+        environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=orchestration_caller,
@@ -766,7 +754,6 @@ def add_backend_services(
         env,
         database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
-        gateway=runner_gateway.service(NAMESPACE),
         gateway_control_target=environment_service.environments_control_target(NAMESPACE),
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),

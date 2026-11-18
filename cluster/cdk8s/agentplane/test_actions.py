@@ -28,7 +28,6 @@ from cluster.cdk8s.agentplane import (
     history_service,
     mcp_edge,
     runner_gateway,
-    session_dispatcher,
     staging,
     telemetry,
     workload_tls,
@@ -132,7 +131,7 @@ def test_settings_and_tls_are_mounted_without_optional_secrets(scratch_app: App)
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
         placement=None,
         registry_secret_name=None,
     )
@@ -155,7 +154,7 @@ def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> No
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
     ).add_platform_resources()
 
     rule = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "PrometheusRule")
@@ -404,7 +403,7 @@ def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
     )
     action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)

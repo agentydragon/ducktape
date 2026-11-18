@@ -1,26 +1,21 @@
 # Session Dispatcher caller authority
 
-This contract governs SessionDispatcher gRPC methods served by the Runner Gateway and the generated
+This contract governs SessionDispatcher gRPC methods served by Sessions and the generated
 HTTP/JSON facade served by the App.
 It scopes existing Sessions and existing environments; it does not create environments or select templates.
 
 ## Process bootstrap
 
-The Sessions process loads its strict YAML settings from `AGENTPLANE_SESSIONS_CONFIG_FILE`
-or `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE`. Its explicit runtime database Secret uses
-`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` or
-`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Empty values are absent; identical
-nonempty aliases are accepted, and conflicting values fail startup without disclosing their
-values. Neither prefix enables generic per-setting environment overrides. File paths are supplied
-by configuration and need no baked-in mount root. YAML keys, database/Goose names, wire names,
-method grants and exact service SPIFFE IDs are independent of the bootstrap prefix.
+The Sessions process loads strict YAML settings from `AGENTPLANE_SESSIONS_CONFIG_FILE`.
+The database URL comes from the explicit runtime Secret input
+`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL`.
 
 ## Caller proof
 
-- One TLS gRPC listener serves Dispatcher, Runtime proxy, Executor and health. Dispatcher admits
+- The TLS listener at `sessions:8080` serves Dispatcher and gRPC health. Dispatcher admits
   live workload Identity SVIDs, configured exact service SVIDs and configured typed service
-  delegation. Runtime proxy and Executor have separate service-only grants; EnvironmentService is
-  served by Environments on its own listener. Gateway constructs no TokenReview receiver.
+  delegation. Environments serves EnvironmentService, Runtime proxy, HarnessHost and Executor
+  on its own listener.
 - Workload traffic reaches the shared TLS listener through central-proxy CONNECT and presents its
   own SVID. Live credential and Identity UID resolution are unchanged, including standing
   credentials with no Sandbox or Pod. No new Environment attachment requirement is introduced.

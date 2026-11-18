@@ -17,7 +17,7 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 const requiredFile = `sandbox_namespace: agentplane
 policy_namespace: agentplane
 runner_token_file: /var/run/token
-runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'
+runner_control_target_template: 'environments.{namespace}.svc:8082'
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
 rpc:
   listen_address: ':8080'
@@ -43,78 +43,6 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 			path := configtest.WriteSettings(t, contents)
 			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 				t.Fatal("accepted a missing policy_namespace")
-			}
-		})
-	}
-}
-
-func TestBootstrapNames(t *testing.T) {
-	const databaseURL = "postgres://test-user:do-not-log-test-password@database.invalid/test_dispatcher"
-	for _, tc := range []struct {
-		name                     string
-		oldFile, newFile         bool
-		oldDatabase, newDatabase bool
-		conflictFile             bool
-		conflictDatabase         bool
-		unknownKey               bool
-		wantError                bool
-	}{
-		{name: "old", oldFile: true, oldDatabase: true},
-		{name: "new", newFile: true, newDatabase: true},
-		{name: "old file new database", oldFile: true, newDatabase: true},
-		{name: "new file old database", newFile: true, oldDatabase: true},
-		{name: "identical aliases", oldFile: true, newFile: true, oldDatabase: true, newDatabase: true},
-		{name: "conflicting files", oldFile: true, newFile: true, oldDatabase: true, conflictFile: true, wantError: true},
-		{name: "conflicting secrets", newFile: true, oldDatabase: true, newDatabase: true, conflictDatabase: true, wantError: true},
-		{name: "new file remains strict", newFile: true, newDatabase: true, unknownKey: true, wantError: true},
-		{name: "missing file", newDatabase: true, wantError: true},
-		{name: "missing database", newFile: true, wantError: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			settings := strings.ReplaceAll(requiredFile, "agentplane\n", "test-sandboxes\n")
-			settings = strings.ReplaceAll(settings, "runner-gateway.{namespace}.svc:8080", "test-proxy.{namespace}.svc:18082")
-			if tc.unknownKey {
-				settings += "test_unknown_setting: true\n"
-			}
-			path := configtest.WriteSettings(t, settings)
-			env := []string{
-				"AGENTPLANE_SESSIONS_RPC__LISTEN_ADDRESS=test-ignored.invalid:9999",
-			}
-			if tc.oldFile {
-				env = append(env, settingPrefix+"CONFIG_FILE="+path)
-			}
-			if tc.newFile {
-				newPath := path
-				if tc.conflictFile {
-					newPath = configtest.WriteSettings(t, settings)
-				}
-				env = append(env, "AGENTPLANE_SESSIONS_CONFIG_FILE="+newPath)
-			}
-			if tc.oldDatabase {
-				env = append(env, dispatcherDatabaseURLEnv+"="+databaseURL)
-			}
-			if tc.newDatabase {
-				newURL := databaseURL
-				if tc.conflictDatabase {
-					newURL += "_other"
-				}
-				env = append(env, "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL="+newURL)
-			}
-			c, err := configtest.Load(t, "AGENTPLANE_", loadConfig, env)
-			if tc.wantError {
-				if err == nil {
-					t.Fatal("accepted invalid bootstrap configuration")
-				}
-				if strings.Contains(err.Error(), "do-not-log-test-password") {
-					t.Fatal("error disclosed a runtime Secret")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if c.Namespace != "test-sandboxes" || c.DispatcherDatabaseURL != databaseURL || c.RPC.ListenAddress != ":8080" {
-				t.Fatal("bootstrap did not preserve YAML settings and the explicit database input")
 			}
 		})
 	}
@@ -218,7 +146,7 @@ func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
 
 func TestHostProcessTargetsAreAccepted(t *testing.T) {
 	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:41001", 1)
-	settings = strings.Replace(settings, "runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'",
+	settings = strings.Replace(settings, "runner_control_target_template: 'environments.{namespace}.svc:8082'",
 		"runner_control_target_template: 127.0.0.1:41001", 1) + `
 kubeconfig: /tmp/fake-kubeconfig
 `

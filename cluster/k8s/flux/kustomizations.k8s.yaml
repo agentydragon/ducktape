@@ -4725,10 +4725,6 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: sandbox-controller
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
       name: environments
       namespace: agentplane-staging
     - apiVersion: apps/v1
@@ -4774,14 +4770,6 @@ spec:
     - apiVersion: cert-manager.io/v1
       kind: Certificate
       name: app-workload
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: sandbox-controller-client-workload
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: sandbox-controller-runtime-proxy-client-workload
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate

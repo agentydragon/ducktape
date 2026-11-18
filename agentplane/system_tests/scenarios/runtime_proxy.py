@@ -28,7 +28,7 @@ from agentplane.system_tests.driver.tls import service_svid_credentials
 
 
 async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
-    cluster: Cluster, client: Client, sandbox: environment_service_pb2.EnvironmentDescriptor, *, service: str
+    cluster: Cluster, client: Client, sandbox: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
     target = sandbox.target
     assert sandbox.kubernetes_diagnostics.HasField("pod")
@@ -44,7 +44,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         async_port_forward(
             PortForward(
                 cluster.command("port-forward"),
-                resource=f"service/{service}",
+                resource="service/environments",
                 local_address="127.0.0.1",
                 local_port=None,
                 remote_port=8082,
@@ -54,21 +54,20 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         dial(
             address,
             channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-            server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+            server_name=f"environments.{cluster.namespace}.svc.cluster.local",
         ) as runtime_channel,
         dial(
             address,
             channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-            server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+            server_name=f"environments.{cluster.namespace}.svc.cluster.local",
         ) as channel,
     ):
-        # A watch starts from the same exact environment after its transport reconnects,
-        # independently of which public Service selected the receiver.
+        # A watch starts from the same exact environment after its transport reconnects.
         for _ in range(2):
             async with dial(
                 address,
                 channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-                server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                server_name=f"environments.{cluster.namespace}.svc.cluster.local",
             ) as watch_channel:
                 watch = environment_service_pb2_grpc.EnvironmentServiceStub(watch_channel).WatchEnvironment(
                     environment_service_pb2.WatchEnvironmentRequest(target=target), timeout=15

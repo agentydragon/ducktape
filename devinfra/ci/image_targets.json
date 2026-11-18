@@ -274,19 +274,9 @@
       "test": "//agentplane/policy_controller/...",
       "registry": "forgejo"
     },
-    "agentplane-sandbox-controller": {
-      "target": "//agentplane/environments:image",
-      "test": "//agentplane/environments/...",
-      "registry": "forgejo"
-    },
     "agentplane-environments": {
       "target": "//agentplane/environments:image",
       "test": "//agentplane/environments/...",
-      "registry": "forgejo"
-    },
-    "agentplane-runner-gateway": {
-      "target": "//agentplane/session_dispatcher:image",
-      "test": "//agentplane/session_dispatcher/...",
       "registry": "forgejo"
     },
     "agentplane-sessions": {

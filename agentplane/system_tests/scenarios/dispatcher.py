@@ -45,7 +45,6 @@ from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKLOAD = "sessions"
-_ROLLBACK_WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
@@ -338,36 +337,46 @@ async def _crashed_dispatcher_process(
             await send_signal("SIGKILL")
 
 
+async def _wait_for_dispatcher_replicas(cluster: Cluster, count: int) -> list[dict[str, Any]]:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(120), wait=wait_fixed(0.25), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            pods = json.loads(
+                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+            )
+            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
+            assert len(live) == count, f"expected {count} live Sessions replicas, found {len(live)}"
+            for pod in live:
+                assert any(
+                    condition["type"] == "Ready" and condition["status"] == "True"
+                    for condition in pod["status"].get("conditions", [])
+                ), f"Sessions Pod {pod['metadata']['name']} is not Ready"
+            return live
+    raise AssertionError("Sessions replicas never became ready")
+
+
 @asynccontextmanager
 async def _replace_original_with_peer(
     cluster: Cluster, deployment_uid: str, evidence: dict[str, object], *, crictl_command: tuple[str, ...] | None = None
 ) -> AsyncIterator[str]:
     with tracer.start_as_current_span("system_test.dispatcher.peer_lifetime"):
-        pods = json.loads(
-            await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
-        )
-        live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-        assert len(live) == 1, f"expected the initial singleton, found {len(live)} live replicas"
-        original = live[0]
-        rollback = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
-        assert rollback["spec"]["replicas"] == 0
-        current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
-        assert current["metadata"]["uid"] == deployment_uid
-        rollback_uid = rollback["metadata"]["uid"]
+        (original,) = await _wait_for_dispatcher_replicas(cluster, 1)
+        original_uid = original["metadata"]["uid"]
         scaled_generation: int | None = None
         try:
             patched = json.loads(
                 await cluster.kubectl(
                     "patch",
                     "deployment",
-                    _ROLLBACK_WORKLOAD,
+                    WORKLOAD,
                     "--type=json",
                     "-p",
                     json.dumps(
                         [
-                            {"op": "test", "path": "/metadata/uid", "value": rollback_uid},
-                            {"op": "test", "path": "/spec/replicas", "value": 0},
-                            {"op": "replace", "path": "/spec/replicas", "value": 1},
+                            {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
+                            {"op": "test", "path": "/spec/replicas", "value": 1},
+                            {"op": "replace", "path": "/spec/replicas", "value": 2},
                         ]
                     ),
                     "-o",
@@ -375,42 +384,45 @@ async def _replace_original_with_peer(
                 )
             )
             scaled_generation = patched["metadata"]["generation"]
-            await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
-            pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={_ROLLBACK_WORKLOAD}", "-o", "json")
-            )
-            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-            assert len(live) == 1, f"expected one rollback peer after scale-up, found {len(live)}"
-            (peer,) = live
+            live = await _wait_for_dispatcher_replicas(cluster, 2)
+            assert any(pod["metadata"]["uid"] == original_uid for pod in live), "original Sessions replica disappeared"
+            (peer,) = [pod for pod in live if pod["metadata"]["uid"] != original_uid]
             if crictl_command is None:
-                await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
+                await _delete_pod(cluster, original["metadata"]["name"], original_uid)
             else:
                 async with _crashed_dispatcher_process(cluster, original, crictl_command), cluster.api_client() as api:
                     await k8s.CoreV1Api(api).delete_namespaced_pod(
                         original["metadata"]["name"],
                         cluster.namespace,
-                        body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original["metadata"]["uid"])),
+                        body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original_uid)),
                     )
                 await cluster.kubectl("wait", f"pod/{original['metadata']['name']}", "--for=delete", "--timeout=120s")
-            evidence["original_dispatcher_pod_uid"] = original["metadata"]["uid"]
+            evidence["original_dispatcher_pod_uid"] = original_uid
             evidence["peer_dispatcher_pod_uid"] = peer["metadata"]["uid"]
             yield peer["metadata"]["name"]
         finally:
             if scaled_generation is not None:
-                current = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
-                # Do not overwrite a concurrent operator or GitOps rollout.
+                current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
                 if (
-                    current["metadata"]["uid"] == rollback_uid
+                    current["metadata"]["uid"] == deployment_uid
                     and current["metadata"]["generation"] == scaled_generation
                 ):
                     await cluster.kubectl(
-                        "scale",
-                        f"deployment/{_ROLLBACK_WORKLOAD}",
-                        "--current-replicas=1",
-                        "--replicas=0",
-                        f"--resource-version={current['metadata']['resourceVersion']}",
+                        "patch",
+                        "deployment",
+                        WORKLOAD,
+                        "--type=json",
+                        "-p",
+                        json.dumps(
+                            [
+                                {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
+                                {"op": "test", "path": "/metadata/generation", "value": scaled_generation},
+                                {"op": "test", "path": "/spec/replicas", "value": 2},
+                                {"op": "replace", "path": "/spec/replicas", "value": 1},
+                            ]
+                        ),
                     )
-                    await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
+                    await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
 async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
@@ -489,7 +501,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             dial(
                 target,
                 channel_credentials=server_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
             )
         )
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
@@ -501,7 +513,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         async with dial(
             target,
             channel_credentials=await service_credentials(cluster),
-            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as anonymous_channel:
             with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
                 await session_dispatcher_pb2_grpc.SessionDispatcherStub(anonymous_channel).ListDispatches(
@@ -563,7 +575,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 dial(
                     peer_target,
                     channel_credentials=server_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
@@ -598,7 +610,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 dial(
                     peer_target,
                     channel_credentials=server_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
@@ -722,12 +734,8 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 metadata=authentication.metadata,
                 timeout=15,
             )
-            await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-            pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/component=sessions", "-o", "json")
-            )
-            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-            assert len(live) == 2
+            live = await _wait_for_dispatcher_replicas(cluster, 2)
+            assert any(pod["metadata"]["uid"] == evidence["peer_dispatcher_pod_uid"] for pod in live)
             streams = []
             server_credentials = authentication.channel_credentials
             for replica in live:
@@ -736,7 +744,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                     dial(
                         target,
                         channel_credentials=server_credentials,
-                        server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                        server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                     )
                 )
                 reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
@@ -783,7 +791,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 async_port_forward(
                     PortForward(
                         cluster.command("port-forward"),
-                        resource="service/sandbox-controller",
+                        resource="service/environments",
                         local_address="127.0.0.1",
                         local_port=None,
                         remote_port=8082,
@@ -795,7 +803,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 dial(
                     environment_target,
                     channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-                    server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"environments.{cluster.namespace}.svc.cluster.local",
                 )
             )
             environments = environment_service_pb2_grpc.EnvironmentServiceStub(environment_channel)
@@ -993,14 +1001,14 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
             channel = dial(
                 target,
                 channel_credentials=server_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
             )
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 notification_channel = dial(
                     target,
                     channel_credentials=notification_authentication.channel_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
                 notification_stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(notification_channel)
                 created = await stub.CreateSession(

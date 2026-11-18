@@ -7,16 +7,10 @@ exactly one of `pod`, `vm`, or `firecracker`.
 
 ## Deployment settings
 
-The controller reads one required, strict YAML settings file at the path named by
-`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE` or `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`.
-Empty bootstrap values are absent. Both may be set to the same path; conflicting nonempty
-paths fail startup without disclosing their values. Neither prefix enables per-setting overrides.
-Unknown keys, missing required values or invalid
-configuration fail startup; metrics and health bind addresses keep their existing defaults when omitted.
-The controller does not fall back to per-setting environment variables. The file is mounted read-only
-from the cdk8s-authored ConfigMap and is loaded at process startup. Reloader restarts the Deployment
-when the ConfigMap changes. The file contains static settings and the path to the projected token
-named by `runner_token_file`; token contents remain in the rotating read-only projected volume.
+The controller reads strict YAML settings from the read-only file named by
+`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE`. Unknown keys, missing required values or invalid configuration
+fail startup. Metrics and health bind addresses default to `:8080` and `:8081`. Reloader restarts the
+Deployment when the cdk8s-authored settings ConfigMap changes.
 
 ## EnvironmentService listener
 
@@ -169,10 +163,8 @@ without proxy support, remove the setting and verify its ConfigMap and rollout.
   facts. A reconnect for the same UID can restore observation; the Runtime proxy cannot choose or advance
   the binding. Each new Runtime process has a fresh boot ID, even when retained state and workload
   UID are unchanged.
-  The controller's own Runtime proxy calls retain their projected bearer and verify the shared service's
-  SVID with `runner_gateway_tls`. Its scalar environment fields are
-  `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
-  `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__SERVER_URI`; a partial TLS configuration is refused.
+  For its own lifecycle calls in staging, the controller presents its service SVID to
+  Environments and verifies the receiving service SVID using the `runner_gateway_tls` settings.
 - Before starting a new workload, the controller requests the Sandbox's `WorkloadCredential`, named
   after and controlled by the Sandbox, with the Identity the Sandbox acts as as subject and no
   binding, and waits until the Policy Controller has issued it
@@ -326,7 +318,7 @@ without proxy support, remove the setting and verify its ConfigMap and rollout.
 ## Runtime lifecycle calls
 
 The controller uses the historically named `runner_gateway_target` to call the stable
-`sandbox-controller:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
+`environments:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
 admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
 routes the request to its own Runtime connection. No per-Sandbox control Service is created.
 Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the

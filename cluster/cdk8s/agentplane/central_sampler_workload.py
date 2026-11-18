@@ -36,7 +36,6 @@ from cluster.cdk8s.agentplane import (
     environment_service,
     history_service,
     llm_ingress,
-    runner_gateway,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -186,7 +185,7 @@ class CentralSampler(Construct):
             cilium.dns_egress(),
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
-            environment_service.service(namespace).egress(),
+            environment_service.environments_service(namespace).egress(),
             history_service.service(namespace).egress(),
             llm_ingress.service(namespace).egress(),
         ]
@@ -206,6 +205,5 @@ class CentralSampler(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=central_sampler.NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
-            ingress=[runner_gateway.service(namespace).pods.admit(self.service.pod_port)],
             egress=egress,
         )

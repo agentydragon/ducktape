@@ -9,8 +9,7 @@ Former logical `OpenSession`/opening APIs have no compatibility path. The distin
 name below preserve this ADR's historical decisions and examples.
 
 Current routing, observation and fencing are specified in [runner control](runner_control.md). The
-per-Sandbox route design in D1 is superseded; [receiver retirement and rollback](runner_control.md#receiver-retirement-and-rollback)
-covers the separate Gateway receiver migration.
+per-Sandbox route design in D1 is historical.
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers runner routing, readiness and runner
@@ -21,7 +20,7 @@ not redesign storage, the History Service, or policy.
 
 1. **Run a Sandbox.** Reconcile the `Sandbox` CR into a state volume and, while running, one Pod
    or VM. Kind (`pod` or `vm`) comes from the template.
-2. **Reach its runner.** Callers use the stable `sandbox-controller:8082` Service; any Environments
+2. **Reach its runner.** Callers use the stable `environments:8082` Service; any Environments
    proxy replica with a fresh observation of the current Runtime can answer.
 3. **Say what state it is in.** Created, starting, booting, connected, ready, quiescing,
    suspended, tearing down, and why it is stuck when it is.

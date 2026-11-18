@@ -121,10 +121,9 @@ for VM image layout and lifecycle.
 
 ### Runtime proxy outages
 
-The historical target names `test_gateway_crash` and `test_gateway_budget` now exercise the
-Environments Runtime proxy on `sandbox-controller:8082`. Executor traffic no longer traverses the
-Gateway; taking the Gateway down cannot establish an Executor reconnect failure. The shared
-outage helper removes the Environments Pod, proves its Service has no ready endpoint, and restores
+The `test_gateway_crash` and `test_gateway_budget` targets exercise the Environments Runtime
+proxy on `environments:8082`. The shared outage helper removes the Environments Pod, proves its
+Service has no ready endpoint, and restores
 it after checking retained History progress and the selected failure/recovery boundary.
 
 The abrupt-crash case sends `SIGSTOP` to the exact `sandbox-controller` process, confirms it is
@@ -186,19 +185,19 @@ creator scope across Identities.
 
 ## Dispatcher queue and replicas
 
-The queue case leaves a stopped Sandbox unchanged. The replica case raises Gateway replicas to two,
-removes the initial singleton and verifies that a peer reads and delivers the durable queued command;
-the stopped command has no held Session lease, so this case does not test lease expiry. Opted-in app
-and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
+The queue case leaves a stopped Sandbox unchanged. The replica case scales Sessions to two and
+waits for the second Pod to be ready before deleting the initial Pod by UID. It reads the durable
+queued command and its eventual admission through the second Pod. Both ready replicas must see
+the outcome of a later Sandbox deletion. Opted-in app and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
 Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
 runner mount inspection, archives and cleanup evidence capture live in
 [`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
 The mid-delivery crash case gates the real database settlement after Runtime admission, stops
-and kills the exact delivering process after kubelet observes Pod deletion, and lets a peer
-recover after the Session's natural PostgreSQL lease expiry. Its initial single replica identifies
-the delivering process; the queued replica case does not infer lease ownership from a Pod. It checks
-the retained attempt fact, one Runtime journal admission for the replayed command ID, and a subsequent
-admitted command. All replicas use the same image; this does not establish mixed-image overlap safety.
+and kills the exact delivering process after kubelet observes Pod deletion, and observes
+recovery through the ready peer after the Session's PostgreSQL lease expires. The initial
+singleton identifies the delivering process. The test checks the retained attempt fact,
+one Runtime journal admission for the replayed command ID, and a subsequent admitted command.
+Both cases restore Sessions to one replica.
 
 The [Dispatcher guide](../session_dispatcher/dispatcher/README.md) owns the command delivery contract.
 

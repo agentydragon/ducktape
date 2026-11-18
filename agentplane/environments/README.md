@@ -1,6 +1,6 @@
 # Sandbox Controller
 
-Deployment enables EnvironmentService on every replica at `sandbox-controller:8082`, using the
+Environments serves EnvironmentService on every replica at `environments:8082`, using the
 existing Sandbox Controller service SVID. Reconcilers and lifecycle-fact observation stay leader-only;
 the listener and its independent policy watches determine readiness on leaders and standbys. See
 [the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
@@ -14,7 +14,7 @@ Enabling `environment_service` requires the accepting Controller image to be pin
 that configuration before rolling back to an image that cannot decode it.
 
 Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
-Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
+Executor on every replica at `environments:8082`, with independent routing watches and narrow
 service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
 binding observer certificate. Sessions delivery, central sampler Executor and Controller lifecycle
 calls use the proxy and pin its Sandbox Controller server identity. App diagnostics
@@ -43,7 +43,8 @@ Session: the controller calls `EnvironmentRuntime.Quiesce` through the
 [Runtime proxy](runtimeproxy/SPEC.md) and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `runner_security` selects the Controller's own direct observer credentials;
-`runner_gateway_target` and `runner_gateway_token_file` remain required settings in the mounted YAML file.
+`runner_gateway_target` and `runner_gateway_tls` configure its outbound lifecycle call to
+Environments in staging.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Each incarnation runs with the Sandbox's `WorkloadCredential`, which the controller requests
@@ -99,19 +100,13 @@ retain their creation records and are never reapplied from a changed template.
 
 ## Running
 
-Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
-also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`. The Controller
-reads its required, strict YAML settings file from the path named by
-`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE` or `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`.
-Empty bootstrap values are absent; two different nonempty paths fail startup.
-Both `agentplane-sandbox-controller` and `agentplane-environments` publish the image;
-the Deployment and Service retain their current names during bootstrap-reader rollout.
-Static settings are authored in
-[`settings.py`](settings.py); the projected `runner_token_file` remains a separate read-only file.
-Locally:
+The cdk8s construct in `cluster/cdk8s/agentplane/sandbox_controller.py` owns the Environments
+Deployment and RBAC. SandboxTemplates live in `environment_sandbox.py`. CI publishes the serving
+image as `agentplane-environments`. The process reads strict YAML settings from the path in
+`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE`. Static settings are authored in [`settings.py`](settings.py).
 
 ```bash
-AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE=<settings.yaml> \
+AGENTPLANE_ENVIRONMENTS_CONFIG_FILE=<settings.yaml> \
   bb run //agentplane/environments/cmd:sandbox-controller
 ```
 

@@ -78,17 +78,14 @@ def test_fixture_grants_no_tokenreviews(runfiles: Runfiles) -> None:
             assert "token-reviewer" not in doc["roleRef"]["name"], doc["metadata"]["name"]
 
 
-def test_fixture_runs_renamed_controller_through_both_services(runfiles: Runfiles) -> None:
+def test_fixture_exposes_environments(runfiles: Runfiles) -> None:
     docs = _filled_fixture(runfiles).objects
-    legacy = _resource(docs, "Deployment", "sandbox-controller")
-    active = _resource(docs, "Deployment", "environments")
-    assert legacy["spec"]["replicas"] == 0
-    assert active["spec"]["replicas"] == 1
-    labels = active["spec"]["template"]["metadata"]["labels"]
-    for name in ("sandbox-controller", "environments"):
-        assert _resource(docs, "Service", name)["spec"]["selector"].items() <= labels.items()
+    deployment = _resource(docs, "Deployment", "environments")
+    assert deployment["spec"]["replicas"] == 1
+    labels = deployment["spec"]["template"]["metadata"]["labels"]
+    assert _resource(docs, "Service", "environments")["spec"]["selector"].items() <= labels.items()
     certificate = _resource(docs, "Certificate", "environments-client-workload")["spec"]
-    assert certificate["dnsNames"] == [f"sandbox-controller.{NAMESPACE}.svc.cluster.local"]
+    assert certificate["dnsNames"] == [f"environments.{NAMESPACE}.svc.cluster.local"]
     assert certificate["uris"] == [SANDBOX_CONTROLLER_URI]
 
 
@@ -185,7 +182,7 @@ def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfil
     _resource(fixture.objects, "SandboxTemplate", template)
 
 
-def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles) -> None:
+def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles) -> None:
     fixture = _filled_fixture(runfiles)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
@@ -205,11 +202,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         }
         for doc in docs
     )
-    assert not any(
-        doc["kind"] == "Certificate" and doc["metadata"]["name"] == "agentplane-runner-gateway" for doc in docs
-    )
-    dispatcher_certificate = _resource(docs, "Certificate", "runner-gateway-workload")
-    assert dispatcher_certificate["spec"]["dnsNames"] == [f"session-dispatcher.{NAMESPACE}.svc.cluster.local"]
+    dispatcher_certificate = _resource(docs, "Certificate", "sessions-workload")
+    assert dispatcher_certificate["spec"]["dnsNames"] == [f"sessions.{NAMESPACE}.svc.cluster.local"]
     workload_issuer = _resource(docs, "ClusterIssuer", "agentplane-workload")
     workload_ca = one(
         doc
@@ -236,7 +230,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert "reader_accounts" not in actions_settings
     assert actions_settings["connection_delegation_service"] == MCP_EDGE_URI
     assert [auth["mode"] for auth in actions_settings["rpc"]["auth"]] == ["spiffe"]
-    for workload in ("actions", "notifications", "history-service", "runner-gateway", "llm-ingress"):
+    for workload in ("actions", "notifications", "history-service", "sessions", "llm-ingress"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         container = pod["containers"][0]
         probes = (
@@ -322,66 +316,56 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
             sslmode = {entry["name"]: entry.get("value") for entry in container.get("env", [])}.get("PGSSLMODE")
             assert sslmode == "disable", (workload, container["name"])
 
-    gateway = _resource(docs, "Deployment", fixture_chart.RUNNER_GATEWAY)
-    pod = gateway["spec"]["template"]["spec"]
+    sessions = _resource(docs, "Deployment", "sessions")
+    pod = sessions["spec"]["template"]["spec"]
     container = pod["containers"][0]
     database_env = next(
-        entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+        entry for entry in container["env"] if entry["name"] == "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
     )
     assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-session-dispatcher"
-    gateway_env = {entry["name"]: entry for entry in container["env"]}
-    assert "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE" in gateway_env
-    gateway_config = yaml.safe_load(
-        _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
-    )
-    assert "runner_token_file" not in gateway_config
+    sessions_env = {entry["name"]: entry for entry in container["env"]}
+    assert "AGENTPLANE_SESSIONS_CONFIG_FILE" in sessions_env
+    sessions_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
+    assert "runner_token_file" not in sessions_config
     sessions_tls_mount = one(
-        mount
-        for mount in container["volumeMounts"]
-        if mount["name"] == f"{runner_gateway.NAME}-sessions-client-workload-tls"
+        mount for mount in container["volumeMounts"] if mount["name"] == "sessions-client-workload-tls"
     )
     sessions_tls_path = PurePosixPath(sessions_tls_mount["mountPath"])
-    assert gateway_config["gateway_tls"] == {
+    assert sessions_config["gateway_tls"] == {
         "ca_file": workload_tls.TRUST_BUNDLE_FILE,
         "server_uri": SANDBOX_CONTROLLER_URI,
         "cert_file": str(sessions_tls_path / "tls.crt"),
         "key_file": str(sessions_tls_path / "tls.key"),
         "client_uri": GATEWAY_SESSIONS_URI,
     }
-    assert "operator_callers" not in gateway_config
-    assert not any(key.startswith("environment_") for key in gateway_config)
-    assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
-    assert gateway_config["rpc"]["tls"] == {
+    assert "operator_callers" not in sessions_config
+    assert not any(key.startswith("environment_") for key in sessions_config)
+    assert sessions_config["rpc"]["listen_address"] == "0.0.0.0:8080"
+    assert sessions_config["rpc"]["tls"] == {
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
         "key_file": "/run/agentplane/workload-tls/tls.key",
     }
-    assert gateway_config["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
-    assert "runner_security" not in gateway_config
+    assert sessions_config["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
+    assert "runner_security" not in sessions_config
     app_certificate = _resource(docs, "Certificate", "app-workload")["spec"]
-    assert set(app_certificate["uris"]) <= set(gateway_config["wake_service_callers"])
+    assert set(app_certificate["uris"]) <= set(sessions_config["wake_service_callers"])
 
-    gateway_pod_labels = gateway["spec"]["template"]["metadata"]["labels"]
-    gateway_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
-    assert gateway_listener_ports["grpc"] == 8080
-    for name in (fixture_chart.RUNNER_GATEWAY, fixture_chart.SESSION_DISPATCHER):
-        service = _resource(docs, "Service", name)
-        assert service["spec"]["selector"]
-        assert all(gateway_pod_labels[key] == value for key, value in service["spec"]["selector"].items())
-        assert all(port["targetPort"] == gateway_listener_ports[port["name"]] for port in service["spec"]["ports"])
+    sessions_pod_labels = sessions["spec"]["template"]["metadata"]["labels"]
+    sessions_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
+    assert sessions_listener_ports["grpc"] == 8080
+    dispatcher = _resource(docs, "Service", "sessions")
+    assert dispatcher["spec"]["selector"]
+    assert dispatcher["spec"]["selector"].items() <= sessions_pod_labels.items()
+    assert all(port["targetPort"] == sessions_listener_ports[port["name"]] for port in dispatcher["spec"]["ports"])
+    assert "workload" not in sessions_listener_ports
 
-    assert "workload" not in gateway_listener_ports
-
-    dispatcher = _resource(docs, "Service", runner_gateway.sessions_service(NAMESPACE).name)
     dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
     assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    assert gateway_config["runner_control_target_template"] == "sandbox-controller.{namespace}.svc:8082"
-    sessions_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     assert sessions_config["runner_control_target_template"] == "environments.{namespace}.svc:8082"
-    assert sessions_config["gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}
@@ -394,13 +378,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "AGENTPLANE_OIDC_SESSION_SECRET",
     }
     notifications = yaml.safe_load(_resource(docs, "ConfigMap", "notifications-settings")["data"]["settings.yaml"])
-    notifications_dispatcher = _resource(docs, "Service", runner_gateway.sessions_service(NAMESPACE).name)
-    notifications_port = one(
-        port["port"] for port in notifications_dispatcher["spec"]["ports"] if port["name"] == "grpc"
-    )
-    assert notifications["session_dispatcher"]["target"] == (
-        f"{notifications_dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{notifications_port}"
-    )
+    assert notifications["session_dispatcher"]["target"] == endpoint
     assert notifications["session_dispatcher"]["tls"]["server_uri"] == SESSION_DISPATCHER_URI
     actions_config = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
     assert actions_config["session_dispatcher"]["target"] == endpoint
@@ -411,13 +389,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         f"{environments_service['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{environments_port}"
     )
     assert actions_config["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
+    role = _resource(docs, "Role", "sessions")
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
-    assert not any(
-        doc["kind"] in {"ClusterRole", "ClusterRoleBinding"}
-        and doc["metadata"]["name"] == f"{NAMESPACE}-runner-gateway-token-reviewer"
-        for doc in docs
-    )
     postgres = _resource(docs, "Deployment", fixture_database.NAME)
     postgres_container = next(
         container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
@@ -867,7 +840,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_config["log_levels"] == {}
     assert "litellm_key" not in llm_config
     assert "central_sampler_accounts" not in llm_config
-    gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
+    gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
     assert sampler_target["target"] == central_sampler.target(NAMESPACE)
     assert "token_file" not in sampler_target
@@ -914,10 +887,10 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
     assert central_app["oidc"]["static_ed25519_keys"] == ["test-operator-public-key"]
     assert mcp_app["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
     assert "static_ed25519_keys" not in mcp_app["oidc"]
-    for component in ("central-sampler", "runner-gateway", "history-service"):
+    for component in ("central-sampler", "sessions", "history-service"):
         for kind in ("Deployment", "Service"):
             assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
-    for config in ("central-sampler-settings", "runner-gateway-settings", "history-service-config"):
+    for config in ("central-sampler-settings", "sessions-settings", "history-service-config"):
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
@@ -936,7 +909,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert fixture.browser_services == []
     docs = fixture.objects
     deployments = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Deployment"}
-    assert {"runner-gateway", "history-service", "notifications"} <= deployments
+    assert {"sessions", "history-service", "notifications"} <= deployments
     assert ("central-sampler" in deployments) is central_enabled
     assert not {"app", "dex", "mcp-edge"} & deployments
     assert not any(doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc", "app-config"} for doc in docs)
@@ -947,7 +920,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     certificate = _resource(docs, "Certificate", "app-workload")["spec"]
     assert certificate["uris"] == ["spiffe://agentplane/app"]
     assert any(volume.get("secret", {}).get("secretName") == certificate["secretName"] for volume in pod["volumes"])
-    gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
+    gateway = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     assert "operator_callers" not in gateway
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "environments-settings")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])

@@ -13,7 +13,7 @@ import (
 const validSettings = `namespace: agentplane
 metrics_bind_address: ":9090"
 health_probe_bind_address: ":9091"
-runner_gateway_target: "runner-gateway.{namespace}.svc:8080"
+runner_gateway_target: "environments.{namespace}.svc:8082"
 runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
 runner_security:
   mode: mtls
@@ -51,7 +51,7 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 	}
 	want := config{
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
-		RunnerGatewayTarget:    "runner-gateway.{namespace}.svc:8080",
+		RunnerGatewayTarget:    "environments.{namespace}.svc:8082",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
 		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &peertls.Config{
 			CertFile: "/run/agentplane/sandbox-controller-client-tls/tls.crt",
@@ -68,57 +68,6 @@ func TestLoadConfigRequiresConfigFilePath(t *testing.T) {
 	t.Setenv(configFileEnv, " \t")
 	if _, err := loadConfig(); err == nil {
 		t.Fatal("started without a settings file path")
-	}
-}
-
-func TestBootstrapNames(t *testing.T) {
-	for _, tc := range []struct {
-		name                 string
-		oldFile, newFile     bool
-		conflict, unknownKey bool
-		wantError            bool
-	}{
-		{name: "old", oldFile: true},
-		{name: "new", newFile: true},
-		{name: "identical aliases", oldFile: true, newFile: true},
-		{name: "conflicting aliases", oldFile: true, newFile: true, conflict: true, wantError: true},
-		{name: "new file remains strict", newFile: true, unknownKey: true, wantError: true},
-		{name: "missing file", wantError: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(configFileEnv, "")
-			t.Setenv("AGENTPLANE_ENVIRONMENTS_CONFIG_FILE", "")
-			t.Setenv("AGENTPLANE_ENVIRONMENTS_NAMESPACE", "test-ignored-namespace")
-			settings := strings.ReplaceAll(validSettings, "namespace: agentplane", "namespace: test-sandboxes")
-			settings = strings.ReplaceAll(settings, "runner-gateway.{namespace}.svc:8080", "test-proxy.{namespace}.svc:18082")
-			if tc.unknownKey {
-				settings += "test_unknown_setting: true\n"
-			}
-			path := writeSettings(t, settings)
-			if tc.oldFile {
-				t.Setenv(configFileEnv, path)
-			}
-			if tc.newFile {
-				newPath := path
-				if tc.conflict {
-					newPath = writeSettings(t, settings)
-				}
-				t.Setenv("AGENTPLANE_ENVIRONMENTS_CONFIG_FILE", newPath)
-			}
-			c, err := loadConfig()
-			if tc.wantError {
-				if err == nil {
-					t.Fatal("accepted invalid bootstrap configuration")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if c.Namespace != "test-sandboxes" || c.RunnerGatewayTarget != "test-proxy.{namespace}.svc:18082" {
-				t.Fatal("bootstrap did not preserve YAML settings")
-			}
-		})
 	}
 }
 
@@ -146,7 +95,7 @@ func TestBindAddressesDefaultWhenOmittedFromYAML(t *testing.T) {
 func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 	missing := map[string]string{
 		"namespace":                 "namespace: agentplane\n",
-		"runner_gateway_target":     "runner_gateway_target: \"runner-gateway.{namespace}.svc:8080\"\n",
+		"runner_gateway_target":     "runner_gateway_target: \"environments.{namespace}.svc:8082\"\n",
 		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
 		"runner_security":           "runner_security:\n  mode: mtls\n  tls:\n    cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt\n    key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n    ca_file: /run/agentplane/workload-trust/ca.crt\n",
 	}
