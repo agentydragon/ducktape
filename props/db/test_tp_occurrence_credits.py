@@ -180,10 +180,10 @@ def test_multiple_occurrences_with_or_logic(synced_test_session: Session, exampl
     assert len(results) == 2, f"Expected 2 occurrences in recall scope, got {len(results)}"
 
 
-def test_multiple_grader_runs_do_not_overweight_critic_run(
+def test_recall_views_count_critic_runs_not_grader_runs(
     synced_test_session: Session, example_subtract_orm: Example, tp_occurrence_single: tuple[str, str]
 ):
-    """Test that multiple grader runs for same critic run don't cause overweighting."""
+    """Both recall views count critic runs, however many grader runs graded each one."""
     # Ungraded run (timed out, no grading edges → 0 credit)
     ungraded_run = make_fake_critic_run(
         session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.TIMED_OUT
@@ -211,20 +211,30 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
 
     synced_test_session.commit()
 
-    result = (
+    by_definition = (
         synced_test_session.query(RecallByDefinitionSplitKind)
         .filter_by(critic_image_digest=FAKE_CRITIC_DIGEST, split=Split.TRAIN, critic_model=DEFAULT_TEST_MODEL)
         .one()
     )
+    by_example = (
+        synced_test_session.query(RecallByExample)
+        .filter_by(
+            snapshot_slug=example_subtract_orm.snapshot_slug,
+            example_kind=example_subtract_orm.example_kind,
+            files_hash=example_subtract_orm.files_hash,
+        )
+        .one()
+    )
 
-    assert sum(result.status_counts.values()) == 2, "Should count both critic runs"
-    assert result.status_counts[AgentRunStatus.EXITED] == 1
-    assert result.status_counts[AgentRunStatus.TIMED_OUT] == 1
+    for result in (by_definition, by_example):
+        assert sum(result.status_counts.values()) == 2, "Should count both critic runs"
+        assert result.status_counts[AgentRunStatus.EXITED] == 1
+        assert result.status_counts[AgentRunStatus.TIMED_OUT] == 1
 
-    # SUM credits per critique: 0.2+0.3+0.4=0.9. Mean across 2 runs: (0.0 + 0.9) / 2 = 0.45
-    avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
-    assert abs(avg_caught - 0.45) < 0.01, f"credit_stats.mean should be 0.45, got {avg_caught}"
-    assert result.recall_denominator == 2
+        # SUM credits per critique: 0.2+0.3+0.4=0.9. Mean across 2 runs: (0.0 + 0.9) / 2 = 0.45
+        avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
+        assert abs(avg_caught - 0.45) < 0.01, f"credit_stats.mean should be 0.45, got {avg_caught}"
+        assert result.recall_denominator == 2
 
 
 def test_aggregated_view_counts_by_status(synced_test_session: Session, example_subtract_orm: Example):
@@ -262,57 +272,6 @@ def test_aggregated_view_counts_by_status(synced_test_session: Session, example_
     assert sum(result.status_counts.values()) == 5
     assert result.status_counts[AgentRunStatus.EXITED] == 3
     assert result.status_counts[AgentRunStatus.TIMED_OUT] == 2
-
-
-def test_aggregated_recall_by_example_has_correct_weighting(
-    synced_test_session: Session, example_subtract_orm: Example, tp_occurrence_single: tuple[str, str]
-):
-    """Test that aggregated_recall_by_example correctly weights critic runs."""
-    # Ungraded run (timed out, no grading edges → 0 credit)
-    ungraded_run = make_fake_critic_run(
-        session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.TIMED_OUT
-    )
-    synced_test_session.add(ungraded_run)
-
-    # Graded run with 3 grader runs at different credits
-    graded_run = make_fake_critic_run(
-        session=synced_test_session,
-        example=example_subtract_orm.to_example_spec(),
-        model=DEFAULT_TEST_MODEL,
-        status=AgentRunStatus.EXITED,
-    )
-    synced_test_session.add(graded_run)
-    synced_test_session.flush()
-
-    for idx, credit in enumerate([0.1, 0.2, 0.3]):
-        make_fake_grader_run_with_credit(
-            session=synced_test_session,
-            critic_run=graded_run,
-            tp_occurrence=tp_occurrence_single,
-            credit=credit,
-            input_idx=idx,
-        )
-
-    synced_test_session.commit()
-
-    result = (
-        synced_test_session.query(RecallByExample)
-        .filter_by(
-            snapshot_slug=example_subtract_orm.snapshot_slug,
-            example_kind=example_subtract_orm.example_kind,
-            files_hash=example_subtract_orm.files_hash,
-        )
-        .one()
-    )
-
-    assert sum(result.status_counts.values()) == 2
-    assert result.status_counts[AgentRunStatus.EXITED] == 1
-    assert result.status_counts[AgentRunStatus.TIMED_OUT] == 1
-
-    # SUM credits per critique: 0.1+0.2+0.3=0.6. Mean across 2 runs: (0.0 + 0.6) / 2 = 0.3
-    avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
-    assert abs(avg_caught - 0.3) < 0.01, f"Expected 0.3, got {avg_caught}"
-    assert result.recall_denominator == 2
 
 
 def test_occurrence_statistics_has_correct_n_critic_runs(
