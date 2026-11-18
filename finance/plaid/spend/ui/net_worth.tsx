@@ -1,20 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Paper, Skeleton, Stack, Text, Title, useComputedColorScheme } from "@mantine/core";
-import {
-  CategoryScale,
-  Chart,
-  Legend,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip,
-} from "chart.js";
+import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 
 import type { NetWorthHistory } from "./schema";
 import { money } from "./spend_display";
 
-Chart.register(CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip);
+Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact" });
 const shortDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
@@ -46,22 +37,6 @@ function NetWorthChart({ days }: NetWorthHistory) {
             backgroundColor: color("teal-filled"),
             borderWidth: 3,
           },
-          {
-            label: "Assets",
-            data: days.map((day) => day.totals?.assets_minor_units ?? null),
-            borderColor: color("blue-filled"),
-            backgroundColor: color("blue-filled"),
-            borderDash: [6, 4],
-            borderWidth: 2,
-          },
-          {
-            label: "Debt",
-            data: days.map((day) => day.totals?.debt_minor_units ?? null),
-            borderColor: color("orange-filled"),
-            backgroundColor: color("orange-filled"),
-            borderDash: [2, 4],
-            borderWidth: 2,
-          },
         ],
       },
       options: {
@@ -70,11 +45,10 @@ function NetWorthChart({ days }: NetWorthHistory) {
         interaction: { mode: "index", intersect: false },
         elements: { point: { radius: days.length < 3 ? 3 : 1, hoverRadius: 4 } },
         plugins: {
-          legend: { labels: { color: color("text"), usePointStyle: true, pointStyle: "line", pointStyleWidth: 22 } },
           tooltip: {
             callbacks: {
               title: (items) => (items[0] ? dayLabel(days[items[0].dataIndex].date) : ""),
-              label: ({ dataset, parsed }) => `${dataset.label ?? ""}: ${money(parsed.y, "USD")}`,
+              label: ({ parsed }) => money(parsed.y, "USD"),
               footer: (items) => {
                 const totals = items[0] ? days[items[0].dataIndex].totals : null;
                 if (!totals) return "";
@@ -88,6 +62,8 @@ function NetWorthChart({ days }: NetWorthHistory) {
         scales: {
           x: { grid: { display: false }, ticks: { color: color("dimmed"), maxRotation: 0, maxTicksLimit: 8 } },
           y: {
+            beginAtZero: false,
+            grace: "5%",
             grid: { color: color("default-border") },
             ticks: { color: color("dimmed"), callback: (value) => usd.format(Number(value) / 100) },
           },
@@ -99,7 +75,7 @@ function NetWorthChart({ days }: NetWorthHistory) {
 
   return (
     <Box h={{ base: 280, sm: 360 }}>
-      <canvas ref={canvasRef} role="img" aria-label="Net worth, assets, and debt over time in US dollars" />
+      <canvas ref={canvasRef} role="img" aria-label="Net worth over time in US dollars" />
     </Box>
   );
 }
