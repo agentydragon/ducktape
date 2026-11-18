@@ -1,7 +1,8 @@
 # Git storage latency & HA on the cluster
 
-**Status:** complete 2026-07-17. All benchmark deployments torn down; the rook-ceph trial
-scaffolding has been archived under `<gitlab_gitaly_storage_bench/rook-ceph-trial-manifests/>`.
+**Status:** complete 2026-07-17. All benchmark deployments were torn down.
+The [Rook/CephFS trial manifests](https://github.com/agentydragon/ducktape/tree/6cd31d1b8a8fe9d34ef4f667cea76534d0dcdc4c/cluster/debug/gitlab_gitaly_storage_bench/rook-ceph-trial-manifests)
+are available in Git history.
 
 **Question.** Forgejo git writes on this cluster are slow (haku-ui feedback writes take
 seconds and sometimes fail). Its git repo store is a `RWX` PVC on `seaweedfs-ovh-ssd`,
