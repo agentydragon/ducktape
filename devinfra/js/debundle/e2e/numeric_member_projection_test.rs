@@ -297,7 +297,8 @@ function choosePayload(record) {
 }
 const selected = __SELECTION__;
 later = 42;
-console.log(selected === service, selected.state, record.listener(), record.compare());
+const listenerValue = record.listener();
+console.log(selected === service, selected.state, listenerValue, record.compare());
 "#
         .replace("__WRITE__", write)
         .replace("__SELECTION__", selection);
@@ -315,6 +316,7 @@ console.log(selected === service, selected.state, record.listener(), record.comp
                         "record",
                         "choosePayload",
                         "selected",
+                            "listenerValue",
                     ]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
