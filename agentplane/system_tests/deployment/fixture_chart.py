@@ -705,7 +705,6 @@ def add_backend_services(
         memory_request=Size.mebibytes(64),
         memory_limit=None,
     )
-    control_target = environment_service.control_target(NAMESPACE)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -729,7 +728,6 @@ def add_backend_services(
         env,
         environments_image="git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
         legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
-        gateway_control_target=control_target,
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=orchestration_caller,
@@ -769,7 +767,7 @@ def add_backend_services(
         database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
         gateway=runner_gateway.service(NAMESPACE),
-        gateway_control_target=control_target,
+        gateway_control_target=environment_service.environments_control_target(NAMESPACE),
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),
         callers=list(notification_callers),

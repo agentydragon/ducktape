@@ -248,6 +248,7 @@ class Notifications(Construct):
                 self.actions.egress(),
                 self.gateway.egress(),
                 environment_service.service(env.namespace).egress(),
+                environment_service.environments_service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
                 database.egress(env.namespace),

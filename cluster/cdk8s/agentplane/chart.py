@@ -274,7 +274,6 @@ def environment_chart(
         env,
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         legacy_replica_profile=legacy_replica_profile,
-        gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=environment_launchers,
@@ -310,7 +309,7 @@ def environment_chart(
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
         gateway=runner_gateway.service(env.namespace),
-        gateway_control_target=environment_service.control_target(env.namespace),
+        gateway_control_target=environment_service.environments_control_target(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         callers=[app_component.service(env.namespace).pods],
