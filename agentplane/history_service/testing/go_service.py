@@ -21,6 +21,7 @@ import grpc
 import yaml
 from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
+from tenacity import AsyncRetrying, retry_if_result, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -319,6 +320,28 @@ async def wait_for_history_session(history: HistoryServiceClient, session_id: st
             async for recorded in recorded_sessions:
                 if str(recorded.session_id) == session_id:
                     return
+
+
+async def wait_for_history_snapshot(
+    history: HistoryServiceClient, session_id: str, *, timeout_s: float
+) -> session_pb2.Attached:
+    """Wait for a recorded Session's raw feed to contain its announced snapshot."""
+
+    async def announced() -> session_pb2.Attached | None:
+        page = await history.read_session_events(session_id, after_cursor=0, limit=1)
+        if not page.HasField("feed_state") or not page.feed_state.HasField("attached"):
+            return None
+        attached = session_pb2.Attached()
+        attached.CopyFrom(page.feed_state.attached)
+        attached.last_cursor = page.last_cursor
+        return attached
+
+    async with asyncio.timeout(timeout_s):
+        snapshot: session_pb2.Attached | None = await AsyncRetrying(
+            retry=retry_if_result(lambda result: result is None), wait=wait_fixed(0.05)
+        )(announced)
+    assert snapshot is not None
+    return snapshot
 
 
 @asynccontextmanager
