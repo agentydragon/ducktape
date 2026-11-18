@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/cmd",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/configfile",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api/history:history_service_go_proto",
@@ -48,9 +49,7 @@ go_library(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
-        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",

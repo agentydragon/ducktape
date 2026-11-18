@@ -1,23 +1,20 @@
 package app
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
-	"github.com/go-viper/mapstructure/v2"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -73,36 +70,11 @@ func loadConfig() (config, error) {
 	if path == "" {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return config{}, errors.New("could not read Runner Gateway settings file")
-	}
-	var settings map[string]any
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	if err := decoder.Decode(&settings); err != nil {
-		return config{}, errors.New("could not decode Runner Gateway settings file")
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, errors.New("could not decode Runner Gateway settings file")
-		}
-		return config{}, errors.New("Runner Gateway settings file must contain one YAML document")
-	}
-
 	c := defaultConfig()
-	decodeHook := mapstructure.ComposeDecodeHookFunc(
-		mapstructure.TextUnmarshallerHookFunc(),
-		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
-	)
-	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true, DecodeHook: decodeHook,
-	})
-	if err != nil {
-		return config{}, errors.New("invalid Runner Gateway settings")
-	}
-	if err := mapDecoder.Decode(settings); err != nil {
-		return config{}, errors.New("invalid Runner Gateway settings")
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHook: listener.AuthenticationDecodeHook,
+	}); err != nil {
+		return config{}, configfile.RedactMapstructureError("Runner Gateway", err)
 	}
 	databaseEnv, err := bootstrapEnvName("DISPATCHER_DATABASE_URL")
 	if err != nil {

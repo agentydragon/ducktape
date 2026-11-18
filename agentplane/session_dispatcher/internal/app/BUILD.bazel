@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/app",
     visibility = ["//agentplane/session_dispatcher:__subpackages__"],
     deps = [
+        "//agentplane/configfile",
         "//agentplane/environments/access",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
@@ -32,8 +33,6 @@ go_library(
         "//agentplane/session_dispatcher/internal/store",
         "//agentplane/session_dispatcher/migrations",
         "//agentplane/watchhealth",
-        "@com_github_go_viper_mapstructure_v2//:mapstructure",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//kubernetes/scheme",

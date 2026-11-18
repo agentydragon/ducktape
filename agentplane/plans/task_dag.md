@@ -2178,7 +2178,7 @@ flowchart TD
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
     ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
-    SERVICE_SETTINGS_RETHINK[Decision, unscheduled: how Agentplane services are configured]
+    SERVICE_SETTINGS_RETHINK[Decision, unscheduled: choose a shared service settings framework]
 ```
 
 ### `SANDBOX_ENVIRONMENT_RENAME_DESIGN` — review a scoped Sandbox-to-Environment rename
@@ -2234,14 +2234,14 @@ Boxes and Sandboxes are to converge into one object type
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
-**Decision, then changes; unscheduled (operator, 2026-10-20 UTC: keep the egress sidecar on YAML "for now" and
-"leave a to-do to rethink how the configuration of this whole thing should work").** The app and Action Service
-read required YAML files with strict `yaml.v3` and `mapstructure` decoding; other services retain their existing
-file and runtime-input contracts, and the egress sidecar reads one strict `yaml.v3` file. Each service's Python
-`Settings` schema renders its static settings. The operator asked whether services need both files and environment
-variables ("Do we need both files and env vars", 2026-10-20 UTC). A generic environment layer would need to account
-for Viper's lowercasing of map keys, which requires list-shaped audience and route maps for the sidecar. Settle the
-approach for all services first; changes follow as their own nodes.
+**Decision, then migration. Unscheduled (operator, 2026-11-17).** Choose one typed settings framework
+for Agentplane services. Evaluate defining the schema in protobuf and loading it from YAML or
+textproto, alongside the current typed YAML approach. The design should show how the deployment
+renderer and service loaders use the same schema and handle unknown fields, defaults, and explicit
+runtime Secret inputs. Start from the [current settings contract](../AGENTS.md#settings).
+
+The shared strict YAML loader is the interim improvement. Choose the schema and file format before
+planning the service migrations.
 
 ## 9. Legacy burn-down
 
