@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "a1f86cbfaf604045cfd15a0ea4f92bb3744c23f4",
-  "observed_at_utc": "2026-11-18T01:42:00Z",
+  "source_sha": "faad706002fba8c4cb2a01c62400580e8bca049c",
+  "observed_at_utc": "2026-11-18T02:10:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1469,
+    "files": 1470,
     "directories": 277,
     "production": 815,
-    "tests": 654
+    "tests": 655
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -35,8 +35,8 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 163,
-        "directories": 25
+        "files": 164,
+        "directories": 26
       },
       "directories": [
         {
@@ -47,6 +47,12 @@
             "agentplane/action_service/actionresult/results.go",
             "agentplane/action_service/actionresult/results_test.go"
           ]
+        },
+        {
+          "path": "agentplane/action_service/actionstate",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/action_service/actionstate/state.go"]
         },
         {
           "path": "agentplane/action_service/callers",
@@ -402,6 +408,7 @@
         ],
         "reviewed_package_paths": [
           "agentplane/action_service/actionresult",
+          "agentplane/action_service/actionstate",
           "agentplane/action_service/callers",
           "agentplane/action_service/cmd",
           "agentplane/action_service/docs",
@@ -444,6 +451,21 @@
           "counts": {
             "non_test": 1,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/action_service/actionstate",
+          "role": "Stored text vocabulary for Action lifecycle states.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The Action Service Store and Notifications' Action payload codec read and write the same state strings, so one table maps them. It sits outside `internal/` because Notifications imports it.",
+          "gate": "",
+          "evidence_paths": ["agentplane/action_service/actionstate/state.go"],
+          "declared_packages": ["actionstate"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -3548,7 +3570,7 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 218,
+        "files": 217,
         "directories": 32
       },
       "directories": [
@@ -3711,7 +3733,7 @@
         },
         {
           "path": "agentplane/env/runtime/internal/coordinator",
-          "production": 28,
+          "production": 27,
           "tests": 35,
           "files": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
@@ -3724,7 +3746,6 @@
             "agentplane/env/runtime/internal/coordinator/coordinator_contracts.go",
             "agentplane/env/runtime/internal/coordinator/cosistate_startup_test.go",
             "agentplane/env/runtime/internal/coordinator/direct_host_test.go",
-            "agentplane/env/runtime/internal/coordinator/environment_runtime_sessions.go",
             "agentplane/env/runtime/internal/coordinator/environment_state.go",
             "agentplane/env/runtime/internal/coordinator/environment_state_test.go",
             "agentplane/env/runtime/internal/coordinator/execution_fixtures_test.go",
@@ -3994,7 +4015,7 @@
         "agentplane/env/runtime/execution/executor.proto",
         "agentplane/env/runtime/internal/cosistate/persistent.proto"
       ],
-      "pending_tracks": ["harness-host-extraction", "protobuf-alignment"],
+      "pending_tracks": ["protobuf-alignment"],
       "goal_note": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.; Guest thaw-agent process entry point.; Translates typed Executor RPCs into the local Codex exec-server protocol.; Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol.; Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.; Runtime process lifecycle over managed processes, systemd scopes/units, and PID 1 helpers.",
       "decision": {
         "state": "REWORK",
@@ -4136,7 +4157,7 @@
             "agentplane/env/runtime/control/server_test.go"
           ],
           "declared_packages": ["control"],
-          "pending_tracks": ["harness-host-extraction", "protobuf-alignment"],
+          "pending_tracks": ["protobuf-alignment"],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -4343,9 +4364,9 @@
             "agentplane/env/runtime/internal/coordinator/close_intent_race_test.go"
           ],
           "declared_packages": ["coordinator"],
-          "pending_tracks": ["harness-host-extraction"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 28,
+            "non_test": 27,
             "tests": 35
           }
         },
@@ -4848,11 +4869,7 @@
         }
       ],
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
-      "pending_tracks": [
-        "harness-host-extraction",
-        "settings-single-source",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
       "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status: the Sandbox Controller (deployed as `sandbox-controller`), beside the EnvironmentService API at `v1/`. Every replica serves EnvironmentService, the Runtime proxy and the Executor (`environments/runtimeproxy`).",
       "decision": {
         "state": "REWORK",
@@ -5099,7 +5116,7 @@
             "agentplane/environments/runtimeproxy/sandboxes.go"
           ],
           "declared_packages": ["runtimeproxy"],
-          "pending_tracks": ["harness-host-extraction"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 9,
             "tests": 9
@@ -5392,7 +5409,7 @@
       "id": "grpc",
       "path": "agentplane/grpc",
       "counts": {
-        "files": 9,
+        "files": 11,
         "directories": 5
       },
       "directories": [
@@ -5431,9 +5448,11 @@
         },
         {
           "path": "agentplane/grpc/streaming",
-          "production": 1,
-          "tests": 1,
+          "production": 2,
+          "tests": 2,
           "files": [
+            "agentplane/grpc/streaming/receive.go",
+            "agentplane/grpc/streaming/receive_test.go",
             "agentplane/grpc/streaming/send.go",
             "agentplane/grpc/streaming/send_test.go"
           ]
@@ -5543,21 +5562,22 @@
         },
         {
           "path": "agentplane/grpc/streaming",
-          "role": "Bounded gRPC stream send helper",
+          "role": "Bounded gRPC stream send and heartbeat-timed receive helpers",
           "decision": "retain",
           "target_paths": [],
           "reason": "Twelve production RPC packages share the same bounded send behavior; the helper is capability-oriented and service-independent.",
           "gate": "Keep bounded frame sends centralized.",
           "evidence_paths": [
             "agentplane/grpc/streaming/BUILD.bazel",
+            "agentplane/grpc/streaming/receive.go",
             "agentplane/grpc/streaming/send.go",
             "agentplane/grpc/streaming/send_test.go"
           ],
           "declared_packages": ["streaming", "streaming_test"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 1,
-            "tests": 1
+            "non_test": 2,
+            "tests": 2
           }
         }
       ],
@@ -7121,8 +7141,8 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 216,
-        "directories": 29
+        "files": 215,
+        "directories": 28
       },
       "directories": [
         {
@@ -7386,8 +7406,8 @@
             "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/integration_testmain_test.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
+            "agentplane/notification_service/internal/sources/github/publication/fanout/observation_entries.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
-            "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/wakeups_integration_test.go"
           ]
         },
@@ -7525,12 +7545,6 @@
           ]
         },
         {
-          "path": "agentplane/notification_service/testing",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/notification_service/testing/grpc.go"]
-        },
-        {
           "path": "agentplane/notification_service/testing/process_fixture",
           "production": 0,
           "tests": 1,
@@ -7592,7 +7606,6 @@
           "agentplane/notification_service/internal/worker",
           "agentplane/notification_service/migrations",
           "agentplane/notification_service/model",
-          "agentplane/notification_service/testing",
           "agentplane/notification_service/testing/process_fixture"
         ]
       },
@@ -7893,7 +7906,7 @@
             "agentplane/notification_service/internal/sources/github/publication/fanout/ingest.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/mergeability_entries.go",
             "agentplane/notification_service/internal/sources/github/publication/fanout/pr_entries.go",
-            "agentplane/notification_service/internal/sources/github/publication/fanout/snapshot_entries.go"
+            "agentplane/notification_service/internal/sources/github/publication/fanout/observation_entries.go"
           ],
           "declared_packages": ["fanout"],
           "pending_tracks": ["notification-inbox-split"],
@@ -8097,21 +8110,6 @@
           "pending_tracks": ["notification-inbox-split"],
           "counts": {
             "non_test": 7,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/notification_service/testing",
-          "role": "gRPC fixture implementations for Session listing.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Keep small test services beside integration setup; not a production abstraction.",
-          "gate": "",
-          "evidence_paths": ["agentplane/notification_service/testing/grpc.go"],
-          "declared_packages": ["testing"],
-          "pending_tracks": ["notification-inbox-split"],
-          "counts": {
-            "non_test": 1,
             "tests": 0
           }
         },
@@ -9948,57 +9946,6 @@
     },
     {
       "source_paths": [
-        "agentplane/env/runtime/control/environment_runtime.proto",
-        "agentplane/env/runtime/control/server.go",
-        "agentplane/env/runtime/internal/coordinator/session_admission.go",
-        "agentplane/env/runtime/internal/coordinator/session_status.go",
-        "agentplane/environments/runtimeproxy/server.go",
-        "agentplane/environments/runtimeproxy/proxy.go"
-      ],
-      "target_paths": [
-        "agentplane/env/runtime/control",
-        "agentplane/environments/runtimeproxy"
-      ],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "proposed_file_targets": [],
-      "source_owner": "agentplane/env/runtime/control",
-      "id": "harness-host-extraction",
-      "title": "Pull HarnessHost out of the Environment Runtime",
-      "components": ["env", "environments"],
-      "status": "AGREED DIRECTION",
-      "kind": "service split behind a parallel change",
-      "stage": 3,
-      "priority": 5,
-      "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\"; 00:31: a \"HarnessHost\" service \"would handle session status and commands\". The Runtime serves `HarnessHost` (proto package `agentplane.harness_host`, at `agentplane/harness_host/`) beside `EnvironmentRuntime` through a thin adapter in `coordinator` that shares `Runtime`'s command logic and admission fence (`Runtime.admit`), the Environments proxy forwards it per Sandbox, and every caller uses it. Remaining: `EnvironmentRuntime` drops `CreateSession`, the four commands and `ListSessions`, keeping the Sandbox lifecycle surface (`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission` and a lifecycle-only `GetStatus`).",
-      "how": [
-        "Removal: drop the moved RPCs from `EnvironmentRuntime`, with the Environments proxy's forwarding and method admission for them, and the command messages nothing uses any more. Open as #17435."
-      ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). The removal is open as #17435. The DAG node is `HARNESS_HOST_EXTRACTION`.",
-      "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
-      "validation": [
-        "//agentplane/env/runtime/control:control_test",
-        "//agentplane/env/runtime/internal/coordinator:coordinator_test",
-        "//agentplane/environments/runtimeproxy:server_test",
-        "//agentplane/environments/runtimeproxy:queue_runtime_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/env/runtime/control/environment_runtime.proto",
-        "agentplane/env/runtime/control/server.go",
-        "agentplane/env/runtime/internal/coordinator/session_admission.go",
-        "agentplane/env/runtime/internal/coordinator/session_status.go",
-        "agentplane/environments/runtimeproxy/server.go",
-        "agentplane/environments/runtimeproxy/proxy.go",
-        "agentplane/harness_host/harness_host.proto",
-        "agentplane/env/runtime/internal/coordinator/harness_host.go",
-        "agentplane/environments/runtimeproxy/harness_host_proxy.go"
-      ],
-      "review_size": "One PR: the removal."
-    },
-    {
-      "source_paths": [
         "agentplane/notification_service/cmd/main.go",
         "agentplane/notification_service/cmd/workers.go"
       ],
@@ -10238,8 +10185,8 @@
     {
       "stage": 3,
       "title": "Follow the agreed service directions",
-      "work": ["orchestration-v1-retirement", "harness-host-extraction"],
-      "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered. Every HarnessHost caller has moved; dropping the moved Session RPCs from `EnvironmentRuntime` is open as #17435."
+      "work": ["orchestration-v1-retirement"],
+      "result": "Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
     },
     {
       "stage": 5,
@@ -10261,17 +10208,17 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 277,
-    "go_files": 1469,
+    "go_files": 1470,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "a1f86cbfaf604045cfd15a0ea4f92bb3744c23f4",
+    "review_source_sha": "faad706002fba8c4cb2a01c62400580e8bca049c",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
-        "packages": 25,
-        "go_files": 163
+        "packages": 26,
+        "go_files": 164
       },
       {
         "slice": "app",
@@ -10319,7 +10266,7 @@
         "slice": "env",
         "components": ["env"],
         "packages": 32,
-        "go_files": 218
+        "go_files": 217
       },
       {
         "slice": "environments",
@@ -10337,7 +10284,7 @@
         "slice": "grpc",
         "components": ["grpc"],
         "packages": 5,
-        "go_files": 9
+        "go_files": 11
       },
       {
         "slice": "harness_host",
@@ -10396,8 +10343,8 @@
       {
         "slice": "notification_service",
         "components": ["notification_service"],
-        "packages": 29,
-        "go_files": 216
+        "packages": 28,
+        "go_files": 215
       },
       {
         "slice": "observability",
