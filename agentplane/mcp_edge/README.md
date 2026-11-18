@@ -34,8 +34,7 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 ## Authority
 
 The MCP edge's admission gate protects the nine `ConnectionService` methods with the configured
-operator OIDC issuer. Native gRPC and the HTTP facade both require one valid operator bearer; the
-facade registers directly against the in-process service and applies the same admission gate. An
+operator OIDC issuer. Native gRPC and the HTTP facade both require one valid operator bearer.
 When `rpc_tls.client_ca_file` and `operator_services` are configured, the listener admits only those
 service SVIDs as an additional peer check. Calls still require a valid operator bearer, which supplies
 the operator authority. Certificate-only calls, other service SVIDs and all delegation metadata are

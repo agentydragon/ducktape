@@ -65,21 +65,13 @@ reason and linked evidence without replaying an uncertain operation.
 Build `//agentplane/sampler/cmd:main_bin`. Supply a JSON file matching the Go
 [`Settings`](internal/settings/) package, then run the binary with `--config PATH` to serve. Use a PostgreSQL URL
 (`postgresql://`). Startup applies Goose migrations before opening the service database connection
-or starting workers. Baseline 11 creates the current schema on an empty database and adopts fully upgraded
-version-10 databases after checking their history and schema. Adoption preserves Session records,
+or starting workers. Baseline 15 creates the current schema on an empty database and adopts fully upgraded
+version-14 databases after checking their history and schema. Adoption preserves Session records,
 conversation state, evidence, and export checkpoints. Older or partial histories must first finish
 migrating with the previous image.
 For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` and pass
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
-
-Migration 13 resets **all sampler-owned staging data**: Sessions/conversations, contexts, intents,
-commands, events, History export checkpoints, process/cell bookkeeping, interrupts and notifications.
-Stop old sampler replicas before upgrading, then create new Sessions. History's database and executor
-storage are unchanged. This is one transactional SQL migration; subsequent starts preserve new data.
-To roll back, stop the sampler and restore its pre-cutover database backup with the previous image,
-or recreate its database using that image and start fresh. An image-only rollback cannot read the
-new schema.
 
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the

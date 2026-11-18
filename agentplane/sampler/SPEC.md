@@ -903,20 +903,11 @@ Compaction atomically verifies the expected active context and lease before repl
 settling its intent/command. It never rewrites the transcript. New responses append to both the
 transcript and active context using shared content records.
 
-Migration 13 atomically clears the disposable staging sampler state and replaces inline
-transcript/context storage with content-addressed tables. It clears conversations, Sessions,
-intents, commands, events, export checkpoints, process/cell bookkeeping, interrupts and notifications.
-Existing sampler Sessions cannot resume after this cutover; create new Sessions. The History
-service's database and executor storage are unchanged. The runtime reads only the new format.
-Stop old sampler replicas before applying this migration. Afterward ordinary restarts retain
-new-format data; migration 13 never resets it again.
-
-Baseline 11 creates the initial schema on a fresh empty database. An existing database is adopted
-only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
-and a validated native schema. Adoption preserves existing rows through version 12; migration 13
-intentionally clears them. Older or partial histories fail startup and require the previous image
+Baseline 15 creates the initial schema on a fresh empty database. An existing database is adopted
+only with completed Goose version 14 (the audit rewrite) and a validated native schema. Adoption
+preserves existing rows. Older or partial histories fail startup and require the previous image
 to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
 requires restoring the pre-migration database backup together with the old service image.
 
-The staging sampler Deployment uses two rolling replicas. This schema cutover requires stopping
-old replicas; later compatible migrations can roll normally. The host-instance marker is nullable.
+The staging sampler Deployment uses two rolling replicas. Compatible migrations can roll normally.
+The host-instance marker is nullable.
