@@ -69,22 +69,13 @@ class SandboxControlClient:
         timeout_s: float | None = None,
         expected_incarnation_uid: str | None = None,
     ) -> T:
-        """Call a Runner RPC through the Environments Service, fenced to the Sandbox identity."""
-        async with dial(
-            self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
-            channel_credentials=self.channel_credentials,
-            server_name=self.server_name,
-        ) as channel:
-            runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
-                environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
-            )
-            return await call_unary(
-                call(runner),
-                request,
-                token_file=self.token_file,
-                timeout_s=timeout_s or self.request_timeout_s,
-                extra_metadata=self._metadata(destination, expected_incarnation_uid),
-            )
+        return await self._unary(
+            destination,
+            lambda channel: call(environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)),
+            request,
+            timeout_s=timeout_s,
+            expected_incarnation_uid=expected_incarnation_uid,
+        )
 
     async def harness_host_unary[T](
         self,
@@ -95,15 +86,30 @@ class SandboxControlClient:
         timeout_s: float | None = None,
         expected_incarnation_uid: str | None = None,
     ) -> T:
-        """Call a Session-host RPC through Environments, fenced to the exact Sandbox identity."""
+        return await self._unary(
+            destination,
+            lambda channel: call(harness_host_pb2_grpc.HarnessHostStub(channel)),
+            request,
+            timeout_s=timeout_s,
+            expected_incarnation_uid=expected_incarnation_uid,
+        )
+
+    async def _unary[T](
+        self,
+        destination: SandboxDestination,
+        bind_call: Callable[[grpc.aio.Channel], Callable[..., Awaitable[T]]],
+        request: Message,
+        *,
+        timeout_s: float | None,
+        expected_incarnation_uid: str | None,
+    ) -> T:
         async with dial(
             self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
             channel_credentials=self.channel_credentials,
             server_name=self.server_name,
         ) as channel:
-            host: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(channel)
             return await call_unary(
-                call(host),
+                bind_call(channel),
                 request,
                 token_file=self.token_file,
                 timeout_s=timeout_s or self.request_timeout_s,

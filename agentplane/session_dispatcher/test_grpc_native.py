@@ -306,6 +306,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             opened = await inspect(destination, session)
             assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
     assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
+    # Setup completion and the first History announcement are independent wakeups.
+    await wait_for_history_session(runner.history, session)
     attached = await history_snapshot(runner, session)
     assert session in attached.spec.instructions
     assert (
