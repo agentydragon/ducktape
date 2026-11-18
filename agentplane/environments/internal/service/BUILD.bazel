@@ -21,7 +21,6 @@ go_library(
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
-        "//agentplane/identity/credentials/resolver",
         "//agentplane/net/peertls",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",

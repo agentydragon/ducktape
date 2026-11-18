@@ -7,7 +7,6 @@ go_library(
     srcs = ["handler.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook",
     deps = [
-        "//agentplane/notification_service/internal/inbox",
         "//agentplane/notification_service/internal/sources/github",
         "//agentplane/notification_service/internal/sources/github/publication/fanout",
         "//agentplane/notification_service/internal/sources/github/settings",
