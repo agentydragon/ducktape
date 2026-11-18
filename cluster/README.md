@@ -44,9 +44,13 @@ GPU: wyrm2 provides `nvidia.com/gpu`; GPU pods need `runtimeClassName: nvidia`
 
 ## Services
 
-Curated; the full set is the HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`.
-
 Service inventory: [curated services](docs/topology.md#services).
+
+To find checked-in `HTTPRoute` manifests, run this from the repository root.
+
+```bash
+git grep -l '^kind: HTTPRoute$' -- cluster/generated cluster/k8s
+```
 
 SSO: apps use Authentik via Terraform-managed OIDC/proxy providers plus a shrinking set of
 blueprint-managed proxy providers (<docs/sso.md>). ActivityWatch: per-device importers push
