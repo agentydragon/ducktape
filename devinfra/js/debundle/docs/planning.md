@@ -11,25 +11,10 @@ residual-only baseline needs a tool/input investigation.
 
 ## Plan an assignment
 
-Use a current graph with matching source, module tree, config and package inputs.
 For “what can leave the residual?”, begin with unseeded
-[`modules propose`](module_proposals.md). Do not require an already-known movable
-unit as the starting point. Use `--graphs REPORTS --modules TREE --tree-config
-CONFIG` for the configured corpus, or `--graph GRAPH` for one chunk. Corpus
-results retain each chunk's status and plan; source-unit IDs are chunk-local.
-Configured missing graphs and stale provenance are errors, not empty inventory.
-The initial complete policy preserves existing owners and traversal and appends
-one fresh owner. Generated/catchall residual chunks are explicitly excluded;
-their omission is not exhaustion. Required-unit filters narrow the supported
-entry-residual family without splitting atoms.
-
-A result may contain graph-feasibility inventory without executable selectors.
-An executable snapshot-bound plan also passes selector-writer preflight. Review
-the ownership map, source meaning, destinations and final import priority, then
-check, preview and apply that same plan. A completed negative covers only the
-recorded constructor family. Interruption and unsupported corpus rows cannot
-be counted as successful whole-corpus exhaustion.
-See [placement guarantees and composition](module_proposals.md).
+[`modules propose`](module_proposals.md). Review the ownership map, source
+meaning, destinations and final import priority, then check, preview and apply
+that same plan. See [placement guarantees and composition](module_proposals.md).
 
 Use `graph-summary`, `coverage`, `describe`, `inspect-source --id` and `atoms` to
 understand discovered groups. Atoms are required co-location groups, not a list
