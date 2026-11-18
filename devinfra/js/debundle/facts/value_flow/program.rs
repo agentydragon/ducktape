@@ -1076,6 +1076,7 @@ pub(crate) fn program_value_flows<'a>(
                 );
                 Some(Rc::new(origin_trace::OriginTrace::new(
                     selected_origins,
+                    origins.clone(),
                     targets,
                     key_labels,
                 )))
