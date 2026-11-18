@@ -237,6 +237,44 @@ chunk and program-projection expression queries. A member's start offset alone
 is insufficient: nested members can start at the same byte. Unknown keys,
 later reuse and reads in another callable retain the all-property union.
 
+### Guarded snapshot read certificates
+
+The same function census can relate a computed snapshot to one literal switch
+arm: `value = record[key]`, followed by `switch (key)` and
+`case "payload": selected = value; break`. It certifies that particular RHS
+identifier use, not every use of `value`. The snapshot may be a declaration or
+assignment immediately before the switch, or the final comma pair of an `if`
+condition ending in `value != null`. An arbitrary condition prefix runs before
+the snapshot and keeps its ordinary analysis.
+
+Admission requires three distinct, unambiguous locals owned by the same
+synchronous function, with no captures or dynamic scope. Between the read and
+the certified use, only the noncoercing null comparison, literal case labels
+and a simple identifier assignment are admitted. A preceding arm must terminate;
+fallthrough, effectful labels, intervening calls/rebindings, and unsupported arm
+shapes decline the certificate. Reuse elsewhere in the owning function is
+allowed. The proof is regional, rather than a claim that those bindings never
+change.
+
+On any execution reaching the certified use, the snapshot assignment completed
+with the original receiver and key. Neither another activation nor the admitted
+straight-line operations can replace those locals. Entering the literal arm
+therefore proves that the original key was that literal. The source value query
+can project that property from the original receiver, including all of its
+ordinary property facts. Abrupt completion does not introduce another normal
+value. This is a value-provenance refinement, not a second runtime read or a
+purity/termination certificate: the original read, getters, calls and writes
+remain subject to ordinary effect analysis.
+
+The sealed index maps the exact RHS span to a resolved receiver identity and
+property name. Event lowering and completed chunk/program queries consume the
+same index, including coordinate rekeying; the reference property oracle stays
+independent of tracked property caches. The existing census supplies the local
+ownership and capture proof without a second AST traversal. Shape collection
+and retained entries are O(N), insertion/query are O(log N), and the combined
+census keeps its O(N log N) expected preparation bound. Unsupported uses retain
+ordinary flow; this recognizer is not complete path-sensitive analysis.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`

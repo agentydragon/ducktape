@@ -1450,6 +1450,12 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "guarded_member_projection_test",
+    saved_analysis_tools = True,
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "numeric_member_projection_test",
     saved_analysis_tools = True,
     deps = ["@crates//:serde_json"],

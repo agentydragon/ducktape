@@ -510,7 +510,7 @@ impl ChunkProgramFlow {
         }
         let mut symbols = FlowSymbols {
             fresh_factory_imports: self.fresh_factory_imports.clone(),
-            numeric_loop_reads: flow.numeric_loop_reads.clone(),
+            member_read_certificates: flow.member_read_certificates.clone(),
             ..FlowSymbols::default()
         };
         let mut expr = FlowValueExpr::from_ast(expr, &mut symbols);
@@ -998,7 +998,7 @@ pub(crate) fn program_value_flows<'a>(
         let mut flow = ChunkValueFlow {
             property_names_by_slot: Arc::new(program.symbols.properties.clone()),
             binding_ids_by_slot: Arc::new(program.symbols.bindings.clone()),
-            numeric_loop_reads: program.symbols.numeric_loop_reads.clone(),
+            member_read_certificates: program.symbols.member_read_certificates.clone(),
             origin_table: program.origin_table,
             declared_ids: program.declared_ids,
             canonical: program.canonical,

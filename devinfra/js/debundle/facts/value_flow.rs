@@ -12,8 +12,9 @@ use work_metrics::SourceUnknownCause;
 
 mod call_effects;
 mod candidate_reachability;
+mod guarded_member_reads;
 mod initialization;
-mod numeric_loop_reads;
+mod member_read_certificates;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
@@ -21,7 +22,7 @@ use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
-use numeric_loop_reads::NumericLoopReads;
+use member_read_certificates::MemberReadCertificates;
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
@@ -765,7 +766,7 @@ impl CandidateObjectIndex<'_> {
 pub(crate) struct ChunkValueFlow {
     origin_table: Arc<OriginTable>,
     /// Source-site numeric key certificates survive later expression queries.
-    numeric_loop_reads: Arc<NumericLoopReads>,
+    member_read_certificates: Arc<MemberReadCertificates>,
     program: Option<program::ChunkProgramFlow>,
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
@@ -819,7 +820,7 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols {
-            numeric_loop_reads: self.numeric_loop_reads.clone(),
+            member_read_certificates: self.member_read_certificates.clone(),
             ..FlowSymbols::default()
         };
         let value_expr = FlowValueExpr::from_ast(expr, &mut symbols);
@@ -1131,7 +1132,7 @@ impl ChunkValueFlow {
             binding_ids_by_slot: Arc::new(program.symbols.bindings.clone()),
             read_only_callbacks,
             origin_table: program.origin_table,
-            numeric_loop_reads: program.symbols.numeric_loop_reads.clone(),
+            member_read_certificates: program.symbols.member_read_certificates.clone(),
             return_summaries: Arc::new(program.return_summaries),
             initializations,
             ..Self::default()
@@ -1250,12 +1251,62 @@ impl ChunkValueFlow {
         self.declared_ids.contains(id)
     }
 
+    fn values_of_member(&self, objects: Values, prop: Option<&str>, numeric: bool) -> Values {
+        let mut out = self.empty_values();
+        for origin in objects {
+            if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) = origin {
+                if let Some(prop) = prop {
+                    if let Some(values) = self
+                        .properties
+                        .get(&object)
+                        .and_then(|properties| properties.get(prop))
+                    {
+                        out.union_with(values);
+                    } else {
+                        out.insert(Value::Top);
+                    }
+                } else {
+                    if numeric {
+                        if let Some(properties) = self.properties.get(&object) {
+                            // The reference oracle independently filters the
+                            // property table instead of consulting the tracked
+                            // solver's numeric aggregate cache.
+                            for (name, values) in properties {
+                                if may_be_numeric_property_key(name) {
+                                    out.union_with(values);
+                                }
+                            }
+                        }
+                    } else if let Some(properties) = self.properties.get(&object) {
+                        // This path remains independent of the tracked solver's cached union.
+                        // Set union is commutative, so HashMap iteration cannot affect facts.
+                        for values in properties.values() {
+                            out.union_with(values);
+                        }
+                    }
+                    out.insert(Value::Top);
+                }
+            } else {
+                out.insert(Value::Top);
+            }
+        }
+        out
+    }
+
     pub(crate) fn values_of_expr(&self, expr: &Expr) -> Values {
         if let Some(program) = &self.program {
             return program.values_of_expr(expr, self);
         }
         match expr.unwrap_parens() {
-            Expr::Ident(ident) => self.values_of_binding(&ident.to_id()),
+            Expr::Ident(ident) => {
+                if let Some((receiver, property)) =
+                    self.member_read_certificates.guarded_projection(ident.span)
+                {
+                    self.values_of_member(self.values_of_binding(receiver), Some(property), false)
+                } else {
+                    self.values_of_binding(&ident.to_id())
+                }
+            }
             Expr::Fn(function) => {
                 self.singleton_value(Value::Alloc(Kind::Function, function.function.span.lo.0))
             }
@@ -1279,48 +1330,8 @@ impl ChunkValueFlow {
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
                 let numeric = computed_numeric_property(&member.prop)
-                    || self.numeric_loop_reads.contains(member.span);
-                let mut out = self.empty_values();
-                for origin in self.values_of_expr(&member.obj) {
-                    if let Value::Alloc(Kind::Object, object) | Value::Alloc(Kind::Set, object) =
-                        origin
-                    {
-                        if let Some(prop) = &prop {
-                            if let Some(values) = self
-                                .properties
-                                .get(&object)
-                                .and_then(|properties| properties.get(prop))
-                            {
-                                out.union_with(values);
-                            } else {
-                                out.insert(Value::Top);
-                            }
-                        } else {
-                            if numeric {
-                                if let Some(properties) = self.properties.get(&object) {
-                                    // The reference oracle independently filters the
-                                    // property table instead of consulting the tracked
-                                    // solver's numeric aggregate cache.
-                                    for (name, values) in properties {
-                                        if may_be_numeric_property_key(name) {
-                                            out.union_with(values);
-                                        }
-                                    }
-                                }
-                            } else if let Some(properties) = self.properties.get(&object) {
-                                // This path remains independent of the tracked solver's cached union.
-                                // Set union is commutative, so HashMap iteration cannot affect facts.
-                                for values in properties.values() {
-                                    out.union_with(values);
-                                }
-                            }
-                            out.insert(Value::Top);
-                        }
-                    } else {
-                        out.insert(Value::Top);
-                    }
-                }
-                out
+                    || self.member_read_certificates.contains(member.span);
+                self.values_of_member(self.values_of_expr(&member.obj), prop.as_deref(), numeric)
             }
             Expr::Call(call) => {
                 let Callee::Expr(callee) = &call.callee else {
@@ -1884,7 +1895,7 @@ struct FreshFactoryImports {
 
 #[derive(Default)]
 struct FlowSymbols {
-    numeric_loop_reads: Arc<NumericLoopReads>,
+    member_read_certificates: Arc<MemberReadCertificates>,
     bindings: Vec<Id>,
     binding_slots: HashMap<Id, BindingSlot>,
     properties: Vec<String>,
@@ -2092,7 +2103,20 @@ impl FlowValueExpr {
 
     fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr {
-            Expr::Ident(ident) => Self::Binding(symbols.binding(ident.to_id())),
+            Expr::Ident(ident) => {
+                if let Some((receiver, property)) = symbols
+                    .member_read_certificates
+                    .guarded_projection(ident.span)
+                    .cloned()
+                {
+                    Self::Member {
+                        object: Box::new(Self::Binding(symbols.binding(receiver))),
+                        property: Some(symbols.property(property)),
+                    }
+                } else {
+                    Self::Binding(symbols.binding(ident.to_id()))
+                }
+            }
             Expr::Fn(function) => {
                 Self::Value(Value::Alloc(Kind::Function, function.function.span.lo.0))
             }
@@ -2108,7 +2132,7 @@ impl FlowValueExpr {
                         property: Some(symbols.property(property)),
                     }
                 } else if computed_numeric_property(&member.prop)
-                    || symbols.numeric_loop_reads.contains(member.span)
+                    || symbols.member_read_certificates.contains(member.span)
                 {
                     Self::NumericMember { object }
                 } else {
@@ -2365,12 +2389,12 @@ impl FlowProgram {
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
-        let numeric_loop_reads = Arc::new(NumericLoopReads::collect(body));
+        let member_read_certificates = Arc::new(MemberReadCertificates::collect(body));
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
             symbols: FlowSymbols {
                 fresh_factory_imports,
-                numeric_loop_reads,
+                member_read_certificates,
                 ..FlowSymbols::default()
             },
             events: Vec::new(),
@@ -2471,7 +2495,7 @@ impl FlowProgram {
             fresh_returned_record_keys,
             return_summaries,
         } = self;
-        let numeric_loop_reads = symbols.numeric_loop_reads.clone();
+        let member_read_certificates = symbols.member_read_certificates.clone();
         let return_summaries = Arc::new(return_summaries);
         let numeric_properties = std::mem::take(&mut symbols.numeric_properties);
         let declared = symbols.declared(&declared_ids);
@@ -2501,7 +2525,7 @@ impl FlowProgram {
             binding_ids_by_slot: Arc::new(symbols.bindings.clone()),
             candidate_objects,
             origin_table,
-            numeric_loop_reads,
+            member_read_certificates,
             declared_ids,
             canonical,
             callable_source_unit,
