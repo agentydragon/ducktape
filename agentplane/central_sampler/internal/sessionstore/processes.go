@@ -108,20 +108,25 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	return &process, nil
 }
 
+func lockOwnedProcess(ctx context.Context, tx *sql.Tx, owner Owner, processID string) (*Conversation, *RemoteProcess, error) {
+	conversation, err := lockOwner(ctx, tx, owner)
+	if err != nil {
+		return nil, nil, err
+	}
+	process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
+		FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, protocol.ErrMissing
+	}
+	return conversation, process, err
+}
+
 func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status executionstate.ProcessStatus, exitCode *int, consumeOutput bool) error {
 	if !status.Valid() {
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
-			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
-		if errors.Is(err, sql.ErrNoRows) {
-			return protocol.ErrMissing
-		}
+		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
 		}
@@ -165,15 +170,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
-			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
-		if errors.Is(err, sql.ErrNoRows) {
-			return protocol.ErrMissing
-		}
+		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
 		}
@@ -220,15 +217,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 
 func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID string, afterSequence uint64, output []byte, exited bool, exitCode *int) error {
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
-			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
-		if errors.Is(err, sql.ErrNoRows) {
-			return protocol.ErrMissing
-		}
+		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
 		}
