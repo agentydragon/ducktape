@@ -1,8 +1,8 @@
 {
-  "validated_at_utc": "2026-11-17T16:26:48.455952+00:00",
-  "validation_scope": "Exact-artifact RBE preview; canonical deployment verified separately on the publication PR.",
-  "invocation": "daca8961-416b-463c-8a4f-79bbc490a256",
-  "invocation_url": "https://app.buildbuddy.io/invocation/daca8961-416b-463c-8a4f-79bbc490a256",
+  "validated_at_utc": "2026-11-18T03:05:43.719223+00:00",
+  "validation_scope": "Exact-artifact RBE preview; canonical deployment is verified separately on the publication PR.",
+  "invocation": "07bd78de-794a-4ce5-ab0a-42e204c51082",
+  "invocation_url": "https://app.buildbuddy.io/invocation/07bd78de-794a-4ce5-ab0a-42e204c51082",
   "execution": "Uncached RBE Chromium using deterministic_browser_context and VisualPage.capture",
   "target": "//devinfra/ci/x/latency_preview:test_preview",
   "browser_cases": 4,
@@ -15,21 +15,21 @@
     [390, 844]
   ],
   "initial_color_schemes": ["light", "dark"],
-  "screenshots_captured": 80,
-  "screenshots_published": 8,
+  "screenshots_captured": 88,
+  "screenshots_published": 16,
   "rendered_sha256": {
-    "latency/index.html": "ebb35b259f56845630b7cde48061aa54c0292c24c35174a06ec8a08beb184794",
-    "latency/evidence.json": "5233e18c7420c73db9e723df4d7d61309c3e23278ae1d94ad7633508b1521fa9",
-    "latency/evidence.md": "aa15ea3bdd250528bcb8edc637bac2b3aafb70f330ed9b56e7fe789a39797487",
-    "index.html": "35440a467c85f850a33cd5ffda45b49aae79b4b4485ddd52336b05004df0aa9b",
+    "latency/index.html": "fd969f2c29cfdec8acafd4376816bc306d2a5df0731ec9d57481a19034c5bc76",
+    "latency/evidence.json": "8e91f7d17570e3637905a63dbb41b59fdc0d9dedd0a75c466f845907fe9e62da",
+    "latency/evidence.md": "03b62aeaf7effd45666886c3d395fc1c6fb921f3d03b4824dd7fabf9700d3d19",
+    "index.html": "f5eb35d7486298d654b687a6ecc2ab93512c918c48d1a72de8899ccd29eafb74",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
-  "harness_sha256": "e49e00d772b949f7eedf3aa2e07a959603739a088a1e365232f9ddff50c78660",
+  "harness_sha256": "985797adaa9baf9dc9fc0f8ef5b179b48a91b7bf01eae7c6e6c956c634cad0b8",
   "checks": [
     "Exact served report/evidence bytes match frozen SHA256 inputs",
-    "Three head outcomes, six physical actions, five lifecycle rows and eight named timeline intervals match evidence",
-    "All current and historical chart and disclosure checks retained",
+    "Five Firecracker bars, both new evidence tables, findings, protocol and limits match the supporting evidence",
+    "Reverted required-routing disposition is visible; historical canary and all earlier charts and disclosures remain available",
     "Cached older evidence and JavaScript-disabled fallback; no browser console errors",
     "No document overflow; mobile tables scroll internally",
     "Light/dark mode, live preference changes and current root navigation summary"
@@ -38,10 +38,10 @@
     {
       "case": "mobile-light",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/9b793d6c3d9f6dd66060aa019c28fb209a27b554b6f3d517b60d5a7cb41d8671/326954",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a9d1f07f71044bfa786c7e646255a66323f5eba0d122545cc0acdbd1772b8ed0/350181",
       "file": "visuals/canary-mobile-light-required-ci-section.png",
-      "sha256": "9b793d6c3d9f6dd66060aa019c28fb209a27b554b6f3d517b60d5a7cb41d8671",
-      "bytes": 326954
+      "sha256": "a9d1f07f71044bfa786c7e646255a66323f5eba0d122545cc0acdbd1772b8ed0",
+      "bytes": 350181
     },
     {
       "case": "desktop-dark",
@@ -60,28 +60,76 @@
       "bytes": 8993
     },
     {
+      "case": "desktop-dark",
+      "checkpoint": "latest-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6670882985a6abfcef07bcf14cad7dc489f1306ae9af5a8dfd677b1ab3c16618/398383",
+      "file": "visuals/followup-desktop-dark-latest-section.png",
+      "sha256": "6670882985a6abfcef07bcf14cad7dc489f1306ae9af5a8dfd677b1ab3c16618",
+      "bytes": 398383
+    },
+    {
+      "case": "mobile-dark",
+      "checkpoint": "firecracker-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/a2677a2c06e8b87f5e3ae0a1e28acc1907566c7eced610e477f84f791947f31f/8153",
+      "file": "visuals/followup-mobile-dark-firecracker-followup.png",
+      "sha256": "a2677a2c06e8b87f5e3ae0a1e28acc1907566c7eced610e477f84f791947f31f",
+      "bytes": 8153
+    },
+    {
+      "case": "desktop-light",
+      "checkpoint": "firecracker-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/cfc7f749ebfe7c95531227833da5a25ef060d8b066f80a5de5af7f72cca86a1f/11426",
+      "file": "visuals/followup-desktop-light-firecracker-followup.png",
+      "sha256": "cfc7f749ebfe7c95531227833da5a25ef060d8b066f80a5de5af7f72cca86a1f",
+      "bytes": 11426
+    },
+    {
+      "case": "desktop-dark",
+      "checkpoint": "firecracker-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/549c394e220143a3b7e3eb7d74c93639b41b1472768d55752713b99c6d1352aa/10150",
+      "file": "visuals/followup-desktop-dark-firecracker-followup.png",
+      "sha256": "549c394e220143a3b7e3eb7d74c93639b41b1472768d55752713b99c6d1352aa",
+      "bytes": 10150
+    },
+    {
       "case": "mobile-dark",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/801a44511b051f1de66d420a7cc0687653bb617c996de606815ddf93c0e2f907/328949",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/2832036ffab12944ededceae57fb59c4a4813811d74362f98c057525ca9c130f/352498",
       "file": "visuals/canary-mobile-dark-required-ci-section.png",
-      "sha256": "801a44511b051f1de66d420a7cc0687653bb617c996de606815ddf93c0e2f907",
-      "bytes": 328949
+      "sha256": "2832036ffab12944ededceae57fb59c4a4813811d74362f98c057525ca9c130f",
+      "bytes": 352498
+    },
+    {
+      "case": "mobile-light",
+      "checkpoint": "latest-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/7883220de657c5b06ef0e8a91cc711f62935996cbff89625578f3831123a6a32/375858",
+      "file": "visuals/followup-mobile-light-latest-section.png",
+      "sha256": "7883220de657c5b06ef0e8a91cc711f62935996cbff89625578f3831123a6a32",
+      "bytes": 375858
+    },
+    {
+      "case": "mobile-light",
+      "checkpoint": "firecracker-followup",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/dc18af1fa36a82e6609ee92c23f908a92f31ad6263b85074fe13876a95faa8df/9461",
+      "file": "visuals/followup-mobile-light-firecracker-followup.png",
+      "sha256": "dc18af1fa36a82e6609ee92c23f908a92f31ad6263b85074fe13876a95faa8df",
+      "bytes": 9461
     },
     {
       "case": "desktop-dark",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/352fd960fd643280d90b7d11a41aa8dfcc4973f7dae5023d751e598e271f0463/424506",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/c3774caee5a6a93edb75aed0a3931f6af21393863824fcd7448568fc085864e2/449369",
       "file": "visuals/canary-desktop-dark-required-ci-section.png",
-      "sha256": "352fd960fd643280d90b7d11a41aa8dfcc4973f7dae5023d751e598e271f0463",
-      "bytes": 424506
+      "sha256": "c3774caee5a6a93edb75aed0a3931f6af21393863824fcd7448568fc085864e2",
+      "bytes": 449369
     },
     {
       "case": "desktop-light",
       "checkpoint": "required-ci-section",
-      "uri": "bytestream://remote.buildbuddy.io/blobs/ca1f3c6aee5bc119194fed1a5733ab250a85b596541bd39ba880bada71481f13/440172",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/191d9bbe9162948cee7e0c874dab2da070bd554ba2342f62e49af5bfde68aa81/464292",
       "file": "visuals/canary-desktop-light-required-ci-section.png",
-      "sha256": "ca1f3c6aee5bc119194fed1a5733ab250a85b596541bd39ba880bada71481f13",
-      "bytes": 440172
+      "sha256": "191d9bbe9162948cee7e0c874dab2da070bd554ba2342f62e49af5bfde68aa81",
+      "bytes": 464292
     },
     {
       "case": "mobile-light",
@@ -92,25 +140,42 @@
       "bytes": 7542
     },
     {
+      "case": "desktop-light",
+      "checkpoint": "latest-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/aebac69a917df6a9c15e0ba5b88439cbe18a29df19350f42270d6fb46749dec7/404155",
+      "file": "visuals/followup-desktop-light-latest-section.png",
+      "sha256": "aebac69a917df6a9c15e0ba5b88439cbe18a29df19350f42270d6fb46749dec7",
+      "bytes": 404155
+    },
+    {
       "case": "mobile-dark",
       "checkpoint": "required-ci-wall",
       "uri": "bytestream://remote.buildbuddy.io/blobs/a8a4bee6423c8eea657dc5459ac564a2ea0d76519fe2c05e18bf9dd0e0fc4a02/6522",
       "file": "visuals/canary-mobile-dark-required-ci-wall.png",
       "sha256": "a8a4bee6423c8eea657dc5459ac564a2ea0d76519fe2c05e18bf9dd0e0fc4a02",
       "bytes": 6522
-    }
-  ],
-  "review_limits": "Selected desktop/mobile light/dark section and chart PNGs were inspected. Other historical screenshots were not all manually re-reviewed. Mobile table captures show their left edge; DOM assertions cover every evidence cell. Intervals that overlap or nest are not additive.",
-  "preparatory_attempts": [
+    },
     {
-      "invocation": "63a7b39e-4274-412f-b5a6-2dae8fad77b9",
-      "outcome": "Four browser cases failed on one newly added incorrect harness expectation: the old summary was never rendered inside the historical section. All new canary schema/clock/result/cleanup assertions passed before that line. Removed that invalid new assertion; historical checks and report/evidence bytes unchanged.",
-      "population": "Browser-harness authoring only; excluded from the three-head CI canary and six physical scenario actions."
+      "case": "mobile-dark",
+      "checkpoint": "latest-section",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/f816f8df238bdb86bd9dea37e21dc901d2a0d70b5ce30da78ae01774dd6a480f/381480",
+      "file": "visuals/followup-mobile-dark-latest-section.png",
+      "sha256": "f816f8df238bdb86bd9dea37e21dc901d2a0d70b5ce30da78ae01774dd6a480f",
+      "bytes": 381480
     }
   ],
+  "review_limits": "Manually inspected the new section in desktop/mobile light/dark, the new chart in desktop dark/mobile light, the current canary disposition in desktop light, and the mobile navigation card. Other screenshots were validated by DOM/render checks and were not all manually re-reviewed. Mobile table captures show their left edge; DOM assertions cover every evidence cell. Nested process/setup/scenario clocks are not additive.",
+  "preparatory_attempts": [],
   "previous_report_validation": {
-    "publication_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
-    "invocation": "67063408-f066-47f4-a869-b52762f5482f",
-    "metadata_url": "https://github.com/agentydragon/ducktape/blob/b3b90e445a785bbde3c2ddb78b201b932d5abc5d/latency/visual-validation.json"
+    "publication_commit": "6f10299f3a3b22cec7d91acbda32acb2264dea16",
+    "invocation": "daca8961-416b-463c-8a4f-79bbc490a256",
+    "metadata_url": "https://github.com/agentydragon/ducktape/blob/6f10299f3a3b22cec7d91acbda32acb2264dea16/latency/visual-validation.json"
+  },
+  "additional_preview": {
+    "invocation": "2032dbcf-3d3b-4cea-8ab5-d264c9395d8d",
+    "passed_cases": 4,
+    "screenshots": 88,
+    "selected_pngs_byte_identical": 24,
+    "change_since": "Clarified manual clock in manifest and completed historical follow-up wording in evidence.md; visible HTML and evidence JSON unchanged."
   }
 }

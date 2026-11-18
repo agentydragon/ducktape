@@ -1,24 +1,24 @@
 {
-  "source_devel_commit": "0ecce47688eba1358f36e289b542ac7bcb812018",
-  "window_start_utc": "2026-11-17T15:16:05+00:00",
-  "window_end_utc": "2026-11-17T15:51:12Z",
+  "source_devel_commit": "9735c7e9e84ed2d17d2574b582d50341bf1c3c47",
+  "window_start_utc": "2026-11-18T01:13:44Z",
+  "window_end_utc": "2026-11-18T02:41:11.760623+00:00",
   "published_at_utc": null,
-  "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-17T16:11:10.197290+00:00",
-  "audited_at_utc": "2026-11-17T16:11:10.197306+00:00",
-  "publication_status": "Reviewed snapshot; publication commit is recorded in gh-pages Git history",
-  "previous_report_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
-  "history_base_gh_pages_commit": "b3b90e445a785bbde3c2ddb78b201b932d5abc5d",
-  "population": "Three PR heads; six physical TestRunner actions, five passed and one failed. Two candidate heads passed all three required checks; managed control failed. No managed repeat.",
-  "feedback_clock": "Earliest of the three required workflow creation times to the last required-check completion, including failures. Draft status and push-to-auto-merge eligibility are separate.",
-  "report_sha256": "ebb35b259f56845630b7cde48061aa54c0292c24c35174a06ec8a08beb184794",
-  "evidence_sha256": "5233e18c7420c73db9e723df4d7d61309c3e23278ae1d94ad7633508b1521fa9",
+  "attribution": "Native stage clocks, fixture spans and selected paired command wall; no population critical-path or Shapley attribution",
+  "snapshot_prepared_at_utc": "2026-11-18T02:45:27.512213+00:00",
+  "audited_at_utc": "2026-11-18T02:45:27.512226+00:00",
+  "publication_status": "Validated snapshot; Git history records the publication commit",
+  "previous_report_commit": "6f10299f3a3b22cec7d91acbda32acb2264dea16",
+  "history_base_gh_pages_commit": "506a66527717a8e58634e98e35c828aa235bee06",
+  "population": "Current: five Firecracker and six VM scenario actions / 22 passing cases; two separate collection-only disposals; two Nix ordinary/debug CI attempts. Earlier cohorts remain separately timestamped.",
+  "feedback_clock": "Current manual pairs: earlier local bbr command submission to later command completion, including outer setup, Bazel work and queues. Historical required-check canary: first of three required workflow creation times to last required-check completion, including failures. Neither clock establishes auto-merge readiness.",
+  "report_sha256": "fd969f2c29cfdec8acafd4376816bc306d2a5df0731ec9d57481a19034c5bc76",
+  "evidence_sha256": "8e91f7d17570e3637905a63dbb41b59fdc0d9dedd0a75c466f845907fe9e62da",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "New required-check canary: three heads and six TestRunner actions. Earlier experiments and cohorts retain separate windows.",
+  "window_note": "Current Nix CI and manual benchmark window; local curl reachability at 01:10 UTC and all earlier cohorts have separate original clocks.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "aa15ea3bdd250528bcb8edc637bac2b3aafb70f330ed9b56e7fe789a39797487",
+  "evidence_index_sha256": "03b62aeaf7effd45666886c3d395fc1c6fb921f3d03b4824dd7fabf9700d3d19",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -68,7 +68,7 @@
   ],
   "postfix_qualification_test_source": "6593034a7b491fa1651f455bc0f8e843ca34200e",
   "postfix_qualification_source_pr": 17371,
-  "source_note": "First parent of the last GitHub-tested synthetic merge; each canary head and actual tested merge is recorded separately. Earlier experiments retain their original source fields.",
+  "source_note": "Current manual benchmark is frozen at followup_test_source; source PRs #17480 and #17485 are merged. Nix tested merge and each earlier experiment's original source remain in their evidence.",
   "postfix_qualification_source_merge": "daffbb842abfc625da909e4fc58dcba08390f195",
   "postfix_qualification_population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
   "postfix_qualification_passed": false,
@@ -299,6 +299,7 @@
       "summary": "An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel."
     }
   },
-  "visual_invocation": "daca8961-416b-463c-8a4f-79bbc490a256",
-  "visual_screenshot_count": 80
+  "followup_test_source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+  "visual_invocation": "07bd78de-794a-4ce5-ab0a-42e204c51082",
+  "visual_screenshot_count": 88
 }

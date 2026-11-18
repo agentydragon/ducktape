@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · mixed KVM recycling qualification</title>
+    <title>CI latency · tooling and Firecracker reuse</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -1174,11 +1174,84 @@
         </section>`;
       }
 
+      function LatestMeasurements() {
+        const q = e.ci_latency_followup;
+        if (!q) return null;
+        return html`<section id="latest-measurements">
+          <${Title} order=${2}>Tooling and Firecracker follow-up<//>
+          <${Text} c="dimmed" size="sm">${q.window_label}<//>
+          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
+            >${q.summary}<//
+          >
+          <${Title} order=${3} id="nix-setup">Nix tooling setup<//>
+          <${Text} my="sm">${q.nix.summary}<//>
+          ${table(q.nix.headers, q.nix.rows, 1000)}
+          ${q.nix.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
+          <${Group} gap="md" my="md"
+            >${q.nix.links.map((x) => link(x.url, x.label))}<//
+          >
+          <${Title} order=${3} id="firecracker-reuse" mt="xl"
+            >Firecracker fixture reuse<//
+          >
+          <${Text} my="sm">${q.firecracker.summary}<//>
+          ${
+            q.firecracker.chart.length
+              ? html`<${Box}
+                  role="img"
+                  data-chart="firecracker-followup"
+                  aria-label="Firecracker test process seconds in the manual comparison; selected actions, not required CI feedback"
+                  my="lg"
+                >
+                  <${BarChart}
+                    h=${300}
+                    data=${q.firecracker.chart}
+                    orientation="vertical"
+                    dataKey="label"
+                    yAxisProps=${{ width: 185 }}
+                    series=${[{ name: "Test process", color: "blue.6" }]}
+                    valueFormatter=${(v) => `${num(v)}s`}
+                  />
+                <//>`
+              : null
+          }
+          ${table(q.firecracker.headers, q.firecracker.rows, 1150)}
+          ${q.firecracker.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
+          <${Group} gap="md" my="md"
+            >${q.firecracker.links.map((x) => link(x.url, x.label))}<//
+          >
+          <${Accordion} variant="contained" mt="md"
+            ><${Accordion.Item} value="followup-methods">
+              <${Accordion.Control}>Follow-up protocol and limits<//>
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${q.methods.concat(q.limits).map((x) => html`<${Text} size="sm">${x}<//>`)}
+                <//><//
+              >
+            <//><//
+          >
+        </section>`;
+      }
+
       function RequiredCiCanary() {
         const q = e.kvm_required_ci_canary;
         if (!q) return null;
         return html`<section id="required-ci-canary">
           <${Title} order=${2}>VM recycling through the required CI checks<//>
+          ${
+            q.current_disposition
+              ? html`<${Alert}
+                  color="blue"
+                  title=${q.current_disposition.status}
+                  my="md"
+                >
+                  ${q.current_disposition.summary}<br />
+                  ${link(q.current_disposition.revert_pr, "Merged revert #17420")}
+                  <${Text} size="sm" mt="sm"
+                    >${q.current_disposition.revert_validation}<//
+                  >
+                <//>`
+              : null
+          }
           <${Text} c="dimmed" size="sm">${q.window_label}<//>
           <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
             >${q.summary}<//
@@ -1254,23 +1327,25 @@
           ><${Stack} gap="xl">
             <header>
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
-                >CI latency · reviewed 17 November 2026 UTC<//
+                >CI latency · reviewed 18 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >Recycled KVM in the required CI path<//
+                >CI tooling and Firecracker fixture reuse<//
               >
               <${Text} size="lg"
-                >${e.kvm_required_ci_canary?.summary ?? "Canary results are unavailable. Earlier measurements follow."}<//
+                >${e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New: three
-                required-check canary heads on 17 November, including the failed
-                managed control and a verified KVM warm chain. Earlier loaded
-                bursts, cleanup qualification, worker-image comparison and PR
-                cohorts retain their original windows. A matched green-to-green
-                speedup remains unmeasured.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />New: Nix
+                realization diagnostics and a manual Firecracker lifetime
+                comparison. The required-routing canary was reverted. Earlier
+                canary heads, loaded bursts, cleanup qualification, worker-image
+                comparisons and PR cohorts retain their original windows.
+                Selected-action measurements remain separate from required CI
+                feedback.<//
               >
             </header>
+            <${LatestMeasurements} />
             <${RequiredCiCanary} />
             <${PostfixQualification} />
             <${MixedRecycling} />

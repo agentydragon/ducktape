@@ -1,3 +1,33 @@
+# Tooling and Firecracker follow-up · 18 November 2026 UTC
+
+The 115-second Nix delay did not recur. Firecracker warm setup took 38.7s; a worker pin added 200.1s of queueing. Ordinary scheduling chose a fresh baseline and finished its pair in 5m51s. All 22 manual case executions passed; broad CI savings remain unqualified.
+
+The public Attic narinfo responses omit FileSize. Nix therefore estimated 0.0 KiB to download even though the two HTTP bodies transferred 31,896,869 bytes; the declared unpacked total was 103,895,840 bytes.
+
+In the debug run the two Attic copy activities took 0.939s and 0.645s with no retries or full-buffer pauses. A separate nixpkgs source copy took 7.157s; its HTTP request logged 4.42s with 26 client buffer-full pauses, followed by 2.710s before copy completion. Request wall time can include client backpressure and is not pure server or network time.
+
+The historical 115-second cause remains unknown: normal logs lack request/activity completion boundaries, and the deployed Attic server retained no HTTP request timing. Merged PR #17480 enables native structured debug logs for GitHub debug reruns. No cache or retry-policy repair, or CI speedup, is established.
+
+One cold-to-warm chain passed 42 identity, isolation and cleanup checks after a non-recycled VM ran on the same executor. Native runner, Docker namespaces, K3s process/node and PKI controllers stayed stable; fixture and device-plugin identities changed. Candidate Action input roots, Commands and platforms match exactly.
+
+Observed setup was 121.000s and 109.455s in the non-recycled controls, 92.064s in the cold candidate, and 38.728s warm. Warm process time was 287.877s. Scenario work still took 199.667s; setup, process and scenario clocks nest and must not be added.
+
+The controlled warm action queued 200.149s while its pinned executor ran the VM companion. Their native process windows had zero overlap. The paired command clock was 540.513s, versus 470.540s and 431.017s for the controls. A faster test process did not make this pinned pair faster.
+
+The adaptive ordinary-scheduler probe selected a fresh K3s baseline on another executor: queue 3.595s, process 293.600s, paired command feedback 350.662s and 196.117s of VM/Firecracker process overlap. This was one ordinary selection and no warm hit; its result cannot establish a fleet warm-hit rate or a causal before/after speedup.
+
+RAM coexistence passed on the original 8-GiB worker: both VM guests powered off orderly, the paused Firecracker baseline survived, and the subsequent Firecracker action reused it. Candidate cgroup memory after the cold action's reclamation was 1,395,810,304 bytes; after the VM it was 855,597,056 bytes. Its kernel lifetime peak was 5,516,976,128 bytes, including file cache. Candidate cgroup OOM counters stayed zero. These observations do not establish fleet capacity or safe additional replicas.
+
+Two collection-only actions reused the exact observed native/Docker runner chains and requested discard. Both returned zero without running scenario bodies. The following six-worker inventory observed both original kernels, zero owned containers and zero owned loop mappings; both recorded sparse backing files were absent from their original Docker upper layers. Disposal is excluded from all scenario and timing populations.
+
+Ordinary PR CI initially failed when a managed TCG guest lost CPU 0 timer/RCU progress before Runtime connected; cleanup then rejected a remaining Sandbox. One job retry passed using cached test results, and #17485 merged. No fresh managed-VM validation is claimed by that retry. The original serial and QEMU snapshot remain in the evidence. The timer stall is unresolved and distinct from the earlier Kine fatal and QEMU IOTLB assertion.
+
+Keep Firecracker retention manual while measuring natural reuse and eviction under representative parallel load. Allow ordinary scheduler fallback; a worker pin is useful for identity proof and can create its own head-of-line wait. Required-check feedback remains the acceptance clock for a routing proposal.
+
+Source and clocks: `evidence.json → ci_latency_followup`. The five Firecracker and six VM scenario actions, adaptive selection, 42-check chain, memory observations, native CAS joins, original ordinary-CI failure and retry, and two separate disposal receipts are retained there. Earlier populations below retain their original windows.
+
+---
+
 # Required-check canary evidence
 
 Recycled KVM passed both required-check heads (8m50s cold / 8m03s warm) and one verified warm reuse chain. Firecracker finished last on both. The managed warm control failed after 12m18s; no green-to-green speedup is established.
@@ -14,7 +44,7 @@ Nix logs localize the time to profile install/cache restore but do not identify 
 
 An explicit collection-only disposal reused the exact native runner and Docker container, linked to the warm action, and requested discard. The following inventory of all six current workers found zero owned containers, zero private recycled loops and no mapping of the recorded backing inode on the original worker kernel.
 
-Keep the routing canary in draft. The next latency spike should test retained K3s for Firecracker on the same pool, preserving its scenarios and proving clean reuse and coexistence with the retained VM baseline. Broader backend PR feedback remains unmeasured; a pool-size increase is not supported by this small exposure. Separately, capture internal Nix realization/cache-request timings for the same two tool paths before choosing a closure cache or prebuilt artifact.
+The routing canary was merged and reverted by #17420; required VM routing is managed again. Its two immediate follow-ups—manual Firecracker reuse/coexistence and native Nix realization diagnostics—are now measured in the current section above. Broader backend PR feedback remains unmeasured; a pool-size increase is not supported by this small exposure.
 
 - [managed-control-first](https://github.com/agentydragon/ducktape/actions/runs/44112342031): head `10cdce47272d3fc028782b0e6d77fc0223951ae4`, tested merge `b45e0f5d4ac14e8658aa602184d6b8947ced4e4a`; 2 required checks passed / 1 failed; required result 738s; test invocation [f7f73d49-a860-5aa1-8911-53662af9d1be](https://app.buildbuddy.io/invocation/f7f73d49-a860-5aa1-8911-53662af9d1be).
 - [kvm-recycled-first](https://github.com/agentydragon/ducktape/actions/runs/44115300261): head `489598899619b33beb1854ab0f7ea2ef879bad01`, tested merge `72bb29a9b7c944fdf0456bb48eea19f03cf7e35a`; 3/3 required checks passed; required result 530s; test invocation [f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4](https://app.buildbuddy.io/invocation/f72e3fd7-a6cb-5791-9c03-a4d0c2a7b6b4).
