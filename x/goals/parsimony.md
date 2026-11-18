@@ -2,7 +2,7 @@
 
 Keep Ducktape correct, understandable, and easy to change. A future maintainer should be able to find what they need, understand what must keep working, and make a change without updating several copies of the same fact.
 
-Write as compactly as the repository owner can comfortably read. Keep the facts, conditions, and pointers that affect what the reader does. Use familiar abbreviations where they read naturally.
+Preserve all important information, including facts, conditions, caveats, and pointers. Use the shortest wording the repository owner can comfortably read. Fragments and familiar shorthand are fine.
 
 Preserve important user flows, security properties, access to stored data, and the ability to deploy, diagnose, and recover the system. Follow [the consumer scope in AGENTS.md](../../AGENTS.md#changes). An internal protocol can change if the result is easier to understand and maintain. Check the actual consumers, including configuration, jobs, and deployed components. Review feature retirement and reductions in supported behavior explicitly.
 
