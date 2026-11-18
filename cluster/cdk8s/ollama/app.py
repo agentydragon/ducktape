@@ -191,7 +191,7 @@ def _deployment(scope: Construct, scripts: ConfigMap, auth_proxy_config: ConfigM
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
-            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
+            replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
