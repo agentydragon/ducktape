@@ -1,0 +1,20 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:private"],
+)
+
+py_test(
+    name = "test_csv_request_schema",
+    srcs = ["test_csv_request_schema.py"],
+    deps = [
+        "//:conftest",
+        "//finance/budget:wire",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
+)
