@@ -25,26 +25,6 @@ py_binary(
 )
 
 py_library(
-    name = "export_node_subset",
-    srcs = ["export_node_subset.py"],
-    deps = [
-        ":convert",
-        "//tana/domain:constants",
-        "//tana/domain:nodes",
-        "//tana/domain:types",
-        "//tana/graph",
-        "//tana/graph:wrappers",
-    ],
-)
-
-py_binary(
-    name = "export_node_subset_bin",
-    main_module = "tana.export.export_node_subset",
-    visibility = ["//:__subpackages__"],
-    deps = [":export_node_subset"],
-)
-
-py_library(
     name = "materialize_searches",
     srcs = ["materialize_searches.py"],
     deps = [
