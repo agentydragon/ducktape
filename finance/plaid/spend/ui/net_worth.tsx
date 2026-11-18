@@ -1,5 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Box, Paper, Skeleton, Stack, Text, Title, useComputedColorScheme } from "@mantine/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Box,
+  Group,
+  Paper,
+  SegmentedControl,
+  Skeleton,
+  Stack,
+  Text,
+  Title,
+  useComputedColorScheme,
+} from "@mantine/core";
 import { Legend } from "chart.js";
 
 import { chartPalette, mountChart, seriesColor } from "./chart";
@@ -14,6 +25,7 @@ const dayLabel = (day: string) => {
   return (date.getUTCFullYear() === new Date().getFullYear() ? shortDay : datedDay).format(date);
 };
 const observedTime = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const RECENT_CHANGE_DAYS = 30;
 const signedUsd = (minorUnits: number | null) => {
   return minorUnits != null && minorUnits > 0 ? `+${money(minorUnits, "USD")}` : money(minorUnits, "USD");
 };
@@ -88,6 +100,10 @@ function NetWorthChart({ days }: NetWorthHistory) {
 function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["days"]; accountLabels: string[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scheme = useComputedColorScheme("light");
+  const [range, setRange] = useState("recent");
+  const firstVisibleIndex = range === "all" ? 0 : Math.max(0, days.length - RECENT_CHANGE_DAYS);
+  const visibleDays = useMemo(() => days.slice(firstVisibleIndex), [days, firstVisibleIndex]);
+  const hasChanges = visibleDays.some((day) => day.account_changes_minor_units != null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,11 +114,11 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
       type: "bar",
       plugins: [Legend],
       data: {
-        labels: days.map((day) => dayLabel(day.date)),
+        labels: visibleDays.map((day) => dayLabel(day.date)),
         datasets: accountLabels.map((label, index) => ({
           label,
           backgroundColor: seriesColor(scheme, index),
-          data: days.map((day) => day.account_changes_minor_units?.[index] ?? null),
+          data: visibleDays.map((day) => day.account_changes_minor_units?.[index] ?? null),
         })),
       },
       options: {
@@ -115,8 +131,8 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
               footer: (items) => {
                 const index = items[0]?.dataIndex;
                 if (index == null) return "";
-                const current = days[index].totals;
-                const previous = days[index - 1]?.totals;
+                const current = visibleDays[index].totals;
+                const previous = days[firstVisibleIndex + index - 1]?.totals;
                 return current && previous
                   ? `Net change ${signedUsd(current.net_minor_units - previous.net_minor_units)}`
                   : "";
@@ -139,19 +155,39 @@ function AccountChangesChart({ days, accountLabels }: { days: NetWorthHistory["d
         },
       },
     });
-  }, [accountLabels, days, scheme]);
+  }, [accountLabels, days, firstVisibleIndex, scheme, visibleDays]);
 
   return (
     <Stack component="section" aria-labelledby="account-changes-title" gap="xs">
-      <Title id="account-changes-title" order={2} size="h3">
-        Daily change by account
-      </Title>
+      <Group justify="space-between">
+        <Title id="account-changes-title" order={2} size="h3">
+          Daily change by account
+        </Title>
+        {days.length > RECENT_CHANGE_DAYS && (
+          <SegmentedControl
+            aria-label="Account change history"
+            size="xs"
+            value={range}
+            onChange={setRange}
+            data={[
+              { value: "recent", label: `${RECENT_CHANGE_DAYS} days` },
+              { value: "all", label: "All history" },
+            ]}
+          />
+        )}
+      </Group>
       <Text size="sm" c="dimmed">
         Changes use consecutive days with complete balances. Transfers can show up on both sides of zero.
       </Text>
-      <Box h={{ base: 280, sm: 320 }}>
-        <canvas ref={canvasRef} role="img" aria-label="Daily changes in net worth by account in US dollars" />
-      </Box>
+      {hasChanges ? (
+        <Box h={{ base: 280, sm: 320 }}>
+          <canvas ref={canvasRef} role="img" aria-label="Daily changes in net worth by account in US dollars" />
+        </Box>
+      ) : (
+        <Text size="sm" c="dimmed">
+          No consecutive days have complete balances in this range.
+        </Text>
+      )}
     </Stack>
   );
 }
