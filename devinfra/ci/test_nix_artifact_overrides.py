@@ -104,7 +104,7 @@ def test_rejects_registry_filename_that_differs_from_the_default_output(
     )
 
     with pytest.raises(SystemExit, match="filename"):
-        nix_artifact_overrides.fetch_overrides(["one"], registry)
+        nix_artifact_overrides.main(["--invocations", "one", "--artifact-targets", str(registry)])
 
 
 def test_surfaces_a_failed_bulk_download_without_emitting_overrides(

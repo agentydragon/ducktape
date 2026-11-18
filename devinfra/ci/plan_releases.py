@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import dataclasses
 import json
 import os
 import subprocess
@@ -49,83 +48,14 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import quote
 
-from devinfra.buildbuddy.ci.bes import Output, artifact_output
+from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci import publication_evidence
+from devinfra.ci.release_assets import Release, load_releases, resolve_asset_output
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
 TAG_HASH_LENGTH = 12
 
 REPO = "agentydragon/ducktape"
-
-
-@dataclasses.dataclass(frozen=True)
-class Release:
-    """One row of the release matrix.
-
-    Field names are the matrix keys release.yml reads — except `filenames`,
-    which only the planner's own identity derivation consumes.
-    """
-
-    pkg: str
-    targets: str
-    #: Each target's released asset name, aligned with `targets`. The name is a
-    #: contract: sync_pins.py derives every pin's download URL from it, and
-    #: release_assets.py refuses a built file that carries a different name.
-    filenames: str
-    tests: str
-    bazel_flags: str
-    release_metadata: str
-    metadata_platform: str
-
-    @property
-    def uses_default_config(self) -> bool:
-        """Whether this row was built under the same Bazel config as bazel-ci."""
-        return not self.bazel_flags
-
-    @property
-    def assets(self) -> list[tuple[str, str]]:
-        """(target, filename) pairs, aligned by position."""
-        return list(zip(self.targets.split(), self.filenames.split(), strict=True))
-
-    def as_matrix_row(self) -> dict[str, str]:
-        row = dataclasses.asdict(self)
-        del row["filenames"]
-        return row
-
-
-def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release]:
-    """Every release row, from the two SSOT files release.yml has always read."""
-    doc = json.loads(artifact_targets.read_text())
-    pins = doc["pins"]
-    rows = [
-        Release(
-            pkg=name,
-            targets=" ".join(pin["target"] for pin in owned),
-            filenames=" ".join(pin["filename"] for pin in owned),
-            tests=entry.get("tests", ""),
-            bazel_flags=entry.get("bazelFlags", ""),
-            release_metadata=str(entry.get("releaseMetadata", False)).lower(),
-            metadata_platform=entry.get("metadataPlatform", ""),
-        )
-        for name, entry in doc["releases"].items()
-        if (owned := [pin for pin in pins.values() if pin["release"] == name])
-    ]
-    # One release per deployable skill; skills/skills_registry.json is the SSOT.
-    # Their `<name>_frontmatter_test` already runs in bazel-ci, so tests stays empty.
-    skills = json.loads(skills_registry.read_text())["skills"]
-    rows.extend(
-        Release(
-            pkg=skill["pkg"],
-            targets=skill["target"],
-            filenames=skill["filename"],
-            tests="",
-            bazel_flags="",
-            release_metadata="false",
-            metadata_platform="",
-        )
-        for skill in skills
-    )
-    return rows
 
 
 def content_tag(pkg: str, content_hash: str) -> str:
@@ -144,13 +74,9 @@ def content_hash(release: Release, by_label: Mapping[str, list[Output]]) -> str 
     """
     assets = []
     for target, filename in release.assets:
-        artifact = artifact_output(by_label, target)
-        if isinstance(artifact, str):
-            if target not in by_label:
-                return None
-            raise ValueError(artifact)
-        if (built := Path(artifact.path).name) != filename:
-            raise ValueError(f"{target} built {built!r} but its pin says filename={filename!r}")
+        if target not in by_label:
+            return None
+        artifact = resolve_asset_output(by_label, target, filename)
         assets.append((filename, artifact.digest))
     return release_content_hash_from_digests(assets)
 

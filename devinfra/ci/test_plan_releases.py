@@ -7,16 +7,8 @@ import pytest
 import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
-from devinfra.ci.plan_releases import (
-    Release,
-    content_hash,
-    content_tag,
-    is_published,
-    load_releases,
-    main,
-    matrix_include,
-    plan,
-)
+from devinfra.ci.plan_releases import content_hash, content_tag, is_published, main, matrix_include, plan
+from devinfra.ci.release_assets import Release, load_releases
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
 # Relative to the runfiles root, which is cwd under `bazel test` — the same paths

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 
 from devinfra.buildbuddy.cli import CLIError, run
 
@@ -167,23 +167,6 @@ def _invocation_from_export(document: object) -> Invocation:
         child_invocation_ids=tuple(document.get("childInvocationIds", [])),
         exit_code_name=document.get("exitCodeName"),
     )
-
-
-def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output | str:
-    """The one file `label` publishes, or a reason it has none.
-
-    "Artifact" means the target's own default output group, not lint reports
-    completing under the same label or `_validation` outputs.
-    """
-    artifacts = sorted(
-        {o for o in by_label.get(label, []) if not o.aspect and o.output_group == "default"}, key=lambda o: o.path
-    )
-    if not artifacts:
-        return f"{label}: not reported by the build"
-    if len(artifacts) > 1:
-        paths = ", ".join(o.path for o in artifacts)
-        return f"{label}: reports {len(artifacts)} default outputs ({paths}); an artifact target must publish one"
-    return artifacts[0]
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:
