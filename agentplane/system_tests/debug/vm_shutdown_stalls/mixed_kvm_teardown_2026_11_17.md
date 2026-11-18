@@ -173,20 +173,17 @@ runner after upload. The loop mapping was still attached. Its exact remaining
 file-descriptor holder was not captured, so attributing the descriptor to QEMU
 specifically remains an inference.
 
-A separate candidate in `deployment/stack.py` installs a failure-only guard after
-opening the retained baseline. It calls the existing ownership-checked
+The failure-only guard from [PR #17323](https://github.com/agentydragon/ducktape/pull/17323)
+in `deployment/stack.py` runs after opening the retained baseline. It calls the existing ownership-checked
 `baseline.stop_owned` after ordinary resource cleanup and before raw volume
 cleanup. Successful stacks keep their warm daemon. If the stop fails, the
-original error is re-raised with a note. The focused
-[regression invocation](https://app.buildbuddy.io/invocation/9b5ce5c7-e6bb-4559-a320-d9cd479227c0)
-and the changed [library build](https://app.buildbuddy.io/invocation/43d1461c-acba-4c1b-b346-74b9ad837c4d)
-passed. The candidate is published in [PR #17323](https://github.com/agentydragon/ducktape/pull/17323).
-Those focused checks ran before its rebase from `010d80acd3` onto `74f4be8370`;
-neither changed source file differed between those bases. File-scoped pre-commit
-also passed. Its tests exercise the guard and baseline certification with a simulated
-resource-unwind layout; they do not reproduce the stalled guest or establish
-real loop release. This remains a fixture-cleanup candidate, not a boot-stall
-repair or a reason to bypass production quiescence.
+original error is re-raised with a note. The original [focused regression](https://app.buildbuddy.io/invocation/9b5ce5c7-e6bb-4559-a320-d9cd479227c0)
+exercised a simulated resource unwind. A later retained-stack probe found a
+kubelet block-device lease still attached after userspace owners exited.
+[PR #17371](https://github.com/agentydragon/ducktape/pull/17371) added identity-checked lease
+release. The real Ready-VM error probe then preserved the injected failure and
+detached both mappings. See [the repair qualification](raw_block_kernel_lease_2026_11_17.md#repair-qualification)
+and [the repeat command](../../x/vm_kvm/README.md#retained-failure-cleanup-qualification).
 
 ## PR CI: QEMU boot assertion reported by the teardown gate
 
@@ -241,16 +238,17 @@ No CPU 1 flush appears between the retained fill and assertion, but loss prevent
 promoting that absence to proof that no flush occurred. The exact matching
 fill/access provenance and a safe emulator repair therefore remain unproven.
 
-## Next discriminator
+## Later qualification and open questions
 
-Normal shutdown log verbosity is a measured way to restore some KVM shutdown
-margin while preserving lifecycle checks. A faithful recycled-fixture repeat
-under the original load is still needed before claiming the flake repaired.
-The owned-baseline cleanup candidate needs a real disposable-cluster failure
-exercise that retains an open block device, verifies the original failure, and
-proves that all owned device users exit before detach.
+Normal log verbosity restored some KVM shutdown margin in the ordinary-fixture
+trial. With the storage fix and reduced verbosity in place, two later recycled
+KVM bursts each retained strict orderly-shutdown evidence for all eight guests.
+The cold managed control failed and its second burst was canceled. The later
+window leaves the mixed-pool comparison open and does not isolate what prevented
+the earlier KVM failures. See [the post-fix qualification](https://github.com/agentydragon/ducktape/blob/b3b90e445a785bbde3c2ddb78b201b932d5abc5d/latency/evidence.md#post-fix-qualification-evidence).
 
-For the managed boot stall, retain the timer-acceptance/EOI sequence and establish
-whether the accepted vector reaches the guest interrupt entry point. Avoid
-increasing the readiness or shutdown deadlines: the former guest is losing
-timer progress, while the latter path has measurable diagnostic overhead.
+The managed boot investigation now includes a natural recurrence with exact
+APIC probes. QEMU returned from dispatch for the retained timer vector, but
+the capture lacks guest instruction flow and has a trace-retention gap. The next
+discriminator is execution at the guest interrupt entry and acknowledgement
+with verified CPU 0 coverage. See [the recurrence](../vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes).
