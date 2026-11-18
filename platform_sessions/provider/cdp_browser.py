@@ -40,6 +40,7 @@ class CdpBrowser:
 
     No startup window delays tab restoration until after the HTTP and WebSocket guards
     are installed. This guards page traffic, not arbitrary Chromium process egress.
+    Restoration can continue after startup; the fallback guards remain installed.
     Profiles with service-worker storage are refused before Chromium can run a worker.
     """
 

@@ -26,8 +26,9 @@ serves a graphical sign-in browser at the fixed private WebSocket path
 instance identifier, authenticates the owner and forwards only to that configured provider over
 verified TLS with a provider bearer. The provider independently verifies the bearer on every
 WebSocket connection. Neither metadata nor the browser can select another provider endpoint.
-When `initial_url` is omitted, the shared runtime does not navigate at startup. It closes extra
-restored tabs and moves the remaining tab to `about:blank` before reporting ready. Such providers
+When `initial_url` is omitted, the shared runtime does not navigate upstream at startup. It closes
+extra tabs currently exposed by Playwright and moves the remaining tab to `about:blank` before
+reporting ready. Such providers
 navigate in `on_viewer_connect` after authenticated admission and before viewer acceptance. Chromium
 may issue a transient request while restoring a profile before Playwright exposes the context, so
 providers quiesce visible pages before orderly shutdown as well.
@@ -37,6 +38,8 @@ and WebSocket fallback guards before creating a visible page. Provider request r
 `continue_()` for their explicitly allowed requests; `fallback()` remains denied. Only the
 page selected by `run_viewer_sync` can use unscoped HTTP(S) and WebSockets during authenticated
 viewer admission. Disconnect revokes that allowance before the provider quiesces the page.
+Restoration may continue after startup and produce blocked Chromium error pages. Those tabs
+remain denied; `run_viewer_sync` closes other known tabs before allowing its selected page.
 This mode requires `service_workers="block"`, refuses profiles containing service-worker
 storage before process launch, and blocks new registrations before page scripts run. Chromium
 can create worker storage even with registration blocked: a caller using a dedicated managed

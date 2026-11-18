@@ -297,6 +297,7 @@ class InteractiveBrowserRuntime:
 
         The CDP context keeps every other page denied. Provider request pages must
         explicitly continue their own allowed requests instead of falling back.
+        Close other known tabs before granting access; later restorations remain denied.
         """
         with self._state_lock:
             if not self._viewer_connected:
@@ -527,8 +528,8 @@ class InteractiveBrowserRuntime:
         )
 
     def _prepare_initial_page(self, context: BrowserContext) -> None:
-        # A provider may keep Chromium at about:blank until authenticated viewer
-        # admission, then navigate in on_viewer_connect after fencing reads.
+        # Quiesce the tabs Playwright currently exposes. CDP restoration can continue
+        # later; its permanent context guards keep those additional tabs denied.
         if self._initial_url is None:
             pages = context.pages
             if not pages:
@@ -537,8 +538,7 @@ class InteractiveBrowserRuntime:
             for extra in pages[1:]:
                 extra.close()
             if pages[0].url != "about:blank":
-                # Fail startup if a restored tab cannot be quiesced; otherwise a
-                # restart could keep making unattended upstream requests.
+                # Fail startup if an already restored tab cannot be quiesced.
                 pages[0].goto("about:blank", wait_until="commit", timeout=15000)
             return
         if not context.pages or all(page.url == "about:blank" for page in context.pages):
