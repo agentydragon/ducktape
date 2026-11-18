@@ -260,21 +260,16 @@ changes with PF8; either slice can land independently when its contract is clear
 
 ### PF8 — Dependency registration, storage and useful wakeups
 
-The representation slice in [#17180](https://github.com/agentydragon/ducktape/pull/17180)
-assigns dense rule identities, stores reverse reader vectors, and keeps each
-rule's forward membership, scheduled round and dirty keys in an indexed record.
-Actual `(round, Rule)` ordering and cumulative absent/historical subscriptions
-remain. Its contract is in <../docs/inference.md#value-subscriptions>.
-
-Every repeated read still records a key and checks forward membership. Each
-changed key traverses its consumers and inserts dirty keys even when evaluation
-is already queued. Historical subscriptions can wake events whose current exact
-dependencies no longer contain that key. Per-reader hash tables, key payloads,
-vector capacity and fact-table lookups remain. The test-only counters distinguish
-accesses from distinct edges, no-op from changing proposals, and wake attempts
-from schedules; they do not provide production corpus cardinalities. The early
-private-consumer heap sample includes both watcher directions, not a complete account of the
-later RSS peak.
+Measure remaining registration and wakeup costs against the
+[compact cell representation](../docs/inference.md#value-subscriptions).
+Each repeated read still looks up its semantic key, records a cell ID and checks
+forward membership. Each changed cell traverses its consumers and inserts dirty
+IDs even when evaluation is already queued. Historical subscriptions can wake
+events whose current exact dependencies no longer contain that key. Per-reader
+hash tables, key-to-cell lookup, vector capacity and semantic-key ordering remain.
+Work counters distinguish accesses from distinct edges, no-op from changing
+proposals, and wake attempts from schedules. They do not account for all retained
+key/payload capacity or the rest of the process's peak memory.
 
 Use the closed source [property-producer census](../docs/inference.md#source-property-producer-census)
 when measuring the remaining dependency relation. The bounded corpus
@@ -282,7 +277,7 @@ when measuring the remaining dependency relation. The bounded corpus
 ends at different partial states; quantify completed memory/runtime and remaining
 potential-writer subscriptions before attributing a full-consumer improvement.
 
-Then reduce repeated forward-key membership, per-reader allocation and dirty-key
+Then reduce repeated forward membership, per-reader allocation and dirty-key
 processing through explicit compiled/activated dependencies in the existing
 inference owner. Compact reverse adjacency alone does not remove those accesses.
 Account for both index directions, empty/small memberships, actual live edges
@@ -294,31 +289,10 @@ retirement. Proof-bearing proposals also rescan their preceding reads to registe
 premise edges; charge that work separately. Source-only flow already skips that
 proof index, so it is not the explanation for its watcher cost.
 
-Revise the cell-ID arena layout before any further adoption attempt; the first
-[public comparison](../perf/analysis_serial_phases.md#rejected-cell-id-arena)
-exceeds the wall-time guardrail and increases peak memory. Measure the full
-optional fact slot reserved by absent cells, and evaluate separate storage for
-positive facts while sharing key-to-cell lookup and using sparse ID sets for
-rule-local membership and pending changes. Keep IDs internal; restore the
-original key order at semantic delivery boundaries. Check absent reads followed
-by late producers, proof-only growth, sealed inputs, consumed facts and positive
-finished outputs. Measure actual key/cell layouts and distinct absent, present
-and consumed cells: an absent cell's optional fact slot and the final map
-conversion can offset savings in watcher sets. Restore immediate release of
-unobserved consumed runtime keys as well as fact payloads; those keys own path
-vectors. Prove that cell-ID reuse follows removal of active read/change and
-proof references and that no registered watcher or pending delivery can retain
-the old ID. Keep historically watched cells stable, and cover consume/reuse in
-one activation plus later producers. Compare complete optimized pipelines and
-peak memory; unchanged work counts are expected for this representation change.
-
-If per-property watcher edges remain dominant, first measure unique eligible
-receiver/slot edges, expression-group widths and writer fanout before choosing
-grouped property queries. A union of an object's property values is not an
-exact change signal: a new value for one property may already occur in another.
-Any grouped design needs exact property-growth notifications, receiver-growth
-backfill, absent-read behavior and a bound on scans of hot property buckets.
-It must preserve current exact query results and typed proof dependencies.
+Before grouping property notifications by receiver, measure distinct per-slot
+edges, per-receiver groups and added wake fanout. Keep exact value reads and
+changed-key delivery. A receiver-wide value union cannot act as a notification
+for a new slot whose value was already present in that union.
 
 Close with registration/wakeup and retained-state work controls plus identical
 semantic/CLI outcomes and matched optimized profiles. Measure useful work and
