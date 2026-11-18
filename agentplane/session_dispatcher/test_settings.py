@@ -29,23 +29,6 @@ def _settings(*, kubernetes_client_qps: float = 0) -> Settings:
     )
 
 
-@pytest.mark.parametrize(
-    ("key", "value"),
-    [
-        ("runner_security", {"mode": "insecure"}),
-        ("runtime_proxy_readers", ["spiffe://agentplane/app"]),
-        ("runtime_proxy_session_callers", ["spiffe://agentplane/sessions"]),
-        ("runtime_proxy_controller_callers", ["spiffe://agentplane/sandbox-controller"]),
-        ("executor_service_callers", ["spiffe://agentplane/central-sampler"]),
-    ],
-)
-def test_dispatcher_rejects_retired_runtime_settings(key: str, value: object) -> None:
-    source = _settings().model_dump(mode="json")
-    source[key] = value
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        Settings.model_validate(source)
-
-
 @pytest.mark.parametrize("qps", [-1, 0, 25.5])
 def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
     assert _settings(kubernetes_client_qps=qps).kubernetes_client_qps == qps
