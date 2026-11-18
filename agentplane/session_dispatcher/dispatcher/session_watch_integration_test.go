@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"net/url"
 	"runtime"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -102,13 +102,7 @@ func receiveCaughtUp(t *testing.T, run *sessionWatchRun) *dispatcherpb.WatchSess
 
 func sessionWatchHub(t *testing.T, databaseURL, name string) *wakeups.Hub {
 	t.Helper()
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := parsed.Query()
-	query.Set("application_name", name)
-	parsed.RawQuery = query.Encode()
+	parsed := postgres.URLWithApplicationName(t, databaseURL, name)
 	hub, err := wakeups.Listen(t.Context(), parsed.String(), store.SessionNotifyChannel)
 	if err != nil {
 		t.Fatal(err)

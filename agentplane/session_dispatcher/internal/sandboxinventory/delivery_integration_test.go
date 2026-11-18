@@ -172,13 +172,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 
 func (f *deliveryFixture) listen(t *testing.T, name string) *wakeups.Hub {
 	t.Helper()
-	target, err := url.Parse(f.dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := target.Query()
-	query.Set("application_name", name)
-	target.RawQuery = query.Encode()
+	target := postgres.URLWithApplicationName(t, f.dsn, name)
 	hub, err := wakeups.Listen(f.ctx, target.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -302,14 +296,8 @@ func TestReconnectRecoversNotifyCommittedWhileListenerDisconnected(t *testing.T)
 			t.Error(err)
 		}
 	})
-	target, err := url.Parse(f.dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
+	target := postgres.URLWithApplicationName(t, f.dsn, "test-gap-listener")
 	target.User = url.UserPassword(role, "test-listener-password")
-	query := target.Query()
-	query.Set("application_name", "test-gap-listener")
-	target.RawQuery = query.Encode()
 	gap, err := wakeups.Listen(f.ctx, target.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)

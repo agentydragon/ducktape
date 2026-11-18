@@ -163,6 +163,22 @@ func Open(t testing.TB, dsn string) *sql.DB {
 	return db
 }
 
+// URLWithApplicationName returns the fixture URL with an application_name for pg_stat_activity.
+// An empty name leaves the existing connection parameters as supplied.
+func URLWithApplicationName(t testing.TB, dsn, name string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "" {
+		query := parsed.Query()
+		query.Set("application_name", name)
+		parsed.RawQuery = query.Encode()
+	}
+	return parsed
+}
+
 // prepareCloneTemplateLocked initializes the clone source while db.mu is held.
 func (db *Database) prepareCloneTemplateLocked(ctx context.Context) error {
 	if db.admin != nil {

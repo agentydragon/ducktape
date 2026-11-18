@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -25,13 +24,7 @@ func openDB(t *testing.T) *sql.DB {
 // listen returns a hub whose LISTEN connection is called `name` in pg_stat_activity.
 func listen(t *testing.T, name string, channels ...string) *Hub {
 	t.Helper()
-	target, err := url.Parse(integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := target.Query()
-	query.Set("application_name", name)
-	target.RawQuery = query.Encode()
+	target := postgres.URLWithApplicationName(t, integrationDatabase.URL, name)
 	hub, err := Listen(t.Context(), target.String(), channels...)
 	if err != nil {
 		t.Fatal(err)

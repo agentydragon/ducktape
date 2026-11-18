@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"net/url"
 	"runtime"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -222,13 +222,7 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-expired-sandbox", sandboxUID, input("test-expired-command", "test-input"), nil); err != nil {
 		t.Fatal(err)
 	}
-	listenerURL, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := listenerURL.Query()
-	query.Set("application_name", "test-dispatch-retention-reconnect")
-	listenerURL.RawQuery = query.Encode()
+	listenerURL := postgres.URLWithApplicationName(t, databaseURL, "test-dispatch-retention-reconnect")
 	hub, err := wakeups.Listen(t.Context(), listenerURL.String(), store.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)

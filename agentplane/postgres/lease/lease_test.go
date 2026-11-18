@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -43,17 +42,7 @@ func subjects(t *testing.T, db *sql.DB) map[string]subject {
 // openDB opens the fixture database; a non-empty applicationName names its connections in pg_stat_activity.
 func openDB(t *testing.T, applicationName string) *sql.DB {
 	t.Helper()
-	target, err := url.Parse(integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if applicationName != "" {
-		query := target.Query()
-		query.Set("application_name", applicationName)
-		target.RawQuery = query.Encode()
-	}
-	db := postgres.Open(t, target.String())
-	return db
+	return postgres.Open(t, postgres.URLWithApplicationName(t, integrationDatabase.URL, applicationName).String())
 }
 
 func inTx(db *sql.DB, f func(tx *sql.Tx) error) error {
