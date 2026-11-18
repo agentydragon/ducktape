@@ -39,7 +39,9 @@ def test_build_symlinks_do_not_prevent_listing_visual_test_outputs() -> None:
 
     listed = list_ci_artifacts(["invocation"], run=run)
 
-    assert [(item.artifact.label, item.artifact.file.name, item.artifact.file.uri) for item in listed] == [
+    assert [
+        (item.artifact.id.test_result.label, item.artifact.file.name, item.artifact.file.uri) for item in listed
+    ] == [
         ("//ui:visual", "test.outputs/test-outputs/records/scene.json", "bytestream://test-outputs/records/scene.json"),
         ("//ui:visual", "test.outputs/test-outputs/files/screen.png", "bytestream://test-outputs/files/screen.png"),
     ]
@@ -56,7 +58,7 @@ def test_visual_test_outputs_still_require_download_uris(name: str) -> None:
         list_ci_artifacts(["invocation"], run=run)
 
 
-def test_required_listing_does_not_hide_one_failed_invocation() -> None:
+def test_artifact_listing_does_not_hide_one_failed_invocation() -> None:
     artifact = {
         "id": {"testResult": {"label": "//ui:visual"}},
         "file": {"name": "test.outputs/test-outputs/records/a.json", "uri": "bytestream://record"},
@@ -68,9 +70,18 @@ def test_required_listing_does_not_hide_one_failed_invocation() -> None:
         return subprocess.CompletedProcess(command, 0, json.dumps([artifact]), "")
 
     with pytest.raises(RuntimeError, match="failed: listing unavailable"):
-        list_ci_artifacts(["successful", "failed"], run=run, require_all=True)
+        list_ci_artifacts(["successful", "failed"], run=run)
 
-    assert len(list_ci_artifacts(["successful", "failed"], run=run)) == 1
+
+def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
+    """A run cancelled before Bazel starts may name an invocation BuildBuddy never saw."""
+    absent = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr="Error: HTTP 500: rpc error: code = NotFound desc = invocation not found",
+    )
+    assert list_ci_artifacts(["absent-a", "absent-b"], run=lambda *_a, **_k: absent) == []
 
 
 if __name__ == "__main__":

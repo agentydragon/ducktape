@@ -46,8 +46,7 @@ class BESLabelId(BESModel):
 
 
 class BESArtifactId(BESModel):
-    test_result: BESLabelId | None = None
-    target_completed: BESLabelId | None = None
+    test_result: BESLabelId
 
 
 class BESTestSummary(BESModel):
@@ -64,13 +63,6 @@ class BuildBuddyArtifact(BESModel):
     status: str | None = None
     test_summary: BESTestSummary | None = None
 
-    @property
-    def label(self) -> str:
-        target = self.id.test_result or self.id.target_completed
-        if target is None:
-            raise ValueError("artifact has neither test result nor target completion ID")
-        return target.label
-
 
 @dataclass(frozen=True)
 class ListedArtifact:
@@ -79,8 +71,10 @@ class ListedArtifact:
 
 
 def list_ci_artifacts(
-    invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run, require_all: bool = False
+    invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
 ) -> list[ListedArtifact]:
+    """List test artifacts across invocations, failing if any listing query fails."""
+    adapter: TypeAdapter[list[BuildBuddyArtifact] | None] = TypeAdapter(list[BuildBuddyArtifact] | None)
     listed: list[ListedArtifact] = []
     failures: list[str] = []
     for invocation in invocations:
@@ -91,15 +85,13 @@ def list_ci_artifacts(
             text=True,
             capture_output=True,
         )
-        if result.returncode != 0 or INVOCATION_ABSENT in result.stderr:
-            if INVOCATION_ABSENT not in result.stderr:
-                failures.append(f"{invocation}: {result.stderr.strip()}")
+        if INVOCATION_ABSENT in result.stderr:
             continue
-        parsed_artifacts: list[BuildBuddyArtifact] | None = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(
-            result.stdout
-        )
-        artifacts: list[BuildBuddyArtifact] = parsed_artifacts or []
+        if result.returncode != 0:
+            failures.append(f"{invocation}: {result.stderr.strip()}")
+            continue
+        artifacts = adapter.validate_json(result.stdout) or []
         listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
-    if failures and (require_all or len(failures) == len(invocations)):
+    if failures:
         raise RuntimeError("BuildBuddy artifact queries failed: " + "; ".join(failures))
     return listed

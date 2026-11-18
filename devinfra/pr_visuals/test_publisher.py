@@ -17,7 +17,7 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import BuildBuddyArtifact
 from devinfra.pr_visuals.collection import (
     CollectedOutputs,
     CollectionIssue,
@@ -95,27 +95,6 @@ class FakeBaselineSource:
 
     def fetch(self, key: str) -> bytes | None:
         return self.objects.get(key)
-
-
-def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
-    """A run cancelled before Bazel started names two invocations BuildBuddy has never
-    seen, because the IDs are assigned up front. That is a normal empty result — raising
-    would turn the quietest case into a red job."""
-    calls = subprocess.CompletedProcess(
-        args=[],
-        returncode=1,
-        stdout="",
-        stderr="Error: HTTP 500: rpc error: code = NotFound desc = invocation not found",
-    )
-    assert list_ci_artifacts(["absent-a", "absent-b"], run=lambda *_a, **_k: calls) == []
-
-
-def test_a_genuine_query_failure_still_raises() -> None:
-    """A transport or auth failure must not read as 'this run had no visuals' — that
-    would publish an empty bundle over a commit that really did render something."""
-    broken = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Error: HTTP 503: upstream timeout")
-    with pytest.raises(RuntimeError):
-        list_ci_artifacts(["a", "b"], run=lambda *_a, **_k: broken)
 
 
 @pytest.mark.parametrize("pull_request_head", [None, "pr-owner:topic"])
