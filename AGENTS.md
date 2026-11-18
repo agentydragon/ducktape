@@ -2,6 +2,10 @@
 
 Linux only.
 
+## Technical communication
+
+Default to [level 7](STYLE.md#level-7-for-human-facing-material) when discussing technical work with the user, including code and change summaries.
+
 ## Environment
 
 - **Tools come from the Nix devshell** (`bazelisk`, `bbr`, `pre-commit`, pinned `prettier`, …). If one is missing, load it (`direnv allow; eval "$(direnv export bash)"` or `nix develop`) — never a per-tool workaround or skipped hook.
