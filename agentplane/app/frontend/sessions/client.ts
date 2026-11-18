@@ -49,6 +49,7 @@ import {
   type Dispatch,
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { facadeBody } from "./facade_body";
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
 
@@ -70,15 +71,6 @@ function historyJson(path: string, init: RequestInit = {}): Promise<JsonValue> {
     ...init,
     headers: { Accept: "application/json", ...init.headers },
   });
-}
-
-function bodyWithoutSessionId(value: JsonValue): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Request did not serialize to a JSON object");
-  }
-  const body = { ...value };
-  delete body.sessionId;
-  return JSON.stringify(body);
 }
 
 export function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
@@ -197,7 +189,7 @@ export async function threadEvidence(
     await historyJson(`/sessions/${encodeURIComponent(request.sessionId)}/entity-evidence`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: bodyWithoutSessionId(toJson(ReadEntityEvidenceRequestSchema, request)),
+      body: facadeBody(toJson(ReadEntityEvidenceRequestSchema, request), "sessionId"),
       signal,
     })
   );
@@ -213,7 +205,7 @@ export async function threadNativeFrames(
     await historyJson(`/sessions/${encodeURIComponent(request.sessionId)}/native-frames`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: bodyWithoutSessionId(toJson(ReadNativeFramesRequestSchema, request)),
+      body: facadeBody(toJson(ReadNativeFramesRequestSchema, request), "sessionId"),
       signal,
     })
   );
@@ -339,7 +331,7 @@ export async function submitInput(
   });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:submitInput`,
-    bodyWithoutSessionId(toJson(SubmitInputRequestSchema, request))
+    facadeBody(toJson(SubmitInputRequestSchema, request), "sessionId")
   );
   const response = fromJson(SubmitInputResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
@@ -359,7 +351,7 @@ export async function changeModel(
   });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:changeModel`,
-    bodyWithoutSessionId(toJson(ChangeModelRequestSchema, request))
+    facadeBody(toJson(ChangeModelRequestSchema, request), "sessionId")
   );
   const response = fromJson(ChangeModelResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
@@ -379,7 +371,7 @@ export async function changeReasoningEffort(
   });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:changeReasoningEffort`,
-    bodyWithoutSessionId(toJson(ChangeReasoningEffortRequestSchema, request))
+    facadeBody(toJson(ChangeReasoningEffortRequestSchema, request), "sessionId")
   );
   const response = fromJson(ChangeReasoningEffortResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
@@ -399,7 +391,7 @@ export async function interruptTurn(
   });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:interruptTurn`,
-    bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))
+    facadeBody(toJson(InterruptTurnRequestSchema, request), "sessionId")
   );
   const response = fromJson(InterruptTurnResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
@@ -418,7 +410,7 @@ export async function threadScope(threadId: string, signal?: AbortSignal): Promi
     const value = await historyJson(`/sessions/${encodeURIComponent(threadId)}/entities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: bodyWithoutSessionId(toJson(ReadThreadEntitiesRequestSchema, request)),
+      body: facadeBody(toJson(ReadThreadEntitiesRequestSchema, request), "sessionId"),
       signal,
     });
     return fromJson(ReadThreadEntitiesResponseSchema, value);

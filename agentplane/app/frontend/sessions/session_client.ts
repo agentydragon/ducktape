@@ -12,6 +12,7 @@ import {
   SessionSchema,
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { facadeBody } from "./facade_body";
 
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function createSession(
@@ -27,14 +28,14 @@ export async function createSession(
     spec: toJson(SessionSpecSchema, spec) as JsonObject,
     setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
   });
-  const body = toJson(CreateSessionRequestSchema, request, { useProtoFieldName: true }) as JsonObject;
-  // The path supplies the name; the app request body carries the remaining fields.
-  delete body.name;
-  const session = await sessionJson(`/sandboxes/${encodeURIComponent(request.name)}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const session = fromJson(
+    SessionSchema,
+    await fetchJson(`/sandboxes/${encodeURIComponent(request.name)}/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: facadeBody(toJson(CreateSessionRequestSchema, request, { useProtoFieldName: true }), "name"),
+    })
+  );
   if (session.sessionId !== request.sessionId) {
     throw new Error(`App returned Session ${session.sessionId} for requested Session ${request.sessionId}`);
   }
@@ -49,10 +50,6 @@ export async function createSession(
     throw new Error("App acknowledged a different Environment identity");
   }
   return session;
-}
-
-async function sessionJson(path: string, init?: RequestInit): Promise<Session> {
-  return fromJson(SessionSchema, await fetchJson(path, init));
 }
 
 export async function getSession(sessionId: string): Promise<Session> {
@@ -77,7 +74,20 @@ export function sessionCreateRejected(error: unknown): boolean {
     // ABORTED and UNAUTHENTICATED describe a rejected submission. Other results remain uncertain.
     return [3, 5, 6, 7, 9, 10, 16].includes(error.code);
   }
-  return error.status >= 400 && error.status < 500 && error.status !== 408;
+  // Older App replicas report Huma problem details. An intermediary's HTTP status alone
+  // cannot confirm that the App rejected this request.
+  const { body, status } = error;
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "status" in body &&
+    body.status === status &&
+    "title" in body &&
+    typeof body.title === "string" &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408
+  );
 }
 
 export function sessionNotVisible(error: unknown): boolean {

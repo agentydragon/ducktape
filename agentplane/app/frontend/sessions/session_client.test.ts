@@ -97,6 +97,46 @@ it("looks up the same Session identity without repeating an uncertain Create", a
   ]);
 });
 
+it("keeps a non-JSON intermediary failure uncertain and retains its diagnostics", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response("temporary edge failure", { status: 429 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const error: unknown = await createSession(target, id, create(SessionSpecSchema)).catch((reason: unknown) => reason);
+
+  expect(error).toBeInstanceOf(HttpError);
+  expect(error).toMatchObject({ status: 429, body: "temporary edge failure" });
+  expect(sessionCreateRejected(error)).toBe(false);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { sessionId: "other-session", uid: target.uid, message: /requested Session/ },
+  { sessionId: id, uid: "other-environment", message: /different Environment identity/ },
+])("keeps a mismatched creation acknowledgement uncertain", async ({ sessionId, uid, message }) => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      sessionId,
+      placement: { environmentHosted: { environment: { name: target.name, uid } } },
+    })
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const error: unknown = await createSession(target, id, create(SessionSpecSchema)).catch((reason: unknown) => reason);
+
+  expect(error).toBeInstanceOf(Error);
+  expect(error).toMatchObject({ message: expect.stringMatching(message) });
+  expect(sessionCreateRejected(error)).toBe(false);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("keeps malformed creation acknowledgements uncertain", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ sessionId: id, placement: [] }));
+  vi.stubGlobal("fetch", fetchMock);
+  const error: unknown = await createSession(target, id, create(SessionSpecSchema)).catch((reason: unknown) => reason);
+
+  expect(error).toBeInstanceOf(Error);
+  expect(sessionCreateRejected(error)).toBe(false);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 it("rejects a different Session ID in the Dispatcher response", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     Response.json({
@@ -115,6 +155,15 @@ it("rejects a different Session ID in the Dispatcher response", async () => {
   );
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}`);
+});
+
+it.each([
+  { body: { code: 3, message: "invalid request" }, rejected: true },
+  { body: { title: "Unprocessable Entity", status: 422, detail: "invalid request" }, rejected: true },
+  { body: { title: "Bad Request", status: 400 }, rejected: false },
+  { body: { code: "3", message: "invalid request" }, rejected: false },
+])("classifies only explicit gRPC or legacy Huma rejections", ({ body, rejected }) => {
+  expect(sessionCreateRejected(new HttpError(new Response(null, { status: 422 }), body))).toBe(rejected);
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {
