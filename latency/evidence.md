@@ -1,3 +1,9 @@
+## 18 November CI configuration rollout
+
+[Deployment checkpoint](index.html#ci-config-rollout): Firecracker fixture reuse [#17585](https://github.com/agentydragon/ducktape/pull/17585), merged 10:38:27 UTC as `82cf178955eba5270ce1d473ccae28db24b2ce06`, and KVM minimum 1 to 2 [#17586](https://github.com/agentydragon/ducktape/pull/17586), merged 10:16:39 UTC as `2503f5401bf664aa37eebe22893c04461507e08a`. Maximum stays eight. Live HPA min2/max8 was confirmed by 10:22:14 UTC and captured again at 2026-11-18T11:06:42.495719+00:00; the exact reconcile instant was not observed.
+
+`evidence.json → ci_configuration_rollout` preserves the revisions, live configuration receipt, three fresh native/JUnit joins, six passing scenario verdicts, warm-chain validation checks, failed initial CI and successful identical-head retry. Warm setup 40.6s versus 106.3s cold is bounded acceptance. Whole-PR savings and fleet warm-floor benefit remain unmeasured. The report contains the later matched-cohort procedure; this update schedules no collection job. Prior measurements below retain their original windows.
+
 # Repaired-source graph stopped on a managed executor kernel panic
 
 The control and cold seed passed 242 cases each in 8m22s and 9m44s. The first repeat verified 38.6s warm Firecracker setup, but a managed executor kernel panic stopped the comparison. Two remaining arms were not run. Full-graph speedup remains unqualified.

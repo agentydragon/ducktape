@@ -1,8 +1,11 @@
 {
   "schema_version": 3,
-  "reviewed_at_utc": "2026-11-17T09:12:12.086676+00:00",
-  "source_devel_commit": "3d6cad0ae580d65ec7c19ddb15a1fe2ec2e1b361",
-  "window_utc": ["2026-11-17T08:42:24Z", "2026-11-17T09:12:01Z"],
+  "reviewed_at_utc": "2026-11-18T11:09:14.807132+00:00",
+  "source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",
+  "window_utc": [
+    "2026-11-18T10:10:38.530145Z",
+    "2026-11-18T11:06:42.495719+00:00"
+  ],
   "cohort": {
     "window": ["2026-11-10T00:00:00Z", "2026-11-16T10:45:00Z"],
     "collection": ["2026-11-16T10:43:22Z", "2026-11-16T10:51:55.343163+00:00"],
@@ -34277,7 +34280,7 @@
           "Diagnose the trust-probe wait variance using existing Gateway and Kubernetes lifecycle evidence; distinguish certificate/Secret projection, observer reconnect and cleanup before proposing a repair."
         ],
         "decision": "Four Pod case slots landed through PR #16659. In its frozen unsplit 22-case cohort, all cases passed and mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed. The current required inventory is partitioned differently, so this is not a new port measurement.",
-        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6\u2013391.1s; four-slot times ranged 285.2\u2013293.1s. One trust probe took 94.5s in the slower control versus 12\u201317s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
+        "scope": "Two fresh actions per setting, sequential order 2/4/4/2, with all 88 JUnit case executions passing. Input trees, executor properties and case identities are identical; decoded Commands differ only in the case-limit environment variable. All fixtures were distinct, infrastructure was warm, and cleanup completed. Mean setup was 35.2s at two slots and 40.4s at four; setup variation is separate from case concurrency. This small action screen does not establish whole-PR savings, p90, cold-start behavior or a fleet reliability rate. Two-slot action times ranged 335.6–391.1s; four-slot times ranged 285.2–293.1s. One trust probe took 94.5s in the slower control versus 12–17s elsewhere; its wait is not subdivided in existing traces, so that outlier is not attributed to concurrency. Against the faster control alone, the four-slot mean is 13.8% shorter; this is a sensitivity comparison, not a confidence bound.",
         "memory_finding": "Maximum whole-action memory was 5.07 GiB at two slots and 5.12 GiB at four. Kubelet samples retained at least 4.51 GiB available and sampled up to 5 runtime Pods in the four-slot arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and snapshots can miss transient events.",
         "required_ci": {
           "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
@@ -34328,18 +34331,18 @@
           "title": "Pinned configured runfiles",
           "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
           "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
+          "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 → 0/0/0 and App Pod 8 → 8. Action-input evidence, not elapsed-time savings."
         },
         {
           "title": "Earlier pinned production selector replay",
           "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
-          "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
+          "result": "App Client source edit: 79 → 15 ordinary tests. Gateway 45 → 45; Controller 20 → 20. All 42 selection commands completed successfully.",
           "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
         },
         {
           "title": "Earlier pinned same-source ordinary-pytest screen",
           "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
-          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
+          "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 → 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 → 366.7s (+13.5%).",
           "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
         },
         {
@@ -42459,7 +42462,7 @@
               }
             }
           ],
-          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+          "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
         },
         "lanes": [
           {
@@ -42568,9 +42571,9 @@
             "id": 8,
             "title": "Diagnose and repair browser login fixture stalls",
             "status": "Controlled auth timeout localized; natural cause open",
-            "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+            "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
             "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-            "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+            "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
             "evidence_links": [
               {
                 "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -42609,7 +42612,7 @@
                 "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
               },
               {
-                "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+                "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
                 "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
               }
             ]
@@ -43121,7 +43124,7 @@
           }
         }
       ],
-      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
+      "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records."
     },
     "lanes": [
       {
@@ -43230,9 +43233,9 @@
         "id": 8,
         "title": "Diagnose and repair browser login fixture stalls",
         "status": "Controlled auth timeout localized; natural cause open",
-        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
         "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
         "evidence_links": [
           {
             "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
@@ -43271,7 +43274,7 @@
             "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
           },
           {
-            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+            "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
             "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
           }
         ]
@@ -55667,7 +55670,7 @@
       "Raw BES TestResult, JUnit XML, GetExecution NEW physical actions, native fixture spans, persistence receipts, host-QEMU/topology artifacts, native guest/cgroup counters and Mimir queries are separate evidence layers. Inner K3s pod working sets are not outer action memory. The native executor omits outer usageStats CPU/peak memory; those remain unknown rather than zero, with sampled parent-cgroup peaks supplied separately.",
       "Input identity uses SHA-256-verified native CAS Action and Command messages and whole input-root Merkle digests, compared by TEST_RUN_NUMBER. Normalization removes the platform and intentional KVM flag/test-run variable only. Raw Commands, credentials, worker/container identities, guest logs and full API payloads remain private. Public records contain reviewed digests, clocks, verdicts and nonidentifying resource aggregates.",
       "Per-action p50/p90 use nearest rank; means are arithmetic. Only valid clock intervals enter summaries; inverted clocks are counted. Concurrent cases use first start to last end, not the sum of overlapping spans. Warm/cold receipt outcomes are stratified in the downloadable evidence. There are twelve candidate VM observations, eight complete control VM observations, three candidate commands, two control commands and only one cold-start pool ramp.",
-      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today\u2019s production 8-compute-unit warm-baseline lane. The existing 10\u201316 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
+      "Historical 12 November cold managed 4-CPU comparison (346.448 vs 219.986 seconds) is retained as prior evidence, not used as the expectation for today’s production 8-compute-unit warm-baseline lane. The existing 10–16 November PR cohort has not been recollected by this experiment; its original window and source remain explicit below.",
       "Descendant-local memory attribution was attempted with a bounded serial-console probe, but command delivery failed and no descendant_inventory samples were collected. The max-event owner remains unknown. This diagnostic is not a passing resource check. All qualification actions reached terminal physical index states; the interrupted control was not replayed."
     ],
     "prechecks": [
@@ -55719,7 +55722,7 @@
       "schema_version": 1
     }
   },
-  "snapshot_update_boundary": "Only Docker recycling follow-up is newly measured. Original PR-cohort and other experiment windows/sources are retained unchanged.",
+  "snapshot_update_boundary": "18 November deployment checkpoint and fresh acceptance only. Historical cohort, graph, canary and qualification measurements retain their original sources/windows. Production effect measurement remains pending.",
   "kvm_scaleup_qualification": {
     "schema_version": 1,
     "effective_test_source": "425fb8cab9a062f42a29ddc85079af4feedf155b",
@@ -58480,10 +58483,10 @@
       "step_seconds": 15
     },
     "finding": "The burst passed, but the demand proxy counted peer-running reservations again: four occupied workers plus six local reservations produced demand10, capped at eight. Two excess workers then failed their first boot. Missing registration held the pool at eight even while idle. This is a capacity-control and bootstrap finding, not a measured fleet CI improvement.",
-    "comparison_boundary": "This is a fixed-order cold\u2192warm comparison on the same test inputs. The cold burst began at one registered worker; the warm burst began at six registered workers while two surplus VMs were still unregistered. Starting capacity, caches and ongoing provisioning differ. The 671.3s versus 295.6s native Bazel command clocks describe these states; they do not isolate the causal benefit of #17045. No old-policy replay or managed-executor control was run in this round. Required VM tests remain on the managed lane.",
-    "scaleup_observation": "First observed task occupancy was23:35:06 UTC; all three additional VMIs were created together at23:35:10. Desired1\u21924 was first sampled at23:35:16. Creation\u2192Ready for these three workers was133/195/199s. Registration reached four only at23:39:28. Removing the old policy delay does not remove package installation, guest boot or scheduler registration.",
-    "demand_observation": "Replaying the deployed guarded PromQL at10s resolution,23:39:30\u201323:40:00 UTC, gives occupied4 + summed reservations6 = demand10. The executor-local queue views were3/2/1/0, although only four experiment test processes ran concurrently. HPA capped the result at8; four more VMs were created at23:39:27. Once the desired count became8, the registration guard held that count until every desired executor reported.",
-    "boot_failure": "Five of seven initial additional workers became Ready in133\u2013199s. Two remained unregistered: Ubuntu docker.io downloads failed HTTPS handshakes, cloud-init continued, and bootstrap.sh then exited when it tried to stop absent Docker/containerd units. Executor startup was never reached. Same-host controls installed the same packages successfully. The logs establish the failed download\u2192incomplete setup chain; the underlying TLS/network cause remains unresolved. Repeated KubeVirt \u201cNo disk capacity\u201d log messages also occur on a healthy worker and do not establish disk exhaustion. Original connection verdicts are unavailable: the 4095-entry Hubble buffers retained only about 15s by inspection, and Envoy logs had no boot-window entries. Cilium FQDN garbage-collection notices alone do not prove a policy denial. A reproducible TLS follow-up needs durable filtered DNS/443 capture and same-policy client comparisons preserving SNI and certificate validation.",
+    "comparison_boundary": "This is a fixed-order cold→warm comparison on the same test inputs. The cold burst began at one registered worker; the warm burst began at six registered workers while two surplus VMs were still unregistered. Starting capacity, caches and ongoing provisioning differ. The 671.3s versus 295.6s native Bazel command clocks describe these states; they do not isolate the causal benefit of #17045. No old-policy replay or managed-executor control was run in this round. Required VM tests remain on the managed lane.",
+    "scaleup_observation": "First observed task occupancy was23:35:06 UTC; all three additional VMIs were created together at23:35:10. Desired1→4 was first sampled at23:35:16. Creation→Ready for these three workers was133/195/199s. Registration reached four only at23:39:28. Removing the old policy delay does not remove package installation, guest boot or scheduler registration.",
+    "demand_observation": "Replaying the deployed guarded PromQL at10s resolution,23:39:30–23:40:00 UTC, gives occupied4 + summed reservations6 = demand10. The executor-local queue views were3/2/1/0, although only four experiment test processes ran concurrently. HPA capped the result at8; four more VMs were created at23:39:27. Once the desired count became8, the registration guard held that count until every desired executor reported.",
+    "boot_failure": "Five of seven initial additional workers became Ready in133–199s. Two remained unregistered: Ubuntu docker.io downloads failed HTTPS handshakes, cloud-init continued, and bootstrap.sh then exited when it tried to stop absent Docker/containerd units. Executor startup was never reached. Same-host controls installed the same packages successfully. The logs establish the failed download→incomplete setup chain; the underlying TLS/network cause remains unresolved. Repeated KubeVirt “No disk capacity” log messages also occur on a healthy worker and do not establish disk exhaustion. Original connection verdicts are unavailable: the 4095-entry Hubble buffers retained only about 15s by inspection, and Envoy logs had no boot-window entries. Cilium FQDN garbage-collection notices alone do not prove a policy denial. A reproducible TLS follow-up needs durable filtered DNS/443 capture and same-policy client comparisons preserving SNI and certificate validation.",
     "command": "bbr test --config=ci --nocache_test_results --flaky_test_attempts=1 --runs_per_test=4 --keep_going --test_output=errors --invocation_id=<cold-or-warm-UUID> //agentplane/system_tests/suites:test_firecracker",
     "rejected_query": {
       "invocation": "842dd5d3-e647-4052-acd1-42a406622e2d",
@@ -58493,9 +58496,9 @@
     "next_action": "Prepare a pinned KVM worker image with Docker/containerd installed, replacing burst-time cloud-init packages:[docker.io] in cluster/cdk8s/buildbuddy_kvm_worker.py. Keep the existing guest kernel/configuration and workload assertions; test boot, registration and a deliberately unavailable Ubuntu endpoint before promotion. Add explicit package-presence diagnostics before bootstrap.sh stops Docker/containerd. Any automatic recovery must distinguish a never-registered failed bootstrap from a previously registered or active worker and retain bounded recovery state. Separately, trace scheduler reservation ownership and obtain a pool-specific count of distinct, actually pending execution IDs before replacing the demand query. These are implementation proposals, not shipped changes. Keep required VM routing on managed executors; defer warm K3s fixture reuse until pool control is reliable.",
     "methods": [
       "Two selected Firecracker-only bursts, four intentional runs each; all eight TestRunner actions are NEW and COMPLETED, with16 passing JUnit cases and no failures/errors/skips. This is not a complete required-gate or GitHub workflow experiment. No GitHub assignment or push-to-green clock is inferred.",
-      "Effective source425fb8cab9a062f42a29ddc85079af4feedf155b; the remote runner fetched base4faeaf1dd2386041783bea6bcfcb9ffa881c1be1 and applied the source patch. Native invocation metadata records the runner base. For every TEST_RUN_NUMBER, SHA-verified full input-root digest, exact Command digest, normalized Command, remaining Action fields and platform match cold\u2194warm and the earlier425 Firecracker control. Metadata alone is not treated as input identity. Cold source patch digest:a1d944bd3f3e57df95fe4cb4cabb0e6a527e92b1b72f67a2125c67b8284cf606.",
+      "Effective source425fb8cab9a062f42a29ddc85079af4feedf155b; the remote runner fetched base4faeaf1dd2386041783bea6bcfcb9ffa881c1be1 and applied the source patch. Native invocation metadata records the runner base. For every TEST_RUN_NUMBER, SHA-verified full input-root digest, exact Command digest, normalized Command, remaining Action fields and platform match cold↔warm and the earlier425 Firecracker control. Metadata alone is not treated as input identity. Cold source patch digest:a1d944bd3f3e57df95fe4cb4cabb0e6a527e92b1b72f67a2125c67b8284cf606.",
       "Build/input caches remain enabled; test-result cache disabled; one attempt per intentional run; no action replay. Existing real Claude/Codex harness assertions, fresh fixture behavior, cleanup and one job per worker remain unchanged.",
-      "Native command is the inner Bazel invocation duration, not shell cleanup or outer runner admission. Queue is queuedTimestamp\u2192workerStartTimestamp only when ordered; process is executionStart\u2192executionCompleted. p50/p90 use nearest rank, mean is arithmetic. Nested spans and independent percentiles are not summed.",
+      "Native command is the inner Bazel invocation duration, not shell cleanup or outer runner admission. Queue is queuedTimestamp→workerStartTimestamp only when ordered; process is executionStart→executionCompleted. p50/p90 use nearest rank, mean is arithmetic. Nested spans and independent percentiles are not summed.",
       "Raw BES, GetExecution, SHA-verified CAS Action/Command and allowlisted logs/XML/span outputs were inspected privately. Artifact download inventories have zero errors. Public evidence includes clocks, aggregate resources and identity comparisons; no raw commands, worker identities or credentials.",
       "Resource range data uses15s steps and3m CPU/PSI rates. Scope is eight guest node-exporter series across initial and recovered incarnations, and all three eligible HIL hosts; failed first boots have no guest-resource series. Missing first scrapes hide pre-scrape events. Host activity includes other workloads. No per-action peak RSS or eight-busy-worker contention proof is available."
     ],
@@ -58541,7 +58544,7 @@
         "Does not establish aggregate storage throughput headroom"
       ]
     ],
-    "resource_boundary": "Range window 2026-11-16T23:30:00.075767+00:00 \u2192 2026-11-17T00:09:22.458699+00:00; includes load and idle time. Resource metrics support this four-action exposure only. Keep the 8GiB guest allocation: a RAM-request reduction and eight simultaneous busy workers remain unqualified. Eight workers reserve about 67.7GiB including VM overhead, so duplicate-driven scale-out consumes material cluster RAM.",
+    "resource_boundary": "Range window 2026-11-16T23:30:00.075767+00:00 → 2026-11-17T00:09:22.458699+00:00; includes load and idle time. Resource metrics support this four-action exposure only. Keep the 8GiB guest allocation: a RAM-request reduction and eight simultaneous busy workers remain unqualified. Eight workers reserve about 67.7GiB including VM overhead, so duplicate-driven scale-out consumes material cluster RAM.",
     "recovery": {
       "requested_at_utc": [
         "2026-11-17T00:04:45.852293Z",
@@ -58550,7 +58553,7 @@
       "new_vmi_created_at": "2026-11-17T00:04:50Z",
       "new_vmi_ready_at": ["2026-11-17T00:07:23Z", "2026-11-17T00:07:53Z"],
       "verified_all_registered_at": "2026-11-17T00:09:17.256918+00:00",
-      "observation": "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45\u201346 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause."
+      "observation": "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause."
     },
     "gates": [
       [
@@ -58560,7 +58563,7 @@
       ],
       [
         "Input identity",
-        "All4 run identities match cold\u2194warm and earlier425 control",
+        "All4 run identities match cold↔warm and earlier425 control",
         "Fixed order; shared state/caches not controlled"
       ],
       [
@@ -58570,12 +58573,12 @@
       ],
       [
         "Registration and overshoot",
-        "1\u21924\u21928 desired; only6 initial registrations",
+        "1→4→8 desired; only6 initial registrations",
         "Four concurrent own processes, not eight saturated workers"
       ],
       [
         "Idle scale-down / recovery",
-        "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45\u201346 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause.",
+        "After both benchmark invocations completed, one normal restart per failed worker was requested at00:04:45–46 UTC; work disks were preserved. New VMI identities became Ready at00:07:23 and00:07:53; all8 were registered by00:08:56 with zero active tasks. Before intervention, the pool had remained at8 with only6 registered and no activity from23:55:07 until the restart. At this snapshot it still requests8. Post-recovery stabilization/full return to min1 and active-task drain are not qualified here. This recovery does not identify the original TLS failure cause.",
         "Manual intervention is separate from automatic idle behavior; no active-task drain fault injection"
       ]
     ],
@@ -58804,7 +58807,7 @@
   },
   "worker_image_comparison": {
     "schema_version": 1,
-    "headline": "Cached worker startup fell from 182\u2013188s to 82\u201385s; test execution stayed similar",
+    "headline": "Cached worker startup fell from 182–188s to 82–85s; test execution stayed similar",
     "decision": "The comparison supported adopting the repaired prebuilt image: two cached-image fresh-disk starts were about 100 seconds shorter, with one guest boot instead of two, and both bursts passed all 16 cases in total. Action process time was 1.54% higher on NixOS in this small sequential sample; no faster-test or whole-PR speedup was established. Follow-up verified 17 November at 07:59 UTC: production adoption #17184 merged at 06:09 UTC, and the Docker recycling trial used that qualified image. The original comparison window and measurements are retained.",
     "window_utc": ["2026-11-17T03:07:58Z", "2026-11-17T04:48:54Z"],
     "source_devel_commit": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
@@ -59033,7 +59036,7 @@
         "worker_end_utc": "2026-11-17T04:37:16.339094Z"
       }
     ],
-    "workload_interpretation": "Ubuntu process time totaled 1001.151s; NixOS totaled 1016.561s (+15.410s, +1.54%). The first-process-start \u2192 last-process-end envelopes were 1010.149s and 1028.532s. Each arm ran two VM and two Firecracker target executions on one worker; every downloaded JUnit file has two passing cases, with no failures, errors or skips. This supports faster worker availability, without evidence that the tests themselves run faster.",
+    "workload_interpretation": "Ubuntu process time totaled 1001.151s; NixOS totaled 1016.561s (+15.410s, +1.54%). The first-process-start → last-process-end envelopes were 1010.149s and 1028.532s. Each arm ran two VM and two Firecracker target executions on one worker; every downloaded JUnit file has two passing cases, with no failures, errors or skips. This supports faster worker availability, without evidence that the tests themselves run faster.",
     "identity_summary": "All four target/run pairs have exactly equal native ActionDigest hash and size, full input roots, raw Command identities, remaining Action fields and actual platform allowlists. All eight actions were NEW (invocationLinkType=1), doNotCache=true, terminal-successful, with valid process clocks; one physical worker per arm was confirmed against guest provenance. Per-run JUnit artifacts confirm 16 passing cases. Raw commands, environment values and worker IDs are omitted.",
     "resource_summary": {
       "ubuntu_guest": {
@@ -59335,7 +59338,7 @@
       [
         "NixOS guest",
         "Minimum sampled MemAvailable 1.786 GiB; 92 process-sequence samples; no OOM or swap counter increases",
-        "~11s cadence; sampled spans cover 95\u201396% of each process. This does not demonstrate a RAM saving or justify reducing the 8 GiB guest."
+        "~11s cadence; sampled spans cover 95–96% of each process. This does not demonstrate a RAM saving or justify reducing the 8 GiB guest."
       ],
       [
         "Guest pressure during captured process sequence",
@@ -59344,8 +59347,8 @@
       ],
       [
         "Same shared KVM host, process windows",
-        "67 NodeMetrics samples per arm: Ubuntu CPU 1.492\u20136.009 cores, memory 20.790\u201324.583 GiB; NixOS CPU 1.593\u20136.096 cores, memory 22.445\u201324.513 GiB",
-        "~15s cadence; API measurement windows are ~10\u201320s. Host figures include unrelated workloads and cannot establish worker-only use or fleet capacity."
+        "67 NodeMetrics samples per arm: Ubuntu CPU 1.492–6.009 cores, memory 20.790–24.583 GiB; NixOS CPU 1.593–6.096 cores, memory 22.445–24.513 GiB",
+        "~15s cadence; API measurement windows are ~10–20s. Host figures include unrelated workloads and cannot establish worker-only use or fleet capacity."
       ],
       [
         "Native action usage statistics",
@@ -59360,16 +59363,16 @@
       "Both arms use the isolated kvm-vm-nixos-spike scheduler pool on the same host. The unique qualification marker is deliberately identical, including its ubuntu text, to keep the raw Commands equal. Variant comes from observed boot image, kernel/Docker and executor provenance, not that marker.",
       "Startup is the API-server VM creation timestamp to the VM Ready condition transition, confirmed against guest executor registration and kubelet cache events. Every measured start has a fresh blank 80 GiB work disk. Both cached starts per variant share their already-present containerDisk; the separate Nix cold warm-up is excluded.",
       "Same BuildBuddy executor 2.321.0 / sha256:465d670159f7f2be756eb31815d7c6be54ce812de74a5cc49d3f6bda1fc7b078 and same action image/platform for both arms. Ubuntu uses its production cloud-init/bootstrap; NixOS has prebuilt Docker and embedded executor, without apt or a configuration reboot.",
-      "GetExecution final rows, full Action/Command identities, per-run JUnit and guest boot/registration provenance were cross-checked. Preparation is workerStart\u2192executionStart and includes input fetch; do not add the input column to preparation. Process totals add action durations, not critical-path or whole-PR time.",
+      "GetExecution final rows, full Action/Command identities, per-run JUnit and guest boot/registration provenance were cross-checked. Preparation is workerStart→executionStart and includes input fetch; do not add the input column to preparation. Process totals add action durations, not critical-path or whole-PR time.",
       "An initial Nix outer Bazel attempt failed fetching a Go OTLP module from proxy.golang.org with a TLS handshake timeout (PARSING_FAILURE). It launched zero remote TestRunner actions and produced no JUnit. The unchanged command was retried on the same empty worker; the successful invocation is the comparison arm. The failed launch is retained separately.",
       "Production adoption is a separate GitOps image repin after the boot-order repair and artifact verification. Required VM routing remains managed, and concurrent scale-up, drain/scale-down and full required-gate feedback were not requalified here."
     ],
     "limits": [
       "Only two cached starts and one four-action burst per image, on one shared host. Order: Ubuntu 1, failed original Nix image, Ubuntu 2, repaired Nix cold warm-up, repaired Nix cached 1 plus burst, repaired Nix cached 2. No ABBA/randomization or quiesced-host control; no confidence interval or fleet prediction.",
-      "One queued\u2192worker-start span per arm is inverted and shown as unknown; all eight process clocks are valid. Guest time sync reported unsynchronized with a 16s maximum-error estimate; spot checks were about 0.5\u20131s from caller time. Durations within one worker are preferred; cross-system intervals are approximate.",
-      "The worker-creation\u2192burst-completion column ends at native workerCompletedTimestamp, including final upload. NixOS includes the failed outer fetch, retry and pre-launch dwell; it is not an image-speed comparison. The Bazel elapsed clock also includes outer-runner analysis, cache and dependency-fetch conditions that were not matched.",
+      "One queued→worker-start span per arm is inverted and shown as unknown; all eight process clocks are valid. Guest time sync reported unsynchronized with a 16s maximum-error estimate; spot checks were about 0.5–1s from caller time. Durations within one worker are preferred; cross-system intervals are approximate.",
+      "The worker-creation→burst-completion column ends at native workerCompletedTimestamp, including final upload. NixOS includes the failed outer fetch, retry and pre-launch dwell; it is not an image-speed comparison. The Bazel elapsed clock also includes outer-runner analysis, cache and dependency-fetch conditions that were not matched.",
       "This is a worker bundle comparison: kernel and Docker versions differ. It does not isolate apt cost, kernel effect or Docker version. Ubuntu trial 2 logged an apt security-index HTTPS failure but continued with available indexes and reached Ready.",
-      "The larger Nix image took 69.339s to pull in its separate cold warm-up (170s creation\u2192Ready); there is no matched cold Ubuntu trial. Cached results must not be generalized to cold hosts.",
+      "The larger Nix image took 69.339s to pull in its separate cold warm-up (170s creation→Ready); there is no matched cold Ubuntu trial. Cached results must not be generalized to cold hosts.",
       "The original merged Nix artifact genuinely failed a fresh boot and is retained separately. A scheduler-stream EOF warning during the successful Nix burst did not coincide with a sampled scheduler-health drop; all four actions completed without extra attempts. This does not establish absence of shorter unsampled interruptions.",
       "No RAM saving, CPU request reduction, additional safe replica count or full required-gate improvement is established. The minimum sampled Nix MemAvailable was lower, and Ubuntu resource sampling missed the first-process prefix. Keep 8 GiB and existing CPU allocations until a dedicated resource intervention is measured."
     ],
@@ -59468,8 +59471,8 @@
     },
     "cleanup_observed_at_utc": "2026-11-17T04:48:54Z",
     "numerical_corrections": [
-      "Ubuntu trial 1: 03:07:58\u219203:11:06 is 188s; an interim working preview/commentary incorrectly said 208s.",
-      "Nix creation\u2192burst completion is 1405.339094s through final worker upload; 1404.645992s would stop at process completion."
+      "Ubuntu trial 1: 03:07:58→03:11:06 is 188s; an interim working preview/commentary incorrectly said 208s.",
+      "Nix creation→burst completion is 1405.339094s through final worker upload; 1404.645992s would stop at process completion."
     ],
     "repair_status": {
       "pr": 17137,
@@ -61216,7 +61219,7 @@
       ],
       [
         "Work-disk lifecycle",
-        "piraeus-ssd-local-delete and bound PV: Delete; VM\u2192DataVolume\u2192PVC owner chain. Restart preserves PVC/PV identity. Deletion behavior configured, not destructively tested."
+        "piraeus-ssd-local-delete and bound PV: Delete; VM→DataVolume→PVC owner chain. Restart preserves PVC/PV identity. Deletion behavior configured, not destructively tested."
       ],
       [
         "CI boundary",
@@ -67036,7 +67039,7 @@
       "Order was changed before first completion from ABBA to consecutive candidate bursts followed by disposal and managed controls, to expose warm affinity and avoid experimental resident RAM in managed controls. The first candidate failed, activating the declared stop rule: skip further candidate repetitions, clean up and run one unchanged managed control. No failures were rerun or excluded.",
       "Both arms select twelve uncached NEW physical TestRunner actions with one attempt and no executor pin. Every native request skipCacheLookup is true; all twelve BES run/shard/attempt identities join to native output digests in each arm. Four scenario suites per workload include the unchanged Claude and Codex cases and teardown guard.",
       "The candidate command omitted --keep_going; the managed command includes it and --test_output=errors. All twelve candidate actions nevertheless completed and produced JUnit, so no selected work was truncated. Build/test caches remain enabled except for test result reuse.",
-      "Clocks: request wall time is local command-receipt creation to observed bbr completion. Inner Bazel duration is invocation.durationUsec. Queue is server queued\u2192worker start; worker preparation is worker start\u2192process start, including but not limited to input fetch. Process is execution start\u2192completion; stack setup is nested and never added. Negative/epoch/missing intervals remain unknown. Median is the midpoint of the two middle values for even samples; maxima are observed maxima, not population tails.",
+      "Clocks: request wall time is local command-receipt creation to observed bbr completion. Inner Bazel duration is invocation.durationUsec. Queue is server queued→worker start; worker preparation is worker start→process start, including but not limited to input fetch. Process is execution start→completion; stack setup is nested and never added. Negative/epoch/missing intervals remain unknown. Median is the midpoint of the two middle values for even samples; maxima are observed maxima, not population tails.",
       "The failed warm managed action has direct guest-console evidence: 13 RCU stall reports and 13 CPU0 safe-halt backtraces before Runtime connection. This establishes a proximate guest-kernel stall, not its ultimate cause; no panic/Oops marker was captured. See the bounded diagnostic summary in this evidence."
     ],
     "command": "bbr --run_from_branch=devel --run_from_commit=501db4bd091984653f6430de69f85f3de7bc8062 test --config=rbe --config=ci --test_tag_filters=-live_openai_api --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --runs_per_test=<VM-target>@4 --runs_per_test=//agentplane/system_tests/suites:test_firecracker@4 --jobs=30 <VM-target> //agentplane/system_tests/suites:test_firecracker //agentplane/system_tests/suites:test_pod //agentplane/system_tests/suites:test_pod_platform //agentplane/system_tests/suites:test_dispatcher //agentplane/system_tests/suites/mcp:test_gateway_budget",
@@ -81744,7 +81747,7 @@
       "table_rows": [
         [
           "first",
-          "required workflows: created \u2192 last required check",
+          "required workflows: created → last required check",
           "2026-11-17T15:31:26+00:00",
           "2026-11-17T15:40:16Z",
           530.0,
@@ -81776,7 +81779,7 @@
         ],
         [
           "first",
-          "workflow created \u2192 first TestRunner worker",
+          "workflow created → first TestRunner worker",
           "2026-11-17T15:31:26+00:00",
           "2026-11-17T15:33:12.484770Z",
           106.485,
@@ -81784,7 +81787,7 @@
         ],
         [
           "first",
-          "Test + Build step start \u2192 first TestRunner worker",
+          "Test + Build step start → first TestRunner worker",
           "2026-11-17T15:31:52Z",
           "2026-11-17T15:33:12.484770Z",
           80.485,
@@ -81792,7 +81795,7 @@
         ],
         [
           "repeat",
-          "required workflows: created \u2192 last required check",
+          "required workflows: created → last required check",
           "2026-11-17T15:43:09+00:00",
           "2026-11-17T15:51:12Z",
           483.0,
@@ -81824,7 +81827,7 @@
         ],
         [
           "repeat",
-          "workflow created \u2192 first TestRunner worker",
+          "workflow created → first TestRunner worker",
           "2026-11-17T15:43:09+00:00",
           "2026-11-17T15:46:29.247001Z",
           200.247,
@@ -81832,7 +81835,7 @@
         ],
         [
           "repeat",
-          "Test + Build step start \u2192 first TestRunner worker",
+          "Test + Build step start → first TestRunner worker",
           "2026-11-17T15:45:21Z",
           "2026-11-17T15:46:29.247001Z",
           68.247,
@@ -81844,7 +81847,7 @@
           "2026-11-17T15:33:14.254306Z",
           "2026-11-17T15:40:05.215243Z",
           410.960937,
-          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+          "ordered BuildBuddy executionStart → executionCompleted; exit 0"
         ],
         [
           "first",
@@ -81852,7 +81855,7 @@
           "2026-11-17T15:34:02.975287Z",
           "2026-11-17T15:38:42.311352Z",
           279.336065,
-          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+          "ordered BuildBuddy executionStart → executionCompleted; exit 0"
         ],
         [
           "repeat",
@@ -81860,7 +81863,7 @@
           "2026-11-17T15:46:29.703712Z",
           "2026-11-17T15:50:53.317341Z",
           263.613629,
-          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+          "ordered BuildBuddy executionStart → executionCompleted; exit 0"
         ],
         [
           "repeat",
@@ -81868,7 +81871,7 @@
           "2026-11-17T15:46:30.271671Z",
           "2026-11-17T15:49:31.839954Z",
           181.568283,
-          "ordered BuildBuddy executionStart \u2192 executionCompleted; exit 0"
+          "ordered BuildBuddy executionStart → executionCompleted; exit 0"
         ],
         [
           "first",
@@ -82228,13 +82231,13 @@
           "Nix action; internal restore stage unresolved"
         ],
         [
-          "Workflow creation \u2192 first TestRunner worker",
+          "Workflow creation → first TestRunner worker",
           "106.485s",
           "200.247s",
           "Cross-provider wall time; not an RBE queue"
         ],
         [
-          "Test step start \u2192 first TestRunner worker",
+          "Test step start → first TestRunner worker",
           "80.485s",
           "68.247s",
           "Startup / selection / dispatch not separately attributed"
@@ -82277,7 +82280,7 @@
       "Experiment runner disposal is separate collection-only work on exact observed runner registrations. It is excluded from scenario and latency tables. The final current-worker inventory and recorded backing-identity checks are in the disposal receipt.",
       "The separate runner-lifecycle ownership audit found the active owner in agentplane/env/TODO.md. Stop, deletion, suspension and Close retain distinct barriers covered by race tests. A real shutdown CPU profile is still required before simplifying aggregate scans; this canary makes no Runtime ownership change.",
       "Both candidate native VM and Firecracker input roots, Commands and platforms match across the two heads. The warm-head tooling delay is separately attributed to nix profile install, not to an RBE queue. Five of six queue intervals have inverted timestamps and remain unknown.",
-      "A separate 268-sample pool observation spans 15:17:19\u201316:05:03 UTC: registered workers 4\u20136, busy tasks 0\u20133 and local reservations 0\u20133. This includes unrelated traffic; local reservations are not a central scheduler backlog. No replica or memory-capacity conclusion follows from these samples."
+      "A separate 268-sample pool observation spans 15:17:19–16:05:03 UTC: registered workers 4–6, busy tasks 0–3 and local reservations 0–3. This includes unrelated traffic; local reservations are not a central scheduler backlog. No replica or memory-capacity conclusion follows from these samples."
     ],
     "limits": [
       "One VM and one Firecracker TestRunner per head; three heads total, with one warm candidate chain. This does not establish fleet reliability, mean feedback, p90, sustained throughput, safe additional replicas or broad backend-source CI savings.",
@@ -82395,7 +82398,7 @@
     }
   },
   "ci_latency_followup": {
-    "window_label": "18 November 2026 UTC. Nix CI: 01:13\u201301:18. Manual actions: 01:32 onward; exact intervals and disposal end are in the evidence. Four preplanned Firecracker arms plus one adaptive ordinary-scheduler probe. Frozen Firecracker source: 8c2b75a379; Nix tested merge: e6fa0de1566c.",
+    "window_label": "18 November 2026 UTC. Nix CI: 01:13–01:18. Manual actions: 01:32 onward; exact intervals and disposal end are in the evidence. Four preplanned Firecracker arms plus one adaptive ordinary-scheduler probe. Frozen Firecracker source: 8c2b75a379; Nix tested merge: e6fa0de1566c.",
     "verdict_title": "Reuse and RAM coexistence passed; scheduling determines the benefit",
     "verdict_color": "yellow",
     "summary": "The 115-second Nix delay did not recur. Firecracker warm setup took 38.7s; a worker pin added 200.1s of queueing. Ordinary scheduling chose a fresh baseline and finished its pair in 5m51s. All 22 manual case executions passed; broad CI savings remain unqualified.",
@@ -82788,7 +82791,7 @@
         "Stack setup",
         "Scenario envelope",
         "VM companion",
-        "Pair submission \u2192 results"
+        "Pair submission → results"
       ],
       "rows": [
         [
@@ -86201,10 +86204,10 @@
     ]
   },
   "natural_firecracker_scheduling": {
-    "window_label": "18 November 2026 UTC \u00b7 2026-11-18T03:17:08.312343+00:00 \u2192 2026-11-18T04:03:50.414784+00:00 \u00b7 frozen source dd10e9c5d4136810db10c48b936f46244e85b17f",
+    "window_label": "18 November 2026 UTC · 2026-11-18T03:17:08.312343+00:00 → 2026-11-18T04:03:50.414784+00:00 · frozen source dd10e9c5d4136810db10c48b936f46244e85b17f",
     "verdict_title": "Ordinary warm reuse qualified in this bounded workload",
     "verdict_color": "green",
-    "summary": "Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1\u201341.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured.",
+    "summary": "Ordinary scheduling reused both Firecracker baselines in both repeat batches: 4/4 verified warm actions. Warm setup was 36.1–41.1s; repeat batch feedback was 6m45s and 6m13s. All 40 case executions passed. Full required-CI savings remain unmeasured.",
     "cards": [
       {
         "label": "Warm repeat actions",
@@ -86213,8 +86216,8 @@
       },
       {
         "label": "Warm stack setup",
-        "value": "36.1\u201341.1s",
-        "note": "Cold matched controls: 104.0\u2013133.4s; setup is nested inside the action."
+        "value": "36.1–41.1s",
+        "note": "Cold matched controls: 104.0–133.4s; setup is nested inside the action."
       },
       {
         "label": "Fresh scenario exposure",
@@ -86534,17 +86537,17 @@
       ]
     ],
     "findings": [
-      "The two cold controls had Firecracker setup 104.0\u2013133.4s. The candidate seed created two cold baselines; each subsequent repeat returned to the corresponding observed runner/container. All four warm chains preserve K3s process/node/PKI identity while replacing every recorded fixture and device-plugin identity; all per-action persistence/runtime cleanups completed.",
+      "The two cold controls had Firecracker setup 104.0–133.4s. The candidate seed created two cold baselines; each subsequent repeat returned to the corresponding observed runner/container. All four warm chains preserve K3s process/node/PKI identity while replacing every recorded fixture and device-plugin identity; all per-action persistence/runtime cleanups completed.",
       "All 20 selected TestRunner actions were distinct NEW uncached executions, joined to exact BES JUnit CAS digests: 40 passing case executions, no retries/skips/failures. The 10 ordinary VM actions independently passed all 20 strict guest shutdown checks. Each batch recorded four overlapping action processes; the Firecracker/VM process overlap is retained per batch, rather than inferred from --jobs=4.",
       "The sampled pool grew from 3 to 8 registered workers. Fresh/current-object guest memory samples reached 2.26GiB MemAvailable; 9 guest Pod series recorded zero OOM counter values. These samples include ambient work and do not qualify additional replicas. Runner cgroup peaks include file cache and may predate the current action; before/after reclaim values are retained per action.",
       "The inspected BuildBuddy archive predicts best-effort executor affinity for a stable first output and platform, followed by a local paused-runner lookup. It does not track paused baselines centrally. The hosted service revision/affinity flags were not verified; native runner and receipt chains establish these warm hits. A 5s recycling wait is a scheduler preference delay, not a wait for a busy local runner.",
       "Maximum 8 workers, worker 8GiB, advertised 7GiB, configured 10GB retention/effective 7GiB clamp, CPU requests and host placement are unchanged. The live work StorageClass uses Delete; no destructive volume deletion was used as a test."
     ],
     "cleanup_summary": "Both retained baselines were explicitly discarded by separate collection-only actions, each matching the last observed native runner, executor, Docker container and previous-action receipt. The following 8-worker inventory observed both original kernels, no owned containers or loop mappings, and both recorded backing files absent. Disposal ran no scenario bodies and is excluded from batch timings and case counts.",
-    "next_action": "Next, prepare an explicitly manual comparison of the complete required test graph at one frozen source. Require a fresh passing managed baseline, then alternate matched baseline/candidate arms with failure and cleanup gates. Keep the required VM route managed; a routing PR is not the canary. The recorded managed TCG timer stall still needs diagnosis; profile Runtime shutdown before simplifying runner lifecycle ownership.",
+    "next_action": "The later authorized Firecracker reuse rollout #17585 and warm-floor change #17586 are now recorded in the 18 November checkpoint. Measure their production effect with matched workload windows and exact source/configuration eligibility. The managed VM route is unchanged; its timer stall and runner-lifecycle ownership remain separate reliability work.",
     "methods": [
       "Latest merged source includes Runtime diagnostic/interface migrations; this is a separate population from the earlier controlled manual comparison. Manual benchmark definitions, pool/resource/retention policy and scenario intent are unchanged.",
-      "Frozen source: dd10e9c5d4136810db10c48b936f46244e85b17f. Preplanned order: control-first \u2192 candidate-seed \u2192 candidate-repeat-1 \u2192 candidate-repeat-2 \u2192 control-last. Each invocation selected two Firecracker and two nonrecycled KVM VM TestRunner actions via --runs_per_test=2 --jobs=4, --nocache_test_results and --flaky_test_attempts=1. All five gates passed before proceeding; no adaptive latency samples were added.",
+      "Frozen source: dd10e9c5d4136810db10c48b936f46244e85b17f. Preplanned order: control-first → candidate-seed → candidate-repeat-1 → candidate-repeat-2 → control-last. Each invocation selected two Firecracker and two nonrecycled KVM VM TestRunner actions via --runs_per_test=2 --jobs=4, --nocache_test_results and --flaky_test_attempts=1. All five gates passed before proceeding; no adaptive latency samples were added.",
       "Measured work had no debug executor override. Pins were used only for the separate collection-only disposal actions, which ran no scenario bodies and are excluded from batch timings/counts. Warm acceptance additionally checks fresh native executions, source, previous-action identity, retained controller/process identities, new namespaces/credentials/storage/device-plugin identities, clean baseline state and zero recorded cgroup OOM.",
       "Each run has its own native Action/Command, run index and exact JUnit output-digest join. Full invocation URLs and receipt SHA256s are public; raw runner/executor/container identities, logs, environments and internal paths are excluded. All earlier cohorts retain their original source pins, clocks and outcomes.",
       "Pool/retention metrics include ambient traffic and idle intervals. Local reservations can duplicate actions; they are not a unique central pending backlog.",
@@ -86554,7 +86557,7 @@
     ],
     "limits": [
       "Five sequential four-action manual batches at one frozen source; two baselines and four warm exposures. This is neither a representative fleet hit rate nor a reliability/p90 estimate.",
-      "Batch feedback is local bbr submission \u2192 completion, including outer setup, Bazel work and queues. It does not measure GitHub required checks or auto-merge. Native queue clocks with inverted timestamps stay Unknown.",
+      "Batch feedback is local bbr submission → completion, including outer setup, Bazel work and queues. It does not measure GitHub required checks or auto-merge. Native queue clocks with inverted timestamps stay Unknown.",
       "Pool growth, one other worker VMI replacement, dependency caches, idle intervals and ambient traffic confound timing comparisons. Controls bracket the candidates; the order was preplanned, not randomized.",
       "The manual Firecracker control uses the same disk-backed K3s persistence as the candidate and then discards it. The normal required Firecracker route uses a fresh baseline/in-memory database, so this is not its before/after treatment."
     ],
@@ -90924,19 +90927,19 @@
       "The control completed test and build successfully. The failed seed stopped after tests and skipped build, matching normal CI failure behavior. Its 7m42s failed-command duration is not a successful latency sample or evidence of improvement.",
       "The failed Claude launch/restart case observed a recorded History session without an attached feed snapshot. wait_for_history_session watches session existence; history_snapshot requires feed_state.attached. Those are different readiness predicates. The frozen source and current devel still have this sequence. This explains the observed assertion, not its fleet frequency or any causal link to Firecracker.",
       "Firecracker passed both scenarios in both arms. Normal fresh setup was 89.4s; the disk-backed recyclable seed was cold, 98.1s, with no prior action, complete baseline/device-plugin cleanup and zero recorded cgroup OOM counters. No warm action was measured in this full-graph attempt.",
-      "Pod was the control\u2019s last native test action: 366.9s process time, ending 16.3s after Firecracker. The seed\u2019s last action was Firecracker, 362.1s. Last-finisher identity changed; these single sequential exposures cannot establish a stable critical path or causal treatment effect.",
+      "Pod was the control’s last native test action: 366.9s process time, ending 16.3s after Firecracker. The seed’s last action was Firecracker, 362.1s. Last-finisher identity changed; these single sequential exposures cannot establish a stable critical path or causal treatment effect.",
       "All four managed VM guest incarnations passed strict console/serial/libvirt shutdown checks. The pool removed the owned worker before the pinned disposal could start. Its VMI, DataVolume, PVC and PV were absent afterward; all four current workers had no owned container or loop. Storage reclaim policy is Delete. Explicit disposal did not execute, and the original kernel/backing-file unlink could not be inspected after removal.",
-      "Fresh/current guest memory samples had a minimum MemAvailable of 4.35GiB; observed guest OOM counters stayed zero. Registered workers ranged 5\u20136. These are sampled observations, not peak-memory or safe-replica proof.",
-      "Earlier ordinary scheduling qualification remains separate: 4/4 verified warm actions, 36.1\u201341.1s setup, 40 passing cases. It proves the previously exercised reuse chains, not full-backend CI savings.",
+      "Fresh/current guest memory samples had a minimum MemAvailable of 4.35GiB; observed guest OOM counters stayed zero. Registered workers ranged 5–6. These are sampled observations, not peak-memory or safe-replica proof.",
+      "Earlier ordinary scheduling qualification remains separate: 4/4 verified warm actions, 36.1–41.1s setup, 40 passing cases. It proves the previously exercised reuse chains, not full-backend CI savings.",
       "The control Pod trace shows 52.3s stack setup, a 215.0s scenario envelope and 49.2s stack cleanup. A readiness-heavy final worker lane ended the bounded case batch; 40.5s outside the first/last test spans remains unattributed. These nested spans are not additive. See the curated Pod analysis in the evidence for source pointers and the conditional concurrency experiment."
     ],
     "recommendations": [
-      "Repair the launch/restart test\u2019s readiness predicate: wait with a bounded deadline for the attached History snapshot that the next assertion needs. Keep the existence helper\u2019s contract for callers that only need a recorded session; do not add a fixed sleep or increase the timeout.",
+      "Repair the launch/restart test’s readiness predicate: wait with a bounded deadline for the attached History snapshot that the next assertion needs. Keep the existence helper’s contract for callers that only need a recorded session; do not add a fixed sleep or increase the timeout.",
       "Validate that focused target with fresh RBE execution, then restart the predefined backend-graph comparison on a newly frozen source containing the repair. Preserve this failed exposure as a separate population; do not retry it into a green performance sample.",
       "Keep required routing, pool sizing and retention settings unchanged. If Pod remains the tail after the reliability repair, compare fresh AGENTPLANE_POD_CASE_LIMIT=4 and 6 runs with all 16 cases/assertions unchanged, measuring batch/lane wall, sandbox readiness and resource contention. The 60-second idle-suspension contract stays intact. Runner-lifecycle ownership/simplification remains a separate follow-up."
     ],
     "methods": [
-      "Manual BuildBuddy replay of PR #17529\u2019s GitHub-tested synthetic merge 5a0ccc77e106bf22ae018d4f6e18843ef93439e9, base b5447dd698dd9ab79bc5753f11120a0915d15bc2 and PR head be50e7d9543ceb6831b1272140bce07b1284d9b1. No source PR served as a canary and no required check status was posted.",
+      "Manual BuildBuddy replay of PR #17529’s GitHub-tested synthetic merge 5a0ccc77e106bf22ae018d4f6e18843ef93439e9, base b5447dd698dd9ab79bc5753f11120a0915d15bc2 and PR head be50e7d9543ceb6831b1272140bce07b1284d9b1. No source PR served as a canary and no required check status was posted.",
       "Predeclared sequence:normal control, recycling seed, two recycling repeats, final normal control. Stop on test/teardown/OOM or evidence-integrity failure. Only the first two arms ran; no test retries. The outer CLI retries were disabled.",
       "Each arm reran the existing bazel-diff selector, rejected a full sweep, aliases, test_suites and unexpected manual roots, and matched the original 57 runnable labels. Later arms also compared all 94 original build roots against the first baseline. The sole substitution was the required Firecracker test for its explicit manual recycled target; managed VM routing stayed unchanged.",
       "Normal CI 8-unit/100GB outer runner with the existing ducktape-bazel-ci-v4 key, normal RBE concurrency, race/lint settings and pinned action image. --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 retained ordinary dependency/build caching and normal sharding. B allowed only the explicit manual Firecracker replacement while retaining live-test exclusions.",
@@ -112909,11 +112912,11 @@
       "BuildBuddy automatically created a replacement execution although Bazel test retries were disabled. The repeat therefore has 76 native execution records for the planned 75 actions. It was cancelled at 06:45:17 UTC after the provider failure: its 15m09 submission-to-cancellation duration includes waiting for the replacement and is not a successful latency sample or a time-to-first-failure clock. Two later arms were not submitted.",
       "Across the three submitted arms, 224 JUnit artifacts have exact native/BES hash, size and path joins, containing 724 observed passing case verdicts. The interrupted repeat has 240 passing verdicts; its two planned managed-VM case identities have no JUnit verdict. The failed provider attempt has empty stdout/stderr and an empty declared output tree, so its additional scenario exposure and teardown are also unknown. Only the first two arms establish all four strict managed-guest shutdowns; none is claimed for the interrupted repeat.",
       "The control was last finished by managed VM (373.1s native process). The cold seed was last finished by Firecracker after 129.0s native queueing and 42.7s worker preparation, with the 8.9s input fetch nested inside preparation. Pool samples showed one registered busy worker while desired capacity rose to two. The warm-repeat Firecracker queue clock is inverted and remains unknown. Queueing, preparation, setup and action process time are separate clocks.",
-      "Fresh/current guest memory samples reached a minimum MemAvailable of 4.90GiB; observed self-hosted guest OOM counters stayed zero. Registered workers ranged 1\u20135. Samples include ambient activity and do not establish peak memory or safe replica counts.",
+      "Fresh/current guest memory samples reached a minimum MemAvailable of 4.90GiB; observed self-hosted guest OOM counters stayed zero. Registered workers ranged 1–5. Samples include ambient activity and do not establish peak memory or safe replica counts.",
       "The separate collection-only disposal matched the exact last native runner, executor, Docker container and previous-action receipt and ran no scenarios. Original-kernel inventory observed zero owned containers and loop mappings at 06:54:17 UTC. The pool removed that worker at 06:54:18; its VM/VMI, DataVolume, PVC and associated PV are absent, with Delete policy. The subsequent backing-file check could not observe individual unlink on the removed worker; that limit is explicit."
     ],
     "recommendations": [
-      "Keep required routing, pool sizing and retention settings unchanged. The predefined comparison stopped at its failure rule; no full-graph latency winner is established.",
+      "Historical comparison stopped at its failure rule; no full-graph latency winner was established. The later authorized rollout (#17585 fixture reuse, #17586 min2/max8) is recorded separately above; required managed VM routing remains unchanged and its production effect remains unmeasured.",
       "Use the recovered managed-executor kernel trace and exact failed execution as the next reliability investigation. The trace identifies the crashing scheduler path, not the underlying corruption mechanism or a proven snapshot fix. The presence of a restored provider snapshot is evidence to investigate, not causal proof.",
       "Start another full-graph performance comparison only after deciding how to handle the managed executor failure; retain this failed exposure and its provider reschedule as a separate population. Do not turn a green replacement or cached test result into a clean performance sample.",
       "Defer the Pod concurrency spike: managed VM was the control tail, and the repeat failed at the managed-executor layer. The 60-second idle-suspension contract remains intact. Runner-lifecycle shutdown/reconciliation ownership and one race-tested simplification remain a separate follow-up."
@@ -113295,5 +113298,271 @@
         "driver_sha256": "5b2917baa3908d1ca3f130263267114ac46543b7ab8ca11fd467953d59365b13"
       }
     ]
+  },
+  "ci_configuration_rollout": {
+    "title": "CI configuration changes deployed",
+    "summary": "Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured.",
+    "status": "Deployed; impact measurement pending",
+    "recorded_at_utc": "2026-11-18T11:09:14.807132+00:00",
+    "inspected_source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",
+    "observation_window_utc": [
+      "2026-11-18T10:10:38.530145Z",
+      "2026-11-18T11:06:42.495719+00:00"
+    ],
+    "previous_report_commit": "df20865667f8763ed90432479fcad38335439849",
+    "changes": [
+      {
+        "name": "Firecracker fixture reuse",
+        "pr": 17585,
+        "head": "84e00c80989657057d34e7d370c68445c9ead237",
+        "merge_commit": "82cf178955eba5270ce1d473ccae28db24b2ce06",
+        "merged_at_utc": "2026-11-18T10:38:27Z",
+        "state": "Required test_firecracker reuses healthy K3s/PKI infrastructure on the existing kvm-vm route. Workloads, credentials, storage and device-plugin identities stay fresh.",
+        "tradeoff": "Both real scenario bodies remain in required CI. Full cold startup has a separate nightly/manual signal at 08:17 UTC; unhealthy, incompatible or dirty baselines rebuild cold.",
+        "source_path": "agentplane/system_tests/firecracker/defs.bzl"
+      },
+      {
+        "name": "KVM minimum 1 → 2",
+        "pr": 17586,
+        "head": "8bbadd4ea30e2d29b6b45017cb6d854d137e5041",
+        "merge_commit": "2503f5401bf664aa37eebe22893c04461507e08a",
+        "merged_at_utc": "2026-11-18T10:16:39Z",
+        "state": "Live HPA minimum 2, maximum 8. KEDA fallback and initial VMPool replicas also use two. Scale rates, placement and per-worker resources stay the same.",
+        "tradeoff": "One additional standby worker reserves 8 GiB guest RAM plus KubeVirt overhead. It can avoid a worker boot after an idle period; that benefit is unmeasured.",
+        "source_path": "cluster/cdk8s/buildbuddy_kvm_worker.py"
+      }
+    ],
+    "cluster_observation": {
+      "captured_at_utc": "2026-11-18T11:06:42.495719+00:00",
+      "capture_clock": "UTC receipt file saved after read-only Kubernetes API response",
+      "previous_hpa_confirmed_by_utc": "2026-11-18T10:22:14Z",
+      "namespace": "buildbuddy-executor",
+      "hpa": "keda-hpa-buildbuddy-kvm-worker",
+      "min_replicas": 2,
+      "max_replicas": 8,
+      "current_replicas": 4,
+      "desired_replicas": 4,
+      "limit": "This verifies configuration under load, not an idle-floor or latency treatment."
+    },
+    "acceptance": {
+      "source_head": "84e00c80989657057d34e7d370c68445c9ead237",
+      "runs": [
+        {
+          "name": "cold",
+          "label": "Cold coverage target",
+          "invocation": "8f49243f-cdb0-464f-a9aa-089cb326a356",
+          "target": "//agentplane/system_tests/suites:test_firecracker_cold",
+          "source_head": "84e00c80989657057d34e7d370c68445c9ead237",
+          "native_process_window_utc": [
+            "2026-11-18T10:10:38.530145Z",
+            "2026-11-18T10:18:00.604160Z"
+          ],
+          "setup_seconds": 100.209724,
+          "process_seconds": 442.074015,
+          "new_uncached_native_success": true,
+          "junit_passes": 2,
+          "junit_digest_join": {
+            "cas_digest": "d1e77b8e94607b50c34fb60e12207bafd3ae88ed48fc965bf99400e786d1ba33",
+            "size_bytes": 546,
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker_cold/test.xml",
+            "exact_hash_size_path_match": true
+          },
+          "baseline": "cold",
+          "final_discard_requested": true,
+          "fixture_cleanup_complete": true,
+          "queue_clock": {
+            "end": "2026-11-18T10:10:37.839211Z",
+            "quality": "unknown",
+            "seconds": null,
+            "start": "2026-11-18T10:10:38.454753Z",
+            "unknown_reason": "inverted_timestamp_order"
+          }
+        },
+        {
+          "name": "seed",
+          "label": "Required target, cold seed",
+          "invocation": "c62c1114-3024-4ae3-be36-4078a6d02e62",
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "source_head": "84e00c80989657057d34e7d370c68445c9ead237",
+          "native_process_window_utc": [
+            "2026-11-18T10:13:33.372415Z",
+            "2026-11-18T10:19:57.898739Z"
+          ],
+          "setup_seconds": 106.319933,
+          "process_seconds": 384.526324,
+          "new_uncached_native_success": true,
+          "junit_passes": 2,
+          "junit_digest_join": {
+            "cas_digest": "a033851827614e9c557ee4d4050bfd3461675993f6e0f1a843dd217622ebdbd6",
+            "size_bytes": 546,
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.xml",
+            "exact_hash_size_path_match": true
+          },
+          "baseline": "cold",
+          "final_discard_requested": false,
+          "fixture_cleanup_complete": true,
+          "queue_clock": {
+            "end": "2026-11-18T10:12:50.793987Z",
+            "quality": "valid",
+            "seconds": 126.278365,
+            "start": "2026-11-18T10:10:44.515622Z"
+          }
+        },
+        {
+          "name": "repeat",
+          "label": "Required target, warm repeat",
+          "invocation": "e9a600a3-1fb0-4663-9e41-8e2009ed081c",
+          "target": "//agentplane/system_tests/suites:test_firecracker",
+          "source_head": "84e00c80989657057d34e7d370c68445c9ead237",
+          "native_process_window_utc": [
+            "2026-11-18T10:21:25.033479Z",
+            "2026-11-18T10:26:16.787589Z"
+          ],
+          "setup_seconds": 40.576977,
+          "process_seconds": 291.75411,
+          "new_uncached_native_success": true,
+          "junit_passes": 2,
+          "junit_digest_join": {
+            "cas_digest": "d827a4072a856622990f317fc07a56bc21419dfb36fe4c85a5cdaf8b8c2b8500",
+            "size_bytes": 546,
+            "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/suites/test_firecracker/test.xml",
+            "exact_hash_size_path_match": true
+          },
+          "baseline": "verified warm",
+          "final_discard_requested": true,
+          "fixture_cleanup_complete": true,
+          "queue_clock": {
+            "end": "2026-11-18T10:21:24.472914Z",
+            "quality": "unknown",
+            "seconds": null,
+            "start": "2026-11-18T10:21:26.055300Z",
+            "unknown_reason": "inverted_timestamp_order"
+          }
+        }
+      ],
+      "checks": {
+        "cold_two_cases_passed": true,
+        "cold_exact_native_junit_join": true,
+        "cold_new_uncached_native_success": true,
+        "cold_fixture_cleanup": true,
+        "cold_no_cgroup_oom": true,
+        "seed_two_cases_passed": true,
+        "seed_exact_native_junit_join": true,
+        "seed_new_uncached_native_success": true,
+        "seed_fixture_cleanup": true,
+        "seed_no_cgroup_oom": true,
+        "repeat_two_cases_passed": true,
+        "repeat_exact_native_junit_join": true,
+        "repeat_new_uncached_native_success": true,
+        "repeat_fixture_cleanup": true,
+        "repeat_no_cgroup_oom": true,
+        "three_distinct_executions": true,
+        "explicit_cold_start_discard": true,
+        "seed_started_cold_and_retained": true,
+        "repeat_is_warm_and_disposed": true,
+        "exact_previous_action": true,
+        "fresh_action": true,
+        "same_runner_instance": true,
+        "same_container_hostname": true,
+        "same_pid_namespace": true,
+        "same_mount_namespace": true,
+        "same_cgroup_namespace": true,
+        "same_k3s_boot_id": true,
+        "same_k3s_pid": true,
+        "same_k3s_process_start_ticks": true,
+        "same_k3s_namespace_uid": true,
+        "same_k3s_node_uid": true,
+        "same_fingerprint": true,
+        "same_pki_controller_uids": true,
+        "same_native_runner_fingerprint": true,
+        "same_native_executor_fingerprint": true,
+        "fresh_namespace_uid": true,
+        "fresh_postgres_pod_uid": true,
+        "fresh_root_certificate_uid": true,
+        "fresh_root_secret_uid": true,
+        "fresh_collector_namespace_uid": true,
+        "fresh_plugin_namespace_uid": true,
+        "fresh_plugin_daemonset_uid": true,
+        "fresh_plugin_pods": true,
+        "same_native_inputRootDigest": true,
+        "same_native_platform": true,
+        "only_test_argument_change_is_final_discard": true
+      },
+      "scenario_verdicts_passed": 6,
+      "warm_chains_verified": 1,
+      "executor_pinned": false,
+      "limits": "Three fresh executions of the same two scenario identities, with one linked warm chain. The final repeat adds only --discard-recycled-runner. Fixtures completed cleanup and requested final disposal; provider-level container disappearance was not independently inventoried. Two native queue clocks are inverted and remain unknown. This is acceptance evidence, not a representative CI cohort or a causal latency estimate. The seed and repeat also straddle the pool-minimum deployment, so this ordered pair does not isolate a causal treatment effect."
+    },
+    "ci": {
+      "run": 44282675680,
+      "head": "84e00c80989657057d34e7d370c68445c9ead237",
+      "tested_merge": "15210c3443f927e87b3e9319bfbbf7efc8dc0678",
+      "first_attempt": {
+        "invocation": "111d9f12-4df7-5754-854b-5770bed06f46",
+        "source_head": "84e00c80989657057d34e7d370c68445c9ead237",
+        "tested_merge": "15210c3443f927e87b3e9319bfbbf7efc8dc0678",
+        "selected_targets": 2022,
+        "passed_targets": 2021,
+        "failed_target": "//agentplane/system_tests/suites:test_vm",
+        "failed_case": "test_vm_scenarios[codex]",
+        "observations": [
+          "Runtime never connected within 300s; cleanup also timed out",
+          "Guest serial reports missed RCU timer wakeups and possible timer handling issue on CPU1",
+          "Passive QEMU snapshot: CPU0/TCG and CPU1/TCG sleeping in futex_wait_queue_me",
+          "Claude VM case and required Firecracker suite passed"
+        ],
+        "interpretation": "Recurrence of the previously observed managed TCG guest timer-stall symptom; distinct from the provider executor kernel panic. The underlying timer-stall cause remains unknown. No VM-path behavior is changed by this Firecracker rollout.",
+        "next": "One identical-head failed-job rerun; retain original failure as reliability evidence, not a performance result."
+      },
+      "retry": {
+        "attempt": 2,
+        "invocation": "50949ded-7a3b-5f4a-b0cf-9be8953b7bca",
+        "result": "success",
+        "test_targets_passed": 2022,
+        "fresh_vm_process_seconds": 463.372,
+        "scope": "Unchanged head; managed VM fresh execution passed, other ordinary targets cached. All required GitHub checks passed before user-enabled auto-merge."
+      },
+      "all_required_checks_passed": true,
+      "timer_stall_fixed": false
+    },
+    "cold_workflow": {
+      "path": ".github/workflows/firecracker-cold.yml",
+      "id": 422470337,
+      "state": "active",
+      "schedule_utc": "17 8 * * *",
+      "first_scheduled_result_observed": false,
+      "manually_validated_target": "//agentplane/system_tests/suites:test_firecracker_cold"
+    },
+    "future_measurement": {
+      "status": "pending",
+      "automatic_collection_scheduled": false,
+      "plan": [
+        {
+          "metric": "Eligible before / after populations",
+          "method": "Use matched seven-day windows and the same PR change classes. Before: tested source lacks the Firecracker merge and execution precedes the pool rollout. After: tested source contains the Firecracker merge and execution follows confirmed live min2/max8. Treat the transition and older-source runs after cluster rollout separately. A source SHA alone cannot prove a global pool setting. Record later configuration changes."
+        },
+        {
+          "metric": "Required feedback",
+          "method": "One observation per exact PR head. Report p50, p90, mean and counts for backend, infrastructure and other change classes. Reuse the first-workflow-created to required-results-complete proxy when push time is unavailable; keep it distinct from auto-merge eligibility. Include first-attempt failures, retries, superseded and unfinished heads; do not select only green reruns."
+        },
+        {
+          "metric": "Firecracker work and reuse",
+          "method": "Join fresh NEW TestRunner executions to exact JUnit and baseline receipts. Measure valid inner queue, worker preparation, process, setup and cleanup clocks separately. Count verified warm reuse, cold rebuild reasons and cached results separately; a cache hit is not a warm-baseline observation. Aim for at least 50 fresh outcomes in each cohort; disclose smaller samples and uncertainty."
+        },
+        {
+          "metric": "Pool benefit and cost",
+          "method": "Observe desired, registered, Ready and busy workers, idle periods, startup-to-registration time, burst admission and reserved RAM. Compare similar arrivals after idle periods. The extra worker reserves 8 GiB plus KubeVirt overhead. At this checkpoint current/desired is four; it does not demonstrate the benefit of an idle floor of two."
+        },
+        {
+          "metric": "Coverage and reliability",
+          "method": "Keep both real scenarios, cleanup verdicts, failed physical attempts and nightly cold-start outcomes. Track the independent managed VM timer-stall recurrence and rerun delay separately. The daily workflow is active; its first scheduled result is not part of this acceptance record."
+        },
+        {
+          "metric": "Attribution and limiting gate",
+          "method": "Locate the last required gate on each head and compare the whole required graph. The two interventions landed close together, so a before/after cohort estimates their combined association. Separating either causal effect needs a matched controlled comparison. Do not add setup savings and queue savings or infer whole-PR speedup from the acceptance pair."
+        }
+      ],
+      "historical_cohort": "10–16 November cohort remains labeled historical; it is not a fresh pre-rollout matched window."
+    }
   }
 }

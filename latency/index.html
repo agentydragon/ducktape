@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency and ordinary Firecracker reuse</title>
+    <title>CI configuration changes deployed</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -74,7 +74,11 @@
       const e = await response.json(),
         c = e.cohort;
       const backendGraph = e.backend_graph_comparison;
-      if (backendGraph) document.title = backendGraph.verdict_title;
+      const configurationRollout = e.ci_configuration_rollout;
+      document.title =
+        configurationRollout?.title ??
+        backendGraph?.verdict_title ??
+        "CI latency and ordinary Firecracker reuse";
       const gh = "https://github.com/agentydragon/ducktape";
       const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
@@ -403,7 +407,8 @@
           >
           <${Text} my="sm"
             >${q.observation_window_utc.join(" → ")} UTC. ${pr(17045)} deployed
-            +4 workers /60s, zero scale-up stabilization; min1/max8. Scale-down
+            +4 workers /60s, zero scale-up stabilization; min1/max8 at that
+            observation. The later min2 rollout is recorded above. Scale-down
             remains −1/300s with a 900s stabilization window.<//
           >
           <${Alert}
@@ -1541,6 +1546,104 @@
         </section>`;
       }
 
+      function ConfigurationRollout() {
+        const q = e.ci_configuration_rollout;
+        if (!q) return null;
+        return html`<section id="ci-config-rollout">
+          <${Title} order=${2}
+            >18 November rollout and measurement checkpoint<//
+          >
+          <${Alert}
+            title="Whole-CI impact is not measured yet"
+            color="blue"
+            my="md"
+          >
+            ${q.summary}
+          <//>
+          ${table(
+            ["Change", "Merged UTC", "Deployed behavior", "Cost and coverage"],
+            q.changes.map((x) => [
+              html`<${Stack} gap="xs"
+                ><${Text} fw=${600}>${x.name}<//>${pr(x.pr)}<//
+              >`,
+              x.merged_at_utc,
+              x.state,
+              x.tradeoff,
+            ]),
+            1050,
+          )}
+          <${Text} size="sm" c="dimmed" my="sm">
+            HPA observed ${q.cluster_observation.captured_at_utc}: minimum
+            ${q.cluster_observation.min_replicas}, maximum
+            ${q.cluster_observation.max_replicas}, current/desired
+            ${q.cluster_observation.current_replicas}/${q.cluster_observation.desired_replicas}.
+            The exact reconciliation instant was not sampled. This is a
+            configuration check under load.
+          <//>
+          <${Title} order=${3} mt="lg">Acceptance before promotion<//>
+          ${table(
+            [
+              "Fresh execution",
+              "Fixture setup",
+              "Action process",
+              "Cases",
+              "Baseline / final disposal",
+            ],
+            q.acceptance.runs.map((x) => [
+              html`<${Stack} gap="xs"
+                ><${Text}>${x.label}<//>${inv(x.invocation)}<//
+              >`,
+              `${num(x.setup_seconds)}s`,
+              `${num(x.process_seconds)}s`,
+              `${x.junit_passes} passed`,
+              `${x.baseline}; ${x.final_discard_requested ? "discard requested" : "retained for repeat"}`,
+            ]),
+            850,
+          )}
+          <${Text} size="sm" my="sm">${q.acceptance.limits}<//>
+          <${Text} my="sm">
+            Initial PR CI passed 2,021/2,022 targets; the managed VM Codex case
+            hit the timer-stall symptom. The identical-head retry passed
+            2,022/2,022, including a fresh VM execution. The timer-stall cause
+            remains open. These attempts validate the rollout and are not a
+            before/after latency comparison.
+          <//>
+          <${Accordion} variant="contained" multiple=${true} my="md">
+            <${Accordion.Item} value="rollout-measurement">
+              <${Accordion.Control}>How to measure the effect later<//>
+              <${Accordion.Panel}>
+                ${table(
+                  ["Measure", "Comparison rule"],
+                  q.future_measurement.plan.map((x) => [x.metric, x.method]),
+                  850,
+                )}
+                <${Text} size="sm" my="sm"
+                  >No new measurement job is scheduled by this report update.
+                  The earlier 10–16 November cohort remains historical.<//
+                >
+              <//>
+            <//>
+            <${Accordion.Item} value="rollout-evidence">
+              <${Accordion.Control}>Rollout revisions and CI evidence<//>
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  <${Text}
+                    >Inspected devel:
+                    <${Code}>${q.inspected_source_devel_commit}<//><//
+                  >
+                  ${q.changes.map((x) => html`<${Text}>${x.name}: head <${Code}>${x.head}<//>; merge ${link(`${gh}/commit/${x.merge_commit}`, x.merge_commit)}; ${link(`${gh}/blob/${q.inspected_source_devel_commit}/${x.source_path}`, "effective source")}<//>`)}
+                  ${link(`${gh}/actions/runs/${q.ci.run}/attempts/1`, "Initial CI attempt (failed managed VM)")}
+                  ${link(`${gh}/actions/runs/${q.ci.run}/attempts/2`, "Identical-head retry (all required checks passed)")}
+                  ${link(`${gh}/actions/workflows/firecracker-cold.yml`, "Nightly/manual cold-start workflow (active; first scheduled result not observed)")}
+                  ${link("./evidence.json", "Reviewed rollout and acceptance evidence")}
+                  ${link(`${gh}/blob/${q.previous_report_commit}/latency/index.html`, "Report before this deployment checkpoint")}
+                <//><//
+              >
+            <//>
+          <//>
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
@@ -1553,10 +1656,10 @@
                 >CI latency · reviewed 18 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >${backendGraph?.verdict_title ?? "CI latency and ordinary Firecracker reuse"}<//
+                >${configurationRollout?.title ?? backendGraph?.verdict_title ?? "CI latency and ordinary Firecracker reuse"}<//
               >
               <${Text} size="lg"
-                >${backendGraph?.summary ?? e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
+                >${configurationRollout?.summary ?? backendGraph?.summary ?? e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /><br />Each experiment
@@ -1566,6 +1669,7 @@
                 their original windows.<//
               >
             </header>
+            <${ConfigurationRollout} />
             <${BackendGraphComparison} />
             <${NaturalScheduling} />
             <${LatestMeasurements} />
@@ -1993,7 +2097,7 @@
                   [
                     "KVM tail capacity — cluster pool owner",
                     "Historical headroom reaches 444s, but the recent 416s wait is on a failed head; typical managed VM/budget paths stay unchanged.",
-                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. The new Docker reuse qualification above supersedes the initial 2 GB rejection; ordinary scheduler affinity and loaded fleet qualification remain open. Required routing stays managed; matched admission/drain and eight-worker saturation remain untested.",
+                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. The new Docker reuse qualification above supersedes the initial 2 GB rejection; ordinary scheduler affinity was subsequently demonstrated for Firecracker and #17585 enabled its fixture reuse. #17586 raised the live minimum to two (maximum eight). Their production effect remains unmeasured. The required VM route stays managed; matched admission/drain and eight-worker saturation remain untested.",
                   ],
                   [
                     "Retained daemon correctness — K3s baseline owner",
