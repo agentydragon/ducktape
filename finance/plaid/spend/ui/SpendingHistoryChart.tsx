@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -17,15 +17,7 @@ import type { AllowanceView, PaceHistory } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { money } from "./spend_display";
 
-export function SpendingHistoryChart({
-  allowance,
-  revision,
-  connectionBadge,
-}: {
-  allowance: AllowanceView;
-  revision: string;
-  connectionBadge: ReactNode;
-}) {
+export function SpendingHistoryChart({ allowance, revision }: { allowance: AllowanceView; revision: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [days, setDays] = useState("30");
   const [history, setHistory] = useState<PaceHistory | null>(null);
@@ -166,12 +158,9 @@ export function SpendingHistoryChart({
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
           <div>
-            <Group gap="xs">
-              <Title id="spending-history-title" order={2} size="h3">
-                Spending over time
-              </Title>
-              {connectionBadge}
-            </Group>
+            <Title id="spending-history-title" order={2} size="h3">
+              Spending over time
+            </Title>
             <Text size="xs" c="dimmed">
               Daily flexible purchases · {allowance.time_zone}
             </Text>

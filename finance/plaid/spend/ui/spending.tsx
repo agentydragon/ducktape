@@ -472,7 +472,6 @@ function SpendCard({ card }: { card: CardView }) {
 
 export function SpendingPage({
   view,
-  connectionState,
   error,
   estimatePeriodId,
   estimatePending,
@@ -481,7 +480,6 @@ export function SpendingPage({
   onEstimatePeriodChange,
 }: {
   view: SpendView | null;
-  connectionState: string;
   error: string | null;
   estimatePeriodId: EstimatePeriodId;
   estimatePending: boolean;
@@ -490,21 +488,10 @@ export function SpendingPage({
   onEstimatePeriodChange: (periodId: EstimatePeriodId) => void;
 }) {
   const cards = view?.cards || [];
-  const connectionBadge = (
-    <Badge color={connectionState === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
-      {connectionState}
-    </Badge>
-  );
   return (
     <Stack gap="xl">
-      {view?.allowance?.status === "active" ? (
-        <SpendingHistoryChart
-          allowance={view.allowance}
-          revision={view.generated_at}
-          connectionBadge={connectionBadge}
-        />
-      ) : (
-        <Group justify="flex-end">{connectionBadge}</Group>
+      {view?.allowance?.status === "active" && (
+        <SpendingHistoryChart allowance={view.allowance} revision={view.generated_at} />
       )}
       {error && (
         <Alert color="red" title="Couldn't refresh your view">
