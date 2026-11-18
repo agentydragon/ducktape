@@ -110,9 +110,21 @@ Framework shortlist, all on the LiteLLM keystone:
 - **LangGraph or Microsoft Agent Framework** — durable, resumable sessions
   (checkpointer/threads), heavier abstraction.
 
-The experimental implementation uses Microsoft Agent Framework in
-<../runtime/x/agent_framework/README.md>. Alternative Pydantic AI drafts are in
-<runtime_c_artifacts.md>.
+The [Microsoft Agent Framework prototype](../runtime/x/agent_framework/README.md)
+has its own deployment plan. Compare it and the Pydantic AI alternative against
+real Haku workflows, model support, operational cost, and recovery.
+
+Before deploying Runtime C:
+
+- Verify the chosen framework's pinned MCP lifecycle, LiteLLM routing, and tracing APIs.
+  Select model, budget, and trace destination.
+- Design the image and startup clone of `haku-state`. Supply credentials at runtime and
+  verify allowed and denied use of each MCP source under the [egress policy](../docs/security.md),
+  including any separate tools container. Choose replacements for the retired Console MCP endpoint.
+- Define authenticated wake admission, serialization or queuing, and history retention
+  and compaction. Test concurrent, interrupted, and duplicate wakes, including recovery
+  of message history and reconciliation of uncertain effects. Evaluate any separate
+  workflow engine against those requirements and its operational cost.
 
 ## What Runtime C gives up — the Anthropic surfaces
 
@@ -164,7 +176,6 @@ controls. Keep credential isolation and trace-data handling in the comparison.
 - **B** remains an option if hosted loop infrastructure, vaults, and the Console
   are worth Anthropic model-lock + API rates.
 
-Haku's `haku-state` git memory means the warm "wake session" is an
-**optimization** in every runtime — losing it just re-orients from `haku-state` —
-so C's "re-instantiate per wake" is both cheap and robust, and the choice between
-B and C is really hosted-convenience-with-lock-in vs. self-hosted-and-portable.
+A fresh wake can reorient from `haku-state`. Treat the warm session as an
+optimization once the runtime can recover interrupted wakes and reconcile
+uncertain external effects.
