@@ -62,14 +62,17 @@ def test_public_alias_preserves_controller_endpoints_and_single_metrics_scrape(
                 <= other["spec"]["template"]["metadata"]["labels"].items()
             )
             assert selected == (deployment is other)
-    assert alias["spec"]["ports"] == [one(port for port in existing["spec"]["ports"] if port["name"] == "grpc")]
+    assert {port["name"]: port for port in alias["spec"]["ports"]} == {
+        port["name"]: port for port in existing["spec"]["ports"]
+    }
     monitor = _resource(staging_manifests, "ServiceMonitor", sandbox_controller.NAME)
+    assert one(monitor["spec"]["endpoints"])["port"] == "metrics"
     selector = monitor["spec"]["selector"]["matchLabels"]
     assert [
         doc["metadata"]["name"]
         for doc in staging_manifests
         if doc["kind"] == "Service" and selector.items() <= doc["metadata"].get("labels", {}).items()
-    ] == [existing["metadata"]["name"]]
+    ] == [alias["metadata"]["name"]]
 
 
 @pytest.mark.parametrize(

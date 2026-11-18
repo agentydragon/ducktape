@@ -6505,6 +6505,10 @@ spec:
       port: 8082
       protocol: TCP
       targetPort: 8082
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
   selector:
     app.kubernetes.io/component: environments
   type: ClusterIP
@@ -8015,7 +8019,7 @@ spec:
       port: metrics
   selector:
     matchLabels:
-      app.kubernetes.io/name: sandbox-controller
+      app.kubernetes.io/name: environments
 ---
 apiVersion: v1
 kind: ServiceAccount

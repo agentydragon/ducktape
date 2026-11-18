@@ -4,7 +4,7 @@ PVCs, WorkloadCredentials and Pod or VM incarnations for Sandboxes using their r
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -70,6 +70,7 @@ _SETTINGS_PATH = "/etc/agentplane-sandbox-controller/config.yaml"
 NAME = environment_service.NAME
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
 _GROUP = "agentplane.allegedly.works"
+_METRICS_PORT = Port(name="metrics", number=8080)
 _HEALTH_PORT = 8081
 _ENVIRONMENT_SERVICE = "/agentplane.environments.v1.EnvironmentService/"
 _ENVIRONMENT_SERVICE_READ_METHODS = (
@@ -150,14 +151,8 @@ _DEFAULT_MEMORY_REQUEST = Size.mebibytes(64)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
 
 
-def metrics(namespace: str) -> ServiceRef:
-    return ServiceRef(
-        name=NAME, port=Port(name="metrics", number=8080), pods=environment_service.service(namespace).pods
-    )
-
-
 def pods(namespace: str) -> Pods:
-    return metrics(namespace).pods
+    return environment_service.service(namespace).pods
 
 
 def _add_controller_workload(
@@ -226,8 +221,8 @@ class SandboxController(Construct):
         self.env = env
         self.authority = authority
         namespace = env.namespace
-        endpoint = metrics(namespace)
         environment_endpoint = environment_service.service(namespace)
+        endpoint = replace(environment_endpoint, port=_METRICS_PORT)
         workload = _add_controller_workload(
             self,
             env,
@@ -241,10 +236,9 @@ class SandboxController(Construct):
             replica_profile=legacy_replica_profile,
         )
         environments = environment_service.environments_service(namespace)
-        # Keep the old metrics Service and one scrape over both sets of Pods.
         for service_id, service, ports in (
-            ("service", endpoint, [endpoint.port, environment_endpoint.port]),
-            ("environments-service", environments, [environments.port]),
+            ("service", endpoint, [_METRICS_PORT, environment_endpoint.port]),
+            ("environments-service", environments, [environments.port, _METRICS_PORT]),
         ):
             k8s.KubeService(
                 self,
@@ -351,7 +345,7 @@ class SandboxController(Construct):
         environments_workload = _add_controller_workload(
             environments_scope,
             env,
-            endpoint=ServiceRef(name=environments.name, port=endpoint.port, pods=environments.pods),
+            endpoint=replace(environments, port=_METRICS_PORT),
             environment_endpoint=environments,
             image=environments_image,
             placement=placement,
@@ -398,11 +392,10 @@ class SandboxController(Construct):
     def add_platform_resources(self) -> None:
         """Add the scoped receiver network policy and metrics scrape."""
         namespace = self.env.namespace
-        endpoint = metrics(namespace)
         environment_endpoint = environment_service.service(namespace)
         environment_callers = [
             egress.proxy(namespace).pods,
-            endpoint.pods,
+            environment_endpoint.pods,
             runner_gateway.service(namespace).pods,
             notifications.service(namespace).pods,
         ]
@@ -415,7 +408,7 @@ class SandboxController(Construct):
         environments = environment_service.environments_service(namespace)
         environment_callers.extend([environments.pods, runner_gateway.sessions_service(namespace).pods])
         inbound = [
-            cilium.SCRAPERS.admit(endpoint.pod_port),
+            cilium.SCRAPERS.admit(_METRICS_PORT.number),
             *(caller.admit(environment_endpoint.pod_port) for caller in environment_callers),
         ]
         outbound = [
@@ -454,7 +447,7 @@ class SandboxController(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            spec=endpoint.service_monitor_spec(),
+            spec=replace(environments, port=_METRICS_PORT).service_monitor_spec(),
         )
 
 
