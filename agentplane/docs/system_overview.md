@@ -152,7 +152,7 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl -->|Quiesce and suspend admission: service SVID mTLS to every-replica proxy| sandboxctl
-    gw -->|HarnessHost creation, commands + WatchSessions: Sessions SVID mTLS| sandboxctl
+    gw -->|HarnessHost creation, commands + WatchSessions via environments:8082, Sessions SVID mTLS| sandboxctl
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| vmruntime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
@@ -916,9 +916,10 @@ Deployment enables `environment_service.runtime_proxy` on the existing every-rep
 grants. Each replica's routing inventory and Runtime watches operate independently of leadership
 and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
 from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
-mutation outcomes stay unchanged. Notifications inventory, Sessions delivery and Controller lifecycle
-target this Service and pin its Sandbox Controller server SVID. The central sampler dials
-`environments:8082` for Executor RPCs and pins the same server SVID.
+mutation outcomes stay unchanged. Notifications inventory, legacy Runner Gateway delivery and
+Controller lifecycle target this Service. The Sessions Deployment uses `environments:8082` for
+HarnessHost RPCs, and the central sampler uses it for Executor RPCs. Both Services use the same
+Sandbox Controller server SVID.
 App diagnostics use EnvironmentService on the same listener, without a raw-proxy grant. Dispatcher API calls retain their separate endpoint and identity.
 The Gateway registers no Runtime proxy, HarnessHost or Executor receiver. Its obsolete credentials, network
 permissions and ignored grant settings retire after the receiver-free image is pinned and running.

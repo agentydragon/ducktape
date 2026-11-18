@@ -371,6 +371,7 @@ class RunnerGateway(Construct):
         credentials = {"cert_file": Path(client.cert_file), "key_file": Path(client.key_file)}
         sessions_settings = static_settings.model_copy(
             update={
+                "runner_control_target_template": environment_service.environments_control_target(namespace),
                 "gateway_tls": static_settings.gateway_tls.model_copy(update=credentials),
                 "central_sampler": (
                     static_settings.central_sampler.model_copy(
