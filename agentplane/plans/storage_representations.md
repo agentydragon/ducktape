@@ -81,9 +81,9 @@ Successful sampling and compaction audits now omit `events`, retaining terminal 
 HTTP metadata. Per-event evidence and transient failure diagnostics remain. The staging rewrite
 verified and removed 1,623 History audit arrays and 38 sampler audit arrays without changing cursors
 or source links; full vacuum reclaimed about 26.5 MB across both databases. Fresh provider/tool use,
-compaction and continuation passed for OpenAI and Anthropic. Sampler baseline 15 and History baseline
-18 adopt the completed rewrite predecessors; the converter and older compatibility paths are
-retired. See the [cutover results](../debug/2026_11_12_sampler_audit_dedup.md).
+compaction and continuation passed for OpenAI and Anthropic.
+See the [staging cutover evidence](https://github.com/agentydragon/ducktape/blob/9860064cb82ba09a55442f3af8e7a9d8e629412a/agentplane/debug/2026_11_12_sampler_audit_dedup.md)
+and the [baseline adoption requirements](../postgres/migrate/README.md#sampler-and-history-audit-rewrite).
 
 Raw wire capture remains a separate policy decision because the SPEC promises received bytes,
 including incomplete SSE tails. The other response representations remain to be addressed.
