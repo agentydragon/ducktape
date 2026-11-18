@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
-	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model"
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state"
+	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
@@ -57,6 +57,52 @@ func (c *Coordinator) recordObservationSnapshots(ctx context.Context, tx transac
 		}
 	}
 	return len(snapshots), len(snapshots) == githubmodel.DeliveryPageSize, nil
+}
+
+type observationAccessOrder bool
+
+const (
+	installationBeforeRepository observationAccessOrder = false
+	repositoryBeforeInstallation observationAccessOrder = true
+)
+
+// observationAccessClause binds each event's full access tuple in the query's parameter order.
+func observationAccessClause(args *argList, fences []githubstate.AccessFence, order observationAccessOrder) string {
+	clauses := make([]string, len(fences))
+	for i, fence := range fences {
+		key := fence.Key
+		firstColumn, secondColumn := "installation_id", "repository_id"
+		firstID, secondID := key.InstallationID, key.RepositoryID
+		if order == repositoryBeforeInstallation {
+			firstColumn, secondColumn = secondColumn, firstColumn
+			firstID, secondID = secondID, firstID
+		}
+		clauses[i] = fmt.Sprintf("(e.app_id = %s AND e.%s = %s AND e.%s = %s)",
+			args.add(key.AppID), firstColumn, args.add(firstID), secondColumn, args.add(secondID))
+	}
+	return strings.Join(clauses, " OR ")
+}
+
+func (c *Coordinator) appendObservationPage(ctx context.Context, tx transaction.Tx, inboxID, subscriptionID uuid.UUID,
+	rows *sql.Rows, snapshotCount int, operation string,
+) (int, bool, error) {
+	events, err := readGitHubObservations(rows)
+	if err != nil {
+		return 0, false, err
+	}
+	remaining := githubmodel.DeliveryPageSize - snapshotCount
+	more := len(events) > remaining
+	events = events[:min(len(events), remaining)]
+	for _, event := range events {
+		input, err := sourceadapter.AppendInputFor(event.identity, event.payload)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
+			return 0, false, fmt.Errorf("%s: %w", operation, err)
+		}
+	}
+	return snapshotCount + len(events), more, nil
 }
 
 // readGitHubObservations drains and closes rows before any appends use the transaction's connection.

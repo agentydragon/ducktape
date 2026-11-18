@@ -10,8 +10,8 @@ go_library(
         "deliveries.go",
         "ingest.go",
         "mergeability_entries.go",
+        "observation_entries.go",
         "pr_entries.go",
-        "snapshot_entries.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout",
     deps = [

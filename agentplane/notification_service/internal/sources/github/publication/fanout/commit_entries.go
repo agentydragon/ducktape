@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubfilters "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/filters"
@@ -51,25 +49,20 @@ func (c *Coordinator) recordCommitObservations(ctx context.Context, tx transacti
 	if more {
 		return count, true, nil
 	}
-	remaining := githubmodel.DeliveryPageSize - count
-	var args argList
-	accessible := make([]string, 0, len(fences))
-	for _, fence := range fences {
-		accessible = append(accessible, "(e.app_id = "+args.add(fence.Key.AppID)+" AND e.repository_id = "+args.add(fence.Key.RepositoryID)+
-			" AND e.installation_id = "+args.add(fence.Key.InstallationID)+")")
-	}
-	if len(accessible) == 0 {
+	if len(fences) == 0 {
 		return count, false, nil
 	}
+	var args argList
+	accessible := observationAccessClause(&args, fences, repositoryBeforeInstallation)
 	selected := githubfilters.CommitObservationClause("e", selection, args.add)
 	repository := args.add(subject.RepositoryID)
 	kind := args.add(subject.Kind)
 	key := args.add(subject.Key)
 	sequence := args.add(after)
-	limit := args.add(remaining + 1)
+	limit := args.add(githubmodel.DeliveryPageSize - count + 1)
 	query := `SELECT e.app_id, e.installation_id, e.repository_id, e.event, e.sequence, e.payload
 		FROM github_commit_event e
-		WHERE (` + strings.Join(accessible, " OR ") + `) AND ` + selected + `
+		WHERE (` + accessible + `) AND ` + selected + `
 			AND EXISTS (SELECT 1 FROM github_subject_revision r
 				WHERE r.repository_id = ` + repository + ` AND r.kind = ` + kind + ` AND r.subject_key = ` + key + `
 					AND r.head_repository_id = e.repository_id AND r.sha = e.head_sha)
@@ -85,23 +78,5 @@ func (c *Coordinator) recordCommitObservations(ctx context.Context, tx transacti
 	if err != nil {
 		return 0, false, err
 	}
-	events, err := readGitHubObservations(rows)
-	if err != nil {
-		return 0, false, err
-	}
-	more = len(events) > remaining
-	if more {
-		events = events[:remaining]
-	}
-	for _, item := range events {
-		input, err := sourceadapter.AppendInputFor(item.identity, item.payload)
-		if err != nil {
-			return 0, false, err
-		}
-		if err := c.inboxes.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
-			return 0, false, fmt.Errorf("append GitHub commit observation: %w", err)
-		}
-		count++
-	}
-	return count, more, nil
+	return c.appendObservationPage(ctx, tx, inboxID, subscriptionID, rows, count, "append GitHub commit observation")
 }
