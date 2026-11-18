@@ -7,6 +7,7 @@
 # Generated from `package.json.in` by run.sh. The repository's CI treats any committed `package.json` as a change to the whole build graph.
 /extract/package.json
 /experiments/lowering/package.json
+/experiments/debundle_cases/package.json
 # Scratch directories used by the scripts.
 /.tmp*/
 __pycache__/

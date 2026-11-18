@@ -8,6 +8,7 @@
 #   ./run.sh --lowering   also lower real bundles to ESTree, compute footprints in Lean, compare with eslint-scope
 #   ./run.sh --es-order   also compare the model's module evaluation order with Node on 500 random import graphs
 #   ./run.sh --splits     also check 2,740 splits of six real bundles and run each in Node (needs --lowering first; about 3 minutes)
+#   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -101,4 +102,11 @@ if [[ " $* " == *" --splits "* ]]; then
   step "Splits: halves, cuts, blocks and random placements of real bundles, checked and run in Node"
   (cd lean && lake build lowersplit)
   experiments/splits/run_all.sh
+fi
+
+if [[ " $* " == *" --debundle-cases "* ]]; then
+  step "debundle's e2e cases: each spec translated, checked by Lean, the emitted modules run in Node"
+  (cd lean && lake build lowersplit)
+  (cd experiments/debundle_cases && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+    && node run_cases.mjs && node summarize.mjs results/cases.jsonl >results/summary.md)
 fi
