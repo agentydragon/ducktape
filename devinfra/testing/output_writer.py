@@ -43,7 +43,6 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _publish_record(record: OutputRecord, record_path: Path) -> None:
-    # No overwrite. The record becomes visible only after its payload is complete.
     with atomic_write(record_path, encoding="utf-8", overwrite=False) as output:
         # A null checkpoint is required by the schema. Only label and title have defaults.
         output.write(record.model_dump_json(by_alias=True, exclude_defaults=True))
@@ -58,18 +57,16 @@ def _publish_temporary_payload(temporary_payload: Path, *, root: Path, key: str,
         if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
             raise ValueError(f"test output claim lock must be a regular file: {lock_path}")
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if record_path.exists() or record_path.is_symlink():
+        if record_path.exists(follow_symlinks=False):
             raise FileExistsError(f"test output identity already claimed: {record_path}")
 
-        payload_installed = False
+        # Link without overwriting, then publish the record for the complete payload.
+        os.link(temporary_payload, payload_path)
         try:
-            # The record is not visible until this complete payload is in place.
-            os.link(temporary_payload, payload_path)
-            payload_installed = True
             _fsync_directory(payload_path.parent)
             _publish_record(record, record_path)
         except BaseException:
-            if payload_installed and not (record_path.exists() or record_path.is_symlink()):
+            if not record_path.exists(follow_symlinks=False):
                 payload_path.unlink(missing_ok=True)
                 _fsync_directory(payload_path.parent)
             raise
