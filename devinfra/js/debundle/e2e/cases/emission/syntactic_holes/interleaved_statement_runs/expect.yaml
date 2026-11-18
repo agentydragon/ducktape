@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "a\npinned1\nb\npinned2\nc\n"
+    source:
+      static/app/modules/init.js:
+        contains: ['console.log("a")', 'console.log("pinned1")', 'console.log("pinned2")', "const marker"]
+        excludes: [STMT_LIST_HEAD, STMT_LIST_MID, STMT_LIST_TAIL]

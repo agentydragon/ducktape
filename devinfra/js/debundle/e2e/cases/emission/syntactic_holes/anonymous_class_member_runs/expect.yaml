@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "count:5\n"
+    exports:
+      static/app/modules/counter.js:
+        include: [Counter]
+        exclude: [RuntimeCounter]
+    source:
+      static/app/modules/counter.js:
+        contains: ["class Counter", "increment()", "reset()"]
+        excludes: [ANYTHING]

@@ -1,0 +1,17 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Widget-module_first__mix1 Widget-module_second__mix2\n"
+    exports:
+      static/app/modules/styles/mixed-widget.js:
+        include: [makeStyles, styles]
+        exclude: [firstClassName, secondClassName, runtimeMakeStyles, runtimeStyles]
+    source:
+      static/app/modules/styles/mixed-widget.js:
+        contains:
+          [
+            "import { runtimeFirstClassName, runtimeSecondClassName }",
+            "function makeStyles",
+            "const styles = makeStyles",
+          ]
+        excludes: [STR_LITERAL_MATCHING_RE]

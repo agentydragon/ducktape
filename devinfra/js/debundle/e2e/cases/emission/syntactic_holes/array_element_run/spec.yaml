@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    theme:
+      source_matches:
+        - match: 'const readable = ["black", ARRAY_ELEMENTS, "white"];'
+          bindings:
+            - { local: readable, name: color_palette }
+import_order:
+  static/app: [theme]
+unassigned_mode:
+  static/app: { kind: catchall_file }

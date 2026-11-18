@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "load:first:a\n"
+    exports:
+      static/app/modules/resource.js:
+        include: [label_resource]
+        exclude: [loadLabel, otherLabel]
+    source:
+      static/app/modules/resource.js:
+        contains: ["function label_resource", "load:", "cache[0]"]
+        excludes: [SEQ_EXPRS, readable]

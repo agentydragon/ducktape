@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "black white\n"
+    exports:
+      static/app/modules/theme.js:
+        include: [color_palette]
+        exclude: [palette]
+    source:
+      static/app/modules/theme.js:
+        contains: ["const color_palette", '"black"', '"gray"', '"white"']
+        excludes: [ARRAY_ELEMENTS, readable]

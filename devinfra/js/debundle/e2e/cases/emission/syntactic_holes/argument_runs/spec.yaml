@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    joined:
+      source_matches:
+        - match: 'const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);'
+          bindings:
+            - { local: selectedValue, name: joinedValue }
+import_order:
+  static/app: [joined, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Widget-module_first__c0m Widget-module_second__m3nt\n"
+    exports:
+      static/app/modules/styles/commented-widget.js:
+        include: [styles]
+        exclude: [firstClassName, secondClassName, runtimeStyles]
+    source:
+      static/app/modules/styles/commented-widget.js:
+        contains: ["const styles = {", "first:", "second:"]
+        excludes: [STR_LITERAL_MATCHING_RE, "Deliberately between declarations"]

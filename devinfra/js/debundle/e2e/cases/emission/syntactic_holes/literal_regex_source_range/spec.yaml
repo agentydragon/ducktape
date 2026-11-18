@@ -1,0 +1,13 @@
+logical_modules:
+  static/app:
+    styles/widget:
+      source_matches:
+        - match: |-
+            const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+            const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+            const styles = { first: firstClassName, second: secondClassName };
+          bindings: [firstClassName, secondClassName, styles]
+import_order:
+  static/app: [styles/widget]
+unassigned_mode:
+  static/app: { kind: catchall_file }

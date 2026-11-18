@@ -1,0 +1,11 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "1\n"
+    exports:
+      static/app/modules/shapes.js:
+        include: [Counter]
+    source:
+      static/app/modules/shapes.js:
+        contains: [class, increment, reset]
+        excludes: [ANYTHING, STMT_LIST_CTOR]

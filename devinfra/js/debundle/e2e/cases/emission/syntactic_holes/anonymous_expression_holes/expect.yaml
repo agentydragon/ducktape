@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "11\n"
+    exports:
+      static/app/modules/calc.js:
+        include: [calc_value]
+        exclude: [actual]
+    source:
+      static/app/modules/calc.js:
+        contains: [Number.parseInt, "].length", "const calc_value"]
+        excludes: [ANYTHING, readable]

@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    config:
+      source_matches:
+        - match: |-
+            function readable(ANYTHING) {
+              return `stable:${ANYTHING}`;
+            }
+          bindings:
+            - { local: readable, name: readConfig }
+import_order:
+  static/app: [config]
+unassigned_mode:
+  static/app: { kind: catchall_file }

@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    selected/range:
+      source_matches:
+        - match: |-
+            STMT_LIST_HEAD;
+            const first = "alpha";
+            function second() {
+              return `${first}:beta`;
+            }
+            STMT_LIST_TAIL;
+          bindings: [first, second]
+import_order:
+  static/app: [selected/range, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

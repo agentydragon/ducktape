@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    helpers:
+      source_matches:
+        - match: |-
+            function readable(target, decorators) {
+              return (applyDecorators(target, decorators), target);
+            }
+          bindings:
+            - { local: readable, name: decorate_helper }
+import_order:
+  static/app: [helpers, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

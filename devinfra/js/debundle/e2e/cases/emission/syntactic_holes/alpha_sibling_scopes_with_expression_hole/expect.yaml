@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "LEFT,RIGHT\n"
+    source:
+      static/app/modules/format.js:
+        contains: ["function format_items", ".filter", ".map"]
+        excludes: [EXPR, "function actual", "function readable"]

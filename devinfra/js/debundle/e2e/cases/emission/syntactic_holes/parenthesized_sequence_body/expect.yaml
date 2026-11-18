@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "a\n"
+    source:
+      static/app/modules/helpers.js:
+        contains: ["function decorate_helper", "applyDecorators(target, decorators)"]
+        excludes: [readable]

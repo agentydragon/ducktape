@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    config:
+      source_matches:
+        - match: |-
+            const readable = {
+              requiredKey: ANYTHING,
+              ANYTHING,
+              anotherKey: ANYTHING,
+            };
+          bindings:
+            - { local: readable, name: config_object }
+import_order:
+  static/app: [config, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

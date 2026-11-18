@@ -1,0 +1,19 @@
+logical_modules:
+  static/app:
+    router:
+      source_matches:
+        - match: |-
+            function readable(ANYTHING) {
+              switch (ANYTHING) {
+                case CASE_REST_BEFORE:
+                case "go":
+                  STMT_LIST_GO;
+                case CASE_REST_AFTER:
+              }
+            }
+          bindings:
+            - { local: readable, name: dispatch }
+import_order:
+  static/app: [router]
+unassigned_mode:
+  static/app: { kind: catchall_file }

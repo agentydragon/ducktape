@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "stable:ok\n"
+    exports:
+      static/app/modules/config.js:
+        include: [readConfig]
+        exclude: [actual]
+    source:
+      static/app/modules/config.js:
+        contains: ["function readConfig", "{ value, ignored }"]
+        excludes: [ANYTHING, readable]

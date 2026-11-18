@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "true 10\n"
+    source:
+      static/app/modules/limits.js:
+        contains: ["const maxEntries = 10"]
+        excludes: ["const maxEntries = new WeakMap()"]

@@ -1,0 +1,21 @@
+logical_modules:
+  static/app:
+    cache:
+      source_matches:
+        - match: |-
+            function getCached(n, e) {
+              let t = cache.get(n);
+              STMT_LIST;
+            }
+          bindings: [getCached]
+        - match: |-
+            const DECLARATORS, propertyCache = new WeakMap();
+            function getCached(n, e) {
+              let t = propertyCache.get(n);
+              STMT_LIST;
+            }
+          bindings: [propertyCache]
+import_order:
+  static/app: [cache, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    init:
+      members:
+        - { name: marker, selector: { binding: { name: marker } } }
+      anonymous_statements:
+        - source_match:
+            match: |-
+              if (true) {
+                STMT_SETUP;
+                console.log("done");
+              }
+import_order:
+  static/app: [init]
+unassigned_mode:
+  static/app: { kind: catchall_file }

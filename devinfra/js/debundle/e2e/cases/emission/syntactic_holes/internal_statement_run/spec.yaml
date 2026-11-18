@@ -1,0 +1,15 @@
+logical_modules:
+  static/app:
+    selected/gapped-range:
+      source_matches:
+        - match: |-
+            const first = "alpha";
+            STMT_LIST_MIDDLE;
+            function second() {
+              return `${first}:beta`;
+            }
+          bindings: [first, second]
+import_order:
+  static/app: [selected/gapped-range, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "alpha:beta before after\n"
+    exports:
+      static/app/modules/selected/range.js:
+        include: [first, second]
+        exclude: [ignoredBefore, ignoredAfter]
+    source:
+      static/app/modules/selected/range.js:
+        contains: ["const first", "function second", alpha]
+        excludes: [ignoredBefore, ignoredAfter, STMT_LIST]

@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "prefix Left suffix\n"
+    exports:
+      static/app/modules/display.js:
+        include: [readDisplayLabel]
+        exclude: [runtimeRead]
+    source:
+      static/app/modules/display.js:
+        contains: ["const readDisplayLabel", runtimeLabels.get]
+        excludes: [runtimePrefix, runtimeSuffix, DECLARATORS]

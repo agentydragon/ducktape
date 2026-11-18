@@ -1,0 +1,11 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "42\n"
+    exports:
+      static/app/modules/router.js:
+        include: [dispatch]
+    source:
+      static/app/modules/router.js:
+        contains: ["function dispatch", switch, '"alpha"', '"go"', default]
+        excludes: [CASE_REST, STMT_LIST_GO]

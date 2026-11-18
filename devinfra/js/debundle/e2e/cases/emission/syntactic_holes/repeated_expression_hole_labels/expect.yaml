@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "7\n"
+    source:
+      static/app/modules/calc.js:
+        contains: [Math.max, "const calc_value"]
+        excludes: [EXPR]
