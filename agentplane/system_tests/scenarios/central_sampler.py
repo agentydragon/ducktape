@@ -904,6 +904,8 @@ async def _start_central_codex_turn(
     expected_sandbox_uid: str,
     command_id: str,
     text: str,
+    check_dispatch_command_id: bool = False,
+    request_timeout_s: float | None = 30,
 ) -> tuple[CodexModel, ModelRequest[ResponsesRequest]]:
     model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
@@ -916,11 +918,15 @@ async def _start_central_codex_turn(
         expected_sandbox_uid=expected_sandbox_uid,
         timeout_s=15,
     )
-    await _submit_exact_input(
+    submitted = await _submit_exact_input(
         deployed, session_id, expected_sandbox_uid=expected_sandbox_uid, command_id=command_id, text=text, timeout_s=15
     )
+    if check_dispatch_command_id:
+        assert submitted.dispatch.command_id == command_id
     await _wait_for_setup(deployed, session_id)
-    request = await asyncio.wait_for(model.request(), timeout=30)
+    request = await (
+        model.request() if request_timeout_s is None else asyncio.wait_for(model.request(), timeout=request_timeout_s)
+    )
     return model, request
 
 
@@ -1986,28 +1992,19 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
     """Lost JavaScript work is settled once before the successor continues the confirmed input."""
     session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        submitted = await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=command_id,
             text="Start an executor process and keep this turn active.",
-            timeout_s=15,
+            check_dispatch_command_id=True,
+            request_timeout_s=None,
         )
-        assert submitted.dispatch.command_id == command_id
-        await _wait_for_setup(deployed, session_id)
-        request = await model.request()
         assert request.native.client_metadata.session_id == session_id
         async with request._exchange as exchange:
             await exchange.send(
@@ -2287,28 +2284,18 @@ async def history_outage_backfills_completed_turn(
     """A completed active turn is committed by the sampler and folded after History returns."""
     session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
-        assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
+        model, request = await _start_central_codex_turn(
             deployed,
+            scripted,
             session_id,
             cwd=executor.cwd,
             model_name=MODEL,
             setup_script=":\n",
             expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
-        submitted = await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=command_id,
             text="Complete this synthetic turn while History is unavailable.",
-            timeout_s=15,
+            check_dispatch_command_id=True,
         )
-        assert submitted.dispatch.command_id == command_id
-        await _wait_for_setup(deployed, session_id)
-        request = await asyncio.wait_for(model.request(), timeout=30)
         assert request.native.client_metadata.session_id == session_id
         assert any("synthetic turn" in text for text in request.user_texts)
 
