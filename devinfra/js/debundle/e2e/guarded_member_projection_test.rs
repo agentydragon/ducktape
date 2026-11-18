@@ -188,15 +188,22 @@ console.log(wrapped.invoke(), service.state);
             "42 new\n",
         ),
     ];
+    let mut runs = Vec::new();
     for (label, selection, mutate, route, accepted, expected) in cases {
         let (fresh, saved, expected) = run_case(selection, mutate, route, expected);
+        runs.push((label, accepted, expected, fresh, saved));
+    }
+
+    let mut failures = Vec::new();
+    for (label, accepted, expected, fresh, saved) in runs {
         for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
-            assert_eq!(
-                invocation.result.status.success(),
-                accepted,
-                "{label} {kind} acceptance mismatch:\n{}",
-                invocation.result.stderr
-            );
+            if invocation.result.status.success() != accepted {
+                failures.push(format!(
+                    "{label} {kind} acceptance mismatch:\n{}",
+                    invocation.result.stderr
+                ));
+                continue;
+            }
             let emitted = invocation.output_root().join("app/static/app/entry.js");
             if accepted {
                 assert_node_output(&emitted, expected, "");
@@ -206,24 +213,30 @@ console.log(wrapped.invoke(), service.state);
                         .output_root()
                         .join("reports/tree/static/app/atomic_group_conflicts.json"),
                 );
-                assert!(
-                    conflicts.as_array().is_some_and(|groups| {
-                        groups.iter().any(|group| {
-                            group["claims"].as_array().is_some_and(|claims| {
-                                claims.iter().any(|claim| {
-                                    claim["binding_names"].as_array().is_some_and(|names| {
-                                        names.iter().any(|name| name == "later")
-                                    })
-                                })
+                if !conflicts.as_array().is_some_and(|groups| {
+                    groups.iter().any(|group| {
+                        group["claims"].as_array().is_some_and(|claims| {
+                            claims.iter().any(|claim| {
+                                claim["binding_names"]
+                                    .as_array()
+                                    .is_some_and(|names| names.iter().any(|name| name == "later"))
                             })
                         })
-                    }),
-                    "{label} {kind} refusal had no conflict witness involving `later`: {conflicts:#?}"
-                );
+                    })
+                }) {
+                    failures.push(format!(
+                        "{label} {kind} refusal had no conflict witness involving `later`: {conflicts:#?}"
+                    ));
+                }
             }
         }
         assert_same_invocation_trees(&fresh, &saved);
     }
+    assert!(
+        failures.is_empty(),
+        "case failures:\n{}",
+        failures.join("\n")
+    );
 }
 const PROVIDER: &str = "export function factory(callback) { return { invoke: callback }; }\n";
 

@@ -240,21 +240,22 @@ later reuse and reads in another callable retain the all-property union.
 ### Guarded snapshot read certificates
 
 The same function census can relate a computed snapshot to one literal switch
-arm: `value = record[key]`, followed by `switch (key)` and
+arm: `value = record[key]`, followed by `if (value != null) switch (key)` and
 `case "payload": selected = value; break`. It certifies that particular RHS
 identifier use, not every use of `value`. The snapshot may be a declaration or
-assignment immediately before the switch, or the final comma pair of an `if`
-condition ending in `value != null`. An arbitrary condition prefix runs before
-the snapshot and keeps its ordinary analysis.
+assignment immediately before the switch, immediately before an exact
+`value != null` guard whose consequent is the switch, or the final comma pair
+of an `if` condition ending in `value != null`. An `if` prefix before the read
+may run arbitrary code; its condition and effects stay in ordinary analysis.
 
 Admission requires three distinct, unambiguous locals owned by the same
 synchronous function, with no captures or dynamic scope. Between the read and
-the certified use, only the noncoercing null comparison, literal case labels
-and a simple identifier assignment are admitted. A preceding arm must terminate;
-fallthrough, effectful labels, intervening calls/rebindings, and unsupported arm
-shapes decline the certificate. Reuse elsewhere in the owning function is
-allowed. The proof is regional, rather than a claim that those bindings never
-change.
+the certified use, only the exact noncoercing null comparison, literal case
+labels and a simple identifier assignment are admitted. A preceding arm must
+terminate; fallthrough, effectful labels, intervening calls/rebindings,
+coercing or compound null conditions, and unsupported arm shapes decline the
+certificate. Reuse elsewhere in the owning function is allowed. The proof is
+regional, rather than a claim that those bindings never change.
 
 On any execution reaching the certified use, the snapshot assignment completed
 with the original receiver and key. Neither another activation nor the admitted

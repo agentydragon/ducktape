@@ -544,6 +544,55 @@ function choose(record) {
     }
 
     #[test]
+    fn separate_null_check_snapshot_requires_an_unchanged_read_key_and_receiver() {
+        let accepted = raw_js_test_support::parse(
+            r#"
+function choose(record, beforeRead) {
+  let result;
+  for (let key in record) {
+    if (beforeRead(key)) {
+      var snapshot = record[key];
+      if (snapshot != null) {
+        switch (key) {
+          case "payload": result = snapshot; break;
+        }
+      }
+    }
+  }
+  return result;
+}
+"#,
+        );
+        let certificates = MemberReadCertificates::collect(&top_level_item_views(&accepted.body));
+        let properties: BTreeSet<_> = certificates
+            .guarded
+            .values()
+            .map(|(_, property)| property.as_str())
+            .collect();
+        assert_eq!(properties, BTreeSet::from(["payload"]));
+
+        let rejected = [
+            // Rebinding the key after the read breaks the read/key relation.
+            r#"function f(record) { for (let key in record) { var snapshot = record[key]; key = 'payload'; if (snapshot != null) switch (key) { case 'payload': result = snapshot; break; } } }"#,
+            // Rebinding the receiver after the read breaks the projection source.
+            r#"function f(record) { for (let key in record) { var snapshot = record[key]; record = other; if (snapshot != null) switch (key) { case 'payload': result = snapshot; break; } } }"#,
+            // Replacing the saved value breaks its relation to the original read.
+            r#"function f(record) { for (let key in record) { var snapshot = record[key]; snapshot = other; if (snapshot != null) switch (key) { case 'payload': result = snapshot; break; } } }"#,
+            // A call or a coercing/compound condition is not the exact null proof.
+            r#"function f(record) { for (let key in record) { var snapshot = record[key]; if (snapshot != null && check(snapshot)) switch (key) { case 'payload': result = snapshot; break; } } }"#,
+            r#"function f(record) { for (let key in record) { var snapshot = record[key]; if (isPresent(snapshot)) switch (key) { case 'payload': result = snapshot; break; } } }"#,
+        ];
+        for source in rejected {
+            let module = raw_js_test_support::parse(source);
+            let certificates = MemberReadCertificates::collect(&top_level_item_views(&module.body));
+            assert!(
+                certificates.guarded.is_empty(),
+                "unsafe guarded read: {source}"
+            );
+        }
+    }
+
+    #[test]
     fn guarded_snapshot_proof_rejects_interference_and_fallthrough() {
         let cases = [
             // A getter can mutate captured locals before the switch.
