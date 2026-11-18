@@ -367,12 +367,14 @@ fn local_property_return_summaries_keep_module_slot_names() {
         &bindings,
         [
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],

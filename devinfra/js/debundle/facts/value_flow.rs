@@ -1634,15 +1634,13 @@ fn append_call_result(
                             unknown,
                         );
                     }
-                    ReturnSummary::ArgumentProperty(property) => {
-                        append_property_values(
-                            argument,
-                            Some(*property),
-                            values,
-                            read_values,
-                            unknown,
-                        )
-                    }
+                    ReturnSummary::ArgumentProperty(property) => append_property_values(
+                        argument,
+                        Some(*property),
+                        values,
+                        read_values,
+                        unknown,
+                    ),
                 }
             } else if let Some(found) = read_values(FlowKey::Return(function)) {
                 values.extend(&found);
