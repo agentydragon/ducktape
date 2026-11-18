@@ -25,11 +25,10 @@ function choosePayload(record) {
 
 const SEPARATE_NULL_CHECK_ROUTE: &str = r#"
 function choosePayload(record) {
-  let value;
   let chosen = null;
   for (let key in record) {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
-      value = record[key];
+      var value = record[key];
       if (value != null) {
         switch (key) {
           case "payload": chosen = value; break;
