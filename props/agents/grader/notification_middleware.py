@@ -2,8 +2,7 @@
 
 Drains `GraderState.notification_queue` before each model call. If notifications are
 pending, appends a single user message summarizing them so the model sees newly-arrived
-work — covering both wake-from-sleep and mid-work arrivals through one code path. (Port of
-the agent_core `GraderNotificationsHandler` that returned `InjectItems` on `on_before_sample`.)
+work — covering both wake-from-sleep and mid-work arrivals through one code path.
 """
 
 from __future__ import annotations

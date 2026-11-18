@@ -1,7 +1,4 @@
-"""Typer-based CLI entry for props.
-
-Incremental migration target: we will gradually move subcommands here.
-"""
+"""Typer-based CLI entry for props."""
 
 from __future__ import annotations
 

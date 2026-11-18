@@ -49,7 +49,7 @@ via `critic_scopes_expected_to_recall` subset join):
 | 5    | `gmail-archiver/2025-12-17-00` | `gmail_archiver/cli/common.py`, `gmail_archiver/__main__.py` | `9e218584782810e5a65195da8f63931a` | 14  | 21          |
 
 ```bash
-ADMIN_TOKEN="<from backend startup logs>"
+ADMIN_TOKEN="$(printf '%s:%s' "$PGUSER" "$PGPASSWORD" | base64 -w0)"
 
 # File-set example (fast, cheap)
 curl -s -X POST 'http://localhost:8000/api/runs/critic' \

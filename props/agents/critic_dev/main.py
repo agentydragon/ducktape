@@ -292,8 +292,7 @@ def improve_termination_middleware(
     captured: dict[str, TerminationSuccess],
 ) -> Callable[[ChatContext, Callable[[], Awaitable[None]]], Awaitable[None]]:
     """Chat middleware (improve mode): before each model call, end the run once a candidate
-    definition beats baseline. Replaces agent_core's `ImprovementReminderHandler.on_before_sample`
-    (same per-model-call cadence); the captured success drives the exit code.
+    definition beats baseline. The captured success drives the exit code.
     """
 
     @chat_middleware
