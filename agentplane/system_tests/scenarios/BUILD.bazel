@@ -323,7 +323,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -477,7 +476,6 @@ py_test(
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

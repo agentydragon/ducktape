@@ -5,7 +5,6 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.plaid.spend.allowance import (
@@ -385,7 +384,3 @@ def test_pair_schema_requires_bounded_identifying_selectors_and_unique_ids() -> 
     with pytest.raises(ValidationError, match="unique ids"):
         policy([pair(), pair()])
     assert policy([]).reversal_pairs == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

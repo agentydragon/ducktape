@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from fastmcp import Client
 from jsonschema import Draft202012Validator
 from mcp_types import Tool
@@ -177,7 +176,3 @@ def test_rejects_schemas_the_frontend_adapter_was_not_reviewed_against(schema: d
     with pytest.raises(ValueError, match=message) as error:
         _validate_frontend_schema(schema, "$.tool")
     assert "$.tool" in str(error.value)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

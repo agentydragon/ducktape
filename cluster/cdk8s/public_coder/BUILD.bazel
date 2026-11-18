@@ -93,7 +93,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

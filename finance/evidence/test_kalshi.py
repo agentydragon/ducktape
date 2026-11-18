@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.evidence.kalshi import load_market
@@ -44,7 +43,3 @@ def test_load_market_parses_stringified_decimals() -> None:
 def test_load_market_requires_wrapper() -> None:
     with pytest.raises(ValidationError):
         load_market(json.dumps(_RESPONSE["market"]).encode())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

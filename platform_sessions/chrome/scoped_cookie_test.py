@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from platform_sessions.chrome.profile import ChromeCookie
@@ -75,7 +74,3 @@ def test_schema_rejects_bad_scope_and_hides_credentials():
         with pytest.raises(ValidationError) as error:
             ScopedCookie.model_validate(data | change)
         assert "secret" not in str(error.value)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

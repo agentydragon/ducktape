@@ -6,7 +6,6 @@ import tomllib
 from xml.etree import ElementTree as ET
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from laser.lightburn.lbrn2_writer import LightBurnProject, RectShape, TextShape
@@ -593,7 +592,3 @@ def test_generate_legend_default_off():
     project = generate(cfg)
     legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
     assert len(legend_rects) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

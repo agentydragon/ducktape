@@ -2,7 +2,6 @@ from datetime import UTC, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 
 from aiquota.peak_windows import SCHEDULES, BurnSchedule, PeakPeriod, status, status_for, upcoming_peaks
 
@@ -132,7 +131,3 @@ def test_upcoming_lists_windows_in_chronological_order_starting_with_the_current
 def test_upcoming_from_off_peak_starts_with_the_next_window_not_a_past_one() -> None:
     windows = upcoming_peaks(_schedule(_AFTERNOON), _sgt(2026, 8, 24, 19), count=2)
     assert [w.start for w in windows] == [_sgt(2026, 8, 25, 14), _sgt(2026, 8, 26, 14)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

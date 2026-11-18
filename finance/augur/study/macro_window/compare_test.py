@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest_bazel
-
 from finance.augur.study.macro_window.compare import compare_windows, describe
 from finance.augur.x.models.structural_macro_fit import MacroFitWindow, macro_fit_sources
 
@@ -43,7 +41,3 @@ def test_both_windows_are_fit_and_the_long_record_is_longer() -> None:
     # before there is one), and pinning the literal would be re-asserting that arithmetic.
     assert long_record.first_month < short.first_month
     assert long_record.sample_months > short.sample_months
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

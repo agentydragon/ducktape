@@ -226,12 +226,6 @@ def test_turn_timeout_must_be_positive_and_fit_in_duration(seconds: int) -> None
         Settings.model_validate({**settings_data(), "turn_timeout_seconds": seconds})
 
 
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()
-
-
 def test_environment_namespace_is_required() -> None:
     data = settings_data()
     del data["environment_namespace"]

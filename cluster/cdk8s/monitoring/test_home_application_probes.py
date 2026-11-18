@@ -10,7 +10,6 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.monitoring import blackbox_exporter, home_application_probes
@@ -79,7 +78,3 @@ def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
 
     assert _probe_success(tcp_metrics) == 1
     assert _probe_success(http_on_https_metrics) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

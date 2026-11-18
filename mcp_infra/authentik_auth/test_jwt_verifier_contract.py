@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx2
 import pytest
-import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
@@ -166,7 +165,3 @@ async def test_rejects_untrusted_direct_tokens(
 ) -> None:
     access_token = await jwt_contract_harness.auth.verify_token(jwt_contract_harness.create_token(**token_kwargs))
     assert access_token is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

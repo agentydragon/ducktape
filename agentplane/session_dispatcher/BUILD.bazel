@@ -98,7 +98,6 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -145,7 +144,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -219,6 +217,5 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

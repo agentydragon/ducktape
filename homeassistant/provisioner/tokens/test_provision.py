@@ -2,7 +2,6 @@ import base64
 from http import HTTPStatus
 
 import kubernetes
-import pytest_bazel
 import respx
 
 from homeassistant.provisioner.client import HomeAssistantClient
@@ -228,7 +227,3 @@ async def test_a_read_only_users_token_is_minted_in_that_users_session(
         ("session-of-reader", "auth/long_lived_access_token"),
     ]
     assert [secret.string_data for secret in v1.created] == [{"token": "reader-token"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

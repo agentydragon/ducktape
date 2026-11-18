@@ -34,7 +34,6 @@ py_test(
         ":conftest",
         ":dates",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -89,7 +88,6 @@ py_test(
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -136,7 +134,6 @@ py_test(
         "//util/testing/frontend_visual:page_capture",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

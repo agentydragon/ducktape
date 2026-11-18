@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
@@ -36,7 +35,3 @@ class TestRestrictAgentGatewayRoutes:
         """Routes in non-agent (operator-owned) namespaces are untouched."""
         result = apply_policy(gateway_routes_policy, manifest("httproute_in_service_namespace.yaml"))
         assert result.failed == 0, f"HTTPRoute in forgejo must not be denied\n{result.stdout}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

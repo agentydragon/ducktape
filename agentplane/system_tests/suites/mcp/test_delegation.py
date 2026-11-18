@@ -10,7 +10,6 @@ from uuid import uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from more_itertools import one
 
@@ -215,7 +214,3 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
         if created is not None:
             await _cleanup_sandbox(cluster, deployment.token, created.name, created.uid)
             await delete_scenario_identity(cluster, identity)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

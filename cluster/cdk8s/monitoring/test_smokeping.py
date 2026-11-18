@@ -4,7 +4,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -39,7 +38,3 @@ def test_reliability_queries(runfiles: Runfiles, promtool: Path, tmp_path: Path)
         (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml").read_text()
     )
     subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

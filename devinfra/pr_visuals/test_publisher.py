@@ -12,7 +12,6 @@ from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 
 import pytest
-import pytest_bazel
 from botocore.exceptions import ClientError
 from PIL import Image
 
@@ -2573,7 +2572,3 @@ def test_new_assets_get_previews_without_modified_assets() -> None:
     assert "tests/ex-visuals-abcdef/a.png" in body
     assert "tests/ex-visuals-abcdef/b.png" in body
     assert body.count("<img ") == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

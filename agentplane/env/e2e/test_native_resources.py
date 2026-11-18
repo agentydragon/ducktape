@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -146,7 +145,3 @@ async def test_native_history_and_resume_resources(
                 assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     finally:
         artifact.write_text(json.dumps(samples, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

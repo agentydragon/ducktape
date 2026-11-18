@@ -14,7 +14,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import TypeAdapter
 from python.runfiles import Runfiles
 
@@ -168,7 +167,3 @@ def test_variant_matches_zod(zod_schema: dict[str, Any], event_name: str) -> Non
             )
         )
         pytest.fail(f"Schema mismatch for {event_name}:\n{diff}")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

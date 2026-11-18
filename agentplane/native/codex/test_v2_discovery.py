@@ -20,7 +20,6 @@ from contextlib import AsyncExitStack
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
@@ -455,7 +454,3 @@ async def test_nested_child_ancestry_and_terminal_recovery(
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.25):
                     await openai_responses.await_next_request()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

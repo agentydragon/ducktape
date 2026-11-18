@@ -2,7 +2,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from pydantic import SecretStr
 
 from att_gateway.pages import parse_syslog
@@ -103,7 +102,3 @@ async def test_wrong_access_code_raises_without_saving() -> None:
     with pytest.raises(ValueError, match="syslog form not found"):
         await _reconcile(gateway, access_code="wrong-code")
     assert gateway.posts == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

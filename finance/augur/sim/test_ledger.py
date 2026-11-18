@@ -1,7 +1,6 @@
 """Balanced journal and atomic rejection, including compound postings and overflow."""
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting
 from finance.augur.sim.ids import AccountId, AgentId
@@ -129,7 +128,3 @@ def test_compound_delta_overflow_does_not_cancel_silently(ledger: Ledger) -> Non
             )
         )
     assert ledger.balances == before
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

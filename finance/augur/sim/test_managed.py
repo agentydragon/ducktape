@@ -4,7 +4,6 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import Withdraw
 from finance.augur.sim.books import EXTERNAL_BOUNDARY
@@ -241,7 +240,3 @@ def test_opening_a_component_requires_one_matching_observation_per_declared_port
             managed.open(books, spec, opening.model_copy(update={"account_id": "test_elsewhere"}))
         assert not managed.specs
     assert books.ledger.trial_balance() == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

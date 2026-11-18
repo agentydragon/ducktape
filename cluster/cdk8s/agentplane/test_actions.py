@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
@@ -445,7 +444,3 @@ def test_session_delegation_network_caller_requires_the_group() -> None:
     caller = one(actions.session_delegation_callers(env_with_session_delegation))
     assert caller.namespace == env_with_session_delegation.namespace
     assert caller.name == actions.NAME
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

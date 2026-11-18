@@ -9,7 +9,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell
@@ -283,7 +282,3 @@ def test_selected_reordered_replay_matches_original_paths(
     assert [rollout.rollout_id for rollout in reordered.rollouts] == [TAXED, QUIET]
     assert reordered.rollouts == [population[TAXED], population[QUIET]]
     assert _run(independent_paths, sale_month=15, rollout_ids=[TAXED]).rollouts == [population[TAXED]]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

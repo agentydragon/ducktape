@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -58,7 +56,3 @@ async def test_resume_replays_original_developer_message_before_compaction(
         # No warning says that the instruction override waits until context is rebuilt.
         warnings = [frame["params"]["message"] for frame in second.native_frames() if frame.get("method") == "warning"]
         assert not [message for message in warnings if "nstructions" in message]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

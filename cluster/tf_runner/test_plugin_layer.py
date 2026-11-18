@@ -4,7 +4,6 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 import pytest
-import pytest_bazel
 
 from cluster.tf_runner.plugin_layer import write_layer
 
@@ -53,7 +52,3 @@ def test_is_reproducible(mirror: Path, tmp_path: Path) -> None:
 def test_rejects_an_empty_mirror(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no provider packages"):
         write_layer(tmp_path, PurePosixPath("opt/plugins"), tmp_path / "layer.tar")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

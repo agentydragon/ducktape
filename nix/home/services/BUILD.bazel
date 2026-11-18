@@ -11,7 +11,6 @@ py_test(
     deps = [
         ":snapshot_sqlite",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -35,7 +34,6 @@ py_test(
     deps = [
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

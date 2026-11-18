@@ -4,7 +4,6 @@ import sys
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals import check_run
 
@@ -214,7 +213,3 @@ def test_standalone_cli_constructs_a_client_and_passes_it_to_the_helper(monkeypa
             "conclusion": "success",
         }
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

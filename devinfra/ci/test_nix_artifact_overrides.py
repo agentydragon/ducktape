@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy import cli
 from devinfra.buildbuddy.ci.bes import Invocation, Output
@@ -154,7 +153,3 @@ def test_rejects_a_download_that_does_not_materialize_the_resolved_asset(
 
     with pytest.raises(SystemExit, match=r"completed without creating bb-out/.*/first.whl"):
         nix_artifact_overrides.fetch_overrides(["one"], registry)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

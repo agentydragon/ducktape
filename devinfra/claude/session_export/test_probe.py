@@ -3,7 +3,6 @@ from datetime import timedelta
 
 import httpx
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from devinfra.claude.session_export.conftest import (
@@ -68,7 +67,3 @@ async def test_the_probe_stops_rather_than_refresh_a_lapsed_token(
 ) -> None:
     with pytest.raises(ValueError, match="lapsed"):
         await probe(credential_store(expires_in=timedelta(seconds=-1)), session_id=None, listen_seconds=0.1)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

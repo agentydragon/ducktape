@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 from filelock import Timeout
 
 from platform_sessions.provider import provider_runtime
@@ -396,7 +395,3 @@ def test_service_constructor_failure_releases_instance_ownership(tmp_path, monke
 
     successor = InstanceOwnership(state_dir / "imports")
     successor.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

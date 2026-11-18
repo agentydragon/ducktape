@@ -1,7 +1,6 @@
 """Evidence and raw expansion use scoped, keyset reads over actual projected PostgreSQL rows."""
 
 import httpx
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.history import SessionHistory
@@ -240,7 +239,3 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             )
             assert linked.status_code == 200, linked.text
             assert "entry" in linked.json()["frames"][0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

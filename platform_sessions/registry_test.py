@@ -3,7 +3,6 @@
 from pathlib import PurePosixPath
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from platform_sessions.registry import IntegrationConfigError, IntegrationRegistry, IntegrationType
@@ -94,7 +93,3 @@ def test_duplicate_types_are_rejected() -> None:
     item = IntegrationType("example", ExampleSettings, "https://example.test")
     with pytest.raises(IntegrationConfigError):
         IntegrationRegistry((item, item))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

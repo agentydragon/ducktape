@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest_bazel
-
 from x.ai_sub_value.native_accounting import aggregate, counters, database, scan
 
 
@@ -137,7 +135,3 @@ def test_openai_cached_input_is_subset_and_invalid_counts_do_not_enter_ledger() 
         None,
     )
     assert counters({"input_tokens": 3, "cached_input_tokens": 4}, "openai") is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

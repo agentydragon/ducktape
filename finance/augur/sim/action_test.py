@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.bills import Biller
@@ -317,7 +316,3 @@ def test_extraction_error_and_explicit_close_release_the_session() -> None:
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         closed.start()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

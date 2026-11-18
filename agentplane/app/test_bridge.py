@@ -16,7 +16,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -882,7 +881,3 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             assert len(completed_turn_ids) == 2
             assert len(set(completed_turn_ids)) == 2
             assert {confirmation.turn_id for confirmation in confirmations} == set(completed_turn_ids)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

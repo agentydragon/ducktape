@@ -6,8 +6,6 @@ themselves, not inferred from the model-visible outcome alone.
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.claude import scenarios
 from agentplane.native.claude.testing import anthropic_sse, frames
 from agentplane.native.claude.testing.harness import ClaudeLauncher
@@ -77,7 +75,3 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
     assert len(pretooluse) == 1
     assert pretooluse[0].input.get("tool_name") == "Bash"
     assert frames.permission_prompts(captured) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

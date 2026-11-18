@@ -12,7 +12,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import (
     App,
@@ -182,7 +181,3 @@ def test_rules_route_wires_workload_identity_without_mounting_the_svid_into_open
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == "http://127.0.0.1:3130"
     assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
     assert public_coder_egress.SVID_VOLUME not in {mount["name"] for mount in app["volumeMounts"]}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

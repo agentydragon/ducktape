@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.collection import (
     CollectedOutputs,
@@ -607,7 +606,3 @@ def test_unavailable_invocation_is_not_returned_as_a_missing_screenshot_run() ->
     assert observed.invocations == ["present"]
     assert observed.unavailable_invocations == ["absent"]
     assert "absent" not in observed.runs_by_invocation
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

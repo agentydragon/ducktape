@@ -3,7 +3,6 @@
 import json
 from urllib.parse import urlsplit
 
-import pytest_bazel
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.platform_sessions import app, config, remote
@@ -252,7 +251,3 @@ def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) 
         canary_pod["containers"][0]["image"]
         == deployments["myquest"]["spec"]["template"]["spec"]["containers"][0]["image"]
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

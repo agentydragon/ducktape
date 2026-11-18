@@ -14,7 +14,6 @@ import os
 import shlex
 from dataclasses import replace
 
-import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.native.codex import wire
@@ -111,7 +110,3 @@ async def test_remote_output_remains_pollable_after_foreground_exit(
             if executor.returncode is None:
                 executor.kill()
             await executor.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

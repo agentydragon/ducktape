@@ -11,7 +11,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
 from mcp_infra.persistence import ValkeyPersistence
@@ -67,7 +66,3 @@ def test_named_missing_config_is_refused_even_when_settings_have_values(
     monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "missing.yaml"))
     with pytest.raises(FileNotFoundError):
         ServerSettings(grocy_url="https://grocy.example.com")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

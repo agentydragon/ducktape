@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-import pytest_bazel
 from prometheus_client import CollectorRegistry
 from pydantic import SecretStr
 
@@ -125,7 +124,3 @@ async def test_pages_are_fetched_one_at_a_time() -> None:
 
     await _poll(httpx.MockTransport(handler))
     assert peak == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

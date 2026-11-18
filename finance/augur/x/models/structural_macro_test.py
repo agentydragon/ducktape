@@ -14,7 +14,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
@@ -561,7 +560,3 @@ def test_macro_shocks_are_correlated_across_states() -> None:
     # Lower-triangular, so state 0's innovation cannot depend on states 1-2's draws.
     assert cholesky[0][1] == 0.0
     assert cholesky[0][2] == 0.0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import content_hash, content_tag, is_published, main, matrix_include, plan
@@ -246,7 +245,3 @@ def test_each_row_pairs_one_filename_with_one_target() -> None:
         for _, filename in row.assets:  # raises if the row is unpairable
             assert "/" not in filename, f"{row.pkg}: filename must be a bare asset name, not a path"
         assert row.release_metadata in {"true", "false"}, row.pkg
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

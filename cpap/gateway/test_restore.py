@@ -9,7 +9,6 @@ from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-import pytest_bazel
 
 from cpap.gateway.restore import RestoreError, restore_card
 
@@ -286,7 +285,3 @@ def test_transport_failures_do_not_leak_credentials_or_follow_redirects(
     assert state.reset_count == 0
     if failure == "redirect":
         assert local_servers.redirect_server.requests == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

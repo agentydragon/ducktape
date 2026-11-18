@@ -5,7 +5,6 @@ import signal
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from filelock import Timeout
 
 from platform_sessions.provider.instance_ownership import InstanceOwnership
@@ -34,7 +33,3 @@ def test_crashed_owner_releases_process_lock(tmp_path: Path) -> None:
         os.waitpid(child, 0)
     successor = InstanceOwnership(tmp_path)
     successor.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

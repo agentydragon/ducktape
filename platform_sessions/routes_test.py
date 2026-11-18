@@ -1,7 +1,6 @@
 """Authorization and upstream path mapping share one path interpretation."""
 
 import pytest
-import pytest_bazel
 
 from platform_sessions.routes import Route, authorize_route
 
@@ -44,7 +43,3 @@ def test_invalid_rules_and_base_paths():
         Route("GET", "/item*")
     with pytest.raises(ValueError, match="path"):
         authorize_route("GET", "/items", "https://example.test/%2e%2e", (Route("GET", "/items"),))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

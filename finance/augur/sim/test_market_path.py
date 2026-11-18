@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import MAX_COUNT
@@ -60,7 +59,3 @@ def test_indexed_result_range_is_checked_without_losing_valid_large_counts(infla
     assert market.amount(amount, 0) == MAX_COUNT
     with pytest.raises(OverflowError, match="overflow"):
         market.amount(amount, 2)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

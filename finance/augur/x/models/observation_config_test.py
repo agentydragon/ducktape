@@ -4,7 +4,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import ValidationError
 from python.runfiles import Runfiles
@@ -112,7 +111,3 @@ def test_legacy_checked_in_vecm_artifact_requires_refitting() -> None:
         VecmProviderConfig.model_validate(document)
     missing_fields = {item["loc"][-1] for item in error.value.errors() if item["type"] == "missing"}
     assert {"train_months", "as_of_month", "training_segments", "calendar_gaps"} <= missing_fields
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

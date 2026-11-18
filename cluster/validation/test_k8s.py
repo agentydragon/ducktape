@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from cluster.validation.k8s import parse_k8s_resources
 
 
@@ -20,7 +18,3 @@ class TestParseK8sResources:
         ]
         [resource] = parse_k8s_resources(docs)
         assert resource.name == "real"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
-import pytest_bazel
 import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
 from more_itertools import one
@@ -278,7 +277,3 @@ def test_controller_may_bind_every_role_a_role_set_names(
         if (kind, None, name) not in bindable and (kind, namespace or None, name) not in bindable
     }
     assert unbindable == set()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

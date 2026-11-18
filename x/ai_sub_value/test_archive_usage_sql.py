@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from hashlib import md5
 from typing import Any
 
-import pytest_bazel
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
@@ -213,7 +212,3 @@ def test_archive_usage_sql_reconstructs_partial_versions_without_counter_multipl
             assert reports["JSONDecodeError"]["usage_bearing_records"] == 0
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

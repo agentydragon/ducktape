@@ -6,7 +6,6 @@ from pathlib import Path
 
 import aiohttp
 import pytest
-import pytest_bazel
 from aiohttp import web
 from mitmproxy import http, io
 from mitmproxy.addons.proxyserver import Proxyserver
@@ -131,7 +130,3 @@ async def test_open_websocket_records_before_close(tmp_path: Path, monkeypatch: 
     assert isinstance(flows[0], http.HTTPFlow)
     assert flows[0].websocket is not None
     assert len(flows[0].websocket.messages) == 6
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

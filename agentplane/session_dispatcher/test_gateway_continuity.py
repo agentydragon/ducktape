@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -476,7 +475,3 @@ class TestGatewayContinuity:
             assert bytes(fresh_output) == b"fresh"
             assert len(fresh_marker.read_text().splitlines()) == 1
             resumed.cancel()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from x.wt.shared.fixtures import PRFixtureEntry
 from x.wt.shared.github_models import PRState
@@ -89,7 +88,3 @@ def test_github_pr_variants(pr, expects, real_temp_repo, daemon_config_factory, 
     assert_output_contains(row, *expects)
     if pr is None:
         assert not re.search(r"#\d+", row)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

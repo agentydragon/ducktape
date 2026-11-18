@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.pytest_outputs import case_id_for_pytest_item
@@ -51,7 +50,3 @@ def test_case_id_uses_repo_file_and_retains_class_and_parameters(tmp_path: Path)
 def test_case_id_rejects_external_test_file(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="outside the repository"):
         case_id_for_pytest_item(tmp_path / "outside.py", "outside.py::test_example", repo_root=tmp_path / "repo")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

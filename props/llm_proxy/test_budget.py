@@ -9,7 +9,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 
 from props.core.agent_types import CriticTypeConfig
@@ -143,7 +142,3 @@ async def test_budget_includes_child_run_costs(synced_db: Database) -> None:
             with pytest.raises(HTTPException) as exc_info:
                 await _check_budget(session, parent_id, budget_usd=0.10)
         assert exc_info.value.status_code == 429
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

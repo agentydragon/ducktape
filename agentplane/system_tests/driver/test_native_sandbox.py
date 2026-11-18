@@ -6,7 +6,6 @@ from typing import cast
 from unittest.mock import create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto.identity_pb2 import EnvironmentTarget
@@ -176,7 +175,3 @@ async def test_wrong_name_acknowledgement_is_owned_before_contract_failure(monke
 
     assert events == ["sandbox", "identity"]
     platform.environment.environment_snapshots.assert_not_called()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-import pytest_bazel
 from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 
 from x.habitify_mcp.habitify_client import HabitifyError
@@ -176,7 +175,3 @@ async def test_set_habit_status_skipped(client, mock_async_response, patch_clien
         assert "value" not in body
         assert_that(status, instance_of(HabitStatus))
         assert_that(status, has_properties(status=Status.SKIPPED, note="Test skipped via async unit test", value=None))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

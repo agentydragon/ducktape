@@ -126,7 +126,6 @@ py_test(
         "//:conftest",
         "//aiquota:models",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -140,7 +139,6 @@ py_test(
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -152,7 +150,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -175,7 +172,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -196,7 +192,6 @@ py_test(
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -209,6 +204,5 @@ py_test(
         ":zai_lib",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

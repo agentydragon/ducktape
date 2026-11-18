@@ -4,8 +4,6 @@ import logging
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
-
 from cluster.cdk8s.litellm import upstream_test_image
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -36,7 +34,3 @@ def test_verified_baggage_reaches_exported_litellm_span() -> None:
             image_logger.removeHandler(handler)
             image_logger.setLevel(previous_level)
     assert result.returncode == 0, f"LiteLLM attribution export smoke failed; see {output}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
 from finance.augur.sim.fixed_point import (
@@ -87,7 +86,3 @@ def test_quantity_conversion_rejects_invalid_quote_and_overflow() -> None:
             quantity_for_value(value, price, scale, round_up=False)
     with pytest.raises(OverflowError):
         quantity_for_value((1 << 63) - 1, 1, 10, round_up=False)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from haku.console import app
 
@@ -148,7 +147,3 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
 def test_image_command_rejects_unknown_modes() -> None:
     with pytest.raises(SystemExit):
         app.run_command(["unknown"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

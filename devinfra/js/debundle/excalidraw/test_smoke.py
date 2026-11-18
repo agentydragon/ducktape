@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-import pytest_bazel
 from playwright.async_api import ConsoleMessage, Error, Page, Playwright, Request, Response, expect
 from python.runfiles import Runfiles
 from starlette.applications import Starlette
@@ -1696,7 +1695,3 @@ async def test_mobile_toolbar(playwright_driver: Playwright, origin: str) -> Non
         await expect(rectangle).to_be_checked()
         await expect(page.locator("canvas.excalidraw__canvas.interactive")).to_be_visible()
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

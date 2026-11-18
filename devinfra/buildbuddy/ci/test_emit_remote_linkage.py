@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.buildbuddy.ci import emit_remote_linkage
 
 
@@ -97,7 +95,3 @@ INFO: Invocation ID: 33333333-3333-4333-8333-333333333333
         "22222222-2222-4222-8222-222222222222",
         "33333333-3333-4333-8333-333333333333",
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

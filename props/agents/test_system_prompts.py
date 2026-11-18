@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import importlib.resources
 
-import pytest_bazel
-
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.agents.runtime import render_template_string
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
@@ -90,7 +88,3 @@ def test_critic_dev_improve_prompt(db: Database):
         },
     )
     _write_output("critic_dev_improve.md", rendered)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

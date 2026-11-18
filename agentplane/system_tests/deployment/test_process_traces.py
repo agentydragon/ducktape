@@ -5,7 +5,6 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 import grpc
-import pytest_bazel
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2, trace_service_pb2_grpc
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue, InstrumentationScope, KeyValue
 from opentelemetry.proto.resource.v1.resource_pb2 import Resource
@@ -165,7 +164,3 @@ def test_process_spans_are_exported_with_identity_and_parentage(tmp_path: Path) 
         ]
         for span in spans
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

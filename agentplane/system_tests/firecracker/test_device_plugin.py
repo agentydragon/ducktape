@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -75,7 +74,3 @@ def test_device_allocation_releases_after_pod_deletion(tmp_path: Path, runfiles:
         node.kubectl("delete", "pod/first", "--grace-period=0", "--force", "--wait=true")
         node.kubectl("wait", "--for=condition=Ready", "pod/second", "--timeout=60s")
         assert "allocated" in node.kubectl("logs", "second")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

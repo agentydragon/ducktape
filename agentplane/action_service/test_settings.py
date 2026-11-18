@@ -1,7 +1,6 @@
 """The Python deployment contract accepts the current service identity settings."""
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
@@ -136,7 +135,3 @@ def test_environment_service_peer_is_optional_and_pins_controller_svid() -> None
     ):
         with pytest.raises(ValidationError):
             EnvironmentServicePeer.model_validate(invalid)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

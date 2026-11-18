@@ -136,7 +136,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -175,7 +174,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -275,7 +273,6 @@ py_test(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/scenarios:storage",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -318,7 +315,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -431,7 +427,6 @@ py_test(
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -484,7 +479,6 @@ py_test(
         "//agentplane/system_tests/vm:block_storage",
         "//agentplane/system_tests/vm:guest_logs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -629,7 +623,6 @@ py_test(
         "//agentplane/system_tests/scenarios:session_instructions",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -689,7 +682,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:session_deletion",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -755,7 +747,6 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -806,7 +797,6 @@ py_test(
         "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -6,7 +6,6 @@ import json
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
@@ -515,7 +514,3 @@ async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinkin
     (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
     assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
     assert await _reasoning_replayed_next_turn(session, model) == ["KEPT_THOUGHT"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

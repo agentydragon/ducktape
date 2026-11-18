@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.pr_mergeability import SourceRevisionError
 from devinfra.ci.precommit_file_selection import main, needs_ansible_roles, prepare_changed_files
@@ -216,7 +215,3 @@ def test_workflow_entrypoint_publishes_verified_selection(
     assert (tmp_path / "pre-commit-changed-files").read_bytes() == (
         ".ansible-lint.yaml\0new-name.txt\0pr.txt\0space and\n雪.txt\0".encode()
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

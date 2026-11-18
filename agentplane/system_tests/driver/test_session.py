@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -349,7 +348,3 @@ async def test_interrupted_setup_is_a_failure_and_consumes_its_terminal() -> Non
     assert "permission denied" in str(caught.value)
     assert session._cursor == 3
     history.read_session_events.assert_awaited_once()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

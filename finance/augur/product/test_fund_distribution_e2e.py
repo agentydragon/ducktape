@@ -18,7 +18,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config, DistributionTaxShareConfig, SecurityDistributionConfig
@@ -277,7 +276,3 @@ def test_a_declared_security_nobody_holds_contributes_nothing(augur_config: Conf
     )
 
     assert _distributions(config) == ()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

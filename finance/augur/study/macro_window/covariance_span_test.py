@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.study.macro_window.holdout import describe, long_record_state_path
 from finance.augur.study.macro_window.mixed_windows import compare_covariance_spans
@@ -30,7 +29,3 @@ def test_every_covariance_span_scores_finite() -> None:
     for score in scores:
         assert np.isfinite(score.mean_log_density), f"{score.arm} at {score.horizon} scored non-finite"
         assert all(np.isfinite(value) for value in score.mean_crps.values())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-import pytest_bazel
 from sqlalchemy import insert
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
@@ -287,7 +286,3 @@ def test_selectors_bind_hostile_values() -> None:
         compiled = statement.compile(dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True})
         assert selector not in str(compiled)
         assert selector in compiled.params.values()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

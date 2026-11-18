@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import (
     SP500_SYMBOL,
@@ -38,7 +37,3 @@ def test_parse_level_series_key_rejects_unknown_wire_ids() -> None:
 def test_try_parse_level_series_key_returns_none_for_pe_wire_ids() -> None:
     assert try_parse_level_series_key("private_equity:acme") is None
     assert try_parse_level_series_key("private_equity_regime_code:acme") is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

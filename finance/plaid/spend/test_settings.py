@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from pydantic import SecretStr, ValidationError
 
 from finance.plaid.spend.settings import SpendSettings
@@ -74,7 +73,3 @@ def test_coinbase_credentials_reject_partial_or_empty_values(
 
     error_text = str(error.value)
     assert not any(value in error_text for value in values.values() if value.strip())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

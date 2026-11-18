@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from cdk8s import (
     Chart,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
@@ -44,7 +43,3 @@ def test_s3_objects_refuse_a_namespace_the_tenants_grant_does_not_admit(scratch_
         s3.credentials(
             scratch_chart, "credentials", identity="test", namespace=_NOT_A_TENANT, secret="test", key_fields=None
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

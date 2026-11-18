@@ -6,7 +6,6 @@ import re
 from typing import Any, Literal
 
 import pytest
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -274,7 +273,3 @@ def test_preserves_error_flag():
     result = ToolResult(content=[TextContent(text="err\x00")], is_error=True)
     sanitized = _sanitize_tool_result(result)
     assert sanitized.is_error is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

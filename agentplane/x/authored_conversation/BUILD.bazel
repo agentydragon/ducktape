@@ -95,7 +95,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -111,7 +110,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -124,7 +122,6 @@ py_test(
         ":store",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -137,7 +134,6 @@ py_test(
         ":store",
         ":tools",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -172,7 +168,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//textual",
     ],
 )

@@ -42,9 +42,3 @@ def test_workload_trust_mount_matches_guest_contract() -> None:
         entry.split() for entry in tmpfiles.splitlines() if entry.strip() and not entry.lstrip().startswith("#")
     ]
     assert ["d", workload_trust["mount"], "0755", "root", "root", "-"] in tmpfiles_entries
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

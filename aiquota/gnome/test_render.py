@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
@@ -705,7 +704,3 @@ def test_client_freshness_deadline_suppresses_cached_projections(session: GnomeS
     assert "exhausts" not in rows
     assert "on pace" not in rows
     assert " pace:" not in codex.details
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

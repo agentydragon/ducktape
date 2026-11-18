@@ -54,7 +54,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest async plugin
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

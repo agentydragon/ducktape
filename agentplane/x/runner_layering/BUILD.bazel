@@ -73,7 +73,6 @@ py_test(
         "//agentplane/x/runner_layering:tools_rootfs",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

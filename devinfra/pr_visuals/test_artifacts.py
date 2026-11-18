@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.pr_visuals.artifacts import list_ci_artifacts
@@ -82,7 +81,3 @@ def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
         stderr="Error: HTTP 500: rpc error: code = NotFound desc = invocation not found",
     )
     assert list_ci_artifacts(["absent-a", "absent-b"], run=lambda *_a, **_k: absent) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

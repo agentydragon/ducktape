@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.study.macro_window.holdout import HORIZONS, compare_start_dates, describe, long_record_state_path
 
@@ -38,7 +37,3 @@ def test_both_window_lengths_are_scored_on_the_same_origins() -> None:
     for score in scores:
         assert np.isfinite(score.mean_log_density), f"{score.arm} at {score.horizon} scored non-finite"
         assert all(np.isfinite(value) for value in score.mean_crps.values())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from typing import Any, cast
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 
 from aiquota.models import (
@@ -34,9 +33,6 @@ from aiquota.providers.codex import (
     _to_success,
     _UsageResponse,
 )
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def _jwt(exp: datetime) -> str:

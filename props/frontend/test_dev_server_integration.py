@@ -8,7 +8,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -58,7 +57,3 @@ def test_dev_server_reaches_backend(db: Database, tmp_path: Path) -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

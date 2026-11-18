@@ -7,7 +7,6 @@ from typing import cast
 from unittest.mock import AsyncMock, create_autospec
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
@@ -154,7 +153,3 @@ async def test_sandbox_delete_preconditions_the_acknowledged_uid(monkeypatch: py
     assert raised.value.status == 409
     assert len(delete_options) == 1
     assert kubectl.await_count == 3
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

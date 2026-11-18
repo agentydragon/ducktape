@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.checks import check_sops_decryption_blocks
 from cluster.validation.cluster import ParsedCluster
@@ -86,7 +85,3 @@ def test_suspended_kustomization_with_sops_is_skipped(tmp_path: Path) -> None:
     cluster = _cluster(tmp_path, _sops_secret(), spec)
 
     assert check_sops_decryption_blocks(cluster, tmp_path) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

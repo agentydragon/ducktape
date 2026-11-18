@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import pytest_bazel
-
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
@@ -39,7 +37,3 @@ async def test_shell_commands_see_the_agent_cli_environment(
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "ENVIRONMENT_DONE"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

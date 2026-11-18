@@ -7,7 +7,6 @@ answers a shell call with a script that runs the nested `exec_command`.
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver
@@ -65,7 +64,3 @@ async def test_shell_call_runs_through_exec(
     (text,) = events.items(seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
     assert events.completed(seen, text).text == "TOOL_DONE"
     events.assert_sourced(seen)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

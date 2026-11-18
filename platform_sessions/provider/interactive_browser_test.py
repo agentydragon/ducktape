@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import pytest_bazel
 from starlette.datastructures import Headers
 from websockets.asyncio.server import serve
 from websockets.typing import Subprotocol
@@ -384,7 +383,3 @@ def test_cdp_configuration_refuses_unsupported_or_partial_options(tmp_path: Path
         InteractiveBrowserRuntime(
             profile_dir=tmp_path / "profile", owner_token=_TOKEN, launch_mode="cdp", launch_options=options
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

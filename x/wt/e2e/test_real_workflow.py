@@ -5,7 +5,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from x.wt.testing.utils import wait_until
 
@@ -87,7 +86,3 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
         new_pid = int(pid_file.read_text().strip())
         if new_pid == pid:
             pytest.fail("PID file not cleaned up after daemon kill")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

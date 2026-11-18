@@ -49,7 +49,6 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",

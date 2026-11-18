@@ -3,7 +3,6 @@
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -51,7 +50,3 @@ async def test_generated_crds_and_api_key_capabilities() -> None:
                 key("duplicate", ["CAS_WRITE", "CAS_WRITE"]),
             )
         assert rejected.value.status == 422
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

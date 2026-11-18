@@ -11,7 +11,6 @@ import json
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.native.claude import wire
@@ -418,7 +417,3 @@ async def test_thinking_beside_a_block_interrupted_before_it_was_written_is_not_
             assert exchange.request.thinking_blocks == []
             await exchange.send(*anthropic_sse.message_stream([anthropic_sse.Text("NEXT_OK")], model=MODEL).events)
         assert (await next_input.result()).result == "NEXT_OK"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

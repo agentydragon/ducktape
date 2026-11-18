@@ -35,6 +35,5 @@ py_test(
         ":wordle_env",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

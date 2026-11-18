@@ -2,8 +2,6 @@
 
 import json
 
-import pytest_bazel
-
 from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ResponsesResult, ResponseUsage
 from openai_utils.testing.openai_mock import FakeOpenAIModel
 from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
@@ -116,7 +114,3 @@ async def test_success_on_turn_1(tmp_path):
     assert isinstance(summary.result, Correct)
     assert summary.result.turns == 1
     assert summary.turns == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

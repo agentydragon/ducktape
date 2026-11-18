@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from finance.augur.sim.books import AccountRef
@@ -212,7 +211,3 @@ def test_population_cli_keeps_original_ids_for_selected_replay(run_bin: Path, tm
         original = population[result.rollout_id]
         assert result.summary == original.summary
         assert result.stop == original.stop
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 # gazelle:include_dep @pypi//protobuf
@@ -466,7 +465,3 @@ def test_guest_window_argument_selects_360_bounded_samples(tmp_path: Path) -> No
     serial = result.stdout.replace(b"\r\n", b"\n")
     assert serial.count(b"AGENTPLANE_BOOT_RCU_SAMPLE_BEGIN seq=") == 360
     assert b"AGENTPLANE_BOOT_RCU_OBSERVER_COMPLETE samples=360\n" in serial
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -61,7 +61,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -100,7 +99,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

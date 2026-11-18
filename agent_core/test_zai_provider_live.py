@@ -4,7 +4,6 @@ import json
 import os
 
 import pytest
-import pytest_bazel
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
@@ -232,7 +231,3 @@ async def test_zai_anthropic_shape_union_tool_param_returned_as_object_live(comb
     assert example["kind"] == "file_set"
     assert example["snapshot_slug"] == "crush/2025-08-30-internal_db"
     assert example["files_hash"] == "c27fe50118b25dbc185f00315006c37b"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

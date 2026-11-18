@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver import runner_data_archive
 
@@ -204,7 +203,3 @@ def test_archive_fails_when_sqlite_identity_changes(tmp_path: Path, monkeypatch:
     assert runner_data_archive.capture(plan) == 1
     assert _manifest(tmp_path)["archive"] == "partial_or_failed"
     assert not (tmp_path / "data.tar").exists()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

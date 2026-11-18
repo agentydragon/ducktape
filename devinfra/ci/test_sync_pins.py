@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci import sync_pins
 from devinfra.ci.artifacts import Artifact, Pin, Sources
@@ -154,7 +153,3 @@ def test_pin_sync_never_publishes_incompatible_wheel_set(
     else:
         assert "ducktape-git-hooks" not in pins
     assert pins["unrelated"].url == url(latest_unrelated, "unrelated")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -262,9 +262,3 @@ def test_full_message_batch_returns_successes_and_explicit_failures() -> None:
     assert [message.id for message in messages] == ["a"]
     assert [message_id for message_id, _ in errors] == ["b"]
     assert "HTTP 404" in errors[0][1]
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -87,7 +86,3 @@ def test_claude_title_projection_backfills_stored_ai_title_records(tmp_path: Pat
         assert session is not None
         assert session.title == "Verify-docs skill conversion"
         assert session.claude_title_projection_version == CLAUDE_TITLE_PROJECTION_VERSION
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

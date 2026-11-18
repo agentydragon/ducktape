@@ -177,7 +177,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -198,7 +197,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -210,7 +208,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -223,7 +220,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -240,7 +236,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -300,7 +295,6 @@ py_test(
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/k3s:baseline",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -312,7 +306,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -373,7 +366,6 @@ py_test(
         "//agentplane/proto:identity_pb2",
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -712,7 +704,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -755,7 +746,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -767,7 +757,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//zstandard",
     ],
 )
@@ -781,7 +770,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -798,6 +786,5 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

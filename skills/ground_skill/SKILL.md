@@ -108,25 +108,20 @@ All tests must fail loudly — no swallowed exceptions. A broken recipe → a re
 
 ```starlark
 # examples/BUILD.bazel
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
 py_library(name = "my_recipe", srcs = ["my_recipe.py"], deps = [...])
 
 py_test(
     name = "test_my_recipe",
     srcs = ["test_my_recipe.py"],
     data = ["golden.png", "//skills/myskill/conda:tool_binary"],
-    deps = [":my_recipe", "//skills/myskill:conftest", "@pypi//pytest_bazel", ...],
+    deps = [":my_recipe", "//skills/myskill:conftest", "@pypi//pytest", ...],
 )
 ```
 
-Every `py_test` must include a `pytest_bazel.main()` entry point — without it Bazel
-exits 0 without running any tests (see AGENTS.md):
-
-```python
-import pytest_bazel
-# ... tests ...
-if __name__ == "__main__":
-    pytest_bazel.main()
-```
+The repository's `py_test` wrapper runs a test source named after its target through the shared
+pytest entrypoint. See [Testing](../../AGENTS.md#testing) for custom entrypoints.
 
 **Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form uses
 `strip_prefix.from_pkg()`, which drops subdirectory structure for cross-package

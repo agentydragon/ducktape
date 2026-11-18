@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pygit2
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from x.wt.server.handlers.status_handler import get_status
@@ -146,7 +145,3 @@ async def test_get_status_reports_current_discovery_state(status_deps: ServiceDe
     assert response.readiness_summary.discovery_scanning is scanning
     assert response.components is not None
     assert response.components.discovery.state == (ComponentState.SCANNING if scanning else ComponentState.OK)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

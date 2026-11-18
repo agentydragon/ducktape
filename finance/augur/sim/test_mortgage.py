@@ -4,7 +4,6 @@ from dataclasses import replace
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
@@ -139,7 +138,3 @@ def test_rejected_or_mismatched_settlement_does_not_mutate_servicing_facts() -> 
 def test_invalid_terms_fail_before_servicing(principal: int, rate: int, months: int) -> None:
     with pytest.raises(ValueError, match=r"positive|nonnegative|not exceed"):
         Mortgage(_terms(principal=principal, rate=rate, months=months))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

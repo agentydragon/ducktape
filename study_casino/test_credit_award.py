@@ -5,8 +5,6 @@ from __future__ import annotations
 import datetime
 from decimal import Decimal
 
-import pytest_bazel
-
 from study_casino.credit_award import (
     base_session_credits,
     millis_from_credits,
@@ -139,7 +137,3 @@ def test_pacific_day_bounds_cover_dst_transition() -> None:
     # 2026-03-08 is the spring-forward day in LA: only 23 hours long.
     start_ms, end_ms = pacific_day_bounds_ms(_day("2026-03-08"))
     assert (end_ms - start_ms) == 23 * 3600 * 1000
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

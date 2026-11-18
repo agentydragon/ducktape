@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import tracefs
 
@@ -29,7 +28,3 @@ def test_mount_failure_reaches_collector(tmp_path: Path) -> None:
         pytest.raises(subprocess.CalledProcessError),
     ):
         tracefs.ensure_mounted(tmp_path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

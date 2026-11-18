@@ -2,8 +2,6 @@ import json
 import tarfile
 from pathlib import Path
 
-import pytest_bazel
-
 from devinfra.buildbuddy.ci import runner_probe
 
 
@@ -116,7 +114,3 @@ def test_persist_latest(tmp_path: Path) -> None:
     runner_probe.persist_latest(paths)
 
     assert paths.latest_jsonl.read_text() == '{"phase": "after-build"}\n'
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

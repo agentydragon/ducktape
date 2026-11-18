@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pytest_bazel
-
 from finance.augur.dates import months_between
 
 
@@ -22,7 +20,3 @@ def test_reversed_span_is_negative() -> None:
     end = dt.date(2021, 4, 1)
     assert months_between(start, end) > 0.0
     assert months_between(end, start) == -months_between(start, end)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

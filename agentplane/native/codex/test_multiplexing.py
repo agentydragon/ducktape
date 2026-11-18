@@ -21,8 +21,6 @@ not establish active multi-thread crash recovery.
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -178,7 +176,3 @@ async def test_independent_threads_share_a_process_and_resume_by_thread_id(
                 ).events
             )
         assert (await second_resume_turn.completed()).params.thread_id == second_thread_id
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

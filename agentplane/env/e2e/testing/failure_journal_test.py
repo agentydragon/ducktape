@@ -5,8 +5,6 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-import pytest_bazel
-
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.proto import event_log_pb2
 
@@ -32,7 +30,3 @@ def test_capture_retained_journals_while_writer_has_uncommitted_event(tmp_path: 
         assert writer.in_transaction
         writer.rollback()
         assert writer.execute("SELECT MAX(cursor) FROM event_entry").fetchone() == (600,)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

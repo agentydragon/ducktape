@@ -11,7 +11,6 @@ import json
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
@@ -57,7 +56,3 @@ async def test_fresh_root_identity_timing(
                 (claude.logs / "identity-after-input.json").write_text(json.dumps(session_frames[0], indent=2) + "\n")
     # Native logs include graceful no-input shutdown as well; a post-shutdown
     # result must not retroactively be described as an initialization declaration.
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

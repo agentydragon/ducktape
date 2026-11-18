@@ -7,7 +7,6 @@ import sys
 import zipfile
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import runfiles
 
 
@@ -59,7 +58,3 @@ def test_callback_contract_recipe_and_conservative_controls(tmp_path: Path) -> N
         report = shared / "out/controls" / name / "reports/tree/main/atomic_group_conflicts.json"
         conflicts = json.loads(report.read_text())
         assert any(modules <= {claim["module"] for claim in conflict["claims"]} for conflict in conflicts)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

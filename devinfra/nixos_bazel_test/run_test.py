@@ -6,7 +6,6 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import runfiles
 
 
@@ -53,7 +52,3 @@ def test_runner_cleans_scratch_after_docker_start_failure(tmp_path: Path) -> Non
             ["docker", "ps", "-aq", "--filter", f"ancestor={image}"], check=True, capture_output=True, text=True
         )
         assert not containers.stdout.strip()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

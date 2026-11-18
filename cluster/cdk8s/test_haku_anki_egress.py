@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
@@ -52,7 +51,3 @@ def test_haku_anki_has_no_identity_or_binding_of_its_own(resources: list[dict[st
 
     assert "haku-anki" not in bound_subjects
     assert "haku-anki" not in {d["metadata"]["name"] for d in resources if d["kind"] == "Identity"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

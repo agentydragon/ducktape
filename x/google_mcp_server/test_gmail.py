@@ -9,7 +9,6 @@ Writes go through the hand-written `GmailToolsClient`, so write tests mock its m
 from unittest.mock import Mock
 
 import pytest
-import pytest_bazel
 from fastmcp import Client
 
 from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
@@ -165,7 +164,3 @@ async def test_drafts_update_dispatches_with_draft_id(gmail: Mock, client):
     (args,), _kwargs = gmail.drafts_update.call_args
     assert args.draft_id == "d9"
     assert args.to == ["a@x"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

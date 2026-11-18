@@ -7,7 +7,6 @@ from decimal import Decimal
 
 import asyncpg
 import pytest
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -720,7 +719,3 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         assert (
             await conn.execute(text("SELECT count(*) FROM plaid_api_events WHERE item_id = 'item-purge'"))
         ).scalar_one() == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

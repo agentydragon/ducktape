@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 
 from finance.evidence.polymarket import load_market
 
@@ -41,7 +40,3 @@ def test_load_market_from_bare_object() -> None:
 def test_load_market_rejects_empty_list() -> None:
     with pytest.raises(ValueError, match="too few items"):
         load_market(b"[]")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

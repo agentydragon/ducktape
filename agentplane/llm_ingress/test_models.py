@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from agentplane.llm_ingress.models import (
     AttributionConfig,
     AttributionField,
@@ -20,7 +18,3 @@ def test_every_output_must_name_identity():
     header = AttributionJsonHeader(name="x-verified", fields=[_IDENTITY])
     assert AttributionConfig(json_headers=[header], baggage=[_IDENTITY]).names_identity()
     assert not AttributionConfig(json_headers=[header], baggage=[_NAMESPACE]).names_identity()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

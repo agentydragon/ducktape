@@ -1,7 +1,6 @@
 """The shared construct gives only the egress proxy access and copies in no credential; each
 environment's own module decides which credentials it gets."""
 
-import pytest_bazel
 from cdk8s import Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
@@ -26,7 +25,3 @@ def test_only_the_proxy_reads_and_nothing_is_copied(scratch_chart: Chart) -> Non
     assert bindings[0]["subjects"] == [
         {"apiGroup": "", "kind": "ServiceAccount", "name": "egress", "namespace": _PROXY_NAMESPACE}
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

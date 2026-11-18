@@ -6,7 +6,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration import macro_anchors
 from finance.augur.calibration.catalog import (
@@ -153,7 +152,3 @@ def test_derived_cpi_history_rejects_nonpositive_levels(synthetic_evidence_dir: 
 
     with pytest.raises(ValueError, match="invalid level"):
         resolve_anchors(_catalog())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

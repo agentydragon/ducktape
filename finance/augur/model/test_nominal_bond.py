@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.nominal_bond import par_coupon_rate, price_per_face
 
@@ -35,7 +34,3 @@ def test_par_coupon_reprices_to_one_on_each_curve_in_a_batch() -> None:
     coupons = jax.jit(par_coupon_rate, static_argnames="coupon_period_months")(discounts, coupon_period_months=6)
     np.testing.assert_allclose(price_per_face(coupons, discounts, coupon_period_months=6), 1, atol=1e-14)
     assert float(coupons[1]) < 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

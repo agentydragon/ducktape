@@ -15,7 +15,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from x.google_mcp_server import google_discovery
 from x.google_mcp_server.google_discovery import GenTool, build_generated_tools
@@ -143,7 +142,3 @@ def test_unknown_exposed_param_fails_loud() -> None:
 def test_unknown_method_id_fails_loud() -> None:
     with pytest.raises(KeyError, match="missing"):
         _build(GenTool("fake.widgets.missing", "x", "fake.v1"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

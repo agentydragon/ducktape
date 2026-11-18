@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from devinfra.ci.skills.ci_latency.scripts import gate_headroom
 
@@ -103,7 +102,3 @@ def test_rejects_duplicate_scenario_names():
                 ],
             }
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

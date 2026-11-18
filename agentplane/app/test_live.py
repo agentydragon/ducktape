@@ -10,7 +10,6 @@ from uuid import uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import text
@@ -453,7 +452,3 @@ async def test_generated_egress_watch_streams_decisions_and_rotates_token(
         frame = ParseDict(await anext(_watch_results(response)), egress_admin_pb2.WatchDecisionsResponse())
         assert len(frame.snapshot.decisions) == 2
     assert egress_admin.tokens == ["Bearer fake-token", "Bearer rotated-token"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

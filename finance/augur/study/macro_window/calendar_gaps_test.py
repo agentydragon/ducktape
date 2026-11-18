@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 
 import numpy as np
-import pytest_bazel
 
 from finance.augur.study.macro_window.holdout import Arm, score_arms
 from finance.augur.x.models.macro_var import MacroStatePath, MacroVarFit
@@ -37,7 +36,3 @@ def test_holdout_horizon_targets_the_calendar_month_and_omits_an_absent_target()
     # month, so it is skipped. Index arithmetic would incorrectly score the following January.
     assert [score.origins for score in scores] == [3]
     assert np.isfinite(scores[0].mean_log_density)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

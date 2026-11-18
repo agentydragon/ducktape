@@ -1,11 +1,7 @@
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from aiquota.models import FetchSuccess, QuotaWindow
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_fetch_success_sorts_windows_by_provider_duration() -> None:

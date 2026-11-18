@@ -8,7 +8,6 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.app.testing.history import SessionHistory
@@ -383,7 +382,3 @@ async def _history_window(
     chunks = await _open(client_two, f"{path}/chunks/text", epoch)
     body, _ = await _subset(client_two, f"{path}/chunks/text", epoch, chunks, _bodies(reference))
     assert _body(body, reference) == "Body 40" + hidden_text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

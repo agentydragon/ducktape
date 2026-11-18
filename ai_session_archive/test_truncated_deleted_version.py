@@ -2,7 +2,6 @@
 # gazelle:include_dep :testing
 from pathlib import Path
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -72,7 +71,3 @@ def test_truncated_and_deleted_file_keeps_prior_versions(tmp_path: Path, postgre
         assert deletion is not None
         assert deletion.status == "deleted"
         assert db.scalar(select(SessionRow).where(SessionRow.id == main.id)) is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

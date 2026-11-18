@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
@@ -188,7 +187,3 @@ async def test_quiesce_interrupts_every_codex_session_before_the_shared_app_serv
         exited = events.of_kind(session.seen, "harness_exited")[-1]
         assert exited.event.harness_exited.stopped_by_runner
         assert exited.cursor > done.cursor
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import durationpy
 import pytest
-import pytest_bazel
 
 from cluster.validation.flux import FluxReconcileHistoryEntry, parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
@@ -86,7 +85,3 @@ stringData:
     errors = check_flux_bootstrap_auth(tmp_path)
     assert any("sets provider=github" in error for error in errors)
     assert any("references SOPS-managed Secret" in error for error in errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

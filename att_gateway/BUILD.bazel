@@ -68,7 +68,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -81,7 +80,6 @@ py_test(
         ":settings",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -148,6 +146,5 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

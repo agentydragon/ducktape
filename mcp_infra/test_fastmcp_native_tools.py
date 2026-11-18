@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Annotated
 
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.context import Context
@@ -51,7 +50,3 @@ async def test_native_tool_injects_context_without_exposing_it() -> None:
         await session.call_tool("capture", {"value": 7})
 
     assert isinstance(seen["context"], Context)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

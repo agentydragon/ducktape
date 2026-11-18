@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -34,7 +33,3 @@ def test_public_coder_clickhouse_reader_contract() -> None:
     annotations = metadata.get("annotations", {})
     assert "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" not in annotations
     assert "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces" not in annotations
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

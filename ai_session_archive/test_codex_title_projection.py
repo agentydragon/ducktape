@@ -5,7 +5,6 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import pytest_bazel
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -110,7 +109,3 @@ def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: En
         assert duplicate.title == "Name 3"
         assert indexed is not None
         assert indexed.title == "Index name 5"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

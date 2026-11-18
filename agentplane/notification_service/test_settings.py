@@ -4,7 +4,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.net.peertls.config import (
@@ -239,7 +238,3 @@ def test_receiver_requires_spiffe_trust() -> None:
     }
     with pytest.raises(ValidationError, match="does not match any of the expected tags"):
         Settings.model_validate(values)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

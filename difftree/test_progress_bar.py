@@ -1,7 +1,6 @@
 """Tests for ProgressBar component."""
 
 import pytest
-import pytest_bazel
 
 from difftree.conftest import RIGHT_BLOCK_CHARS, render_to_string
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
@@ -36,7 +35,3 @@ def test_minimum_sliver_alignment(align):
     else:
         assert "▕" in plain  # Right-growing block for RTL
     assert len(plain) == 20
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

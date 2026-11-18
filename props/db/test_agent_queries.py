@@ -1,7 +1,5 @@
 """Tests for agent query builders against a synced test database."""
 
-import pytest_bazel
-
 from props.agents.critic_dev.recipes.ground_truth import count_issues_by_snapshot
 from props.core.splits import Split
 from props.db.database import Database
@@ -26,7 +24,3 @@ def test_count_issues_by_snapshot(synced_db: Database) -> None:
     assert "test-fixtures/train1" not in valid
     assert "test-fixtures/valid1" in valid
     assert "test-fixtures/valid1" not in train
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

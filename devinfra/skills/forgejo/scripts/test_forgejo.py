@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 
 from devinfra.skills.forgejo.scripts import forgejo
 from devinfra.skills.forgejo.scripts.forgejo import Task
@@ -218,7 +217,3 @@ def test_credentials_prefer_flags_then_netrc(tmp_path, monkeypatch: pytest.Monke
     assert forgejo.credentials("https://forgejo.test/", "flag-user", None) == ("bot", "hunter2")
     with pytest.raises(SystemExit, match=r"no credentials for other\.test"):
         forgejo.credentials("https://other.test/", None, None)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

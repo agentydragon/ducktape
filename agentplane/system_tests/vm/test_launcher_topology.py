@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import launcher_topology
 from agentplane.system_tests.vm.launcher_topology import inspect_launcher_topology
@@ -370,7 +369,3 @@ async def test_pod_in_another_namespace_is_rejected_before_kubectl(
 
     report_path = tmp_path / "vm-artifacts/launcher-topology/pod-uid.json"
     assert json.loads(report_path.read_text())["observation"]["state"] == "projected_pod_namespace_mismatch"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

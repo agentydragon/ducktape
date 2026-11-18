@@ -4,8 +4,6 @@ import csv
 import io
 from datetime import date
 
-import pytest_bazel
-
 from x.loom.gym.dossier import series_dossier
 from x.loom.gym.monthly_series import MonthlySeries, add_months
 
@@ -30,7 +28,3 @@ def test_dossier_lists_series_with_readme() -> None:
     dossier = series_dossier([RAMP], as_of=date(2024, 7, 1))
     assert set(dossier) == {"ramp_monthly.csv", "README.txt"}
     assert "test ramp" in dossier["README.txt"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

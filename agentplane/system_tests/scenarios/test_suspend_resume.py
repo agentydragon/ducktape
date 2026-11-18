@@ -6,7 +6,6 @@ from typing import cast
 from unittest.mock import AsyncMock, create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
@@ -36,7 +35,3 @@ async def test_idle_suspend_waits_for_stopped_stage(intermediate_stage: str) -> 
 
     assert stopped.observed_state.stop_stage == "Stopped"
     assert get_environment.await_count == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

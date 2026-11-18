@@ -8,7 +8,6 @@ from typing import get_args
 
 import numpy as np
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.api.config import Config
@@ -1585,7 +1584,3 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
     assert federal_accrual.mortgage_interest_deduction_quanta == _usd_quanta(0.0)
     assert federal_accrual.itemized_deduction_quanta == _usd_quanta(0.0)
     assert federal_accrual.standard_deduction_quanta == _usd_quanta(14_600.0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

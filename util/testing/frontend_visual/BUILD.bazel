@@ -34,7 +34,6 @@ py_test(
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -55,7 +54,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -120,7 +118,6 @@ py_test(
         "//util/testing/frontend_visual:fixtures",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

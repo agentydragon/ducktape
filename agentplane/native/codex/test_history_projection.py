@@ -7,7 +7,6 @@ import json
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.codex import scenarios
 from agentplane.native.codex.testing import responses_sse
@@ -312,7 +311,3 @@ async def test_compaction_history_projection_against_resumed_model_input(
                     ).events
                 )
             await completed(cursor, turn["id"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

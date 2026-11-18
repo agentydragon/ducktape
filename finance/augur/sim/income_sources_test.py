@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
@@ -277,7 +276,3 @@ def test_interest_a_jurisdiction_exempts_is_still_income_earned() -> None:
 
     assert earned[("alice", TREASURY_SOURCE)] == _quanta(ALICE_INTEREST)
     assert earned[("bob", TREASURY_SOURCE)] == _quanta(BOB_INTEREST)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

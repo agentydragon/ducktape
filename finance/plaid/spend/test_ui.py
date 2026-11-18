@@ -8,7 +8,6 @@ from typing import cast
 
 import httpx
 import pytest
-import pytest_bazel
 from itsdangerous import TimestampSigner
 from pydantic import SecretStr
 
@@ -133,7 +132,3 @@ async def test_one_api_route_accepts_bearer_or_signed_session() -> None:
         assert history.json() == {"days": []}
         assert (await client.get("/api/v1/events")).status_code == 401
         assert (await client.get("/api/v1/web/view", headers=cookie)).status_code == 404
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

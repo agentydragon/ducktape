@@ -21,7 +21,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -51,7 +50,6 @@ py_test(
         ":session_transfer",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -64,7 +62,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -81,7 +78,6 @@ py_test(
         ":routes",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -176,7 +172,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -190,7 +185,6 @@ py_test(
         ":session_store",
         "//:conftest",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -205,7 +199,6 @@ py_test(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -223,7 +216,6 @@ py_test(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -253,7 +245,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx2",  # keep: starlette.testclient imports it at runtime
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -179,7 +179,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -459,7 +458,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//grpcio",
         "@pypi//opentelemetry_proto",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -511,7 +509,6 @@ py_test(
         "//agentplane/system_tests/k3s:namespaces",
         "//cluster/cdk8s/agentplane:namespaces",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -549,7 +546,6 @@ py_test(
         "//agentplane/system_tests/k3s:pki_infrastructure",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//cryptography",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -563,7 +559,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -590,7 +585,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

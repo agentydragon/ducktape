@@ -4,7 +4,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.cdk8s.x.render_diff import (
     Blob,
@@ -209,7 +208,3 @@ def test_copy_semantics(op: dict[str, object], expected: set[str]) -> None:
     artifact: dict[str, Blob] = {}
     apply_copy({"r": {"d/a.yaml": blob, "d/sub/b.md": blob, "e/c.yaml": blob}}, op, artifact)
     assert set(artifact) == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

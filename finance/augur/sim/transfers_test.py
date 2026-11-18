@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.ids import AccountId, AgentId
@@ -210,7 +209,3 @@ def test_combined_one_off_and_recurring() -> None:
     assert sorted(
         (txn["cause_id"], txn["amount_quanta"]) for txn in transfers.iter_rows(named=True) if txn["month_index"] == 5
     ) == [("alice_bonus", 500000), ("alice_paycheck", 100000)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

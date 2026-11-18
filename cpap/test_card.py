@@ -1,7 +1,6 @@
 """Tests for routing card-returned URLs through the configured gateway."""
 
 import pytest
-import pytest_bazel
 
 from cpap.card import EZShareClient
 
@@ -20,7 +19,3 @@ def test_card_absolute_url_uses_gateway_host(client: EZShareClient) -> None:
 
 def test_relative_url_is_resolved_against_gateway(client: EZShareClient) -> None:
     assert client._proxy_url("/download?file=STR.EDF") == ("http://test-cpap-gateway.invalid/download?file=STR.EDF")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.testing.replication_source import ReplicationSource
@@ -246,7 +245,3 @@ async def test_fixed_older_window_receives_busy_tail_changes(
                 )
                 report["responses"] = {"entities": rows.responses, "chunks": chunks.responses}
                 artifact.write_text(json.dumps(report, indent=2) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

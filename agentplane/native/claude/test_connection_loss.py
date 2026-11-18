@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from agentplane.native.claude.scenarios import MAX_RETRIES
 from agentplane.native.claude.testing import anthropic_sse, frames
 from agentplane.native.claude.testing.harness import ClaudeLauncher
@@ -130,7 +128,3 @@ async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
             )
         assert (await second.result()).result == "HTTP_FOLLOW_UP_OK"
     assert [terminal.is_error for terminal in frames.terminals(run.native_frames())] == [True, False]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

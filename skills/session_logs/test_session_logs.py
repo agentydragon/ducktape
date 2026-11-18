@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 
 from skills.session_logs import session_logs
 
@@ -146,7 +145,3 @@ def test_followups_replay_guidance_requires_clean_scan_for_fast_path(
     compactions: int, malformed_records: int, expected: session_logs.ReplayGuidance
 ) -> None:
     assert session_logs.followups_replay_guidance(compactions, malformed_records) == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

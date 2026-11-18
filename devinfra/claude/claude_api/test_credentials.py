@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.claude_api.credentials import read_credentials
 
@@ -29,7 +28,3 @@ def test_read_credentials_malformed(patch_credentials_path: Path):
     patch_credentials_path.write_text("not json")
 
     assert read_credentials() is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

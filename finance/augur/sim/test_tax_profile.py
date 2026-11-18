@@ -12,7 +12,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
 from finance.augur.sim.income import Municipal, OrdinaryIncome, Taxable, Treasury
@@ -185,7 +184,3 @@ def test_largest_finite_threshold_is_not_an_open_bracket_sentinel() -> None:
 
 def test_nothing_named_still_declares_ordinary_income() -> None:
     assert compile_income_sources(()) == (OrdinaryIncome(),)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -16,7 +16,6 @@ from typing import Any, TypeVar, override
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import text
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -987,9 +986,6 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                             break
                         await asyncio.sleep(0.05)
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # Generated service stubs require their direct typing dependencies.
 # gazelle:include_dep @pypi//grpcio

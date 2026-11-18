@@ -66,7 +66,6 @@ py_test(
         "//finance/augur/sim:ids",
         "//finance/augur/sim:results",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -104,6 +103,5 @@ py_test(
         "//finance/augur/sim:session",
         "//finance/augur/sim:world",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

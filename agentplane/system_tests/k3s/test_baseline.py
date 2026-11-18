@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.k3s import baseline
 
@@ -274,7 +273,3 @@ def test_profile_containerd_marks_cancelled_capture_incomplete(tmp_path: Path, m
     assert metadata["status"] == "cancelled"
     assert metadata["complete"] is False
     assert metadata["phase_within_requested_client_window"] is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

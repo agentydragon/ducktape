@@ -9,8 +9,6 @@ test_cluster_integration.py::test_image_automation_webhook_consistency.
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.k8s import parse_k8s_resources
@@ -69,7 +67,3 @@ def test_stale_webhook_entry() -> None:
     cluster = _cluster(_repo("foo"), _receiver(["foo", "gone"]))
     errors = check_image_automation_webhook(cluster)
     assert any("gone" in e for e in errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

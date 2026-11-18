@@ -9,7 +9,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane import sandbox_resource
@@ -275,7 +274,3 @@ async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncC
 
     legacy = await http.get("/system/status")
     assert legacy.status_code == 404, legacy.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

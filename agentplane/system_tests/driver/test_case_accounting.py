@@ -5,7 +5,6 @@ from typing import Literal
 from xml.etree import ElementTree
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -149,7 +148,3 @@ def test_shared_phase_failure_still_fails_the_suite(
     assert any(
         f"shared {phase if phase == 'setup' else 'cleanup'} failed" in error.attrib["message"] for error in errors
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

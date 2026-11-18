@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.native.claude import wire
@@ -163,7 +162,3 @@ async def test_child_resume(runfiles: Runfiles, tmp_path: Path, scenario: str) -
                     if frame.get("subtype") == "task_notification"
                 ]
                 assert len(notifications) == (1 if active else 0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

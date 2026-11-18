@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -1635,7 +1634,3 @@ async def test_accordion_readiness_ignores_unrelated_animations(page: Page, runf
     await _expand_accordion(page.get_by_role("button", name="Expand"))
     await expect(page.locator("#panel")).to_have_css("height", "120px")
     assert await page.locator("#spinner").evaluate("element => element.getAnimations().length") == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

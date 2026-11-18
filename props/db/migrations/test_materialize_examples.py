@@ -6,7 +6,6 @@ This module verifies the function-level workaround used by the migration.
 from collections.abc import Generator
 
 import pytest
-import pytest_bazel
 from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
@@ -65,7 +64,3 @@ def test_set_search_path_fixes_matview_creation(blank_engine: Engine) -> None:
         """)
         )
         conn.execute(text("CREATE MATERIALIZED VIEW mv AS SELECT get_val_sp(1) AS result"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

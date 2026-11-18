@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
-
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
@@ -152,7 +150,3 @@ def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
     assert len(results) == 1
     assert results[0].status == SanityStatus.UNMODELED
     assert "unmodeled_co" in results[0].series_id
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

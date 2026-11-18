@@ -85,6 +85,5 @@ py_test(
         "//:conftest",
         "//agentplane/firecracker:launcher_test_image",
         "//devinfra/oci",
-        "@pypi//pytest_bazel",
     ],
 )

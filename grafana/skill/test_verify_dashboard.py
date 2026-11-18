@@ -103,9 +103,3 @@ def test_query_target_datasource_overrides_panel_datasource() -> None:
     VERIFY_DASHBOARD["query_panels"](api, dashboard, by_name, by_uid, 1, 2, [], [])
 
     assert requests[0]["queries"][0]["datasource"] == {"type": "loki", "uid": "loki-live-uid"}
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

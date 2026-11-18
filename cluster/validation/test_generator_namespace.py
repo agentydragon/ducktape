@@ -26,7 +26,6 @@ holds the hand-written ones, which live in the other manifest roots.
 
 from pathlib import Path, PurePosixPath
 
-import pytest_bazel
 import yaml
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
@@ -97,7 +96,3 @@ def test_generators_declare_a_namespace(repo_root: Path) -> None:
         '"namespace not specified" and Flux applies nothing from that directory. '
         "Add `namespace: <ns>` to the kustomization:\n" + "\n".join(f"  {o}" for o in offenders)
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -189,9 +189,3 @@ def test_operator_facades_can_add_app_svid_without_replacing_operator_oauth() ->
     assert settings.actions_tls.uses_svid
     assert settings.connection_service_tls is not None
     assert settings.connection_service_tls.uses_svid
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()
