@@ -1610,6 +1610,17 @@ struct ReturnInputs {
     importer_allocations: Arc<Vec<RoaringBitmap>>,
 }
 
+#[derive(Clone, Copy)]
+struct CallEvalContext<'a> {
+    declared: &'a [bool],
+    returns: &'a ReturnInputs,
+}
+
+struct SummaryArgument<'a> {
+    values: &'a Values,
+    sources: Option<&'a origin_trace::InputSnapshot>,
+}
+
 fn append_value_expr(
     expr: &FlowValueExpr,
     values: &mut ValuesBuilder,
@@ -1696,8 +1707,7 @@ fn append_value_expr(
                         callee,
                         *argument,
                         &mut result,
-                        declared,
-                        returns,
+                        CallEvalContext { declared, returns },
                         read_values,
                         unknown,
                         call_source.as_mut(),
@@ -1717,8 +1727,7 @@ fn append_value_expr(
                         callee,
                         *argument,
                         values,
-                        declared,
-                        returns,
+                        CallEvalContext { declared, returns },
                         read_values,
                         unknown,
                         source.as_deref_mut(),
@@ -1741,8 +1750,7 @@ fn append_call_result(
     callee: &FlowValueExpr,
     argument: Option<usize>,
     values: &mut ValuesBuilder,
-    declared: &[bool],
-    returns: &ReturnInputs,
+    eval: CallEvalContext<'_>,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
     mut source: Option<&mut origin_trace::SourceCapture<'_>>,
@@ -1751,8 +1759,8 @@ fn append_call_result(
     append_value_expr(
         callee,
         &mut targets,
-        declared,
-        returns,
+        eval.declared,
+        eval.returns,
         read_values,
         unknown,
         None,
@@ -1762,16 +1770,16 @@ fn append_call_result(
     for origin in targets.finish() {
         if let Value::Alloc(Kind::Function, function) = origin {
             if let Some(argument) = argument
-                && let Some(summary) = returns.summaries.get(&function)
+                && let Some(summary) = eval.returns.summaries.get(&function)
             {
                 let argument = actual.get_or_insert_with(|| {
                     let mut result = values.child();
                     let mut capture = source.as_deref().map(|source| source.child());
                     append_value_expr(
-                        &returns.arguments[argument],
+                        &eval.returns.arguments[argument],
                         &mut result,
-                        declared,
-                        returns,
+                        eval.declared,
+                        eval.returns,
                         read_values,
                         unknown,
                         capture.as_mut(),
@@ -1784,9 +1792,9 @@ fn append_call_result(
                     *summary,
                     argument,
                     values,
-                    &|slot| declared[slot.0 as usize],
-                    &returns.summaries,
-                    returns.default_property,
+                    &|slot| eval.declared[slot.0 as usize],
+                    &eval.returns.summaries,
+                    eval.returns.default_property,
                     read_values,
                     unknown,
                     source.as_deref_mut(),
@@ -1822,13 +1830,15 @@ fn append_summary_result(
 ) {
     if append_leaf_summary(
         summary,
-        actual,
+        SummaryArgument {
+            values: actual,
+            sources: actual_source,
+        },
         values,
         default_property,
         read_values,
         unknown,
         source.as_deref_mut(),
-        actual_source,
     ) {
         return;
     }
@@ -1849,13 +1859,15 @@ fn append_summary_result(
                     Some(leaf @ (ReturnSummary::Argument | ReturnSummary::ArgumentProperty(_))) => {
                         append_leaf_summary(
                             *leaf,
-                            actual,
+                            SummaryArgument {
+                                values: actual,
+                                sources: actual_source,
+                            },
                             values,
                             default_property,
                             read_values,
                             unknown,
                             source.as_deref_mut(),
-                            actual_source,
                         );
                     }
                     _ => {
@@ -1877,31 +1889,37 @@ fn append_summary_result(
 
 fn append_leaf_summary(
     summary: ReturnSummary,
-    actual: &Values,
+    actual: SummaryArgument<'_>,
     values: &mut ValuesBuilder,
     default_property: Option<PropertySlot>,
     read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
     unknown: &mut impl FnMut(SourceUnknownCause),
     mut source: Option<&mut origin_trace::SourceCapture<'_>>,
-    actual_source: Option<&origin_trace::InputSnapshot>,
 ) -> bool {
     match summary {
         ReturnSummary::Argument => {
-            if let (Some(source), Some(actual_source)) = (source, actual_source) {
+            if let (Some(source), Some(actual_source)) = (source, actual.sources) {
                 source.merge(actual_source);
             }
-            values.extend(actual);
+            values.extend(actual.values);
         }
         ReturnSummary::ArgumentProperty(property) => {
-            append_property_values(actual, Some(property), values, read_values, unknown, source);
+            append_property_values(
+                actual.values,
+                Some(property),
+                values,
+                read_values,
+                unknown,
+                source,
+            );
         }
         ReturnSummary::ArgumentOrDefault => {
-            if let (Some(source), Some(actual_source)) = (source.as_deref_mut(), actual_source) {
+            if let (Some(source), Some(actual_source)) = (source.as_deref_mut(), actual.sources) {
                 source.merge(actual_source);
             }
-            values.extend(actual);
+            values.extend(actual.values);
             append_property_values(
-                actual,
+                actual.values,
                 default_property,
                 values,
                 read_values,
@@ -3694,16 +3712,6 @@ impl FlowRules {
                 }
             }
         }
-    }
-
-    fn values_of_expr_tracking(
-        &self,
-        expr: &FlowValueExpr,
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        dependencies: Option<&mut FxHashSet<FlowKey>>,
-    ) -> Values {
-        self.values_of_expr_tracking_with_sources(expr, context, dependencies)
-            .0
     }
 
     fn values_of_expr_tracking_with_sources(
