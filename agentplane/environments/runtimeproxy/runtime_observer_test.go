@@ -24,6 +24,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -343,10 +344,6 @@ func testRuntimeObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	creds, err := runtimeSecurity.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
@@ -362,9 +359,7 @@ func testRuntimeObserver(t *testing.T, mode peertls.SecurityMode) {
 	}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
 	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	destination.target = listener.Addr().String()
+	destination.target = grpcserver.Serve(t, server)
 	cancel, done, _ := runObserver(t, g, destination)
 	connection := awaitConnection(t, g, string(f.sandbox.UID), "test-runner-boot", done)
 	if _, err := connection.runtime.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {

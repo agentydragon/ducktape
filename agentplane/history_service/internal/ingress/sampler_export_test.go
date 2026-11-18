@@ -3,7 +3,6 @@ package ingress
 import (
 	"context"
 	"database/sql"
-	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -196,10 +196,6 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		History: history, Timing: Timing{IdleAck: 10 * time.Second, SilenceLimit: 30 * time.Second},
 		SamplerServiceActor: transport.CentralSamplerURI,
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Push as deployed: runners use live workload SVIDs and the central sampler is an exact service
 	// SVID that may delegate the live Identity a Session executes as.
 	named := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "test-export-identity-"+uuid.NewString()[:8], samplerExportPolicyNamespace)
@@ -223,11 +219,10 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	ingressServer := &samplerExportIngressServer{service: service, plans: plans}
 	session_ingresspb.RegisterSessionJournalIngressServer(server, ingressServer)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	address := grpcserver.Serve(t, server)
 
 	return samplerExportFixture{
-		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: listener.Addr().String(), tls: exportTLS,
+		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: address, tls: exportTLS,
 		identity: named, ingress: ingressServer,
 	}
 }

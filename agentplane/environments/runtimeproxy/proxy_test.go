@@ -2,7 +2,6 @@ package runtimeproxy
 
 import (
 	"context"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -65,10 +65,6 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	credentials, err := f.runtimeTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
@@ -80,9 +76,7 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	host := &observedHarnessHost{watchStarted: make(chan struct{})}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
 	harnesshostpb.RegisterHarnessHostServer(runtimeServer, host)
-	go func() { _ = runtimeServer.Serve(runtimeListener) }()
-	t.Cleanup(runtimeServer.Stop)
-	destination.target = runtimeListener.Addr().String()
+	destination.target = grpcserver.Serve(t, runtimeServer)
 
 	observerContext, stopObserver := context.WithCancel(t.Context())
 	t.Cleanup(stopObserver)

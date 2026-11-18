@@ -2,13 +2,13 @@ package runtimeproxy
 
 import (
 	"context"
-	"net"
 	"testing"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -41,10 +41,6 @@ func TestRuntimeDiagnosticsUsesFencedLiveConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	credentials, err := f.runtimeTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
@@ -58,9 +54,7 @@ func TestRuntimeDiagnosticsUsesFencedLiveConnection(t *testing.T) {
 	runtime := &diagnosticRuntime{observedRuntime: observedRuntime{sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "diagnostic-boot"}, read: func() (*sessionpb.EnvironmentRuntimeStatus, error) { return snapshot, nil }}
 	server := grpc.NewServer(grpc.Creds(credentials))
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	destination.target = listener.Addr().String()
+	destination.target = grpcserver.Serve(t, server)
 	cancel, done, _ := runObserver(t, proxy, destination)
 	connection := awaitConnection(t, proxy, string(f.sandbox.UID), runtime.bootID, done)
 	// Neither a previous client context nor untrusted proxy headers supply the Runtime fence.
