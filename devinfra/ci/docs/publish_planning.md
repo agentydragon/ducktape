@@ -85,8 +85,8 @@ file of the same name differ only by prefix.
 The publish side resolves the same way: `artifact_targets.json` names targets
 and released filenames, never Bazel output paths, and after each build
 `release_assets.py` reads that build's own stream to find where the assets
-landed (`bes.artifact_output` — the one default-group, non-aspect file a label
-reports; bazel-ci's lint aspects complete report files under the same label).
+landed. The planner, release job, and Nix overrides use the same resolver for a
+label's single default-group, non-aspect output and its expected filename.
 Unlike the planner it fails loud, because it runs in the job about to publish.
 
 ## The planner fails open; the push job does not
