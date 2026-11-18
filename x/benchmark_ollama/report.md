@@ -83,8 +83,7 @@ destroying throughput.
 
 ### 1. `OLLAMA_NUM_CTX` controls KV cache preallocation, not just truncation
 
-A previous claim that this env var "just controls truncation" was wrong. Setting it
-to 1M caused the 20b model's output speed to go from 228 t/s to N/A. The KV cache
+Setting it to 1M caused the 20b model's output speed to go from 228 t/s to N/A. The KV cache
 preallocated at 1M tokens consumed ~16 GiB of VRAM on the 20b model (which only
 needs 13 GB for weights), likely forcing partial CPU offload.
 
