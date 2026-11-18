@@ -151,6 +151,24 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pyyaml",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "go_service_test",
+    srcs = ["go_service_test.py"],
+    deps = [
+        ":go_service",
+        "//:conftest",
+        "//agentplane/grpc:calls",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
