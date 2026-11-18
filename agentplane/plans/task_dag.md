@@ -596,7 +596,6 @@ flowchart TD
     SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping, section 13]
     HISTORY_SANDBOX_RECORD[Conditional: Sandbox history record and tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
-    HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
     PLATFORM_GUIDANCE_SINGLE_OWNER[Later refactor: one platform-guidance owner]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN --> PLATFORM_GUIDANCE_SINGLE_OWNER
@@ -694,15 +693,6 @@ never deletes it. The History rule in [service boundaries](../docs/service_bound
 [History README](../history_service/README.md) change in the same PR. Test a tag edit reaching the
 record, a deleted Sandbox keeping its last tags, a same-name replacement getting its own record, and a
 restarted watch catching up.
-
-### `HISTORY_SANDBOX_ASSOCIATION_SOURCE` — an authoritative Sandbox UID source for History
-
-**Unscheduled TODO (operator, #11835).** History resolves a writer's Sandbox UID from the controller
-ownerReference on its ServiceAccount ([README](../history_service/README.md#session-writer-and-execution-sandbox)).
-Consider whether the Sandbox Controller can expose a cleaner authoritative association instead; keep the
-ownerReference until that is reviewed. Related: a ServiceAccount recreated in place under the same Sandbox
-keeps failing as a different writer, and letting the Sandbox UID take over as the pin is a separate
-decision.
 
 ### Approved caller-privilege delegation implementation
 
@@ -2158,7 +2148,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: choose a shared service settings framework]
 ```
@@ -2177,18 +2166,6 @@ agent-sandbox `Sandbox` CRD remains separately owned. Action execution boxes kee
 and reference migration that preserves identities and stored data. Do not use a global text
 replacement or implicitly rename upstream APIs/resources. No implementation or wire/CRD/storage
 cutover is approved here; this proposal is independent of current authorization and reliability work.
-
-### `ENVIRONMENT_RUNTIME_SERVICE_SPLIT` — separate environment and Harness/Session APIs
-
-**Unscheduled.** Split the renamed public Environment Runtime API by
-responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
-actions belong to the Environment API; Harness/Session admission and operations belong to the
-Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
-the implementation design. Keep the Runtime-to-Host in-process lifecycle contract distinct. This split
-does not decide whether the services use separate binaries or Deployments; that grouping remains
-separate from API ownership. Update Gateway routing, authorization, tests, component specs and system
-overviews with the split. Base the boundary on
-[`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
