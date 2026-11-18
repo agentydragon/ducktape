@@ -4,14 +4,12 @@ name: LiteLLM Crossplane Provider
 
 on:
   pull_request:
-    paths:
+    paths: &provider_paths
       - ".github/workflows/crossplane-provider-litellm.yml"
       - "cluster/cdk8s/providers/litellm/**"
   push:
     branches: [devel]
-    paths:
-      - ".github/workflows/crossplane-provider-litellm.yml"
-      - "cluster/cdk8s/providers/litellm/**"
+    paths: *provider_paths
   workflow_dispatch:
 
 concurrency:
