@@ -1328,6 +1328,71 @@ The wrapper completed normally after the analyzer's deliberate timeout; that
 wrapper success is not an analysis pass. Raw metrics, perf data and standard
 reports are in `numeric-profile/` under the same scratch root.
 
+### Counted-loop numeric-read candidate
+
+The next candidate retains a per-member numeric certificate for a function-local
+counted loop. Its proof and exclusions are in
+<../docs/inference.md#counted-loop-read-certificates>. It also covers a counter
+reused outside the loop: only the certified read changes. A numeric initializer
+alone is not a global type for the binding.
+
+The program-query regression
+`counted_loop_certificate_survives_program_expression_queries_only_at_its_sites`
+[fails on the numeric-aggregate baseline](https://app.buildbuddy.io/invocation/bd697b55-bf32-408b-9760-5a1c763a02d6):
+the inside-loop read incorrectly includes the unrelated named-field callback.
+The [combined corrected checks](https://app.buildbuddy.io/invocation/078e2a50-8bef-4b2c-8679-02f69478dfae)
+pass all 446 analysis tests (three pre-existing ignored tests), the analysis
+library checks, and the numeric-member, program-value-flow and return-summary
+CLI suites. Controls cover writes, captures, dynamic scope, parameter aliases,
+later reuse and complete-span membership for nested members with the same start
+byte. The CLI unsafe cases still reject and their emitted candidates demonstrate
+the expected TDZ. The independent computed-read execution fallback remains.
+
+The [optimized build](https://app.buildbuddy.io/invocation/d119db39-bc1e-4292-9993-a79a7a5ed01c)
+uses parent `5841f1f4564df4b4df935f97c94432d50673658e` plus
+`loop-source.patch`, SHA-256
+`9b9c77966e7eef508eb472d256f943af646124b19ad11df3d169a378315924af`.
+Binary hashes are in `loop-tools/identity.json` under the scratch root above.
+The fresh private projection passed in 14.44 seconds, with 1,450,236 KiB
+maximum RSS. The whole pipeline then hit the 16 GiB cgroup memory cap after
+**467.833 seconds wall time and 458.224 seconds CPU**, with no swap. Analysis
+did not complete, and application and runtime checks were not reached. This
+still fails the 600-second / 16-GiB completion requirement; it is not a measured
+private speedup. The run used four Rayon workers and disabled metrics, with
+fresh projection and no saved analysis. Receipts are in `tana-loop-fresh/` and
+its adjacent stderr file under the same scratch root.
+
+Three interleaved baseline/candidate pairs per metrics mode used the same
+optimized baseline and pre-staged Excalidraw inputs as the numeric-key experiment.
+All 12 fresh projection/analysis/apply pipelines passed and emitted byte-identical
+manifests of 156 JavaScript files. Raw phase times, commands, manifests and JSONL
+are in `excalidraw-loop-paired/` under the scratch root above.
+
+| Whole pipeline | Median wall baseline → candidate | Median paired wall ratio | Paired wall ratio range | Median CPU baseline → candidate | Maximum RSS baseline → candidate |
+| -------------- | -------------------------------: | -----------------------: | ----------------------: | ------------------------------: | -------------------------------: |
+| Metrics off    |                  16.07 → 15.90 s |                   0.9894 |           0.9888–1.0035 |                 23.85 → 23.44 s |            713,972 → 807,676 KiB |
+| Metrics on     |                  15.66 → 15.89 s |                   1.0089 |           0.9778–1.0775 |                 23.25 → 23.68 s |            811,304 → 810,096 KiB |
+
+Every observed pair remains below the requested 10% wall-time slowdown ceiling.
+Memory is reported separately: the metrics-off maximum RSS is higher in the
+candidate. This regression check does not close the private completion gate.
+
+A separate 120-second production-analyzer prefix used one-second OTLP and
+49 Hz perf sampling. Source-flow solving had not completed. The last complete
+snapshot recorded 104,817,363 reads and 58,495,545 subscriptions; 97,062,633 reads
+were named-property lookups, including 70,595,464 absent reads. The flat profile
+attributes 34.99% self CPU to bitmap `Store::is_subset`, 9.81% to the expression
+fact-read closure and 6.60% to dependency B-tree insertion. Thus the remaining
+observed work is not predominantly numeric-aggregate lookup. These prefix totals
+are not a throughput comparison: solver progress differs between runs.
+
+The profile wrapper completed after the deliberate analyzer timeout in 124.923
+seconds, with 118.326 seconds CPU and a 9.4-GiB cgroup peak; wrapper success is
+not an analyzer pass. Raw metrics, perf data and standard reports are in
+`loop-profile/`. Choosing the next semantic change still requires a transfer
+witness from this combined candidate, including confirmation that the intended
+counted-loop read lowered to `NumericMember`.
+
 ## Candidate-containment graph materialization (2026-11-17)
 
 A late bounded run identifies the terminal allocation more narrowly than the
