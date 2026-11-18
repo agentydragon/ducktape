@@ -33,16 +33,16 @@ must be present in the same result. Records and payload paths are independent
 of the test framework. The Python writer hashes the JSON-encoded tuple
 `[case_id, checkpoint, role]` for safe filenames; collectors use the fields,
 not those filenames, as identity. A producer must not publish the same tuple
-twice in one test result. In particular, use distinct checkpoints for multiple
-captures by one case.
+twice in one test result. Publish the complete payload before atomically exposing
+its record. Use distinct checkpoints for multiple captures by one case.
 
 The `screenshot` role is a PNG and is eligible for visual review. Other roles
 are collected as outputs but are not compared or uploaded as screenshot images.
 The full logical identity is repository, canonical Bazel target label, case ID,
 checkpoint, and role. Invocation, configuration, run, shard, attempt, status, and
 CAS URI describe an observation, not the identity. A case moving to another
-shard keeps its identity; different cases cannot collide by choosing the same
-checkpoint.
+shard keeps its identity. Distinct shards claiming the same logical identity in
+one configured run conflict even when their payload bytes match.
 
 Python tests can use the `test_outputs` pytest fixture to bind the full
 repository-relative node ID automatically. `VisualPage.capture()` uses that

@@ -73,10 +73,9 @@ are selected.
 
 Per target, first check `reviews-test-outputs/<base_sha>/tests/<slug>/metadata.json`,
 then the mutable `baselines/reviews-test-outputs/<slug>.json` pointer. Only complete,
-stable targets are eligible. If neither exists, screenshots are new. The new namespace
-intentionally does not read filename-based baselines; devel must publish fresh ones
-after the cutover. Clear the old bundle and pointer namespaces as part of the
-hard cutover; historical pages in those namespaces will no longer be available.
+stable targets are eligible. If neither exists, screenshots are new. Structured output
+baselines use their own namespace. See [retention planning](retention.md) for the guard
+against older filename-based bundle and pointer namespaces.
 
 The `bazel-configuration-exact-v1` comparison profile allows comparisons only for
 one known, equal configuration ID on both sides. A missing, changed, or ambiguous
