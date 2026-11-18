@@ -20,16 +20,25 @@ import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from concurrent.futures import Future
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 from urllib.parse import urlsplit
 
-from playwright.sync_api import BrowserContext, Error as PlaywrightError, sync_playwright
+from playwright.sync_api import (
+    BrowserContext,
+    Error as PlaywrightError,
+    Page,
+    Playwright,
+    WebSocketRoute,
+    sync_playwright,
+)
 from starlette.websockets import WebSocket, WebSocketDisconnect
 from websockets.asyncio.client import connect as connect_websocket
 from websockets.exceptions import WebSocketException
 from websockets.typing import Subprotocol
+
+from platform_sessions.provider.cdp_browser import CdpBrowser, validate_options
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -64,6 +73,7 @@ class InteractiveBrowserRuntime:
         initial_url: str | None = None,
         owner_token: str,
         launch_options: Mapping[str, Any] | None = None,
+        launch_mode: Literal["playwright", "cdp"] = "playwright",
         on_viewer_connect: Callable[[], Awaitable[None] | None] | None = None,
         on_viewer_disconnect: Callable[[], Awaitable[None] | None] | None = None,
         xvfb_executable: str = "Xvfb",
@@ -83,10 +93,17 @@ class InteractiveBrowserRuntime:
         options = dict(launch_options or {})
         if any(key in options for key in ("headless", "env", "viewport", "user_data_dir")):
             raise ValueError("launch_options cannot override browser isolation settings")
+        if launch_mode not in ("playwright", "cdp"):
+            raise ValueError("unknown browser launch mode")
+        if launch_mode == "cdp":
+            if initial_url is not None:
+                raise ValueError("CDP launch requires owner-admitted navigation via run_viewer_sync")
+            validate_options(options)
         self._profile_dir = profile_dir
         self._initial_url = initial_url
         self._owner_token = owner_token
         self._launch_options = options
+        self._launch_mode = launch_mode
         self._on_viewer_connect = on_viewer_connect
         self._on_viewer_disconnect = on_viewer_disconnect
         self._xvfb_executable = xvfb_executable
@@ -105,6 +122,9 @@ class InteractiveBrowserRuntime:
         self._viewer_ended.set()
         self._thread: threading.Thread | None = None
         self._context: BrowserContext | None = None
+        self._cdp_browser: CdpBrowser | None = None
+        self._viewer_page: Page | None = None
+        self._viewer_network_allowed = False
         self._xvfb: subprocess.Popen[bytes] | None = None
         self._vnc: subprocess.Popen[bytes] | None = None
         self._websockify: subprocess.Popen[bytes] | None = None
@@ -223,6 +243,8 @@ class InteractiveBrowserRuntime:
             with suppress(OSError, RuntimeError):
                 await websocket.close(code=1011)
         finally:
+            with self._state_lock:
+                self._viewer_network_allowed = False
             cancelled = False
             quiesce_failed = False
             try:
@@ -269,6 +291,44 @@ class InteractiveBrowserRuntime:
             if cancelled:
                 raise asyncio.CancelledError
 
+    def run_viewer_sync(self, callback: Callable[[Page], _T]) -> _T:
+        """Navigate the single page admitted to the authenticated owner viewer.
+
+        The CDP context keeps every other page denied. Provider request pages must
+        explicitly continue their own allowed requests instead of falling back.
+        """
+        with self._state_lock:
+            if not self._viewer_connected:
+                raise RuntimeError("owner viewer is not admitted")
+
+        def run(context: BrowserContext) -> _T:
+            with self._state_lock:
+                if not self._viewer_connected:
+                    raise RuntimeError("owner viewer is no longer admitted")
+            if self._viewer_page is None or self._viewer_page.is_closed():
+                self._viewer_page = context.new_page()
+                self._viewer_page.route_web_socket("**/*", self._viewer_websocket)
+            for page in context.pages:
+                if page is not self._viewer_page:
+                    page.close()
+            with self._state_lock:
+                self._viewer_network_allowed = True
+            return callback(self._viewer_page)
+
+        return self.run_sync(run, allow_during_viewer=True)
+
+    def _allow_viewer_page(self, page: Page) -> bool:
+        with self._state_lock:
+            return self._viewer_connected and self._viewer_network_allowed and page is self._viewer_page
+
+    def _viewer_websocket(self, route: WebSocketRoute) -> None:
+        with self._state_lock:
+            allowed = self._viewer_connected and self._viewer_network_allowed
+        if allowed:
+            route.connect_to_server()
+        else:
+            route.close()
+
     async def close(self) -> None:
         """Stop admitting browser work and disconnect the viewer before process teardown."""
         async with self._lifecycle_lock:
@@ -276,6 +336,7 @@ class InteractiveBrowserRuntime:
                 if self._state == "stopped":
                     return
                 self._state = "stopping"
+                self._viewer_network_allowed = False
                 viewer = self._viewer_socket
             if viewer is not None:
                 with suppress(OSError, RuntimeError):
@@ -386,38 +447,29 @@ class InteractiveBrowserRuntime:
 
         def serve() -> None:
             try:
-                with sync_playwright() as playwright:
-                    options = dict(self._launch_options)
-                    args = list(options.pop("args", ()))
-                    args.extend(
-                        (
-                            "--no-sandbox",
-                            "--disable-dev-shm-usage",
-                            "--disk-cache-size=16777216",
-                            "--media-cache-size=8388608",
+                with sync_playwright() as playwright, ExitStack() as resources:
+                    if self._launch_mode == "cdp":
+                        self._cdp_browser = CdpBrowser(
+                            playwright=playwright,
+                            profile_dir=self._profile_dir,
+                            display=self._display or "",
+                            options=self._launch_options,
+                            timeout_seconds=self._startup_timeout_seconds,
+                            allow_viewer_page=self._allow_viewer_page,
                         )
-                    )
-                    context = playwright.chromium.launch_persistent_context(
-                        str(self._profile_dir),
-                        headless=False,
-                        viewport=None,
-                        args=args,
-                        env={**os.environ, "DISPLAY": self._display or ""},
-                        timeout=self._startup_timeout_seconds * 1000,
-                        **options,
-                    )
+                        context = resources.enter_context(self._cdp_browser)
+                    else:
+                        context = resources.enter_context(self._launch_context(playwright))
                     self._context = context
-                    try:
-                        self._prepare_initial_page(context)
-                        started.set()
-                        while (work := self._jobs.get()) is not None:
-                            try:
-                                work.result.set_result(work.callback(context))
-                            except BaseException as error:
-                                work.result.set_exception(error)
-                    finally:
-                        context.close()
-                        self._context = None
+                    self._prepare_initial_page(context)
+                    started.set()
+                    while (work := self._jobs.get()) is not None:
+                        try:
+                            work.result.set_result(work.callback(context))
+                        except BaseException as error:
+                            work.result.set_exception(error)
+                    self._context = None
+                    self._viewer_page = None
             except BaseException as error:
                 failure.append(error)
                 started.set()
@@ -439,6 +491,22 @@ class InteractiveBrowserRuntime:
             raise TimeoutError("Chromium did not start")
         if failure:
             raise RuntimeError("Chromium did not start") from failure[0]
+
+    def _launch_context(self, playwright: Playwright) -> BrowserContext:
+        options = dict(self._launch_options)
+        args = list(options.pop("args", ()))
+        args.extend(
+            ("--no-sandbox", "--disable-dev-shm-usage", "--disk-cache-size=16777216", "--media-cache-size=8388608")
+        )
+        return playwright.chromium.launch_persistent_context(
+            str(self._profile_dir),
+            headless=False,
+            viewport=None,
+            args=args,
+            env={**os.environ, "DISPLAY": self._display or ""},
+            timeout=self._startup_timeout_seconds * 1000,
+            **options,
+        )
 
     def _prepare_initial_page(self, context: BrowserContext) -> None:
         # A provider may keep Chromium at about:blank until authenticated viewer
@@ -466,6 +534,8 @@ class InteractiveBrowserRuntime:
         if self._thread is not None:
             self._jobs.put(None)
             self._thread.join(timeout=15)
+        if self._cdp_browser is not None:
+            self._cdp_browser.stop_process()
         worker_alive = self._thread is not None and self._thread.is_alive()
         for process in (self._websockify, self._vnc, self._xvfb):
             if process is None:

@@ -31,6 +31,20 @@ restored tabs and moves the remaining tab to `about:blank` before reporting read
 navigate in `on_viewer_connect` after authenticated admission and before viewer acceptance. Chromium
 may issue a transient request while restoring a profile before Playwright exposes the context, so
 providers quiesce visible pages before orderly shutdown as well.
+The experimental `launch_mode="cdp"` starts ordinary Chromium without a startup window,
+then attaches Playwright over a random loopback-only CDP port. It installs permanent HTTP(S)
+and WebSocket fallback guards before creating a visible page. Provider request routes must use
+`continue_()` for their explicitly allowed requests; `fallback()` remains denied. Only the
+page selected by `run_viewer_sync` can use unscoped HTTP(S) and WebSockets during authenticated
+viewer admission. Disconnect revokes that allowance before the provider quiesces the page.
+This mode requires `service_workers="block"`, refuses profiles containing service-worker
+storage before process launch, and blocks new registrations before page scripts run. Use a
+fresh profile and sign in again when an existing profile is refused. Optional HAR recording
+uses the attached context and is finalized during orderly shutdown.
+This is a canary experiment, not process-level network isolation. Its guards cover page
+HTTP(S) and WebSockets; Chromium background services and other protocols are outside that
+boundary. Background networking, extensions and QUIC are disabled, but the absence of all
+pre-attachment process egress is not guaranteed. The default Playwright launch path is unchanged.
 The public upgrade requires the owner's session cookie and an exact public `Origin`, even though
 ordinary management GETs allow a missing Origin. A bearer token alone cannot open the viewer.
 The gateway relays binary RFB frames without applying the 120-second HTTP operation deadline;

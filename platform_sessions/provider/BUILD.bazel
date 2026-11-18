@@ -214,6 +214,7 @@ py_library(
     name = "interactive_browser",
     srcs = ["interactive_browser.py"],
     deps = [
+        ":cdp_browser",
         "@pypi//playwright",
         "@pypi//starlette",
         "@pypi//websockets",
@@ -230,5 +231,24 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//websockets",
+    ],
+)
+
+py_library(
+    name = "cdp_browser",
+    srcs = ["cdp_browser.py"],
+    deps = ["@pypi//playwright"],
+)
+
+py_test(
+    name = "cdp_browser_test",
+    srcs = ["cdp_browser_test.py"],
+    deps = [
+        ":cdp_browser",
+        "//:conftest",
+        "//util/testing/browser:launcher",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
