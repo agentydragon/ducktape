@@ -2,13 +2,14 @@
 
 use graph_provenance::VerifiedGraphSourceContext;
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Args;
 use peel::OutputFormat;
+use peel::assignment::{AssignmentPlan, SourceUnitAssignment};
 use serde_json::from_slice;
+use spec::ModulePath;
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::load_module_docs;
@@ -99,37 +100,22 @@ pub fn run_modules_apply(
         args.tree_config.as_deref(),
         analysis_engine_sha256,
     )?;
-    let (assignments, import_order) = if let Some(path) = &args.plan {
-        let plan: peel::assignment::AssignmentPlan = from_slice(&fs::read(path)?)?;
-        plan.verify(&args.graph)?;
+    let (mut assignments, import_order) = read_assignment_request(
+        &args.graph,
+        args.plan.as_deref(),
+        args.assignments.as_deref(),
+        args.import_order.as_deref(),
+    )?;
+    if args.plan.is_some() {
         let input = analysis::DependencyGraphInput::read(&args.graph)?;
-        (
-            physical_plan_changes(
-                plan.changes,
-                &input,
-                args.tree_config.as_deref(),
-                &args.modules_root,
-                source_context,
-            )?,
-            Some(plan.import_order),
-        )
-    } else {
-        let assignments = serde_json::from_str(&read_batch(
-            args.assignments
-                .as_deref()
-                .expect("clap requires assignments or plan"),
-        )?)
-        .context("parsing source-unit assignment batch")?;
-        let import_order = args
-            .import_order
-            .as_ref()
-            .map(|path| {
-                from_slice(&fs::read(path)?)
-                    .with_context(|| format!("parsing import order {}", path.display()))
-            })
-            .transpose()?;
-        (assignments, import_order)
-    };
+        assignments = physical_plan_changes(
+            assignments,
+            &input,
+            args.tree_config.as_deref(),
+            &args.modules_root,
+            source_context,
+        )?;
+    }
     let readable_names = args
         .readable_names
         .as_ref()
@@ -244,12 +230,31 @@ pub(super) fn physical_plan_changes(
     Ok(changes)
 }
 
-fn read_batch(path: &str) -> Result<String> {
-    Ok(if path == "-" {
-        let mut text = String::new();
-        std::io::stdin().read_to_string(&mut text)?;
-        text
+pub(super) fn read_assignment_request(
+    graph: &Path,
+    plan: Option<&Path>,
+    batch: Option<&str>,
+    import_order: Option<&Path>,
+) -> Result<(Vec<SourceUnitAssignment>, Option<Vec<ModulePath>>)> {
+    if let Some(path) = plan {
+        let plan: AssignmentPlan = from_slice(&fs::read(path)?)?;
+        plan.verify(graph)?;
+        return Ok((plan.changes, Some(plan.import_order)));
+    }
+    let batch = batch.expect("clap requires a batch or plan");
+    let bytes = if batch == "-" {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::stdin(), &mut bytes)?;
+        bytes
     } else {
-        fs::read_to_string(path).with_context(|| format!("reading {path}"))?
-    })
+        fs::read(batch).with_context(|| format!("reading {batch}"))?
+    };
+    let changes = from_slice(&bytes).context("parsing source-unit assignment batch")?;
+    let import_order = import_order
+        .map(|path| {
+            from_slice(&fs::read(path)?)
+                .with_context(|| format!("parsing import order {}", path.display()))
+        })
+        .transpose()?;
+    Ok((changes, import_order))
 }

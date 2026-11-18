@@ -3,8 +3,11 @@
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
-use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
+use crate::module_apply::{
+    ModulesApplyArgs, physical_plan_changes, read_assignment_request, run_modules_apply,
+};
 use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
+use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
@@ -12,8 +15,8 @@ use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
 use peel::{CommonArgs, OutputFormat, ProposeArgs};
-use std::path::PathBuf;
-use std::{fs, io::Read};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit, merge, delete, propose, check, apply and list verbs.
@@ -264,32 +267,12 @@ fn run_modules_check(
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<()> {
     let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
-    let bytes = if args.batch.as_deref() == Some("-") {
-        let mut bytes = Vec::new();
-        std::io::stdin().read_to_end(&mut bytes)?;
-        bytes
-    } else {
-        let path = args
-            .plan
-            .as_deref()
-            .or_else(|| args.batch.as_deref().map(std::path::Path::new))
-            .expect("clap requires a batch or plan");
-        fs::read(path).with_context(|| format!("reading {}", path.display()))?
-    };
-    let (mut changes, import_order): (Vec<SourceUnitAssignment>, Vec<spec::ModulePath>) =
-        if args.plan.is_some() {
-            let plan: AssignmentPlan = serde_json::from_slice(&bytes)?;
-            plan.verify(&args.common.dependency_graph_path)?;
-            (plan.changes, plan.import_order)
-        } else {
-            let import_order = if let Some(path) = &args.import_order {
-                serde_json::from_slice(&fs::read(path)?)
-                    .with_context(|| format!("parsing import order {}", path.display()))?
-            } else {
-                Vec::new()
-            };
-            (serde_json::from_slice(&bytes)?, import_order)
-        };
+    let (mut changes, import_order) = read_assignment_request(
+        &args.common.dependency_graph_path,
+        args.plan.as_deref(),
+        args.batch.as_deref(),
+        args.import_order.as_deref(),
+    )?;
     if args.plan.is_none()
         && input.report().ownership_subset.is_none()
         && let Some(config) = &args.tree_config
@@ -301,11 +284,7 @@ fn run_modules_check(
         }
     }
     let problem = AssignmentProblem::prepare(&input)?;
-    let import_order = if args.plan.is_some() || args.import_order.is_some() {
-        import_order
-    } else {
-        input.report().import_order.clone()
-    };
+    let import_order = import_order.unwrap_or_else(|| input.report().import_order.clone());
     let candidate = problem.candidate(&changes)?;
     let validation = problem.validate_with_priority(&candidate, &import_order)?;
     for change in &mut changes {
@@ -325,28 +304,14 @@ fn run_modules_check(
                 .source_root
                 .as_deref()
                 .context("executable plan check requires --source-root for selector preflight")?;
-            let assignments = crate::module_apply::physical_plan_changes(
-                changes.clone(),
-                &input,
-                args.tree_config.as_deref(),
-                &args.common.modules_root,
-                source_context,
-            )?;
-            crate::source_unit_apply::run_source_unit_apply(
+            preflight_assignment(
                 stderr,
-                &args.common.modules_root,
+                &input,
                 &args.common.dependency_graph_path,
+                &args.common.modules_root,
                 source_root,
                 source_context,
-                crate::source_unit_apply::SourceUnitApplyOptions {
-                    tree_config: args.tree_config.as_deref(),
-                    assignments,
-                    import_order: Some(import_order.clone()),
-                    readable_names: Default::default(),
-                    selector_overrides: Default::default(),
-                    dry_run: true,
-                    effect_assessment_context: None,
-                },
+                preview_options(args.tree_config.as_deref(), changes.clone(), &import_order),
             )
         })();
         realization.err().map(|error| format!("{error:#}"))
@@ -496,20 +461,47 @@ fn reject_selector_realization(report: &mut peel::search::SearchReport, error: &
     ));
 }
 
-fn proposal_apply_options<'a>(
-    args: &'a ProposeArgs,
-    report: &peel::search::SearchReport,
+fn preview_options<'a>(
+    tree_config: Option<&'a Path>,
     assignments: Vec<SourceUnitAssignment>,
-) -> crate::source_unit_apply::SourceUnitApplyOptions<'a> {
-    crate::source_unit_apply::SourceUnitApplyOptions {
-        tree_config: args.tree_config.as_deref(),
+    import_order: &[spec::ModulePath],
+) -> SourceUnitApplyOptions<'a> {
+    SourceUnitApplyOptions {
+        tree_config,
         assignments,
-        import_order: Some(report.import_order.clone()),
+        import_order: Some(import_order.to_vec()),
         readable_names: Default::default(),
         selector_overrides: Default::default(),
         dry_run: true,
         effect_assessment_context: None,
     }
+}
+
+fn preflight_assignment(
+    stderr: &mut (dyn std::io::Write + Send),
+    input: &analysis::DependencyGraphInput,
+    graph: &Path,
+    modules_root: &Path,
+    source_root: &Path,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    mut preview: SourceUnitApplyOptions<'_>,
+) -> Result<()> {
+    preview.assignments = physical_plan_changes(
+        preview.assignments,
+        input,
+        preview.tree_config,
+        modules_root,
+        source_context,
+    )?;
+    run_source_unit_apply(
+        stderr,
+        modules_root,
+        graph,
+        source_root,
+        source_context,
+        preview,
+    )?;
+    Ok(())
 }
 
 fn preflight_one_proposal(
@@ -536,27 +528,22 @@ fn preflight_one_proposal(
         .and(context)
         .and_then(VerifiedGraphSourceContext::modules_root)
         .unwrap_or(&args.modules_root);
-    let preflight = (|| {
-        let assignments = crate::module_apply::physical_plan_changes(
-            proposal.search.changes.clone(),
-            proposal
-                .input
-                .as_ref()
-                .expect("found proposal retains its graph"),
+    if let Err(error) = preflight_assignment(
+        stderr,
+        proposal
+            .input
+            .as_ref()
+            .expect("found proposal retains its graph"),
+        &proposal.graph,
+        modules_root,
+        source_root,
+        context,
+        preview_options(
             args.tree_config.as_deref(),
-            modules_root,
-            context,
-        )?;
-        crate::source_unit_apply::run_source_unit_apply(
-            stderr,
-            modules_root,
-            &proposal.graph,
-            source_root,
-            context,
-            proposal_apply_options(args, &proposal.search, assignments),
-        )
-    })();
-    if let Err(error) = preflight {
+            proposal.search.changes.clone(),
+            &proposal.search.import_order,
+        ),
+    ) {
         reject_selector_realization(&mut proposal.search, &error);
     }
     proposal.input = None;
@@ -667,10 +654,10 @@ fn preflight_selected_corpus(
                                     .input
                                     .take()
                                     .expect("each selected proposal consumes its graph once"),
-                                proposal_apply_options(
-                                    args,
-                                    &proposal.search,
+                                preview_options(
+                                    args.tree_config.as_deref(),
                                     proposal.search.changes.clone(),
+                                    &proposal.search.import_order,
                                 ),
                                 session,
                             )
