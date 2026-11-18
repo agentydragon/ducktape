@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,8 +13,9 @@ var errOwnerMismatch = errors.New("Session execution Identity does not match the
 
 // unavailableError marks a failed dependency call for a later claim. name is safe to show to the inbox owner.
 type unavailableError struct {
-	name string
-	err  error
+	name       string
+	err        error
+	retryAfter time.Duration
 }
 
 func (e *unavailableError) Error() string { return e.name + ": " + e.err.Error() }
@@ -29,6 +31,14 @@ func unavailable(err error) error {
 		name = name + ": " + code.String()
 	}
 	return &unavailableError{name: name, err: err}
+}
+
+// unavailableNotFound gives missing Session and History records explicit names and a longer retry.
+func unavailableNotFound(err error, name string, retryAfter time.Duration) error {
+	if status.Code(err) == codes.NotFound {
+		return &unavailableError{name: name, err: err, retryAfter: retryAfter}
+	}
+	return unavailable(err)
 }
 
 const timeoutName = "TimeoutError"

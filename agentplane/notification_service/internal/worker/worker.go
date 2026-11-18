@@ -119,6 +119,8 @@ func wait(ctx context.Context, changes <-chan struct{}, duration time.Duration) 
 type attended struct {
 	// deliveryError is what the inbox shows after this step.
 	deliveryError *string
+	// retryAfter extends the normal delivery-failure backoff for a stable dependency NotFound.
+	retryAfter time.Duration
 	// released is whether the claim was already given back, or lost.
 	released bool
 }
@@ -137,7 +139,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	if shutdown := ctx.Err(); shutdown != nil {
 		// What interrupted the work is not an outcome. The claim is given back all the same, so another replica
 		// need not wait out the lease.
-		released := w.release(grace, *claim, carriedError(*claim))
+		released := w.release(grace, *claim, carriedError(*claim), 0)
 		if released != nil {
 			// Run returns nil once stopped, so this log is the only trace that the inbox stays held until its
 			// lease runs out. The error text can carry the connection string; the type names the failure.
@@ -146,17 +148,21 @@ func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 		return true, errors.Join(shutdown, released)
 	}
 	if !outcome.released {
-		failure = errors.Join(failure, w.release(grace, *claim, outcome.deliveryError))
+		failure = errors.Join(failure, w.release(grace, *claim, outcome.deliveryError, outcome.retryAfter))
 	}
 	return true, failure
 }
 
 // release gives the claim back with the next deadline computed from the rows. A claim that was lost has nothing
 // to give back.
-func (w *Worker) release(ctx context.Context, claim inboxstore.Claim, deliveryError *string) error {
+func (w *Worker) release(ctx context.Context, claim inboxstore.Claim, deliveryError *string, retryAfter time.Duration) error {
 	due, err := w.noticeDueAt(ctx, claim)
 	if err == nil {
-		err = w.Store.Release(ctx, claim, deliveryError, due)
+		if retryAfter > 0 {
+			err = w.Store.ReleaseWithRetry(ctx, claim, deliveryError, due, retryAfter)
+		} else {
+			err = w.Store.Release(ctx, claim, deliveryError, due)
+		}
 	}
 	if errors.Is(err, inboxstore.ErrClaimLost) {
 		return nil
@@ -208,6 +214,7 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 		outcome.deliveryError = &message
 	case errors.As(err, &unavailableFailure):
 		failed(unavailableFailure.name)
+		outcome.retryAfter = unavailableFailure.retryAfter
 	default:
 		return outcome, err
 	}
@@ -218,7 +225,7 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 func (w *Worker) work(ctx context.Context, claim inboxstore.Claim, deliver bool) error {
 	session, err := w.Dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: claim.SessionID})
 	if err != nil {
-		return unavailable(err)
+		return unavailableNotFound(err, "SessionNotFoundError", seconds(w.Settings.UnavailableDestinationRetrySeconds))
 	}
 	if err := w.checkSessionOwner(claim, session.GetSession()); err != nil {
 		return err

@@ -40,7 +40,9 @@ UID. Dispatcher owns routing and automatic wake according to placement. A differ
 unplaced Session keeps the existing `OwnerMismatchError` outcome:
 the pending notice remains unattempted and retries after five seconds. Placement-free pending-and-retry
 policy changes belong to `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`. Explicit inbox retirement remains
-available through the API.
+available through the API. A Dispatcher `GetSession` NotFound is exposed as `SessionNotFoundError`; a
+History `ReadSessionEvents` NotFound is exposed as `HistoryNotFoundError`. Both keep the inbox data and
+retry using `unavailable_destination_retry_s` (30 seconds by default).
 
 Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
 inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own

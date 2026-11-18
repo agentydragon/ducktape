@@ -163,6 +163,14 @@ func (s *Store) fencedTransaction(ctx context.Context, claim Claim, f func(tx tr
 // Source deadlines are scheduled independently by ClaimSource. deliveryError is shown on the inbox until the
 // next release replaces it, and a failure postpones delivery work by at least five seconds.
 func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string, noticeDueAt *time.Time) error {
+	return s.ReleaseWithRetry(ctx, claim, deliveryError, noticeDueAt, releaseBackoff)
+}
+
+// ReleaseWithRetry gives the inbox back with a caller-selected minimum wait after delivery failures.
+func (s *Store) ReleaseWithRetry(ctx context.Context, claim Claim, deliveryError *string, noticeDueAt *time.Time, minimumRetry time.Duration) error {
+	if minimumRetry < releaseBackoff {
+		minimumRetry = releaseBackoff
+	}
 	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		released := now()
 		notice, err := latestNotice(ctx, tx, held.ID)
@@ -171,7 +179,7 @@ func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string,
 		}
 		waiting := notice != nil && !notice.Confirmed && notice.Error == nil
 		unread := held.LastCursor > max(held.Covered, held.Acknowledged, held.ExpiredThrough)
-		backoff := released.Add(releaseBackoff)
+		backoff := released.Add(minimumRetry)
 
 		var next *time.Time
 		earliest := func(deadline time.Time) {
