@@ -2,7 +2,8 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    TreeFixture, debundle_fixture_output, parse_stdout_json, read_tree, run_tree_graph_fixture,
+    TreeFixture, debundle_fixture_output, parse_stdout_json, process, read_tree,
+    run_tree_graph_fixture,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -160,11 +161,7 @@ fn graph_only_keeps_graph_acceptance_separate_from_selector_realization() {
     );
 
     let graph_only = run_check(&fixture, &batch, &order, Some(&config), true, true, false);
-    assert!(
-        graph_only.status.success(),
-        "{}",
-        String::from_utf8_lossy(&graph_only.stderr)
-    );
+    process::assert_success(&graph_only);
     let graph_only = parse_stdout_json(&graph_only);
     assert_eq!(graph_only["scope"], "graph_only");
     assert_eq!(graph_only["accepted"], true, "{graph_only}");
@@ -200,11 +197,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
     let config_before = fs::read(&config).unwrap();
 
     let checked = run_check(&fixture, &batch, &order, Some(&config), false, true, false);
-    assert!(
-        checked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&checked.stderr)
-    );
+    process::assert_success(&checked);
     let checked = parse_stdout_json(&checked);
     assert_eq!(checked["scope"], "executable_plan");
     assert_eq!(checked["accepted"], true, "{checked}");
@@ -235,11 +228,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
     let plan_path = fixture.root().join("checked-plan.json");
     fs::write(&plan_path, serde_json::to_vec_pretty(&plan).unwrap()).unwrap();
     let rechecked = check_plan(&fixture, &plan_path, &config);
-    assert!(
-        rechecked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&rechecked.stderr)
-    );
+    process::assert_success(&rechecked);
     let rechecked = parse_stdout_json(&rechecked);
     assert_eq!(rechecked["scope"], "executable_plan");
     assert_eq!(rechecked["accepted"], true, "{rechecked}");
@@ -265,11 +254,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
         "--format",
         "json",
     ]);
-    assert!(
-        preview.status.success(),
-        "{}",
-        String::from_utf8_lossy(&preview.stderr)
-    );
+    process::assert_success(&preview);
     assert_eq!(read_tree(&fixture.modules), modules_before);
     assert_eq!(fs::read(&config).unwrap(), config_before);
 
@@ -285,11 +270,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
         "--format",
         "json",
     ]);
-    assert!(
-        applied.status.success(),
-        "{}",
-        String::from_utf8_lossy(&applied.stderr)
-    );
+    process::assert_success(&applied);
     fixture.assert_runs("1 3\n");
     fixture.refresh_graph();
     assert_owner(&fixture, "anchor", "home");
@@ -322,11 +303,7 @@ fn default_check_requires_source_root_while_graph_only_omits_the_option() {
     assert_eq!(input_snapshot(&fixture, &batch, &order), before);
 
     let graph_only = run_check(&fixture, &batch, &order, Some(&config), true, false, false);
-    assert!(
-        graph_only.status.success(),
-        "{}",
-        String::from_utf8_lossy(&graph_only.stderr)
-    );
+    process::assert_success(&graph_only);
     let graph_only = parse_stdout_json(&graph_only);
     assert_eq!(graph_only["scope"], "graph_only");
     assert_eq!(graph_only["accepted"], true, "{graph_only}");

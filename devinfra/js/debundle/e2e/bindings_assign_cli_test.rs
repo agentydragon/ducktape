@@ -246,11 +246,7 @@ fn list_reports_source_capture_direct_and_structural_identities_separately() {
     // Smoke run of the text renderer, which has no other coverage; identities
     // are asserted structurally above.
     let text = fixture.command(&["bindings", "list", "--format", "text"]);
-    assert!(
-        text.status.success(),
-        "{}",
-        String::from_utf8_lossy(&text.stderr)
-    );
+    process::assert_success(&text);
     let text = String::from_utf8(text.stdout).unwrap();
     for module in ["anchor", "helper", "values"] {
         assert!(text.contains(module), "{text}");
@@ -337,11 +333,7 @@ fn rename_batch_swaps_members_and_source_matches_without_graph() {
             command.arg("--dry-run");
         }
         let output = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        process::assert_success(&output);
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             report["action"],
@@ -558,11 +550,7 @@ fn rename_batch_reads_stdin_and_renders_each_format() {
         )
         .unwrap_or_else(|err| panic!("{err}"));
         debundle_e2e_support::process::assert_debundle_invariants(&output);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        debundle_e2e_support::process::assert_success(&output);
         if format == "text" {
             assert!(!output.stdout.is_empty());
         } else {

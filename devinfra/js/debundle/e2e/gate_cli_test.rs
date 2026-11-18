@@ -142,11 +142,7 @@ fn sequenced_initializer_rejection_names_source_unit_location_rule_and_escape_ha
     .expect("sequenced cause has runnable source inspection");
     let inspected = process::output(Command::new("sh").arg("-c").arg(command))
         .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        inspected.status.success(),
-        "{}",
-        String::from_utf8_lossy(&inspected.stderr)
-    );
+    process::assert_success(&inspected);
     let source: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
     assert_eq!(source["selected_source_unit_count"], 1, "{source}");
 }

@@ -17,7 +17,8 @@ The library's existing public test helpers are re-exported by `mod.rs`:
 - `process.rs` owns the mechanical subprocess boundary: it returns raw
   `std::process::Output` for either exit status, reports spawn/capture failures with
   command and working-directory context, and exposes the explicit Debundle invariant
-  guard. It has no fixture or transcript state.
+  guard and `assert_success`, which reports a failed child's status, stdout and
+  stderr. It has no fixture or transcript state.
 - `failure_workspace.rs` owns a case's lifetime. Flat, tree, graph and staged fixtures
   retain the whole workspace under `$TEST_UNDECLARED_OUTPUTS_DIR/failed-fixtures/`
   when an assertion unwinds through an owning handle, including assertions after a

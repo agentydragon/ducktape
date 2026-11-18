@@ -488,11 +488,7 @@ impl GraphFixture {
     pub fn rerun(&self) -> CaseWorkspace {
         let rerun = self.run.workspace().child();
         let out = self.run_current_spec(rerun.path());
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         rerun
     }
 

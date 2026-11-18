@@ -2,7 +2,7 @@
 //! multi-owner import component and produces an applicable exact plan.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::parse_stdout_json;
+use debundle_e2e_support::{parse_stdout_json, process};
 use serde_json::{json, to_vec};
 use std::fs;
 
@@ -47,11 +47,7 @@ fn extracts_lazy_consumer_from_multi_anchor_import_scc() {
         "--format",
         "json",
     ]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let proposal = parse_stdout_json(&output);
     assert_eq!(proposal["status"], "found", "{proposal}");
     assert_eq!(proposal["residual_units_extracted"], 1, "{proposal}");
