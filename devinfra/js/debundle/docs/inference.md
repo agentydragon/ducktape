@@ -1120,6 +1120,34 @@ identity benchmark. That bound describes this family, not the total analysis
 cost of arbitrary programs. CLI regressions exercise the corresponding module
 cut, fresh/saved parity and preserved invocation effects.
 
+Declared callback factories also refine direct result origins before source
+flow. Raw export stability and a complete, dynamically closed static provider
+closure excluding the importer establish allocation ownership. Namespace-member
+calls additionally consume the source-only namespace privacy receipt from the
+shared raw execution index. All configured potentially aliasing namespace roots
+are checked together, including roots with no asserted independent members.
+Only declared factory members also covered by that receipt are eligible; the
+later value-flow-dependent namespace analysis cannot feed this solve.
+
+The fresh-input proof is structural induction over immediate calls. An inline
+function/arrow starts with a fresh ordinary graph. An eligible single-argument
+factory returns a fresh ordinary graph preserving its callback, by its existing
+author contract. Passing that immediate result to another eligible factory
+introduces no intervening exposure or mutation. Thus every certified call's
+direct result excludes importer allocation sites. The exclusion does not touch
+the global return/formal cells, retained members, unknown alternatives or any
+effects. Named callbacks, aliases, projections and other expression shapes do
+not receive this certificate. Real CLI tests distinguish independent wrapper
+metadata from actual callback/namespace alias mutation and check saved parity.
+
+The collector reuses each lowered argument's certificate from its existing arena,
+with no heap traversal or alias search per call. Namespace privacy piggybacks on
+the existing source visit; policy intersections are prepared once per importer,
+and provider closure queries remain memoized per distinct provider edge. Each
+call adds bounded shape checks and indexed identity lookups. The importer
+allocation mask is still shared, and ordinary source propagation retains its
+existing cost.
+
 `facts/value_flow/program.rs` prepares a source-qualified instance of the existing
 `FlowRules`, lexical-access rules and candidate reachability closure.
 `cross_module_purity` builds it after the raw

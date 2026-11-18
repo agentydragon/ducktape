@@ -302,6 +302,7 @@ mod tests {
             Vec::new(),
             Default::default(),
             Default::default(),
+            Default::default(),
         );
         assert_eq!(
             prepared.index.callables[&key]
@@ -416,6 +417,7 @@ mod tests {
                     Vec::new(),
                     Default::default(),
                     Default::default(),
+                    Default::default(),
                 );
                 let summary = derive(&prepared.index, key, &BTreeSet::new())
                     .expect("local transfer retains the checked provider capture");
@@ -457,6 +459,7 @@ mod tests {
                     BTreeSet::from(["make".into()]),
                     Vec::new(),
                     Vec::new(),
+                    Default::default(),
                     Default::default(),
                     Default::default(),
                 );

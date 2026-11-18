@@ -1202,6 +1202,11 @@ pub struct CallableSummaryInputs<'a> {
     /// Ordinary imports with a complete, dynamically closed provider dependency
     /// closure excluding the importer. This proves allocation ownership only.
     pub closed_factory_imports: &'a BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    /// Full importer-local namespace family; empty member sets retain roots
+    /// configured by other namespace contracts without asserting independence.
+    pub namespace_privacy_members:
+        &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+    pub callback_factory_members: &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
     /// Exact original exports selected by audited initializer call inputs.
     pub requested_original_provider_exports: &'a BTreeSet<(SourceModuleKey, String)>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
@@ -1233,6 +1238,8 @@ pub fn resolve_imported_callable_summaries(
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
         closed_factory_imports,
+        namespace_privacy_members,
+        callback_factory_members,
         requested_original_provider_exports,
         selected_value_inputs,
         selected_native_operation_inputs,
@@ -1314,6 +1321,10 @@ pub fn resolve_imported_callable_summaries(
                         .unwrap_or_default(),
                     predefined_globals,
                     bundle_globals.clone(),
+                    namespace_privacy_members
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
                 );
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
@@ -1541,6 +1552,31 @@ pub fn resolve_imported_callable_summaries(
             (module.clone(), eligible)
         })
         .collect();
+    let fresh_factory_members: BTreeMap<_, BTreeMap<_, BTreeSet<_>>> = modules
+        .keys()
+        .map(|module| {
+            let mut eligible = BTreeMap::new();
+            if let Some(family) = prepared[module].source_private_namespace_family()
+                && let Some(declared) = callback_factory_members.get(module)
+            {
+                for (root, independent) in family {
+                    let name = root.0.as_ref();
+                    if source_stable[module].contains(name)
+                        && closed_factory_imports
+                            .get(module)
+                            .is_some_and(|imports| imports.contains(name))
+                        && let Some(members) = declared.get(name)
+                    {
+                        eligible.insert(
+                            name.to_owned(),
+                            members.intersection(independent).cloned().collect(),
+                        );
+                    }
+                }
+            }
+            (module.clone(), eligible)
+        })
+        .collect();
     // All source identities are qualified once, then the existing flow rules
     // close imports, calls and object carriers in one program-wide store.
     // These are possible values, not imported execution/availability proofs.
@@ -1571,6 +1607,7 @@ pub fn resolve_imported_callable_summaries(
             .map(|(module, views)| crate::facts::ProgramFlowModule {
                 module,
                 fresh_factory_imports: &fresh_factory_imports[*module],
+                fresh_factory_members: &fresh_factory_members[*module],
                 body: views,
                 native_operation_inputs: resolved_native_operation_inputs
                     .get(*module)
@@ -2685,6 +2722,8 @@ mod tests {
             &BTreeMap::new(),
             CallableSummaryInputs {
                 closed_factory_imports: &BTreeMap::new(),
+                namespace_privacy_members: &BTreeMap::new(),
+                callback_factory_members: &BTreeMap::new(),
                 requested_original_provider_exports: &BTreeSet::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),

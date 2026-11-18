@@ -11850,6 +11850,20 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    /// A sufficient whole-source namespace privacy receipt, covering only
+    /// these exact canonical IDs. No value-flow or ordered execution fact is
+    /// consumed. Callers must independently check canonical dynamic scope,
+    /// provider stability/closure and each requested member contract.
+    pub(crate) fn source_private_namespace_family(
+        &self,
+    ) -> Option<&BTreeMap<Id, BTreeSet<String>>> {
+        let privacy = &self.index.namespace_privacy;
+        (!privacy.members.is_empty()
+            && !privacy.invalid
+            && self.index.dynamic_scope_owners.is_empty())
+        .then_some(&privacy.members)
+    }
+
     /// A negative check for an exact audited imported call. This reads the
     /// already prepared callable index; unresolved calls remain the author's
     /// responsibility rather than becoming inferred absence of effects.
@@ -12205,6 +12219,7 @@ pub(crate) fn prepare_callable_capabilities(
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
     predefined_globals: spec::PredefinedGlobals,
     bundle_globals: BundleGlobalNames,
+    namespace_privacy_members: BTreeMap<String, BTreeSet<String>>,
 ) -> PreparedCallableCapabilities {
     let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
@@ -12216,6 +12231,7 @@ pub(crate) fn prepare_callable_capabilities(
                 assumptions: crate::analysis_inputs::AnalysisAssumptions {
                     predefined_globals,
                     bundle_globals,
+                    namespace_independent_members: namespace_privacy_members,
                     ..Default::default()
                 },
                 ..AnalysisInputs::default()
@@ -12637,6 +12653,7 @@ mod preflow_set_protocol_tests {
             Vec::new(),
             spec::PredefinedGlobals::Unknown,
             BundleGlobalNames::default(),
+            BTreeMap::new(),
         );
         assert!(prepared.flow.is_none());
         assert!(

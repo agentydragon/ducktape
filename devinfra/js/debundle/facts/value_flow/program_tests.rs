@@ -61,6 +61,7 @@ fn program_and_caller(source: &str) -> (ProgramValueFlows, swc_ecma_ast::Module)
         [
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
@@ -68,6 +69,7 @@ fn program_and_caller(source: &str) -> (ProgramValueFlows, swc_ecma_ast::Module)
             },
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -368,6 +370,7 @@ fn local_property_return_summaries_keep_module_slot_names() {
         [
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
@@ -375,6 +378,7 @@ fn local_property_return_summaries_keep_module_slot_names() {
             },
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -448,6 +452,7 @@ fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
         [
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
@@ -455,6 +460,7 @@ fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
             },
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -675,6 +681,7 @@ fn shared_scc_program() -> (ProgramValueFlows, swc_ecma_ast::Module) {
         [
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
@@ -682,6 +689,7 @@ fn shared_scc_program() -> (ProgramValueFlows, swc_ecma_ast::Module) {
             },
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -689,6 +697,7 @@ fn shared_scc_program() -> (ProgramValueFlows, swc_ecma_ast::Module) {
             },
             ProgramFlowModule {
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 module: "empty",
                 body: &empty_views,
                 native_operation_inputs: &[],
@@ -959,6 +968,7 @@ fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provid
                 module: "caller",
                 body: &caller_views,
                 fresh_factory_imports: &eligible,
+                fresh_factory_members: &BTreeMap::new(),
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
@@ -966,6 +976,7 @@ fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provid
                 module: "provider",
                 body: &provider_views,
                 fresh_factory_imports: &BTreeSet::new(),
+                fresh_factory_members: &BTreeMap::new(),
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },

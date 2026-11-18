@@ -1715,6 +1715,15 @@ struct BindingSlot(u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct PropertySlot(u32);
 
+/// Source-validated factory identities for one importer. Namespace members
+/// additionally require the completed whole-source privacy receipt.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct FreshFactoryImports {
+    importer: usize,
+    named: BTreeSet<Id>,
+    members: BTreeMap<Id, BTreeSet<String>>,
+}
+
 #[derive(Default)]
 struct FlowSymbols {
     bindings: Vec<Id>,
@@ -1723,11 +1732,52 @@ struct FlowSymbols {
     property_slots: HashMap<String, PropertySlot>,
     call_arguments: Vec<FlowValueExpr>,
     call_argument_slots: HashMap<(u32, u32), usize>,
-    /// Only prevalidated declared imports; the integer is the importer module.
-    fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
+    fresh_factory_imports: Arc<FreshFactoryImports>,
 }
 
 impl FlowSymbols {
+    fn factory_importer(&self, call: &CallExpr, argument: Option<usize>) -> Option<usize> {
+        let [input] = call.args.as_slice() else {
+            return None;
+        };
+        if input.spread.is_some() {
+            return None;
+        }
+        // Immediate composition has no intervening use that could mutate or
+        // expose the inner fresh graph. Reuse its already lowered receipt;
+        // aliases, projections, sequences and named callbacks stay conservative.
+        let fresh_input = match input.expr.unwrap_parens() {
+            Expr::Fn(_) | Expr::Arrow(_) => true,
+            Expr::Call(_) => matches!(
+                self.call_arguments.get(argument?),
+                Some(FlowValueExpr::Call {
+                    factory_importer: Some(_),
+                    ..
+                })
+            ),
+            _ => false,
+        };
+        if !fresh_input {
+            return None;
+        }
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let imports = &self.fresh_factory_imports;
+        let eligible = match callee.unwrap_parens() {
+            Expr::Ident(id) => imports.named.contains(&id.to_id()),
+            Expr::Member(member) => match (member.obj.unwrap_parens(), &member.prop) {
+                (Expr::Ident(root), MemberProp::Ident(property)) => imports
+                    .members
+                    .get(&root.to_id())
+                    .is_some_and(|members| members.contains(property.sym.as_ref())),
+                _ => false,
+            },
+            _ => false,
+        };
+        eligible.then_some(imports.importer)
+    }
+
     /// Lower each actual first argument once. Nested calls refer to this arena
     /// instead of duplicating their argument trees in every expression user.
     fn call_argument(&mut self, call: &CallExpr) -> Option<usize> {
@@ -1887,20 +1937,15 @@ impl FlowValueExpr {
                 property: static_prop(&member.prop).map(|name| symbols.property(name)),
             },
             Expr::Call(call) => match &call.callee {
-                Callee::Expr(callee) => Self::Call {
-                    callee: Box::new(Self::from_ast(callee, symbols)),
-                    argument: symbols.call_argument(call),
-                    factory_importer: match callee.unwrap_parens() {
-                        Expr::Ident(id)
-                            if matches!(call.args.as_slice(), [argument]
-                            if argument.spread.is_none()
-                            && matches!(argument.expr.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))) =>
-                        {
-                            symbols.fresh_factory_imports.get(&id.to_id()).copied()
-                        }
-                        _ => None,
-                    },
-                },
+                Callee::Expr(callee) => {
+                    let callee = Box::new(Self::from_ast(callee, symbols));
+                    let argument = symbols.call_argument(call);
+                    Self::Call {
+                        callee,
+                        argument,
+                        factory_importer: symbols.factory_importer(call, argument),
+                    }
+                }
                 _ => Self::Unknown(SourceUnknownCause::UnsupportedExpression),
             },
             Expr::Seq(seq) => seq.exprs.last().map_or(
@@ -2104,7 +2149,7 @@ impl FlowProgram {
         body: &[TopLevelItemView<'_>],
         inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
         inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
-        fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
+        fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
         let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
         candidates.extend(super::heap_contents::array_candidate_roots(body));
@@ -2135,7 +2180,7 @@ impl FlowProgram {
         body: &[TopLevelItemView<'_>],
         candidate_objects: &BTreeSet<Value>,
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
-        fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
+        fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),

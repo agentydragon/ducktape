@@ -122,23 +122,28 @@ Remaining work:
    cap to reach and attribute a later phase. It cannot satisfy the 300-second
    completion requirement or substitute saved analysis for the fresh pipeline.
 
-2. Validate the bounded static-property return relation against the private
-   passing assignment and attribute any remaining precision loss to its source
-   producer. The neutral context-read CLI regression proves only that distinct
-   call arguments no longer share a pooled property-result origin; it does not
-   establish that the private gate now accepts. Preserve unknown-property and
-   true-alias refusals, ordinary getter and write effects, and fresh/saved
-   parity. Keep historical boundary comparisons and their resource evidence in
-   <../perf/analysis_serial_phases.md>, not as open acceptance work.
+2. Finish the remaining precision repair after static-property returns and
+   direct audited-factory root refinement. Trace the surviving producer, rather
+   than inferring it from the same final rejection. Immediate nested factory
+   calls need source-only namespace identity, declared factory contracts and
+   closed provider ownership before refining their direct roots. Check these
+   premises on the actual consumer and retain the neutral nested-factory CLI
+   regression, its no-write/always-fresh controls and unsafe alias refusals.
+   A separate named-callback route needs an unmutated ordinary graph proof;
+   binding immutability alone does not justify it. Preserve unknown-property
+   and true-alias refusals, ordinary getter/write effects and fresh/saved parity.
+   Run the fresh private normal gate after each scoped repair. Historical
+   comparisons and source witnesses belong in performance reports or the
+   private repository, not as a completion history in this active plan.
 3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
 
 Every implementation slice must also pass a matched optimized Excalidraw
 regression check: no more than 10% wall-time slowdown on the same canonical
-spec and captured inputs. Use repeated, interleaved unprofiled runs and report
-metrics-disabled and metrics-enabled costs separately. Keep compilation and
-input staging outside the measured interval; compare output/gate behavior too.
+spec and captured inputs. Use repeated, interleaved unprofiled runs with metrics
+disabled. Keep compilation and input staging outside the measured interval;
+compare output/gate behavior too.
 If noise prevents a conclusion, collect more evidence instead of calling it a
 pass. Preserve the telemetry lifecycle and raw-artifact contract in
 <../docs/inference.md#opt-in-production-work-metrics> when extending coverage.
