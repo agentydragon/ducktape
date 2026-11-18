@@ -127,6 +127,8 @@ def test_preserves_structured_output_baseline_and_its_shared_image() -> None:
     metadata_key = f"reviews-test-outputs/{SHA_A}/metadata.json"
     metadata = json.loads(bodies[metadata_key])
     metadata["tests"][0]["assets"][0]["variants"] = [{"sha256": DIGEST_DIFF, "results": []}]
+    # Older bundles included a second copy of the preview asset.
+    metadata["tests"][0]["preview"] = metadata["tests"][0]["assets"][0]
     bodies[metadata_key] = json.dumps(metadata).encode()
     pointer = "baselines/reviews-test-outputs/example.json"
     objects.append(StoredObject(pointer, 5, old))

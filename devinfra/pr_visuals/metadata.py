@@ -101,7 +101,6 @@ class ReviewTest(BaseModel):
     merge_base_sha: str | None = None
     baseline_fallback: bool | None = None
     summary: ClassificationCounts | None = None
-    preview: ReviewAsset | None = None
 
 
 class ReviewBundleMetadata(BaseModel):

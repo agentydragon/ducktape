@@ -56,7 +56,7 @@ from devinfra.pr_visuals.metadata import (
     ReviewVariant,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
-from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
+from devinfra.pr_visuals.render_common import classification_totals, shared_image_key, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
 
 if TYPE_CHECKING:
@@ -531,23 +531,6 @@ def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
     return ClassificationCounts(**counts)
 
 
-def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
-    """The one asset shown as a test's thumbnail on the aggregate index page.
-
-    Prefers a `modified` asset (there's a diff to draw attention to); falls back to a `new` one
-    (a target whose assets are all new — e.g. its first publish, or a PR that only adds fixtures
-    to an existing target — otherwise gets no thumbnail at all).
-    """
-    ordered = ordered_assets(assets)
-    return next(
-        (asset for asset in ordered if asset.classification == "unstable"),
-        next(
-            (asset for asset in ordered if asset.classification == "modified"),
-            next((asset for asset in ordered if asset.classification == "new"), None),
-        ),
-    )
-
-
 def _asset_identity(asset: CollectedAsset | ReviewAsset) -> tuple[str, str | None, str]:
     return asset.case_id, asset.checkpoint, asset.role
 
@@ -748,7 +731,6 @@ def build_bundle(
             merge_base_sha=base_sha,
             baseline_fallback=baseline.fallback if baseline is not None else None,
             summary=_asset_summary(assets) if base_sha else None,
-            preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
         page = review_test_page_data(review_test, asset_base="", page_url="", shared_asset_base="../../../../")

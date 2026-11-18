@@ -2219,8 +2219,10 @@ def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
     assert "baseline_fallback" not in metadata
     assert metadata["assets"][0]["classification"] == "new"
     assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0, "unstable": 0}
-    # No modified asset to prefer — the aggregate index page still gets a thumbnail.
-    assert metadata["preview"]["classification"] == "new"
+    assert "preview" not in metadata
+    index = (bundle / "index.html").read_text()
+    assert f'href="tests/{test.slug}/index.html#{metadata["assets"][0]["path"]}"' in index
+    assert "(new)</figcaption>" in index
 
 
 def test_write_baseline_pointers_puts_mutable_json() -> None:
