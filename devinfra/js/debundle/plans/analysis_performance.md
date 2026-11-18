@@ -36,15 +36,16 @@ or a synthetic cut does not establish unchanged passing-subset acceptance.
 
 Remaining work, in order:
 
-1. Test the source-use hypothesis at one exact property-write RHS: when a
-   simple static property assignment is the final term of a pure `&&` chain
-   containing `typeof value != "function"`, the assignment cannot receive a
-   Function or Class value through that identifier. Attach the certificate to
-   that RHS occurrence only, require every referenced identifier to be a unique
-   uncaptured local binding, and preserve Top, Proxy and all other origins.
-   Keep the binding's joined value and every later use unchanged. This is a
-   bounded may-flow experiment, not a purity rule or proof that the full gate
-   rejection has this sole cause.
+1. Test the surviving source-use hypothesis after definite local scalar
+   overwrites. A function may receive a callable argument, overwrite it with a
+   primitive, and copy it through another local before a property write. Its
+   flow-insensitive binding union must not make that later exact read carry
+   the earlier function origin. Validate the bounded sequence-local proof in
+   [Scalar local overwrites](../docs/inference.md#scalar-local-overwrites-in-comma-expressions)
+   against the observed path, retaining capture/dynamic-scope barriers, Top,
+   Proxy, ordinary effects and dependency subscriptions. This is a bounded
+   may-flow experiment, not a purity rule or a claim that the gate rejection
+   has this sole cause.
 
    Continue to use bounded value-source traces to choose and interpret each
    experiment. Separate value-bearing inputs from reads used only to select a

@@ -365,7 +365,7 @@ fn getter_payload_that_returns_the_callback_keeps_the_unsafe_alias() {
 }
 
 fn retained_property_write_fixture(
-    guard: &str,
+    install: &str,
     write: &str,
 ) -> debundle_e2e_support::saved_analysis::Staged {
     let source = r#"
@@ -381,16 +381,13 @@ function compare() {
 }
 const memo = { compare };
 function installValue(value, target) {
-  if (__GUARD__ && (target.payload = value)) {
-    return target;
-  }
-  return target;
+  __INSTALL__
 }
 const wrapped = factory(compare);
 later = 42;
 console.log(wrapped.invoke(), service.state, memo.compare.state || "unmodified");
 "#
-    .replace("__GUARD__", guard)
+    .replace("__INSTALL__", install)
     .replace("__WRITE__", write);
     let (stage, _) = staged(
         FixtureOpts::new(
@@ -461,53 +458,135 @@ fn guarded_non_function_property_write_does_not_create_a_callback_receiver() {
 
     let mut failures = Vec::new();
     for (label, guard, write, accepted, expected) in cases {
-        let stage = retained_property_write_fixture(guard, write);
-        let original = stage.root().join("snapshot/static/app.js");
-        assert_node_output(&original, expected, "");
-
-        let fresh = stage.run(&["--emit-on-rejection"]);
-        let saved = stage.run(&["--emit-on-rejection", "--analysis", path(&stage.artifact)]);
-        for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
-            let expected_status = Some(if accepted { 0 } else { 3 });
-            if invocation.result.status.code() != expected_status {
-                failures.push(format!(
-                    "{label} {kind} expected exit {expected_status:?}, got {:?}:\n{}",
-                    invocation.result.status.code(),
-                    invocation.result.stderr
-                ));
-            }
-            let emitted = invocation.output_root().join("app/static/app/entry.js");
-            assert_node_output(&emitted, expected, "");
-            if !accepted {
-                let conflicts: Value = read_json(
-                    &invocation
-                        .output_root()
-                        .join("reports/tree/static/app/atomic_group_conflicts.json"),
-                );
-                if !conflicts.as_array().is_some_and(|groups| {
-                    groups.iter().any(|group| {
-                        group["claims"].as_array().is_some_and(|claims| {
-                            ["later", "wrapped"].into_iter().all(|expected| {
-                                claims.iter().any(|claim| {
-                                    claim["binding_names"].as_array().is_some_and(|names| {
-                                        names.iter().any(|name| name == expected)
-                                    })
-                                })
-                            })
-                        })
-                    })
-                }) {
-                    failures.push(format!(
-                        "{label} {kind} refusal lacked a `later`/`wrapped` atomic witness: {conflicts:#?}"
-                    ));
-                }
-            }
-        }
-        assert_same_invocation_trees(&fresh, &saved);
+        let install =
+            format!("if ({guard} && (target.payload = value)) {{ return target; }} return target;");
+        failures.extend(check_retained_property_write(
+            label, &install, write, accepted, expected,
+        ));
     }
     assert!(
         failures.is_empty(),
         "case failures:\n{}",
         failures.join("\n")
     );
+}
+
+#[test]
+fn scalar_local_overwrites_do_not_create_a_callback_receiver() {
+    let cases = [
+        (
+            "direct scalar overwrite",
+            r#"(value = "" + value, target.payload = value);"#,
+            true,
+            "42 cold unmodified\n",
+        ),
+        (
+            "scalar fallback through another local",
+            r#"let fallback = value; value = null;
+               (fallback = fallback != null ? "" + fallback : "",
+                value = value != null ? "" + value : fallback,
+                target.payload = value);"#,
+            true,
+            "42 cold unmodified\n",
+        ),
+        (
+            "coercion effects still execute",
+            r#"(value = "" + { toString() { service.state = "coerced"; return "text"; } },
+                target.payload = value);"#,
+            true,
+            "42 coerced unmodified\n",
+        ),
+        (
+            "unmodified callback",
+            "target.payload = value;",
+            false,
+            "42 cold ready\n",
+        ),
+        (
+            "overwrite followed by rebinding",
+            r#"(value = "" + value, value = memo.compare, target.payload = value);"#,
+            false,
+            "42 cold ready\n",
+        ),
+        (
+            "capture can restore callback",
+            r#"const restore = () => { value = memo.compare; };
+               (value = "" + value, restore(), target.payload = value);"#,
+            false,
+            "42 cold ready\n",
+        ),
+    ];
+    let write = r#"if (typeof selected === "function") selected.state = "ready";"#;
+    let mut failures = Vec::new();
+    for (label, install, accepted, expected) in cases {
+        failures.extend(check_retained_property_write(
+            label, install, write, accepted, expected,
+        ));
+    }
+    failures.extend(check_retained_property_write(
+        "no mutation control",
+        "target.payload = value;",
+        "void selected;",
+        true,
+        "42 cold unmodified\n",
+    ));
+    assert!(
+        failures.is_empty(),
+        "case failures:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn check_retained_property_write(
+    label: &str,
+    install: &str,
+    write: &str,
+    accepted: bool,
+    expected: &str,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    let stage = retained_property_write_fixture(install, write);
+    let original = stage.root().join("snapshot/static/app.js");
+    assert_node_output(&original, expected, "");
+
+    let fresh = stage.run(&["--emit-on-rejection"]);
+    let saved = stage.run(&["--emit-on-rejection", "--analysis", path(&stage.artifact)]);
+    for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
+        let expected_status = Some(if accepted { 0 } else { 3 });
+        if invocation.result.status.code() != expected_status {
+            failures.push(format!(
+                "{label} {kind} expected exit {expected_status:?}, got {:?}:\n{}",
+                invocation.result.status.code(),
+                invocation.result.stderr
+            ));
+        }
+        let emitted = invocation.output_root().join("app/static/app/entry.js");
+        assert_node_output(&emitted, expected, "");
+        if !accepted {
+            let conflicts: Value = read_json(
+                &invocation
+                    .output_root()
+                    .join("reports/tree/static/app/atomic_group_conflicts.json"),
+            );
+            if !conflicts.as_array().is_some_and(|groups| {
+                groups.iter().any(|group| {
+                    group["claims"].as_array().is_some_and(|claims| {
+                        ["later", "wrapped"].into_iter().all(|expected| {
+                            claims.iter().any(|claim| {
+                                claim["binding_names"]
+                                    .as_array()
+                                    .is_some_and(|names| names.iter().any(|name| name == expected))
+                            })
+                        })
+                    })
+                })
+            }) {
+                failures.push(format!(
+                        "{label} {kind} refusal lacked a `later`/`wrapped` atomic witness: {conflicts:#?}"
+                    ));
+            }
+        }
+    }
+    assert_same_invocation_trees(&fresh, &saved);
+    failures
 }
