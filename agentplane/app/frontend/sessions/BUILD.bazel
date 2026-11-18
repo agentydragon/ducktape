@@ -968,6 +968,7 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":facade_body",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:schema",
@@ -998,10 +999,18 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "facade_body",
+    srcs = ["facade_body.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+ts_library(
     name = "session_client",
     srcs = ["session_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":facade_body",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/transport:client",
