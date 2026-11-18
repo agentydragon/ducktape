@@ -116,8 +116,8 @@ a dynamic `import()` already keeps it off the page.
 
 Each step ships alone, and the first changes no behaviour.
 
-1. Move `proxy/electric.go` into `threadsync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
-   change.
+1. Move `agentplane/app/internal/electricproxy/electric.go` into `threadsync/electric/`, and its routes to
+   `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same change.
 2. The deployment setting that picks an implementation, which the frontend reads at start.
 3. A second implementation, with the shared range and delta read. The cheapest is the window poll,
    long-polled rather than on a timer (**E6**).
