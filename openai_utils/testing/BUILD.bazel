@@ -23,7 +23,6 @@ py_library(
         "//openai_utils:builders",
         "//openai_utils:model",
         "@pypi//pydantic",
-        "@pypi//pytest",
     ],
 )
 
