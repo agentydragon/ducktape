@@ -119,3 +119,255 @@ fn default_export_result_keeps_independent_callback_origins() {
         true,
     );
 }
+
+fn assert_unsafe_return_summary_cut(
+    source: &str,
+    members: &[&'static str],
+    callback_setup: &[&str],
+    original_output: &str,
+    emitted_output: &str,
+) {
+    let (stage, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/selected",
+                    &members.iter().copied().map(Member::new).collect::<Vec<_>>(),
+                    callback_setup,
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(
+        &stage.root().join("snapshot/static/app.js"),
+        original_output,
+        "",
+    );
+    let fresh = stage.run(&["--emit-on-rejection"]);
+    let saved = stage.run(&["--emit-on-rejection", "--analysis", path(&stage.artifact)]);
+    for invocation in [&fresh, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "an unsupported return relationship must keep the unsafe cut rejected:\n{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            emitted_output,
+            "",
+        );
+    }
+    assert_same_invocation_trees(&fresh, &saved);
+}
+
+#[test]
+fn parameter_rebinding_does_not_use_a_first_argument_return_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) {
+  value = () => later;
+  return value;
+}
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn nested_closure_parameter_write_does_not_use_a_first_argument_return_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) {
+  function replace() { value = () => later; }
+  replace();
+  return value;
+}
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn default_parameter_return_does_not_use_the_call_argument_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value = () => later) { return value; }
+const selected = relay(undefined);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn body_function_declaration_does_not_preserve_the_parameter_return() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) {
+  function value() { return later; }
+  return value;
+}
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn direct_eval_parameter_write_does_not_use_a_first_argument_return_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) {
+  eval("value = () => later");
+  return value;
+}
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "selected", "observed"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn forwarding_cycle_does_not_use_a_first_argument_return_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+let depth = 0;
+function relay(value) {
+  if (depth === 0) {
+    depth += 1;
+    return forward(value);
+  }
+  return () => later;
+}
+function forward(value) { return relay(value); }
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "forward", "selected", "observed", "depth"],
+        &[],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn reassigned_helper_binding_does_not_keep_a_stale_argument_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+function relay(value) { return value; }
+function replacement(value) { return () => later; }
+let invoke = relay;
+invoke = replacement;
+const selected = invoke(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &["relay", "replacement", "invoke", "selected", "observed"],
+        &["invoke = replacement;"],
+        "0 42\n",
+        "42 42\n",
+    );
+}
+
+#[test]
+fn conditional_effectful_identity_helpers_preserve_returned_callback_and_effects() {
+    let source = r#"
+const earlier = 41;
+let effects = 0;
+function afterEffect(value) {
+  effects += 1;
+  return value;
+}
+function relay(value) {
+  if (value) return afterEffect(value);
+  return afterEffect(value);
+}
+function selectedCallback() { return earlier; }
+const selected = relay(selectedCallback);
+const observed = selected();
+const later = 7;
+console.log(observed, effects, later);
+"#;
+    let (stage, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/selected",
+                    &[
+                        Member::new("earlier"),
+                        Member::new("effects"),
+                        Member::new("afterEffect"),
+                        Member::new("relay"),
+                        Member::new("selectedCallback"),
+                        Member::new("selected"),
+                        Member::new("observed"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&stage.root().join("snapshot/static/app.js"), "41 1 7\n", "");
+    let fresh = stage.run(&[]);
+    let saved = stage.run(&["--analysis", path(&stage.artifact)]);
+    for invocation in [&fresh, &saved] {
+        assert!(
+            invocation.result.status.success(),
+            "effectful helper return summary rejected an equivalent split:\n{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "41 1 7\n",
+            "",
+        );
+    }
+    assert_same_invocation_trees(&fresh, &saved);
+}
