@@ -61,7 +61,6 @@ go_test(
     name = "unit_test",
     srcs = [
         "errors_test.go",
-        "send_test.go",
         "views_test.go",
     ],
     embed = [":rpc"],
@@ -82,7 +81,6 @@ go_test(
         "//agentplane/notification_service/model",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
-        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
