@@ -43,12 +43,9 @@ py_library(
     srcs = ["mock_factory.py"],
     deps = [
         ":data",
-        "//x/wt/client:view_formatter",
-        "//x/wt/client:wt_client",
         "//x/wt/server:git_manager",
         "//x/wt/server:github_client",
         "//x/wt/server:worktree_service",
-        "//x/wt/shared:protocol",
     ],
 )
 

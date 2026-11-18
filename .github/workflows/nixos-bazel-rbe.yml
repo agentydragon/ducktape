@@ -4,8 +4,7 @@ name: Bazel execution contract
 # devinfra/bazel/rbe.bazelrc; the root .bazelrc and MODULE.bazel do not configure it.
 on:
   pull_request:
-    paths:
-      # keep-sorted start
+    paths: &contract_paths # keep-sorted start
       - ".github/actions/setup-bazel/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
@@ -20,20 +19,7 @@ on:
       # keep-sorted end
   push:
     branches: [devel]
-    paths:
-      # keep-sorted start
-      - ".github/actions/setup-bazel/action.yml"
-      - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/nixos-bazel-rbe.yml"
-      - "devinfra/bazel/**"
-      - "devinfra/buildbuddy/setup.sh"
-      - "devinfra/nixos_bazel_test/**"
-      - "flake.lock"
-      - "flake.nix"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/packages.nix"
-      - "nix/nixos/modules/bazel/**"
-      # keep-sorted end
+    paths: *contract_paths
   workflow_dispatch:
 
 concurrency:

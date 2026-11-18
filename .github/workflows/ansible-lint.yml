@@ -6,15 +6,12 @@ name: Ansible-lint
 on:
   push:
     branches: [main, devel]
-    paths:
+    paths: &ansible_paths
       - "ansible/**"
       - ".ansible-lint.yaml"
       - ".github/workflows/ansible-lint.yml"
   pull_request:
-    paths:
-      - "ansible/**"
-      - ".ansible-lint.yaml"
-      - ".github/workflows/ansible-lint.yml"
+    paths: *ansible_paths
   workflow_dispatch:
 
 jobs:

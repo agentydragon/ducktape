@@ -76,3 +76,12 @@ would remain a Home Manager service.
 - [ ] Move Wyrm2 `/home` to a separate VM volume during a convenient maintenance
       window. Preserve existing home data and define a rollback path; account for
       GNOME session state, mount ordering, and services that use the current home.
+
+## Bring readline, `gh` and git-worktree-switcher config under Home Manager
+
+- readline: `programs.readline` (`nix/home/modules/shell.nix`) sets only `show-all-if-ambiguous`; fold any other
+  `~/.inputrc` tweaks into it.
+- `gh`: `nix/home/home.nix` installs the package without config. Consider `programs.gh` for settings and extensions,
+  and for auth/hosts if feasible.
+- git-worktree-switcher: absent from `nix/`. Find the current workflow (scripts? aliases?), migrate its settings,
+  document best practices.

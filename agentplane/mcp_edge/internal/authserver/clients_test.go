@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"code.dny.dev/ssrf"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 // wantRendered is a refusal the authorization endpoint renders, since it cannot trust the redirect URI.
@@ -129,10 +130,7 @@ func TestARegistrationIsRefusedMetadataTheServerCannotServe(t *testing.T) {
 			t.Errorf("%s: %d %v, want %s", refused.what, status, answer, refused.code)
 		}
 	}
-	var registered int
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM oauth_registered_client`).Scan(&registered); err != nil {
-		t.Fatal(err)
-	}
+	registered := postgres.Count(t, h.db, `SELECT count(*) FROM oauth_registered_client`)
 	if registered != 0 {
 		t.Errorf("the refused registrations stored %d clients", registered)
 	}

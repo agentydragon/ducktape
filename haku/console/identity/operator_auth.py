@@ -78,8 +78,7 @@ class SignedOperatorSession:
     """What the session cookie claims: well-formed, correctly signed, and inside its deadline.
 
     Distinct from `OperatorSession`, which is that claim *after* the database has confirmed the
-    identity is still active. The event socket needs the difference — an expired cookie means
-    "re-authenticate", a rejected identity means "this Operator is gone".
+    identity is still active.
     """
 
     operator_id: UUID
@@ -197,14 +196,6 @@ async def operator_session(conn: HTTPConnection) -> OperatorSession | None:
         username=signed.username,
         expires_at=signed.expires_at,
     )
-
-
-async def operator_username(request: Request) -> str | None:
-    """The authenticated operator's `preferred_username`, or None — for display/audit, never a key.
-
-    Sourced only from a DB-revalidated app-owned OIDC session; no request-header fallback."""
-    session = await operator_session(request)
-    return session.username if session is not None else None
 
 
 def exact_operator_origin(conn: HTTPConnection) -> bool:

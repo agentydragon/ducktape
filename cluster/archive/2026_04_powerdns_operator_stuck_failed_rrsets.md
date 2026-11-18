@@ -117,3 +117,12 @@ kubectl patch clusterrrset <name> --type=merge -p '{"spec":{"ttl":300}}'
       ClusterRRset reaches Failed status, it never retries unless spec
       changes. Should retry with backoff, or at minimum log a warning.
       Repo: `https://github.com/powerdns-operator/PowerDNS-Operator`
+
+## Related: Kyverno GeneratingPolicy
+
+Kyverno 3.7.1 `GeneratingPolicy` (`evaluation.synchronize.enabled` and `evaluation.generateExisting.enabled` true)
+generated four `ClusterRRset`s (`wildcard`, `apex`, `ns1`, `ns2`) from one `generator.Apply` and a `cluster-info`
+ConfigMap from a second; CRD objects needed `dyn()` because the CEL environment registers no CRD types. After a node
+trigger, `apex` and `ns1` were created then deleted within seconds while the other three persisted. No controller
+errors, no `UpdateRequest`s; hand-applied copies (no Kyverno ownership labels) persisted. Cause not found (untried: one
+policy per record, `synchronize` off); no upstream report recorded.

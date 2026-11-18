@@ -37,7 +37,8 @@ class ActionRequest(BaseModel):
 # Every action endpoint puts a different payload into `ActionResponse.result`.
 # Each variant has an explicit `kind` discriminator. Constructors supply the
 # literal default; serialized input must carry the tag. Migration 0006 backfills
-# older server-action ledger results. Rollout: docs/action_result_discriminators.md.
+# older server-action ledger results, so stored results carry it. Images from
+# before #10880 reject tagged results: strip the tags before rolling back to one.
 
 
 class SessionCompleteResult(BaseModel):

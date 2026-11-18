@@ -22,9 +22,8 @@
   provider-specific fields such as `reasoning_content` are useful during
   debugging.
 - Add a first-class provider/model capability only if we route z.ai through
-  Chat Completions again. The live GLM path uses the Anthropic Messages shape
-  because z.ai's Chat Completions tool-call parser mishandles union-shaped tool
-  parameters; see `props/debug/glm46_strict_tool_schema_experiments.md`.
+  Chat Completions again: its tool-call parser mishandles union-shaped tool
+  parameters, which its Anthropic Messages shape avoids (<docs/zai_api.md>).
 - Defer a dedicated `correlation_id` column until DB-to-Langfuse joins need it.
   Current correlation rides in injected props metadata.
 - Make the trace-metadata injection in `llm_proxy/routes.py` (`_merge_props_metadata`)
@@ -57,10 +56,6 @@
 
 - Sane story for applying migrations without full `db recreate` (direct `alembic upgrade head`)
 - Bulk specimen sync in `props db sync` from Bazel bundle artifacts (currently one-by-one via `sync-specimen`)
-- GLM per-model pricing. `props/deploy/config.toml` assigns all 7 z.ai GLM models
-  glm-4.6's placeholder rates (input 0.39 / output 1.74 per 1M). Set real-ish per-model z.ai
-  rates so budget accounting is accurate. Low urgency: z.ai is currently a flat prepaid
-  subscription (quota-based), so per-token cost is largely cosmetic for budgeting.
 
 ## Native Execution
 

@@ -15,7 +15,7 @@ allowlisting every registry CDN.
 | Internal exposure   | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
 | Public exposure     | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
 
-Upstreams are addressed **by path prefix** (Zot `sync` `stripPrefix`); the endpoint
+Upstreams are addressed **by path prefix** (Zot `sync` `destination`); the endpoint
 is plain HTTP on port 80, so clients need an `http://` endpoint / insecure-registry config:
 
 | Upstream          | Pull as                                     |
@@ -93,16 +93,7 @@ deferred because Talos machine-config changes reboot nodes.
    force-proxy policy had to allow the **backend** port 5000 for the mirror (Cilium enforces
    on targetPort, not the Service port).
 
-## Verified working (2026-07-05)
-
-Confirmed live end-to-end: image tag `v2.1.11` runs with the `sync` extension, the S3
-`storageDriver` keys are correct, the `prefix`/`destination` routing resolves
-(`docker-hub/library/busybox` → `docker.io/library/busybox`), Docker Hub anonymous pull
-works, and a fresh image **persists to the SeaweedFS bucket** (`successfully synced image`
-in Zot's log; tag reads back). Getting here took three fixes on top of the initial deploy:
-`sync.downloadDir` (crashloop), the `prefix:"**"` + `destination` routing (was mapping
-backwards), and a `seaweedfs-s3` gateway restart so it loaded the `registry-cache` identity
-(see the SeaweedFS S3 identity RCA in `../../docs/lessons_learned/`).
+## Verification
 
 Smoke test (use a fresh tag to exercise pull-through):
 

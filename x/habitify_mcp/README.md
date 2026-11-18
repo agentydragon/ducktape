@@ -11,12 +11,11 @@ MCP server providing Claude Desktop access to the [Habitify API](https://docs.ha
 ## Setup
 
 ```bash
-pip install -e .
 export HABITIFY_API_KEY=your_key  # From Habitify app settings
-habitify install  # Installs to Claude Desktop
+bb run //x/habitify_mcp:habitify_cli -- install  # Installs to Claude Desktop
 ```
 
-CLI: `habitify mcp` (stdio), `habitify mcp --transport=sse --port=8080`, `habitify test`.
+CLI: `bb run //x/habitify_mcp:habitify_cli -- <cmd>` with `mcp` (stdio) or `mcp --transport=sse --port=8080`.
 
 ## Environment Variables
 
@@ -25,4 +24,4 @@ CLI: `habitify mcp` (stdio), `habitify mcp --transport=sse --port=8080`, `habiti
 
 ## Development
 
-API reference examples in `habitify_api_reference/` (regenerate with `python collect_references.py`).
+API reference captures: [`api_reference/`](api_reference/README.md). Read its collector warning before regenerating them.

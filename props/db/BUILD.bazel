@@ -248,6 +248,7 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
         "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

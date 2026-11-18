@@ -107,6 +107,14 @@ its default queries against that database, and the primary's instance reconcile 
 owner's password from the secret. When the role does not exist, that reconcile fails and
 skips every later step.
 
+## Gotcha: replica stuck `0/1` after failover
+
+A former primary can finish `pg_rewind`, enter standby and stay `0/1` for ~30 minutes while the
+new primary is healthy: it needs WAL up to a minimum recovery ending LSN that the idle primary
+has not sent (`airlock-db-1` needed `0/15000028`; the primary had sent and the replica replayed
+`0/15000000`). `pg_switch_wal()` does not help while the primary idles at a WAL segment boundary;
+one WAL record on the primary does: `select pg_create_restore_point('cnpg_recovery_nudge_<date>_<cluster>');`
+
 ## Current Compliance
 
 No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;

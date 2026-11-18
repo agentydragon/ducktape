@@ -1,9 +1,9 @@
 //! Install PATH shims: small shell wrappers in `<session_dir>/bin/`
 //! that `exec claude-hook shim <name> "$@"`.
 //!
-//! Ported from the retired Python shim installer. `claude-hook` is
-//! resolved via PATH at exec time (not baked in) so the wrapper keeps
-//! working across binary upgrades without restarting the session.
+//! `claude-hook` is resolved via PATH at exec time (not baked in) so the
+//! wrapper keeps working across binary upgrades without restarting the
+//! session.
 
 use claude_hook_config::GitShimConfig;
 use std::os::unix::fs::PermissionsExt;

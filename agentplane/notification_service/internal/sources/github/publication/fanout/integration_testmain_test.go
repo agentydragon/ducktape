@@ -3,7 +3,6 @@ package fanout
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -209,7 +208,3 @@ func requireEqual(t *testing.T, got, want any) {
 }
 
 func ptr[T any](value T) *T { return &value }
-
-func payloadOf(event sourceadapter.ActionsEvent) string {
-	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "at": "2026-01-01T00:00:00Z", "actor": null}`, event.Sequence)
-}

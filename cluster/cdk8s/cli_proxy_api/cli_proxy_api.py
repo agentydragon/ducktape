@@ -28,6 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
@@ -50,10 +51,7 @@ SERVICE = ServiceRef(
 )
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-state"
-_INIT_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-    limits={"memory": k8s.Quantity.from_string("64Mi")},
-)
+_INIT_RESOURCES = container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi")
 _ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
 # The SOPS-managed management key; aiquota reads it too.
 MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
@@ -158,15 +156,8 @@ def _deployment(scope: Construct) -> None:
                             ports=[SERVICE.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("1"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="128Mi", cpu_limit="1", memory_limit="512Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),

@@ -52,7 +52,7 @@ build-time scrambling and the language-specific recovery angles.
   vs the skill's generality? Drives where to invest —
   per-specimen-runbook generation vs skill prose. Origin: the 1h
   Sonnet timeout review at
-  <evals/x/notes/2026_04_29_sonnet_review_haiku.md> showed Sonnet's
+  <devinfra/skills/reverse_engineer/evals/x/notes/2026_04_29_sonnet_review_haiku.md> showed Sonnet's
   failure was triage (over-disassembly, no checkpointing,
   cipher-guessing without ground truth) rather than skill knowledge,
   and the hinted arm would isolate that.

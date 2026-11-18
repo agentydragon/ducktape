@@ -30,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -45,7 +46,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -178,7 +178,7 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 // watch runs a policy informer of the namespace until the test ends, and returns its index once the index is available.
 func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
-	index := informer.NewIndex([]string{testNamespace})
+	index := informer.NewIndex()
 	policyInformer, err := informer.New(kube.Config, index, string(n))
 	if err != nil {
 		t.Fatal(err)
@@ -193,18 +193,8 @@ func (n policyNamespace) watch(t *testing.T) *informer.Index {
 		cancel()
 		<-done
 	})
-	eventually(t, "the policy index to be available", index.Health.Available)
+	eventually.Eventually(t, "the policy index to be available", index.Health.Available)
 	return index
-}
-
-// eventually waits for the condition, and fails the test once callDeadline passes without it.
-func eventually(t *testing.T, what string, condition func() bool) {
-	t.Helper()
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		t.Fatalf("gave up waiting for %s: %v", what, err)
-	}
 }
 
 // submissionCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and

@@ -131,6 +131,7 @@ ts_library(
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/app/frontend/ui:inline_name",
         "//agentplane/mcp_edge/api/connection:connection_service_pb",
+        "//agentplane/proto:code_pb",
         "//agentplane/proto:identity_pb",
     ],
 )
@@ -150,6 +151,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/connections/testing:test_support",
         "//agentplane/mcp_edge/api/connection:connection_service_pb",
+        "//agentplane/proto:code_pb",
         "//agentplane/proto:identity_pb",
     ],
 )

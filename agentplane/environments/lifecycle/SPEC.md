@@ -100,13 +100,4 @@ remain read-only; explicit resume uses the policy and mutation contract above.
 The public service exposes no suspend operation. Any future public suspend API requires a separately
 reviewed authority and retry contract.
 
-Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`environment_service_readers`, `environment_service_managers`,
-`environment_service_launchers`, and `environment_service_operators`. Service operators may
-explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`environment_service_delegation` admits a service actor only for configured read methods and
-`ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. Environments' `wake_service_callers`
-grants automatic broker eligibility for its own assessments. Dispatcher configures its own broker
-list and budgets service wakes by exact SPIFFE ID. Create receipts retain the typed service actor
-separately from the Action origin.
+Service SVID role grants and delegation: [EnvironmentService SPEC](../internal/service/SPEC.md#resume-and-ownership).

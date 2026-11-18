@@ -42,12 +42,6 @@ py_test(
 )
 
 py_library(
-    name = "constants",
-    srcs = ["constants.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "static_bearer",
     srcs = ["static_bearer.py"],
     visibility = ["//:__subpackages__"],

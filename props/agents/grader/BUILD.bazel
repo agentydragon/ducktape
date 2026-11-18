@@ -358,10 +358,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core/models:examples",
         "//props/db:database",
-        "//props/db:models",
-        "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

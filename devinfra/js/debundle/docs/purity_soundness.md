@@ -348,9 +348,9 @@ writes remain witnesses under the explicit premise; sibling writes are not
 assumed inert because an inherited setter or Proxy trap could indirectly change
 the required slots.
 
-This input only resolves native callee identity. The existing `FreshDataRecord`
-guard must separately establish an ordinary fresh plain-data argument before
-the native `Object.freeze` return and no-reentry model can be used. It does not
+This input only resolves native callee identity. The `Object.freeze` row's
+`Integrity` proof must separately establish an ordinary fresh plain-data
+argument before the native return and no-reentry model can be used. It does not
 assert call purity, suppress argument effects or throws, or establish
 whole-family native integrity. For the selected call with a fresh plain-data
 object literal argument, the native freeze body cannot observe an earlier
@@ -618,10 +618,10 @@ non-pure, while a statically primitive key can be admitted.
 Trap execution remains observable when the proxy is later used. The rule
 classifies only construction; it does not make reads, writes, calls, or
 other operations through the resulting proxy pure. This boundary is pinned
-by `fresh_proxy_object_literals_are_pure`,
+by `fresh_proxy_object_literals_have_no_effects`,
 `proxy_constructor_rejects_unproved_args`,
-`shadowed_proxy_constructor_falls_back_to_unknown`, and the E2E test
-`proxy_traps_run_only_after_property_access`.
+`shadowed_proxy_constructor_constructs_the_user_binding`, and the
+`emission/proxy_constructor/trap_timing` corpus case.
 
 See the [Proxy constructor algorithm](https://tc39.es/ecma262/multipage/reflection.html#sec-proxy-constructor)
 and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxycreate).
@@ -1048,9 +1048,8 @@ heap frontier.
 getter per ECMA-262, so the read itself is pure. The **call** of the resolved
 value is summarized only by its row, if any: a function with no row, or whose
 row constrains its operands, stays unknown on arbitrary arguments.
-`function_valued_property_calls_remain_unknown` pins that direction for every
-function-valued entry, so a read entry is never mistaken for a call
-admission.
+`function_valued_property_calls_with_opaque_arguments_invoke` pins that
+direction, so a read entry is never mistaken for a call admission.
 
 ## Global-object member call targets
 
@@ -1405,33 +1404,14 @@ and admits only when test and arms have covered access. It proves no exact
 truthiness or runtime equality. Effectful/coercing children and unavailable
 bindings cannot acquire an allocation-only certificate through an outer
 operator. General conditionals remain opaque and keep conservative branch reach.
-For a namespace-member contract, the author must audit the provider and every
-caller/runtime path supplying values used by admitted callbacks, establishing
-that listed factory members retain their identities and behavior through the
-analyzed chunk's synchronous initialization. In particular, provider or other
-namespace members and callback/ref/hook inputs must not expose an alias that
-can replace a listed factory member. Direct static identifier-property
-namespace call results are treated as independent only under this explicit
-author assertion. The checker propagates explicit namespace provenance through
-assignments, local aliases, property values, returns, and call arguments. An
-unrelated call or constructor result with no such path is not treated as a
-namespace alias solely because its runtime value is unknown; the author audit
-asserts that values used by admitted callbacks cannot alias or replace listed
-members. Unknown syntax remains conservative when it reaches a publication or
-call-argument sink; unsupported destructuring results stay possible namespace
-values through later local aliases. Recognized local class values and
-allocations are checked against their retained aggregate static or instance
-fields. A member projection checks the whole receiver, which may conservatively
-taint an unrelated sibling property. Constructors, inheritance, decorators,
-accessors, and unsupported class surfaces remain opaque; method bodies keep
-their existing return and effect checks. A value from an unknown call or
-constructor used as an actual static or dynamic write receiver remains a
-possible namespace alias, including through local aliases and member
-projections, and disables the contract. For call-argument checks, the checker follows namespace values in
-the supplied argument expressions and excludes the callee expression, which
-is not passed as an argument. The checker does not prove that arbitrary
-callback parameters or unrelated call results are disjoint from the
-namespace; that non-aliasing guarantee is part of the author audit.
+The author audit of a namespace-member contract and the checker's namespace
+provenance, write-receiver and call-argument rules are in
+[SPEC § Namespace and record calls without synchronous reentry](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry).
+Unsupported destructuring results stay possible namespace values through later
+local aliases. Recognized local class values and allocations are checked
+against their retained aggregate static or instance fields. A member projection
+checks the whole receiver, which may conservatively taint an unrelated sibling
+property. Method bodies keep their existing return and effect checks.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as a callee, not as a
 captured namespace value. Its arguments and effects remain analyzed; computed

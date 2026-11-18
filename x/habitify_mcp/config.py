@@ -20,8 +20,3 @@ def load_api_key(*, exit_on_missing: bool = True) -> str | None:
         )
 
     return api_key
-
-
-def get_api_base_url() -> str | None:
-    """Get the optional Habitify API base URL from environment."""
-    return os.environ.get("HABITIFY_API_BASE_URL")

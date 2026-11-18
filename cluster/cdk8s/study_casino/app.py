@@ -33,6 +33,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -192,13 +193,7 @@ def _readonly_provisioner(scope: Construct) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("128Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             command=["/bin/bash", "-c"],
                             args=[_PROVISIONER_SCRIPT],
                             termination_message_policy="FallbackToLogsOnError",
@@ -298,13 +293,7 @@ def _deployment(scope: Construct) -> None:
                                     name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                    "cpu": k8s.Quantity.from_string("25m"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
                             readiness_probe=_probe(3, 10),
                             liveness_probe=_probe(15, 20),
                         )

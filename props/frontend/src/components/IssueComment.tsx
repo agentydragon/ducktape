@@ -15,7 +15,6 @@ interface Props {
   expanded?: boolean;
   onToggle?: () => void;
   gradingEdges?: GradingEdgeInfo[];
-  credit?: number;
   copyUrl?: string;
   snapshotSlug?: string;
 }
@@ -46,7 +45,6 @@ export default function IssueComment({
   expanded = false,
   onToggle,
   gradingEdges = [],
-  credit,
   copyUrl,
   snapshotSlug,
 }: Props) {
@@ -80,9 +78,6 @@ export default function IssueComment({
         <Icon size={16} className={styling.colors.text} />
         <span className="font-mono text-sm font-medium">{issueId}</span>
         <span className={`text-xs ${styling.colors.textDark} font-medium`}>{styling.label}</span>
-        {credit !== undefined ? (
-          <span className="text-xs text-gray-500 dark:text-gray-400">(+{credit.toFixed(2)})</span>
-        ) : null}
         <span className="ml-auto text-gray-400 dark:text-gray-500 text-xs">{expanded ? "▼" : "▶"}</span>
       </UnstyledButton>
 

@@ -91,13 +91,19 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
   `cmd` field stringifying the whole argv list instead of returning `list[str]`,
   and a malformed tool-call name resembling `python3</arg_value>`. Props' local
   tool validation rejected those calls, but z.ai returned them despite the
-  strict metadata.
+  strict metadata. Minimal tests did not reproduce the `cmd` case (required
+  `list[str]`, `sh -c` pipes included): treat both as weaker, model-quality
+  symptoms.
 - `glm-4.6` has a reproducible issue with required nullable fields under strict
-  tool schemas. Direct z.ai and cluster LiteLLM tests both returned `"null"` as
-  a string for required nullable string/array fields, and returned a stringified
-  JSON array for a required nullable array. Required non-null string/array
-  fields worked, and non-null sentinel shapes worked. Prefer non-null sentinel
-  or mode-object schemas over `anyOf: [T, null]` for z.ai tool inputs.
+  tool schemas. OpenAI strict mode forces every field into `required`, so an
+  optional `T | None` argument becomes a required nullable one. Direct z.ai and
+  cluster LiteLLM tests both returned `"null"` as a string for required nullable
+  string/array fields, and a stringified JSON array for a required nullable
+  array. Validation accepts the string `"null"` for a nullable `str` but rejects
+  it for a nullable `list`. Required non-null string/array fields, non-null
+  sentinel shapes and an optional field omitted from `required` all worked.
+  Prefer non-null sentinel or mode-object schemas over `anyOf: [T, null]` for
+  z.ai tool inputs, and test the exact shape against z.ai before deploying it.
 - The `anyOf` weakness extends to **object-typed union parameters**. A tool
   parameter whose schema is an `anyOf`/`oneOf` of object variants (e.g. a
   Pydantic discriminated union) comes back as a **JSON-encoded string**, not a

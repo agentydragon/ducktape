@@ -4,18 +4,19 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import aiodocker
 import anyio
 from fastmcp.server import FastMCP
 from tenacity import AsyncRetrying, retry_if_result, wait_fixed
 
-from mcp_infra.constants import SLEEP_FOREVER_CMD
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, ResolvedExecInput
 from util.exec.models import MAX_BYTES_CAP, BaseExecResult, render_raw_to_result
 
 logger = logging.getLogger(__name__)
+
+SLEEP_FOREVER_CMD: Final[list[str]] = ["/bin/sh", "-lc", "sleep infinity"]
 
 # Docker exec stream type codes
 STREAM_TYPE_STDOUT = 1

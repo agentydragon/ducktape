@@ -34,23 +34,23 @@ run_loop_agent()
 
 ### Container Interface
 
-| Aspect     | Decision                                                                     |
-| ---------- | ---------------------------------------------------------------------------- |
-| Entrypoint | Standard Dockerfile `CMD` (not `/init` convention)                           |
-| Completion | Exit code 0 = success, non-zero = failure                                    |
-| Status     | Host determines status (agents cannot update their own status due to RLS)    |
-| Abort      | Host hard-kills container/Pod on timeout                                     |
-| Logs       | Runtime logs are shipped to Loki and read through the backend                |
-| Lifecycle  | Host records `started_at`, `ended_at`, `container_exit_code` in `agent_runs` |
+| Aspect     | Decision                                                                  |
+| ---------- | ------------------------------------------------------------------------- |
+| Entrypoint | Standard Dockerfile `CMD` (not `/init` convention)                        |
+| Completion | Exit code 0 = success, non-zero = failure                                 |
+| Status     | Host determines status (agents cannot update their own status due to RLS) |
+| Abort      | Host hard-kills container/Pod on timeout                                  |
+| Logs       | Runtime logs are shipped to Loki and read through the backend             |
+| Lifecycle  | Host records `status` and `container_exit_code` in `agent_runs`           |
 
 **Status determination (outside container):**
 
 - Agents cannot update their own `agent_runs.status` column due to Row Level Security (no UPDATE policy)
-- Host determines final status after container exits based on:
-  - Exit code 0 + issues reported → `COMPLETED` (for critics)
-  - Exit code 0 + all grading edges complete → `COMPLETED` (for graders)
+- Host sets the terminal status when the run ends (`AgentRunStatus`):
+  - Container exits → `EXITED`, with `container_exit_code` (0 = success)
   - Timeout (container killed) → `TIMED_OUT`
-  - Exit code != 0 or validation failed → `REPORTED_FAILURE`
+  - Host task cancelled → `CANCELLED`
+  - Container could not be started → `STARTUP_FAILED`
 - Submit/report_failure tools perform validation but don't change status; they signal intent via exit code
 
 ### LLM Proxy
@@ -87,13 +87,12 @@ The registry proxy is a separate service (`props/registry_proxy`) that reuses th
 
 ### Resource Limits
 
-| Aspect          | Decision                                                                      |
-| --------------- | ----------------------------------------------------------------------------- |
-| USD budget      | `agent_runs.budget_usd` - max USD cost for agent + all child agents           |
-| Timeout         | `agent_runs.timeout_seconds` - max wall-clock time before container is killed |
-| Budget enforce  | LLM proxy checks budget before each request; rejects if exceeded              |
-| Timeout enforce | `agent_registry` uses `asyncio.wait_for()` to kill container on timeout       |
-| Lifecycle       | `agent_runs.started_at` and `ended_at` record container execution window      |
+| Aspect          | Decision                                                                 |
+| --------------- | ------------------------------------------------------------------------ |
+| USD budget      | `agent_runs.budget_usd` - max USD cost for agent + all child agents      |
+| Timeout         | Run's `timeout_seconds` - max wall-clock time before container is killed |
+| Budget enforce  | LLM proxy checks budget before each request; rejects if exceeded         |
+| Timeout enforce | `agent_registry` uses `asyncio.wait_for()` to kill container on timeout  |
 
 **Budget enforcement by proxy:**
 
@@ -108,10 +107,10 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 **Timeout enforcement by agent_registry:**
 
-1. Record `started_at` when creating AgentRun
-2. Wrap container execution in `asyncio.wait_for(coro, timeout=timeout_seconds)`
-3. If timeout fires, container is killed (run_loop_agent's finally block cleans up)
-4. Record `ended_at` and set status to `TIMED_OUT`
+1. `_collect_run` passes `timeout_seconds` to `ContainerHandle.wait()`
+2. The Docker and Kubernetes handles wrap the wait in `asyncio.wait_for(..., timeout=timeout_seconds)`
+3. If timeout fires, the handle kills the container/Pod and returns `TimedOut`
+4. `_collect_run` sets status to `TIMED_OUT`
 
 ### Tool Execution
 

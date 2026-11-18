@@ -1,6 +1,6 @@
 // `google_calendar` preview fixtures: the only list of this server's preview cards. The `:previews` target
 // mounts them (`preview_harness.tsx`) and derives its screenshot scenarios from them
-// (`screenshot/emit_scenarios.mjs`). `RegisteredToolPreviewFixture` ties each (serverId, toolName,
+// (`screenshot/emit_fixtures.mjs`). `RegisteredToolPreviewFixture` ties each (serverId, toolName,
 // args, result?) to the registry's real Zod schemas, so a stale id, argument, or result shape is a
 // type error.
 import type { RegisteredToolPreviewFixture } from "../index";

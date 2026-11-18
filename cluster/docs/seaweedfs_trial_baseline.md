@@ -1,8 +1,7 @@
 # SeaweedFS trial — baseline performance
 
 Initial latency/throughput numbers captured on the two-kimsufi-worker
-SeaweedFS deployment described in <kimsufi_provisioning.md> and the trial
-plan at `~/.claude/plans/ns103656-ip-147-135-39-us-...md`.
+SeaweedFS deployment (node provisioning: <kimsufi_provisioning.md>).
 
 The point of this file: a written-down "what we got on day one" so a future
 decision about (a) enabling the filer for PVCs, or (b) promoting the
@@ -68,13 +67,13 @@ scrape via the Service ClusterIP, which is fine.)
 ## How to reproduce
 
 In-cluster S3 endpoint: `http://seaweedfs-s3.seaweedfs.svc:8333`.
-Credentials in SOPS at `cluster/k8s/seaweedfs/secrets/s3-config.sops.yaml`.
+Admin credentials: `stringData.accessKey`/`secretKey` in SOPS at
+`cluster/k8s/seaweedfs/cluster/identities/admin.sops.yaml`.
 
 ```sh
 # admin creds (from SOPS)
-sops -d cluster/k8s/seaweedfs/secrets/s3-config.sops.yaml |
-  yq '.stringData["seaweedfs_s3_config.json"]' | fromjson |
-  jq '.identities[0].credentials[0]'
+sops -d cluster/k8s/seaweedfs/cluster/identities/admin.sops.yaml |
+  yq '.stringData | {accessKey, secretKey}'
 
 # from a one-shot pod in the cluster:
 kubectl run -n default --rm -it --image=amazon/aws-cli s3test -- \

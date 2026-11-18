@@ -82,7 +82,6 @@ py_test(
         "//props/backend:auth",
         "//props/backend:conftest",
         "//props/backend:deps",
-        "//props/core:agent_types",
         "//props/db:database",
         "//props/db:models",
         "//props/orchestration:agent_registry",

@@ -21,10 +21,14 @@ relying on it, starting from the files below.
 Upstream splits hooks into two execution paths:
 
 **REPL hooks** — run during the model conversation loop. `systemMessage` is
-injected as a `hook_system_message` attachment the model reads.
+injected as a `hook_system_message` attachment the model reads;
+`additionalContext` (via `hookSpecificOutput`) as a `hook_additional_context`
+attachment.
 
 **Non-REPL hooks** — run outside the loop (startup, shutdown, filesystem events).
-`systemMessage` goes to UI notification callback only; model never sees it.
+`systemMessage` goes to UI notification callback only; model never sees it. For
+SessionStart, use `additionalContext` (via `hookSpecificOutput`) to inject text
+the model reads.
 
 Non-REPL hooks: SessionStart, SessionEnd, Setup, CwdChanged, FileChanged,
 InstructionsLoaded, WorktreeCreate, WorktreeRemove, ConfigChange.
@@ -34,8 +38,8 @@ Everything else is REPL.
 Upstream code path: REPL → `executeHooks()` yields messages into conversation.
 Non-REPL → `executeHooksOutsideREPL()` returns `HookOutsideReplResult`.
 
-Our guard: `server.py` raises `AssertionError` if `system_message` is set on a
-non-REPL hook output.
+Our daemon puts mailbox messages in `systemMessage` only on REPL hooks
+(`is_repl()` in <devinfra/claude/claude_hook/protocol.rs>).
 
 ## Async hooks
 
@@ -92,14 +96,15 @@ No native MCP-as-hook-callback support. `http` type is the closest workaround
 - `updatedInput` without `permissionDecision` → passthrough (modifies input,
   normal permission flow still applies).
 - `updatedInput` with `deny` → silently dropped.
-- `updatedInput` + `allow` satisfies `requiresUserInteraction` (headless escape hatch).
+- `updatedInput` + `allow` satisfies `requiresUserInteraction` for tools like
+  `AskUserQuestion` (headless escape hatch).
 
 ## Other notable semantics
 
 - **Exit code 2** = blocking error for shell command hooks (equiv to `decision: 'block'`).
 - **SessionEnd timeout**: 1.5s default (not 10min). Override via `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`.
 - **`CLAUDE_ENV_FILE`**: only on SessionStart, Setup, CwdChanged, FileChanged hooks.
-- **`updatedMCPToolOutput`**: silently ignored for non-MCP tools.
+- **`updatedMCPToolOutput`**: silently ignored for non-MCP tools (`isMcpTool()` check upstream).
 - **`hookSpecificOutput.hookEventName`** validated against expected event — mismatch throws.
 - **Workspace trust**: all hooks skipped if trust dialog not accepted (interactive mode).
 - **`tool_input`**: upstream uses `z.unknown()`, we use `dict[str, Any]`.
@@ -120,5 +125,5 @@ No native MCP-as-hook-callback support. `http` type is the closest workaround
   mismatched IDs during compaction — this is a Claude Code bug, not design.
 - **Resume** from a new Claude instance: process generates a fresh UUID at
   startup, then `switchSession()` overwrites it with the old ID before hooks fire.
-- **Transcripts**: `~/.claude/sessions/<sessionId>.jsonl`. Metadata (title, tags)
+- **Transcripts**: `~/.claude/projects/<project>/<sessionId>.jsonl`. Metadata (title, tags)
   appended to end of same file. No separate metadata store.

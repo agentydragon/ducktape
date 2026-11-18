@@ -18,11 +18,13 @@ from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -145,10 +147,7 @@ def _link_ssd_models_container() -> k8s.Container:
         name="link-ssd-models",
         image="ollama/ollama:0.34.4",
         command=["/bin/sh", f"{_SCRIPTS_DIR}/{_LINK_SCRIPT}"],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-            limits={"memory": k8s.Quantity.from_string("64Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
         volume_mounts=[
             k8s.VolumeMount(name="models", mount_path=_MODELS_DIR),
             k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
@@ -162,10 +161,7 @@ def _auth_proxy_container() -> k8s.Container:
         name="auth-proxy",
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("256Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
         ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
@@ -191,6 +187,7 @@ def _deployment(scope: Construct, scripts: ConfigMap, auth_proxy_config: ConfigM
         "deployment",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
+            # TabbyAPI owns both GPUs. Keep Ollama available for GitOps rollback.
             replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
@@ -345,13 +342,7 @@ def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
                             command=[f"{_SCRIPTS_DIR}/{_SETUP_SCRIPT}"],
                             env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
                             # curl calls against the local registration API.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             volume_mounts=[k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True)],
                         )
                     ],
@@ -435,6 +426,7 @@ def chart(app: App) -> Chart:
     if not _PAUSED_FOR_HOST_EXPERIMENTS:
         _setup_job(chart, scripts)
     _direct_token(chart)
+    tabby.add_tabbyapi(chart)
     return chart
 
 
@@ -450,11 +442,14 @@ def ollama(
         timeout="10m",
         health_checks=[
             KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name=tabby.SERVICE.name, namespace=_NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name=DIRECT_TOKEN.secret.name,
                 namespace=_NAMESPACE,
-            )
+            ),
         ],
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook

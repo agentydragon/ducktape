@@ -22,6 +22,7 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import namespace
@@ -79,14 +80,8 @@ INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, file
 SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _stalwart_resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests=_quantities({"cpu": "100m", "memory": "256Mi"}), limits=_quantities({"cpu": "1", "memory": "1Gi"})
-    )
+    return container_resources(cpu="100m", memory="256Mi", cpu_limit="1", memory_limit="1Gi")
 
 
 def _stalwart_mounts() -> list[k8s.VolumeMount]:
@@ -316,10 +311,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                                limits=_quantities({"memory": "64Mi"}),
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),

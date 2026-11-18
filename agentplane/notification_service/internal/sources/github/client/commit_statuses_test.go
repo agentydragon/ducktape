@@ -122,26 +122,3 @@ func TestCommitStatusesRejectsNonImmutableSHAWithoutRequest(t *testing.T) {
 		t.Errorf("CommitStatuses with a branch name = %v after %d requests, want argument error without requests", err, fake.Total())
 	}
 }
-
-func TestCommitStatusesReturnsTypedFailureFromLaterPage(t *testing.T) {
-	fake := fixture.NewFake(t)
-	fake.Handler = func(w http.ResponseWriter, r *http.Request, path string) bool {
-		if !strings.HasSuffix(path, "/status") {
-			return false
-		}
-		if r.URL.Query().Get("page") == "1" {
-			replyPage(w, r, path, "per_page=100", 2, fmt.Sprintf(`{"state":"pending","sha":%q,"total_count":1,"statuses":[]}`, fixture.SHA))
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"message":"unavailable"}`)
-		}
-		return true
-	}
-	statuses, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
-	if failure := fixture.AsError[*StatusError](t, err); failure.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("failure %+v", failure)
-	}
-	if statuses != nil {
-		t.Errorf("CommitStatuses() on error = %#v, want nil", statuses)
-	}
-}

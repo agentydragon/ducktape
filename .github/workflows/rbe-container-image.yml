@@ -20,15 +20,12 @@ name: RBE Container Image
 on:
   push:
     branches: [main, devel]
-    paths:
+    paths: &rbe_image_paths
       - "devinfra/buildbuddy/images/rbe/Dockerfile"
       - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
       - ".github/workflows/rbe-container-image.yml"
   pull_request:
-    paths:
-      - "devinfra/buildbuddy/images/rbe/Dockerfile"
-      - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
-      - ".github/workflows/rbe-container-image.yml"
+    paths: *rbe_image_paths
   workflow_dispatch:
 
 concurrency:

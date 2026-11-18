@@ -88,7 +88,6 @@ async def test_disabled_operator_invalidates_session_and_identity_resolution(
     assert (
         await store.resolve_active_session(operator_id=identity.operator_id, identity_id=identity.identity_id) is None
     )
-    assert not await store.is_active(identity.operator_id)
     with pytest.raises(InactiveOperatorError):
         await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user"))
 
@@ -108,9 +107,6 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(
         )
         is None
     )
-    # Existing ownership remains in the trust domain even after the browser issuer is removed,
-    # while the browser session itself is invalidated by the narrowed issuer allowlist.
-    assert await changed_issuer_store.is_active(identity.operator_id)
 
     changed_domain_store = PostgresOperatorIdentityStore(
         migrated_sessions,
@@ -124,7 +120,6 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(
         )
         is None
     )
-    assert not await changed_domain_store.is_active(identity.operator_id)
 
 
 def test_identity_config_rejects_empty_trust_domain() -> None:

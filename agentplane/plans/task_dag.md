@@ -42,8 +42,7 @@ Independent ready work may proceed alongside the main track; priority is not a n
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
 follow-ups, inline TODOs and open PRs are not automatically next work merely because they exist.
 Recheck their current state before dispatch: some old PRs overlap shipped changes. Actual failure
-cases can justify pulling a narrower fix forward. The sprint dispatch below scopes the currently
-authorized work; the priority list does not dispatch the other tracks.
+cases can justify pulling a narrower fix forward. The priority list does not dispatch work.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Execution service](../env/runtime/execution/SPEC.md) and their Session and native process components
@@ -110,56 +109,7 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Sprint scope and reliability follow-ups
-
-**Two-week timebox; operator dispatch, 2026-10-30 PDT; remaining scope reconciled 2026-11-02 UTC.**
-Reliability contracts live in the
-[runtime specification](../sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../sampler/docs/blocked_session_recovery.md). The
-[acceptance record](../sampler/docs/rollout_acceptance.md)
-retains the deployed exporter evidence and its limits.
-The shared explicit/automatic resume authority and uncertain-outcome contract live in the
-[lifecycle manager specification](../environments/lifecycle/SPEC.md) and concise
-[lifecycle README](../environments/lifecycle/README.md).
-
-**Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
-coverage audit and additional acceptance tests. The operator will evaluate reliability through
-normal use. Revisit [a focused follow-up](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
-only if that use exposes continued instability. This exercise no longer gates the sprint or the
-daily CI milestone; no dedicated acceptance worker is dispatched.
-
-The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
-implementation, operator 2026-10-31**, and its backend tools are built; routine calls use same-SA authorization and environment creation initially needs human
-approval when implemented. **First release: reuse existing environments; new environment creation
-and template-catalogue ownership are deferred by the operator.** Prefer existing gRPC methods and
-CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction TODOs where needed. File conflicts do
-not block independent PRs. Required system checks and a documented rollback precede staging changes.
-
-The control-plane deployment target remains rolling updates with at least two replicas, with the
-accepted [Electric exception](../docs/electric_single_replica.md). K3s fixtures remain single-replica; a two-replica
-nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
-the broader runtime redesign remain outside this sprint.
-
-### Dispatch order and prerequisites
-
-Keep reliability follow-up regression-driven; it does not block other work.
-
-Scheduled wake is an unscheduled [persistent-agents proposal](persistent_agents.md), not a dispatch
-priority. The daily CI capstone's scheduling/delegation dependencies do not select it for work.
-
-Natural-agent delegation usability is an operator follow-up; no model exercise is dispatched.
-Focused regression tests and Bazel runs remain authorized; broad disruption exercises remain waived.
-Revisit reliability work when normal use exposes a concrete regression. Provider attempt recovery
-and remaining native cleanup blocks follow the
-[sampler contract](../sampler/SPEC.md#runtime-and-effects); the executor's survival across
-control-plane rolls is
-[`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
-
-| Lane          | Next reviewable outcome                                                       | Prerequisite / stopping point                 |
-| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
-| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability | Ordinary use; no model exercise is dispatched |
-
-Scheduled wake and the daily CI capstone await selection by the operator.
+### Unexplained cleanup timeouts
 
 The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
@@ -168,21 +118,18 @@ also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence 
 either failure or claiming it fixed. Passing later tests and the merged Runtime COSI improvements
 do not establish either cause.
 
-Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
-next and are independent of each other; image/layering work becomes a prerequisite only when the
-chosen change actually needs it. Existing technical, authorization, data-preservation and explicit
-operator-review gates remain in the owning nodes. Lower-priority maintenance stays in its sections;
-its old ordering does not give it precedence over the selected tracks.
+A third is also unexplained: a Dispatcher system-test cleanup timed out waiting for the Sandbox to
+stop ([note](../debug/dispatcher_cleanup_timeout.md)). On recurrence, read its captured diagnostics
+before changing lifecycle behavior.
 
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                    | Operator release (UTC) | Node                        | State                                                                         |
-| ------------------------ | ---------------------- | --------------------------- | ----------------------------------------------------------------------------- |
-| Versioned dispatch watch | 2026-11-16 06:40       | none (`CLEANUP` tombstone)  | Chunked-notice cleanup awaits the rollback window                             |
-| Leftover settings keys   | 2026-11-16 06:40       | none (`CLEANUP` tombstones) | In flight; manifests stop setting each key before the code stops accepting it |
+| Track                  | Operator release (UTC) | Node                        | State                                                                         |
+| ---------------------- | ---------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| Leftover settings keys | 2026-11-16 06:40       | none (`CLEANUP` tombstones) | In flight; manifests stop setting each key before the code stops accepting it |
 
 Not released:
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
@@ -2158,7 +2105,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: choose a shared service settings framework]
 ```
@@ -2177,18 +2123,6 @@ agent-sandbox `Sandbox` CRD remains separately owned. Action execution boxes kee
 and reference migration that preserves identities and stored data. Do not use a global text
 replacement or implicitly rename upstream APIs/resources. No implementation or wire/CRD/storage
 cutover is approved here; this proposal is independent of current authorization and reliability work.
-
-### `ENVIRONMENT_RUNTIME_SERVICE_SPLIT` — separate environment and Harness/Session APIs
-
-**Unscheduled.** Split the renamed public Environment Runtime API by
-responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
-actions belong to the Environment API; Harness/Session admission and operations belong to the
-Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
-the implementation design. Keep the Runtime-to-Host in-process lifecycle contract distinct. This split
-does not decide whether the services use separate binaries or Deployments; that grouping remains
-separate from API ownership. Update Gateway routing, authorization, tests, component specs and system
-overviews with the split. Base the boundary on
-[`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 

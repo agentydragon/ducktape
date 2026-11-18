@@ -9,6 +9,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -75,15 +76,8 @@ def _server(chart: Chart) -> None:
                                 DATABASE.app_secret.key("uri").env_var("ATUIN_DB_URI"),
                                 k8s.EnvVar(name="RUST_LOG", value="info"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="500m", memory_limit="256Mi"
                             ),
                             liveness_probe=_http_probe(initial_delay_seconds=10, period_seconds=10),
                             readiness_probe=_http_probe(initial_delay_seconds=5, period_seconds=5),

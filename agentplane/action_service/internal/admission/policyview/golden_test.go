@@ -38,7 +38,7 @@ func TestReadersReceiveTheirPolicyViews(t *testing.T) {
 	}
 	for name, v := range golden.Views {
 		t.Run(name, func(t *testing.T) {
-			index := informer.NewIndex(nil)
+			index := informer.NewIndex()
 			for _, set := range v.PolicySets {
 				index.Rules.PutPolicySet(&set)
 			}

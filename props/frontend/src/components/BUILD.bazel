@@ -331,12 +331,9 @@ props_vitest_test(
     srcs = ["RunDetail.test.tsx"],
     deps = [
         ":RunDetail",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
@@ -344,6 +341,7 @@ props_vitest_test(
         "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
         "//util/frontend:deferred_test_utils",
+        "//util/frontend:react_test_utils",
     ],
 )
 

@@ -443,9 +443,6 @@ function LoadedRunContent({
         <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <GradingEdges
             edges={aggregateEdges}
-            missedOccurrences={[]}
-            totalCredit={gradingSummary?.total_credit}
-            recallDenominator={undefined}
             defaultOpen={aggregateEdges.filter((edge) => edge.target.credit > 0).length < 10}
             runId={run.agent_run_id}
             snapshotSlug={getSnapshotSlug(run)}
@@ -459,7 +456,6 @@ function LoadedRunContent({
             <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
               <GradingEdges
                 edges={gradingEdges}
-                missedOccurrences={[]}
                 defaultOpen={gradingEdges.filter((edge) => edge.target.credit > 0).length < 10}
                 runId={run.agent_run_id}
                 snapshotSlug={getSnapshotSlug(run)}

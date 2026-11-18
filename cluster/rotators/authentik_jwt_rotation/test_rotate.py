@@ -3,7 +3,6 @@ import json
 import textwrap
 import urllib.parse
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -11,6 +10,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from cluster.rotators import sops
 from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
 from cluster.rotators.authentik_jwt_rotation.rotate import (
@@ -21,7 +21,6 @@ from cluster.rotators.authentik_jwt_rotation.rotate import (
     stamped_claims,
     token_audiences,
 )
-from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:
@@ -43,83 +42,6 @@ def _recording_client(status_code: int, seen: list[httpx.Request], json: dict | 
         return httpx.Response(status_code, json=json)
 
     return _mock_client(handler)
-
-
-def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: Path):
-    sops_file = tmp_path / "secrets" / "haku-k8s-jwt.yaml"
-    credentials_dir = tmp_path / "creds"
-    credentials_dir.mkdir()
-    rotation = Rotation(
-        name="haku-k8s",
-        provider_slug="kubectl-sandbox-client-credentials",
-        scopes="openid profile email groups",
-        credentials_dir=credentials_dir,
-        sops_file=sops_file,
-        token_field="jwt",
-    )
-    token = _make_jwt({"iss": rotation.expected_issuer, "exp": 1_800_000_000, "groups": []})
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    assert rotate.rotate_one(_status_client(500), rotation, Config(rotations=[])) is True
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
-
-
-def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
-    out = K8sSecretOutput(
-        path=tmp_path / "cluster/k8s/agents/example/test-kube-token.sops.yaml",
-        name="test-kube-token",
-        namespace="example",
-    )
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    rotate.write_k8s_secret(out, token="the-jwt", exp_epoch=1_800_000_000)
-
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
-
-
-def test_remaining_hours_missing_file_is_none(tmp_path: Path):
-    assert remaining_hours(tmp_path / "absent.yaml") is None
-
-
-def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text("jwt: abc\n")
-    assert remaining_hours(f) is None
-
-
-def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
-    expires = datetime.now(UTC) + timedelta(hours=10)
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            jwt: abc
-            """)
-    )
-    remaining = remaining_hours(f)
-    assert remaining is not None
-    assert 9 < remaining < 11
 
 
 def test_token_audiences_normalizes_string_list_and_missing():
@@ -314,8 +236,8 @@ def _stub_mint(monkeypatch):
         {"iss": "https://auth.allegedly.works/application/o/alloy-otlp-client-credentials/", "exp": 1_800_000_000}
     )
     monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
-    monkeypatch.setattr(rotate.subprocess, "run", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _path: None)
+    monkeypatch.setattr(sops.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _path: None)
 
 
 def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):

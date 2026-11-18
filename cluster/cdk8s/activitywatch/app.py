@@ -22,6 +22,7 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.authentik import app as authentik
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -98,11 +99,8 @@ def _aw_server_container() -> k8s.Container:
         ],
         ports=[k8s.ContainerPort(container_port=_SERVER_PORT, name="http")],
         volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("64Mi")},
-            # VPA target 121Mi (upper bound 127Mi) on 2026-10-12; grows with imported events.
-            limits={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
-        ),
+        # VPA target 121Mi (upper bound 127Mi) on 2026-10-12; grows with imported events.
+        resources=container_resources(cpu="50m", memory="64Mi", cpu_limit="500m", memory_limit="512Mi"),
         liveness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=10, period_seconds=30),
         readiness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=5, period_seconds=10),
     )
@@ -114,15 +112,9 @@ def _readonly_proxy_container() -> k8s.Container:
         image="nginx:alpine",
         ports=[k8s.ContainerPort(container_port=_READONLY.pod_port, name="readonly")],
         volume_mounts=[k8s.VolumeMount(name="readonly-proxy-config", mount_path="/etc/nginx/conf.d", read_only=True)],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={
-                "cpu": k8s.Quantity.from_string("100m"),
-                # TODO(vpa-memory-audit): 64Mi -> 128Mi. VPA observed a 50Mi
-                # request / 60Mi upper bound, leaving no headroom at 64Mi.
-                "memory": k8s.Quantity.from_string("128Mi"),
-            },
-        ),
+        # TODO(vpa-memory-audit): 64Mi -> 128Mi. VPA observed a 50Mi
+        # request / 60Mi upper bound, leaving no headroom at 64Mi.
+        resources=container_resources(cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"),
         liveness_probe=_http_probe("/healthz", _READONLY.pod_port, initial_delay_seconds=5, period_seconds=30),
         readiness_probe=_http_probe("/healthz", _READONLY.pod_port, initial_delay_seconds=2, period_seconds=10),
     )
@@ -148,10 +140,7 @@ def _bearer_proxy_container() -> k8s.Container:
             k8s.ContainerPort(container_port=READ.pod_port, name="read"),
         ],
         volume_mounts=[k8s.VolumeMount(name="bearer-proxy-config", mount_path="/etc/nginx/templates", read_only=True)],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("64Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
         liveness_probe=_http_probe("/healthz", _WRITE.pod_port, initial_delay_seconds=5, period_seconds=30),
         readiness_probe=_http_probe("/healthz", _WRITE.pod_port, initial_delay_seconds=2, period_seconds=10),
     )

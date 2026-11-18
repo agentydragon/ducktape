@@ -23,6 +23,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
@@ -194,13 +195,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("128Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             command=["/bin/bash", "-c"],
                             args=[
                                 "set -euo pipefail\n"

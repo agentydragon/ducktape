@@ -12,6 +12,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -147,15 +148,8 @@ def _deployment(chart: Chart) -> None:
                             volume_mounts=[
                                 k8s.VolumeMount(name="kube-root-ca", mount_path="/var/run/kube-root-ca", read_only=True)
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
                             ),
                             readiness_probe=_healthz(initial_delay_seconds=3, period_seconds=10),
                             liveness_probe=_healthz(initial_delay_seconds=10, period_seconds=20),

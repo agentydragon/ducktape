@@ -42,7 +42,7 @@ On VMs, [`systemd-scope`](../systemd_scope.go) reconciles volatile scope intent,
 owner's marker and slice, and fences stale units before publishing readiness. Process desired state
 names its scope, and the process controller waits for that scope's ready status before launching.
 The scope controller never owns current process attempts; its ready latch prevents re-inventory
-inside the same Runtime lifetime. [`systemdBackend`](../systemd.go) owns each transient unit's manager
+inside the same Runtime lifetime. [`internal/systemd`](../internal/systemd/) owns each transient unit's manager
 connection, name, streams, observed invocation and cgroup, job tracking, exit observation and
 fence. Systemd owns the actual unit, configured signal/escalation behavior and cgroup. Runtime,
 Host and Execution own readiness, successor admission, journals and restart policy above this

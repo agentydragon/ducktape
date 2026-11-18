@@ -40,10 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	authoritySandboxUID = "00000000-0000-4000-8000-000000009013"
-	pendingSandboxUID   = "00000000-0000-4000-8000-000000009014"
-)
+const authoritySandboxUID = "00000000-0000-4000-8000-000000009013"
 
 type authorityInventory struct {
 	mu              sync.Mutex
@@ -207,20 +204,6 @@ func (s *countingAuthorityDispatcher) ListSessions(
 ) (*dispatcherpb.ListSessionsResponse, error) {
 	s.listCalls.Add(1)
 	return s.SessionDispatcherServer.ListSessions(ctx, request)
-}
-
-func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDispatcherClient, ctx context.Context, sessionID, sandboxName, sandboxUID string) {
-	t.Helper()
-	if _, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), Text: "unregistered",
-	}); status.Code(err) != codes.NotFound {
-		t.Fatalf("unregistered Session input: %v", err)
-	}
-	if _, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
-	}); status.Code(err) != codes.NotFound {
-		t.Fatalf("unregistered Session interrupt: %v", err)
-	}
 }
 
 type authoritySVIDServer struct {

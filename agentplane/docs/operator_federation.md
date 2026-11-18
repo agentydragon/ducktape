@@ -179,8 +179,9 @@ The explicit `dex` profile permits this absence while still rejecting a supplied
 `azp`. Both profiles require RS256, a pinned issuer/JWKS, a single string audience equal to the
 configured client, a nonblank subject, and valid integral `iat`/`exp`. Multiple audiences and
 cross-client Dex grants are not supported. Authentik's required `azp` contract is unchanged,
-including for Haku and MCP enrollment callers. The shared implementation lives in
-[`finance/plaid/spend/oidc_principal.py`](../../finance/plaid/spend/oidc_principal.py).
+including for Haku and MCP enrollment callers. The profile logic lives in
+[`agentplane/identity/operator/verifier.go`](../identity/operator/verifier.go) for the Action Service and MCP edge,
+and in [`agentplane/app/internal/federation/verify.go`](../app/internal/federation/verify.go) for the app.
 
 To activate Dex, first deploy app and Action Service images supporting the profile, then set
 `login_token_profile`, `target.token_profile`, and Action Service `token_profile` to `dex` in
@@ -353,9 +354,9 @@ view as the submitting caller.
   callback on another replica, two operators with distinct subjects and no local subject mapping,
   logout replay rejection, wrong issuer/audience/expiry/subject rejection, real MCP single dispatch,
   and login-token renewal through the app, refused renewal included.
-- `//agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, idle and absolute
+- `//agentplane/app/internal/auth:session_integration_test`: server-side PKCE/state, stable subject, idle and absolute
   expiry, logout and strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
-  rotation and callback replay, alongside the existing Kubernetes caller boundary.
+  rotation and callback replay; `//agentplane/app/internal/auth:unit_test` keeps the Kubernetes caller boundary.
 - `//agentplane/action_service/internal/rpc:unit_test` verifies signed operator-token claims, including
   arbitrary subjects and rejected issuer/audience/azp/expiry/subject/signature combinations;
   `//agentplane/action_service/internal/rpc:integration_test` verifies operator-only HTTP and RPC admission.

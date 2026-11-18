@@ -682,6 +682,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	if activeAdmissions > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "Admission") {
 		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "Admission"})
 	}
+	// Keep the stable EnvironmentRuntimeFacts enum value while execution is carried over typed gRPC.
 	if activeExecution > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "ExecutorRelay") {
 		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "ExecutorRelay"})
 	}

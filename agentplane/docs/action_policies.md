@@ -11,26 +11,25 @@ for it.
 ## Model
 
 Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
-(`agentplane/crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
-the external-caller principal.
+(`agentplane/crds/`), watched by the Action Service, plus the `Identity` kind as the caller
+principal.
 
-| Kind            | Spec                                                                           |
-| --------------- | ------------------------------------------------------------------------------ |
-| `PolicySet`     | `rules`: typed rules; each `action_auto_approve` rule holds one policy         |
-| `PolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
+| Kind            | Spec                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| `PolicySet`     | `rules`: typed rules; each `action_auto_approve` rule holds one policy                             |
+| `PolicyBinding` | `subject` (an Identity `name`, or a ServiceAccount `{namespace, name}`), `policySets`, `expiresAt` |
 
 Both are shared with the other rule types' readers ([Policy Controller](../policy_controller/SPEC.md));
 the Action Service reads only the `action_auto_approve` rules.
 
-**Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
-through ordinary RoleBindings and Action permissions through a `PolicyBinding`, and an
-in-cluster workload is the account its Pod runs as, so there is one identity vocabulary and one
-subject shape. The label `agentplane.allegedly.works/use-action-service: "true"` is what admits an
-account at all, however it arrives: the app labels the ServiceAccount it mints for each Sandbox, and
-the consent UI lists the labeled accounts for the operator to pick one for a Connection. An
-unlabeled account is refused at the transport; a Connection's grant is refused again at admission
-and at the dispatch claim. Removing the label or the object is the disable, and it takes effect on
-the next call rather than at the next consent.
+**Every caller is an Identity.** A workload acts as the Identity its SVID's `WorkloadCredential`
+names, and an MCP Connection as the Identity the operator bound it to, so there is one identity
+vocabulary and one subject shape. A live `PolicyBinding` naming the Identity incarnation is what
+admits it at all, however it arrives: the consent UI lists the policy namespace's live Identities
+for the operator to pick one for a Connection. An Identity no live binding names is refused at the
+transport, directly or through a Connection. Removing its last binding or the Identity is the
+disable, and it takes effect on the next call rather than at the next consent. A ServiceAccount is
+no caller: its token admits nothing, and a binding naming one decides no request.
 
 **Every policy kind is a typed contract.** Kubernetes carries `type` and parameters; the Go Action
 Service owns evaluation, while Python models validate and render those shapes. A constraint the

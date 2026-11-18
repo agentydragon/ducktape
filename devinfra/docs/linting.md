@@ -14,6 +14,10 @@
 ESLint and mypy run through Bazel, not pre-commit. Buildifier's Nix and Bazel
 pins are separate; changing one does not automatically update the other.
 
+A hook that runs `bazel` serializes pre-commit's parallel batches on the Bazel
+client lock; `bazel run --script_path` writes a launcher that runs after Bazel
+releases it.
+
 ## Bazel Aspect Configs
 
 Lint runs by default on builds. The enabled aspects and failure policy are in
@@ -37,8 +41,10 @@ common directory patterns is not the source of truth.
 PRs and all files on pushes/manual runs.
 [bazel-ci.yml](../../.github/workflows/bazel-ci.yml) selects test/build targets;
 builds use the default lint aspects. Full ansible-lint runs separately in
-[ansible-lint.yml](../../.github/workflows/ansible-lint.yml), which installs its
-Galaxy roles and collections; the fast syntax check remains a pre-commit hook.
+[ansible-lint.yml](../../.github/workflows/ansible-lint.yml), which installs
+ansible-lint and the Galaxy roles and collections, then runs
+[run-ansible-lint.sh](../../.github/scripts/run-ansible-lint.sh) (usable locally
+after the same installs). The fast syntax check remains a pre-commit hook.
 
 Terraform validation/linting also runs through `rules_tf`'s `tf_module` test
 targets. Cluster structural validation is the `//cluster/validation:test_*`

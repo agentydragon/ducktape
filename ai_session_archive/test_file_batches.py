@@ -39,7 +39,7 @@ from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.version_queries import get_version, list_events, list_versions
+from ai_session_archive.version_queries import list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
@@ -118,7 +118,6 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
             assert summary.version_count == 0
             assert summary.latest_version_id is None
             assert list_versions(db, session_id=session.id) == []
-            assert get_version(db, session_id=session.id, version_id=stage.id) is None
             assert list_events(db, session_id=session.id, version_id=stage.id, cursor=None, limit=10) is None
             assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
             assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 2
@@ -250,7 +249,7 @@ def test_failed_batch_preserves_current_capture_then_retries(postgres_engine: En
         assert current.version_count == 1
         assert current.latest_version_record_count == 1
         assert len(list_versions(db, session_id=current.id)) == 1
-        assert get_version(db, session_id=current.id, version_id=stage.id) is None
+        assert list_events(db, session_id=current.id, version_id=stage.id, cursor=None, limit=10) is None
     with postgres_engine.begin() as connection:
         connection.exec_driver_sql("DROP TRIGGER reject_second_batch ON file_version_import_records")
         connection.exec_driver_sql("DROP FUNCTION reject_second_batch()")

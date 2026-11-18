@@ -85,6 +85,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

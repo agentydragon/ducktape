@@ -8,7 +8,6 @@ package rpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -75,24 +74,6 @@ func ReadMethods() []string {
 		historypb.HistoryService_FindSessions_FullMethodName,
 		historypb.HistoryService_WatchSessionSummaries_FullMethodName,
 	}
-}
-
-// MethodsWithServiceCallers adds exact component peers to every configured read method.
-func MethodsWithServiceCallers(subjects auth.SubjectResolver, callers []string) (auth.Methods, error) {
-	return Methods(subjects).WithServiceCallers(ReadMethods(), callers)
-}
-
-// MethodsWithServiceDelegation adds exact service actors to the configured read methods.
-func MethodsWithServiceDelegation(
-	subjects auth.SubjectResolver,
-	actors []auth.ServiceDelegator,
-	identities auth.IdentityUIDReader,
-) (auth.Methods, error) {
-	methods, err := Methods(subjects).WithServiceDelegation(ReadMethods(), actors, identities)
-	if err != nil {
-		return nil, fmt.Errorf("configure delegated History service methods: %w", err)
-	}
-	return methods, nil
 }
 
 func NewService(options Options) *Service {

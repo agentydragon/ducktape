@@ -55,6 +55,21 @@ ssh root@atlas "qm reset <vmid>"
 See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md> for the incident evidence
 and recovery outcome.
 
+### UserVolume Claimed but Not Mounted (New Mounts Fail with EROFS)
+
+**Signal**: a node's PVCs on a Talos `UserVolumeConfig` path fail new mounts with
+`mkdir <path>/...: read-only file system`, while pods already running keep working because
+their bind mounts outlive the missing top-level mount. On the broken node
+`talosctl get volumestatus` shows `u-<name>` as `ready`, but `talosctl get mountstatus` and
+`talosctl get volumemountstatus` have no entry for it; a healthy node has both. The machine
+config matches the working node and `tofu plan` shows no changes, `talosctl apply-config
+--mode=no-reboot` with identical content does nothing, and `talosctl wipe disk` refuses with
+`FailedPrecondition` because the volume still claims the disk.
+
+**Fix**: reboot the node. `VolumeConfigController` re-evaluates the volume from scratch and
+mounts it. Seen on Talos 1.12.3 after a node rename (2026-06-03); the backup lesson from that
+incident is in <plan.md>.
+
 ## Cilium Issues
 
 ### Gateway Controller Dies After Talos Machine Config Apply

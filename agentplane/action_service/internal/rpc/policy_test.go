@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -87,7 +88,7 @@ func TestWatchActionPolicyUsesGetAuthorizationAndHTTPFacade(t *testing.T) {
 	namespace.binding(t, "watched-binding", callerAccount, "watched-set")
 	index := namespace.watch(t)
 	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
-	eventually(t, "the operator's binding diagnostics", func() bool {
+	eventually.Eventually(t, "the operator's binding diagnostics", func() bool {
 		view, err := s.readPolicy(t, s.operatorToken, accountView(callerAccount))
 		return err == nil && len(view.GetBindings()) == 1 && view.GetBindings()[0].GetReady() != nil
 	})
@@ -323,7 +324,7 @@ func TestOnlyAnOperatorIsShownTheBindingDiagnostics(t *testing.T) {
 	s := serveWithPolicy(t, &catalog.Catalog{}, namespace, index)
 	// The informer judges the binding once it has listed every kind, so its first ActionsReady is its last.
 	var ready *metav1.Condition
-	eventually(t, "the binding's ActionsReady", func() bool {
+	eventually.Eventually(t, "the binding's ActionsReady", func() bool {
 		stored := &policyapi.PolicyBinding{}
 		if err := policyObjects.Get(t.Context(), client.ObjectKeyFromObject(binding), stored); err != nil {
 			t.Fatal(err)

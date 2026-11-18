@@ -6,7 +6,7 @@ Operator and permits profile changes only for eligible Agents. Static Agent conf
 startup reconciliation are retired. Revision `0138` disables existing static Agents and revokes
 their active bindings while retaining their rows as history.
 
-Alembic revision `0081` is the forward-only database baseline. The retained identity graph is:
+Alembic revision `0135` is the forward-only database baseline. The retained identity graph is:
 
 ```text
 Operator -> IdentityAnchor -> OidcIdentity

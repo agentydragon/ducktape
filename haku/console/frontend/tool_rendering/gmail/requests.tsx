@@ -1,6 +1,6 @@
-// Per-tool-type rendering for haku-console's in-process `gmail` MCP server (see
-// haku/console/tools/gmail.py). Anything not shaped as expected falls back to the generic raw-JSON
-// view (approval_state.ts's argumentsJson): arguments are validated by the tool's own Pydantic model
+// Per-tool-type rendering for the `gmail` MCP server (see
+// x/google_mcp_server/gmail.py). Anything not shaped as expected falls back to the generic raw-JSON
+// view (tool_call_state.ts's argumentsJson): arguments are validated by the tool's own Pydantic model
 // at execution time, not at submission, so a pending approval's may be malformed. The remaining read
 // tools (`labels_list`, `filters_list`, `drafts_list`, …) have no widget — their args are empty or
 // self-descriptive. The Zod schemas below are built from the FastMCP input schemas advertised by
@@ -35,8 +35,8 @@ type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
 type GetGmailThreadArgs = z.infer<typeof zGetGmailThreadArgs>;
 type GetGmailMessageArgs = z.infer<typeof zGetGmailMessageArgs>;
 
-// A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link the
-// backend builds for thread previews (haku/console/tools/gmail.py `_THREAD_URL`).
+// A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link
+// `gmailThreadPreview` (`gmail_client.ts`) builds for thread previews.
 export function gmailThreadUrl(threadId: string): string {
   return `https://mail.google.com/mail/u/0/#all/${threadId}`;
 }

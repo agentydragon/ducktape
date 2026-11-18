@@ -17,7 +17,6 @@
   --aiquota-bg: var(--mantine-color-body);
   --aiquota-text: var(--mantine-color-text);
   --aiquota-muted: color-mix(in srgb, var(--mantine-color-text) 70%, var(--mantine-color-body));
-  --aiquota-accent: var(--mantine-primary-color-filled);
   --aiquota-track: var(--mantine-color-gray-light);
   --aiquota-tick: var(--mantine-color-dimmed);
   --aiquota-cool: var(--mantine-color-blue-text);
@@ -327,7 +326,6 @@
   overflow-wrap: anywhere;
 }
 
-.aiquota-aside,
 .aiquota-empty {
   color: var(--aiquota-muted);
   font-size: 0.78rem;
@@ -425,11 +423,6 @@
   font-weight: 650;
 }
 
-.aiquota-pace {
-  color: var(--aiquota-tint);
-  font-weight: 700;
-}
-
 .aiquota-exhausted {
   color: var(--aiquota-hot);
   font-weight: 700;
@@ -438,10 +431,9 @@
 }
 
 /*
- * A provider fact that is not a quota window — banked resets, peak-burn hours, the over-plan
- * notice — is a strip: a headline and, where there is one, a detail line under it. One shape
- * so they read as a set, and so a single fact is never split between a status pill and a
- * loose line of grey text.
+ * A provider fact that is not a quota window — banked resets, peak-burn hours — is a strip: a
+ * headline and, where there is one, a detail line under it. One shape so they read as a set,
+ * and so a single fact is never split between a status pill and a loose line of grey text.
  */
 .aiquota-strip {
   background: var(--aiquota-surface-sunken);
@@ -487,13 +479,4 @@
 
 .aiquota-strip-peak {
   background: color-mix(in srgb, var(--aiquota-warn) 14%, transparent);
-}
-
-.aiquota-strip-over-plan {
-  background: color-mix(in srgb, var(--aiquota-hot) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--aiquota-hot) 28%, transparent);
-}
-
-.aiquota-strip-over-plan .aiquota-strip-line {
-  color: var(--aiquota-hot);
 }

@@ -121,6 +121,11 @@ Before deploying Runtime C:
 - Design the image and startup clone of `haku-state`. Supply credentials at runtime and
   verify allowed and denied use of each MCP source under the [egress policy](../docs/security.md),
   including any separate tools container. Choose replacements for the retired Console MCP endpoint.
+- Refresh `ducktape` and `haku-state` at each wake. The supervisor's `lifespan` bootstraps once per
+  process, and Runtime B's `entrypoint.sh` pulls once before long-polling, so neither refreshes the
+  checkouts between wakes.
+- Clone `ducktape` deep enough for its history reads. Runtime B's `entrypoint.sh` explains why it
+  needs `--depth 500`; `Settings.ducktape_clone_depth` here defaults to 1.
 - Define authenticated wake admission, serialization or queuing, and history retention
   and compaction. Test concurrent, interrupted, and duplicate wakes, including recovery
   of message history and reconciliation of uncertain effects. Evaluate any separate

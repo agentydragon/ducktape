@@ -27,6 +27,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.home_lan import HOME_LAN
@@ -168,15 +169,8 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                             ports=[_HTTP.k8s_container_port()],
                             liveness_probe=tcp,
                             readiness_probe=tcp,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),

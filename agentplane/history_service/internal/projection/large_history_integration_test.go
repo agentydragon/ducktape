@@ -12,6 +12,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -135,7 +136,7 @@ func TestAnUpdateToAnOldItemReadsTheSameRowsHoweverLongTheHistory(t *testing.T) 
 			if _, err := db.Exec("ANALYZE " + strings.Join(historyTables, ", ")); err != nil {
 				t.Fatal(err)
 			}
-			if got := count(t, db, "SELECT count(*) FROM thread_entity WHERE thread_id = $1 AND entity_kind = 'item'", threadID); got != materialized+1 {
+			if got := postgres.Count(t, db, "SELECT count(*) FROM thread_entity WHERE thread_id = $1 AND entity_kind = 'item'", threadID); got != materialized+1 {
 				t.Fatalf("%d items folded, want %d", got, materialized+1)
 			}
 

@@ -1,7 +1,6 @@
 package ingress
 
 import (
-	"net"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -41,10 +41,6 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnySubject(svids)}
 	var pushHandlers atomic.Int32
 	server := grpc.NewServer(
@@ -57,17 +53,11 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 		grpc.Creds(credentials.NewTLS(serverTLS)),
 	)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	idleListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	serverAddr := grpcserver.Serve(t, server)
 	idleService := &Service{History: service.History, Timing: Timing{IdleAck: testTiming.IdleAck, SilenceLimit: time.Hour}}
 	idleServer := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(idleServer, idleService)
-	go func() { _ = idleServer.Serve(idleListener) }()
-	t.Cleanup(idleServer.Stop)
+	idleAddr := grpcserver.Serve(t, idleServer)
 	connectAt := func(address string, workload workloadauthtesting.Workload) testIngress {
 		config := ca.Issue(t, workload.URI)
 		security, err := config.ClientCredentials(transport.HistoryIngressURI)
@@ -82,7 +72,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 		return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
 	}
 	connect := func(workload workloadauthtesting.Workload) testIngress {
-		return connectAt(listener.Addr().String(), workload)
+		return connectAt(serverAddr, workload)
 	}
 	session := uuid.New()
 	// Mixed certificate and bearer credentials are rejected before Push reaches its handler.
@@ -142,7 +132,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	admitted.acknowledged(1, true)
 
 	// Clearing the binding revokes durable writes on an already-admitted stream.
-	idleRevocation := connectAt(idleListener.Addr().String(), first).open(t, "")
+	idleRevocation := connectAt(idleAddr, first).open(t, "")
 	idleRevocation.send(announce(uuid.New(), 0, ""))
 	idleRevocation.acknowledged(0, false)
 	first.Record.Spec.Binding, first.Record.Spec.Pod = nil, nil
@@ -203,21 +193,16 @@ func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri
 	if err != nil {
 		t.Fatal(err)
 	}
-	socket, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnySubject(svids)}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
-	go func() { _ = server.Serve(socket) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	return func(uri string) testIngress {
 		security, err := ca.Issue(t, uri).ClientCredentials(transport.HistoryIngressURI)
 		if err != nil {
 			t.Fatal(err)
 		}
-		connection, err := grpc.NewClient(socket.Addr().String(), grpc.WithTransportCredentials(security), grpc.WithNoProxy())
+		connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(security), grpc.WithNoProxy())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -3,7 +3,6 @@ package runtimeproxy
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	tlstest "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
@@ -239,15 +239,10 @@ func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceC
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(serverMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(tlsConfig)))...)
 	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: listener.Addr().String(), ca: ca}
+	address := grpcserver.Serve(t, server)
+	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: address, ca: ca}
 	for _, service := range []string{"", peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
 		certificateService := service
 		if certificateService == "" {
