@@ -194,7 +194,7 @@ def from_collection(
 ) -> Observations:
     """Build comparable screenshot rosters from selected terminal result observations."""
     results_by_target_invocation: dict[tuple[str, str], list[ResultCoverage]] = defaultdict(list)
-    result_attempts: dict[tuple[str, str, str, int, int], list[ResultCoverage]] = defaultdict(list)
+    roster_shards: dict[Roster, list[ResultCoverage]] = defaultdict(list)
     configurations: dict[str, set[str]] = defaultdict(set)
     incomplete: list[CollectionIssue] = []
 
@@ -206,9 +206,9 @@ def from_collection(
         if source.configuration is None or source.run is None or source.shard is None or source.attempt is None:
             incomplete.append(CollectionIssue("incomplete native test result identity", result=source))
             continue
-        result_attempts[(source.invocation, source.target, source.configuration, source.run, source.shard)].append(
-            result
-        )
+        # Superseded attempts carry retried_by even when the final attempt failed.
+        if result.retried_by is None:
+            roster_shards[Roster(source.target, source.invocation, source.configuration, source.run)].append(result)
 
     # An opaque configuration hash is provenance, not a comparison profile. Until an explicit
     # compatible profile exists, only a single configuration per target is comparable.
@@ -218,14 +218,6 @@ def from_collection(
         for target in sorted(ambiguous_targets)
     )
 
-    roster_shards: dict[tuple[str, str, str, int], list[ResultCoverage]] = defaultdict(list)
-    for shard_key, attempts in result_attempts.items():
-        terminal = max(attempts, key=lambda item: item.result.attempt or 0)
-        invocation, target, configuration, run_number, _shard = shard_key
-        roster_shards[invocation, target, configuration, run_number].append(terminal)
-
-    successful_rosters: dict[str, list[Roster]] = defaultdict(list)
-    unusable_rosters: set[tuple[str, str, str, int]] = set()
     expected_targets = set(targets)
     for invocation in invocations:
         for target in sorted(expected_targets):
@@ -251,17 +243,22 @@ def from_collection(
                     )
                 )
 
-    for roster_id, shard_results in roster_shards.items():
-        invocation, target, configuration, run_number = roster_id
-        if target in ambiguous_targets:
-            unusable_rosters.add(roster_id)
+    claims_by_roster: dict[Roster, dict[Render, list[OutputObservation]]] = defaultdict(lambda: defaultdict(list))
+    for output in collected.selected:
+        key = output.result
+        if output.key.role == "screenshot" and key.configuration is not None and key.run is not None:
+            roster = Roster(key.target, key.invocation, key.configuration, key.run)
+            claims_by_roster[roster][_render(output)].append(output)
+
+    successful_rosters: dict[str, list[Roster]] = defaultdict(list)
+    screenshots: dict[Render, Observation] = {}
+    for roster, shard_results in roster_shards.items():
+        if roster.target in ambiguous_targets:
             continue
-        target_rows = target_runs.get(invocation, {}).get(target, [])
+        target_rows = target_runs.get(roster.invocation, {}).get(roster.target, [])
         if not target_rows or any(row.status == "FAILED" for row in target_rows):
-            unusable_rosters.add(roster_id)
             continue
         if not all(result.selected and not result.issues for result in shard_results):
-            unusable_rosters.add(roster_id)
             incomplete.extend(
                 CollectionIssue(
                     "incomplete or unsuccessful shard roster; excluded from missing checks", result=result.result
@@ -269,66 +266,37 @@ def from_collection(
                 for result in shard_results
             )
             continue
-        roster = Roster(target, invocation, configuration, run_number)
-        successful_rosters[target].append(roster)
 
-    selected_by_roster: dict[tuple[str, str, str, int], list[OutputObservation]] = defaultdict(list)
-    for output in collected.selected:
-        result_key = output.result
-        if result_key.configuration is None or result_key.run is None:
+        # Keep an empty entry if the target ran successfully but had unusable screenshots.
+        target_rosters = successful_rosters[roster.target]
+        claims = claims_by_roster.get(roster, {})
+        if not claims:
+            reason = "completed visual target emitted no screenshot outputs"
+        elif any(len(outputs) > 1 for outputs in claims.values()):
+            reason = "duplicate screenshot identity across shards"
+        elif any(outputs[0].digest is None for outputs in claims.values()):
+            reason = "screenshot has no CAS digest"
+        else:
+            reason = None
+        if reason is not None:
+            incomplete.extend(
+                CollectionIssue(f"{reason}; excluded from missing checks", result=result.result)
+                for result in shard_results
+            )
             continue
-        roster_id = result_key.invocation, result_key.target, result_key.configuration, result_key.run
-        if roster_id not in unusable_rosters:
-            selected_by_roster[roster_id].append(output)
 
-    screenshots: dict[Render, Observation] = {}
-    diagnostics: list[OutputObservation] = [
-        output for output in collected.observations if output.key.role != "screenshot"
-    ]
-    for rosters in successful_rosters.values():
-        for roster in rosters[:]:
-            roster_id = roster.invocation, roster.target, roster.configuration, roster.run
-            outputs = selected_by_roster.get(roster_id, [])
-            claims: dict[Render, list[OutputObservation]] = defaultdict(list)
-            for output in outputs:
-                if output.key.role == "screenshot":
-                    claims[_render(output)].append(output)
-            if not claims:
-                rosters.remove(roster)
-                unusable_rosters.add(roster_id)
-                incomplete.extend(
-                    CollectionIssue(
-                        "completed visual target emitted no screenshot outputs; excluded from missing checks",
-                        result=result.result,
-                    )
-                    for result in roster_shards[roster_id]
-                )
-                continue
-            duplicates = [render for render, claims_for_render in claims.items() if len(claims_for_render) > 1]
-            invalid_digests = [
-                render for render, claims_for_render in claims.items() if claims_for_render[0].digest is None
-            ]
-            if duplicates or invalid_digests:
-                rosters.remove(roster)
-                unusable_rosters.add(roster_id)
-                reason = "duplicate screenshot identity across shards" if duplicates else "screenshot has no CAS digest"
-                incomplete.extend(
-                    CollectionIssue(f"{reason}; excluded from missing checks", result=result.result)
-                    for result in roster_shards[roster_id]
-                )
-                continue
-            for render, claims_for_render in claims.items():
-                output = claims_for_render[0]
-                observation = screenshots.setdefault(render, Observation())
-                observation.rosters.add(roster)
-                observation.labels.add(output.label or "")
-                assert output.digest is not None
-                observation.by_digest.setdefault(output.digest, []).append(roster)
+        target_rosters.append(roster)
+        for render, outputs in claims.items():
+            output = outputs[0]
+            observation = screenshots.setdefault(render, Observation())
+            observation.rosters.add(roster)
+            observation.labels.add(output.label or "")
+            assert output.digest is not None
+            observation.by_digest.setdefault(output.digest, []).append(roster)
 
-    # Sort and deduplicate report-only issues while preserving their readable source detail.
     return Observations(
         screenshots=screenshots,
-        diagnostics=tuple(diagnostics),
+        diagnostics=tuple(output for output in collected.observations if output.key.role != "screenshot"),
         complete_rosters={
             target: tuple(sorted(rosters, key=lambda roster: (roster.invocation, roster.run, roster.configuration)))
             for target, rosters in successful_rosters.items()
