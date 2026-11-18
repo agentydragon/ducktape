@@ -439,7 +439,7 @@ async fn handle_mailbox(
     Json(req): Json<MailboxRequest>,
 ) -> &'static str {
     state.touch();
-    // Post to every registered session's mailbox (matches server.py).
+    // Post to every registered session's mailbox.
     let g = state.sessions.read().unwrap();
     for s in g.values() {
         s.post_message(req.message.clone());

@@ -24,9 +24,8 @@ pub struct HookResponse {
 // ---------------------------------------------------------------------------
 
 /// Hook types where Claude Code delivers `systemMessage` only to the UI
-/// notification callback, not into the model conversation. Matches Python's
-/// `_NON_REPL_HOOK_TYPES` in `server.py`. Used as a fallback for hooks that
-/// aren't explicitly modeled (fall through to `Unknown`).
+/// notification callback, not into the model conversation. Used as a fallback
+/// for hooks that aren't explicitly modeled (fall through to `Unknown`).
 ///
 /// WorktreeCreate / WorktreeRemove are intentionally excluded: the daemon
 /// does not implement worktree management (Claude Code expects the hook to
@@ -224,7 +223,6 @@ impl AnyHookInput {
     /// Returns true if Claude Code injects `systemMessage` into the model
     /// conversation for this hook. Non-REPL hooks deliver it only to the UI
     /// notification callback; flushing the mailbox there has no effect.
-    /// Matches `_NON_REPL_HOOK_TYPES` in `server.py`.
     pub fn is_repl(&self) -> bool {
         match self {
             AnyHookInput::SessionStart(_)

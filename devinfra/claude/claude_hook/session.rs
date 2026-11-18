@@ -60,8 +60,7 @@ impl Session {
     }
 }
 
-/// Render drained mailbox + bg output as `HookOutput.system_message`,
-/// matching the Python format in `server.py::_apply_mailbox`.
+/// Render drained mailbox + bg output as `HookOutput.system_message`.
 pub fn format_system_message(
     mailbox: Vec<String>,
     bg: HashMap<(String, BgStream), Vec<String>>,
