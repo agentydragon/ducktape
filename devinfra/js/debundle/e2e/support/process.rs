@@ -117,6 +117,19 @@ pub fn assert_debundle_invariants(output: &Output) {
     );
 }
 
+/// Assert that a child exited successfully; the panic reports its exit status,
+/// stdout and stderr.
+#[track_caller]
+pub fn assert_success(output: &Output) {
+    assert!(
+        output.status.success(),
+        "{}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 fn describe_command(command: &Command) -> String {
     let mut parts = vec![format_os_str(command.get_program())];
     parts.extend(command.get_args().map(format_os_str));
@@ -139,7 +152,7 @@ fn describe_cwd(command: &Command) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{debundle_output, output};
+    use super::{assert_success, debundle_output, output};
     use std::path::Path;
     use std::process::Command;
 
@@ -231,5 +244,13 @@ mod tests {
 
         assert_eq!(result.status.code(), Some(3));
         assert_eq!(result.stdout, b"rejected");
+    }
+
+    #[test]
+    #[should_panic(expected = "exit status: 3\nstdout:\nout\nstderr:\nerr")]
+    fn assert_success_reports_status_and_both_streams_of_a_failed_child() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf 'out'; printf 'err' >&2; exit 3"]);
+        assert_success(&output(&mut command).expect("spawn shell"));
     }
 }

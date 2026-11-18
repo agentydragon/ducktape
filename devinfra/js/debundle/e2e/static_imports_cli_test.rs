@@ -1,6 +1,8 @@
 //! Original static import reachability is queryable even when authored claims fail.
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture, tree_spec_args};
+use debundle_e2e_support::{
+    TreeFixture, debundler_path, process, run_tree_fixture, tree_spec_args,
+};
 use serde_json::{Value, json};
 use std::process::Command;
 
@@ -44,11 +46,7 @@ fn query_with_target_source(args: &[&str], target_source: &str) -> Value {
             .args(["--format", "json"]),
     )
     .expect("run query");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
     let relative = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
@@ -70,11 +68,7 @@ fn query_with_target_source(args: &[&str], target_source: &str) -> Value {
             .args(["--format", "json"]),
     )
     .expect("run relative-path query");
-    assert!(
-        relative.status.success(),
-        "{}",
-        String::from_utf8_lossy(&relative.stderr)
-    );
+    process::assert_success(&relative);
     assert_eq!(
         serde_json::from_slice::<Value>(&relative.stdout).expect("relative JSON report"),
         report
@@ -198,11 +192,7 @@ fn conditional_literal_loader_graph_includes_deferred_return_edge() {
         }
         let output = debundle_e2e_support::process::debundle_output(&mut command)
             .unwrap_or_else(|err| panic!("{err}"));
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        process::assert_success(&output);
         serde_json::from_slice::<Value>(&output.stdout).expect("JSON report")
     };
     assert_eq!(command(false)["targets"][0]["from_to_target"], Value::Null);
@@ -256,11 +246,7 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
             ]),
     )
     .expect("query");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
     assert_eq!(report["targets"][0]["from_to_target"], Value::Null);
     assert!(

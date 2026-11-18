@@ -2,7 +2,8 @@
 //! and commands whose stdout is a machine-readable document.
 use debundle_e2e_support::saved_analysis::{assert_ok, command, command_with, path, staged};
 use debundle_e2e_support::{
-    FixtureOpts, Member, MemberPurity, logical_module, projector_path, write_validate_fixture_spec,
+    FixtureOpts, Member, MemberPurity, logical_module, process, projector_path,
+    write_validate_fixture_spec,
 };
 
 fn hinted() -> FixtureOpts<'static> {
@@ -240,11 +241,7 @@ fn progress_environment_controls_every_phase_without_changing_json() {
         }
         let result = debundle_e2e_support::process::debundle_output(&mut command)
             .unwrap_or_else(|err| panic!("{err}"));
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        process::assert_success(&result);
         let report: serde_json::Value =
             serde_json::from_slice(&result.stdout).expect("one JSON document");
         assert!(report.is_object());

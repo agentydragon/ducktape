@@ -3,7 +3,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::write_text_file;
+use debundle_e2e_support::{process, write_text_file};
 use serde_yaml::Value;
 use std::collections::BTreeSet;
 
@@ -419,20 +419,12 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         let mut preview = args.to_vec();
         preview.push("--dry-run");
         let out = fixture.command(&preview);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         for (path, bytes) in paths.iter().zip(before) {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
         let out = fixture.command(&args);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         let doc: Value =
             serde_yaml::from_slice(&fs::read(fixture.modules.join("ui/target.yaml")).unwrap())
                 .unwrap();

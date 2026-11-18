@@ -1,7 +1,7 @@
 //! End-to-end exercise of `debundle modules list`'s filters by
 //! shelling out to the built binary against a tiny modules fixture.
 
-use debundle_e2e_support::{run_debundle, write_text_file};
+use debundle_e2e_support::{process, run_debundle, write_text_file};
 use std::path::Path;
 
 fn setup_modules_fixture(root: &Path) {
@@ -28,11 +28,7 @@ fn list(modules: &Path, extra: &[&str]) -> serde_json::Value {
     ];
     args.extend_from_slice(extra);
     let out = run_debundle(&args);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     serde_json::from_slice(&out.stdout).unwrap()
 }
 

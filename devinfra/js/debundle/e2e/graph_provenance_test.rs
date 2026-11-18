@@ -7,7 +7,7 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, debundler_path,
-    logical_module, node_module_evaluation_order, read_tree, run_fixture_with_graphs,
+    logical_module, node_module_evaluation_order, process, read_tree, run_fixture_with_graphs,
     run_tree_graph_fixture, tree_spec_args, unassigned_mode_inline,
 };
 use tempfile::TempDir;
@@ -73,11 +73,7 @@ impl AliasGraphFixture {
                 .arg(&out_root),
         )
         .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        process::assert_success(&output);
 
         Self {
             graph: out_root.join("reports/tree/provider/dependency_graph.json.gz"),
@@ -118,18 +114,8 @@ impl AliasGraphFixture {
     }
 }
 
-fn assert_success(output: &std::process::Output) {
-    assert!(
-        output.status.success(),
-        "status={:?}\nstdout={}\nstderr={}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        stderr(output)
-    );
-}
-
 fn query_json(output: &std::process::Output) -> serde_json::Value {
-    assert_success(output);
+    process::assert_success(output);
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
@@ -187,11 +173,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
             "--tree-config",
             config.to_str().unwrap(),
         ]);
-        assert_success(&fixture.command(&args, Some(&fixture.source_root), None));
+        process::assert_success(&fixture.command(&args, Some(&fixture.source_root), None));
         assert_eq!(read_tree(&fixture.modules), before);
         assert_eq!(fs::read(&config).unwrap(), config_before);
     }
-    assert_success(&fixture.command(
+    process::assert_success(&fixture.command(
         &[
             "modules",
             "apply",
@@ -212,7 +198,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
             .arg(&out_root),
     )
     .unwrap();
-    assert_success(&materialized);
+    process::assert_success(&materialized);
     assert_node_output(&out_root.join("app/provider/entry.js"), "42\n", "");
 }
 
@@ -233,7 +219,7 @@ fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
         None,
         None,
     );
-    assert_success(&output);
+    process::assert_success(&output);
     assert!(fixture.modules.join("next.yaml").is_file());
 
     assert_graph_mismatch(
