@@ -11,7 +11,7 @@ What remains here supports the open phases:
 
 | Path                                   | Contents                                                                            |
 | -------------------------------------- | ----------------------------------------------------------------------------------- |
-| [`inventory/`](inventory/README.md)    | 2026-10-19 cluster, node, PV-consumer and storage inventory, including Wyrm2 disks. |
+| [`inventory/`](inventory/README.md)    | 2026-10-19 Wyrm2 disks, LVM and PV claims: evidence for retiring `virtio0/2/6`.     |
 | [`benchmarks/`](benchmarks/README.md)  | Dated FILE_THIN, local-path and SeaweedFS experiments with scripts and raw results. |
 | [`observability.md`](observability.md) | Piraeus disk-accounting contract and its pending Grafana verification.              |
 
