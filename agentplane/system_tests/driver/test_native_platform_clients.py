@@ -45,7 +45,7 @@ async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch:
         target=identity_pb2.EnvironmentTarget(namespace="sandbox-ns", name="sandbox", uid="sandbox-uid"),
     )
     client = SandboxControlClient(
-        control_target="runner-gateway.{namespace}.svc:8080", token_file=None, request_timeout_s=10
+        control_target="environments.{namespace}.svc:8082", token_file=None, request_timeout_s=10
     )
     await client.runner_unary(
         destination,

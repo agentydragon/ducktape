@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, staging
 
 
 def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[dict[str, Any]]) -> None:
@@ -24,7 +24,7 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         uri for sender in senders for uri in resource("Certificate", f"{sender}-workload")["spec"]["uris"]
     }
     assert wakers <= callers
-    service = resource("Service", session_dispatcher.NAME)["spec"]
+    service = resource("Service", runner_gateway.NAME)["spec"]
     labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
     assert service["selector"].items() <= labels.items()
     assert {port["targetPort"] for port in service["ports"]} <= {port["containerPort"] for port in container["ports"]}
@@ -32,7 +32,7 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
     assert database["name"] == "session_dispatcher"
     assert database["owner"] == "session_dispatcher"
     assert {item["name"]: item.get("valueFrom") for item in container["env"]}[
-        "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+        "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
     ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     for sender in senders:
         policy = resource("CiliumNetworkPolicy", sender)["spec"]

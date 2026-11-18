@@ -88,13 +88,9 @@ def history_grpc(namespace: str) -> Route:
 
 
 def environments_grpc(namespace: str) -> Route:
-    return _environments_grpc(environment_service.environments_service(namespace))
-
-
-def _environments_grpc(service: ServiceRef) -> Route:
     return Route(
         "environments",
-        service,
+        environment_service.environments_service(namespace),
         TLSConnectRouteTransport(server_uri=SANDBOX_CONTROLLER_URI),
         ("/agentplane.environments.v1.EnvironmentService/",),
     )
@@ -115,17 +111,13 @@ def telemetry_route() -> Route:
 
 
 def routes(namespace: str) -> tuple[Route, ...]:
-    return _routes(namespace, environments_grpc(namespace))
-
-
-def _routes(namespace: str, environments: Route) -> tuple[Route, ...]:
     return (
         telemetry_route(),
         egress_rules(namespace),
         notifications_grpc(namespace),
         model_config(namespace),
         history_grpc(namespace),
-        environments,
+        environments_grpc(namespace),
     )
 
 
@@ -155,9 +147,7 @@ class PlatformRouteFences(Construct):
 
     def __init__(self, scope: Construct, id: str, *, namespace: str, clients: Pods) -> None:
         super().__init__(scope, id)
-        # The Environments client grant already covers the new route. Keep the
-        # old direct grant until the overlap ends.
-        fenced_routes = _routes(namespace, _environments_grpc(environment_service.service(namespace)))
+        fenced_routes = routes(namespace)
         NetworkPolicy(
             self,
             "clients",

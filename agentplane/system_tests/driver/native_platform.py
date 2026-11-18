@@ -27,7 +27,7 @@ from agentplane.system_tests.driver.tls import service_svid_credentials
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-DISPATCHER_SERVICE = "session-dispatcher"
+DISPATCHER_SERVICE = "sessions"
 HISTORY_SERVICE = "history-service"
 SERVICE_PORT = 8080
 REQUEST_TIMEOUT_SECONDS = 30.0

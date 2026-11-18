@@ -121,7 +121,6 @@ py_library(
         ":notifications",
         ":runner_gateway",
         ":service_workload",
-        ":session_dispatcher",
         "//agentplane:crd_group",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
@@ -404,7 +403,6 @@ py_library(
         ":egress",
         ":environment",
         ":kubernetes_grants",
-        ":session_dispatcher",
         ":telemetry",
         "//agentplane/egress:kubernetes_audience",
         "//agentplane/egress:platform_routes",
@@ -441,7 +439,6 @@ py_library(
         ":policy_controller",
         ":runner_gateway",
         ":service_workload",
-        ":session_dispatcher",
         ":telemetry",
         ":workload_tls",
         "//agentplane:crd_group",
@@ -559,7 +556,6 @@ py_library(
         ":notifications",
         ":runner_gateway",
         ":service_workload",
-        ":session_dispatcher",
         ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane:subjects",
@@ -1133,7 +1129,6 @@ py_test(
         ":llm_ingress",
         ":policy_controller",
         ":runner_gateway",
-        ":session_dispatcher",
         ":staging",
         ":workload_tls",
         "//agentplane/env/runtime:harness",
@@ -1461,7 +1456,6 @@ py_library(
         ":runner_gateway",
         ":sandbox_controller",
         ":service_workload",
-        ":session_dispatcher",
         ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane:subjects",
@@ -1503,7 +1497,6 @@ py_test(
         ":runner_gateway",
         ":runner_gateway_workload",
         ":sandbox_controller",
-        ":session_dispatcher",
         ":staging",
         ":workload_tls",
         "//:conftest",
@@ -1522,15 +1515,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "session_dispatcher",
-    srcs = ["session_dispatcher.py"],
-    deps = [
-        ":runner_gateway",
-        "//cluster/cdk8s:service_ref",
-    ],
-)
-
 py_test(
     name = "test_service_boundaries",
     # Synthesizes both environments and checks History database wiring, environment authority, and notification scope.
@@ -1545,7 +1529,6 @@ py_test(
         ":notifications",
         ":runner_gateway",
         ":sandbox_controller",
-        ":session_dispatcher",
         ":staging",
         "//:conftest",
         "//util:settings_contract",
@@ -1568,7 +1551,6 @@ py_test(
         ":conftest",
         ":notifications",
         ":runner_gateway",
-        ":session_dispatcher",
         ":staging",
         "//:conftest",
         "@pypi//more_itertools",

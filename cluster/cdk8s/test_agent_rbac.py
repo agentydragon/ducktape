@@ -238,9 +238,9 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
         for verb in ("create", "patch", "delete")
     }
     denied |= {
-        Permission(_NAMESPACE, "", "serviceaccounts/token", "create", "sandbox-controller"),
+        Permission(_NAMESPACE, "", "serviceaccounts/token", "create", "environments"),
         Permission(_NAMESPACE, "apps", "deployments", "patch", "app"),
-        Permission(_NAMESPACE, "apps", "deployments/scale", "patch", "runner-gateway"),
+        Permission(_NAMESPACE, "apps", "deployments/scale", "patch", "sessions"),
     }
     denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")

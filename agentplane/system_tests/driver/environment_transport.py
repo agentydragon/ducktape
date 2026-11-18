@@ -15,7 +15,7 @@ from agentplane.environments.v1 import environment_service_pb2, environment_serv
 from agentplane.grpc.calls import call_unary, dial, raise_status
 from agentplane.proto import identity_pb2
 
-ENVIRONMENT_SERVICE = "sandbox-controller"
+ENVIRONMENT_SERVICE = "environments"
 ENVIRONMENT_PORT = 8082
 RECONNECT_PAUSE_SECONDS = 2.0
 REQUEST_TIMEOUT_SECONDS = 30.0

@@ -1537,9 +1537,7 @@ data:
       - history-service.agentplane-staging.svc.cluster.local:8080
       - llm-ingress.agentplane-staging.svc.cluster.local:8080
       - notifications.agentplane-staging.svc.cluster.local:8080
-      - runner-gateway.agentplane-staging.svc.cluster.local:8080
       - sessions.agentplane-staging.svc.cluster.local:8080
-      - sandbox-controller.agentplane-staging.svc.cluster.local:8082
       - environments.agentplane-staging.svc.cluster.local:8082
       - actions.agentplane-staging.svc.cluster.local:8080
     forward:
@@ -2378,7 +2376,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
+            app.kubernetes.io/name: sessions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -2386,7 +2384,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -2510,38 +2508,6 @@ rules:
       - configmaps
     verbs:
       - get
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: runner-gateway
-  name: runner-gateway
-  namespace: agentplane-staging
-spec:
-  ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app.kubernetes.io/component: sessions
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: session-dispatcher
-  name: session-dispatcher
-  namespace: agentplane-staging
-spec:
-  ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app.kubernetes.io/component: sessions
 ---
 apiVersion: v1
 kind: Service
@@ -3588,7 +3554,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -3642,15 +3608,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: central-sampler
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8083"
-              protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -4657,19 +4614,11 @@ spec:
             - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
+            app.kubernetes.io/name: sessions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -4678,14 +4627,6 @@ spec:
       toPorts:
         - ports:
             - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -6164,7 +6105,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -6277,7 +6218,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: sandbox-controller
+      app.kubernetes.io/name: environments
   ingress:
     - fromEndpoints:
         - matchLabels:
@@ -6311,181 +6252,6 @@ spec:
               protocol: TCP
 ---
 apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: sandbox-controller
-  namespace: agentplane-staging
-automountServiceAccountToken: true
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/name: sandbox-controller
-  name: sandbox-controller
-  namespace: agentplane-staging
-spec:
-  minReadySeconds: 5
-  progressDeadlineSeconds: 600
-  replicas: 0
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        agentplane.io/otel-class: service
-        agentplane.io/otel-emitter: "true"
-        app.kubernetes.io/component: environments
-        app.kubernetes.io/name: sandbox-controller
-        cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: OTEL_SERVICE_NAME
-              value: sandbox-controller
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
-            - name: OTEL_TRACES_EXPORTER
-              value: otlp
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: grpc
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://alloy.monitoring.svc.cluster.local:4317
-            - name: OTEL_TRACES_SAMPLER
-              value: parentbased_always_on
-            - name: AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE
-              value: /etc/agentplane-sandbox-controller/config.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          name: sandbox-controller
-          ports:
-            - containerPort: 8080
-              name: metrics
-              protocol: TCP
-            - containerPort: 8082
-              name: grpc
-              protocol: TCP
-            - containerPort: 8081
-              name: health
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /readyz
-              port: 8081
-              scheme: HTTP
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          resources:
-            limits:
-              memory: 256Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /run/agentplane/sandbox-controller-client-tls
-              name: sandbox-controller-client-workload-tls
-              readOnly: true
-            - mountPath: /run/agentplane/sandbox-controller-runtime-proxy-client-tls
-              name: sandbox-controller-runtime-proxy-client-workload-tls
-              readOnly: true
-            - mountPath: /etc/agentplane-sandbox-controller
-              name: configmap-sandbox-controller-settings
-              readOnly: true
-            - mountPath: /run/agentplane/workload-trust
-              name: workload-trust
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Always
-      securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: sandbox-controller
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 30
-      volumes:
-        - name: sandbox-controller-client-workload-tls
-          secret:
-            secretName: sandbox-controller-client-workload-tls
-        - name: sandbox-controller-runtime-proxy-client-workload-tls
-          secret:
-            secretName: sandbox-controller-runtime-proxy-client-workload-tls
-        - configMap:
-            name: sandbox-controller-settings
-          name: configmap-sandbox-controller-settings
-        - configMap:
-            name: agentplane-workload-ca-bundle
-          name: workload-trust
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: sandbox-controller
-  namespace: agentplane-staging
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: sandbox-controller
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: sandbox-controller
-  name: sandbox-controller
-  namespace: agentplane-staging
-spec:
-  externalIPs: []
-  ports:
-    - name: metrics
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-    - name: grpc
-      port: 8082
-      protocol: TCP
-      targetPort: 8082
-  selector:
-    app.kubernetes.io/component: environments
-  type: ClusterIP
----
-apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -6506,451 +6272,6 @@ spec:
   selector:
     app.kubernetes.io/component: environments
   type: ClusterIP
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: sandbox-controller-client-workload
-  namespace: agentplane-staging
-spec:
-  duration: 24h
-  issuerRef:
-    kind: ClusterIssuer
-    name: agentplane-workload
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8h
-  secretName: sandbox-controller-client-workload-tls
-  uris:
-    - spiffe://agentplane/sandbox-controller
-  usages:
-    - digital signature
-    - client auth
-    - server auth
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: sandbox-controller-runtime-proxy-client-workload
-  namespace: agentplane-staging
-spec:
-  duration: 24h
-  issuerRef:
-    kind: ClusterIssuer
-    name: agentplane-workload
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8h
-  secretName: sandbox-controller-runtime-proxy-client-workload-tls
-  uris:
-    - spiffe://agentplane/runtime-proxy
-  usages:
-    - digital signature
-    - client auth
-    - server auth
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: sandbox-controller-settings
-  namespace: agentplane-staging
-data:
-  config.yaml: |
-    runner_gateway_tls:
-      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/sandbox-controller
-      cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
-      key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
-      client_uri: spiffe://agentplane/sandbox-controller
-    runner_security:
-      mode: mtls
-      tls:
-        cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
-        key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-    environment_service:
-      rpc:
-        listen_address: 0.0.0.0:8082
-        tls:
-          cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
-          key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
-        auth:
-          - mode: spiffe
-            ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      policy_namespace: agentplane-staging
-      service_readers:
-        - spiffe://agentplane/app
-      service_managers:
-        - spiffe://agentplane/app
-      service_launchers:
-        - spiffe://agentplane/actions
-      service_operators:
-        - spiffe://agentplane/app
-      wake_service_callers:
-        - spiffe://agentplane/app
-        - spiffe://agentplane/notifications
-      service_delegation:
-        actors:
-          - spiffe_id: spiffe://agentplane/actions
-            connection_provenance: false
-        methods:
-          - /agentplane.environments.v1.EnvironmentService/ListEnvironments
-          - /agentplane.environments.v1.EnvironmentService/GetEnvironment
-          - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
-          - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
-      runtime_proxy:
-        runner_security:
-          mode: mtls
-          tls:
-            cert_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.crt
-            key_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.key
-            ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        readers: []
-        session_callers:
-          - spiffe://agentplane/sessions
-        controller_callers:
-          - spiffe://agentplane/sandbox-controller
-        executor_callers:
-          - spiffe://agentplane/central-sampler
-      runtime_catalog:
-        models:
-          models:
-            - model: antigravity/ant-messages/claude-opus-4-6-thinking
-              display_name: Claude Opus 4.6 (Thinking) — Google Antigravity
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: antigravity/ant-messages/claude-sonnet-4-6
-              display_name: Claude Sonnet 4.6 (Thinking) — Google Antigravity
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: antigravity/ant-messages/gemini-3-flash
-              display_name: Gemini 3 Flash — Google Antigravity
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: antigravity/ant-messages/gemini-3.5-flash-lite
-              display_name: Gemini 3.5 Flash-Lite — Google Antigravity
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: antigravity/ant-messages/gemini-3.8-flash-high
-              display_name: Gemini 3.8 Flash (High) — Google Antigravity
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: chatgpt-sub/oai-responses/gpt-6-astra
-              display_name: GPT-6 Astra — ChatGPT
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: chatgpt-sub/oai-responses/gpt-6-luna
-              display_name: GPT-6 Luna — ChatGPT
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: chatgpt-sub/oai-responses/gpt-6.1-sol
-              display_name: GPT-6.1 Sol — ChatGPT
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-            - model: ollama/oai-chat/gpt-oss-20b-128k
-              display_name: GPT-OSS 20B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gpt-oss-120b-128k
-              display_name: GPT-OSS 120B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-              display_name: Gemma 4 31B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: anthropic-api/ant-messages/claude-opus-5-5
-              display_name: Opus 5.5 — Anthropic API
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: anthropic-api/ant-messages/claude-sonnet-5-5
-              display_name: Sonnet 5.5 — Anthropic API
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: anthropic-api/ant-messages/claude-haiku-5-5
-              display_name: Haiku 5.5 — Anthropic API
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-            - model: anthropic-api/ant-messages/claude-fable-5-1
-              display_name: Fable 5.1 — Anthropic API
-              reasoning_efforts:
-                - low
-                - medium
-                - high
-                - xhigh
-                - max
-          harnesses:
-            HARNESS_CLAUDE:
-              - antigravity/ant-messages/claude-opus-4-6-thinking
-              - antigravity/ant-messages/claude-sonnet-4-6
-              - antigravity/ant-messages/gemini-3-flash
-              - antigravity/ant-messages/gemini-3.5-flash-lite
-              - antigravity/ant-messages/gemini-3.8-flash-high
-            HARNESS_CODEX:
-              - chatgpt-sub/oai-responses/gpt-6-astra
-              - chatgpt-sub/oai-responses/gpt-6-luna
-              - chatgpt-sub/oai-responses/gpt-6.1-sol
-              - antigravity/ant-messages/claude-opus-4-6-thinking
-              - antigravity/ant-messages/claude-sonnet-4-6
-              - antigravity/ant-messages/gemini-3-flash
-              - antigravity/ant-messages/gemini-3.5-flash-lite
-              - antigravity/ant-messages/gemini-3.8-flash-high
-              - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-            HARNESS_CENTRAL_SAMPLER:
-              - chatgpt-sub/oai-responses/gpt-6-astra
-              - chatgpt-sub/oai-responses/gpt-6-luna
-              - chatgpt-sub/oai-responses/gpt-6.1-sol
-              - antigravity/ant-messages/claude-opus-4-6-thinking
-              - antigravity/ant-messages/claude-sonnet-4-6
-              - antigravity/ant-messages/gemini-3-flash
-              - antigravity/ant-messages/gemini-3.5-flash-lite
-              - antigravity/ant-messages/gemini-3.8-flash-high
-              - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
-              - anthropic-api/ant-messages/claude-opus-5-5
-              - anthropic-api/ant-messages/claude-sonnet-5-5
-              - anthropic-api/ant-messages/claude-haiku-5-5
-              - anthropic-api/ant-messages/claude-fable-5-1
-        templates:
-          environment-tools:
-            workspace_root: /state/workspaces
-            workspace_provenance: DEPLOYMENT_CONFIG
-            workspace_root_enforced: false
-            creates_missing_cwd: true
-          environment-vm:
-            workspace_root: /state/workspaces
-            workspace_provenance: DEPLOYMENT_CONFIG
-            workspace_root_enforced: true
-            creates_missing_cwd: true
-    namespace: agentplane-staging
-    metrics_bind_address: :8080
-    health_probe_bind_address: :8081
-    runner_gateway_target: sandbox-controller.{namespace}.svc:8082
-immutable: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: sandbox-controller
-  namespace: agentplane-staging
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes/status
-    verbs:
-      - update
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes/finalizers
-    verbs:
-      - update
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - pods/proxy
-    verbs:
-      - get
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - workloadcredentials
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - persistentvolumeclaims
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-  - apiGroups:
-      - kubevirt.io
-    resources:
-      - virtualmachines
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - delete
-  - apiGroups:
-      - kubevirt.io
-    resources:
-      - virtualmachineinstances
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - policysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - policybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - policybindings/status
-    verbs:
-      - patch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - get
-      - create
-      - update
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: sandbox-controller
-  namespace: agentplane-staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: sandbox-controller
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: sandbox-controller
-    namespace: agentplane-staging
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -7553,133 +6874,6 @@ immutable: false
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: sandbox-controller
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEntities:
-        - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-environment-runtime
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "9090"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: sandbox-controller
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: monitoring
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: central-sampler
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: actions
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sessions
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
   name: environments
   namespace: agentplane-staging
 spec:
@@ -7696,14 +6890,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: environments
@@ -7741,7 +6927,7 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
+            app.kubernetes.io/name: environments
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -7749,7 +6935,7 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
+            app.kubernetes.io/name: sessions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -7789,22 +6975,6 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sessions
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: agentplane-environment-runtime
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -7834,7 +7004,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: environments-client-sandbox-controller
+  name: environments-client-environments
   namespace: agentplane-staging
 spec:
   egress:
@@ -7848,12 +7018,12 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: sandbox-controller
+      app.kubernetes.io/name: environments
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: environments-client-runner-gateway
+  name: environments-client-sessions
   namespace: agentplane-staging
 spec:
   egress:
@@ -7867,7 +7037,7 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: runner-gateway
+      app.kubernetes.io/name: sessions
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -7944,44 +7114,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: actions
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: environments-client-environments
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: environments
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: environments-client-sessions
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: sessions
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -9192,14 +8324,6 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: sessions
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -9213,14 +8337,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -10288,22 +9404,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

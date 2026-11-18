@@ -55,7 +55,7 @@ type config struct {
 type runnerGateway struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is the Environments Runtime proxy Service, a template of `{namespace}` such as
-	// `sandbox-controller.{namespace}.svc:8082`.
+	// `environments.{namespace}.svc:8082`.
 	ControlTarget string `mapstructure:"control_target"`
 	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile             string  `mapstructure:"token_file"`

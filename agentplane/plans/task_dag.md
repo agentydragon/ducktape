@@ -1096,7 +1096,7 @@ flowchart LR
     SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
     VM_STARTUP_LATENCY[Later: measure production VM startup]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
+    EGRESS_RELAY_RENAME[Deferred: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
@@ -1597,10 +1597,9 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 ### `EGRESS_RELAY_RENAME` — rename the egress sidecar to relay
 
-**TODO; operator request, 2026-10-16.** The separately acceptable
-[relay migration section](deployed_service_names.md#egress_relay_rename--separate-approval) owns
-its inventory, proposed names and image/reader/template rollout gates. No dependency on the
-Sessions/Environments deployed-name decision; deployed configuration stays unchanged until review.
+**Deferred pending operator approval.** The [relay migration plan](egress_relay_rename.md) owns
+the image, settings and template rollout gates. R0 starts with a fresh inventory of live and
+retained relay consumers.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
@@ -2168,7 +2167,8 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 ## 8. Ownership and naming cleanup
 
 Decisions and designs about what things are called and which service owns what. The decided
-renames and ownership moves (`ACTION_BOX_RENAME`, `RUNNER_GATEWAY_RENAME`, `HISTORY_DATABASE_RENAME`) are dispatched from [Cleanups](#15-cleanups). Staging data follows
+renames and ownership moves (`ACTION_BOX_RENAME`, `HISTORY_DATABASE_RENAME`) are dispatched
+from [Cleanups](#15-cleanups). Staging data follows
 [staging data preservation](../docs/staging_data_preservation.md): Session identities and history
 are irreplaceable, and a node that deletes a column or row stops for the operator.
 
@@ -3646,7 +3646,7 @@ service SVID admission; Kubernetes API credentials and historical account attrib
 ```mermaid
 flowchart LR
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
-    RUNNER_GATEWAY_RENAME[Unscheduled: deployed names follow the two-binary split]
+    RUNNER_GATEWAY_RENAME[Rollout pending: retire legacy Sessions and Environments names]
     PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
@@ -3703,16 +3703,10 @@ into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)),
 which would settle the name instead; check that before dispatch.
 
-#### `RUNNER_GATEWAY_RENAME` — deployed names for the Sessions and Environments binaries
+#### `RUNNER_GATEWAY_RENAME` — retire legacy Sessions and Environments names
 
-**Plan released by the operator, 2026-11-16 20:06 UTC; implementation awaits review.**
-[Deployed service names](deployed_service_names.md) owns the verified inventory, proposed
-`sessions` / `environments` names, operator decisions and ordered rollout/rollback gates.
-The two-binary decision ([section 17](#17-two-binaries-and-the-go-layout)) and source directories
-are settled: `agentplane/session_dispatcher/` and `agentplane/environments/`. Deployed names,
-settings and security identities remain unchanged until the corresponding migration gate lands;
-the 2026-10-31 "Environment Gateway" proposal is superseded. The relay rename has a separately
-acceptable section in the same plan and is not a prerequisite.
+**S8 rollout pending.** The [staging checklist](deployed_service_names.md) records the
+pre-removal evidence, post-Flux checks and rollback. Remove this node once staging passes.
 
 ### Blocked
 
@@ -3830,8 +3824,8 @@ writes or keep only item-done and terminal events; or keep everything and add re
 
 ## 17. Two binaries and the Go layout
 
-The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, are decided and serve;
-their deployed names change under `RUNNER_GATEWAY_RENAME`. The
+The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, serve under their
+canonical names. The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1,
 2 and 4 are done; the others keep their numbers.
@@ -3845,7 +3839,6 @@ evidence and line-level steps for every track below; its stages are ordered by c
 ```mermaid
 flowchart LR
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time

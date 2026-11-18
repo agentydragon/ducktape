@@ -175,12 +175,12 @@ The detailed delivery and transport contract is in [SPEC.md](SPEC.md).
 
 ## Running
 
-The serving binary and image live under `//agentplane/session_dispatcher` and
-`//agentplane/session_dispatcher:image`. It reads the certificate and caller settings described in
-<../README.md>, a projected Gateway token for calls to other holder replicas, and
-`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving binary applies the embedded Goose queue migrations before opening the Gateway
-listener; the same binary accepts `--migrate-only` for explicit fixture or maintenance use. The
-startup probe waits for initialization before `grpc.health.v1` readiness on the shared listener.
+Build the serving binary at `//agentplane/session_dispatcher/cmd:runner-gateway` or the
+Sessions image at `//agentplane/session_dispatcher:image`. See the
+[Sessions settings](../README.md#source-and-tests) for TLS and caller grants. The binary uses
+`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` to apply the embedded Goose migrations before
+opening the listener. Run the same binary with `--migrate-only` for explicit fixture or
+maintenance use. The startup probe waits for initialization before `grpc.health.v1` readiness.
 
 Automatic wake execution and its budget contract live in [`wake`](wake/manager.go). Environments
 owns explicit resume; both use the shared [`lifecycle` policy and guarded writes](../../environments/lifecycle/SPEC.md).

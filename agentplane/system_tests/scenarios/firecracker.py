@@ -120,7 +120,7 @@ async def _renew_credentials(cluster: Cluster, secret_name: str) -> tuple[str, s
 
 async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credential: tuple[str, str]) -> None:
     proxy = json.loads(
-        await cluster.kubectl("get", "secret", "sandbox-controller-runtime-proxy-client-workload-tls", "-o", "json")
+        await cluster.kubectl("get", "secret", "environments-runtime-proxy-client-workload-tls", "-o", "json")
     )["data"]
     cert_pem, ca_pem = credential
     expected = x509.load_pem_x509_certificate(base64.b64decode(cert_pem))

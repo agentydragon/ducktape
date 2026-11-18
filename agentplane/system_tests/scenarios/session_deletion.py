@@ -287,7 +287,7 @@ async def deployed_session_command_cannot_cross_deletion(
             dial(
                 target,
                 channel_credentials=app.channel_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
             )
         )
         runtime_target = await stack.enter_async_context(
@@ -683,7 +683,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                 dial(
                     dispatcher_target,
                     channel_credentials=app.channel_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             runtime_channel = await identities.enter_async_context(

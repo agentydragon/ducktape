@@ -56,10 +56,11 @@ Also here:
 - Workload HTTP routes carry only the upstream authority and exact service URI. Their destination
   TLS uses the same Sandbox SVID and CA configured on `proxy.transport`; the central proxy sees an
   authenticated CONNECT and does not terminate the service TLS connection or assert a caller.
-- The shared local platform listener routes `EnvironmentService` methods to `sandbox-controller:8082`
+- The shared local platform listener routes `EnvironmentService` methods to `environments:8082`
   through central CONNECT, presenting the Sandbox SVID and verifying the Controller SVID. Managed
-  CLIs receive `AGENTPLANE_ENVIRONMENTS_URL` separately from their Sessions URL. Old Sandbox
-  processes retain their launch-time routes until restarted; the Gateway API remains during cutover.
+  CLIs receive `AGENTPLANE_ENVIRONMENTS_URL` separately from their Sessions URL. Relay routes
+  load at startup. ConfigMap updates can change the mounted file while an existing process
+  continues to use its launch-time settings.
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's shared listener and per-service route settings from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.

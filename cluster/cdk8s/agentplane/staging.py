@@ -742,7 +742,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         db=DbProps(
             instances=2, wal_archive=True, profile=cluster.OVH_PIRAEUS_SSD, size="24Gi", resize_in_use_volumes=True
         ),
-        legacy_replica_profile=replace(env.replicas, count=0),
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
@@ -1068,12 +1067,7 @@ def _add_standing_identity_access(
 
 
 def delivery_chart(app: App, env: Environment = ENV) -> Chart:
-    return runner_gateway_workload.serving_chart(
-        app,
-        env=env,
-        legacy_replica_profile=replace(env.replicas, count=0),
-        wake_service_callers=DISPATCHER_WAKE_SERVICE_CALLERS,
-    )
+    return runner_gateway_workload.serving_chart(app, env=env, wake_service_callers=DISPATCHER_WAKE_SERVICE_CALLERS)
 
 
 def _add_session_secret(scope: Chart) -> None:

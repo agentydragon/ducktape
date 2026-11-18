@@ -157,7 +157,7 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert {runner_gateway.NAME, dispatcher.name, "sandbox-controller", "environments"} <= egress_services
+    assert {dispatcher.name, "environments"} <= egress_services
     proxy_ingress = one(
         rule
         for rule in policy["ingress"]

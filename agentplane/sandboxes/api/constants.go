@@ -28,7 +28,7 @@ const (
 	RuntimeProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
 
 	RuntimeProxyServicePort = 8082
-	RuntimeProxyService     = "sandbox-controller"
+	RuntimeProxyService     = "environments"
 	// EnvironmentRuntimeServicePort is the Environment Runtime's mTLS listener port in a Pod or KubeVirt guest.
 	EnvironmentRuntimeServicePort           = 9090
 	EnvironmentRuntimeCredentialMetadataKey = "agentplane.allegedly.works/environment-runtime-credential"

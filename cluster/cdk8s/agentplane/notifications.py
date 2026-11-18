@@ -83,7 +83,6 @@ class Notifications(Construct):
         *,
         database_url: EnvValue,
         actions: ServiceRef,
-        gateway: ServiceRef,
         gateway_control_target: str,
         history: ServiceRef,
         dispatcher: ServiceRef,
@@ -99,7 +98,6 @@ class Notifications(Construct):
         self.env = env
         self.callers = callers
         self.actions = actions
-        self.gateway = gateway
         self.history = history
         self.dispatcher = dispatcher
         endpoint = service(env.namespace)
@@ -246,8 +244,6 @@ class Notifications(Construct):
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.actions.egress(),
-                self.gateway.egress(),
-                environment_service.service(env.namespace).egress(),
                 environment_service.environments_service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),

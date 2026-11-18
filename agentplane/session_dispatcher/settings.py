@@ -59,8 +59,8 @@ class ServiceDelegation(BaseModel):
 class Settings(BaseModel):
     """Complete non-secret static settings authored in the mounted YAML file."""
 
-    config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
-    dispatcher_database_url_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+    config_file_env: ClassVar[str] = "AGENTPLANE_SESSIONS_CONFIG_FILE"
+    dispatcher_database_url_env: ClassVar[str] = "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
     model_config = ConfigDict(extra="forbid")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
@@ -82,7 +82,7 @@ class Settings(BaseModel):
         description="Verify the Environments SVID and authenticate with the Sessions role SVID."
     )
     runner_control_target_template: str = Field(
-        default="sandbox-controller.{namespace}.svc:8082",
+        default="environments.{namespace}.svc:8082",
         min_length=1,
         description="Stable Environments Service target or template used for each Sandbox Runtime proxy.",
     )

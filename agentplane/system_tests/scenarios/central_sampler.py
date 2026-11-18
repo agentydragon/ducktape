@@ -701,7 +701,7 @@ async def _roll_runtime_proxy_for_central_session(
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
         proxy_slices = json.loads(
             await cluster.kubectl(
-                "get", "endpointslices", "-l", "kubernetes.io/service-name=sandbox-controller", "-o", "json"
+                "get", "endpointslices", "-l", "kubernetes.io/service-name=environments", "-o", "json"
             )
         )["items"]
         assert not any(
@@ -756,7 +756,7 @@ async def _roll_runtime_proxy_for_central_session(
         while True:
             slices = json.loads(
                 await cluster.kubectl(
-                    "get", "endpointslices", "-l", "kubernetes.io/service-name=sandbox-controller", "-o", "json"
+                    "get", "endpointslices", "-l", "kubernetes.io/service-name=environments", "-o", "json"
                 )
             )["items"]
             if any(
@@ -2250,8 +2250,8 @@ async def _assert_central_components_unchanged(
 ) -> None:
     for component, expected in pod_uids.items():
         assert await _ready_pod_uids(cluster, component) == expected, f"{component} changed during History outage"
-    ready = await _ready_service_endpoint_addresses(cluster, "runner-gateway")
-    assert ready, "Runner Gateway Service lost all ready endpoints during the History outage"
+    ready = await _ready_service_endpoint_addresses(cluster, "sessions")
+    assert ready, "Sessions Service lost all ready endpoints during the History outage"
     await deployed.runner.list_sessions(expected_incarnation_uid=deployed.incarnation_uid)
 
 

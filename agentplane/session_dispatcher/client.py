@@ -36,7 +36,7 @@ class SandboxControlClient:
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
     ) -> None:
-        # A template of `{namespace}`: `sandbox-controller.{namespace}.svc:8082`.
+        # A template of `{namespace}`: `environments.{namespace}.svc:8082`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s

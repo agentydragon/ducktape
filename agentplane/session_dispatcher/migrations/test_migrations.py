@@ -20,7 +20,7 @@ _VERSION = "runner_gateway_dispatcher_goose_version"
 def _run(url: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [_SERVICE, "--migrate-only"],
-        env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+        env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
         text=True,
         capture_output=True,
         timeout=60,
@@ -59,14 +59,14 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
         argv: list[str | Path] = [_SERVICE, "--migrate-only"]
         first = subprocess.Popen(
             argv,
-            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+            env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
         second = subprocess.Popen(
             argv,
-            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+            env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

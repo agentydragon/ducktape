@@ -213,7 +213,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             # Call through the stable Service so Kubernetes can send every request to any replica.
-            gateway_target = await _address(cluster, core, "sandbox-controller", 8082)
+            gateway_target = await _address(cluster, core, "environments", 8082)
             # Direct observations act as the same Sessions service principal as Gateway.
             # Its certificate survives a Gateway Pod roll; no Pod-bound bearer is involved.
             sampler_client = await core.read_namespaced_secret("sessions-client-workload-tls", cluster.namespace)
@@ -232,7 +232,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 token_file=None,
                 request_timeout_s=2,
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-                server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                server_name=f"environments.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
@@ -247,9 +247,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             dispatcher_channel = await stack.enter_async_context(
                 dial(
-                    await _address(cluster, core, "session-dispatcher", 8080),
+                    await _address(cluster, core, "sessions", 8080),
                     channel_credentials=caller_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             await asyncio.wait_for(dispatcher_channel.channel_ready(), timeout=30)

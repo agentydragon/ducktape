@@ -43,7 +43,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     telemetry,
 )
-from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
@@ -78,7 +78,6 @@ def environment_chart(
     env: Environment,
     *,
     db: database.DbProps,
-    legacy_replica_profile: ReplicaProfile,
     environment_template_name: str,
     environment_tools_image: str,
     environment_runtime_key_files: Sequence[environment_sandbox.KeyFile] = (),
@@ -135,9 +134,7 @@ def environment_chart(
             history_service.service(env.namespace),
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
-            runner_gateway.service(env.namespace),
             runner_gateway.sessions_service(env.namespace),
-            environment_service.service(env.namespace),
             environment_service.environments_service(env.namespace),
             actions.service(env.namespace),
         ],
@@ -148,7 +145,7 @@ def environment_chart(
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
-    runner_gateway_workload.add_stable_services(chart, env)
+    runner_gateway_workload.add_service(chart, env)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -273,7 +270,6 @@ def environment_chart(
         "sandbox-controller",
         env,
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
-        legacy_replica_profile=legacy_replica_profile,
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=environment_launchers,
@@ -308,7 +304,6 @@ def environment_chart(
         env,
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
-        gateway=runner_gateway.service(env.namespace),
         gateway_control_target=environment_service.environments_control_target(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),

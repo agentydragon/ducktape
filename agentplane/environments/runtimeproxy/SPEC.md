@@ -1,6 +1,6 @@
 # Runtime proxy connection and authorization contracts
 
-Environments replicas serve EnvironmentRuntime and HarnessHost on `sandbox-controller:8082`.
+Environments replicas serve EnvironmentRuntime and HarnessHost on `environments:8082`.
 Executor registers when its own grant is configured. Callers pin
 `spiffe://agentplane/sandbox-controller`. The outbound proxy uses `spiffe://agentplane/runtime-proxy`,
 separate from the leader's incarnation-binding observer. Sessions reaches hosted HarnessHost

@@ -227,13 +227,13 @@ def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() 
 
 def test_runtime_inputs_are_not_settings_fields() -> None:
     assert "dispatcher_database_url" not in Settings.model_fields
-    assert Settings.config_file_env == "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
-    assert Settings.dispatcher_database_url_env == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+    assert Settings.config_file_env == "AGENTPLANE_SESSIONS_CONFIG_FILE"
+    assert Settings.dispatcher_database_url_env == "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
 
 
 def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE", "environment-value")
-    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
+    monkeypatch.setenv("AGENTPLANE_SESSIONS_SANDBOX_NAMESPACE", "environment-value")
+    monkeypatch.setenv("AGENTPLANE_SESSIONS_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
     settings = _settings()
     assert settings.sandbox_namespace == "test-sandboxes"
     assert settings.rpc.listen_address == ":8080"

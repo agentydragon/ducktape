@@ -2,7 +2,7 @@
 
 `EnvironmentService` owns managed Sandbox creation, template listing, discovery, watches, and
 separately authorized lifecycle and policy mutations. It is a separate gRPC service from the Session Dispatcher,
-served by every Sandbox Controller replica on its independent listener at `sandbox-controller:8082`. Its public contract is defined in
+served by every Sandbox Controller replica on its independent listener at `environments:8082`. Its public contract is defined in
 [`agentplane/environments/v1/environment_service.proto`](../../v1/environment_service.proto).
 Its discovery and resume method paths are:
 
