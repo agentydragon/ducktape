@@ -11,6 +11,7 @@ pub(crate) struct ProgramFlowModule<'a> {
     pub module: &'a str,
     pub body: &'a [TopLevelItemView<'a>],
     pub fresh_factory_imports: &'a BTreeSet<String>,
+    pub fresh_factory_members: &'a BTreeMap<String, BTreeSet<String>>,
     pub native_operation_inputs: &'a [crate::analysis_inputs::ResolvedNativeOperationInput],
     pub inferred_sets: &'a BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 }
@@ -335,7 +336,7 @@ impl CompletedSet {
 pub(super) struct ChunkProgramFlow {
     shared: Arc<ProgramFlowFacts>,
     module: usize,
-    fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
+    fresh_factory_imports: Arc<FreshFactoryImports>,
     bindings: HashMap<Id, BindingSlot>,
     sites: BTreeMap<u32, u32>,
     candidates: BTreeMap<u32, u32>,
@@ -700,24 +701,29 @@ pub(crate) fn program_value_flows<'a>(
     let mut names = Vec::new();
     for module in modules {
         let importer = names.len();
-        let imports = module
+        let mut imports = FreshFactoryImports {
+            importer,
+            ..Default::default()
+        };
+        for specifier in module
             .body
             .iter()
             .flat_map(|item| match item.as_module_item() {
                 ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import.specifiers.iter(),
                 _ => [].iter(),
             })
-            .filter_map(|specifier| match specifier {
-                ImportSpecifier::Named(named)
-                    if module
-                        .fresh_factory_imports
-                        .contains(named.local.sym.as_ref()) =>
-                {
-                    Some((named.local.to_id(), importer))
-                }
-                _ => None,
-            })
-            .collect();
+        {
+            let ImportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            let name = named.local.sym.as_ref();
+            if module.fresh_factory_imports.contains(name) {
+                imports.named.insert(named.local.to_id());
+            }
+            if let Some(members) = module.fresh_factory_members.get(name) {
+                imports.members.insert(named.local.to_id(), members.clone());
+            }
+        }
         programs.push(FlowProgram::structural_with_factory_imports(
             module.body,
             module.native_operation_inputs,

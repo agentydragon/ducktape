@@ -787,6 +787,7 @@ mod tests {
                 Vec::new(),
                 spec::PredefinedGlobals::Standard,
                 BundleGlobalNames::default(),
+                BTreeMap::new(),
             );
             let modules = vec![Module::prepare(&prepared.index, &[])];
             let candidates = candidate_union(&modules);

@@ -664,6 +664,39 @@ pub fn collect_program_summary(
             (importer.clone(), locals)
         })
         .collect();
+    macro_rules! members {
+        ($field:ident, $contract:ident) => {
+            project_onto_importers(
+                &modules,
+                &scoped(chunk_export_purity, &modules, |p| &p.$field),
+                ExportContract::$contract,
+                diagnostics,
+            )
+        };
+    }
+    // Project each policy once. Raw namespace privacy needs the same complete
+    // potentially aliasing family as normal execution, before source flow.
+    let namespace_independent_members =
+        members!(namespace_independent_members, NamespaceIndependentMembers);
+    let callback_factory_members = members!(callback_factory_members, CallbackFactoryMembers);
+    let retained_callback_factory_members = members!(
+        retained_callback_factory_members,
+        RetainedCallbackFactoryMembers
+    );
+    let no_reentry_members = members!(no_reentry_members, NoReentryMembers);
+    let no_reentry_record_members = members!(no_reentry_record_members, NoReentryRecordMembers);
+    let mut namespace_privacy_members = namespace_independent_members.clone();
+    for module in modules.keys() {
+        let family = namespace_privacy_members.entry(module.clone()).or_default();
+        for root in callback_factory_members[module]
+            .keys()
+            .chain(retained_callback_factory_members[module].keys())
+            .chain(no_reentry_members[module].keys())
+            .chain(no_reentry_record_members[module].keys())
+        {
+            family.entry(root.clone()).or_default();
+        }
+    }
     // A fresh result cannot be allocated at an importer AST site when all
     // provider code is in this complete static closure, which excludes that
     // importer. Dynamic scope cannot supply the missing identity proof.
@@ -680,6 +713,7 @@ pub fn collect_program_summary(
                             .get(&target.module)
                             .is_some_and(|policy| {
                                 policy.callback_factory_exports.contains(&target.export)
+                                    || policy.callback_factory_members.contains_key(&target.export)
                             })
                     {
                         return None;
@@ -721,6 +755,8 @@ pub fn collect_program_summary(
         }),
         CallableSummaryInputs {
             closed_factory_imports: &closed_factory_imports,
+            namespace_privacy_members: &namespace_privacy_members,
+            callback_factory_members: &callback_factory_members,
             requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
@@ -797,16 +833,6 @@ pub fn collect_program_summary(
             }
         }
     }
-    macro_rules! members {
-        ($field:ident, $contract:ident) => {
-            project_onto_importers(
-                &modules,
-                &scoped(chunk_export_purity, &modules, |p| &p.$field),
-                ExportContract::$contract,
-                diagnostics,
-            )
-        };
-    }
     macro_rules! exports {
         ($field:ident, $contract:ident) => {
             project_export_set(
@@ -831,10 +857,7 @@ pub fn collect_program_summary(
             retained_callback_factory_exports,
             RetainedCallbackFactoryExports
         ),
-        retained_callback_factory_members: members!(
-            retained_callback_factory_members,
-            RetainedCallbackFactoryMembers
-        ),
+        retained_callback_factory_members,
         values,
         primitive_reads,
         bindings: imported_purities,
@@ -855,13 +878,10 @@ pub fn collect_program_summary(
             inline_callback_factory_exports,
             InlineCallbackFactoryExports
         ),
-        namespace_independent_members: members!(
-            namespace_independent_members,
-            NamespaceIndependentMembers
-        ),
-        callback_factory_members: members!(callback_factory_members, CallbackFactoryMembers),
-        no_reentry_members: members!(no_reentry_members, NoReentryMembers),
-        no_reentry_record_members: members!(no_reentry_record_members, NoReentryRecordMembers),
+        namespace_independent_members,
+        callback_factory_members,
+        no_reentry_members,
+        no_reentry_record_members,
         no_reentry_exports: exports!(no_reentry_exports, NoReentryExports),
     })
 }
