@@ -5,7 +5,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, Protocol
 
-from devinfra.pr_visuals.metadata import ClassificationCounts, ReviewAsset, ReviewResult, ReviewTest
+from devinfra.pr_visuals.metadata import ClassificationCounts, ReviewAsset, ReviewResult, ReviewTest, shared_image_key
 
 
 class ProvenanceSource(Protocol):
@@ -41,10 +41,6 @@ def ordered_assets(assets: list[ReviewAsset]) -> list[ReviewAsset]:
             asset.path,
         ),
     )
-
-
-def shared_image_key(digest: str) -> str:
-    return f"assets/{digest}.png"
 
 
 def _asset_url(
