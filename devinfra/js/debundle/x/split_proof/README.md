@@ -160,16 +160,18 @@ The main development does not use `native_decide`, so the compiler is not truste
 1. **Footprints.** [`extract/extract.mjs`](extract/extract.mjs) parses the bundle with `acorn` and computes, per statement, what it declares, what it reads eagerly, what it reads only inside function bodies, whether it is hoisted, whether it may have effects.
    Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals.
    A statement with effects also counts everything it mentions as eager, since a call may invoke a callback or an immediately invoked function. The first version missed this and accepted a split that throws on load; see [`experiments/README.md`](experiments/README.md).
+   A `var` inside a top-level block declares a module-scope name. The Lean front end missed this at first and accepted four splits from debundle's corpus that fail to load ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
    It rejects syntax it does not model (classes, destructuring, reassigning a top-level binding, `eval`, `import.meta`, async). Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`).
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
 5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports.
-6. **Two rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts a statement assigning a top-level binding in another module than the binding
-   (ES imports are read-only), and one that puts an `export` statement outside the entry module (the entry's exports are the program's interface).
-   Both rules lived outside `Valid` until the split experiment (`experiments/README.md` § 7) showed the second was missing. When one fails, `lowersplit --lean` writes no certificate.
-   Moving them into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
+6. **Three rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts a statement assigning a top-level binding in another module than the binding
+   (ES imports are read-only), one that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
+   and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
+   The second rule was missing until the split experiment (`experiments/README.md` § 7) and the third until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
+   Moving the first two into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The third needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
 
 ## Controls
 
@@ -237,26 +239,27 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 7. 2,740 real splits (halves, single cuts, blocks, random placements), each run in Node;
 8. how a proof is produced, with a strategy ladder;
 9. what already exists and what I would reuse;
-10. the module-order model against Node.
+10. the module-order model against Node;
+11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
 
 ## Files
 
-| Path                           | Role                                                                                                                                                                                                       |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lean/EsmSplit/Bundle.lean`    | statement footprints, read closure (worklist over a `TreeMap` index, proved least and closed), conflict                                                                                                    |
-| `lean/EsmSplit/Semantics.lean` | abstract semantics and the reorder theorem                                                                                                                                                                 |
-| `lean/EsmSplit/Plan.lean`      | spec, plan, ES order model, the checks as plain statements                                                                                                                                                 |
-| `lean/EsmSplit/Fast.lean`      | how each check is decided: table-based algorithms, each proved equal to its statement                                                                                                                      |
-| `lean/EsmSplit/Split.lean`     | the splitter `mkPlan` (untrusted)                                                                                                                                                                          |
-| `lean/EsmSplit/Correct.lean`   | `Correct` and `split_correct`                                                                                                                                                                              |
-| `lean/EsmSplit/Render.lean`    | prints a module                                                                                                                                                                                            |
-| `lean/EsmSplit/Instance.lean`  | generated: footprints, spec, kernel-checked theorems                                                                                                                                                       |
-| `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                 |
-| `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                            |
-| `lean/Main.lean`               | the `render` executable                                                                                                                                                                                    |
-| `lean/Experiments/`            | experiments: output checker, mini-JS semantics, two tiers, lowering, strategy ladder, module order                                                                                                         |
-| `extract/`                     | JavaScript front end for the example (`extract.mjs`) and output reader (`extract_output.mjs`)                                                                                                              |
-| `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                               |
-| `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                   |
-| `experiments/`                 | [experiments](experiments/README.md) and [timings](experiments/TIMINGS.md); scripts in `check_output/`, `lowering/`, `scaling/`, `splits/`, `proof_search/`, `es_order/`; raw timing records in `records/` |
-| `run.sh`                       | everything, end to end                                                                                                                                                                                     |
+| Path                           | Role                                                                                                                                                                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lean/EsmSplit/Bundle.lean`    | statement footprints, read closure (worklist over a `TreeMap` index, proved least and closed), conflict                                                                                                                       |
+| `lean/EsmSplit/Semantics.lean` | abstract semantics and the reorder theorem                                                                                                                                                                                    |
+| `lean/EsmSplit/Plan.lean`      | spec, plan, ES order model, the checks as plain statements                                                                                                                                                                    |
+| `lean/EsmSplit/Fast.lean`      | how each check is decided: table-based algorithms, each proved equal to its statement                                                                                                                                         |
+| `lean/EsmSplit/Split.lean`     | the splitter `mkPlan` (untrusted)                                                                                                                                                                                             |
+| `lean/EsmSplit/Correct.lean`   | `Correct` and `split_correct`                                                                                                                                                                                                 |
+| `lean/EsmSplit/Render.lean`    | prints a module                                                                                                                                                                                                               |
+| `lean/EsmSplit/Instance.lean`  | generated: footprints, spec, kernel-checked theorems                                                                                                                                                                          |
+| `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                                    |
+| `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                                               |
+| `lean/Main.lean`               | the `render` executable                                                                                                                                                                                                       |
+| `lean/Experiments/`            | experiments: output checker, mini-JS semantics, two tiers, lowering, strategy ladder, module order                                                                                                                            |
+| `extract/`                     | JavaScript front end for the example (`extract.mjs`) and output reader (`extract_output.mjs`)                                                                                                                                 |
+| `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                                                  |
+| `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                                      |
+| `experiments/`                 | [experiments](experiments/README.md) and [timings](experiments/TIMINGS.md); scripts in `check_output/`, `lowering/`, `scaling/`, `splits/`, `proof_search/`, `es_order/`, `debundle_cases/`; raw timing records in `records/` |
+| `run.sh`                       | everything, end to end                                                                                                                                                                                                        |

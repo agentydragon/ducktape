@@ -1,6 +1,6 @@
 # Experiments: what it costs to go further
 
-Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7). § 5 and § 8 have their own scripts.
+Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11). § 5 and § 8 have their own scripts.
 Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Check someone else's output: input + output → confirmation
@@ -252,16 +252,16 @@ The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortB
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
 One JSON line per split is in [`splits/results/`](splits/results); [`results/summary.md`](splits/results/summary.md) has the per-bundle table.
 
-| Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                 |
-| ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | --------------------------------------- |
-| halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                       |
-| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `Reassign` 13                           |
-| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `Reassign` 2              |
-| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 0         | 0                      | 476                   | 4                   | `OrderOk` 480, `Reassign` 370           |
-| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `OrderOk` 198, `ExportOutsideEntry` 198 |
-| **all**                                                                            | **2,740** | **2,033** | **0**                  | **698**               | **9**               |                                         |
+| Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                          |
+| ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | ------------------------------------------------ |
+| halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                                |
+| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `Reassign` 13                                    |
+| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `Reassign` 2                       |
+| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 0         | 0                      | 476                   | 4                   | `OrderOk` 480, `Reassign` 370, `ExportNames` 158 |
+| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `OrderOk` 198, `ExportOutsideEntry` 198          |
+| **all**                                                                            | **2,740** | **2,033** | **0**                  | **698**               | **9**               |                                                  |
 
-- **No accepted split behaved differently.** That is the soundness claim, tested on 2,033 accepted splits.
+- **No accepted split behaved differently.** That is the soundness claim, tested on 2,033 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
 - **Halving is mostly fine, which I did not expect.** With the entry in the second half, the entry imports the first half. If the first half refers back to the second
   (a function calling a helper declared later), it imports it too, and the cycle is cut at the entry. The order of the bodies stays the bundle's order.
   99.4% of the single cuts are accepted.
@@ -386,3 +386,21 @@ Every module prints its name. The order Node prints must equal `Plan.evalOrder`,
 | `node check.mjs 100 1 --control` (Node sees each module's imports reversed) | 100    | 59           | 24         |
 
 The control shows that the test can fail.
+
+## 11. debundle's e2e cases
+
+debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/cases)) has 207 entries: a bundle, a spec, and the verdict debundle must give.
+[`debundle_cases/run_cases.mjs`](debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --force`, runs the original and the emitted entry in Node, and compares.
+Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the plan: [`debundle_cases/README.md`](debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
+
+| Outcome                                                                                  | Entries |
+| ---------------------------------------------------------------------------------------- | ------- |
+| both accept, same stdout                                                                 | 66      |
+| both reject (`atomic_conflict` 8, `cycle` 7)                                             | 15      |
+| I reject, debundle accepts (8 would run, 2 do not load)                                  | 10      |
+| I accept and the output differs                                                          | 0       |
+| refusal tests (debundle's error text)                                                    | 13      |
+| not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists) | 103     |
+
+- **It found two soundness gaps in my front end,** both fixed or guarded: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`).
+- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (5), repeated `var` (3), export names (1), and an import for evaluation order (1).
