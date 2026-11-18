@@ -16,9 +16,10 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import ServiceError
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import wait_for_history_session
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
@@ -368,10 +369,10 @@ async def test_direct_gateway_command_cannot_create_a_session(
     remote: SandboxControlClient, sandbox: SandboxCluster
 ) -> None:
     with pytest.raises(ServiceError) as commanded:
-        await remote.runner_unary(
+        await remote.harness_host_unary(
             sandbox.destination,
             lambda stub: stub.SubmitInput,
-            environment_runtime_pb2.SubmitInputRequest(
+            harness_host_pb2.SubmitInputRequest(
                 session_id=str(uuid4()), command_id="unknown-notice", text="no creation"
             ),
         )

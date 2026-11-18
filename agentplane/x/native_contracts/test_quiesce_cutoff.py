@@ -21,8 +21,8 @@ from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import bind_incarnation
 from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import RefusedError, ServiceError
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -264,16 +264,16 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
     controller = gateway_service.environment_runtime_client(
         "spiffe://agentplane/sandbox-controller", request_timeout_s=30
     )
-    delayed_call: asyncio.Task[environment_runtime_pb2.InterruptTurnResponse] | None = None
+    delayed_call: asyncio.Task[harness_host_pb2.InterruptTurnResponse] | None = None
     diagnostic_dir = undeclared_outputs_dir() / "quiesce-cutoff"
     try:
         await asyncio.to_thread(gate.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread((gate / "command").write_text, delayed_id)
         delayed_call = asyncio.create_task(
-            gateway_service.environment_runtime_client("spiffe://agentplane/sessions").runner_unary(
+            gateway_service.environment_runtime_client("spiffe://agentplane/sessions").harness_host_unary(
                 sandbox.destination,
                 lambda stub: stub.InterruptTurn,
-                environment_runtime_pb2.InterruptTurnRequest(
+                harness_host_pb2.InterruptTurnRequest(
                     session_id=session_id, command_id=delayed_id, turn_id=active_turn_id
                 ),
                 expected_incarnation_uid=sandbox.pod_uid,

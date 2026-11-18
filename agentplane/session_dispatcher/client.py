@@ -8,6 +8,7 @@ from google.protobuf.message import Message
 
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.grpc.calls import call_unary, dial
+from agentplane.harness_host import harness_host_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.session_dispatcher.api import (
@@ -54,7 +55,40 @@ class SandboxControlClient:
         timeout_s: float | None = None,
         expected_incarnation_uid: str | None = None,
     ) -> T:
-        """Call a Runner RPC through the Environments Service, fenced to the Sandbox identity."""
+        return await self._unary(
+            destination,
+            lambda channel: call(environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)),
+            request,
+            timeout_s=timeout_s,
+            expected_incarnation_uid=expected_incarnation_uid,
+        )
+
+    async def harness_host_unary[T](
+        self,
+        destination: SandboxDestination,
+        call: Callable[[harness_host_pb2_grpc.HarnessHostStub], Callable[..., Awaitable[T]]],
+        request: Message,
+        *,
+        timeout_s: float | None = None,
+        expected_incarnation_uid: str | None = None,
+    ) -> T:
+        return await self._unary(
+            destination,
+            lambda channel: call(harness_host_pb2_grpc.HarnessHostStub(channel)),
+            request,
+            timeout_s=timeout_s,
+            expected_incarnation_uid=expected_incarnation_uid,
+        )
+
+    async def _unary[T](
+        self,
+        destination: SandboxDestination,
+        bind_call: Callable[[grpc.aio.Channel], Callable[..., Awaitable[T]]],
+        request: Message,
+        *,
+        timeout_s: float | None,
+        expected_incarnation_uid: str | None,
+    ) -> T:
         incarnation_metadata = (
             ((INCARNATION_UID_HEADER, expected_incarnation_uid),) if expected_incarnation_uid is not None else ()
         )
@@ -63,11 +97,8 @@ class SandboxControlClient:
             channel_credentials=self.channel_credentials,
             server_name=self.server_name,
         ) as channel:
-            runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
-                environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
-            )
             return await call_unary(
-                call(runner),
+                bind_call(channel),
                 request,
                 token_file=self.token_file,
                 timeout_s=timeout_s or self.request_timeout_s,
