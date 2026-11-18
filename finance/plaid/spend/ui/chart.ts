@@ -42,7 +42,7 @@ export function seriesColor(scheme: ChartColorScheme, index: number): string {
   return chartPalette[scheme].series[index] ?? `hsl(${hue} 72% ${scheme === "dark" ? 70 : 35}%)`;
 }
 
-const standardAveragePositions: Readonly<Partial<Record<number, number>>> = { 7: 0, 30: 1, 90: 3, 365: 2 };
+const standardAveragePositions: Readonly<Partial<Record<number, number>>> = { 7: 1, 30: 0, 90: 3, 365: 2 };
 
 export function movingAverageColor(scheme: ChartColorScheme, days: number, index = 0): string {
   return seriesColor(scheme, standardAveragePositions[days] ?? index + 4);
