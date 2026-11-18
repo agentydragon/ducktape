@@ -892,6 +892,132 @@ pub(crate) fn program_value_flows<'a>(
         }
     }
     let origins = Arc::new(OriginTable::from_origins(origins));
+    let trace = match origin_trace::Selection::from_env() {
+        Ok(Some(_selection)) if names.len() < 2 => {
+            eprintln!(
+                "origin-journal skipped modules={} reason=single-module-shadow",
+                names.len()
+            );
+            None
+        }
+        Ok(Some(selection)) => {
+            let mut selected_origins = BTreeMap::new();
+            for selector in &selection.functions {
+                let Some(module) = names.iter().position(|name| name == &selector.module) else {
+                    eprintln!(
+                        "origin-journal unresolved_function module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                };
+                let Some(site) = site_maps[module].get(&selector.offset).copied() else {
+                    eprintln!(
+                        "origin-journal unresolved_function_site module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                };
+                let value = Value::Alloc(Kind::Function, site);
+                if !origins.origins.contains(&value) {
+                    eprintln!(
+                        "origin-journal unresolved_function_origin module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                }
+                selected_origins.insert(
+                    origins.id(value),
+                    (selector.module.clone(), selector.offset),
+                );
+            }
+            let mut targets = Vec::new();
+            for selector in &selection.bindings {
+                let Some(module) = names.iter().position(|name| name == &selector.module) else {
+                    eprintln!(
+                        "origin-journal unresolved_binding module={:?} name={:?} context={}",
+                        selector.module, selector.name, selector.context
+                    );
+                    continue;
+                };
+                let matches: Vec<_> = programs[module]
+                    .symbols
+                    .bindings
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, id)| {
+                        id.0.as_ref() == selector.name && id.1.as_u32() == selector.context
+                    })
+                    .collect();
+                if matches.len() != 1 {
+                    eprintln!(
+                        "origin-journal binding_match_count module={:?} name={:?} context={} count={}",
+                        selector.module,
+                        selector.name,
+                        selector.context,
+                        matches.len()
+                    );
+                    continue;
+                }
+                let (local, _) = matches[0];
+                let Some(slot) = binding_maps[module][local] else {
+                    eprintln!(
+                        "origin-journal unresolved_binding_slot module={:?} name={:?} context={}",
+                        selector.module, selector.name, selector.context
+                    );
+                    continue;
+                };
+                targets.push(origin_trace::Target {
+                    module: selector.module.clone(),
+                    name: selector.name.clone(),
+                    context: selector.context,
+                    key: FlowKey::Binding(slot),
+                });
+            }
+            if selected_origins.is_empty() || targets.is_empty() {
+                eprintln!(
+                    "origin-journal disabled resolved_origins={} resolved_targets={}",
+                    selected_origins.len(),
+                    targets.len()
+                );
+                None
+            } else {
+                let mut binding_labels = vec![String::new(); declared.len()];
+                for (module, program) in programs.iter().enumerate() {
+                    for (local, id) in program.symbols.bindings.iter().enumerate() {
+                        if let Some(slot) = binding_maps[module][local] {
+                            binding_labels[slot.0 as usize] =
+                                format!("{}|{}|{}", names[module], id.0, id.1.as_u32());
+                        }
+                    }
+                }
+                let key_labels = origin_trace::KeyLabels {
+                    bindings: binding_labels,
+                    sites: sites
+                        .sources
+                        .iter()
+                        .map(|(module, offset)| (names[*module].clone(), *offset))
+                        .collect(),
+                    properties: property_names.properties.clone(),
+                };
+                eprintln!(
+                    "origin-journal enabled resolved_origins={} resolved_targets={} modules={}",
+                    selected_origins.len(),
+                    targets.len(),
+                    names.len()
+                );
+                Some(Rc::new(origin_trace::OriginTrace::new(
+                    selected_origins,
+                    targets,
+                    key_labels,
+                )))
+            }
+        }
+        Ok(None) => None,
+        Err(error) => {
+            eprintln!("origin-journal disabled selector_error={error}");
+            None
+        }
+    };
     let mut importer_allocations = vec![RoaringBitmap::new(); names.len()];
     for (index, value) in origins.origins.iter().enumerate() {
         if let Value::Alloc(_, site) = value {
@@ -917,6 +1043,7 @@ pub(crate) fn program_value_flows<'a>(
             },
             declared: declared.clone(),
             numeric_properties,
+            trace: trace.clone(),
         },
         origins.clone(),
         &candidates,
@@ -924,6 +1051,9 @@ pub(crate) fn program_value_flows<'a>(
         cell_effects,
         diagnostics,
     );
+    if let Some(trace) = &trace {
+        trace.report_global(&facts);
+    }
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]
     let mut ordered_value_oracle = BTreeMap::new();
@@ -1017,8 +1147,40 @@ pub(crate) fn program_value_flows<'a>(
         for (local, global) in program.symbols.bindings.iter().zip(&binding_maps[module]) {
             let global = global.expect("prepared source binding");
             if let Some(values) = shared.values.get(&FlowKey::Binding(global)) {
-                flow.bindings
-                    .insert(local.clone(), view.prepare_projection(values, &flow));
+                let projected = view.prepare_projection(values, &flow);
+                if let Some(trace) = &trace
+                    && let Some(target) = trace.target_for_key(FlowKey::Binding(global))
+                {
+                    let selected_offsets: BTreeSet<_> = trace
+                        .selected_sources_for_module(&target.module)
+                        .into_iter()
+                        .map(|(_, offset)| offset)
+                        .collect();
+                    // Current candidate roots are object/array/set allocations,
+                    // so this exact lookup should ordinarily be empty for a
+                    // selected Function origin. Record the actual slots without
+                    // tracing candidate-closure provenance through carriers.
+                    let local_candidate_offsets: Vec<_> = view
+                        .candidates
+                        .iter()
+                        .filter_map(|(_, local_candidate)| {
+                            let Value::Alloc(Kind::Function, offset) =
+                                flow.candidate_objects.get(*local_candidate as usize)?
+                            else {
+                                return None;
+                            };
+                            selected_offsets.contains(offset).then_some(*offset)
+                        })
+                        .collect();
+                    trace.report_projection(origin_trace::ProjectionReport {
+                        target,
+                        global: values,
+                        projected: &projected,
+                        local_origins: &flow.origin_table,
+                        local_candidate_offsets: &local_candidate_offsets,
+                    });
+                }
+                flow.bindings.insert(local.clone(), projected);
             }
             if let Some(bits) = candidate_bindings.get(&global) {
                 let key = Arc::as_ptr(bits) as usize;
