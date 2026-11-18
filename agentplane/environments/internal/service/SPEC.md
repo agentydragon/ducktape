@@ -110,6 +110,9 @@ same live UID/ownership checks as get. The service rechecks target UID and Ident
 assembling a descriptor. An already admitted Identity stream never follows a replacement target or
 Identity. Credentials are reviewed before sends and periodically while idle; a valid credential
 keeps its stream open.
+Before returning a target-read error, the service reviews the admitted credential again;
+if that review fails, its error ends the stream. Identity deletion or replacement that also
+hides the target therefore ends a delegated stream with `PERMISSION_DENIED`.
 
 This is a current-state subscription, not retained transition history. Intermediate states may be
 coalesced. Reconnecting starts with a current snapshot and has no cursor. Source closure, expiration,

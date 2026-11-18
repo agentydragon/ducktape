@@ -41,6 +41,9 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	get := &environmentpb.GetEnvironmentRequest{Target: request.GetTarget()}
 	// Authorize the target before allocating watches or reading any collection.
 	if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
+		if authErr := auth.RevalidateStream(ctx); authErr != nil {
+			return authErr
+		}
 		return err
 	}
 	sandboxes, err := s.watchObjects(ctx, &api.SandboxList{}, request.GetTarget())
@@ -75,6 +78,11 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 		// is either in the snapshot or wakes another read. Events are never used as authority.
 		current, currentPodName, err := s.getEnvironment(ctx, get, identity)
 		if err != nil {
+			// Identity revocation can also hide the target during this read, even
+			// after the periodic credential check. Report the credential failure first.
+			if authErr := auth.RevalidateStream(ctx); authErr != nil {
+				return authErr
+			}
 			return err
 		}
 		if !environmentDescriptorsEqual(previous, current) {
