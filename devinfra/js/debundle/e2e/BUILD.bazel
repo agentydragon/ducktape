@@ -1520,3 +1520,8 @@ debundle_e2e_test(
     ),
     source = "initialization/mod.rs",
 )
+
+debundle_e2e_test(
+    name = "context_read_retained_test",
+    saved_analysis_tools = True,
+)

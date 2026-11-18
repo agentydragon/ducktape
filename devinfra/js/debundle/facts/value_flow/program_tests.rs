@@ -336,6 +336,85 @@ fn completed_expression_queries_preserve_static_missing_and_dynamic_top() {
 }
 
 #[test]
+fn local_property_return_summaries_keep_module_slot_names() {
+    let caller = raw_js_test_support::parse("const marker = { alpha: 0 };\n");
+    let provider = raw_js_test_support::parse(
+        "const callback = () => 1;\nfunction read(context) { return context.value; }\nconst result = read({ value: callback });\n",
+    );
+    let caller_views = crate::facts::top_level_item_views(&caller.body);
+    let provider_views = crate::facts::top_level_item_views(&provider.body);
+    let empty_imports = BTreeMap::new();
+    let empty_exports = BTreeMap::new();
+    let bindings = ProgramBindings::new(
+        [
+            ModuleBindings {
+                module: "caller",
+                imports: &empty_imports,
+                exports: &empty_exports,
+            },
+            ModuleBindings {
+                module: "provider",
+                imports: &empty_imports,
+                exports: &empty_exports,
+            },
+        ],
+        [],
+    );
+    let inferred = BTreeMap::new();
+    let flows = program_value_flows(
+        &bindings,
+        [
+            ProgramFlowModule {
+                module: "caller",
+                body: &caller_views,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+            ProgramFlowModule {
+                module: "provider",
+                body: &provider_views,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+        ],
+        &crate::diagnostics::Diagnostics::default(),
+    );
+    let flow = &flows.flows["provider"];
+    let view = flow.program.as_ref().unwrap();
+    let local_value_slot = flow
+        .property_names_by_slot
+        .iter()
+        .position(|name| name == "value")
+        .expect("provider interns the summarized property");
+    let shared_value_slot = view.shared.property_slots["value"].0 as usize;
+    assert_ne!(
+        local_value_slot, shared_value_slot,
+        "the earlier caller property must make the shared slot differ from provider-local slots"
+    );
+
+    let callback = flow.values_of_binding(&id("callback"));
+    let result = flow.values_of_binding(&id("result"));
+    assert!(
+        callback.iter().all(|origin| result.contains(&origin)),
+        "the local return summary transfers the selected property even when the conservative return row also has Top"
+    );
+    let result_expr = variable_initializer(&provider, "result");
+    let shared_query = flow.values_of_expr(result_expr);
+    assert!(
+        callback.iter().all(|origin| shared_query.contains(&origin)),
+        "the shared summary uses globally rekeyed property slots"
+    );
+    let reference = ChunkValueFlow::analyze_reference(&provider_views);
+    let local_query = reference.values_of_expr(result_expr);
+    let callback_values: BTreeSet<_> = callback.iter().collect();
+    let local_values: BTreeSet<_> = local_query.iter().collect();
+    assert!(
+        callback_values.is_subset(&local_values),
+        "the local reference summary must retain its own property-slot names"
+    );
+}
+
+#[test]
 fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
     let caller = raw_js_test_support::parse("const box = {};\nconst early = box.run;\n");
     let provider =

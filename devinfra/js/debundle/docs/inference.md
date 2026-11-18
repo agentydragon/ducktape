@@ -1072,13 +1072,17 @@ rejecting; a successful corpus run alone is insufficient evidence for a rule.
 
 ### Bounded call-return relationships
 
-The source collector recognizes two normal-return relationships for synchronous
-functions and arrows with one plain identifier parameter: a single return of
-that parameter, and the exact `value && value.__esModule &&
+The source collector recognizes bounded normal-return relationships for
+synchronous functions and arrows with one plain identifier parameter: a single
+return of that parameter, a single static property read from that parameter,
+and the exact `value && value.__esModule &&
 Object.prototype.hasOwnProperty.call(value, "default") ? value.default : value`
 interop shape. Async/generator functions, parameter defaults/destructuring,
 extra statements and other bodies retain the ordinary pooled return relation.
 Recognition uses resolved parameter identity, not a library or binding name.
+The property-return form also admits a sequence prefix of zero-argument calls
+through identifier callees (excluding direct `eval`); those calls remain in
+the ordinary invocation/effect analysis.
 
 Each recognized function allocation has one constant-size certificate. A call
 with an actual first argument and no spreads instantiates its relationship with
@@ -1091,13 +1095,16 @@ instead of copying nested argument trees into every expression consumer.
 
 The proof is a restricted substitution argument. The admitted body cannot rebind
 or expose its parameter cell. On normal completion it returns that call's actual
-argument, or the result of reading its `default` property. The guard can select
-either branch, so this value relation needs no assertion that the guard denotes
-a native operation. It supplies no effect, purity, initialization or completion
-certificate. The original invocation events and body effects remain live,
-including shadowed guard calls and mutations. Property reads continue to use
-the existing conservative value/effect model; the summary does not establish
-that a property is an own data field or that a getter is harmless.
+argument, the result of reading a named property from that argument, or the
+result of reading its `default` property. Property projections use the ordinary
+property transfer, retaining its known producer values and its unknown result
+for missing or unsupported properties. A static property name is only a
+value-origin relation: it does not establish that the property is an own data
+field or that a getter is harmless. The guard can select either interop branch,
+so that value relation needs no assertion that the guard denotes a native
+operation. These summaries supply no effect, purity, initialization or
+completion certificate. Original invocation events and body effects remain
+live, including shadowed guard calls and mutations.
 
 The fixed point tracks the actual argument and projected property dependencies,
 so later facts wake their consumers. Function identities and argument references

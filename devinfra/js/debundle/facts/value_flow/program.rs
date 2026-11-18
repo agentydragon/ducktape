@@ -553,6 +553,15 @@ impl Rekey<'_> {
         self.properties[slot.0 as usize].expect("prepared property slot")
     }
 
+    fn return_summary(&self, summary: ReturnSummary) -> ReturnSummary {
+        match summary {
+            ReturnSummary::ArgumentProperty(property) => {
+                ReturnSummary::ArgumentProperty(self.property(property))
+            }
+            other => other,
+        }
+    }
+
     fn site(&self, site: u32) -> u32 {
         self.sites[&site]
     }
@@ -767,12 +776,9 @@ pub(crate) fn program_value_flows<'a>(
             mapping.expression(argument);
         }
         arguments.append(&mut program.symbols.call_arguments);
-        return_summaries.extend(
-            program
-                .return_summaries
-                .iter()
-                .map(|(function, summary)| (mapping.site(*function), *summary)),
-        );
+        return_summaries.extend(program.return_summaries.iter().map(|(function, summary)| {
+            (mapping.site(*function), mapping.return_summary(*summary))
+        }));
         let local_effects = std::mem::take(&mut program.cell_effects);
         program.cell_effects = local_effects
             .into_iter()
@@ -924,6 +930,7 @@ pub(crate) fn program_value_flows<'a>(
             candidates: std::mem::take(&mut candidate_maps[module]),
         };
         let mut flow = ChunkValueFlow {
+            property_names_by_slot: Arc::new(program.symbols.properties.clone()),
             origin_table: program.origin_table,
             declared_ids: program.declared_ids,
             canonical: program.canonical,
