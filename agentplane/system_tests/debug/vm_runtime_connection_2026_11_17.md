@@ -84,6 +84,91 @@ Coverage needs care. Both APIC collectors report zero kernel overruns/drops and 
 
 The separate IOTLB collector cannot fill the gap: its failed-guest rolling output only retains 925.633944–927.986022 seconds, far after the transition, with 603 kernel overruns and 670,142 overwritten records. It reports no observed assertion; that is not proof of no earlier mapping problem. There is no guest instruction trace at the IDT target or timer acknowledgement in this execution. Capturing that exact-kernel path, with verified CPU 0 retention, is the remaining discriminator between guest execution and TCG state/translation faults. This evidence supports neither a kernel/QEMU patch nor a timeout increase. No new boot repetition or provider outreach was needed for this analysis.
 
+## Earlier managed TCG failures
+
+On [Actions service grants PR #16467](https://github.com/agentydragon/ducktape/pull/16467) at
+`b0a5719548b8f96d3f4591189953032fdaa0845c`, the [failed test action](https://app.buildbuddy.io/invocation/e8fc2499-aeae-572a-b01b-07ac6371e588)
+took 665.362 seconds. VM 2's VMI and launcher reported Ready while Runtime was
+`NeverConnected`. The 300-second readiness wait was followed by the 600-second
+scenario deadline during cleanup. Gateway and Sandbox Controller logs report
+`no route to host` on port 9090, with no retained TLS or authorization error.
+Actions logs are absent. VM 1 completed six scripted upstream exchanges. VM 2's
+serial records PID 1 blocked in `i8042_probe` and CPU 0 in `pv_native_safe_halt`
+with zero ticks in the RCU grace period, an unchanged timer-softirq count of 21
+and a missed timer wakeup. The wedge preceded userspace and receiver authorization.
+The guest used Debian `6.12.115+deb13.1-cloud-amd64` on TCG with two vCPUs and
+no boot observer. The PR changed allowlist entries and kept the outgoing Actions
+transport.
+
+The 00:56:43 UTC host snapshot for launcher Pod UID
+`895c7dbc-c68b-4c01-87ac-6dbd0339bfdd` shows both vCPUs halted with interrupts
+enabled. CPU 0 had unmasked timer vector 236 in service, vectors 52 and 236
+pending, and priority `0xe0`. CPU 1 had neither pending nor in-service vectors.
+The priority blockage accounts for the missed timer and the downstream probe
+wait. Delivery and acknowledgement leading to that state were unobserved.
+
+[PR #16945](https://github.com/agentydragon/ducktape/pull/16945) at `f89eba69`
+[failed in 781.6 seconds](https://app.buildbuddy.io/invocation/a5515ec2-4bc4-5047-ba40-b3d2d5007648).
+Serial records **CPU 1** with zero ticks in the RCU grace period, halted in
+`pv_native_safe_halt` and missing its timer wakeup. The App was Ready at 08:53:56 UTC, the other
+guest completed its scenario and cleanup, and VM 1 exhausted the 300-second
+readiness and 300-second cleanup waits. All 92 successful CPU 1 LAPIC samples
+from 08:54:50.428 to 08:59:37.713 UTC show timer vector `0xec` both in service
+and pending with PPR `0xe0`. Vectors 46, 51, 52 and 53 later joined the pending
+set. The late snapshot still shows QEMU `running` with the vCPU halted and
+interrupts enabled. A [November 9 devel failure at `0e7fc09b6a19b`](https://app.buildbuddy.io/invocation/c3a9fd9f-e61f-5e11-8d20-4ff9ccf8d81f)
+already showed the same CPU 1 zero-tick, idle-stack and missing-wakeup signature.
+The seven-day target-history index included 837 status rows with cached results.
+Use the matched execution as recurrence evidence, with the index as a locator.
+
+The five-second `context deadline exceeded` on #16945 came from a background
+`stats/summary` query to the test's own k3s/kubelet. Sampling resumed, and
+controller and QMP exec requests continued. Available memory stayed above
+13.6 GiB, failed CPU 1 accumulated about 1.37 seconds of host scheduler wait
+by 08:59 and the action queued for about 60 ms. These observations argue against
+sustained resource starvation. A brief physical-host event remains possible
+without provider telemetry. An earlier provider attempt lost its Firecracker
+socket before guest boot. Full run references, artifact paths and source
+comparisons are in the [historical VM CI report](https://github.com/agentydragon/ducktape/blob/22aab7654376a05a3ffaa592dbfaf6ec8e60d1bb/agentplane/debug/2026_11_12_vm_ci_reliability.md#boot-interrupt-stall-2026-11-16).
+
+### Actions grants control
+
+Both recorded controls added diagnostics to the PR head. The [single opt-in run](https://app.buildbuddy.io/invocation/056388a3-0a6c-4d48-8a75-729c1c0c180e)
+added observer code to #16467 and passed `test_vm` in 284.7 seconds and observer
+unit tests in 15.7 seconds. The guest image, CPU count, assertions, auth and
+deadlines were held constant. Both launcher UIDs were found. QEMU rejected
+`apic_register_write` as an unknown event, leaving both traces empty.
+
+The separate paired batch applied identical diagnostics and used
+`--runs_per_test=10 --nocache_test_results --flaky_test_attempts=1`. Each arm
+retained ten distinct run IDs at attempt 1 and both guest consoles per run:
+
+| Source before diagnostics                         | Invocation                                                                            | Result                       |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------- |
+| #16467 `b0a5719548b8f96d3f4591189953032fdaa0845c` | [05413723](https://app.buildbuddy.io/invocation/05413723-5146-4b10-8efd-b40c2e5aff3a) | 10/10 passed (245.9–391.8 s) |
+| devel `a8c4b186458f1522d783c74c5cd63ab6a35e36b8`  | [3ea624ce](https://app.buildbuddy.io/invocation/3ea624ce-ced3-4fc5-91c9-6e1cd53878c8) | 10/10 passed (235.0–380.0 s) |
+
+With diagnostics, the effective commits were `ccdd85dfeea9a104453beb328e621c034729f8a6`
+for #16467 and `38574eada7d5b64dfa8eb71471f9c07b845e39d3` for devel. Two attempts
+with abbreviated SHAs failed during checkout, before any test executed. The timer
+stall did not recur in 40 guest consoles. QEMU exposed no APIC trace events.
+Each arm accepted `log int` for 16 of 20 boots alongside repeated
+`info lapic` and `info pic` samples. Logging generally hit 16 MiB before
+userspace while sampling continued. Six observers selected QEMU PIDs that
+disappeared before reading `/proc/<pid>/cmdline` and aborted before starting
+their monitor timelines. Two more devel observers exhausted startup discovery.
+The collector now checks for the logging PID again after Running and keeps
+monitor sampling if logging discovery fails. The original stall's delivery/EOI
+sequence and any effect of the grants change on recurrence remain unmeasured.
+See [the collector change](https://github.com/agentydragon/ducktape/commit/1bb5bd25230d2045d3ea7e2df74c8bdebabbece3).
+
+The November 15 history comparison covered six pages back to November 13
+at 01:52 UTC and omitted the PR failure. The three failed rows cover a scenario
+timeout with two orderly guest powerdowns, a readiness failure with both guests
+reaching systemd/Runtime and a missing shutdown proof later traced to a QEMU boot
+assertion. Full run and collection details are in
+the [historical Actions grants report](https://github.com/agentydragon/ducktape/blob/22aab7654376a05a3ffaa592dbfaf6ec8e60d1bb/agentplane/debug/actions_service_grants_vm_boot.md).
+
 ## Cleanup follows the requested sequence
 
 | UTC          | Observation                                                                                                                                                       |

@@ -7,24 +7,48 @@ change is supported by the newly inspected evidence.
 ## Historical admitted-turn boundary
 
 The [PR #15493 attempt](https://app.buildbuddy.io/invocation/5d2cc998-8c9b-5d7f-8b67-9509593f00ae)
-admitted Codex input at 22:19:10 UTC. The app-server launch span ended at
-22:19:11.506, and both CRI console and independent QEMU serial stopped near
-22:19:11.5, guest uptime about 86 s. There was no retained harness completion or
-failure during the 300-second turn wait. The later 600-second outer deadline
-and cleanup errors do not identify the stalled component. Late QEMU `running`
-and halted vCPUs do not distinguish a kernel/timer stall, userspace wedge or
-lost telemetry.
+at `a065ad40c83321f6a15612c48ca221422695ce10` waited for the Codex turn from
+22:19:10.042 to 22:24:10.074 UTC. Raw serial's last Runtime reconciliation
+was 22:19:11.495, the app-server launch span ended at 22:19:11.506, and both
+CRI console and independent QEMU serial stopped near then at guest uptime 86 s.
+The retained persistent journal ends at 22:19:01, before that serial record.
+The 22:25:03 host sample showed QEMU `running` and both vCPUs halted. The
+300-second turn and 600-second outer deadlines expired. The late snapshot
+leaves kernel/timer, userspace and I/O causes open.
 
 [PR #15993](https://github.com/agentydragon/ducktape/pull/15993), merged at
 `2faec465369c1033303dac05740c840229248c45`, samples the first outstanding turn at
-210 and 240 seconds, keyed by Sandbox UID, with bounded QMP/host diagnostics.
-A recurrence needs those live samples together with serial, launcher and Runtime
-history; a post-cleanup process scan cannot reconstruct a former live guest.
+210 and 240 seconds with bounded QMP/host diagnostics. It keys on Sandbox name
+and UID, and retains the launcher Pod UID in the separate `turn-0` and `turn-1`
+artifacts. Shorter turns issue no new probes. A recurrence needs those samples
+alongside serial, launcher and Runtime history. QMP may wake QEMU. If both
+samples leave guest scheduling or userspace progress ambiguous, a separate
+bounded experiment can collect guest SysRq task stacks before the turn deadline.
 
-The [other historical attempt](https://app.buildbuddy.io/invocation/d1131cb0-8e38-509f-8b02-eaca85afba23)
-reported a kernel general protection fault in `update_blocked_averages`, a refused
-Firecracker pause and a later TSC `EINVAL` restore failure. Those are distinct
-boundaries, not an explanation of the first admitted-turn stall.
+## Independent failures on nearby attempts
+
+- **Outer provider fault.** On the same source, [another attempt](https://app.buildbuddy.io/invocation/d1131cb0-8e38-509f-8b02-eaca85afba23)
+  reported a managed-kernel general protection fault in `update_blocked_averages`,
+  a refused Firecracker pause and a later TSC `EINVAL` restore failure. Retain
+  provider snapshot creation and restore metadata alongside the host kernel
+  trace to attribute the restore error. See [the snapshot TSC metadata gap](https://github.com/agentydragon/ducktape/pull/15849).
+- **Guest systemd proof.** The [unit proof attempt](https://app.buildbuddy.io/invocation/8dd3217e-38a2-5b1c-a46f-fa0b55149e12)
+  failed in `reap_retries_property_deadline_on_connected_manager`. At the tested
+  head, line 613 read systemd properties in `assertSystemdProofEmpty` with the
+  same 10-second context used for PID observation, stdin and `Wait`. The guest
+  journal records exit 23 about one second after launch. [#15571](https://github.com/agentydragon/ducktape/pull/15571)
+  added a guard and moved the line. [#15957](https://github.com/agentydragon/ducktape/pull/15957)
+  gave the final unit and empty-domain proof a fresh 10 seconds inside the
+  70-second fixture context, retaining retry, identity, exit and stream checks.
+  The old artifact leaves budget exhaustion and a slow manager read possible.
+  On recurrence, record read start, context time remaining and read duration
+  with the native unit identity and guest journal.
+- **Outer suite budget.** A cold action spent 323.5 seconds in setup and about
+  304 seconds in scenarios and cleanup. The [#15481 attempt](https://app.buildbuddy.io/invocation/4b599700-757c-5e24-9e56-9fbcd554cd07)
+  spent 428 seconds in setup and 230 seconds in the case interval. The exact
+  scenario operation blocked before the Kubernetes API cleanup deadlines
+  remains unknown. Compare uncached spans on matching image inputs and retain
+  the active span and guest/host state at expiry. See [the historical CI report](https://github.com/agentydragon/ducktape/blob/22aab7654376a05a3ffaa592dbfaf6ec8e60d1bb/agentplane/debug/2026_11_12_vm_ci_reliability.md).
 
 ## Fresh natural QEMU crash
 
@@ -42,7 +66,8 @@ asserting `section_index < d->map.sections_nb`. The native QEMU message reports
 02:11:53.222 UTC and `shutting down, reason=crashed`. KubeVirt replaced the
 incarnation and the scenario assertions passed; the original crash still
 correctly makes the lifecycle gate red. This matches the independently recorded
-[earlier QEMU abort](vm_cpu_budgets.md), without proving its underlying cause.
+[earlier QEMU abort](vm_cpu_budgets.md). A [later IOTLB trace](vm_shutdown_stalls/mixed_kvm_teardown_2026_11_17.md#pr-ci-qemu-boot-assertion-reported-by-the-teardown-gate)
+captures a map mismatch and leaves the exact provenance and repair open.
 
 The host report was taken at 02:14:22.917 UTC, after the crashed Pod disappeared:
 it reports zero matching QEMU processes and Kubernetes Pod NotFound. That late

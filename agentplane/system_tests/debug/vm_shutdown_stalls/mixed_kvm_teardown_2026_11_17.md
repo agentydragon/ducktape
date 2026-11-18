@@ -238,6 +238,29 @@ No CPU 1 flush appears between the retained fill and assertion, but loss prevent
 promoting that absence to proof that no flush occurred. The exact matching
 fill/access provenance and a safe emulator repair therefore remain unproven.
 
+### Earlier IOTLB assertions
+
+The same assertion occurred on [#16997 at `a84addf4`](https://app.buildbuddy.io/invocation/0b4780e9-5f98-5c50-bf88-dcf69bbcb2e1)
+and on devel at [`2faec465` on November 13](https://app.buildbuddy.io/invocation/fe172529-66fa-5a0f-bbe1-bab5f5372d6a)
+and [`b15bd054` on November 10](https://app.buildbuddy.io/invocation/ed5acdf3-4dd2-524c-9d20-5e81631698c9).
+All three used QEMU `10.1.0-10.el9`, libvirt `11.9.0-1.el9`, host Linux 5.15 and
+two guest vCPUs under explicit TCG with no `/dev/kvm`. The failures occurred
+in the CI k3s/Firecracker environments.
+
+QEMU v11 contains [`854cd16e318e`](https://github.com/qemu/qemu/commit/854cd16e318eed12de2995014b28d9f374c64bf7),
+which addresses a translation through an `IOMMUMemoryRegion` that changes
+`target_as`. The earlier domain configurations used direct-kernel q35 boot
+without EFI/pflash or a vIOMMU. Default SMM supplies `cpu-memory` and `cpu-smm`
+AddressSpaces, but its presence alone does not establish that IOMMU translation.
+The later trace above supports investigating the map-generation mismatch in
+the same AddressSpace. Loss and incomplete provenance leave the safe repair open.
+
+All 14 exact-executable probe definitions registered on the Linux 5.15
+Firecracker executor, including nested user-memory fetches. The [observer contract](../../vm/README.md#qemu-iotlb-assertion-capture)
+records binary verification, isolation from the APIC sampler and collection
+limits. The [historical observer report](https://github.com/agentydragon/ducktape/blob/22aab7654376a05a3ffaa592dbfaf6ec8e60d1bb/agentplane/debug/2026_11_12_vm_ci_reliability.md#qemu-iotlb-assertion-distinct-from-the-timer-stall)
+retains the original debuginfo identities, fixture results and upstream comparison.
+
 ## Later qualification and open questions
 
 Normal log verbosity restored some KVM shutdown margin in the ordinary-fixture
