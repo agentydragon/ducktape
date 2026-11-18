@@ -69,8 +69,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
   component directory: put it first in `helmrelease.yaml` and list only that file in
   `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
   a single-document file.
-- Agent read access to a new namespace: a new `agent-rbac/` directory, never RoleBindings in
-  `agent-rbac-base` or `shared-rbac` (<docs/agent_rbac.md>).
+- Classify common agent diagnostics in <cdk8s/namespace_access.py>. Put service-specific grants
+  with the owning service. See [agent RBAC architecture](docs/agent_rbac.md#architecture).
 - CiliumNetworkPolicy for Gateway API backends: <docs/cilium_network_policy.md>.
   Postmortems: <docs/lessons_learned/>.
 

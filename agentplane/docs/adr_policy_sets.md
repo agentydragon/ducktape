@@ -78,10 +78,9 @@ Policy Controller keeps. Deployed scope and the static grants around it:
     referencing our GitOps-owned ones, and
     [nxs-rbac-operator](https://github.com/nixys/nxs-rbac-operator) is configured operator-wide
     with subjects embedded in each rule.
-- **Kyverno generation.** The cluster retired a Kyverno-generated diagnostics path for Flux-owned
-  bindings
-  ([agent RBAC](../../cluster/docs/agent_rbac.md#namespace-reader-migration-kyverno-to-gitops)).
-  Bringing it back needs a dynamic membership contract and reliable cleanup of generated objects.
+- **Kyverno generation.** Bringing it back needs a dynamic membership contract and reliable
+  cleanup of generated objects.
+  [Kyverno-to-Flux handoff](../../cluster/docs/lessons_learned/2026_10_02_kyverno_agent_reader_handoff.md).
 - **Flux/cdk8s alone** cannot handle runtime-created ServiceAccounts or one-off additions, and
   aggregated ClusterRoles combine rules, not bindings across namespaces.
 - **A finalizer on the binding** blocks deletion whenever the controller is down.
