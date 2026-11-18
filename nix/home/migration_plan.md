@@ -48,8 +48,6 @@ and `ansible/roles/`.
 ### What Ansible Still Manages
 
 - System packages via apt
-- Docker daemon
-- Legacy VPN uninstall (removes old Tailscale/WireGuard)
 - udev rules (GPD trackpoint quirk)
 - System-level services
 
