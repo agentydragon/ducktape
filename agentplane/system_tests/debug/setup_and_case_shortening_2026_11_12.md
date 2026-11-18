@@ -3,7 +3,7 @@
 The balanced Pod experiment and two remaining reliability investigations are
 dispatched separately. Image split [#15214](https://github.com/agentydragon/ducktape/pull/15214)
 remains unmerged: fewer OCI bytes have not demonstrated a CI saving. The
-[three-suite image-overlap trial](../../../devinfra/ci/debug/fixture_overlap_three_suite_graph_2026_11_12.md)
+[three-suite image-overlap trial](../../../devinfra/ci/debug/system_test_feedback/fixture_overlap_three_suite_graph_2026_11_12.md)
 also did not establish a faster gate. The selected graph excludes other required
 suites, build/lint work and GitHub check clocks.
 

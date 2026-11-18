@@ -2,7 +2,7 @@
 
 The Nov 12 Pod control and corrected split main **passed their physical test
 actions**. Their Bazel invocations remain disconnected; neither is a successful
-full Bazel gate. The earlier [graph note](../../ci/debug/four_minute_system_test_graph.md)
+full Bazel gate. The earlier [graph note](../../ci/debug/system_test_feedback/four_minute_system_test_graph.md)
 incorrectly described these test verdicts as unavailable.
 
 ## What went wrong in the investigation

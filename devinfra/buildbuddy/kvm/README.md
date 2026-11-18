@@ -43,7 +43,7 @@ bbr test //devinfra/buildbuddy/kvm:kvm_test --nocache_test_results
 Adoption for ordinary CI is deferred. The manual lane has executed all three
 VM scenarios with actual KVM acceleration, but the full target timed out during
 final cleanup after over ten minutes of execution. See the
-[validation and latency record](../debug/2026_11_03_wyrm2_kvm_worker.md)
+[validation and latency record](../debug/kvm_pool_rollout/2026_11_03_wyrm2_kvm_worker.md)
 for the measured phases and remaining adoption requirements.
 
 The manual `kvm_vm_test` target runs the same `/dev/kvm` smoke check on pool

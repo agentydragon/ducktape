@@ -15,7 +15,7 @@ layers at once. The current [`load_oci_image`](../../oci/oci.py) locks by image 
 rechecks after acquiring the lock, and records the loaded layout digest with the daemon image
 ID. That herd is a plausible contributor to the timeout pattern, not a confirmed explanation:
 the measurements do not show that the affected CI actions shared a daemon and lock filesystem
-or that the Haku timeout was spent importing an image. The [later OCI comparison](../../debug/2026_10_27_oci_loader_comparison.md)
+or that the Haku timeout was spent importing an image. The [later OCI comparison](../../debug/oci_loader_benchmark/README.md)
 also leaves cross-action sharing unestablished.
 
 Docker's classic image store rewrites the OCI config during load, so the daemon's `.Id` differs

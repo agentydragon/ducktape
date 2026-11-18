@@ -29,7 +29,7 @@ its TestRunner action queued at 22:31:16.974 UTC, started on a worker at
 22:46:27.929. Its exact-ID cached ExecuteResponse and JUnit establish that all
 21 cases passed; an earlier unavailable-verdict claim was a lookup and protobuf
 default-field interpretation error, corrected in the
-[recovery investigation](../../buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md).
+[recovery investigation](../../../buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md).
 The Bazel invocation remains disconnected. The old
 0.06-second queue samples cannot be extrapolated to current load; this
 single long queue does not identify an account quota or provider capacity
@@ -174,10 +174,10 @@ proposed required-CI change.
 Evidence sources: the canonical report's
 [`evidence.json`](https://github.com/agentydragon/ducktape/blob/c342162ca9d66f0be60534a588dcaf137e6e1ef0/latency/evidence.json),
 BuildBuddy physical TestRunner records and retained `test-spans.jsonl` for
-Pod/VM, [suite input declaration](../../../agentplane/system_tests/k3s/defs.bzl),
-[Pod batch](../../../agentplane/system_tests/suites/test_pod.py),
-[VM batch](../../../agentplane/system_tests/suites/test_vm.py), and
-[MCP Action batch](../../../agentplane/system_tests/suites/mcp/test_actions.py).
+Pod/VM, [suite input declaration](../../../../agentplane/system_tests/k3s/defs.bzl),
+[Pod batch](../../../../agentplane/system_tests/suites/test_pod.py),
+[VM batch](../../../../agentplane/system_tests/suites/test_vm.py), and
+[MCP Action batch](../../../../agentplane/system_tests/suites/mcp/test_actions.py).
 The 2e817 MCP trace blobs were advertised but returned 404 when fetched;
 there is no per-case MCP attribution here. The historical report's source
 predates current `devel`; its timings cannot be attributed to #15188 or #15897.

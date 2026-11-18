@@ -4,7 +4,7 @@ On November 11, 2026 UTC, a live test of the `kvm-vm` pool confirmed that an
 automatic scale-down can select a busy VM and let its action finish before the VM
 and its disposable disk are removed. This is one observed run, not a guarantee
 for every action or for node failures. The pool's
-[shutdown and scaling configuration](../../../cluster/k8s/buildbuddy-kvm-worker/README.md)
+[shutdown and scaling configuration](../../../../cluster/k8s/buildbuddy-kvm-worker/README.md)
 describes the bounded drain and its input-download limitation.
 
 ## Setup
