@@ -37,7 +37,6 @@ go_test(
     deps = [
         "//agentplane/environments/internal/service/view",
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/identity/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
