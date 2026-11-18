@@ -106,6 +106,7 @@ impl CallEffectRules {
                         _ => unreachable!("value-expression key"),
                     },
                     &mut |_| {},
+                    None,
                 );
                 for target in targets.finish() {
                     if let Value::Alloc(Kind::Function, target) = target {
