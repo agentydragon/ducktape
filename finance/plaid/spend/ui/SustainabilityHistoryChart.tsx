@@ -2,13 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title, useComputedColorScheme } from "@mantine/core";
 import Decimal from "decimal.js";
 
-import { mountChart } from "./chart";
+import { chartPalette, mountChart, movingAverageColor } from "./chart";
 import type { SustainabilityView } from "./schema";
 import { annualFundingMinorUnits, fundingFromSpendingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
-
-const REFERENCE_SCENARIO_COLOR = "#868E96";
 
 type HistoryWindow = {
   view: SustainabilityView;
@@ -21,11 +19,6 @@ type HistoryTooltip = {
   windows: { label: string; color: string; lines: string[] }[];
   references: string | null;
 };
-
-function windowColor(index: number, count: number, dark: boolean): string {
-  const hue = (210 + (index * 360) / count) % 360;
-  return `hsl(${hue} 78% ${dark ? 70 : 34}%)`;
-}
 
 function percent(value: string | number): string {
   const formatter = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
@@ -181,13 +174,14 @@ export function SustainabilityHistoryChart({
   const amountLabel = showTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const colorScheme = useComputedColorScheme("light");
+  const referenceColor = chartPalette[colorScheme].reference;
   const historyWindows = useMemo(
     () =>
       [...windows]
         .sort((left, right) => left.window_days - right.window_days)
         .map((view, index) => ({
           view,
-          color: windowColor(index, windows.length, colorScheme === "dark"),
+          color: movingAverageColor(colorScheme, view.window_days, index),
           pointsByDate: new Map(view.history.map((point) => [point.date, point] as const)),
         })),
     [colorScheme, windows]
@@ -246,8 +240,8 @@ export function SustainabilityHistoryChart({
             type: "line" as const,
             label: `Reference scenario ${index + 1} (${percent(rate)})`,
             data: dates.map(() => new Decimal(rate).toNumber()),
-            borderColor: REFERENCE_SCENARIO_COLOR,
-            backgroundColor: REFERENCE_SCENARIO_COLOR,
+            borderColor: referenceColor,
+            backgroundColor: referenceColor,
             borderWidth: 1,
             borderDash: [2, 4],
             pointRadius: 0,
@@ -262,7 +256,16 @@ export function SustainabilityHistoryChart({
       datasets,
       curveValues,
     };
-  }, [dates, effectiveTaxRate, hasRates, referenceDrawRates, selectedWindowDays, showTaxes, visibleWindows]);
+  }, [
+    dates,
+    effectiveTaxRate,
+    hasRates,
+    referenceColor,
+    referenceDrawRates,
+    selectedWindowDays,
+    showTaxes,
+    visibleWindows,
+  ]);
 
   const hasVisibleCurveData = chart.curveValues.some((values) =>
     values.some((value) => value != null && Number.isFinite(value))
@@ -427,7 +430,7 @@ export function SustainabilityHistoryChart({
             <Group gap={6} wrap="nowrap" role="listitem">
               <span
                 aria-hidden="true"
-                style={{ borderTop: `2px dotted ${REFERENCE_SCENARIO_COLOR}`, display: "inline-block", width: 20 }}
+                style={{ borderTop: `2px dotted ${referenceColor}`, display: "inline-block", width: 20 }}
               />
               <Text size="xs">Reference withdrawal scenarios</Text>
             </Group>

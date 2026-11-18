@@ -1,13 +1,13 @@
 """Historical USD net worth from complete sets of linked Plaid balances."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,10 +34,12 @@ class NetWorthTotals(BaseModel):
 class NetWorthDay(BaseModel):
     date: date
     totals: NetWorthTotals | None
+    account_changes_minor_units: list[int] | None = None
 
 
 class NetWorthHistory(BaseModel):
     days: list[NetWorthDay]
+    account_labels: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -47,12 +49,14 @@ class _Balance:
     captured_at: datetime
     amount: Decimal
 
+    @property
+    def contribution(self) -> Decimal:
+        return -self.amount if self.is_debt else self.amount
 
-def _latest_aligned_balances(
-    observations: list[_Balance], required_accounts: set[str], account_count: int
-) -> NetWorthTotals | None:
+
+def _latest_aligned_balances(observations: list[_Balance], required_accounts: set[str]) -> dict[str, _Balance] | None:
     latest_by_account: dict[str, _Balance] = {}
-    latest_window: tuple[_Balance, ...] = ()
+    latest_window: dict[str, _Balance] | None = None
     for observation in observations:
         latest_by_account[observation.account_id] = observation
         in_window = {
@@ -61,10 +65,12 @@ def _latest_aligned_balances(
             if observation.captured_at - balance.captured_at <= _MAX_CAPTURE_SPREAD
         }
         if required_accounts <= in_window.keys():
-            latest_window = tuple(in_window.values())
-    if not latest_window:
-        return None
+            latest_window = in_window
+    return latest_window
 
+
+def _summarize_balances(balances: Mapping[str, _Balance], account_count: int) -> NetWorthTotals:
+    latest_window = balances.values()
     assets = usd_minor_units(sum((b.amount for b in latest_window if not b.is_debt), Decimal(0)))
     debt = usd_minor_units(sum((b.amount for b in latest_window if b.is_debt), Decimal(0)))
     return NetWorthTotals(
@@ -75,6 +81,16 @@ def _latest_aligned_balances(
         observed_through=max(balance.captured_at for balance in latest_window),
         inferred_zero_account_count=account_count - len(latest_window),
     )
+
+
+def _account_labels(names: list[str]) -> list[str]:
+    counts = Counter(names)
+    occurrences: Counter[str] = Counter()
+    labels = []
+    for name in names:
+        occurrences[name] += 1
+        labels.append(f"{name} ({occurrences[name]})" if counts[name] > 1 else name)
+    return labels
 
 
 def _zero_before(evidence: AccountHistory, *, account_type: str, first_activity: date | None) -> date | None:
@@ -102,7 +118,14 @@ async def read_net_worth(
 ) -> NetWorthHistory:
     """Value currently attached USD accounts from aligned balances and dated opening evidence."""
     rows = await session.execute(
-        select(AccountRow.account_id, AccountRow.type, BalanceSnapshotRow.captured_at, BalanceSnapshotRow.current)
+        select(
+            AccountRow.account_id,
+            AccountRow.type,
+            AccountRow.name,
+            LinkRow.institution_name,
+            BalanceSnapshotRow.captured_at,
+            BalanceSnapshotRow.current,
+        )
         .join(LinkRow, LinkRow.item_id == AccountRow.item_id)
         .outerjoin(
             BalanceSnapshotRow,
@@ -123,10 +146,12 @@ async def read_net_worth(
         .order_by(BalanceSnapshotRow.captured_at, BalanceSnapshotRow.id)
     )
     account_types: dict[str, str] = {}
+    account_names: dict[str, str] = {}
     first_activity: dict[str, date] = {}
     by_day: dict[date, list[_Balance]] = defaultdict(list)
-    for account_id, account_type, captured_at, amount in rows:
+    for account_id, account_type, name, institution, captured_at, amount in rows:
         account_types[account_id] = account_type
+        account_names[account_id] = f"{institution} · {name}" if institution and institution != name else name
         if captured_at is not None and amount is not None:
             day = captured_at.astimezone(time_zone).date()
             by_day[day].append(_Balance(account_id, account_type in _DEBT_TYPES, captured_at, amount))
@@ -162,19 +187,46 @@ async def read_net_worth(
         )
         is not None
     }
-    totals_by_day = {}
+    aligned_by_day: dict[date, dict[str, _Balance]] = {}
     for day, observations in by_day.items():
         required_accounts = account_types.keys() - {account for account, cutoff in zero_before.items() if day < cutoff}
-        totals = _latest_aligned_balances(observations, required_accounts, len(account_types))
-        if totals is not None:
-            totals_by_day[day] = totals
-    if not totals_by_day:
+        aligned = _latest_aligned_balances(observations, required_accounts)
+        if aligned is not None:
+            aligned_by_day[day] = aligned
+    if not aligned_by_day:
         return NetWorthHistory(days=[])
 
-    day = min(totals_by_day)
+    account_ids = sorted(account_names, key=lambda account_id: (account_names[account_id].casefold(), account_id))
+    labels = _account_labels([account_names[account_id] for account_id in account_ids])
+    day = min(aligned_by_day)
     last_day = max(by_day)
     days: list[NetWorthDay] = []
+    previous_amounts: list[Decimal] | None = None
     while day <= last_day:
-        days.append(NetWorthDay(date=day, totals=totals_by_day.get(day)))
+        balances = aligned_by_day.get(day)
+        if balances is None:
+            days.append(NetWorthDay(date=day, totals=None))
+            previous_amounts = None
+        else:
+            amounts = [
+                balance.contribution if (balance := balances.get(account_id)) is not None else Decimal(0)
+                for account_id in account_ids
+            ]
+            changes = (
+                [
+                    usd_minor_units(current - previous)
+                    for current, previous in zip(amounts, previous_amounts, strict=True)
+                ]
+                if previous_amounts is not None
+                else None
+            )
+            days.append(
+                NetWorthDay(
+                    date=day,
+                    totals=_summarize_balances(balances, len(account_ids)),
+                    account_changes_minor_units=changes,
+                )
+            )
+            previous_amounts = amounts
         day += timedelta(days=1)
-    return NetWorthHistory(days=days)
+    return NetWorthHistory(days=days, account_labels=labels)

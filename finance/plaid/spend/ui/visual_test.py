@@ -10,7 +10,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -209,12 +209,24 @@ async def test_net_worth_navigation_and_history(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
     async def serve_balances(route: Route) -> None:
-        assets_and_debts = [(172000, 15000), (175000, 18000), (173000, 15000), None, (189000, 12500), (192000, 12000)]
+        assets_and_debts = [(172000, 15000)] * 29 + [
+            (175000, 18000),
+            (173000, 15000),
+            None,
+            (189000, 12500),
+            (192000, 12000),
+        ]
+        account_changes = (
+            [None] + [(0, 0, 0)] * 28 + [(3500, -500, -3000), (-1500, -500, 3000), None, None, (3500, -500, 500)]
+        )
+        starting_day = date(2026, 9, 10)
         await route.fulfill(
             json={
+                "account_labels": ["Example Brokerage", "Example Bank", "Example Credit Card"],
                 "days": [
                     {
-                        "date": f"2026-10-{day:02}",
+                        "date": day.isoformat(),
+                        "account_changes_minor_units": [change * 100 for change in changes] if changes else None,
                         "totals": (
                             None
                             if balances is None
@@ -222,13 +234,16 @@ async def test_net_worth_navigation_and_history(
                                 "assets_minor_units": balances[0] * 100,
                                 "debt_minor_units": balances[1] * 100,
                                 "net_minor_units": (balances[0] - balances[1]) * 100,
-                                "observed_from": f"2026-10-{day:02}T01:10:00Z",
-                                "observed_through": f"2026-10-{day:02}T01:25:00Z",
+                                "observed_from": f"{day}T01:10:00Z",
+                                "observed_through": f"{day}T01:25:00Z",
                             }
                         ),
                     }
-                    for day, balances in enumerate(assets_and_debts, start=8)
-                ]
+                    for day, balances, changes in (
+                        (starting_day + timedelta(days=index), balances, changes)
+                        for index, (balances, changes) in enumerate(zip(assets_and_debts, account_changes, strict=True))
+                    )
+                ],
             }
         )
 
@@ -249,6 +264,13 @@ async def test_net_worth_navigation_and_history(
     chart = page.get_by_role("img", name="Net worth over time in US dollars")
     await expect(chart).to_be_visible()
     await view.capture(f"linked-net-worth-{width}")
+    account_chart = page.get_by_role("img", name="Daily changes in net worth by account in US dollars")
+    await expect(account_chart).to_be_visible()
+    account_section = page.get_by_role("region", name="Daily change by account")
+    await expect(account_section.get_by_role("radio", name="30 days")).to_be_checked()
+    await view.capture(f"linked-net-worth-account-changes-{width}", target=account_section)
+    await account_section.get_by_text("All history", exact=True).click()
+    await expect(account_section.get_by_role("radio", name="All history")).to_be_checked()
     view.errors.assert_none(context="Linked net worth")
 
 

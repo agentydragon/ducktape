@@ -167,7 +167,7 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
             raise HTTPException(status_code=422, detail="history_days must be 7, 30, 90, or 365")
         return await reader.read_pace_history(history_days=history_days)
 
-    @app.get("/api/v1/net-worth", response_model=NetWorthHistory)
+    @app.get("/api/v1/net-worth", response_model=NetWorthHistory, response_model_exclude_unset=True)
     async def get_net_worth(_access: SpendAccess, reader: SpendReader, response: Response) -> NetWorthHistory:
         response.headers["Cache-Control"] = "no-store"
         return await reader.read_net_worth()
