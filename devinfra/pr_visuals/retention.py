@@ -86,13 +86,7 @@ def _metadata_refs(tests: Iterable[ReviewTest], context: str) -> tuple[set[str],
         for sha in (test.base_sha, test.merge_base_sha):
             if sha is not None:
                 dependencies.add(_validate_sha(sha, context))
-        for asset in test.assets:
-            digests.update(
-                digest
-                for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
-                if digest is not None
-            )
-            digests.update(variant.sha256 for variant in asset.variants)
+        digests.update(test.image_digests())
     return dependencies, digests
 
 

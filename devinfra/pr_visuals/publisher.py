@@ -762,18 +762,7 @@ def upload_bundle(
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
-    digests = {
-        digest
-        for test in metadata.tests
-        for asset in test.assets
-        for digest in (
-            asset.candidate_sha256,
-            asset.baseline_sha256,
-            asset.diff_sha256,
-            *(variant.sha256 for variant in asset.variants),
-        )
-        if digest is not None
-    }
+    digests = {digest for test in metadata.tests for digest in test.image_digests()}
     sources: dict[str, ImageSource] = {}
     for test in candidates or []:
         for asset in test.assets:
