@@ -101,7 +101,7 @@ a freshness guarantee.
 
 ## Recovery acceptance
 
-The [GitHub service acceptance test](../acceptance_github_test.go) runs the configured HTTP API,
+The [GitHub service acceptance test](../cmd/acceptance_github_test.go) runs the configured HTTP API,
 background workers and PostgreSQL store against the shared fake GitHub API and fake Dispatcher and
 History peers. It establishes a quiet PR subscription, changes current GitHub facts, records a pending catch-up job while stopped, and restarts the service. The workers
 must process that job into check-run, commit-status, review and lifecycle entries, dispatch a notice, follow its

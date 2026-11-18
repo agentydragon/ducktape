@@ -45,7 +45,7 @@ content-reference overhead or a concrete migration.
 The [Session receiver](../../env/runtime/session/native.go) records every incoming native frame
 before calling the adapter. The current Codex adapter has no semantic handler for
 `turn/diff/updated`; the full frame remains retained evidence. History stores it at its cursor,
-and its [delta settlement](../storage/settlement.go) handles specific text/argument/output delta
+and its [delta settlement](../internal/storage/settlement.go) handles specific text/argument/output delta
 templates, not repeated diff snapshots. This path has no content-addressed sharing between events.
 
 Separately, exact equal projection chunks of at least 1 KB of encoded JSON text accounted for
@@ -160,7 +160,7 @@ the repeated growing context and its redundant encoding. Retaining successive gr
 has the same quadratic-shaped accumulation measured in the old sampler; this sample does not
 establish that every History producer grows quadratically.
 
-History [appends the serialized EventEntry](../storage/store.go) at each new cursor and checks
+History [appends the serialized EventEntry](../internal/storage/store.go) at each new cursor and checks
 exact replays at old cursors. It does not deduplicate equivalent payload content at different
 cursors. The new sampler format stops creating these old inline request records; it does not
 reclaim the historical copies already in History.
@@ -208,7 +208,7 @@ History. Reassembling the six sampled requests proves that each contains equal s
 
 ### Large completed items bypass settlement
 
-The [settlement reader](../storage/store.go) returns no settlement when its backward scan would
+The [settlement reader](../internal/storage/store.go) returns no settlement when its backward scan would
 exceed `settlementSpanLimit = 20_000`. This also governs the historical backfill. The cap counts
 both native and semantic events, rather than text bytes.
 
