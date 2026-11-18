@@ -14,6 +14,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.calibration.calibration import (
+    CalibrationResult,
     _fit_ladder_curve,
     _monotone_probabilities,
     build_anchored_level_paths,
@@ -160,6 +161,35 @@ async def test_surfaced_row_carries_augur_context(
 _SP500_ANCHOR = 6000.0
 
 
+async def _run_sp500_calibration(
+    macro_model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
+) -> CalibrationResult:
+    seeds = tuple(range(4))
+    sampled = macro_model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
+            required_private_equity_issuers=frozenset({_ISSUER}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"security:SPY": _SP500_ANCHOR},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=len(seeds),
+        horizon_months=_HORIZON,
+    )
+    return await run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=price_clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+    )
+
+
 async def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrameModel) -> None:
     """A point-in-time S&P threshold market scores against the anchored sp500 channel, and a
     market on an unmodeled series (inflation) surfaces as `unmodeled` rather than failing."""
@@ -188,31 +218,8 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
             ),
         ],
     )
-    seeds = tuple(range(4))
-    sampled = macro_model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=_HORIZON,
-            rollout_seeds=seeds,
-            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
-            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-        )
-    )
-    level_paths = build_anchored_level_paths(
-        sampled,
-        anchors={"security:SPY": _SP500_ANCHOR},
-        requested_wire_ids=catalog.referenced_level_series(),
-        rollout_count=4,
-        horizon_months=_HORIZON,
-    )
     clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "SPX-TOUCH": 0.45, "CPI": 0.20}})
-    result = await run_calibration(
-        catalog,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=clients,
-        bundle=sampled.private_equity,
-        level_paths=level_paths,
-    )
+    result = await _run_sp500_calibration(macro_model, catalog, clients)
     clean = {row.market_id: row for row in result.clean}
     spx = clean["SPX"]
     assert spx.channel == "security:SPY"
@@ -249,32 +256,9 @@ async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameMod
             )
         ],
     )
-    seeds = tuple(range(4))
-    sampled = macro_model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=_HORIZON,
-            rollout_seeds=seeds,
-            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
-            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-        )
-    )
-    level_paths = build_anchored_level_paths(
-        sampled,
-        anchors={"security:SPY": _SP500_ANCHOR},
-        requested_wire_ids=catalog.referenced_level_series(),
-        rollout_count=4,
-        horizon_months=_HORIZON,
-    )
     # Live bucket prices 0.2/0.5/0.3 (already sum to 1); model month-7 counts [1,2,1] -> [0.25,0.5,0.25].
     clients = mock_price_clients({Platform.KALSHI: {"B-LO": 0.20, "B-MID": 0.50, "B-HI": 0.30}})
-    result = await run_calibration(
-        catalog,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=clients,
-        bundle=sampled.private_equity,
-        level_paths=level_paths,
-    )
+    result = await _run_sp500_calibration(macro_model, catalog, clients)
     assert len(result.categorical) == 1
     family = result.categorical[0]
     assert family.channel == "security:SPY"
@@ -454,33 +438,10 @@ async def test_none_probability_and_degenerate_family_are_dropped(macro_model: C
             )
         ],
     )
-    seeds = tuple(range(4))
-    sampled = macro_model.sample(
-        ExogenousSamplingRequest(
-            horizon_months=_HORIZON,
-            rollout_seeds=seeds,
-            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
-            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
-        )
-    )
-    level_paths = build_anchored_level_paths(
-        sampled,
-        anchors={"security:SPY": _SP500_ANCHOR},
-        requested_wire_ids=catalog.referenced_level_series(),
-        rollout_count=4,
-        horizon_months=_HORIZON,
-    )
     clients: dict[Platform, PriceClient] = {
         Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})
     }
-    result = await run_calibration(
-        catalog,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=clients,
-        bundle=sampled.private_equity,
-        level_paths=level_paths,
-    )
+    result = await _run_sp500_calibration(macro_model, catalog, clients)
     assert result.clean == []  # None-priced market dropped, not scored
     assert result.surfaced == []  # ...and not surfaced either
     assert result.categorical == []  # degenerate (sum-to-zero) family dropped
