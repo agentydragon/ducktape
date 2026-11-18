@@ -3,13 +3,13 @@ package coordinator
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
-	"github.com/cosi-project/runtime/pkg/state"
 )
 
 const runtimeCloseStatusType = "EnvironmentRuntimeCloseStatuses.agentplane"
@@ -38,14 +38,7 @@ func runtimeCloseStatusResource(value RuntimeCloseStatus) *typed.Resource[Runtim
 }
 
 func readRuntimeCloseStatus(ctx context.Context, reader controller.Reader) (RuntimeCloseStatus, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[RuntimeCloseStatus, runtimeCloseStatusExtension]](ctx, reader, lifecycle.ResourceID)
-	if state.IsNotFoundError(err) {
-		return RuntimeCloseStatus{}, false, nil
-	}
-	if err != nil {
-		return RuntimeCloseStatus{}, false, err
-	}
-	return *value.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, runtimeCloseStatusResource(RuntimeCloseStatus{}))
 }
 
 func writeRuntimeCloseStatus(ctx context.Context, writer controller.Writer, value RuntimeCloseStatus) error {
