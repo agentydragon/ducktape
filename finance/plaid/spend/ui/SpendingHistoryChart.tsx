@@ -1,30 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Checkbox, Group, SegmentedControl, Skeleton, Stack, Text, Title } from "@mantine/core";
-import {
-  BarController,
-  BarElement,
-  CategoryScale,
-  Chart,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip,
-} from "chart.js";
+import { mountChart } from "./chart";
 import type { AllowanceView, PaceHistory } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { money } from "./spend_display";
-
-Chart.register(
-  BarController,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  LineController,
-  LineElement,
-  PointElement,
-  Tooltip
-);
 
 export function SpendingHistoryChart({ allowance, revision }: { allowance: AllowanceView; revision: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -129,16 +108,11 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
 
   useEffect(() => {
     if (!canvasRef.current || !chart) return;
-    const instance = new Chart(canvasRef.current, {
+    return mountChart(canvasRef.current, {
       type: "bar",
       data: { labels: chart.labels, datasets: chart.datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { display: false },
           tooltip: {
             filter: (context) => Number(context.parsed.y ?? 0) > 0,
             callbacks: {
@@ -158,7 +132,6 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
         },
       },
     });
-    return () => instance.destroy();
   }, [allowance.currency, chart]);
 
   const incomplete = history?.daily.some((day) => !day.coverage_complete) ?? false;

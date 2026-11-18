@@ -131,16 +131,23 @@ spend_vitest_test(
 )
 
 ts_library(
+    name = "chart",
+    srcs = ["chart.ts"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/chart.js"],
+)
+
+ts_library(
     name = "SpendingHistoryChart",
     srcs = ["SpendingHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":chart",
         ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/chart.js",
         "//:node_modules/react",
         "//util/frontend:help_tooltip",
     ],
@@ -151,13 +158,13 @@ ts_library(
     srcs = ["SustainabilityHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":chart",
         ":decimal_math",
         ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/chart.js",
         "//:node_modules/decimal.js",
         "//:node_modules/react",
     ],
@@ -267,11 +274,11 @@ ts_library(
     srcs = ["net_worth.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":chart",
         ":schema",
         ":spend_display",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/chart.js",
         "//:node_modules/react",
     ],
 )

@@ -1,16 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Group, Paper, Portal, Stack, Switch, Text, Title, useComputedColorScheme } from "@mantine/core";
-import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 import Decimal from "decimal.js";
 
+import { mountChart } from "./chart";
 import type { SustainabilityView } from "./schema";
 import { annualFundingMinorUnits, fundingFromSpendingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
 const REFERENCE_SCENARIO_COLOR = "#868E96";
-
-Chart.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
 type HistoryWindow = {
   view: SustainabilityView;
@@ -279,15 +277,11 @@ export function SustainabilityHistoryChart({
     const amountPerRate = hasRates
       ? new Decimal(portfolioMinorUnits).mul(showTaxes ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
       : new Decimal(1);
-    const instance = new Chart(canvasRef.current, {
+    const destroy = mountChart(canvasRef.current, {
       type: "line",
       data: { labels: chart.labels, datasets: chart.datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { display: false },
           tooltip: {
             enabled: false,
             external: ({ tooltip: chartTooltip }) => {
@@ -333,11 +327,10 @@ export function SustainabilityHistoryChart({
             ticks: { count: 6, autoSkip: false, callback: (value) => percent(Number(value)) },
           },
         },
-        animation: false,
       },
     });
     return () => {
-      instance.destroy();
+      destroy();
       setTooltip(null);
     };
   }, [
