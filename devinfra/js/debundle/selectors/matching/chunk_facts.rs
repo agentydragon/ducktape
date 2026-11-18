@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use binding_targets::binding_names;
 use js_ast::source_unit_ordinal_for_statement;
-use source_identity::StatementId;
+use source_identity::{SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
@@ -1317,548 +1317,248 @@ pub fn extract_single_declarator_facts(
     Ok(extractor.facts)
 }
 
-/// One `obj.X` member-access derived from a statement's AST facts: the property
-/// name `X`, plus the object identifier when the object is a bare `Ident`
-/// (`ctx.X` ⟹ `object = Some("ctx")`; `foo().X` / `this.X` / `a.b.X` ⟹ `None`).
-/// The dependency graph `reads_member` primitive's EDB row, projected from the same
-/// `Member`→`PropName` structure [`Extractor::member`] records.
+/// Which AST relations the selector program needs. A module-member use is a
+/// member read whose base joins to the chunk's import table in the resolver.
+#[derive(Debug, Default)]
+pub struct RelationalFactNeeds {
+    pub member_reads: bool,
+    pub call_arguments: bool,
+    pub decorate_calls: bool,
+    pub intrinsic_aliases: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct RelationalFacts {
+    pub member_reads: Vec<(SourceUnitOrdinal, MemberReadFact)>,
+    pub call_arguments: Vec<CallArgumentFact>,
+    pub decorate_calls: Vec<DecorateCallFact>,
+    pub intrinsic_aliases: Vec<IntrinsicAliasFact>,
+}
+
+/// A non-computed `obj.member` access. Only a bare identifier names the object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberReadFact {
     pub object: Option<String>,
     pub member: String,
 }
 
-/// The member accesses (`obj.X`, non-computed property) each top-level statement
-/// performs, keyed by the statement's source-order ordinal — the EDB for the
-/// `reads_member` selector primitive (the source_unit that reads member `.X`).
-///
-/// Derived from the per-statement AST facts ([`Member`]/[`PropName`]/[`Ident`]
-/// projection). **Per-statement-tolerant** like [`coverage_report`] (and unlike
-/// [`extract_facts_items`], which fails the whole chunk at the first unmodeled node): a
-/// statement whose subtree hits an [`Unsupported`] construct contributes no
-/// member-read rows rather than aborting the chunk. That tolerance is sound for a
-/// *selector* primitive — a missing member-read can only make a `reads_member`
-/// selector fail to resolve (fail-closed), never resolve to the wrong source_unit — and
-/// it keeps the resolution path robust on real chunks the rest of the pipeline
-/// already lowers. Computed member access (`obj[expr]`) carries no static
-/// property name and contributes nothing.
-pub fn member_reads_by_ordinal(module: &Module) -> BTreeMap<usize, Vec<MemberReadFact>> {
-    let mut by_ordinal: BTreeMap<usize, Vec<MemberReadFact>> = BTreeMap::new();
-    for (body_idx, item) in module.body.iter().enumerate() {
-        let ordinal = source_unit_ordinal_for_statement(&module.body, StatementId(body_idx)).0;
-        let mut extractor = Extractor::default();
-        // A statement with an unmodeled construct yields no member-read rows
-        // (fail-closed for the selector), never a wrong row — so skip it.
-        if extractor.module_item(item, ordinal).is_err() {
-            continue;
-        }
-        let reads = member_reads_of_facts(&extractor.facts);
-        if !reads.is_empty() {
-            by_ordinal.entry(ordinal).or_default().extend(reads);
-        }
-    }
-    by_ordinal
-}
-
-/// Index `facts.child` as parent -> (ordinal -> child) so an extractor can read a
-/// node's positional children (callee + args, object + property, declarator
-/// binding + init) by ordinal.
-fn build_children_map(facts: &ChunkFacts) -> HashMap<NodeId, HashMap<u32, NodeId>> {
-    let mut children: HashMap<NodeId, HashMap<u32, NodeId>> = HashMap::new();
-    for (parent, ordinal, child) in &facts.child {
-        children
-            .entry(*parent)
-            .or_default()
-            .insert(*ordinal, *child);
-    }
-    children
-}
-
-/// Extract every `Member`-node `obj.X` from one statement's facts. A `Member`
-/// node carries child ordinal 0 = object expression, child ordinal 1 = the
-/// property: a `PropName` node (non-computed `.X`) or an arbitrary expression
-/// (computed `[expr]`). Only non-computed accesses — a `PropName` child with a
-/// static `prop_name` — are member reads; the object identifier is recorded when
-/// child 0 is a bare `Ident`.
-fn member_reads_of_facts(facts: &ChunkFacts) -> Vec<MemberReadFact> {
-    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
-    let prop_name: HashMap<NodeId, &str> = facts
-        .prop_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let ident_name: HashMap<NodeId, &str> = facts
-        .ident_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let children = build_children_map(facts);
-    facts
-        .node_kind
-        .iter()
-        .filter(|(_, kind)| *kind == NodeKind::Member)
-        .filter_map(|(member_node, _)| {
-            let positional = children.get(member_node)?;
-            let prop_node = positional.get(&1)?;
-            // Non-computed access only: child 1 must be a `PropName` carrying `.X`.
-            let member = prop_name.get(prop_node)?;
-            let object = positional
-                .get(&0)
-                .filter(|obj| node_kind.get(obj) == Some(&NodeKind::Ident))
-                .and_then(|obj| ident_name.get(obj))
-                .map(|name| name.to_string());
-            Some(MemberReadFact {
-                object,
-                member: member.to_string(),
-            })
-        })
-        .collect()
-}
-
-/// One `mod.X` **use-site** derived from a statement's AST facts joined to the
-/// chunk's import table: the import **source module** `mod` resolves to
-/// (`"./codegen"`, `"react"`) and the export `member` consumed off it. The
-/// dependency graph `member_of_module` primitive's EDB row — the first use-site edge,
-/// pinning an entity by *how it is consumed* rather than by its own minified
-/// name. Both labels are re-minify-invariant (module specifiers and export names
-/// are the public API), which is what makes the edge survive a rebuild.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModuleMemberUseFact {
-    pub module: String,
-    pub member: String,
-}
-
-/// The module-member uses (`mod.X`, `mod` a chunk-top imported binding) each
-/// top-level statement performs, keyed by the statement's source-order ordinal —
-/// the EDB for the `member_of_module` selector primitive (the entity consumed as
-/// `mod.X`).
-///
-/// Built by projecting the same `Member`→`PropName` member accesses
-/// [`member_reads_by_ordinal`] derives, then **joining the bare-identifier object
-/// to `import_sources`** (local import binding name → import source specifier);
-/// a member access whose object is not a chunk-top imported binding contributes
-/// nothing. **Per-statement-tolerant** like [`member_reads_by_ordinal`], and
-/// fail-closed-sound for the same reason. Computed access (`mod[expr]`) carries no
-/// static member name and contributes nothing.
-pub fn module_member_uses_by_ordinal(
-    module: &Module,
-    import_sources: &HashMap<String, String>,
-) -> BTreeMap<usize, Vec<ModuleMemberUseFact>> {
-    let mut by_ordinal: BTreeMap<usize, Vec<ModuleMemberUseFact>> = BTreeMap::new();
-    for (ordinal, reads) in member_reads_by_ordinal(module) {
-        let uses: Vec<ModuleMemberUseFact> = reads
-            .into_iter()
-            .filter_map(|read| {
-                let object = read.object?;
-                let source = import_sources.get(&object)?;
-                Some(ModuleMemberUseFact {
-                    module: source.clone(),
-                    member: read.member,
-                })
-            })
-            .collect();
-        if !uses.is_empty() {
-            by_ordinal.insert(ordinal, uses);
-        }
-    }
-    by_ordinal
-}
-
-/// One call-site where a chunk-top binding is **passed as an argument**: the
-/// argument binding (the target — a top-level identifier handed to the call), the
-/// callee member name `.method` of the call (`r.register(Target)` ⟹
-/// `callee_member = "register"`), the callee's object identifier when it is a bare
-/// `Ident` (`r.register(...)` ⟹ `callee_object = Some("r")`; `a.b.register(...)`
-/// / `register(...)` ⟹ `None`), and the 0-based argument position. The EDB row for
-/// the `passed_to_call` selector primitive — the `resolves_to`-of-argument edge:
-/// the target's identity is "the thing passed to `@registry.register`", which a
-/// re-minification cannot rewrite (the callee member name and the registry's own
-/// stable identity are the public API). Unlike [`MemberReadFact`] /
-/// [`ModuleMemberUseFact`], this fact is keyed by the **argument binding name**
-/// (the target's own minified binding), not by the source_unit that contains the call —
-/// the target is a *separately-declared* source_unit, and the call site that names it
-/// lives elsewhere (typically an anonymous registration statement).
+/// A bare identifier passed to a non-computed member call, keyed by the
+/// argument binding so the resolver can join it to its declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallArgumentFact {
-    /// The minified binding passed as the argument — the target. Joined to its
-    /// declaring source_unit via the dependency graph's `name_source_unit`.
     pub argument: String,
-    /// The callee member name `.method` of the call.
     pub callee_member: String,
-    /// The callee's object identifier when it is a bare `Ident`; `None` for a
-    /// deeper member chain or a bare callee.
     pub callee_object: Option<String>,
-    /// The 0-based position of the argument in the call.
     pub arg_index: usize,
 }
 
-/// Every call-site argument-pass of a bare chunk-top identifier across the whole
-/// chunk, as [`CallArgumentFact`] rows — the EDB for the `passed_to_call` selector
-/// primitive (the target that is *passed to* `@object.member(...)`).
-///
-/// Derived from the chunk's AST facts: each `Call` / `New` / `OptCall` node whose
-/// callee is a member access `obj.method` (non-computed) contributes one row per
-/// argument that is a bare `Ident`, recording the argument's name, the callee
-/// member, the callee object (when bare), and the argument index. The whole chunk
-/// is scanned (not per top-level statement) because the registration call site
-/// may be an anonymous statement, a nested call, or a body statement anywhere; the
-/// rows are keyed by the *argument* identifier, so the containing statement does
-/// not matter.
-///
-/// **Per-statement-tolerant** and fail-closed-sound for the same reason as
-/// [`member_reads_by_ordinal`]: a statement whose subtree hits an [`Unsupported`]
-/// construct contributes no rows rather than aborting the chunk — a missing row
-/// can only make a `passed_to_call` selector fail to resolve (fail-closed), never
-/// resolve to the wrong source_unit. A call with a computed callee (`r[expr](...)`), a
-/// non-member callee (`register(...)`), or a non-identifier argument (`new X()`,
-/// an object literal, a spread) contributes nothing — those carry no static
-/// argument-binding to pin a target by.
-pub fn call_argument_uses(module: &Module) -> Vec<CallArgumentFact> {
-    let mut facts = Vec::new();
-    for item in &module.body {
-        let mut extractor = Extractor::default();
-        // A statement with an unmodeled construct yields no call-argument rows
-        // (fail-closed for the selector), never a wrong row — so skip it.
-        if extractor.module_item(item, 0).is_err() {
-            continue;
-        }
-        facts.extend(call_arguments_of_facts(&extractor.facts));
-    }
-    facts
+/// A structural match for an esbuild/TypeScript decorator application. The
+/// callee names the target binding and the class and optional member anchor it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecorateCallFact {
+    pub callee: String,
+    pub class_anchor: String,
+    pub member: Option<String>,
 }
 
-/// Extract every call-argument-pass `obj.method(.., arg, ..)` of a bare `Ident`
-/// argument from one statement's facts. A `Call` / `New` / `OptCall` node carries
-/// child ordinal 0 = callee, child ordinals 1.. = arguments. The callee is a
-/// member access when it is a `Member` node (child 0 = object, child 1 = property
-/// `PropName`); only non-computed callees with a static member name contribute,
-/// and only arguments that are bare `Ident` nodes (the static target binding).
-fn call_arguments_of_facts(facts: &ChunkFacts) -> Vec<CallArgumentFact> {
-    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
-    let prop_name: HashMap<NodeId, &str> = facts
-        .prop_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let ident_name: HashMap<NodeId, &str> = facts
-        .ident_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let children = build_children_map(facts);
-    let mut rows = Vec::new();
-    for (call_node, kind) in &facts.node_kind {
-        if !matches!(*kind, NodeKind::Call | NodeKind::New | NodeKind::OptCall) {
+/// A bare binding initialized from a non-computed member of the unshadowed
+/// global `Object`. The resolver joins it to the helper that references it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntrinsicAliasFact {
+    pub binding: String,
+    pub property: String,
+}
+
+/// Project each statement once for the requested relations. An unsupported
+/// subtree discards that statement's entire projection. Rows retain statement
+/// and node order, with call arguments in positional order.
+pub fn extract_relational_facts(
+    module: &Module,
+    mut needs: RelationalFactNeeds,
+) -> RelationalFacts {
+    if needs.intrinsic_aliases && module_top_level_binds_object(module) {
+        needs.intrinsic_aliases = false;
+    }
+    let mut rows = RelationalFacts::default();
+    if !(needs.member_reads
+        || needs.call_arguments
+        || needs.decorate_calls
+        || needs.intrinsic_aliases)
+    {
+        return rows;
+    }
+
+    let mut ordinal = SourceUnitOrdinal(0);
+    for item in &module.body {
+        let statement_ordinal = ordinal;
+        if needs.member_reads {
+            ordinal.0 += js_ast::post_split_top_level_count(item);
+        }
+        let mut extractor = Extractor::default();
+        if extractor.module_item(item, statement_ordinal.0).is_err() {
             continue;
         }
-        let Some(positional) = children.get(call_node) else {
-            continue;
-        };
-        // The callee (child 0) must be a non-computed member access `obj.method`.
-        let Some(callee) = positional.get(&0) else {
-            continue;
-        };
-        if node_kind.get(callee) != Some(&NodeKind::Member) {
-            continue;
+        let facts = &extractor.facts;
+        let index = StatementFactIndex::new(facts, needs.decorate_calls);
+        for &(node, kind) in &facts.node_kind {
+            match kind {
+                NodeKind::Member if needs.member_reads => {
+                    if let Some((object, member)) = index.member(node) {
+                        rows.member_reads.push((
+                            statement_ordinal,
+                            MemberReadFact {
+                                object: object.map(str::to_owned),
+                                member: member.to_owned(),
+                            },
+                        ));
+                    }
+                }
+                NodeKind::Call | NodeKind::New | NodeKind::OptCall => {
+                    if needs.call_arguments {
+                        index.call_arguments(node, &mut rows.call_arguments);
+                    }
+                    if needs.decorate_calls && kind == NodeKind::Call {
+                        rows.decorate_calls.extend(index.decorate_call(node));
+                    }
+                }
+                NodeKind::VarDeclarator if needs.intrinsic_aliases => {
+                    rows.intrinsic_aliases.extend(index.intrinsic_alias(node));
+                }
+                _ => {}
+            }
         }
-        let Some(callee_children) = children.get(callee) else {
-            continue;
+    }
+    rows
+}
+
+struct StatementFactIndex<'a> {
+    facts: &'a ChunkFacts,
+    children: HashMap<(NodeId, u32), NodeId>,
+    ident_names: HashMap<NodeId, &'a str>,
+    prop_names: HashMap<NodeId, &'a str>,
+    strings: HashMap<NodeId, &'a str>,
+}
+
+impl<'a> StatementFactIndex<'a> {
+    fn new(facts: &'a ChunkFacts, decorate_calls: bool) -> Self {
+        Self {
+            facts,
+            children: facts.child.iter().map(|&(p, i, c)| ((p, i), c)).collect(),
+            ident_names: facts
+                .ident_name
+                .iter()
+                .map(|(id, s)| (*id, s.as_str()))
+                .collect(),
+            prop_names: facts
+                .prop_name
+                .iter()
+                .map(|(id, s)| (*id, s.as_str()))
+                .collect(),
+            strings: if decorate_calls {
+                facts
+                    .str_lit
+                    .iter()
+                    .map(|(id, s)| (*id, s.as_str()))
+                    .collect()
+            } else {
+                HashMap::new()
+            },
+        }
+    }
+
+    fn child(&self, node: NodeId, ordinal: u32) -> Option<NodeId> {
+        self.children.get(&(node, ordinal)).copied()
+    }
+
+    fn kind(&self, node: NodeId) -> NodeKind {
+        // Extractor::node assigns IDs in node_kind insertion order.
+        self.facts.node_kind[node as usize].1
+    }
+
+    fn ident(&self, node: NodeId, kind: NodeKind) -> Option<&'a str> {
+        self.ident_names
+            .get(&node)
+            .copied()
+            .filter(|_| self.kind(node) == kind)
+    }
+
+    fn member(&self, node: NodeId) -> Option<(Option<&'a str>, &'a str)> {
+        if self.kind(node) != NodeKind::Member {
+            return None;
+        }
+        let property = self.prop_names.get(&self.child(node, 1)?)?;
+        let object = self
+            .child(node, 0)
+            .and_then(|node| self.ident(node, NodeKind::Ident));
+        Some((object, property))
+    }
+
+    fn call_arguments(&self, node: NodeId, rows: &mut Vec<CallArgumentFact>) {
+        let Some((object, member)) = self.child(node, 0).and_then(|callee| self.member(callee))
+        else {
+            return;
         };
-        let Some(callee_member) = callee_children.get(&1).and_then(|p| prop_name.get(p)) else {
-            continue;
-        };
-        let callee_object = callee_children
-            .get(&0)
-            .filter(|obj| node_kind.get(obj) == Some(&NodeKind::Ident))
-            .and_then(|obj| ident_name.get(obj))
-            .map(|name| name.to_string());
-        // Arguments are children at ordinals 1.., contiguous from the call node.
         for arg_index in 0.. {
-            let Some(arg_node) = positional.get(&(arg_index + 1)) else {
+            let Some(arg) = self.child(node, arg_index + 1) else {
                 break;
             };
-            // Only a bare-identifier argument names a static target binding.
-            if node_kind.get(arg_node) == Some(&NodeKind::Ident)
-                && let Some(argument) = ident_name.get(arg_node)
-            {
+            if let Some(argument) = self.ident(arg, NodeKind::Ident) {
                 rows.push(CallArgumentFact {
-                    argument: argument.to_string(),
-                    callee_member: callee_member.to_string(),
-                    callee_object: callee_object.clone(),
+                    argument: argument.to_owned(),
+                    callee_member: member.to_owned(),
+                    callee_object: object.map(str::to_owned),
                     arg_index: arg_index as usize,
                 });
             }
         }
     }
-    rows
-}
 
-/// One top-level **decorator-application** call `H([decorators], C.prototype,
-/// "method"[, flags])` (or the class-decorator form `H([decorators], C)`), as the
-/// EDB for the `makes_decorate_call` selector primitive. The **target is the
-/// callee** `H` — the esbuild/TypeScript `__decorate` helper — distinguished by the
-/// decorator application it makes, not by its own (byte-identical-across-modules)
-/// body or its minified name. This is the inverse direction of `passed_to_call`:
-/// there the target is *passed as an argument* to a call; here the target *makes*
-/// the call, and the disambiguating anchor is the **decorated class** `C` (a
-/// separately-pinned entity), which rides the re-minify-invariant `resolves_to`
-/// edge — never the helper's own churn-prone name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecorateCallFact {
-    /// The minified binding of the callee — the decorate helper, the target.
-    /// Joined to its declaring source_unit via the dependency graph's `name_source_unit`.
-    pub callee: String,
-    /// The minified binding of the decorated class: the base of the 2nd argument
-    /// `C.prototype` (property/method-decorator form) or the bare 2nd argument `C`
-    /// (class-decorator form). The anchor a `makes_decorate_call` selector rides
-    /// (`class: @ClassAnchor`) — re-minify-invariant via the class's own selector.
-    pub class_anchor: String,
-    /// The decorated member name: the 3rd-argument string literal (`"isVisible"`).
-    /// `None` for the 2-argument class-decorator form, which carries no member
-    /// literal. Lets a selector narrow to a specific decorated member.
-    pub member: Option<String>,
-}
-
-/// Every top-level **decorator-application** call across the chunk, as
-/// [`DecorateCallFact`] rows — the EDB for the `makes_decorate_call` selector
-/// primitive (the helper that *makes* a decorator application on `@ClassAnchor`).
-///
-/// Recognizes the esbuild/TypeScript `__decorate` shape structurally:
-///
-/// - **property / method decorator** — `H([d1, d2], C.prototype, "m", flags)`:
-///   callee `H` a bare `Ident` (the target), 1st arg an array literal (the
-///   decorator list), 2nd arg `C.prototype` (a non-computed `.prototype` member off
-///   a bare-identifier class base), 3rd arg a string literal (the member name);
-/// - **class decorator** — `H([d1], C)`: callee `H` a bare `Ident`, 1st arg an
-///   array literal, 2nd arg a bare-identifier class base.
-///
-/// The 1st-argument array literal is the structural guard that makes this a
-/// decorate application and not an arbitrary 2/3-argument call. Both anchor labels
-/// the selector rides — the decorated class `C` (joined through `resolves_to` to a
-/// pinned `@ClassAnchor`) and the optional member literal — survive a rebuild,
-/// while the helper's own minified name and body do not.
-///
-/// **Per-statement-tolerant** and fail-closed-sound for the same reason as
-/// [`call_argument_uses`]: a statement whose subtree hits an [`Unsupported`]
-/// construct contributes no rows rather than aborting the chunk — a missing row can
-/// only make a `makes_decorate_call` selector fail to resolve (fail-closed), never
-/// resolve to the wrong source_unit. Only top-level statements are scanned: an esbuild
-/// decorator application is always emitted as a bare top-level call adjacent to the
-/// class it decorates.
-pub fn decorate_call_uses(module: &Module) -> Vec<DecorateCallFact> {
-    let mut facts = Vec::new();
-    for item in &module.body {
-        let mut extractor = Extractor::default();
-        // A statement with an unmodeled construct yields no decorate-call rows
-        // (fail-closed for the selector), never a wrong row — so skip it.
-        if extractor.module_item(item, 0).is_err() {
-            continue;
+    // The first argument must be an array literal of decorators. The class form
+    // is H([...], C); the member form is H([...], C.prototype, "member"[, flags]).
+    fn decorate_call(&self, node: NodeId) -> Option<DecorateCallFact> {
+        let callee = self.ident(self.child(node, 0)?, NodeKind::Ident)?;
+        if self.kind(self.child(node, 1)?) != NodeKind::Array || self.child(node, 5).is_some() {
+            return None;
         }
-        facts.extend(decorate_calls_of_facts(&extractor.facts));
-    }
-    facts
-}
-
-/// Extract every decorator-application `H([...], C.prototype, "m"[, flags])` /
-/// `H([...], C)` from one statement's facts. A `Call` node carries child ordinal
-/// 0 = callee, child ordinals 1.. = arguments. The callee must be a bare `Ident`
-/// (the target helper); arg 0 (child 1) must be an `Array` node (the decorator
-/// list); arg 1 (child 2) is the class anchor (`C.prototype` member or bare `C`);
-/// arg 2 (child 3), when present, is the member-name `StrLit`.
-fn decorate_calls_of_facts(facts: &ChunkFacts) -> Vec<DecorateCallFact> {
-    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
-    let prop_name: HashMap<NodeId, &str> = facts
-        .prop_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let ident_name: HashMap<NodeId, &str> = facts
-        .ident_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let str_lit: HashMap<NodeId, &str> = facts
-        .str_lit
-        .iter()
-        .map(|(id, value)| (*id, value.as_str()))
-        .collect();
-    let num_lit: HashMap<NodeId, &str> = facts
-        .num_lit
-        .iter()
-        .map(|(id, value)| (*id, value.as_str()))
-        .collect();
-    let children = build_children_map(facts);
-    let mut rows = Vec::new();
-    for (call_node, kind) in &facts.node_kind {
-        // A plain `Call`; `New`/`OptCall` are never an esbuild decorate application.
-        if *kind != NodeKind::Call {
-            continue;
-        }
-        let Some(positional) = children.get(call_node) else {
-            continue;
+        let target = self.child(node, 2)?;
+        let class_anchor = match self.kind(target) {
+            NodeKind::Ident => self.ident(target, NodeKind::Ident)?,
+            NodeKind::Member => match self.member(target)? {
+                (Some(class), "prototype") => class,
+                _ => return None,
+            },
+            _ => return None,
         };
-        // Callee (child 0) must be a bare identifier — the helper, our target.
-        let Some(callee) = positional
-            .get(&0)
-            .filter(|c| node_kind.get(c) == Some(&NodeKind::Ident))
-            .and_then(|c| ident_name.get(c))
-        else {
-            continue;
-        };
-        // Arg 0 (child 1) must be an array literal — the decorator list. This is
-        // the structural guard distinguishing a decorate call from any 2/3-arg call.
-        let Some(arg0) = positional.get(&1) else {
-            continue;
-        };
-        if node_kind.get(arg0) != Some(&NodeKind::Array) {
-            continue;
-        }
-        // Arg 1 (child 2) is the class anchor: `C.prototype` or bare `C`.
-        let Some(arg1) = positional.get(&2) else {
-            continue;
-        };
-        let Some(class_anchor) =
-            decorate_class_anchor(arg1, &node_kind, &prop_name, &ident_name, &children)
-        else {
-            continue;
-        };
-        // A 5th-or-later positional argument means this is not the decorate shape.
-        // (The property form is at most 4: array, class, member, flags.)
-        if positional.contains_key(&5) {
-            continue;
-        }
-        // Arg 2 (child 3) distinguishes the two forms: present ⟹ property/method
-        // decorator carrying the member-name string literal (and an optional numeric
-        // `flags` arg at child 4); absent ⟹ class-decorator form (no member, and no
-        // arg may follow). esbuild emits flags as `1` / `2`.
-        let member = match positional.get(&3) {
-            // Class-decorator form: a member literal must not be present, and no
-            // 4th argument may follow.
-            None => {
-                if positional.contains_key(&4) {
-                    continue;
-                }
-                None
+        let flags = self.child(node, 4);
+        let member = match self.child(node, 3) {
+            None if flags.is_none() => None,
+            Some(arg)
+                if flags.is_none_or(|flag| {
+                    matches!(self.kind(flag), NodeKind::NumLit | NodeKind::BigIntLit)
+                }) =>
+            {
+                Some(self.strings.get(&arg)?.to_string())
             }
-            Some(arg2) => {
-                let Some(value) = str_lit.get(arg2) else {
-                    continue;
-                };
-                // The flags argument (child 4), when present, must be numeric.
-                if let Some(flags) = positional.get(&4)
-                    && !num_lit.contains_key(flags)
-                {
-                    continue;
-                }
-                Some(value.to_string())
-            }
+            _ => return None,
         };
-        rows.push(DecorateCallFact {
-            callee: callee.to_string(),
-            class_anchor,
+        Some(DecorateCallFact {
+            callee: callee.to_owned(),
+            class_anchor: class_anchor.to_owned(),
             member,
-        });
+        })
     }
-    rows
-}
 
-/// The decorated-class binding of a decorate application's 2nd argument: the
-/// bare-identifier base of a non-computed `C.prototype` member (property/method
-/// form) or the bare identifier `C` itself (class-decorator form). Any other shape
-/// (computed access, deeper chain, `.prototype` off a non-identifier, a member
-/// other than `.prototype`) yields `None`, so the statement contributes no
-/// decorate-call row (fail-closed).
-fn decorate_class_anchor(
-    arg: &NodeId,
-    node_kind: &HashMap<NodeId, NodeKind>,
-    prop_name: &HashMap<NodeId, &str>,
-    ident_name: &HashMap<NodeId, &str>,
-    children: &HashMap<NodeId, HashMap<u32, NodeId>>,
-) -> Option<String> {
-    match node_kind.get(arg) {
-        // Class-decorator form: bare `C`.
-        Some(&NodeKind::Ident) => ident_name.get(arg).map(|name| name.to_string()),
-        // Property/method form: `C.prototype` — child 0 a bare ident `C`, child 1
-        // the `PropName` `prototype`.
-        Some(&NodeKind::Member) => {
-            let member_children = children.get(arg)?;
-            let prop = member_children.get(&1)?;
-            if prop_name.get(prop).copied() != Some("prototype") {
-                return None;
-            }
-            member_children
-                .get(&0)
-                .filter(|base| node_kind.get(base) == Some(&NodeKind::Ident))
-                .and_then(|base| ident_name.get(base))
-                .map(|name| name.to_string())
+    fn intrinsic_alias(&self, node: NodeId) -> Option<IntrinsicAliasFact> {
+        let binding = self.ident(self.child(node, 0)?, NodeKind::BindingIdent)?;
+        let (object, property) = self.member(self.child(node, 1)?)?;
+        if object != Some("Object") {
+            return None;
         }
-        _ => None,
+        Some(IntrinsicAliasFact {
+            binding: binding.to_owned(),
+            property: property.to_owned(),
+        })
     }
-}
-
-/// One top-level `var X = Object.<property>` declarator that aliases an **intrinsic
-/// method off the unshadowed global `Object`**, as the EDB for the `intrinsic_alias`
-/// selector primitive. This is the structural recognition half of the primitive that
-/// retires the esbuild decorate-trio's two companions — `var X =
-/// Object.defineProperty` / `var X = Object.getOwnPropertyDescriptor`. The companions
-/// have no anchor in their own body (N byte-identical copies across modules, and the
-/// anchor is the global `Object`, not a spec member), so no `source_match` can pin
-/// them; the resolver pairs this structural fact with an inverse-`references` edge
-/// ("the alias *referenced by* `@<decorateHelper>`") to pick the unique copy.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IntrinsicAliasFact {
-    /// The minified binding of the alias — the target. Joined to its declaring
-    /// source_unit via the dependency graph's `name_source_unit`.
-    pub binding: String,
-    /// The intrinsic property name read off `Object` (`defineProperty`,
-    /// `getOwnPropertyDescriptor`). The re-minify-invariant label half of the
-    /// selector — a spec-level method name the bundler does not rewrite.
-    pub property: String,
-}
-
-/// Every top-level `var X = Object.<property>` declarator aliasing an intrinsic
-/// method off the **unshadowed global `Object`**, as [`IntrinsicAliasFact`] rows —
-/// the EDB for the `intrinsic_alias` selector primitive.
-///
-/// The genuine-intrinsic-identity guard is **fail-closed**: a chunk whose
-/// top-level declarations or imports bind the name `Object` (a shadowed or
-/// reassigned `Object`) is treated as having *no* intrinsic `Object`, so it yields
-/// **no rows** — the alias might read off a local `Object`, not the global, and a
-/// wrong pin is worse than no pin. This mirrors
-/// [`analysis::facts`]'s `unshadowed_global_object_aliases` for the
-/// `globalThis`/`window` family; `Object` itself is added here because it is the
-/// intrinsic whose `.defineProperty` / `.getOwnPropertyDescriptor` the esbuild
-/// decorate helper reads.
-///
-/// Recognizes the alias structurally: a `VarDeclarator` whose name is a bare
-/// `BindingIdent` and whose initializer is a non-computed member access
-/// `Object.<property>` off a bare-identifier base spelled exactly `Object`. The
-/// declaration keyword (`var`/`let`/`const`) is not constrained — esbuild emits
-/// `var`, but the structural shape is the invariant.
-///
-/// **Per-statement-tolerant** and fail-closed-sound for the same reason as
-/// [`decorate_call_uses`]: a statement whose subtree hits an [`Unsupported`]
-/// construct contributes no rows rather than aborting the chunk — a missing row can
-/// only make an `intrinsic_alias` selector fail to resolve (fail-closed), never
-/// resolve to the wrong source_unit. Only top-level statements are scanned: the esbuild
-/// companion aliases are always bare top-level declarations.
-pub fn intrinsic_alias_uses(module: &Module) -> Vec<IntrinsicAliasFact> {
-    // Fail-closed: a shadowed/reassigned/imported `Object` defeats the
-    // intrinsic-identity guard, so the whole chunk yields no rows.
-    if module_top_level_binds_object(module) {
-        return Vec::new();
-    }
-    let mut facts = Vec::new();
-    for item in &module.body {
-        let mut extractor = Extractor::default();
-        // A statement with an unmodeled construct yields no intrinsic-alias rows
-        // (fail-closed for the selector), never a wrong row — so skip it.
-        if extractor.module_item(item, 0).is_err() {
-            continue;
-        }
-        facts.extend(intrinsic_aliases_of_facts(&extractor.facts));
-    }
-    facts
 }
 
 /// `true` when any top-level declaration (incl. block-hoisted `var`s) or import
@@ -1917,71 +1617,6 @@ fn stmt_reassigns_object(stmt: &Stmt) -> bool {
         &assign.left,
         AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) if ident.id.sym.as_ref() == "Object"
     )
-}
-
-/// Extract every `var X = Object.<property>` intrinsic-alias declarator from one
-/// statement's facts. A `VarDeclarator` node carries child 0 = name pattern, child
-/// 1 = initializer; only a bare-`BindingIdent` name and a non-computed
-/// `Object.<property>` member initializer (base a bare `Ident` spelled `Object`)
-/// contribute. The unshadowed-`Object` guard is applied by the caller, so a base
-/// spelled `Object` here is the genuine global intrinsic.
-fn intrinsic_aliases_of_facts(facts: &ChunkFacts) -> Vec<IntrinsicAliasFact> {
-    let node_kind: HashMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
-    let prop_name: HashMap<NodeId, &str> = facts
-        .prop_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let ident_name: HashMap<NodeId, &str> = facts
-        .ident_name
-        .iter()
-        .map(|(id, name)| (*id, name.as_str()))
-        .collect();
-    let children = build_children_map(facts);
-    let mut rows = Vec::new();
-    for (declarator_node, kind) in &facts.node_kind {
-        if *kind != NodeKind::VarDeclarator {
-            continue;
-        }
-        let Some(declarator_children) = children.get(declarator_node) else {
-            continue;
-        };
-        // The name (child 0) must be a bare binding identifier — the alias target.
-        let Some(binding) = declarator_children
-            .get(&0)
-            .filter(|name| node_kind.get(name) == Some(&NodeKind::BindingIdent))
-            .and_then(|name| ident_name.get(name))
-        else {
-            continue;
-        };
-        // The initializer (child 1) must be a non-computed `Object.<property>`
-        // member access off a bare-identifier base spelled exactly `Object`.
-        let Some(init) = declarator_children
-            .get(&1)
-            .filter(|init| node_kind.get(init) == Some(&NodeKind::Member))
-        else {
-            continue;
-        };
-        let Some(member_children) = children.get(init) else {
-            continue;
-        };
-        let base_is_object = member_children
-            .get(&0)
-            .filter(|base| node_kind.get(base) == Some(&NodeKind::Ident))
-            .and_then(|base| ident_name.get(base))
-            == Some(&"Object");
-        if !base_is_object {
-            continue;
-        }
-        let Some(property) = member_children.get(&1).and_then(|prop| prop_name.get(prop)) else {
-            continue;
-        };
-        rows.push(IntrinsicAliasFact {
-            binding: binding.to_string(),
-            property: property.to_string(),
-        });
-    }
-    rows
 }
 
 /// Per-top-level-statement coverage of the extractor over a chunk: how many
@@ -2256,10 +1891,21 @@ mod tests {
         assert_eq!(error.context, "class_member");
     }
 
-    fn member_reads(src: &str) -> BTreeMap<usize, Vec<MemberReadFact>> {
+    fn relational_facts(src: &str, needs: RelationalFactNeeds) -> RelationalFacts {
         js_ast::with_swc_globals(|| {
-            member_reads_by_ordinal(&js_ast::parse_js_module_ast("<test>", src).unwrap())
+            extract_relational_facts(&js_ast::parse_js_module_ast("<test>", src).unwrap(), needs)
         })
+    }
+
+    fn member_reads(src: &str) -> Vec<(SourceUnitOrdinal, MemberReadFact)> {
+        relational_facts(
+            src,
+            RelationalFactNeeds {
+                member_reads: true,
+                ..Default::default()
+            },
+        )
+        .member_reads
     }
 
     #[test]
@@ -2269,18 +1915,23 @@ mod tests {
         let reads =
             member_reads("function helper(ctx) { return ctx.uniqueId; }\nconst v = foo().label;\n");
         assert_eq!(
-            reads[&0],
-            vec![MemberReadFact {
-                object: Some("ctx".to_string()),
-                member: "uniqueId".to_string(),
-            }],
-        );
-        assert_eq!(
-            reads[&1],
-            vec![MemberReadFact {
-                object: None,
-                member: "label".to_string(),
-            }],
+            reads,
+            vec![
+                (
+                    SourceUnitOrdinal(0),
+                    MemberReadFact {
+                        object: Some("ctx".to_string()),
+                        member: "uniqueId".to_string(),
+                    },
+                ),
+                (
+                    SourceUnitOrdinal(1),
+                    MemberReadFact {
+                        object: None,
+                        member: "label".to_string(),
+                    },
+                ),
+            ],
         );
     }
 
@@ -2290,18 +1941,26 @@ mod tests {
         // member-read row, while the sibling `obj.kept` does.
         let reads = member_reads("function f(obj, k) { return obj[k] + obj.kept; }\n");
         assert_eq!(
-            reads[&0],
-            vec![MemberReadFact {
-                object: Some("obj".to_string()),
-                member: "kept".to_string(),
-            }],
+            reads,
+            vec![(
+                SourceUnitOrdinal(0),
+                MemberReadFact {
+                    object: Some("obj".to_string()),
+                    member: "kept".to_string(),
+                },
+            )],
         );
     }
 
     fn call_args(src: &str) -> Vec<CallArgumentFact> {
-        js_ast::with_swc_globals(|| {
-            call_argument_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())
-        })
+        relational_facts(
+            src,
+            RelationalFactNeeds {
+                call_arguments: true,
+                ..Default::default()
+            },
+        )
+        .call_arguments
     }
 
     #[test]
@@ -2342,11 +2001,12 @@ mod tests {
 
     #[test]
     fn call_argument_uses_tolerates_unmodeled_statement() {
-        // A statement with an unmodeled construct (private class member) yields no
-        // rows but does not abort the scan — the sibling registration still
-        // contributes (fail-closed: a missing row can only fail to resolve, never
-        // mis-resolve).
-        let facts = call_args("class C { #x = 1; }\nr.register(Kept);\n");
+        // The unsupported index signature discards an earlier registration
+        // in the same statement. The next statement still contributes its call.
+        let facts = call_args(
+            "function f() { r.register(Dropped); class C { [k: string]: number; } }\n\
+             r.register(Kept);",
+        );
         assert_eq!(
             facts,
             vec![CallArgumentFact {
@@ -2359,9 +2019,14 @@ mod tests {
     }
 
     fn decorate_calls(src: &str) -> Vec<DecorateCallFact> {
-        js_ast::with_swc_globals(|| {
-            decorate_call_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())
-        })
+        relational_facts(
+            src,
+            RelationalFactNeeds {
+                decorate_calls: true,
+                ..Default::default()
+            },
+        )
+        .decorate_calls
     }
 
     #[test]
@@ -2425,9 +2090,10 @@ mod tests {
 
     #[test]
     fn decorate_call_uses_tolerates_unmodeled_statement() {
-        // A statement with an unmodeled construct yields no rows but does not abort
-        // the scan — the sibling decorate application still contributes.
-        let facts = decorate_calls("class C { #x = 1; }\nH([d], C.prototype, \"kept\", 2);\n");
+        let facts = decorate_calls(
+            "function f() { H([d], C.prototype, \"dropped\", 2); class C { [k: string]: number; } }\n\
+             H([d], C.prototype, \"kept\", 2);",
+        );
         assert_eq!(
             facts,
             vec![DecorateCallFact {
@@ -2439,9 +2105,14 @@ mod tests {
     }
 
     fn intrinsic_aliases(src: &str) -> Vec<IntrinsicAliasFact> {
-        js_ast::with_swc_globals(|| {
-            intrinsic_alias_uses(&js_ast::parse_js_module_ast("<test>", src).unwrap())
-        })
+        relational_facts(
+            src,
+            RelationalFactNeeds {
+                intrinsic_aliases: true,
+                ..Default::default()
+            },
+        )
+        .intrinsic_aliases
     }
 
     #[test]
@@ -2554,10 +2225,10 @@ mod tests {
 
     #[test]
     fn intrinsic_alias_uses_tolerates_unmodeled_statement() {
-        // A statement with an unmodeled construct yields no rows but does not abort
-        // the scan — the sibling intrinsic alias still contributes. (The unsupported
-        // statement does not bind `Object`, so the chunk-level guard stays open.)
-        let facts = intrinsic_aliases("class C { #x = 1; }\nvar p = Object.defineProperty;\n");
+        let facts = intrinsic_aliases(
+            "function f() { var dropped = Object.create; class C { [k: string]: number; } }\n\
+             var p = Object.defineProperty;",
+        );
         assert_eq!(
             facts,
             vec![IntrinsicAliasFact {

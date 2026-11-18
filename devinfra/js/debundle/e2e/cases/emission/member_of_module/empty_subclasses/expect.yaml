@@ -12,3 +12,11 @@ spec.yaml:
     stdout: "cards tree\n"
     runtime_files: { static/app/accessors.js: static/accessors.js }
     check_all_js: true
+with_reads_member.spec.yaml:
+  accept:
+    entry: static/app
+    exports:
+      static/app/modules/accessors.js:
+        include: [CardsViewAccessor, TreeViewAccessor]
+    stdout: "cards tree\n"
+    runtime_files: { static/app/accessors.js: static/accessors.js }
