@@ -317,7 +317,11 @@ console.log(wrapped.invoke(), service.state);
                             "choosePayload",
                         ]),
                     ),
-                    logical_module("values/later", &[Member::new("later")]),
+                    logical_module_with_anon(
+                        "values/later",
+                        &[Member::new("later")],
+                        &["later = 42;"],
+                    ),
                 ],
             )
             .with_import_order(&["values/later", "callbacks/selected"])
