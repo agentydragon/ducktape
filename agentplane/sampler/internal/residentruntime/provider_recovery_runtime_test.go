@@ -27,6 +27,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 )
 
 func providerSamplingSettings(baseURL string, maxLiveSessions int) samplersettings.Settings {
@@ -76,50 +77,32 @@ func admitProviderSamplingCommand(t *testing.T, store *sessionstore.Store, sessi
 	}
 }
 
-func waitProviderAttemptStatus(t *testing.T, store *sessionstore.Store, commandID string, attemptNo int, want string) string {
+func waitProviderAttemptStatus(t *testing.T, store *sessionstore.Store, kind sessionstore.IntentKind, commandID string, attemptNo int, want string) string {
 	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var id, status string
+	var id string
+	eventually.Within(t, 10*time.Second, func() (bool, string) {
+		var status string
 		err := store.DB().QueryRowContext(t.Context(), `SELECT id,COALESCE(result->>'status','') FROM sampler_intent
-			WHERE provider_command_id=$1 AND provider_attempt_no=$2 AND request->>'kind'='sampling'`, commandID, attemptNo).Scan(&id, &status)
-		if err == nil && status == want {
-			return id
-		}
+			WHERE provider_command_id=$1 AND provider_attempt_no=$2 AND request->>'kind'=$3`, commandID, attemptNo, string(kind)).Scan(&id, &status)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			t.Fatal(err)
 		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("sampling attempt %d for command %q did not reach status %q (last status %q, err %v)", attemptNo, commandID, want, status, err)
-		case <-ticker.C:
-		}
-	}
+		return err == nil && status == want, fmt.Sprintf("%s attempt %d for command %q did not reach status %q (last status %q, err %v)", kind, attemptNo, commandID, want, status, err)
+	})
+	return id
 }
 
 func waitProviderCommandOutcome(t *testing.T, store *sessionstore.Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
 	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		command, err := store.GetCommand(t.Context(), sessionID, commandID)
-		if err != nil {
+	var command *samplerpb.GetCommandResponse
+	eventually.Within(t, 10*time.Second, func() (bool, string) {
+		var err error
+		if command, err = store.GetCommand(t.Context(), sessionID, commandID); err != nil {
 			t.Fatal(err)
 		}
-		if command.GetOutcome() == want {
-			return command
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("command %q outcome=%v, want %v", commandID, command.GetOutcome(), want)
-		case <-ticker.C:
-		}
-	}
+		return command.GetOutcome() == want, fmt.Sprintf("command %q outcome=%v, want %v", commandID, command.GetOutcome(), want)
+	})
+	return command
 }
 
 func receiveProviderRequest(t *testing.T, requests <-chan []byte) []byte {
@@ -174,24 +157,14 @@ func countUserMessage(t *testing.T, state protocol.Context, text string) int {
 
 func waitProviderTaskReleased(t *testing.T, runtime *Runtime, sessionID string) {
 	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
+	eventually.Within(t, 10*time.Second, func() (bool, string) {
 		runtime.mu.Lock()
 		task := runtime.tasks[sessionID]
 		waiting, busy := task != nil && task.waitingProvider, task != nil && task.busy
 		runtime.mu.Unlock()
-		if waiting && !busy && len(runtime.executing) == 0 {
-			return
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("provider wait did not release execution: waiting=%v busy=%v permits=%d", waiting, busy, len(runtime.executing))
-		case <-ticker.C:
-		}
-	}
+		permits := len(runtime.executing)
+		return waiting && !busy && permits == 0, fmt.Sprintf("provider wait did not release execution: waiting=%v busy=%v permits=%d", waiting, busy, permits)
+	})
 }
 
 func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) {
@@ -236,7 +209,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	runtime.Wake(session.ID)
 
 	firstBody := receiveProviderRequest(t, requests)
-	firstID := waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
+	firstID := waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	setProviderRetryDueNow(t, store, firstID)
 	runtime.Wake(session.ID)
 	secondBody := receiveProviderRequest(t, requests)
@@ -244,7 +217,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 		t.Fatalf("retry after 429 changed frozen sampling request\nfirst:  %s\nsecond: %s", firstBody, secondBody)
 	}
 
-	secondID := waitProviderAttemptStatus(t, store, commandID, 2, string(sessionstore.IntentResultAbandoned))
+	secondID := waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, commandID, 2, string(sessionstore.IntentResultAbandoned))
 	setProviderRetryDueNow(t, store, secondID)
 	runtime.Wake(session.ID)
 	thirdBody := receiveProviderRequest(t, requests)
@@ -326,7 +299,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 			runtime.Wake(session.ID)
 			for attempt := 1; attempt <= tc.attempts; attempt++ {
 				_ = receiveProviderRequest(t, requests)
-				intentID := waitProviderAttemptStatus(t, store, failedCommandID, attempt, string(sessionstore.IntentResultAbandoned))
+				intentID := waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, failedCommandID, attempt, string(sessionstore.IntentResultAbandoned))
 				if attempt < tc.attempts {
 					setProviderRetryDueNow(t, store, intentID)
 					runtime.Wake(session.ID)
@@ -416,7 +389,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(waitingSession.ID)
 	_ = receiveProviderRequest(t, firstRequest)
-	intentID := waitProviderAttemptStatus(t, store, waitingCommandID, 1, string(sessionstore.IntentResultAbandoned))
+	intentID := waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, waitingCommandID, 1, string(sessionstore.IntentResultAbandoned))
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()+interval '1 hour' WHERE id=$1`, intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +465,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(session.ID)
 	// The durable attempt state is the synchronization point; the response is already settled.
-	intentID := waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
+	intentID := waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()+interval '1 hour' WHERE id=$1`, intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +581,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if !strings.Contains(string(freshWire), "The JavaScript host that held this Session's store()/load() values has been lost") {
 		t.Fatalf("fresh provider request omitted the host-loss notice: %s", freshWire)
 	}
-	waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
+	waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 	if got := requestCount.Load(); got != 1 {
 		t.Fatalf("fresh owner provider requests=%d, want one new-context request", got)
