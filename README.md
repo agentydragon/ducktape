@@ -51,7 +51,7 @@ Before deleting a finished plan or resolved investigation, move any workaround t
 
 ### `debug/`
 
-Keep active investigations, in-progress RCAs, and reproducible diagnostic procedures under the project that owns the behavior, at `<project>/debug/<topic>.md`. Use root `debug/` for cross-project investigations and host-level investigations with no owning project, such as `debug/atlas/`.
+Keep active investigations, in-progress RCAs, and reproducible diagnostic procedures under `<project>/debug/` in the project that owns the behavior. Use root `debug/` for cross-project investigations and host-level investigations with no owning project, such as `debug/atlas/`.
 
 Keep one canonical report and refer to it by link from other projects, code comments, and PRs. When the investigation is resolved, promote durable lessons to the owner's docs (`cluster/docs/lessons_learned/` for cluster) and delete the report. Follow the [documentation style](STYLE.md#documentation).
 
