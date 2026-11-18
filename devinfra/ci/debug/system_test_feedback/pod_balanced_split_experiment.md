@@ -6,8 +6,8 @@ pair, the split Pod branch finished 98.744 seconds earlier relative to Bazel
 start. The full selected graph finished 54.414 seconds earlier, but VM was last
 in both runs and independently varied by 41.599 seconds. This pair does not
 establish a causal whole-CI saving or the four-minute feedback objective.
-Required CI still runs the original, unchanged 21-case `test_pod`; these targets
-are tagged `manual`. This follows the [single TLS-tail experiment](pod_split_controlled_experiment.md),
+Required CI kept the original 21-case `test_pod` while both partitions carried the `manual` tag.
+The comparison followed the [single TLS-tail experiment](pod_split_controlled_experiment.md),
 whose extra fixture did not yield a demonstrated saving.
 
 ## Partition and invariant
@@ -30,6 +30,9 @@ two-case concurrency limit, fresh Sessions, assertions, and case-owned cleanup.
 There is no changed timeout, retry, or skipped case.
 
 ## Protocol and tested inputs
+
+The spike targets have been retired. To rerun the commands below, use [the revision that added both targets]
+(https://github.com/agentydragon/ducktape/commit/6cdcf3ba05537deb4a2efe246b1d779e564bf249).
 
 The local code was `5354b836af88ee17fbabc65c20666f90a0e6216c` plus the
 two-file manual-target patch. Collection ran before physical execution:

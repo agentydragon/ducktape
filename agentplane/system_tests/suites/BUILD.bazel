@@ -227,21 +227,6 @@ py_test(
     ],
 )
 
-_POD_DEPS = [
-    ":pod_cases",
-    ":pod_worker",
-    "//:conftest",
-    "//agentplane/system_tests:conftest",
-    "//agentplane/system_tests/driver:case_batch",
-    "//agentplane/system_tests/driver:cluster",
-    "//agentplane/system_tests/driver:dispatcher_transport",
-    "//agentplane/system_tests/driver:scripted_upstream",
-    "//util:net",
-    "@pypi//pytest",
-    "@pypi//pytest_asyncio",
-    "@pypi//pytest_bazel",
-]
-
 # App scenarios share a bounded case batch; platform cases own a separate native stack.
 py_test(
     name = "test_pod",
@@ -326,77 +311,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-# Manual comparison: historical case spans balance across these two independent stacks.
-_POD_BALANCED_A = " or ".join([
-    "operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control",
-    "an_agent_messages_another_which_reads_and_acknowledges_it",
-    "the_model_call_itself_goes_through_the_proxy",
-    "pod_mtls_session_survives_replacement_and_keeps_history",
-    "fresh_workspace_storage_survives_replacement",
-])
-
-py_test(
-    name = "test_pod_balanced_a_spike",
-    size = "enormous",
-    srcs = ["test_pod.py"],
-    args = [
-        "-k",
-        "'" + _POD_BALANCED_A + "'",
-    ],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":pod_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = False),
-    },
-    main = "test_pod.py",
-    tags = K3S_TAGS + ["manual"],
-    deps = _POD_DEPS + ["//agentplane/system_tests/deployment:pytest_plugin"],
-)
-
-py_test(
-    name = "test_pod_balanced_b_spike",
-    size = "enormous",
-    srcs = ["test_pod.py"],
-    args = [
-        "-k",
-        "'not (" + _POD_BALANCED_A + ")'",
-    ],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":pod_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = False),
-    },
-    main = "test_pod.py",
-    tags = K3S_TAGS + ["manual"],
-    deps = _POD_DEPS + ["//agentplane/system_tests/deployment:pytest_plugin"],
 )
 
 # This suite scales Dispatcher and deletes controller Pods on its own stack.
