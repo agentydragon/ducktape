@@ -32,11 +32,12 @@ Keep proprietary captures and source witnesses in the private repository.
 
 Remaining work:
 
-Validate the finite source call-return extension: unchanged first-parameter
-identity leaves and a two-helper conditional forwarding relation, with both
-branches, ordinary effects and conservative helper fallback retained. Check
-captured/declaration/loop writes, dynamic scope, strict-module arguments semantics,
-coordinate rekeying and fresh/saved CLI behavior before attributing consumer improvement.
+Reduce the surviving retained-callback refusal to a neutral CLI regression.
+The selected-origin trace reaches the mutation receiver through a computed
+property snapshot followed by a literal-key switch. Preserve the key/value
+relationship at the guarded use; do not treat a smaller unrelated origin set as
+proof that this path is repaired. Keep raw traces and complete private-pipeline
+receipts in the private report.
 
 1. Transfer witnesses in <../perf/analysis_serial_phases.md> identify shared
    default-wrapper returns creating unrelated call targets, JSX parameter
@@ -59,15 +60,10 @@ coordinate rekeying and fresh/saved CLI behavior before attributing consumer imp
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
-   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
-   still exhausts 16 GiB during analysis before applying the passing spec.
-   The [remaining-growth probes](../perf/analysis_serial_phases.md#remaining-source-flow-growth-2026-11-17)
-   identify a second loss of precision: numeric computed keys read the union of
-   all fields, including unrelated named record fields. The combined
-   numeric-property aggregate and
+   Earlier bounded-summary, numeric-property and counted-loop measurements are
+   in <../perf/analysis_serial_phases.md>. Preserve the
    [counted-loop read certificates](../docs/inference.md#counted-loop-read-certificates)
-   still exhaust 16 GiB before applying the spec; see the
-   [measured outcome](../perf/analysis_serial_phases.md#counted-loop-numeric-read-candidate).
+   and their independent conservative fallback.
    Use a fresh bounded profile and transfer witnesses to choose the next slice.
    Verify the certified read is narrow in the real program, then attribute the
    next broad transfer and its downstream dependency growth. Do not add another
@@ -145,19 +141,24 @@ coordinate rekeying and fresh/saved CLI behavior before attributing consumer imp
    cap to reach and attribute a later phase. It cannot satisfy the 300-second
    completion requirement or substitute saved analysis for the fresh pipeline.
 
-2. Validate the remaining precision repair after static-property returns and
-   direct audited-factory root refinement. Trace the surviving producer rather
-   than infer it from the same final rejection. The immediate nested-factory
-   refinement is landed; retain its source-only namespace/closed-provider proofs,
-   neutral CLI controls and private normal-gate validation. For surviving named
-   inputs, validate finite argument/return correlation instead of broadening
-   fresh-only factory admission: preserve both conditional helper branches,
-   instantiate only proved leaf relations and keep ordinary Return/Top fallback
-   for all other helper targets. Check parameter writes, dynamic scope and
-   coordinate rekeying. Preserve unknown-property and true-alias refusals,
-   ordinary getter/write effects and fresh/saved parity. Historical comparisons
-   and private source witnesses belong in performance reports or the private
-   repository, not as a completion history in this active plan.
+2. Establish a bounded key/value correlation proof for
+   `value = record[key]; switch (key) { case "payload": use(value); }`.
+   First reproduce the normal-gate refusal, with a genuine alias/mutation
+   control. Derive certificates from the shared parsed syntax; a certificate
+   identifies the snapshot, matching case and exact use. It must account for
+   intervening writes, captures, dynamic scope, receiver rebinding, fallthrough
+   and exceptional control flow. Unsupported shapes keep ordinary union flow.
+   Preserve getters, property writes, unknowns, late producers, coordinate
+   rekeying and fresh/saved query parity. Narrowing an origin relation does not
+   certify callback purity or waive any admission guard. Verify the traced
+   private path disappears, then rerun the unchanged passing assignment.
+   Preserve existing finite-return and audited-factory regression controls.
+
+   Separately measure borrowed source-fact reads against the same frozen
+   production inputs. Keep reads, subscriptions, absent-versus-empty behavior
+   and effects unchanged. Publish the slice only with useful measured savings
+   and the Excalidraw check below; fewer temporary clones alone are insufficient.
+
 3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
