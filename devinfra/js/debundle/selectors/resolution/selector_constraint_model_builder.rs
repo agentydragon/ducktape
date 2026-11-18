@@ -9,8 +9,9 @@ use selector_constraint_backend::{
     ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
-    SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError,
-    SelectorProjectedValue, SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
+    SelectorAtom, SelectorFact, SelectorFactStore, SelectorOperand, SelectorProgram,
+    SelectorProgramError, SelectorProjectedValue, SelectorVariableId, SourceUnitTerm, StringTerm,
+    VariableDomain,
 };
 use source_identity::SourceUnitId;
 
@@ -1455,125 +1456,22 @@ impl FactDomains {
     }
 
     fn add_program_constants(&mut self, program: &SelectorProgram) {
-        for atom in &program.atoms {
-            self.add_atom_constants(atom);
-        }
-    }
-
-    fn add_atom_constants(&mut self, atom: &SelectorAtom) {
-        match atom {
-            SelectorAtom::SourceUnitKind {
-                source_unit,
-                statement_kind,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(statement_kind);
-            }
-            SelectorAtom::SourceUnitDeclaresBinding {
-                source_unit,
-                binding,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(binding);
-            }
-            SelectorAtom::ProjectedAllowedTuples { rows, .. } => {
-                for row in rows {
-                    for value in row {
+        for operand in program.atoms.iter().flat_map(SelectorAtom::operands) {
+            match operand {
+                SelectorOperand::Variable { .. } => {}
+                SelectorOperand::SourceUnitConstant(source_unit) => {
+                    self.add_source_unit(source_unit)
+                }
+                SelectorOperand::StringConstant(value) => self.add_string(value),
+                SelectorOperand::ProjectedAllowedTuples { rows, .. } => {
+                    for value in rows.iter().flatten() {
                         self.add_projected_value(value);
                     }
                 }
-            }
-            SelectorAtom::SourceUnitNotIn {
-                source_unit,
-                excluded,
-            } => {
-                self.add_source_unit_term(source_unit);
-                for source_unit in excluded {
-                    self.add_source_unit(*source_unit);
+                SelectorOperand::ExcludedSourceUnits(excluded) => {
+                    self.source_units.extend(excluded.iter().copied());
                 }
             }
-            SelectorAtom::SourceUnitReferencesSourceUnit {
-                source_unit,
-                referenced,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_source_unit_term(referenced);
-            }
-            SelectorAtom::ReadsMember {
-                source_unit,
-                member,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(member);
-            }
-            SelectorAtom::ReadsMemberOfSourceUnit {
-                source_unit,
-                object,
-                member,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_source_unit_term(object);
-                self.add_string_term(member);
-            }
-            SelectorAtom::ConsumesModuleMember {
-                source_unit,
-                module,
-                member,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(module);
-                self.add_string_term(member);
-            }
-            SelectorAtom::PassedToCall {
-                source_unit,
-                callee_member,
-                ..
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(callee_member);
-            }
-            SelectorAtom::PassedToCallOfSourceUnit {
-                source_unit,
-                callee_object,
-                callee_member,
-                ..
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_source_unit_term(callee_object);
-                self.add_string_term(callee_member);
-            }
-            SelectorAtom::MakesDecorateCallForSourceUnit {
-                source_unit,
-                class_anchor,
-                member,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_source_unit_term(class_anchor);
-                if let Some(member) = member {
-                    self.add_string_term(member);
-                }
-            }
-            SelectorAtom::IntrinsicAlias {
-                source_unit,
-                property,
-                referenced_by,
-            } => {
-                self.add_source_unit_term(source_unit);
-                self.add_string_term(property);
-                self.add_source_unit_term(referenced_by);
-            }
-        }
-    }
-
-    fn add_source_unit_term(&mut self, term: &SourceUnitTerm) {
-        if let SourceUnitTerm::Const { source_unit } = term {
-            self.add_source_unit(*source_unit);
-        }
-    }
-
-    fn add_string_term(&mut self, term: &StringTerm) {
-        if let StringTerm::Const { value } = term {
-            self.add_string(value);
         }
     }
 

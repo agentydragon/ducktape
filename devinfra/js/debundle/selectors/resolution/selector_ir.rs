@@ -129,105 +129,179 @@ pub enum SelectorAtom {
     },
 }
 
+pub enum SelectorOperand<'a> {
+    Variable {
+        id: SelectorVariableId,
+        domain: VariableDomain,
+        context: &'static str,
+    },
+    SourceUnitConstant(SourceUnitId),
+    StringConstant(&'a str),
+    ProjectedAllowedTuples {
+        variables: &'a [SelectorVariableId],
+        rows: &'a [Vec<SelectorProjectedValue>],
+    },
+    ExcludedSourceUnits(&'a [SourceUnitId]),
+}
+
 impl SelectorAtom {
-    pub fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
-        let mut variables = BTreeSet::new();
-        match self {
+    pub fn operands<'a>(&'a self) -> impl Iterator<Item = SelectorOperand<'a>> {
+        let source = |term: &SourceUnitTerm, context| {
+            Some(match term {
+                SourceUnitTerm::Var { id } => SelectorOperand::Variable {
+                    id: *id,
+                    domain: VariableDomain::SourceUnit,
+                    context,
+                },
+                SourceUnitTerm::Const { source_unit } => {
+                    SelectorOperand::SourceUnitConstant(*source_unit)
+                }
+            })
+        };
+        let string = |term: &'a StringTerm, context| match term {
+            StringTerm::Var { id } => SelectorOperand::Variable {
+                id: *id,
+                domain: VariableDomain::String,
+                context,
+            },
+            StringTerm::Const { value } => SelectorOperand::StringConstant(value),
+        };
+
+        let operands = match self {
             Self::SourceUnitKind {
                 source_unit,
                 statement_kind,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(statement_kind, &mut variables);
-            }
+            } => [
+                source(source_unit, "source_unit_kind.source unit"),
+                Some(string(statement_kind, "source_unit_kind.statement_kind")),
+                None,
+            ],
             Self::SourceUnitDeclaresBinding {
                 source_unit,
                 binding,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(binding, &mut variables);
-            }
-            Self::ProjectedAllowedTuples {
-                variables: projected,
-                ..
-            } => {
-                variables.extend(projected.iter().copied());
-            }
-            Self::SourceUnitNotIn { source_unit, .. } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-            }
+            } => [
+                source(source_unit, "source_unit_declares_binding.source unit"),
+                Some(string(binding, "source_unit_declares_binding.binding")),
+                None,
+            ],
+            Self::ProjectedAllowedTuples { variables, rows } => [
+                Some(SelectorOperand::ProjectedAllowedTuples { variables, rows }),
+                None,
+                None,
+            ],
+            Self::SourceUnitNotIn {
+                source_unit,
+                excluded,
+            } => [
+                source(source_unit, "source_unit_not_in.source unit"),
+                Some(SelectorOperand::ExcludedSourceUnits(excluded)),
+                None,
+            ],
             Self::SourceUnitReferencesSourceUnit {
                 source_unit,
                 referenced,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_source_unit_term_variables(referenced, &mut variables);
-            }
+            } => [
+                source(
+                    source_unit,
+                    "source_unit_references_source_unit.source unit",
+                ),
+                source(referenced, "source_unit_references_source_unit.referenced"),
+                None,
+            ],
             Self::ReadsMember {
                 source_unit,
                 member,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(member, &mut variables);
-            }
+            } => [
+                source(source_unit, "reads_member.source unit"),
+                Some(string(member, "reads_member.member")),
+                None,
+            ],
             Self::ReadsMemberOfSourceUnit {
                 source_unit,
                 object,
                 member,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_source_unit_term_variables(object, &mut variables);
-                collect_string_term_variables(member, &mut variables);
-            }
+            } => [
+                source(source_unit, "reads_member_of_source_unit.source unit"),
+                source(object, "reads_member_of_source_unit.object"),
+                Some(string(member, "reads_member_of_source_unit.member")),
+            ],
             Self::ConsumesModuleMember {
                 source_unit,
                 module,
                 member,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(module, &mut variables);
-                collect_string_term_variables(member, &mut variables);
-            }
+            } => [
+                source(source_unit, "consumes_module_member.source unit"),
+                Some(string(module, "consumes_module_member.module")),
+                Some(string(member, "consumes_module_member.member")),
+            ],
             Self::PassedToCall {
                 source_unit,
                 callee_member,
                 ..
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(callee_member, &mut variables);
-            }
+            } => [
+                source(source_unit, "passed_to_call.source unit"),
+                Some(string(callee_member, "passed_to_call.callee_member")),
+                None,
+            ],
             Self::PassedToCallOfSourceUnit {
                 source_unit,
                 callee_object,
                 callee_member,
                 ..
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_source_unit_term_variables(callee_object, &mut variables);
-                collect_string_term_variables(callee_member, &mut variables);
-            }
+            } => [
+                source(source_unit, "passed_to_call_of_source_unit.source unit"),
+                source(callee_object, "passed_to_call_of_source_unit.callee_object"),
+                Some(string(
+                    callee_member,
+                    "passed_to_call_of_source_unit.callee_member",
+                )),
+            ],
             Self::MakesDecorateCallForSourceUnit {
                 source_unit,
                 class_anchor,
                 member,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_source_unit_term_variables(class_anchor, &mut variables);
-                if let Some(member) = member {
-                    collect_string_term_variables(member, &mut variables);
-                }
-            }
+            } => [
+                source(
+                    source_unit,
+                    "makes_decorate_call_for_source_unit.source unit",
+                ),
+                source(
+                    class_anchor,
+                    "makes_decorate_call_for_source_unit.class_anchor",
+                ),
+                member
+                    .as_ref()
+                    .map(|member| string(member, "makes_decorate_call_for_source_unit.member")),
+            ],
             Self::IntrinsicAlias {
                 source_unit,
                 property,
                 referenced_by,
-            } => {
-                collect_source_unit_term_variables(source_unit, &mut variables);
-                collect_string_term_variables(property, &mut variables);
-                collect_source_unit_term_variables(referenced_by, &mut variables);
+            } => [
+                source(source_unit, "intrinsic_alias.source unit"),
+                Some(string(property, "intrinsic_alias.property")),
+                source(referenced_by, "intrinsic_alias.referenced_by"),
+            ],
+        };
+        operands.into_iter().flatten()
+    }
+
+    pub fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
+        let mut ids = BTreeSet::new();
+        for operand in self.operands() {
+            match operand {
+                SelectorOperand::Variable { id, .. } => {
+                    ids.insert(id);
+                }
+                SelectorOperand::ProjectedAllowedTuples { variables, .. } => {
+                    ids.extend(variables.iter().copied());
+                }
+                SelectorOperand::SourceUnitConstant(_)
+                | SelectorOperand::StringConstant(_)
+                | SelectorOperand::ExcludedSourceUnits(_) => {}
             }
         }
-        variables
+        ids
     }
 
     fn remap_variables(
@@ -336,21 +410,6 @@ impl SelectorAtom {
                 referenced_by: remap_source_unit_term(referenced_by, variable_map),
             },
         }
-    }
-}
-
-fn collect_source_unit_term_variables(
-    term: &SourceUnitTerm,
-    variables: &mut BTreeSet<SelectorVariableId>,
-) {
-    if let SourceUnitTerm::Var { id } = term {
-        variables.insert(*id);
-    }
-}
-
-fn collect_string_term_variables(term: &StringTerm, variables: &mut BTreeSet<SelectorVariableId>) {
-    if let StringTerm::Var { id } = term {
-        variables.insert(*id);
     }
 }
 
@@ -583,178 +642,57 @@ impl SelectorProgram {
     }
 
     fn validate_atom(&self, atom: &SelectorAtom) -> Result<(), SelectorProgramError> {
-        match atom {
-            SelectorAtom::SourceUnitKind {
-                source_unit,
-                statement_kind,
-            } => {
-                self.validate_source_unit_term(source_unit, "source_unit_kind.source unit")?;
-                self.validate_string_term(statement_kind, "source_unit_kind.statement_kind")
-            }
-            SelectorAtom::SourceUnitDeclaresBinding {
-                source_unit,
-                binding,
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "source_unit_declares_binding.source unit",
-                )?;
-                self.validate_string_term(binding, "source_unit_declares_binding.binding")
-            }
-            SelectorAtom::ProjectedAllowedTuples { variables, rows } => {
-                if variables.is_empty() {
-                    return Err(SelectorProgramError::EmptyProjectedAllowedTuples);
+        for operand in atom.operands() {
+            match operand {
+                SelectorOperand::Variable {
+                    id,
+                    domain,
+                    context,
+                } => {
+                    self.require_domain(id, domain, context)?;
                 }
-                let domains = variables
-                    .iter()
-                    .map(|variable| {
-                        self.require_variable(*variable, "projected_allowed_tuples.variable")
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                for (row_index, row) in rows.iter().enumerate() {
-                    if row.len() != variables.len() {
-                        return Err(SelectorProgramError::ProjectedAllowedTupleArity {
-                            row_index,
-                            expected: variables.len(),
-                            actual: row.len(),
-                        });
-                    }
-                    for (column, (value, expected)) in row.iter().zip(domains.iter()).enumerate() {
-                        let actual = value.domain();
-                        if actual != *expected {
-                            return Err(SelectorProgramError::ProjectedAllowedTupleDomain {
-                                row_index,
-                                column,
-                                expected: *expected,
-                                actual,
-                            });
-                        }
-                    }
+                SelectorOperand::ProjectedAllowedTuples { variables, rows } => {
+                    self.validate_projected_allowed_tuples(variables, rows)?;
                 }
-                Ok(())
+                SelectorOperand::SourceUnitConstant(_)
+                | SelectorOperand::StringConstant(_)
+                | SelectorOperand::ExcludedSourceUnits(_) => {}
             }
-            SelectorAtom::SourceUnitNotIn { source_unit, .. } => {
-                self.validate_source_unit_term(source_unit, "source_unit_not_in.source unit")
-            }
-            SelectorAtom::SourceUnitReferencesSourceUnit {
-                source_unit,
-                referenced,
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "source_unit_references_source_unit.source unit",
-                )?;
-                self.validate_source_unit_term(
-                    referenced,
-                    "source_unit_references_source_unit.referenced",
-                )
-            }
-            SelectorAtom::ReadsMember {
-                source_unit,
-                member,
-            } => {
-                self.validate_source_unit_term(source_unit, "reads_member.source unit")?;
-                self.validate_string_term(member, "reads_member.member")
-            }
-            SelectorAtom::ReadsMemberOfSourceUnit {
-                source_unit,
-                object,
-                member,
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "reads_member_of_source_unit.source unit",
-                )?;
-                self.validate_source_unit_term(object, "reads_member_of_source_unit.object")?;
-                self.validate_string_term(member, "reads_member_of_source_unit.member")
-            }
-            SelectorAtom::ConsumesModuleMember {
-                source_unit,
-                module,
-                member,
-            } => {
-                self.validate_source_unit_term(source_unit, "consumes_module_member.source unit")?;
-                self.validate_string_term(module, "consumes_module_member.module")?;
-                self.validate_string_term(member, "consumes_module_member.member")
-            }
-            SelectorAtom::PassedToCall {
-                source_unit,
-                callee_member,
-                ..
-            } => {
-                self.validate_source_unit_term(source_unit, "passed_to_call.source unit")?;
-                self.validate_string_term(callee_member, "passed_to_call.callee_member")
-            }
-            SelectorAtom::PassedToCallOfSourceUnit {
-                source_unit,
-                callee_object,
-                callee_member,
-                ..
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "passed_to_call_of_source_unit.source unit",
-                )?;
-                self.validate_source_unit_term(
-                    callee_object,
-                    "passed_to_call_of_source_unit.callee_object",
-                )?;
-                self.validate_string_term(
-                    callee_member,
-                    "passed_to_call_of_source_unit.callee_member",
-                )
-            }
-            SelectorAtom::MakesDecorateCallForSourceUnit {
-                source_unit,
-                class_anchor,
-                member,
-            } => {
-                self.validate_source_unit_term(
-                    source_unit,
-                    "makes_decorate_call_for_source_unit.source unit",
-                )?;
-                self.validate_source_unit_term(
-                    class_anchor,
-                    "makes_decorate_call_for_source_unit.class_anchor",
-                )?;
-                if let Some(member) = member {
-                    self.validate_string_term(
-                        member,
-                        "makes_decorate_call_for_source_unit.member",
-                    )?;
-                }
-                Ok(())
-            }
-            SelectorAtom::IntrinsicAlias {
-                source_unit,
-                property,
-                referenced_by,
-            } => {
-                self.validate_source_unit_term(source_unit, "intrinsic_alias.source unit")?;
-                self.validate_string_term(property, "intrinsic_alias.property")?;
-                self.validate_source_unit_term(referenced_by, "intrinsic_alias.referenced_by")
-            }
-        }
-    }
-
-    fn validate_source_unit_term(
-        &self,
-        term: &SourceUnitTerm,
-        context: &'static str,
-    ) -> Result<(), SelectorProgramError> {
-        if let SourceUnitTerm::Var { id } = term {
-            self.require_domain(*id, VariableDomain::SourceUnit, context)?;
         }
         Ok(())
     }
 
-    fn validate_string_term(
+    fn validate_projected_allowed_tuples(
         &self,
-        term: &StringTerm,
-        context: &'static str,
+        variables: &[SelectorVariableId],
+        rows: &[Vec<SelectorProjectedValue>],
     ) -> Result<(), SelectorProgramError> {
-        if let StringTerm::Var { id } = term {
-            self.require_domain(*id, VariableDomain::String, context)?;
+        if variables.is_empty() {
+            return Err(SelectorProgramError::EmptyProjectedAllowedTuples);
+        }
+        let domains = variables
+            .iter()
+            .map(|variable| self.require_variable(*variable, "projected_allowed_tuples.variable"))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (row_index, row) in rows.iter().enumerate() {
+            if row.len() != variables.len() {
+                return Err(SelectorProgramError::ProjectedAllowedTupleArity {
+                    row_index,
+                    expected: variables.len(),
+                    actual: row.len(),
+                });
+            }
+            for (column, (value, expected)) in row.iter().zip(domains.iter()).enumerate() {
+                let actual = value.domain();
+                if actual != *expected {
+                    return Err(SelectorProgramError::ProjectedAllowedTupleDomain {
+                        row_index,
+                        column,
+                        expected: *expected,
+                        actual,
+                    });
+                }
+            }
         }
         Ok(())
     }
