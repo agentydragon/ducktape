@@ -28,12 +28,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function queued(store: LocalCommands, commandId: string): Command {
+function queued(store: LocalCommands, commandId: string, legacyTarget?: typeof COMMAND_TARGET): Command {
   const command = create(CommandSchema, {
     commandId,
     operation: { case: "submitInput", value: { text: commandId } },
   });
-  store.remember(command);
+  if (legacyTarget) {
+    localStorage.setItem(
+      `agentplane.pending:${SESSION}:${commandId}`,
+      JSON.stringify({ command, submittedAt: 1, target: legacyTarget, admission: null })
+    );
+  } else {
+    store.remember(command);
+  }
   store.acknowledgeDispatch(
     command,
     dispatchFromJson({
@@ -67,7 +74,7 @@ async function settle(): Promise<void> {
 }
 
 it("sorts and deduplicates the filter, applies its snapshot, and reuses the cursor after recreation", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   queued(store, "b");
   stop = watchDispatches(store, SESSION, ["b", "a", "a"]);
@@ -94,7 +101,7 @@ it("sorts and deduplicates the filter, applies its snapshot, and reuses the curs
 });
 
 it("marks an absent command unknown only after a complete fresh snapshot", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "kept");
   queued(store, "deleted");
   stop = watchDispatches(store, SESSION, ["kept", "deleted"]);
@@ -111,7 +118,7 @@ it("marks an absent command unknown only after a complete fresh snapshot", async
 });
 
 it("does not infer deletion from a resumed or recurring CaughtUp checkpoint", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "unchanged");
   store.saveDispatchWatchResumeToken(SESSION, ["unchanged"], "previous-checkpoint");
   stop = watchDispatches(store, SESSION, ["unchanged"]);
@@ -126,10 +133,10 @@ it("does not infer deletion from a resumed or recurring CaughtUp checkpoint", as
 });
 
 it.each(["DELIVERY_STATE_FAILED", "DELIVERY_STATE_CANCELLED_IN_DISPATCHER"])(
-  "applies a changed terminal receipt without its Sandbox address (%s)",
+  "applies a changed terminal receipt to a legacy command without losing its original Sandbox address (%s)",
   async (state) => {
-    const store = new LocalCommands(SESSION, COMMAND_TARGET);
-    queued(store, "deleted");
+    const store = new LocalCommands(SESSION);
+    queued(store, "deleted", COMMAND_TARGET);
     store.saveDispatchWatchResumeToken(SESSION, ["deleted"], "previous-checkpoint");
     stop = watchDispatches(store, SESSION, ["deleted"]);
     await settle();
@@ -148,13 +155,16 @@ it.each(["DELIVERY_STATE_FAILED", "DELIVERY_STATE_CANCELLED_IN_DISPATCHER"])(
     expect(stateOf(store, "deleted")).toBe(
       state === "DELIVERY_STATE_FAILED" ? DeliveryState.FAILED : DeliveryState.CANCELLED_IN_DISPATCHER
     );
-    expect(new LocalCommands(SESSION, COMMAND_TARGET).getSnapshot().commands[0]?.target).toEqual(COMMAND_TARGET);
+    expect(new LocalCommands(SESSION).getSnapshot().commands[0]?.destination).toEqual({
+      kind: "reconcile-only",
+      target: COMMAND_TARGET,
+    });
     expect(fetchMock.served[0].url.searchParams.get("resumeToken")).toBe("previous-checkpoint");
   }
 );
 
 it("restarts a partial fresh snapshot from the beginning instead of resuming before CaughtUp", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   queued(store, "b");
   stop = watchDispatches(store, SESSION, ["a", "b"]);
@@ -169,7 +179,7 @@ it("restarts a partial fresh snapshot from the beginning instead of resuming bef
 });
 
 it("surfaces active-stream OUT_OF_RANGE, clears its cursor, and keeps the warning after resnapshot", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();
@@ -191,12 +201,12 @@ it("surfaces active-stream OUT_OF_RANGE, clears its cursor, and keeps the warnin
   await settle();
 
   expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
-  expect(new LocalCommands(SESSION, COMMAND_TARGET).getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  expect(new LocalCommands(SESSION).getSnapshot().dispatchWatchCoverageLost).toBe(true);
   expect(store.dispatchWatchResumeToken(SESSION, ["a"])).toBe("fresh-checkpoint");
 });
 
 it("treats HTTP 400 with gRPC OUT_OF_RANGE code as lost coverage", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   store.saveDispatchWatchResumeToken(SESSION, ["a"], "expired-checkpoint");
   fetchMock.fetch.mockImplementationOnce(() =>
@@ -213,7 +223,7 @@ it("treats HTTP 400 with gRPC OUT_OF_RANGE code as lost coverage", async () => {
 });
 
 it("does not advance a saved cursor when persisting a changed receipt fails", async () => {
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   store.saveDispatchWatchResumeToken(SESSION, ["a"], "durable-checkpoint");
   stop = watchDispatches(store, SESSION, ["a"]);
@@ -230,7 +240,7 @@ it("does not advance a saved cursor when persisting a changed receipt fails", as
 
 it("reconnects before a malformed receipt can advance the cursor", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  const store = new LocalCommands(SESSION);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();

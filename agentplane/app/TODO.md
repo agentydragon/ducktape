@@ -7,9 +7,9 @@
 - [ ] Decide whether Sandbox presets are durable Environment metadata or app-owned creation and
       Session configuration. The Environment service stores the preset label and the app resolves Session
       defaults from it; preserve that behavior until the ownership and replacement data flow are settled.
-- [ ] Retire the legacy browser-retained command destination shape. New commands address a Session
-      ID; preserve unconfirmed saved input and its original Sandbox UID fence while reconciling old
-      records, and never replay an uncertain command.
+- [ ] Retire the browser's legacy saved-command reader once there is a supported recovery path for
+      unconfirmed input still stored by older app versions. Preserve authored text and its original
+      Sandbox UID fence through the transition.
 - [ ] Investigate generated HTTP clients and reusable per-language reducers for protobuf watches.
       EnvironmentService clients repeat route spelling and snapshot, upsert and removal assembly;
       preserve authentication, cancellation, stream errors and reconnect behavior.

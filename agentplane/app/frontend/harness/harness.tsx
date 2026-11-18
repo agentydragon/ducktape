@@ -2491,7 +2491,7 @@ function threadScope(threadId: string): Record<string, unknown> {
 }
 
 function rememberPendingInput(): void {
-  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2504,7 +2504,7 @@ function rememberPendingInput(): void {
 }
 
 function rememberInputEcho(): void {
-  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2518,7 +2518,7 @@ function rememberInputEcho(): void {
 
 function rememberSettledCommands(): void {
   // A settled command shows while the browser that sent it still holds it.
-  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId);
   local.remember(
     create(CommandSchema, {
       commandId: "queued-model",
@@ -2548,7 +2548,7 @@ function rememberDispatch(threadId = RUNNING_THREAD): void {
       value: { text: "Continue when the Sandbox is ready." },
     },
   });
-  const local = new LocalCommands(threadId, COMMAND_TARGET);
+  const local = new LocalCommands(threadId);
   local.remember(command);
   const dispatch = dispatchFromJson({
     commandId: command.commandId,
@@ -2576,7 +2576,7 @@ function rememberShortRefusedWake(): void {
   const reason =
     'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: User "system:serviceaccount:agentplane-staging:runner-gateway" cannot update resource "sandboxes" in API group "agentplane.allegedly.works" in the namespace "agentplane-staging"';
   queuedReasons.set(command.commandId, reason);
-  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
+  const local = new LocalCommands(RUNNING_THREAD);
   local.remember(command);
   local.acknowledgeDispatch(
     command,
@@ -2600,7 +2600,7 @@ function rememberFailedDispatch(): void {
       value: { text: "Please start the Sandbox when capacity is available." },
     },
   });
-  const local = new LocalCommands(RUNNING_THREAD, COMMAND_TARGET);
+  const local = new LocalCommands(RUNNING_THREAD);
   local.remember(command);
   const dispatch = dispatchFromJson({
     commandId: command.commandId,
