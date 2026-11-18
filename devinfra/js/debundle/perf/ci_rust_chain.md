@@ -161,7 +161,7 @@ this does not distinguish admission policy from delayed Skyframe discovery or
 prove that raising the cap would recover 17 s. Historical source and inspected
 source differ, and scheduling varies between the two observations.
 
-The previous [50-versus-100 full sweep](../../../buildbuddy/debug/bazel_jobs_full_sweep.md)
+The previous [50-versus-100 full sweep](../../../docs/bazel_configuration.md#client-job-limit)
 had a warm compilation closure and fresh tests; the 100-job arm was slower and
 failed. Keep that negative result. The new question is compilation-heavy Rust
 changes: can earlier admission of prerequisite compilation shorten feedback
