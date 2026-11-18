@@ -695,13 +695,13 @@ func TestJournalSealReopensWithDurableReopenEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if cursor, ok := reopened.SealedCursor(); !ok || cursor != first.GetCursor() {
-		t.Fatalf("reopened seal = %d, %t", cursor, ok)
+	if seal := reopened.SealState(); seal == nil || seal.Cursor != first.GetCursor() {
+		t.Fatalf("reopened seal = %+v", seal)
 	}
 	if err := reopened.Reopen(ctx, "incarnation-b"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := reopened.SealedCursor(); ok {
+	if reopened.SealState() != nil {
 		t.Fatal("reopen left the seal published")
 	}
 	entries, err := reopened.Since(ctx, first.GetCursor(), 1)
