@@ -171,8 +171,12 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
     )
     pod = canary["spec"]["template"]["spec"]
     provider = pod["containers"][0]
+    production = next(
+        item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == "myquest"
+    )
     env = {item["name"]: item["value"] for item in provider["env"]}
     assert provider["image"] == f"{remote.REGISTRY}/platform-sessions-myquest:unset"
+    assert provider["image"] == production["spec"]["template"]["spec"]["containers"][0]["image"]
     assert env["MYQUEST_BROWSER_RECORD_HAR"] == "true"
     assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "false"
     assert "HTTPS_PROXY" not in env
@@ -188,9 +192,11 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
     assert json.loads(remote.CANARY_CONFIG.data["myquest-canary-integration.json"])["integrations"][0] == {
         "id": "myquest-canary",
         "type": "myquest",
-        "state_dir": "/data/session/myquest-canary",
+        "state_dir": config.myquest_canary_state_dir(False),
         "poll_interval_seconds": 300,
     }
+    assert config.myquest_canary_state_dir(False) == "/data/session/myquest-canary-direct"
+    assert config.myquest_canary_state_dir(True) == "/data/session/myquest-canary-proxy"
 
 
 def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) -> None:
@@ -212,6 +218,10 @@ def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) 
     }
     assert "MYQUEST_BROWSER_RECORD_HAR" not in production_env
     assert production_env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
+    assert (
+        canary_pod["containers"][0]["image"]
+        == deployments["myquest"]["spec"]["template"]["spec"]["containers"][0]["image"]
+    )
 
 
 if __name__ == "__main__":

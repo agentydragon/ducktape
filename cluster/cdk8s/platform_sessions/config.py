@@ -11,6 +11,12 @@ RECORD_UPSTREAM_TRAFFIC = True
 MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC = False
 
 
+def myquest_canary_state_dir(record_upstream_traffic: bool) -> str:
+    # Keep cookies and challenge state from one arm out of the other arm.
+    mode = "proxy" if record_upstream_traffic else "direct"
+    return f"/data/session/myquest-canary-{mode}"
+
+
 class BearerConfig(TypedDict):
     role: str
     token_file: str
@@ -67,7 +73,7 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
         {
             "id": "myquest-canary",
             "type": "myquest",
-            "state_dir": "/data/session/myquest-canary",
+            "state_dir": myquest_canary_state_dir(MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC),
             "poll_interval_seconds": 300,
         },
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
