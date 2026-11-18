@@ -468,7 +468,11 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             env=[
                 k8s.EnvVar(name="HOME", value="/tmp"),
                 *recorder_env,
-                *([k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true")] if instance == "myquest-canary" else []),
+                *(
+                    [k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true")]
+                    if instance == "myquest-canary"
+                    else []
+                ),
                 *(
                     [
                         k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
@@ -561,10 +565,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         else:
             provider_recording = record_upstream_traffic
         _provider_workload(
-            chart,
-            instance,
-            provider_type=str(integration["type"]),
-            record_upstream_traffic=provider_recording,
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
         )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
