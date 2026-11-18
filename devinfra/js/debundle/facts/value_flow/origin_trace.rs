@@ -6,12 +6,14 @@
 
 use super::{FlowEvent, FlowFact, FlowKey, Kind, OriginId, OriginTable, Value, Values};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
-const MAX_JOURNAL_EDGES: usize = 300_000;
-const MAX_JOURNAL_NODES: usize = 100_000;
+const MAX_JOURNAL_GROUPS: usize = 250_000;
+const MAX_JOURNAL_INPUTS: usize = 400_000;
+const MAX_JOURNAL_OUTPUTS: usize = 400_000;
 const MAX_JOURNAL_READS: usize = 300_000;
 const MAX_JOURNAL_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SLICE_NODES: usize = 100_000;
 const MAX_SELECTOR_BYTES: usize = 4 * 1024;
 const MAX_SELECTORS: usize = 32;
 
@@ -97,7 +99,7 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum InputKind {
     ObservedRead,
     CachedDependency,
@@ -105,21 +107,46 @@ enum InputKind {
     Unattributed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct Producer {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct TransferKey {
+    origin: OriginId,
     event: usize,
     kind: &'static str,
-    target: Option<u32>,
     argument: Option<usize>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct Edge {
-    origin: OriginId,
-    output: FlowKey,
-    producer: Producer,
-    input: Option<FlowKey>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct InputWitness {
+    key: Option<FlowKey>,
     input_kind: InputKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct OutputWitness {
+    key: FlowKey,
+    target: Option<u32>,
+}
+
+#[derive(Default)]
+struct TransferGroup {
+    inputs: HashSet<InputWitness>,
+    outputs: HashSet<OutputWitness>,
+}
+
+#[derive(Default)]
+struct JournalCounts {
+    groups: usize,
+    inputs: usize,
+    outputs: usize,
+    event_reads: usize,
+    truncated_at: Option<&'static str>,
+}
+
+#[derive(Default)]
+struct JournalState {
+    groups: HashMap<TransferKey, TransferGroup>,
+    event_reads: HashSet<(usize, OriginId, FlowKey)>,
+    counts: JournalCounts,
 }
 
 #[derive(Clone, Debug)]
@@ -136,12 +163,10 @@ pub(super) struct KeyLabels {
     pub(super) properties: Vec<String>,
 }
 
-pub(super) struct CachedTransfer<'a> {
+pub(super) struct CachedInputs<'a> {
     pub(super) event: usize,
     pub(super) kind: &'static str,
-    pub(super) target: Option<u32>,
     pub(super) argument: Option<usize>,
-    pub(super) output: FlowKey,
     pub(super) values: &'a Values,
     pub(super) dependencies: &'a BTreeSet<FlowKey>,
     pub(super) source: Option<&'a super::FlowValueExpr>,
@@ -156,24 +181,14 @@ pub(super) struct ProjectionReport<'a> {
     pub(super) local_candidate_offsets: &'a [u32],
 }
 
-#[derive(Default)]
-struct JournalCounts {
-    omitted_edges: usize,
-    omitted_nodes: usize,
-    omitted_event_reads: usize,
-}
-
 pub(super) struct OriginTrace {
     origins: BTreeSet<OriginId>,
     origin_sources: BTreeMap<OriginId, (String, u32)>,
     targets: Vec<Target>,
     key_labels: KeyLabels,
-    edges: RefCell<BTreeSet<Edge>>,
-    nodes: RefCell<BTreeSet<FlowKey>>,
-    /// Read witnesses are keyed by event so cached expressions can be traced
-    /// at later uses without another FactContext read.
-    event_reads: RefCell<BTreeSet<(usize, OriginId, FlowKey)>>,
-    counts: RefCell<JournalCounts>,
+    /// Inputs and outputs are separate sets: a group's union is a may-dependency
+    /// relation, not a claim that every input carried every output.
+    state: RefCell<JournalState>,
 }
 
 impl OriginTrace {
@@ -187,15 +202,16 @@ impl OriginTrace {
             origin_sources: origins,
             targets,
             key_labels,
-            edges: RefCell::default(),
-            nodes: RefCell::default(),
-            event_reads: RefCell::default(),
-            counts: RefCell::default(),
+            state: RefCell::default(),
         }
     }
 
     pub(super) fn selected_origins(&self) -> &BTreeSet<OriginId> {
         &self.origins
+    }
+
+    pub(super) fn is_recording(&self) -> bool {
+        self.state.borrow().counts.truncated_at.is_none()
     }
 
     pub(super) fn target_for_key(&self, key: FlowKey) -> Option<&Target> {
@@ -218,14 +234,16 @@ impl OriginTrace {
         values.bitmap.contains(origin.0)
     }
 
+    fn site_label(&self, site: u32) -> String {
+        self.key_labels
+            .sites
+            .get(site as usize)
+            .map(|(module, offset)| format!("{module}@{offset}"))
+            .unwrap_or_else(|| format!("site#{site}"))
+    }
+
     fn key_label(&self, key: FlowKey) -> String {
-        let site = |site: u32| {
-            self.key_labels
-                .sites
-                .get(site as usize)
-                .map(|(module, offset)| format!("{module}@{offset}"))
-                .unwrap_or_else(|| format!("site#{site}"))
-        };
+        let site = |site| self.site_label(site);
         match key {
             FlowKey::Binding(slot) => self
                 .key_labels
@@ -275,49 +293,87 @@ impl OriginTrace {
         }
     }
 
+    fn ensure_group(state: &mut JournalState, key: TransferKey) -> bool {
+        if state.counts.truncated_at.is_some() {
+            return false;
+        }
+        if !state.groups.contains_key(&key) {
+            if state.counts.groups >= MAX_JOURNAL_GROUPS {
+                state.counts.truncated_at = Some("groups");
+                return false;
+            }
+            state.groups.insert(key, TransferGroup::default());
+            state.counts.groups += 1;
+        }
+        true
+    }
+
+    fn add_input(state: &mut JournalState, key: TransferKey, input: InputWitness) -> bool {
+        if state.counts.truncated_at.is_some() {
+            return false;
+        }
+        if state
+            .groups
+            .get(&key)
+            .is_some_and(|group| group.inputs.contains(&input))
+        {
+            return true;
+        }
+        if state.counts.inputs >= MAX_JOURNAL_INPUTS {
+            state.counts.truncated_at = Some("inputs");
+            return false;
+        }
+        if !Self::ensure_group(state, key) {
+            return false;
+        }
+        state.groups.get_mut(&key).unwrap().inputs.insert(input);
+        state.counts.inputs += 1;
+        true
+    }
+
+    fn add_output(state: &mut JournalState, key: TransferKey, output: OutputWitness) -> bool {
+        if state.counts.truncated_at.is_some() {
+            return false;
+        }
+        if state
+            .groups
+            .get(&key)
+            .is_some_and(|group| group.outputs.contains(&output))
+        {
+            return true;
+        }
+        if state.counts.outputs >= MAX_JOURNAL_OUTPUTS {
+            state.counts.truncated_at = Some("outputs");
+            return false;
+        }
+        if !Self::ensure_group(state, key) {
+            return false;
+        }
+        state.groups.get_mut(&key).unwrap().outputs.insert(output);
+        state.counts.outputs += 1;
+        true
+    }
+
     fn note_read(&self, event: usize, key: FlowKey, values: &Values) {
+        let mut state = self.state.borrow_mut();
+        if state.counts.truncated_at.is_some() {
+            return;
+        }
         for origin in &self.origins {
             if !self.contains(values, *origin) {
                 continue;
             }
-            let mut reads = self.event_reads.borrow_mut();
-            let item = (event, *origin, key);
-            if reads.contains(&item) {
+            let read = (event, *origin, key);
+            if state.event_reads.contains(&read) {
                 continue;
             }
-            if reads.len() >= MAX_JOURNAL_READS {
-                self.counts.borrow_mut().omitted_event_reads += 1;
-            } else {
-                reads.insert(item);
-            }
-        }
-    }
-
-    fn observed_for(&self, event: usize, origin: OriginId, key: FlowKey) -> bool {
-        self.event_reads.borrow().contains(&(event, origin, key))
-    }
-
-    fn insert_edge(&self, edge: Edge) {
-        let mut edges = self.edges.borrow_mut();
-        if edges.contains(&edge) {
-            return;
-        }
-        if edges.len() >= MAX_JOURNAL_EDGES {
-            self.counts.borrow_mut().omitted_edges += 1;
-            return;
-        }
-        let mut nodes = self.nodes.borrow_mut();
-        for key in [Some(edge.output), edge.input].into_iter().flatten() {
-            if nodes.contains(&key) {
-                continue;
-            }
-            if nodes.len() >= MAX_JOURNAL_NODES {
-                self.counts.borrow_mut().omitted_nodes += 1;
+            if state.counts.event_reads >= MAX_JOURNAL_READS {
+                state.counts.truncated_at = Some("event_reads");
                 return;
             }
-            nodes.insert(key);
+            state.event_reads.insert(read);
+            state.counts.event_reads += 1;
         }
-        edges.insert(edge);
     }
 
     pub(super) fn record_event_contribution(
@@ -326,7 +382,7 @@ impl OriginTrace {
         source: &FlowEvent,
         output: FlowKey,
         contribution: &Values,
-        reads: &BTreeSet<(OriginId, FlowKey)>,
+        reads: &HashSet<(OriginId, FlowKey)>,
         table: &OriginTable,
     ) {
         if matches!(
@@ -341,112 +397,197 @@ impl OriginTrace {
             // expressions; their exact dependencies are recorded at transfer.
             return;
         }
-        let producer = Producer {
-            event,
-            kind: event_kind(source),
-            target: None,
-            argument: None,
-        };
+        let mut state = self.state.borrow_mut();
+        if state.counts.truncated_at.is_some() {
+            return;
+        }
         for origin in &self.origins {
             if !self.contains(contribution, *origin) {
                 continue;
+            }
+            let transfer = TransferKey {
+                origin: *origin,
+                event,
+                kind: event_kind(source),
+                argument: None,
+            };
+            if !Self::ensure_group(&mut state, transfer)
+                || !Self::add_output(
+                    &mut state,
+                    transfer,
+                    OutputWitness {
+                        key: output,
+                        target: None,
+                    },
+                )
+            {
+                return;
             }
             let mut matched = false;
             for (read_origin, input) in reads {
                 if read_origin == origin {
                     matched = true;
-                    self.insert_edge(Edge {
-                        origin: *origin,
-                        output,
-                        producer,
-                        input: Some(*input),
-                        input_kind: InputKind::ObservedRead,
-                    });
+                    if !Self::add_input(
+                        &mut state,
+                        transfer,
+                        InputWitness {
+                            key: Some(*input),
+                            input_kind: InputKind::ObservedRead,
+                        },
+                    ) {
+                        return;
+                    }
                 }
             }
             if event_contains_origin(source, *origin, table) {
-                self.insert_edge(Edge {
-                    origin: *origin,
-                    output,
-                    producer,
-                    input: None,
-                    input_kind: InputKind::SourceLiteral,
-                });
+                if !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: None,
+                        input_kind: InputKind::SourceLiteral,
+                    },
+                ) {
+                    return;
+                }
             } else if !matched {
-                self.insert_edge(Edge {
-                    origin: *origin,
-                    output,
-                    producer,
-                    input: None,
-                    input_kind: InputKind::Unattributed,
-                });
+                if !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: None,
+                        input_kind: InputKind::Unattributed,
+                    },
+                ) {
+                    return;
+                }
             }
         }
     }
 
-    pub(super) fn record_cached_transfer(&self, transfer: CachedTransfer<'_>) {
-        let CachedTransfer {
+    /// Collect an expression's may-inputs once per cached evaluation, before
+    /// its value is fanned out to formal bindings or receiver properties.
+    pub(super) fn record_cached_inputs(&self, transfer: CachedInputs<'_>) {
+        let CachedInputs {
             event,
             kind,
-            target,
             argument,
-            output,
             values,
             dependencies,
             source,
             table,
         } = transfer;
-        let producer = Producer {
-            event,
-            kind,
-            target,
-            argument,
-        };
+        let mut state = self.state.borrow_mut();
+        if state.counts.truncated_at.is_some() {
+            return;
+        }
         for origin in &self.origins {
             if !self.contains(values, *origin) {
                 continue;
             }
-            let matching: Vec<_> = dependencies
-                .iter()
-                .copied()
-                .filter(|key| self.observed_for(event, *origin, *key))
-                .collect();
-            if !matching.is_empty() {
-                for input in matching {
-                    self.insert_edge(Edge {
-                        origin: *origin,
-                        output,
-                        producer,
-                        input: Some(input),
-                        input_kind: InputKind::ObservedRead,
-                    });
-                }
-            } else if !dependencies.is_empty() {
-                // Cache state can outlive the evaluation that filled it. Keep
-                // the declared dependency path, but label it as unconfirmed.
-                for input in dependencies {
-                    self.insert_edge(Edge {
-                        origin: *origin,
-                        output,
-                        producer,
-                        input: Some(*input),
-                        input_kind: InputKind::CachedDependency,
-                    });
-                }
-            } else {
-                self.insert_edge(Edge {
-                    origin: *origin,
-                    output,
-                    producer,
-                    input: None,
-                    input_kind: if source
-                        .is_some_and(|expr| expression_contains_origin(expr, *origin, table))
-                    {
-                        InputKind::SourceLiteral
-                    } else {
-                        InputKind::Unattributed
+            let transfer = TransferKey {
+                origin: *origin,
+                event,
+                kind,
+                argument,
+            };
+            if !Self::ensure_group(&mut state, transfer) {
+                return;
+            }
+            let mut has_input = false;
+            for input in dependencies {
+                let input_kind = if state.event_reads.contains(&(event, *origin, *input)) {
+                    InputKind::ObservedRead
+                } else {
+                    InputKind::CachedDependency
+                };
+                if !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: Some(*input),
+                        input_kind,
                     },
-                });
+                ) {
+                    return;
+                }
+                has_input = true;
+            }
+            if source.is_some_and(|expr| expression_contains_origin(expr, *origin, table)) {
+                if !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: None,
+                        input_kind: InputKind::SourceLiteral,
+                    },
+                ) {
+                    return;
+                }
+                has_input = true;
+            }
+            if !has_input
+                && !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: None,
+                        input_kind: InputKind::Unattributed,
+                    },
+                )
+            {
+                return;
+            }
+        }
+    }
+
+    /// Register one output target without rescanning the expression inputs.
+    pub(super) fn record_cached_output(
+        &self,
+        event: usize,
+        kind: &'static str,
+        argument: Option<usize>,
+        target: Option<u32>,
+        output: FlowKey,
+        values: &Values,
+    ) {
+        let mut state = self.state.borrow_mut();
+        if state.counts.truncated_at.is_some() {
+            return;
+        }
+        for origin in &self.origins {
+            if !self.contains(values, *origin) {
+                continue;
+            }
+            let transfer = TransferKey {
+                origin: *origin,
+                event,
+                kind,
+                argument,
+            };
+            if !Self::ensure_group(&mut state, transfer)
+                || !Self::add_output(
+                    &mut state,
+                    transfer,
+                    OutputWitness {
+                        key: output,
+                        target,
+                    },
+                )
+            {
+                return;
+            }
+            if state.groups[&transfer].inputs.is_empty()
+                && !Self::add_input(
+                    &mut state,
+                    transfer,
+                    InputWitness {
+                        key: None,
+                        input_kind: InputKind::Unattributed,
+                    },
+                )
+            {
+                return;
             }
         }
     }
@@ -530,13 +671,17 @@ impl OriginTrace {
     }
 
     fn report_slice(&self, facts: &BTreeMap<FlowKey, FlowFact>) {
-        let edges = self.edges.borrow();
-        let mut by_output: BTreeMap<(OriginId, FlowKey), Vec<Edge>> = BTreeMap::new();
-        for edge in edges.iter().copied() {
-            by_output
-                .entry((edge.origin, edge.output))
-                .or_default()
-                .push(edge);
+        let state = self.state.borrow();
+        let mut groups: Vec<_> = state.groups.iter().collect();
+        groups.sort_unstable_by_key(|(key, _)| **key);
+        let mut by_output: HashMap<(OriginId, FlowKey), Vec<usize>> = HashMap::new();
+        for (index, (key, group)) in groups.iter().enumerate() {
+            for output in &group.outputs {
+                by_output
+                    .entry((key.origin, output.key))
+                    .or_default()
+                    .push(index);
+            }
         }
         let mut pending = VecDeque::new();
         for target in &self.targets {
@@ -549,63 +694,118 @@ impl OriginTrace {
                 }
             }
         }
-        let mut seen = BTreeSet::new();
-        let mut selected = BTreeSet::new();
+        let mut seen = HashSet::new();
+        let mut selected = HashSet::new();
+        let mut slice_truncated = false;
         while let Some((origin, output)) = pending.pop_front() {
-            if !seen.insert((origin, output)) {
+            if seen.contains(&(origin, output)) {
                 continue;
             }
+            if seen.len() >= MAX_SLICE_NODES {
+                slice_truncated = true;
+                break;
+            }
+            seen.insert((origin, output));
             if let Some(producers) = by_output.get(&(origin, output)) {
-                for edge in producers {
-                    selected.insert(*edge);
-                    if let Some(input) = edge.input {
-                        pending.push_back((origin, input));
+                for index in producers {
+                    selected.insert(*index);
+                    let (_, group) = groups[*index];
+                    for input in &group.inputs {
+                        let Some(input_key) = input.key else {
+                            continue;
+                        };
+                        // Cached dependencies are only may-edges. Continue the
+                        // reverse walk only when the final fact still contains
+                        // this selected origin at the candidate input key.
+                        let contains_origin = matches!(facts.get(&input_key), Some(FlowFact::Values(values)) if self.contains(values, origin));
+                        if contains_origin {
+                            pending.push_back((origin, input_key));
+                        }
                     }
                 }
             }
         }
-        let counts = self.counts.borrow();
         eprintln!(
-            "origin-journal totals targets={} origins={} recorded_edges={} reverse_slice_edges={} reverse_slice_nodes={} omitted_edges={} omitted_nodes={} omitted_event_reads={} edge_semantics=may_dependency_not_causation hard_caps=edges:{MAX_JOURNAL_EDGES},nodes:{MAX_JOURNAL_NODES},reads:{MAX_JOURNAL_READS},output_bytes:{MAX_JOURNAL_OUTPUT_BYTES} candidate_closure_provenance=omitted",
+            "origin-journal totals targets={} origins={} recorded_groups={} recorded_inputs={} recorded_outputs={} recorded_event_reads={} reverse_slice_groups={} reverse_slice_nodes={} truncated_at={:?} slice_truncated={} hard_caps=groups:{MAX_JOURNAL_GROUPS},inputs:{MAX_JOURNAL_INPUTS},outputs:{MAX_JOURNAL_OUTPUTS},event_reads:{MAX_JOURNAL_READS},slice_nodes:{MAX_SLICE_NODES},output_bytes:{MAX_JOURNAL_OUTPUT_BYTES} aggregation=union_over_evaluations_inputs_not_paired_to_outputs=true edge_semantics=may_dependency_not_causation candidate_closure_provenance=omitted",
             self.targets.len(),
             self.origins.len(),
-            edges.len(),
+            state.counts.groups,
+            state.counts.inputs,
+            state.counts.outputs,
+            state.counts.event_reads,
             selected.len(),
             seen.len(),
-            counts.omitted_edges,
-            counts.omitted_nodes,
-            counts.omitted_event_reads,
+            state.counts.truncated_at,
+            slice_truncated,
         );
         let mut output_bytes = 0usize;
-        let mut omitted_output = 0usize;
-        for edge in selected {
-            let line = format!(
-                "origin-journal edge origin={:?} source={:?} output={:?} output_label={:?} event={} producer={} target={:?} argument={:?} input={:?} input_label={:?} input_kind={:?}\n",
-                edge.origin,
-                self.origin_sources.get(&edge.origin),
-                edge.output,
-                self.key_label(edge.output),
-                edge.producer.event,
-                edge.producer.kind,
-                edge.producer.target,
-                edge.producer.argument,
-                edge.input,
-                edge.input.map(|key| self.key_label(key)),
-                edge.input_kind,
-            );
-            if output_bytes + line.len() > MAX_JOURNAL_OUTPUT_BYTES {
-                omitted_output += 1;
+        let mut output_truncated = false;
+        'groups: for (group_id, (key, group)) in groups.iter().enumerate() {
+            if !selected.contains(&group_id) {
                 continue;
             }
-            output_bytes += line.len();
-            eprint!("{line}");
-        }
-        if omitted_output > 0 {
-            eprintln!(
-                "origin-journal output-truncated omitted_lines={omitted_output} byte_cap={MAX_JOURNAL_OUTPUT_BYTES}"
+            let line = format!(
+                "origin-journal group id={group_id} origin={:?} source={:?} event={} kind={} argument={:?} input_count={} output_count={} aggregation=may_inputs_unpaired_to_outputs\n",
+                key.origin,
+                self.origin_sources.get(&key.origin),
+                key.event,
+                key.kind,
+                key.argument,
+                group.inputs.len(),
+                group.outputs.len(),
             );
+            if !emit_limited_line(&line, &mut output_bytes) {
+                output_truncated = true;
+                break;
+            }
+            let mut inputs: Vec<_> = group.inputs.iter().copied().collect();
+            inputs.sort_unstable();
+            for input in inputs {
+                let input_has_origin = input.key.is_some_and(|input_key| {
+                    matches!(facts.get(&input_key), Some(FlowFact::Values(values)) if self.contains(values, key.origin))
+                });
+                let line = format!(
+                    "origin-journal input group={group_id} kind={:?} key={:?} label={:?} final_contains_origin={}\n",
+                    input.input_kind,
+                    input.key,
+                    input.key.map(|input_key| self.key_label(input_key)),
+                    input_has_origin,
+                );
+                if !emit_limited_line(&line, &mut output_bytes) {
+                    output_truncated = true;
+                    break 'groups;
+                }
+            }
+            let mut outputs: Vec<_> = group.outputs.iter().copied().collect();
+            outputs.sort_unstable();
+            for output in outputs {
+                let line = format!(
+                    "origin-journal output group={group_id} target={:?} target_site={:?} key={:?} label={:?}\n",
+                    output.target,
+                    output.target.map(|site| self.site_label(site)),
+                    output.key,
+                    self.key_label(output.key),
+                );
+                if !emit_limited_line(&line, &mut output_bytes) {
+                    output_truncated = true;
+                    break 'groups;
+                }
+            }
         }
+        eprintln!(
+            "origin-journal output status=printed journal_truncated_at={:?} output_truncated={} bytes_written={} byte_cap={MAX_JOURNAL_OUTPUT_BYTES}",
+            state.counts.truncated_at, output_truncated, output_bytes,
+        );
     }
+}
+
+fn emit_limited_line(line: &str, output_bytes: &mut usize) -> bool {
+    if output_bytes.saturating_add(line.len()) > MAX_JOURNAL_OUTPUT_BYTES {
+        return false;
+    }
+    *output_bytes += line.len();
+    eprint!("{line}");
+    true
 }
 
 pub(super) struct TracedContext<'a, C> {
@@ -613,7 +813,7 @@ pub(super) struct TracedContext<'a, C> {
     trace: Option<&'a OriginTrace>,
     event: usize,
     source: &'a FlowEvent,
-    reads: BTreeSet<(OriginId, FlowKey)>,
+    reads: HashSet<(OriginId, FlowKey)>,
     table: &'a OriginTable,
 }
 
@@ -630,7 +830,7 @@ impl<'a, C> TracedContext<'a, C> {
             trace,
             event,
             source,
-            reads: BTreeSet::new(),
+            reads: HashSet::new(),
             table,
         }
     }
@@ -658,7 +858,9 @@ impl<C: crate::inference::FactContext<FlowKey, FlowFact>>
 {
     fn read(&mut self, key: FlowKey) -> Option<&FlowFact> {
         let fact = self.inner.read(key);
-        if let (Some(trace), Some(FlowFact::Values(values))) = (self.trace, fact) {
+        if let (Some(trace), Some(FlowFact::Values(values))) = (self.trace, fact)
+            && trace.is_recording()
+        {
             for origin in trace.selected_origins() {
                 if trace.contains(values, *origin) {
                     self.reads.insert((*origin, key));

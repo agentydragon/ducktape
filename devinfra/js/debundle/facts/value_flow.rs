@@ -3525,6 +3525,17 @@ impl FlowRules {
             let argument = edge.argument;
             if invocation.arguments[argument].is_none() || invocation.dirty.remove(&argument) {
                 let cached = self.cached_expression(&args[argument], context);
+                if let Some(trace) = &self.trace {
+                    trace.record_cached_inputs(origin_trace::CachedInputs {
+                        event: index,
+                        kind: "invoke_argument",
+                        argument: Some(argument),
+                        values: &cached.values,
+                        dependencies: &cached.dependencies,
+                        source: Some(&args[argument]),
+                        table: &self.origin_table,
+                    });
+                }
                 #[cfg(test)]
                 {
                     self.work.borrow_mut().argument_evaluations += 1;
@@ -3563,20 +3574,14 @@ impl FlowRules {
             }
             let parameter = formal.parameter;
             if let Some(trace) = &self.trace {
-                let cached = invocation.arguments[argument]
-                    .as_ref()
-                    .expect("ordered argument evaluated");
-                trace.record_cached_transfer(origin_trace::CachedTransfer {
-                    event: index,
-                    kind: "invoke_argument",
-                    target: Some(edge.function),
-                    argument: Some(argument),
-                    output: FlowKey::Binding(parameter),
+                trace.record_cached_output(
+                    index,
+                    "invoke_argument",
+                    Some(argument),
+                    Some(edge.function),
+                    FlowKey::Binding(parameter),
                     values,
-                    dependencies: &cached.dependencies,
-                    source: Some(&args[argument]),
-                    table: &self.origin_table,
-                });
+                );
             }
             // Keep only the compact Values frontier in the edge index; the
             // generic family fact wrapper is needed just during delivery.
@@ -3733,13 +3738,27 @@ impl FlowRules {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!("dynamic write has state")
             };
-            let values = self.values_of_expr_tracking(right, context, None);
+            let values = if let Some(trace) = &self.trace {
+                let cached = self.cached_expression(right, context);
+                trace.record_cached_inputs(origin_trace::CachedInputs {
+                    event: index,
+                    kind: "property_rhs",
+                    argument: None,
+                    values: &cached.values,
+                    dependencies: &cached.dependencies,
+                    source: Some(right),
+                    table: &self.origin_table,
+                });
+                cached.values
+            } else {
+                self.values_of_expr_tracking(right, context, None)
+            };
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_direct_evaluations += 1;
             }
             if !values.is_empty() {
-                self.trace_property_transfer(index, object, property, &values, right, None);
+                self.trace_property_outputs(index, object, property, &values);
                 self.propose_property(context, object, property, &values);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
                 #[cfg(test)]
@@ -3754,6 +3773,17 @@ impl FlowRules {
         // write. Self-dependent expressions therefore refresh on the next run.
         let right_grew = if write.right.is_none() || std::mem::take(&mut write.right_dirty) {
             let cached = self.cached_expression(right, context);
+            if let Some(trace) = &self.trace {
+                trace.record_cached_inputs(origin_trace::CachedInputs {
+                    event: index,
+                    kind: "property_rhs",
+                    argument: None,
+                    values: &cached.values,
+                    dependencies: &cached.dependencies,
+                    source: Some(right),
+                    table: &self.origin_table,
+                });
+            }
             #[cfg(test)]
             {
                 self.work.borrow_mut().property_rhs_evaluations += 1;
@@ -3788,14 +3818,7 @@ impl FlowRules {
             let PropertyTarget::Fixed(object) = object else {
                 unreachable!()
             };
-            self.trace_property_transfer(
-                index,
-                object,
-                property,
-                current,
-                right,
-                write.right.as_ref().map(|cached| &cached.dependencies),
-            );
+            self.trace_property_outputs(index, object, property, current);
             if right_grew {
                 self.propose_property(context, object, property, current);
                 context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
@@ -3845,14 +3868,7 @@ impl FlowRules {
                 .copied()
                 .chain(new_receivers.iter().copied())
             {
-                self.trace_property_transfer(
-                    index,
-                    receiver,
-                    property,
-                    current,
-                    right,
-                    write.right.as_ref().map(|cached| &cached.dependencies),
-                );
+                self.trace_property_outputs(index, receiver, property, current);
             }
         }
         // Full-current proposals let every subset destination adopt the same
@@ -3921,20 +3937,16 @@ impl FlowRules {
         }
     }
 
-    fn trace_property_transfer(
+    fn trace_property_outputs(
         &self,
         event: usize,
         object: u32,
         property: PropertySlot,
         values: &Values,
-        source: &FlowValueExpr,
-        dependencies: Option<&BTreeSet<FlowKey>>,
     ) {
         let Some(trace) = &self.trace else {
             return;
         };
-        let empty_dependencies = BTreeSet::new();
-        let dependencies = dependencies.unwrap_or(&empty_dependencies);
         for key in [
             FlowKey::Property(object, property),
             FlowKey::Properties(object),
@@ -3944,17 +3956,7 @@ impl FlowRules {
             self.numeric_properties[property.0 as usize]
                 .then_some(FlowKey::NumericProperties(object)),
         ) {
-            trace.record_cached_transfer(origin_trace::CachedTransfer {
-                event,
-                kind: "property_rhs",
-                target: Some(object),
-                argument: None,
-                output: key,
-                values,
-                dependencies,
-                source: Some(source),
-                table: &self.origin_table,
-            });
+            trace.record_cached_output(event, "property_rhs", None, Some(object), key, values);
         }
     }
 
