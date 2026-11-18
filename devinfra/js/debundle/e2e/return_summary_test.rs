@@ -1,6 +1,6 @@
 //! A call's return relationship must not import another call's callback.
 
-use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
+use analysis::{reports::schema::EdgeRoleReport, DependencyGraphReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::source_unit_for_binding;
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
@@ -164,6 +164,38 @@ fn assert_unsafe_return_summary_cut(
     assert_same_invocation_trees(&fresh, &saved);
 }
 
+fn assert_return_summary_refused(source: &str, members: &[&'static str], original_output: &str) {
+    let (stage, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/selected",
+                    &members.iter().copied().map(Member::new).collect::<Vec<_>>(),
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(
+        &stage.root().join("snapshot/static/app.js"),
+        original_output,
+        "",
+    );
+    let fresh = stage.run(&[]);
+    let saved = stage.run(&["--analysis", path(&stage.artifact)]);
+    for invocation in [&fresh, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "dynamic parameter mutation must keep the return-summary cut rejected:\n{}",
+            invocation.result.stderr
+        );
+    }
+    assert_same_invocation_trees(&fresh, &saved);
+}
+
 #[test]
 fn parameter_rebinding_does_not_use_a_first_argument_return_summary() {
     assert_unsafe_return_summary_cut(
@@ -247,12 +279,12 @@ console.log(observed, later);
 }
 
 #[test]
-fn direct_eval_parameter_write_does_not_use_a_first_argument_return_summary() {
+fn var_initializer_does_not_preserve_the_parameter_return() {
     assert_unsafe_return_summary_cut(
         r#"
 let later = 0;
 function relay(value) {
-  eval("value = () => later");
+  var value = () => later;
   return value;
 }
 const selected = relay(() => 1);
@@ -268,25 +300,46 @@ console.log(observed, later);
 }
 
 #[test]
-fn forwarding_cycle_does_not_use_a_first_argument_return_summary() {
-    assert_unsafe_return_summary_cut(
+fn direct_eval_parameter_write_does_not_use_a_first_argument_return_summary() {
+    assert_return_summary_refused(
         r#"
 let later = 0;
-let depth = 0;
 function relay(value) {
-  if (depth === 0) {
-    depth += 1;
-    return forward(value);
-  }
-  return () => later;
+  eval("value = () => later");
+  return value;
 }
-function forward(value) { return relay(value); }
 const selected = relay(() => 1);
 const observed = selected();
 later = 42;
 console.log(observed, later);
 "#,
-        &["relay", "forward", "selected", "observed", "depth"],
+        &["relay", "selected", "observed"],
+        "0 42\n",
+    );
+}
+
+#[test]
+fn forwarding_cycle_does_not_use_a_first_argument_return_summary() {
+    assert_unsafe_return_summary_cut(
+        r#"
+let later = 0;
+let chooseCycle = false;
+function relay(value) { return chooseCycle ? forward(value) : replacement(value); }
+function forward(value) { return relay(value); }
+function replacement(value) { return () => later; }
+const selected = relay(() => 1);
+const observed = selected();
+later = 42;
+console.log(observed, later);
+"#,
+        &[
+            "relay",
+            "forward",
+            "replacement",
+            "selected",
+            "observed",
+            "chooseCycle",
+        ],
         &[],
         "0 42\n",
         "42 42\n",
@@ -298,16 +351,26 @@ fn reassigned_helper_binding_does_not_keep_a_stale_argument_summary() {
     assert_unsafe_return_summary_cut(
         r#"
 let later = 0;
-function relay(value) { return value; }
+let chooseReplacement = false;
+function stable(value) { return value; }
+function relay(value) { return chooseReplacement ? invoke(value) : stable(value); }
 function replacement(value) { return () => later; }
-let invoke = relay;
+let invoke = stable;
 invoke = replacement;
-const selected = invoke(() => 1);
+const selected = relay(() => later);
 const observed = selected();
 later = 42;
 console.log(observed, later);
 "#,
-        &["relay", "replacement", "invoke", "selected", "observed"],
+        &[
+            "relay",
+            "stable",
+            "replacement",
+            "invoke",
+            "selected",
+            "observed",
+            "chooseReplacement",
+        ],
         &["invoke = replacement;"],
         "0 42\n",
         "42 42\n",
@@ -324,8 +387,7 @@ function afterEffect(value) {
   return value;
 }
 function relay(value) {
-  if (value) return afterEffect(value);
-  return afterEffect(value);
+  return value ? afterEffect(value) : afterEffect(value);
 }
 function selectedCallback() { return earlier; }
 const selected = relay(selectedCallback);
