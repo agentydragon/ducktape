@@ -56,14 +56,13 @@ const (
 )
 
 type Status struct {
-	Owner        string
-	Phase        Phase
-	Started      bool
-	PID          int
-	StartError   string
-	StartRefusal string
-	ExitError    string
-	StopError    string
+	Owner      string
+	Phase      Phase
+	Started    bool
+	PID        int
+	StartError string
+	ExitError  string
+	StopError  string
 	// Systemd is the latest observation of this attempt's VM unit. It is absent
 	// for Pod and container-backed processes and is not process-domain proof.
 	Systemd SystemdObservation
@@ -132,22 +131,6 @@ func (state SystemdStartState) String() string {
 		return "invalid"
 	}
 }
-
-// LaunchRefusal distinguishes a launch that was rejected by policy or
-// capacity from a launch that failed after it was accepted.
-type LaunchRefusal struct {
-	Reason string
-	Cause  error
-}
-
-func (e *LaunchRefusal) Error() string {
-	if e.Cause != nil {
-		return e.Cause.Error()
-	}
-	return e.Reason
-}
-
-func (e *LaunchRefusal) Unwrap() error { return e.Cause }
 
 func (DesiredState) resourceType() resource.Type { return DesiredStateType }
 func (value DesiredState) DeepCopy() DesiredState {
