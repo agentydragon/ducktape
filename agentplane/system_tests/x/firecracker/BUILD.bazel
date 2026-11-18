@@ -1,0 +1,18 @@
+# gazelle:ignore
+
+load(":defs.bzl", "firecracker_bench")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+firecracker_bench(
+    name = "test_firecracker_control",
+    recycle = False,
+)
+
+firecracker_bench(
+    name = "test_firecracker_recycled",
+    recycle = True,
+)

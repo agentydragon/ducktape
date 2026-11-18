@@ -32,11 +32,16 @@ while a fresh kubelet waits for its image-GC minimum age. See the
 During imports, using half of a group's starting filesystem headroom triggers an intermediate
 sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
-Each k3s system-test target explicitly retains live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM targets
+Pod, Dispatcher, MCP, VM and real-model system-test targets explicitly retain live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM targets
 also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
 normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
 The existing manual/live tags still determine which suites run in CI, and real-model tests require
 `OPENAI_API_KEY`.
+
+The required Firecracker suite starts fresh. Its [manual lifetime benchmark](../x/firecracker/README.md)
+can opt into Docker retention with `AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT=1` and the executor
+permission below. It keeps K3s and PKI on disk, while removing its per-action KVM device-plugin
+namespace before certifying the baseline clean.
 
 Retention requires `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1`, injected by BuildBuddy's
 `test.env-overrides` exec property, rather than the test's ordinary environment. Without that

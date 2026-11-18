@@ -265,7 +265,7 @@ def _baseline_evidence(
         "workspace_storage_class_uid": (
             workspace_storage.storage_class_uid(k3s) if workspace_storage is not None else None
         ),
-        "layers_in_memory": fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT,
+        "layers_in_memory": fixture.runtime is rendered_fixture.SandboxRuntime.POD,
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
 
@@ -387,8 +387,12 @@ def running_stack(
         "AGENTPLANE_K3S_REQUIRE_KVM"
     ) != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
-    if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER) and persist_infrastructure:
-        raise ValueError("the Firecracker fixture does not retain executor snapshots")
+    if (
+        fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
+        and persist_infrastructure
+        and os.environ.get("AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT") != "1"
+    ):
+        raise ValueError("Firecracker persistence requires the manual experiment opt-in")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
     if uses_guest_runtime != (runtime_factory is not None):
