@@ -458,25 +458,30 @@ func TestWatchInvocationContinuesStatusAfterPersistentLogIndexLimit(t *testing.T
 }
 
 func TestWatchInvocationFailFastTargetOverridesObservedCompletion(t *testing.T) {
-	const failedTest = "//pkg:failed_test"
-	client := newChunkedInvocationWatchTestClient(
-		t,
-		invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
-		false,
-		failedTest,
-		[]invocationWatchTestChunk{{id: "chunk-1", buffer: "first chunk\n"}},
-		nil,
-	)
-	resultPath := filepath.Join(t.TempDir(), "result.json")
-	var logs bytes.Buffer
+	for name, nextChunkID := range map[string]string{"final log chunk": "", "more log chunks": "chunk-2"} {
+		t.Run(name, func(t *testing.T) {
+			const failedTest = "//pkg:failed_test"
+			client := newChunkedInvocationWatchTestClient(
+				t,
+				invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+				false,
+				failedTest,
+				// Leave chunk-2 unserved so fetching it before reporting failure fails the test.
+				[]invocationWatchTestChunk{{id: "chunk-1", nextChunkID: nextChunkID, buffer: "first chunk\n"}},
+				nil,
+			)
+			resultPath := filepath.Join(t.TempDir(), "result.json")
+			var logs bytes.Buffer
 
-	err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, true, resultPath)
-	if err == nil || !strings.Contains(err.Error(), failedTest) {
-		t.Fatalf("watchInvocation error = %v, want failing target", err)
-	}
-	result := readInvocationWatchResult(t, resultPath)
-	if result.State != "failure" || result.Reason != "test_failure" || !result.InvocationComplete || result.FailedTest != failedTest {
-		t.Errorf("fail-fast result = %+v", result)
+			err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, true, resultPath)
+			if err == nil || !strings.Contains(err.Error(), failedTest) {
+				t.Fatalf("watchInvocation error = %v, want failing target", err)
+			}
+			result := readInvocationWatchResult(t, resultPath)
+			if result.State != "failure" || result.Reason != "test_failure" || !result.InvocationComplete || result.FailedTest != failedTest {
+				t.Errorf("fail-fast result = %+v", result)
+			}
+		})
 	}
 }
 
