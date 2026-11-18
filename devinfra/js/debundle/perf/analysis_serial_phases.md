@@ -1689,3 +1689,42 @@ passes the analysis library's Clippy check, analysis tests, and the unresolved
 callee, foreign-call summary, candidate-object escape, program-value flow and
 ordered-own-data-field CLI tests. The fresh private passing-subset completion
 target remains separate.
+
+### Transient expression dependency collection: public Excalidraw check
+
+Expression reads now deduplicate dependency keys in a transient hash set and
+freeze the result into the existing ordered dependency set once per expression.
+Every underlying fact read still occurs; retained watchers, dirty-key delivery
+and value/proof semantics are unchanged. The parsed-source oracle checks
+duplicate reads and distinct keys against the solved ordered facts.
+
+The [optimized build](https://app.buildbuddy.io/invocation/03c1d737-d8a2-4fa1-8f7e-82d2d03b1f8d)
+is commit `8c72625720d0ec21c816e6875bfa004018e8f689`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Analyzer SHA-256:
+`9905775a078cec9ef6481d3f5dc9a4921bc52fe169688627b2dfe44715bad1cc`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order, using identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. GNU time measures fresh projection, analysis
+and application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.37 → 13.13 s                   | 20.32 → 19.90 s                  | 0.9843                   | 0.9565–0.9940      | 713,300 → 808,320                     |
+| On      | 13.52 → 13.38 s                   | 20.23 → 20.33 s                  | 0.9907                   | 0.9852–1.0214      | 810,036 → 809,232                     |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+RSS varies across these small runs; they do not establish a general runtime
+or memory reduction. Raw commands, GNU time outputs, OTLP JSONL and manifests
+are in `excalidraw-expression-dependencies-paired/` under the task scratch root;
+binary identities are in `expression-dependencies-tools/identity.json` and
+`source-join-tools/identity.json`.
+
+[Focused tests](https://app.buildbuddy.io/invocation/d3502785-3844-48c2-a479-7300485482d3)
+pass `:analysis_test` and the real `program_value_flow_test` CLI suite.
+[Library validation](https://app.buildbuddy.io/invocation/e0953d2a-85c8-42b6-8fac-0158d02da970)
+passes `:analysis`, including Clippy. Fresh large-consumer passing-subset
+completion remains a separate requirement.
