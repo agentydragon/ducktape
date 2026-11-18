@@ -6,7 +6,7 @@ This proposed splitting the manual by writability — roughly 210 lines of autho
 ducktape, roughly 370 lines of craft moving to `haku-state`. That is not what was done. The
 whole manual moved: goals, persona, voice, hard boundaries, run procedure and credential
 discovery all live in haku-state's root cards now, base-sync and its pin are gone, and
-<../base/README.md> records the outcome.
+<haku/README.md> § _Where things live_ records the outcome.
 
 Two things are worth carrying forward from it, which is why it is kept rather than deleted.
 
@@ -27,8 +27,8 @@ The original text follows unchanged.
 
 ---
 
-Today Haku's operating manual is <../base/instructions.md> in ducktape (52 KB), read from a
-live ducktape checkout at run time, with the run procedure in <../run.md> and per-environment
+Today Haku's operating manual is `haku/base/instructions.md` in ducktape (52 KB), read from a
+live ducktape checkout at run time, with the run procedure in `haku/run.md` and per-environment
 entrypoints under <../runtime/>. Haku's `haku-state` repo holds its method — `procedures/`,
 `ui/`, `memory/`, `log/`. The question is whether the manual should move to `haku-state` too.
 
@@ -47,7 +47,7 @@ credential layer, not by convention: Haku has a Forgejo token for `haku-state` a
 write credential. Move the manual as-is and Haku can rewrite its own _Hard rules_, because it
 pushes `haku-state` on every run.
 
-**That costs less than it sounds, and more than nothing.** <../base/README.md> already argues
+**That costs less than it sounds, and more than nothing.** `haku/base/README.md` already argues
 the honest version: in-agent prose is not the boundary, the pod, RBAC and mitmproxy egress are.
 Rewriting _Hard rules_ grants Haku no credential and no RBAC — it changes what Haku believes it
 may do, and the perimeter still refuses. What is genuinely lost is **human review over intent**,
