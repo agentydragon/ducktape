@@ -574,7 +574,6 @@ egress[-_ ]sidecar|EgressSidecar
 | `agentplane/plans/kubernetes_decoupling.md`                                                                   | G, C, R |
 | `agentplane/plans/multiagent_communication.md`                                                                | G, C    |
 | `agentplane/plans/native_harness_interfaces.md`                                                               | C       |
-| `agentplane/plans/runtime_proxy_callers.md`                                                                   | C       |
 | `agentplane/plans/sampling_outside_sandboxes.md`                                                              | G       |
 | `agentplane/plans/session_environment_model.md`                                                               | C       |
 | `agentplane/plans/session_runtime_model.md`                                                                   | G, C    |

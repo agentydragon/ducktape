@@ -66,8 +66,6 @@ improvements alongside. Component TODOs and research plans do not set a competin
   `sandbox-controller` Deployments, Services and images to `sessions` and `environments` (in flight)
 - [Notification Service split](notification_service_split.md) — the seam considered for
   `NOTIFICATION_SERVICE_SPLIT`; not released
-- [Runtime proxy callers](runtime_proxy_callers.md) — source inventory, proposed privileged backend
-  boundary, caller API migrations and the subscription materialization question
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
 - [Storage representations and compression](storage_representations.md) — measured content copies
