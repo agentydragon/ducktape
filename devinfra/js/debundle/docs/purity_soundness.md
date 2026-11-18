@@ -1405,33 +1405,14 @@ and admits only when test and arms have covered access. It proves no exact
 truthiness or runtime equality. Effectful/coercing children and unavailable
 bindings cannot acquire an allocation-only certificate through an outer
 operator. General conditionals remain opaque and keep conservative branch reach.
-For a namespace-member contract, the author must audit the provider and every
-caller/runtime path supplying values used by admitted callbacks, establishing
-that listed factory members retain their identities and behavior through the
-analyzed chunk's synchronous initialization. In particular, provider or other
-namespace members and callback/ref/hook inputs must not expose an alias that
-can replace a listed factory member. Direct static identifier-property
-namespace call results are treated as independent only under this explicit
-author assertion. The checker propagates explicit namespace provenance through
-assignments, local aliases, property values, returns, and call arguments. An
-unrelated call or constructor result with no such path is not treated as a
-namespace alias solely because its runtime value is unknown; the author audit
-asserts that values used by admitted callbacks cannot alias or replace listed
-members. Unknown syntax remains conservative when it reaches a publication or
-call-argument sink; unsupported destructuring results stay possible namespace
-values through later local aliases. Recognized local class values and
-allocations are checked against their retained aggregate static or instance
-fields. A member projection checks the whole receiver, which may conservatively
-taint an unrelated sibling property. Constructors, inheritance, decorators,
-accessors, and unsupported class surfaces remain opaque; method bodies keep
-their existing return and effect checks. A value from an unknown call or
-constructor used as an actual static or dynamic write receiver remains a
-possible namespace alias, including through local aliases and member
-projections, and disables the contract. For call-argument checks, the checker follows namespace values in
-the supplied argument expressions and excludes the callee expression, which
-is not passed as an argument. The checker does not prove that arbitrary
-callback parameters or unrelated call results are disjoint from the
-namespace; that non-aliasing guarantee is part of the author audit.
+The author audit of a namespace-member contract and the checker's namespace
+provenance, write-receiver and call-argument rules are in
+[SPEC § Namespace and record calls without synchronous reentry](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry).
+Unsupported destructuring results stay possible namespace values through later
+local aliases. Recognized local class values and allocations are checked
+against their retained aggregate static or instance fields. A member projection
+checks the whole receiver, which may conservatively taint an unrelated sibling
+property. Method bodies keep their existing return and effect checks.
 Within a literal traversed inside an admitted inline callback, a direct static
 namespace member used as a call callee is analyzed as a callee, not as a
 captured namespace value. Its arguments and effects remain analyzed; computed
