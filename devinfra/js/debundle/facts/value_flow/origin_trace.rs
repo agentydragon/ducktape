@@ -450,17 +450,17 @@ impl OriginTrace {
                 ) {
                     return;
                 }
-            } else if !matched {
-                if !Self::add_input(
+            } else if !matched
+                && !Self::add_input(
                     &mut state,
                     transfer,
                     InputWitness {
                         key: None,
                         input_kind: InputKind::Unattributed,
                     },
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
             }
         }
     }
