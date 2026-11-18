@@ -126,13 +126,13 @@ let
         caio = pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/caio") { };
         aiofile = pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/aiofile") { };
         # Reuse nixpkgs' 0.4.5 recipe and source. Stable uv-build is 0.10.0 while
-        # the package metadata requires >=0.11.4; this build and its checks pass
-        # with 0.10.0, so relax only that metadata bound.
+        # the package metadata requires >=0.11.4; the recipe's own postPatch already
+        # drops that bound, and this build and its checks pass with 0.10.0.
         py-key-value-aio =
           (pyfinal.callPackage (pkgsUnstable.path + "/pkgs/development/python-modules/py-key-value-aio") {
             inherit (pyfinal) uv-build;
           }).overridePythonAttrs
-            (old: {
+            {
               dependencies = with pyfinal; [
                 beartype
                 typing-extensions
@@ -142,11 +142,7 @@ let
                 cachetools
                 pathvalidate
               ];
-              postPatch = (old.postPatch or "") + ''
-                substituteInPlace pyproject.toml \
-                  --replace-fail '"uv_build>=0.11.4,<0.12"' '"uv_build>=0.10.0"'
-              '';
-            });
+            };
         uncalled-for = pkgs.callPackage ./uncalled-for.nix {
           python314Packages = pyfinal;
         };
