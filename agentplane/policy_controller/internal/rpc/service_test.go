@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 	"slices"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -147,16 +147,11 @@ func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	policypb.RegisterPolicyServiceServer(server, service)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 
 	dial := func(t *testing.T, tlsConfig *tls.Config) policypb.PolicyServiceClient {
 		t.Helper()
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 		if err != nil {
 			t.Fatal(err)
 		}

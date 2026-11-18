@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -138,19 +138,11 @@ func newActionFake(t *testing.T) (*actionFake, string) {
 	for _, variable := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
 		t.Setenv(variable, "")
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	fake := &actionFake{}
 	action_servicepb.RegisterActionServiceServer(server, fake)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return fake, "http://" + listener.Addr().String()
+	address := grpcserver.Serve(t, server)
+	return fake, "http://" + address
 }
 
 func (s *actionFake) record(ctx context.Context, method string) {

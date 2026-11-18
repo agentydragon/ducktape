@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -245,15 +245,10 @@ func TestInboxCommandsAddressTheSession(t *testing.T) {
 // serveNotifications runs the Notification gRPC servicer.
 func serveNotifications(t *testing.T, servicer *notificationsServer) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	notificationspb.RegisterNotificationsServer(server, servicer)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return "http://" + listener.Addr().String()
+	address := grpcserver.Serve(t, server)
+	return "http://" + address
 }
 
 func pullRequestSubscription(version int64, cancelled bool) *notificationspb.Subscription {

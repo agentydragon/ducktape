@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -59,18 +59,10 @@ func (f *environmentFixture) ResumeEnvironment(_ context.Context, request *envir
 
 func environmentEndpoint(t *testing.T, fixture *environmentFixture) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	environmentpb.RegisterEnvironmentServiceServer(server, fixture)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return "http://" + listener.Addr().String()
+	address := grpcserver.Serve(t, server)
+	return "http://" + address
 }
 
 func environmentVars(endpoint string) map[string]string {

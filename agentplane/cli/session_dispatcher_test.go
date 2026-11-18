@@ -2,13 +2,13 @@ package cli
 
 import (
 	"context"
-	"net"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -24,23 +24,15 @@ func TestCreateSessionRequiresCanonicalUUIDBeforeConnecting(t *testing.T) {
 }
 
 func TestSessionListOmitsAuthorizationMetadataWithoutBearerConfiguration(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	fixture := &sessionListFixture{
 		requests:       make(chan *dispatcherpb.ListSessionsRequest, 1),
 		authorizations: make(chan []string, 2),
 	}
 	dispatcherpb.RegisterSessionDispatcherServer(server, fixture)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	address := grpcserver.Serve(t, server)
 	env := map[string]string{
-		"AGENTPLANE_SESSIONS_URL": "http://" + listener.Addr().String(),
+		"AGENTPLANE_SESSIONS_URL": "http://" + address,
 	}
 	for _, asJSON := range []bool{true, false} {
 		args := []string{"session-dispatcher", "list", "--limit", "1", "--after", "previous-page"}

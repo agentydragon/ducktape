@@ -2,11 +2,11 @@ package cli
 
 import (
 	"context"
-	"net"
 	"strings"
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -35,16 +35,11 @@ func (f *historyFixture) ReadSessionEvents(ctx context.Context, request *history
 }
 
 func TestHistoryCommandsCallNativeRPCs(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	fixture := &historyFixture{requests: make(chan *historypb.ReadSessionEventsRequest, 1), authorization: make(chan []string, 1)}
 	historypb.RegisterHistoryServiceServer(server, fixture)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	env := map[string]string{"AGENTPLANE_HISTORY_URL": "http://" + listener.Addr().String()}
+	address := grpcserver.Serve(t, server)
+	env := map[string]string{"AGENTPLANE_HISTORY_URL": "http://" + address}
 	code, stdout, stderr := invoke(env, "--json", "history", "get-session-summary", "owned")
 	summary := &historypb.SessionSummary{}
 	if code != 0 || stderr != "" || protojson.Unmarshal([]byte(stdout), summary) != nil || summary.GetSessionId() != "owned" {

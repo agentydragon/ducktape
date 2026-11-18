@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -36,16 +36,11 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
 			methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.AnySubject(svids)}
 			server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 			handler := &svidHealth{expected: auth.IdentityAdmission{Caller: workload.Subject}}
 			healthpb.RegisterHealthServer(server, handler)
-			go func() { _ = server.Serve(listener) }()
-			t.Cleanup(server.Stop)
+			address := grpcserver.Serve(t, server)
 			runtimeURI := leaf.URIs[0].String()
 			valid := ca.Issue(t, runtimeURI)
 			clientTLS, err := valid.ClientTLSConfig(peertls.HistoryIngressURI)
@@ -68,7 +63,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			// Only the certificate presented to the server changes. Destination
 			// verification stays enabled with the transport's pinned service URI.
 			clientTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &pair, nil }
-			connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+			connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,10 +132,6 @@ func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	methods := auth.Methods{
 		healthpb.Health_Check_FullMethodName: shared,
 		healthpb.Health_List_FullMethodName:  serviceOnly,
@@ -148,8 +139,7 @@ func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	admissions := make(chan auth.Admission, 1)
 	healthpb.RegisterHealthServer(server, admissionHealth{admissions: admissions})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	workloadAdmission := auth.IdentityAdmission{Caller: fixture.Subject}
 	serviceAdmission := auth.ServiceAdmission{Caller: auth.ServicePrincipal{SPIFFEID: peertls.CentralSamplerURI}}
 	for _, tc := range []struct {
@@ -177,7 +167,7 @@ func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+			connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
 			if err != nil {
 				t.Fatal(err)
 			}
