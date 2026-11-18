@@ -41,8 +41,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail, ensure};
 use js_ast::SourceLineIndex;
-use swc_atoms::Atom;
-use swc_common::{BytePos, Spanned, SyntaxContext};
+use swc_common::{BytePos, Spanned};
 use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
 use crate::analysis_inputs::{
@@ -236,7 +235,7 @@ struct ProgramFlowShadowSelection {
 #[serde(deny_unknown_fields)]
 struct ProgramFlowShadowBinding {
     name: String,
-    context: u32,
+    span: [u32; 2],
 }
 
 #[derive(Debug, Serialize)]
@@ -253,6 +252,7 @@ struct ProgramFlowShadowValueSummary {
 struct ProgramFlowShadowBindingObservation<'a> {
     #[serde(flatten)]
     binding: &'a ProgramFlowShadowBinding,
+    context: u32,
     full_program: ProgramFlowShadowValueSummary,
     module_only: ProgramFlowShadowValueSummary,
 }
@@ -296,7 +296,7 @@ fn load_program_flow_shadow_selection() -> Result<Option<(PathBuf, ProgramFlowSh
     let binding_ids: BTreeSet<_> = selection
         .bindings
         .iter()
-        .map(|binding| (binding.name.as_str(), binding.context))
+        .map(|binding| (binding.name.as_str(), binding.span))
         .collect();
     let function_offsets: BTreeSet<_> = selection.function_offsets.iter().copied().collect();
     ensure!(
@@ -335,6 +335,14 @@ fn observe_program_flow_shadow(
     let full = full_flows
         .get(module)
         .with_context(|| format!("selected module {module} has no full program flow"))?;
+    let references: Vec<_> = selection
+        .bindings
+        .iter()
+        .map(|binding| (binding.name.clone(), binding.span))
+        .collect();
+    let resolved = shadow_module
+        .diagnostic_binding_references(&references)
+        .map_err(anyhow::Error::msg)?;
     let module_flows =
         crate::facts::program_value_flows(bindings, [shadow_module], &Diagnostics::default());
     let module_only = module_flows
@@ -350,28 +358,22 @@ fn observe_program_flow_shadow(
         );
     }
     let reference = &selection.bindings[0];
-    let reference_id = (
-        Atom::from(reference.name.as_str()),
-        SyntaxContext::from_u32(reference.context),
-    );
+    let reference_id = &resolved[0];
     ensure!(
-        full.is_declared(&reference_id) && module_only.is_declared(&reference_id),
+        full.is_declared(reference_id) && module_only.is_declared(reference_id),
         "reference binding {:?} is absent from module {module}",
         reference
     );
     let rows = selection
         .bindings
         .iter()
-        .map(|binding| {
-            let id = (
-                Atom::from(binding.name.as_str()),
-                SyntaxContext::from_u32(binding.context),
-            );
+        .zip(&resolved)
+        .map(|(binding, id)| {
             let full_summary = full
-                .diagnostic_binding_summary(&id, &selected_functions, &reference_id)
+                .diagnostic_binding_summary(id, &selected_functions, reference_id)
                 .with_context(|| format!("binding {binding:?} is absent from full program flow"))?;
             let module_summary = module_only
-                .diagnostic_binding_summary(&id, &selected_functions, &reference_id)
+                .diagnostic_binding_summary(id, &selected_functions, reference_id)
                 .with_context(|| format!("binding {binding:?} is absent from module-only flow"))?;
             let summary =
                 |(known_alternative_count, top, selected_function_intersections, same)| {
@@ -385,6 +387,7 @@ fn observe_program_flow_shadow(
                 };
             Ok(ProgramFlowShadowBindingObservation {
                 binding,
+                context: id.1.as_u32(),
                 full_program: summary(full_summary),
                 module_only: summary(module_summary),
             })
@@ -1801,11 +1804,10 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
     let empty_sets = BTreeMap::new();
-    let mut structural_flows = crate::facts::program_value_flows(
-        bindings,
-        flow_views
-            .iter()
-            .map(|(module, views)| crate::facts::ProgramFlowModule {
+    let flow_modules = flow_views
+        .iter()
+        .map(|(module, views)| {
+            let prepared = crate::facts::ProgramFlowModule {
                 module,
                 fresh_factory_imports: &fresh_factory_imports[*module],
                 fresh_factory_members: &fresh_factory_members[*module],
@@ -1816,9 +1818,37 @@ pub fn resolve_imported_callable_summaries(
                 inferred_sets: inferred_set_constructions
                     .get(*module)
                     .unwrap_or(&empty_sets),
-            }),
-        diagnostics,
-    );
+            };
+            if let Some((_, selection)) = &program_flow_shadow
+                && selection.module == prepared.module
+            {
+                let references: Vec<_> = selection
+                    .bindings
+                    .iter()
+                    .map(|binding| (binding.name.clone(), binding.span))
+                    .collect();
+                prepared
+                    .diagnostic_binding_references(&references)
+                    .map_err(anyhow::Error::msg)?;
+                eprintln!(
+                    "program-flow-shadow resolved {} source references before solving",
+                    references.len()
+                );
+            }
+            Ok(prepared)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if let Some((_, selection)) = &program_flow_shadow {
+        ensure!(
+            flow_modules
+                .iter()
+                .any(|module| module.module == selection.module),
+            "unknown shadow module {}",
+            selection.module
+        );
+    }
+    let mut structural_flows =
+        crate::facts::program_value_flows(bindings, flow_modules, diagnostics);
     diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
     if let Some((request_path, selection)) = &program_flow_shadow {
         let flow_call = PROGRAM_FLOW_SHADOW_CALL.fetch_add(1, Ordering::Relaxed);
