@@ -11,8 +11,3 @@ class SyncStats:
     added: int
     updated: int
     deleted: int
-
-    @property
-    def summary_text(self) -> str:
-        """Format as human-readable summary."""
-        return f"{self.total} total (+{self.added}, ~{self.updated}, -{self.deleted})"

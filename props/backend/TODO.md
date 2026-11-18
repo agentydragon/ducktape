@@ -20,10 +20,6 @@
 - [ ] **Stats display improvements**
   - Move total available count to subheader: "Valid Partial (N=171)" instead of "5/171" per row
 
-- [ ] **Migrate `props stats` to frontend**
-  - Tables: by-example, by-occurrence views
-  - Include props stats subcommands: `example`, `occurrence`
-
 - [ ] **Live rollout display**
   - Grid of validation jobs with progress bars
   - Timeline of runs (critic->grader pairs)

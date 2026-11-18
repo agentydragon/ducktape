@@ -6,7 +6,6 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.db.models import TpOccurrenceCredit
@@ -16,7 +15,6 @@ class RecallByExampleRow(BaseModel):
     example: ExampleSpec
     critic_image_digest: str
     recall: float
-    snapshot_slug: SnapshotSlug  # For backwards compatibility with existing code
 
 
 def query_recall_by_example(
@@ -84,10 +82,7 @@ def query_recall_by_example(
 
         rows.append(
             RecallByExampleRow(
-                example=example_spec,
-                critic_image_digest=r.critic_image_digest,
-                recall=r.avg_credit_per_occurrence,
-                snapshot_slug=r.snapshot_slug,
+                example=example_spec, critic_image_digest=r.critic_image_digest, recall=r.avg_credit_per_occurrence
             )
         )
     return rows

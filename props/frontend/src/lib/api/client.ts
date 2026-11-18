@@ -272,7 +272,7 @@ export async function fetchModelMetadata() {
 
 // --- Stats: occurrence stats, distributions, coverage ---
 
-export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split, signal?: AbortSignal) {
+export async function fetchOccurrenceStats(snapshotSlug?: string, signal?: AbortSignal) {
   const result = await api.GET("/api/stats/occurrences", {
     params: {
       query: {
@@ -280,7 +280,6 @@ export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split,
         sort_by: "mean_credit",
         sort_dir: "asc",
         ...(snapshotSlug ? { snapshot_slug: snapshotSlug } : {}),
-        ...(split ? { split } : {}),
       },
     },
     signal,
@@ -288,9 +287,7 @@ export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split,
   return unwrapApiResult(result, "Failed to fetch occurrence stats");
 }
 
-export async function fetchCoverage(split: Split, limitDefinitions?: number) {
-  const result = await api.GET("/api/stats/coverage", {
-    params: { query: { split, ...(limitDefinitions ? { limit_definitions: limitDefinitions } : {}) } },
-  });
+export async function fetchCoverage(split: Split) {
+  const result = await api.GET("/api/stats/coverage", { params: { query: { split } } });
   return unwrapApiResult(result, "Failed to fetch coverage");
 }

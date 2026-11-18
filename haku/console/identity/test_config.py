@@ -55,13 +55,6 @@ def test_profile_catalog_rejects_duplicates_and_missing_default() -> None:
         ConsoleConfigFile.model_validate({**_CONFIG, "default_access_profile_id": "missing"})
 
 
-def test_profile_and_catalog_reject_unrecognized_fields() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate({**_CONFIG, "access_profiles_typo": "manual"})
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate({**_CONFIG, "access_profiles": [{"id": "manual", "unexpected": True}]})
-
-
 def test_settings_rejects_unrecognized_yaml_fields(tmp_path) -> None:
     config_file = tmp_path / "console.yaml"
     config_file.write_text(

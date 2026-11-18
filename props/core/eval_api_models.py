@@ -2,7 +2,7 @@
 
 These models are used by both:
 - Backend routes (props/backend/routes/runs.py — critic run endpoints)
-- Container agents (props/agents/critic_dev/ — eval client)
+- Container agents (props/agents/critic_dev/loop.py — the critic-run tools)
 
 This ensures consistent serialization/deserialization between backend and containers.
 """
@@ -40,8 +40,8 @@ class RunCriticRequest(OpenAIStrictModeBaseModel):
 class StartCriticResponse(BaseModel):
     """Response from starting a critic agent (non-blocking).
 
-    The critic runs asynchronously. Poll /api/runs/{critic_run_id} or use the
-    WebSocket feed for status updates, then call wait_until_graded once it exits.
+    The critic runs asynchronously. Poll /api/runs/{critic_run_id} for status, then
+    call wait_until_graded once it exits.
     """
 
     critic_run_id: UUID = Field(description="agent_run_id of the critic agent run")

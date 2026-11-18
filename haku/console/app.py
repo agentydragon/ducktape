@@ -176,10 +176,6 @@ def create_app(settings: Settings) -> FastAPI:
     app = build_app(lifespan=_lifespan)
     # The routers and guards read settings off app.state (see haku.console.deps).
     app.state.settings = settings
-    # Expose the shared database resources to internal dependencies and diagnostics; every store
-    # above uses these same objects rather than creating a second pool.
-    app.state.db_engine = db_engine
-    app.state.db_sessions = db_sessions
     app.state.agent_management_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows

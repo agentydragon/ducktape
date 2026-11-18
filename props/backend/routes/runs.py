@@ -847,8 +847,8 @@ async def start_critic(
     - VALID split: restrictions depend on target_metric mode
     - TEST split: completely off-limits
 
-    The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} or use the
-    WebSocket feed for status, then use wait_until_graded() once the run exits.
+    The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} for status, then
+    use wait_until_graded() once the run exits.
     """
     parent_run_id = (
         auth.role.agent_run_id if isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole) else None
