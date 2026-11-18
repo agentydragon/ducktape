@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -79,22 +79,6 @@ func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlo
 		},
 	}
 	return source, store, entries
-}
-
-func startGRPCServer(t *testing.T, register func(*grpc.Server)) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return listener.Addr().String()
 }
 
 func newRPC(t *testing.T, target string) ingresspb.SessionJournalIngressClient {
@@ -208,7 +192,7 @@ func TestDeliverReconnectsWithFreshAnnouncement(t *testing.T) {
 		authorized: make(chan string, 2),
 		result:     make(chan error, 2),
 	}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 8*time.Second)
@@ -321,7 +305,7 @@ func (s *beyondSentIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushF
 func TestIngressRejectsAcknowledgementBeyondSentCursor(t *testing.T) {
 	source, store, _ := newTestSource(t, inFlightLimit+6)
 	service := &beyondSentIngress{result: make(chan error, 1)}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 8*time.Second)
@@ -441,7 +425,7 @@ func TestBackpressureSendsSealAfterTheFinalAcknowledgedWindow(t *testing.T) {
 		premature:  make(chan receivedFrame, 1),
 		result:     make(chan error, 1),
 	}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 10*time.Second)
@@ -518,7 +502,7 @@ func (s *liveJournalIngress) Push(stream grpc.BidiStreamingServer[ingresspb.Push
 func TestJournalAppendAndSealWakeDeliveryWithoutRuntimeNotification(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	service := &liveJournalIngress{announced: make(chan struct{}), entrySeen: make(chan *eventlogpb.EventEntry, 1), sealSeen: make(chan *sessionpb.Sealed, 1), result: make(chan error, 1)}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
@@ -598,7 +582,7 @@ func (s *emptySealIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFr
 func TestSealWakesDeliveryForAnEmptyJournal(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	service := &emptySealIngress{announced: make(chan struct{}), result: make(chan error, 1)}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
@@ -636,7 +620,7 @@ func TestObserverFailureIsLocalAfterDurableAcknowledgement(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	var calls atomic.Int32
 	service := &emptySealIngress{announced: make(chan struct{}), result: make(chan error, 1)}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)
@@ -661,7 +645,7 @@ func TestObserverFailureIsLocalAfterDurableAcknowledgement(t *testing.T) {
 func TestJournalReadFailureStopsDelivery(t *testing.T) {
 	source, store, _ := newTestSource(t, 0)
 	service := &emptySealIngress{announced: make(chan struct{}), result: make(chan error, 1)}
-	target := startGRPCServer(t, func(server *grpc.Server) {
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
 		ingresspb.RegisterSessionJournalIngressServer(server, service)
 	})
 	ctx, cancel := context.WithTimeout(authenticatedContext(context.Background()), 5*time.Second)

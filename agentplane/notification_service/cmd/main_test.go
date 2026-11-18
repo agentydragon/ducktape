@@ -25,6 +25,7 @@ import (
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -201,14 +202,14 @@ func restart(t *testing.T, tune func(*config)) running {
 		}
 		return path
 	}
-	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
-	runnerAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	actionAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
+	runnerAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		environmentruntimepb.RegisterEnvironmentRuntimeServer(s, &notificationtesting.ListingRunner{Sessions: []string{testSession}})
 	})
-	historyAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	historyAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
-	dispatcherAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
+	dispatcherAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		dispatcherpb.RegisterSessionDispatcherServer(s, openingDispatcher{})
 	})
 

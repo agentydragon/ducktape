@@ -2,28 +2,11 @@ package testing
 
 import (
 	"context"
-	"net"
-	"testing"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
-
-// ServeGRPC serves a fake peer on a loopback port and returns its address.
-func ServeGRPC(t testing.TB, register func(*grpc.Server)) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return listener.Addr().String()
-}
 
 // ListingRunner is a runner peer whose sessions, error, and received metadata are controlled by a test.
 type ListingRunner struct {
