@@ -66,6 +66,7 @@ let
     # Codex clamps it to that model's catalogued maximum (Astra: 872000).
     model_reasoning_effort = "medium";
     plan_mode_reasoning_effort = "medium";
+    # TODO: Consider disabling terminal animations with tui.animations = false.
 
     features = {
       streamable_shell = true;
