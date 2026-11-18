@@ -311,6 +311,12 @@ code. Change its safe refusal to an accepted extraction with the same Node
 output. Keep the escaping-receiver refusal. This is one capability migration,
 not a prerequisite to finish the entire callback engine.
 
+The [receiver-confinement prerequisite investigation](../debug/2026_11_17_receiver_confinement.md)
+identifies the missing shared complete-remainder effect/reach relation and its
+consumers. The selected native row, local fallback, top-level settlement and
+graph fallback must consume the same capability; preserving a slot in only
+one of those boundaries cannot establish accepted extraction.
+
 Admission must establish all of the following from shared prepared facts and
 operation transfers, without another AST recognizer or evaluator:
 
