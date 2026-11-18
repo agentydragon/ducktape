@@ -45,6 +45,10 @@ full history (~17+ min over the card's WiFi; the old PVC-era data was discarded)
 - Data: `STR.EDF` (daily summary) + `DATALOG/<date>/*.edf` (~2.5 MB/night)
 - WiFi stick: MediaTek MT7921U passed through to the KubeVirt gateway VM on OptiPlex (2.4 GHz USB adapter)
 - Card WiFi credentials: SOPS at `secrets/shared/cpap-ezshare.yaml`
+- The card has reverted to the factory SSID and password at least once (2026-10-28) with no
+  deliberate reset, and the cause was never established. The vendor manual (Q7) resets them by
+  deleting the root `ezshare.cfg`. A zero-byte `ezshare.cfg` with timestamp 1231858834 is normal on
+  this card, so it is not evidence of corruption.
 
 ## Architecture
 
