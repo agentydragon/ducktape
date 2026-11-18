@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use analysis::StatementKind;
 use analysis::facts::StructuralChunkSourceFacts;
 use anyhow::{Context, Result, bail, ensure};
+use chunk_facts::{RelationalFactNeeds, extract_relational_facts};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
@@ -3014,7 +3015,6 @@ pub fn import_specifier_names(module: &Module) -> HashSet<String> {
 /// and the relation facts only the relational selectors in `program` read.
 fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> SelectorFactStore {
     let structural = &chunk.structural;
-    let module = chunk.module;
     let mut store = SelectorFactStore::default();
     // A repeated `var` is one selector binding with several syntactic
     // declaration sites. Use its first source-order source unit for binding lookup,
@@ -3074,83 +3074,62 @@ fn selector_fact_store(program: &SelectorProgram, chunk: &Chunk<'_>) -> Selector
         }
     }
 
-    let reads = |atom: &SelectorAtom| {
-        matches!(
-            atom,
-            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfSourceUnit { .. }
-        )
-    };
-    if program.atoms.iter().any(reads) {
-        for (ordinal, member_reads) in chunk_facts::member_reads_by_ordinal(module) {
-            for read in member_reads {
-                store.push(SelectorFact::MemberRead {
-                    statement_ordinal: SourceUnitOrdinal(ordinal),
-                    object: read.object,
-                    member: read.member,
-                });
+    let mut reads_member = false;
+    let mut consumes_module_member = false;
+    let mut needs = RelationalFactNeeds::default();
+    for atom in &program.atoms {
+        match atom {
+            SelectorAtom::ReadsMember { .. } | SelectorAtom::ReadsMemberOfSourceUnit { .. } => {
+                reads_member = true;
             }
-        }
-    }
-    if program
-        .atoms
-        .iter()
-        .any(|atom| matches!(atom, SelectorAtom::ConsumesModuleMember { .. }))
-    {
-        let import_sources = chunk
-            .places()
-            .imports
-            .iter()
-            .map(|(local, import)| (local.clone(), import.source.clone()))
-            .collect::<HashMap<_, _>>();
-        for (ordinal, uses) in chunk_facts::module_member_uses_by_ordinal(module, &import_sources) {
-            for use_site in uses {
-                store.push(SelectorFact::ModuleMemberUse {
-                    statement_ordinal: SourceUnitOrdinal(ordinal),
-                    module: use_site.module,
-                    member: use_site.member,
-                });
+            SelectorAtom::ConsumesModuleMember { .. } => consumes_module_member = true,
+            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfSourceUnit { .. } => {
+                needs.call_arguments = true;
             }
+            SelectorAtom::MakesDecorateCallForSourceUnit { .. } => needs.decorate_calls = true,
+            SelectorAtom::IntrinsicAlias { .. } => needs.intrinsic_aliases = true,
+            _ => {}
         }
     }
-    if program.atoms.iter().any(|atom| {
-        matches!(
-            atom,
-            SelectorAtom::PassedToCall { .. } | SelectorAtom::PassedToCallOfSourceUnit { .. }
-        )
-    }) {
-        for call in chunk_facts::call_argument_uses(module) {
-            store.push(SelectorFact::CallArgumentUse {
-                argument: call.argument,
-                callee_object: call.callee_object,
-                callee_member: call.callee_member,
-                arg_index: call.arg_index,
+    needs.member_reads = reads_member || consumes_module_member;
+    let facts = extract_relational_facts(chunk.module, needs);
+    let imports = consumes_module_member.then(|| &chunk.places().imports);
+    for (statement_ordinal, read) in facts.member_reads {
+        if let Some(import) = imports.and_then(|imports| imports.get(read.object.as_ref()?)) {
+            store.push(SelectorFact::ModuleMemberUse {
+                statement_ordinal,
+                module: import.source.clone(),
+                member: read.member.clone(),
+            });
+        }
+        if reads_member {
+            store.push(SelectorFact::MemberRead {
+                statement_ordinal,
+                object: read.object,
+                member: read.member,
             });
         }
     }
-    if program
-        .atoms
-        .iter()
-        .any(|atom| matches!(atom, SelectorAtom::MakesDecorateCallForSourceUnit { .. }))
-    {
-        for call in chunk_facts::decorate_call_uses(module) {
-            store.push(SelectorFact::DecorateCallUse {
-                callee: call.callee,
-                class_anchor: call.class_anchor,
-                member: call.member,
-            });
-        }
+    for call in facts.call_arguments {
+        store.push(SelectorFact::CallArgumentUse {
+            argument: call.argument,
+            callee_object: call.callee_object,
+            callee_member: call.callee_member,
+            arg_index: call.arg_index,
+        });
     }
-    if program
-        .atoms
-        .iter()
-        .any(|atom| matches!(atom, SelectorAtom::IntrinsicAlias { .. }))
-    {
-        for alias in chunk_facts::intrinsic_alias_uses(module) {
-            store.push(SelectorFact::IntrinsicAliasUse {
-                binding: alias.binding,
-                property: alias.property,
-            });
-        }
+    for call in facts.decorate_calls {
+        store.push(SelectorFact::DecorateCallUse {
+            callee: call.callee,
+            class_anchor: call.class_anchor,
+            member: call.member,
+        });
+    }
+    for alias in facts.intrinsic_aliases {
+        store.push(SelectorFact::IntrinsicAliasUse {
+            binding: alias.binding,
+            property: alias.property,
+        });
     }
     store
 }
