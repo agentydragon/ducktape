@@ -121,7 +121,8 @@ py_test(
 ```
 
 The repository's `py_test` wrapper runs a test source named after its target through the shared
-pytest entrypoint. See [Testing](../../AGENTS.md#testing) for custom entrypoints.
+pytest entrypoint. Custom entrypoints follow the repository's
+[testing instructions](https://github.com/agentydragon/ducktape/blob/devel/AGENTS.md#testing).
 
 **Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form uses
 `strip_prefix.from_pkg()`, which drops subdirectory structure for cross-package
