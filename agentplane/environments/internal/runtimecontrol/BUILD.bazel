@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/internal/controller",
+        "//agentplane/grpc/streaming",
         "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/observability",
