@@ -115,7 +115,6 @@ py_test(
         ":routes",
         "//:conftest",
         "//props:conftest",
-        "//props/core:agent_types",
         "//props/db:async_database",
         "//props/db:database",
         "//props/db:models",
