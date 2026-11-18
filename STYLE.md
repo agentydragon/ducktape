@@ -193,3 +193,23 @@ If deleting it loses no information, delete it. Judge the whole file too: if pro
 - Backtick every code-like token in prose.
 - Fenced blocks always name a language (`text` for diagrams); separate blocks for separate content; no bare JSON in prose.
 - Brace expansion for 2+ suffixed variants: `gitea-{namespace,secrets,db}`.
+
+### Parsimony levels
+
+Keep every important fact, condition, caveat, and pointer. Point straight to artifacts when their paths carry the meaning.
+
+#### Level 15 for repository prose
+
+Default for repo docs, reports, and handoffs. Lead with exact locators. Fragments, familiar shorthand, and arrows are fine. Full meaning recoverable from nearby context and links with a little effort or an agent's help.
+
+#### Level 7 for human-facing material
+
+Use roughly level 7 for explicitly human-facing material. Requested HTML reports (e.g. from the `ci_latency` skill) and dashboard copy qualify. Use short English sentences and exact pointers. A reader familiar with the topic should follow on the first pass.
+
+#### Examples
+
+“When retiring an obsolete workaround, leave at most a one-line warning where the code remains fragile.” → “Retiring obsolete workaround, code still fragile? 1 warning line max beside code.” [README conventions](README.md#conventions)
+
+- **Before** The archive has raw driver output, exact scratch scripts, pod placement/events, and per-run guest-exec, serial, QEMU monitor, and virtiofsd logs.
+- **After, level 7** The archive has raw `driver.log`, exact `{guest,run}.sh`, `results/{pod-placement,events}.txt`, and `results/run-{1..5}/{guest-exec,guest-serial,qemu-monitor,virtiofsd}.log`.
+- **After, level 15** Archive raw `driver.log`, exact `{guest,run}.sh`, `results/{pod-placement.txt,events.txt,run-{1..5}/}`. [Run archive](agentplane/system_tests/debug/vm_shutdown_stalls/tcg/results/repeated-acpi.tar.gz)
