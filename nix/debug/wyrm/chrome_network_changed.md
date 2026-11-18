@@ -71,6 +71,5 @@ interface-creation log counts also are not counts of Chrome resets.
 ## Related
 
 - <../../../debug/kernel_6_18_amd_kvm_stall.md> — the kernel bug causing the pod churn
-- <../../../cluster/debug/pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
 - <../../../docs/atlas_network.md> — atlas physical link flaps (different issue)
 - <../wyrm2/wyrm2_freezes.md> — wyrm2 UI freezes (QXL TTM, resolved)
