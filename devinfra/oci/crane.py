@@ -140,6 +140,9 @@ class Crane:
             raise CraneError(args, proc.returncode, stderr.decode(), stdout.decode())
         return stdout.decode().strip()
 
+    def tags(self, repository: str) -> list[str]:
+        return self._run("ls", repository).splitlines()
+
     def digest(self, image_ref: str) -> str:
         return self._run("digest", image_ref)
 

@@ -1,0 +1,8 @@
+name: Set up OCI publisher
+description: Install this repository's BuildBuddy CI tools
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-nix-devtools
+      with:
+        installables: ".#bb"
