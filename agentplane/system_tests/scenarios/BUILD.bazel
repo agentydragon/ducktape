@@ -299,6 +299,7 @@ py_library(
         "//agentplane/system_tests/driver:app_sandbox",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",

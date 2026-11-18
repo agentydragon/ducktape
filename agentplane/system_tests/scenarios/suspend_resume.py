@@ -7,6 +7,8 @@ import asyncio
 import json
 import shlex
 import subprocess
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -33,6 +35,7 @@ from agentplane.system_tests.driver.agent import (
 from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.identity import API_VERSION
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -155,6 +158,34 @@ async def _wait_until_idle_suspended_without_pod(
     raise AssertionError("unreachable")
 
 
+@asynccontextmanager
+async def _environment_grant(
+    cluster: Cluster, *, name: str, target: identity_pb2.EnvironmentTarget, identity_name: str, operation: str
+) -> AsyncIterator[None]:
+    """Grant one operation on the fixture's exact Environment to its bound Identity."""
+    metadata = {"name": name, "namespace": cluster.namespace}
+    policy = {
+        "rules": [
+            {
+                "type": "environment",
+                "operations": [operation],
+                "environments": [
+                    {"sandbox": {"name": target.name, "uid": target.uid}, "boundIdentity": {"self": True}}
+                ],
+            }
+        ]
+    }
+    binding = {"subject": {"identity": {"name": identity_name}}, "policySets": [name]}
+    async with AsyncExitStack() as cleanup:
+        for kind, spec in (("PolicySet", policy), ("PolicyBinding", binding)):
+            await cluster.kubectl(
+                "create", "-f", "-", body={"apiVersion": API_VERSION, "kind": kind, "metadata": metadata, "spec": spec}
+            )
+            cleanup.push_async_callback(cluster.kubectl, "delete", kind.lower(), name, "--ignore-not-found")
+        await cluster.kubectl("wait", f"policybinding/{name}", "--for=condition=EnvironmentReady=True", "--timeout=60s")
+        yield
+
+
 async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control(
     cluster: Cluster,
     client: Client,
@@ -206,48 +237,9 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     assert start >= 0, denied_turn.transcript
     denied, _ = json.JSONDecoder().raw_decode(denied_output[start:])
     assert denied["error"]["code"] == "PERMISSION_DENIED", denied_turn.transcript
-    grant_name = f"{target.name}-resume"
-    # This fixture writes an explicit grant; a launch still grants no lifecycle capability.
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={
-            "apiVersion": "v1",
-            "kind": "List",
-            "items": [
-                {
-                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                    "kind": "PolicySet",
-                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
-                    "spec": {
-                        "rules": [
-                            {
-                                "type": "environment",
-                                "operations": ["resume"],
-                                "environments": [
-                                    {
-                                        "sandbox": {"name": target.name, "uid": target.uid},
-                                        "boundIdentity": {"self": True},
-                                    }
-                                ],
-                            }
-                        ]
-                    },
-                },
-                {
-                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                    "kind": "PolicyBinding",
-                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
-                    "spec": {"subject": {"identity": {"name": view.identity_name}}, "policySets": [grant_name]},
-                },
-            ],
-        },
-    )
-    try:
-        await cluster.kubectl(
-            "wait", f"policybinding/{grant_name}", "--for=condition=EnvironmentReady=True", "--timeout=60s"
-        )
+    async with _environment_grant(
+        cluster, name=f"{target.name}-resume", target=target, identity_name=view.identity_name, operation="resume"
+    ):
         granted_turn = await agent.run_shell(model, resume_command)
         granted_output = "\n".join(granted_turn.tool_outputs)
         granted_start = granted_output.find("{")
@@ -255,9 +247,6 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
         granted, _ = json.JSONDecoder().raw_decode(granted_output[granted_start:])
         assert granted["outcome"] == "RESUME_OUTCOME_ALREADY_RUNNING", granted_turn.transcript
         assert granted["eligibility"]["reason"] == "RESUME_ELIGIBILITY_REASON_ALLOWED_IDENTITY_GRANT", granted
-    finally:
-        await cluster.kubectl("delete", "policybinding", grant_name, "--ignore-not-found")
-        await cluster.kubectl("delete", "policyset", grant_name, "--ignore-not-found")
     failed_prompt = "Reply with exactly MODEL_HTTP_ERROR."
     failed_task = asyncio.create_task(agent.run(failed_prompt))
     for _ in range(3):
@@ -406,47 +395,9 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
 
     denied = await create()
     assert denied["error"]["code"] == "PERMISSION_DENIED", denied
-    grant_name = f"{target.name}-bind"
-    await cluster.kubectl(
-        "create",
-        "-f",
-        "-",
-        body={
-            "apiVersion": "v1",
-            "kind": "List",
-            "items": [
-                {
-                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                    "kind": "PolicySet",
-                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
-                    "spec": {
-                        "rules": [
-                            {
-                                "type": "environment",
-                                "operations": ["bind_session"],
-                                "environments": [
-                                    {
-                                        "sandbox": {"name": target.name, "uid": target.uid},
-                                        "boundIdentity": {"self": True},
-                                    }
-                                ],
-                            }
-                        ]
-                    },
-                },
-                {
-                    "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                    "kind": "PolicyBinding",
-                    "metadata": {"name": grant_name, "namespace": cluster.namespace},
-                    "spec": {"subject": {"identity": {"name": view.identity_name}}, "policySets": [grant_name]},
-                },
-            ],
-        },
-    )
-    try:
-        await cluster.kubectl(
-            "wait", f"policybinding/{grant_name}", "--for=condition=EnvironmentReady=True", "--timeout=60s"
-        )
+    async with _environment_grant(
+        cluster, name=f"{target.name}-bind", target=target, identity_name=view.identity_name, operation="bind_session"
+    ):
         created = await create()
         assert "error" not in created, created
         # Read with the privileged fixture, independently checking the actual persisted principal.
@@ -456,9 +407,6 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
         assert retained.placement == spec.placement, retained
         assert created["sessionId"] == session_id, created
         assert created["identity"] == MessageToDict(retained.identity), created
-    finally:
-        await cluster.kubectl("delete", "policybinding", grant_name, "--ignore-not-found")
-        await cluster.kubectl("delete", "policyset", grant_name, "--ignore-not-found")
     recovered = await create()
     assert "error" not in recovered, recovered
     assert recovered["sessionId"] == session_id, recovered
