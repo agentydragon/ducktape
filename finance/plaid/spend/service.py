@@ -433,7 +433,6 @@ class SpendService:
                         .mappings()
                         .all()
                     )
-                    evidence = self._configuration.sustainability
                     transactions = [Transaction.model_validate(dict(row)) for row in rows]
                     prepared = self._accounting_cache.prepare(
                         transactions,
@@ -447,7 +446,7 @@ class SpendService:
                         time_zone=self._configuration.time_zone,
                         now=now,
                         last_synced_at=min(value for value in synced if value is not None),
-                        account_history=evidence.account_history if evidence else {},
+                        account_history=self._configuration.account_history,
                         history_days=history_days,
                         prepared=prepared,
                     )
@@ -563,14 +562,13 @@ class SpendService:
 
     async def read_net_worth(self) -> NetWorthHistory:
         sessions = self._require_read_sessions()
-        policy = self._configuration.sustainability
         async with sessions() as session, session.begin():
             await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
             return await read_net_worth(
                 session,
                 time_zone=self._configuration.time_zone,
                 now=datetime.now(UTC),
-                account_history=policy.account_history if policy else {},
+                account_history=self._configuration.account_history,
             )
 
     async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
@@ -673,6 +671,7 @@ class SpendService:
                     window_days=days,
                     source_issues=issues,
                     account_labels=account_labels,
+                    account_history=self._configuration.account_history,
                 )
             )
             for days in windows_days

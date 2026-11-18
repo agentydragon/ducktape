@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest_bazel
 
+from finance.plaid.spend.account_history import AccountHistory, AccountOpening
 from finance.plaid.spend.allowance import (
     AccountingPreparationCache,
     AllowancePolicy,
@@ -17,7 +18,6 @@ from finance.plaid.spend.allowance import (
     calculate,
 )
 from finance.plaid.spend.pace_history import pace_history
-from finance.plaid.spend.sustainability import AccountHistory, AccountOpening
 from finance.plaid.spend.testing.transaction import make_transaction
 
 NOW = datetime(2026, 4, 1, 12, tzinfo=UTC)

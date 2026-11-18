@@ -12,10 +12,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from finance.plaid.db.models import AccountRow, BalanceSnapshotRow, LinkRow
+from finance.plaid.spend.account_history import AccountHistory
 from finance.plaid.spend.allowance import Transaction
 from finance.plaid.spend.plaid_valuation import usd_minor_units
 from finance.plaid.spend.policy_queries import select_policy_transactions
-from finance.plaid.spend.sustainability import AccountHistory
 
 _DEBT_TYPES = {"credit", "loan"}
 _ACCOUNT_TYPES = {"depository", "investment"} | _DEBT_TYPES

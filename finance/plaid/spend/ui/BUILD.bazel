@@ -327,6 +327,7 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/testing:output_writer",
+        "//finance/plaid/spend:account_history",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",

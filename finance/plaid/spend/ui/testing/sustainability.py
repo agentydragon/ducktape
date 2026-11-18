@@ -6,11 +6,10 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
+from finance.plaid.spend.account_history import AccountOpening, DocumentedHistory
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
 from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import (
-    AccountOpening,
-    DocumentedHistory,
     SpendingAccountCoverage,
     SustainabilityDashboard,
     SustainabilityHistoryPoint,
