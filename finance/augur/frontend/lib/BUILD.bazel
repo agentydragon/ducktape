@@ -38,6 +38,12 @@ ts_library(
 )
 
 ts_library(
+    name = "errors",
+    srcs = ["errors.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "format",
     srcs = ["format.ts"],
     tsconfig = TSCONFIG,
@@ -47,7 +53,10 @@ ts_library(
     name = "toast",
     srcs = ["toast.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/@mantine/notifications"],
+    deps = [
+        ":errors",
+        "//:node_modules/@mantine/notifications",
+    ],
 )
 
 # This package's half of //finance/augur/frontend:typed_lint_srcs — a glob cannot cross a package

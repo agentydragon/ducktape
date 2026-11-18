@@ -32,6 +32,7 @@ import {
   clampHorizonMonths,
   metricScaleFromSearch,
 } from "./input_helpers";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { replaceSearchParams } from "./url_state";
 
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
@@ -43,15 +44,6 @@ type CalibrationInfo = Awaited<ReturnType<typeof fetchAugurCalibrationInfo>>;
 type Bootstrap = Omit<Catalog, keyof Settings> & Settings & { calibration: CalibrationInfo };
 type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
 type MetricScale = ReturnType<typeof metricScaleFromSearch>;
-
-function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error && error.message) return String(error.message);
-  return String(error);
-}
-
-function isAbortError(error: unknown): boolean {
-  return error != null && typeof error === "object" && "name" in error && error.name === "AbortError";
-}
 
 function writeRolloutCountToSearch(value: number | null, bootstrap: Bootstrap) {
   replaceSearchParams({ n: value == null || value === rolloutCountDefault(bootstrap) ? null : value });
