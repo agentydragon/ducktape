@@ -148,7 +148,7 @@ Pass `PROPS_CONFIG_FILE=/tmp/props-ollama-config.toml` and
 ## Running a Critic
 
 ```bash
-ADMIN_TOKEN="<from backend logs>"
+ADMIN_TOKEN="$(printf '%s:%s' "$PGUSER" "$PGPASSWORD" | base64 -w0)"
 MODEL_NAME="local-llm"  # or "gpt-oss-20b" for the remote cluster config
 
 curl -s -X POST "http://localhost:8000/api/runs/critic" \
