@@ -160,7 +160,11 @@ def monthly_levels(monthly: pl.DataFrame) -> list[MonthlyLevel]:
 
 
 def fred_series_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
-    """Parse a FRED graph CSV down to a sorted, finite `(date, value)` frame."""
+    """Parse a FRED graph CSV down to a sorted, finite `(date, value)` frame.
+
+    Zero and negative values are kept: rates can be nonpositive. Callers that need positive levels
+    check them with `require_positive_levels`.
+    """
     column = source.series_id  # a FRED CSV is headed by its series id
     frame = pl.read_csv(data, infer_schema=False)
     if "observation_date" not in frame.columns or column not in frame.columns:
