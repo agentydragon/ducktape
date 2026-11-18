@@ -9,8 +9,9 @@ API TLS-passthrough listener on port 443: it overlapped the Gateway's wildcard
 HTTPS listener.
 
 The separate `haku-kubeapi.allegedly.works` route was retired after Haku Console's
-Kubernetes authorization endpoint was removed. A brief historical note is in
-<../../haku/kube_api_proxy.md>.
+Kubernetes authorization endpoint was removed (a Go reverse proxy that authorized each request
+through Console; [#11466](https://github.com/agentydragon/ducktape/pull/11466) removed the route,
+workload, credential wiring and code).
 
 ## Why terminate TLS?
 
