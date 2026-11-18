@@ -3,7 +3,6 @@ package streaming_test
 import (
 	"context"
 	"errors"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -129,10 +129,6 @@ func TestRealGRPCFlowControlReleasesBlockedSend(t *testing.T) {
 }
 
 func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool, writeTimeout time.Duration, expectTimeout bool) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	draining, drain := context.WithCancel(t.Context())
 	if writeTimeout <= 0 {
 		writeTimeout = 10 * time.Second
@@ -145,14 +141,10 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool,
 	}
 	server := grpc.NewServer()
 	server.RegisterService(&flowControlServiceDesc, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	serverAddr := grpcserver.Serve(t, server)
 
 	conn, err := grpc.NewClient(
-		listener.Addr().String(),
+		serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithInitialWindowSize(64<<10),
 		grpc.WithInitialConnWindowSize(64<<10),

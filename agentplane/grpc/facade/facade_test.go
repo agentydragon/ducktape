@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -93,17 +93,12 @@ func serve(t *testing.T) (*dispatcher, string) {
 
 func serveWithUnaryTimeout(t *testing.T, unaryTimeout time.Duration, servicer *dispatcher) (*dispatcher, string) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	dispatcherpb.RegisterSessionDispatcherServer(server, servicer)
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.ServeRegistered(t, func(server *grpc.Server) {
+		dispatcherpb.RegisterSessionDispatcherServer(server, servicer)
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	handler, err := NewHandler(ctx, listener.Addr().String(), unaryTimeout, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
+	handler, err := NewHandler(ctx, serverAddr, unaryTimeout, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
