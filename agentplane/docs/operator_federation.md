@@ -353,9 +353,9 @@ view as the submitting caller.
   callback on another replica, two operators with distinct subjects and no local subject mapping,
   logout replay rejection, wrong issuer/audience/expiry/subject rejection, real MCP single dispatch,
   and login-token renewal through the app, refused renewal included.
-- `//agentplane/app:test_auth_routes`: server-side PKCE/state, stable subject, idle and absolute
+- `//agentplane/app/internal/auth:session_integration_test`: server-side PKCE/state, stable subject, idle and absolute
   expiry, logout and strict same-origin mutations, rejected signed login claims/signatures, state/nonce mismatch, handle
-  rotation and callback replay, alongside the existing Kubernetes caller boundary.
+  rotation and callback replay; `//agentplane/app/internal/auth:unit_test` keeps the Kubernetes caller boundary.
 - `//agentplane/action_service/internal/rpc:unit_test` verifies signed operator-token claims, including
   arbitrary subjects and rejected issuer/audience/azp/expiry/subject/signature combinations;
   `//agentplane/action_service/internal/rpc:integration_test` verifies operator-only HTTP and RPC admission.

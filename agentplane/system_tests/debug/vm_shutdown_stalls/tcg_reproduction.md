@@ -214,7 +214,7 @@ deleted by their drivers and verified absent with read-only `kubectl get namespa
 
 ## Direct TCG pressure probe for the QEMU boot assertion
 
-The [uncached two-vCPU full-suite failure](README.md#uncached-control-after-observer-merges)
+The [uncached two-vCPU full-suite failure](https://github.com/agentydragon/ducktape/blob/4ecd9e8e1dc60442658710da96e31b0342f4a06c/agentplane/system_tests/debug/vm_shutdown_stalls/README.md#uncached-control-after-observer-merges)
 ended during guest PCI enumeration with QEMU 10.1.0's
 `iotlb_to_section: Assertion 'section_index < d->map.sections_nb' failed`. To
 check whether a simple competing CPU consumer makes that assertion recur, ten
