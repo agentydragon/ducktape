@@ -68,8 +68,6 @@ improvements alongside. Component TODOs and research plans do not set a competin
   image, settings and template names
 - [Notification Service split](notification_service_split.md) — the seam considered for
   `NOTIFICATION_SERVICE_SPLIT`; not released
-- [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
-  moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
 - [Storage representations and compression](storage_representations.md) — measured content copies
   across sampler logs, History events/projections and webhooks; content ownership, deduplication,
   compression and metadata work coordinated with the authored-conversation design
