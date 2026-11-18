@@ -30,18 +30,12 @@ matrix — their own job checks and skips exactly as before.
 
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `gh` is preinstalled there.
-
-Publication jobs may reuse verdicts for literal workspace test labels only when
-the same successful push-CI invocation proves source, configuration and one
-passing attempt. Suites, patterns and custom-flag rows keep their test gates.
 """
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import json
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
@@ -49,7 +43,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from devinfra.buildbuddy.ci.bes import Output
-from devinfra.ci import publication_evidence
+from devinfra.ci import publication_cli, publication_evidence
 from devinfra.ci.release_assets import Release, load_releases, resolve_asset_output
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
@@ -139,26 +133,12 @@ def matrix_include(
     return rows
 
 
-def _write_github_output(**values: str) -> None:
-    if not (path := os.environ.get("GITHUB_OUTPUT")):
-        return
-    with Path(path).open("a") as f:
-        f.writelines(f"{key}={value}\n" for key, value in values.items())
-
-
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-targets", type=Path, default=Path("devinfra/ci/artifact_targets.json"))
     parser.add_argument("--skills-registry", type=Path, default=Path("skills/skills_registry.json"))
-    parser.add_argument(
-        "--invocations",
-        default="",
-        help="comma-separated bazel-ci invocation ids; empty releases everything (fail open)",
-    )
+    publication_cli.add_evidence_options(parser)
     parser.add_argument("--workers", type=int, default=8, help="concurrent tag lookups")
-    parser.add_argument("--test-invocation-id", default="", help="exact bazel-ci test invocation id")
-    parser.add_argument("--test-source-commit", default="", help="source SHA verified by bazel-ci checkout")
-    parser.add_argument("--rbe-container-image", default="", help="publication test RBE image override, if any")
     parser.add_argument(
         "--commit-subject",
         default="",
@@ -170,15 +150,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if "[skip ci]" in args.commit_subject:
         print("Commit is marked [skip ci]; releasing nothing.", file=sys.stderr)
-        _write_github_output(matrix=json.dumps({"include": []}), count="0")
+        publication_cli.write_matrix([])
         return
 
-    evidence = publication_evidence.load(
-        [value for value in args.invocations.split(",") if value],
-        test_invocation_id=args.test_invocation_id,
-        source_commit=args.test_source_commit,
-        rbe_container_image=args.rbe_container_image,
-    )
+    evidence = publication_cli.load_evidence(args)
     by_label = evidence.outputs.by_label() if evidence.outputs is not None else {}
 
     decided = plan(releases, by_label, gh_tag_exists, args.workers)
@@ -199,7 +174,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{'skip' if skipped else 'RELEASE':>7}  {release.pkg}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decided)} releases need publishing.", file=sys.stderr)
 
-    _write_github_output(matrix=json.dumps({"include": include}), count=str(len(include)))
+    publication_cli.write_matrix(include)
 
 
 if __name__ == "__main__":

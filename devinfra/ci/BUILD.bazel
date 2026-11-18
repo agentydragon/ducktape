@@ -72,11 +72,18 @@ py_library(
     srcs = ["plan_releases.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":publication_cli",
         ":publication_evidence",
         ":release_assets",
         ":release_content_hash",
         "//devinfra/buildbuddy/ci:bes",
     ],
+)
+
+py_library(
+    name = "publication_cli",
+    srcs = ["publication_cli.py"],
+    deps = [":publication_evidence"],
 )
 
 py_library(
@@ -152,6 +159,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":image_registry",
+        ":publication_cli",
         ":publication_evidence",
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/oci:crane",
