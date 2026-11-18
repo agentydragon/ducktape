@@ -2725,7 +2725,7 @@ fn solve_flow_observed(
         numeric_properties,
         declared: declared.clone(),
         origin_table: origin_table.clone(),
-        trace,
+        trace: trace.clone(),
         #[cfg(test)]
         work: work.clone(),
     };
