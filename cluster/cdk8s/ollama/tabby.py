@@ -99,7 +99,10 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                             startup_probe=k8s.Probe(
                                 http_get=models, period_seconds=5, timeout_seconds=2, failure_threshold=72
                             ),
-                            readiness_probe=k8s.Probe(http_get=models, period_seconds=10, timeout_seconds=2),
+                            # Compilation can block the health handler during a first request.
+                            readiness_probe=k8s.Probe(
+                                http_get=models, period_seconds=10, timeout_seconds=2, failure_threshold=6
+                            ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="weights", mount_path=_MODEL_PATH, read_only=True),
                                 k8s.VolumeMount(

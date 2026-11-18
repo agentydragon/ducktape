@@ -18,6 +18,14 @@ template at runtime, so it leaves the checkpoint directory intact. The
 overlay supports mid-conversation system messages and maps the established
 `high` effort to Qwen's `xhigh`.
 
+The initial deployment took 55 seconds to load the model. The first
+authenticated request took 37 seconds while the engine compiled kernels.
+During that request the health endpoint timed out, and Kubernetes briefly
+removed the Service endpoint. TabbyAPI's built-in warmup runs during model
+load. The readiness probe also tolerates six consecutive timeouts to cover
+remaining first-use compilation. After a restart, watch the initial request
+and confirm the Service endpoint stays ready.
+
 Ollama is scaled to zero. Its direct API, embeddings, and other model routes
 are offline. To restore Ollama through GitOps, first revert the TabbyAPI
 deployment and LiteLLM bindings and wait for the TabbyAPI Pod to stop.
