@@ -1,10 +1,11 @@
-"""Plaid products this app can sync.
+"""Plaid product lists and the products this app can sync.
 
 Narrower than Plaid's full catalog: these are the three the sync path knows how to mirror. An
 institution typically supports more, and the link UI shows the difference.
 """
 
 from enum import StrEnum
+from itertools import chain
 
 
 class Product(StrEnum):
@@ -21,3 +22,8 @@ def syncable_products(institution_products: list[str]) -> list[Product]:
     """
     supported = set(institution_products)
     return [product for product in Product if product.value in supported]
+
+
+def merge_products(*groups: list[str]) -> list[str]:
+    """Combine Plaid product lists in first-seen order."""
+    return list(dict.fromkeys(chain.from_iterable(groups)))

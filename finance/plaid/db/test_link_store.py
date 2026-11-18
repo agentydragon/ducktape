@@ -28,6 +28,23 @@ async def _record_holdings_event(storage: PlaidLinkStorage, item_id: str) -> int
     )
 
 
+async def test_concurrent_completed_updates_accumulate_plaid_products(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]]
+) -> None:
+    await add_link("item-investments")
+
+    await asyncio.gather(
+        storage.mark_link_update_succeeded(item_id="item-investments", products=["investments", "transactions"]),
+        storage.mark_link_update_succeeded(item_id="item-investments", products=["liabilities", "liabilities"]),
+    )
+
+    link = await storage.get_link("item-investments")
+    assert link is not None
+    assert link.products_requested[0] == "investments"
+    assert sorted(link.products_requested) == ["investments", "liabilities", "transactions"]
+    assert link.products_authorized == link.products_requested
+
+
 async def test_successful_sync_run_marks_investment_only_link_synced(
     storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]]
 ) -> None:

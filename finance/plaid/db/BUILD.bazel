@@ -162,6 +162,7 @@ py_library(
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
         ":models",
+        ":products",
         "//finance/plaid:models",
         "//finance/plaid:payloads",
         "@pypi//alembic",
