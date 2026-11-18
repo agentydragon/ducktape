@@ -10,6 +10,7 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -317,7 +318,7 @@ func TestDispatchVersionCheckpointWaitsForEarlierSequenceWriter(t *testing.T) {
 		_, err := checkpointTx.ExecContext(ctx, "LOCK TABLE dispatch, dispatch_tombstone IN SHARE MODE")
 		locked <- err
 	}()
-	waitForPostgresBlocker(t, ctx, store.DB, checkpointPID, firstPID)
+	postgres.WaitForBlocker(t, ctx, store.DB, checkpointPID, firstPID)
 	if err := txFirst.Commit(); err != nil {
 		t.Fatal("commit earlier sequence writer:", err)
 	}
@@ -395,29 +396,6 @@ func rowsAtOrBelowVersion(t *testing.T, ctx context.Context, db interface {
 		t.Fatal(err)
 	}
 	return count
-}
-
-func waitForPostgresBlocker(t *testing.T, ctx context.Context, db interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, blockedPID, blockerPID int,
-) {
-	t.Helper()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var blocked bool
-		if err := db.QueryRowContext(ctx, `SELECT $2 = ANY(pg_blocking_pids($1))`, blockedPID, blockerPID).Scan(&blocked); err != nil {
-			t.Fatal("inspect PostgreSQL blocker:", err)
-		}
-		if blocked {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		case <-ticker.C:
-		}
-	}
 }
 
 func mustWire(t *testing.T, message proto.Message) []byte {

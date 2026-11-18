@@ -58,7 +58,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 		events, err := deleter.EndSandbox(ctx, sandboxUID)
 		deleted <- cleanupResult{events, err}
 	}()
-	waitForPostgresBlocker(t, ctx, store.DB, deleterPID, gatePID)
+	postgres.WaitForBlocker(t, ctx, store.DB, deleterPID, gatePID)
 	type acquisitionResult struct {
 		owner *SessionOwner
 		err   error
@@ -70,7 +70,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	}()
 	// Cleanup has created and locked the previously missing lease before waiting
 	// on the dispatch row. A concurrent acquisition must wait on it too.
-	waitForPostgresBlocker(t, ctx, store.DB, acquirerPID, deleterPID)
+	postgres.WaitForBlocker(t, ctx, store.DB, acquirerPID, deleterPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
 	}

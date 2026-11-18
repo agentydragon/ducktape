@@ -280,3 +280,24 @@ func Count(t testing.TB, db *sql.DB, query string, args ...any) int {
 	}
 	return count
 }
+
+// WaitForBlocker waits until PostgreSQL identifies blockerPID as blocking blockedPID.
+func WaitForBlocker(t testing.TB, ctx context.Context, db *sql.DB, blockedPID, blockerPID int) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked bool
+		if err := db.QueryRowContext(ctx, `SELECT $2 = ANY(pg_blocking_pids($1))`, blockedPID, blockerPID).Scan(&blocked); err != nil {
+			t.Fatal("inspect PostgreSQL blocker:", err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
