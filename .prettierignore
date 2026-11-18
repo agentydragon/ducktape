@@ -19,9 +19,6 @@ tana/testdata/**/*.txt
 # Logseq export - generated content
 x/llm/instruct_logseq/**
 
-# Archived directories - complex formatting that doesn't survive prettier
-x/claude_commands_old/**
-
 # Flux-generated GitOps manifests
 cluster/k8s/flux/flux-system/**
 
