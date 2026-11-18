@@ -66,6 +66,9 @@ diagnostics while suspended.
   at admission, placement and command delivery; their next command fails `execution_identity_changed`.
   The selected Identity is revalidated by UID during the patch, but deletion and same-name recreation
   after that read remain a cross-resource race because the Sandbox spec stores only a name.
+- Workspace and state volumes carry over a rebind: the next Identity reads whatever the previous one
+  left, including privileged files. Accepted risk (operator, 2026-11-10); the app warns when an
+  identity change is requested (`app/frontend/sandboxes/identity.tsx`).
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for Identity callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
 - Identity list filters the configured

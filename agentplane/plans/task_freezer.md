@@ -68,8 +68,8 @@ egress, exec, a lifetime, and access grants. Today they diverge:
 - Harnesses: only Sandboxes run them.
 
 Guideline: new identity and access decisions on either side move toward the shared shape where it
-is cheap. Boxes and Sandboxes converge on the plan's
-[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
+is cheap. Boxes and Sandboxes converge on the
+[acting-as rules](../docs/adr_environment_rules.md): acting in the workload is
 implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
 lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
 requester today, so this changes no behaviour. The unused-box cleanup trigger is tracked by

@@ -8,6 +8,14 @@ workload trust chain on every hop. A service URI is separate from a workload `Wo
 and never resolves to an agent `Identity`. Callers read certificate and trust-bundle files;
 authenticating a service peer requires no Kubernetes API call.
 
+**Why (operator, 2026-11-10):** to keep Agentplane identity from being hard-baked to the Kubernetes
+API server. An identity that only a ServiceAccount and TokenReview can carry ties every caller to a
+cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Session with no
+Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
+require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
+
+A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
+
 ## Sandbox SVID route
 
 Each Sandbox's Runtime certificate is its `WorkloadCredential`'s, with URI SAN
