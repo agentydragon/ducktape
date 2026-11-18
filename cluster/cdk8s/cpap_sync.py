@@ -38,6 +38,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
@@ -225,14 +226,8 @@ def chart(app: App) -> Chart:
                                             name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                         ),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("128Mi"),
-                                        },
-                                        # git pack-objects on the initial ~0.5-1GB seed push.
-                                        limits={"memory": k8s.Quantity.from_string("512Mi")},
-                                    ),
+                                    # git pack-objects on the initial ~0.5-1GB seed push.
+                                    resources=container_resources(cpu="100m", memory="128Mi", memory_limit="512Mi"),
                                 )
                             ],
                         ),

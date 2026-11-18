@@ -10,6 +10,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -83,15 +84,8 @@ def _deployment(chart: Chart) -> None:
                                     read_only=True,
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
                             ),
                             readiness_probe=_healthz(initial_delay_seconds=3, period_seconds=10),
                             liveness_probe=_healthz(initial_delay_seconds=15, period_seconds=20),
