@@ -327,7 +327,6 @@ def _hold(batch: list[Decision]) -> list[DecisionActions]:
 
 
 def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
-    # Preserve the actual product metric control formerly in rust/backend_test.py.
     # Untaxed: tax on $1M accretion would stop this cash-constrained case first.
     for indexed, expected in ((True, 200_000_000), (False, 100_000_000)):
         worlds = partial(compose, bond_case(indexed=indexed, cpi=CPI_DOUBLING, is_taxed=False))

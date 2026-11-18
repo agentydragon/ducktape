@@ -46,8 +46,8 @@ type AssetKey = Annotated[SecurityKey | PrivateEquityAssetKey, Field(discriminat
 """What a lot/sale identifies: a tradable asset-price series, or a private-equity holding.
 
 An INCLUSION, not a parallel hierarchy: `AssetKey` is `AssetPriceKey` plus private equity.
-The tradable member is literally the model's `SecurityKey`, so the conversion that used to
-sit between the two vocabularies is now just the PE narrowing.
+The tradable member is literally the model's `SecurityKey`, so converting between the two
+vocabularies is just the PE narrowing.
 """
 
 

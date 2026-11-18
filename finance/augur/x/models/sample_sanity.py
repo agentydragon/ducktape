@@ -161,10 +161,8 @@ class SampleSanitySpec(FrozenModel):
     The set of series/issuers to attempt is derived from the `*_checks` fields — each check
     declares the key/issuer it bounds and is therefore implicitly a request to sample that
     series. A check whose key the model can't emit is surfaced as `unmodeled` per band rather
-    than treated as a hard sampling failure; the field used to be `required_level_series` /
-    `required_private_equity_issuers` and gated the sample request, but a sanity-band YAML
-    listing a series the deployment's model doesn't cover was meant to render as "not modeled
-    by <preset>", not 400 the calibration tab.
+    than treated as a hard sampling failure: a sanity-band YAML listing a series the deployment's
+    model doesn't cover renders as a "(not modeled)" row, not a 400 on the calibration tab.
     """
 
     horizon_months: int = Field(ge=0)
