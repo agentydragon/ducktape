@@ -82266,12 +82266,12 @@
       ]
     },
     "source_comparison": "The two candidate branch source trees are identical. Their actual GitHub-tested merges differ in a browser test and a Debundle artifact pin; native action input and command identities are recorded in the warm-chain proof. The managed-to-candidate tested trees also include upstream fixture-renderer/service-wiring changes. Sequential order, base drift, cache history and the failed managed outcome prevent a matched causal CI-saving estimate.",
-    "next_action": "Keep the routing canary in draft. The next latency spike should test retained K3s for Firecracker on the same pool, preserving its scenarios and proving clean reuse and coexistence with the retained VM baseline. Broader backend PR feedback remains unmeasured; a pool-size increase is not supported by this small exposure. Separately, capture internal Nix realization/cache-request timings for the same two tool paths before choosing a closure cache or prebuilt artifact.",
+    "next_action": "Measure Nix setup variance and qualify Firecracker reuse with manual targets before proposing another required-routing change.",
     "methods": [
       "Ruleset 15894562 requires bazel-ci / Test & Build, Pre-commit checks, and Build artifacts + imports check. All three were observed separately for each exact head. GitHub ran its normal synthetic merge, source verification, bazel-diff selection, test/build/lint and independent checks; no workflow or tag-filter changes.",
       "Bazel external tags force fresh VM and Firecracker test processes on every head. Decoded Action/Command, native skipCacheLookup and exact native/BES/JUnit digest joins verify the physical executions. Dependencies keep normal caching. No test-body retry was requested; every observed physical TestRunner is retained.",
       "The control retained managed TCG routing and its fixture was warm. After its failure, its planned repeat was not run. The candidate uses a canary-specific recycling key, private ext4 directory and the already-qualified probe on kvm-vm. The repeat is a new empty commit with the identical branch source tree, after all first-head required checks and lifecycle gates passed.",
-      "Required-result time starts at the earliest of the three required workflows and ends at the latest required-check completion. Failed results are labelled failed. This is not push-to-merge eligibility: the PR intentionally remains a draft. Later push acknowledgement bounds and provider-query observations are retained separately.",
+      "Required-result time starts at the earliest of the three required workflows and ends at the latest required-check completion. Failed results are labelled failed. This is not push-to-merge eligibility: the PR was a draft during these measurements. Its later merge and revert are recorded above. Later push acknowledgement bounds and provider-query observations are retained separately.",
       "A VM shutdown passes only with storage proof and final powerdown in both raw serial and CRI captures, plus orderly libvirt shutdown for each expected guest incarnation. Missing evidence remains unknown; absence of captured forced events does not establish graceful shutdown.",
       "The managed retained K3s daemon logged a fatal Kine transaction error at 15:22:23 UTC, before API-refused teardown at 15:26:59 and the stop guard at 15:28:09.793. This orders the failure chain; the transaction trigger and managed-worker final loop state remain unknown.",
       "Experiment runner disposal is separate collection-only work on exact observed runner registrations. It is excluded from scenario and latency tables. The final current-worker inventory and recorded backing-identity checks are in the disposal receipt.",
@@ -82288,7 +82288,7 @@
     ],
     "links": [
       {
-        "label": "Experimental draft #17401",
+        "label": "Experimental routing #17401 (merged, then reverted)",
         "url": "https://github.com/agentydragon/ducktape/pull/17401"
       },
       {
@@ -82306,6 +82306,10 @@
       {
         "label": "Runtime lifecycle follow-up owner",
         "url": "https://github.com/agentydragon/ducktape/blob/a255682c02ee6c495d06ee17b26b6776a3ce8b40/agentplane/env/TODO.md#simplify-environment-runtime-reconciliation-and-coordination"
+      },
+      {
+        "label": "Revert #17420 (merged)",
+        "url": "https://github.com/agentydragon/ducktape/pull/17420"
       }
     ],
     "protocol_outcome": {
@@ -82376,6 +82380,3824 @@
         "host_vm_cpu_cores": "sum by(pod)(rate(container_cpu_usage_seconds_total{namespace=\"buildbuddy-executor\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\",container!=\"\",container!=\"POD\"}[3m]))"
       },
       "limits": "Samples include unrelated work. Local queued reservations are not the central scheduler backlog. Current object joins and separate scrape checks are not an atomic eligible-capacity snapshot. Resource metrics are private diagnostics, not a peak RAM capacity or replica-sizing qualification."
+    },
+    "current_disposition": {
+      "verified_at_utc": "2026-11-18T02:45:27.497941+00:00",
+      "status": "Reverted; required VM tests use the managed route",
+      "summary": "The experimental routing PR was merged at 16:39:16 UTC on 17 November and reverted at 16:43:30 UTC by #17420. The historical measurements below describe the earlier canary; they do not describe deployed routing. Further recycling qualification uses manual benchmark targets.",
+      "canary_pr": "https://github.com/agentydragon/ducktape/pull/17401",
+      "canary_merge": "811ad327dd334ac335cbb93820ef20e69d4bc53a",
+      "canary_merged_at_utc": "2026-11-17T16:39:16Z",
+      "revert_pr": "https://github.com/agentydragon/ducktape/pull/17420",
+      "revert_merge": "0faaa5b7562ba9d32f60b6d1b3c5132abce8c582",
+      "revert_merged_at_utc": "2026-11-17T16:43:30Z",
+      "revert_validation": "The revert was an exact inverse; its pre-commit check passed and Bazel/import checks were cancelled. Subsequent #17485 normal CI had a managed-VM timer stall and one successful job retry using cached test results, recorded in the follow-up above."
     }
+  },
+  "ci_latency_followup": {
+    "window_label": "18 November 2026 UTC. Nix CI: 01:13\u201301:18. Manual actions: 01:32 onward; exact intervals and disposal end are in the evidence. Four preplanned Firecracker arms plus one adaptive ordinary-scheduler probe. Frozen Firecracker source: 8c2b75a379; Nix tested merge: e6fa0de1566c.",
+    "verdict_title": "Reuse and RAM coexistence passed; scheduling determines the benefit",
+    "verdict_color": "yellow",
+    "summary": "The 115-second Nix delay did not recur. Firecracker warm setup took 38.7s; a worker pin added 200.1s of queueing. Ordinary scheduling chose a fresh baseline and finished its pair in 5m51s. All 22 manual case executions passed; broad CI savings remain unqualified.",
+    "nix": {
+      "summary": "The 115-second Nix install did not recur. Normal and debug CI both passed on the same tested merge; the opt-in trace now separates native HTTP requests, copy activities and the profile tail.",
+      "headers": [
+        "Observation",
+        "Profile install / request clock",
+        "Outcome and scope",
+        "Source"
+      ],
+      "rows": [
+        [
+          "Historical fast / slow",
+          "7.181s / 115.008s",
+          "Prior canary; slow internal stage unobserved",
+          "44115300261 / 44117531995"
+        ],
+        [
+          "Current ordinary CI",
+          "10.691s",
+          "Passed; fresh GitHub runner",
+          "44214157324 attempt 1"
+        ],
+        [
+          "Current debug CI",
+          "10.439s",
+          "Passed; same tested merge, debug overhead applies",
+          "44214157324 attempt 2"
+        ],
+        [
+          "Attic bb / bbapi HTTP",
+          "0.77s / 0.53s",
+          "HTTP 200, curl 0; 31,896,869 body bytes total",
+          "Native Nix 2.35.6 diagnostics"
+        ]
+      ],
+      "findings": [
+        "The public Attic narinfo responses omit FileSize. Nix therefore estimated 0.0 KiB to download even though the two HTTP bodies transferred 31,896,869 bytes; the declared unpacked total was 103,895,840 bytes.",
+        "In the debug run the two Attic copy activities took 0.939s and 0.645s with no retries or full-buffer pauses. A separate nixpkgs source copy took 7.157s; its HTTP request logged 4.42s with 26 client buffer-full pauses, followed by 2.710s before copy completion. Request wall time can include client backpressure and is not pure server or network time.",
+        "The historical 115-second cause remains unknown: normal logs lack request/activity completion boundaries, and the deployed Attic server retained no HTTP request timing. Merged PR #17480 enables native structured debug logs for GitHub debug reruns. No cache or retry-policy repair, or CI speedup, is established."
+      ],
+      "links": [
+        {
+          "label": "Nix diagnostics PR #17480",
+          "url": "https://github.com/agentydragon/ducktape/pull/17480"
+        },
+        {
+          "label": "Ordinary CI attempt",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/attempts/1"
+        },
+        {
+          "label": "Debug CI attempt",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/attempts/2"
+        }
+      ],
+      "evidence": {
+        "schema": "ducktape.nix_realization_public_summary.v1",
+        "scope": "Two successful ordinary/debug CI attempts of the same tested merge; diagnostic compatibility and current request attribution, not a reproduction of the historical slow install.",
+        "source_sha": "9735c7e9e84ed2d17d2574b582d50341bf1c3c47",
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/17480",
+        "head_sha": "40b4243f48fc0eef05067eb1c864271e43d85b74",
+        "tested_merge_sha": "e6fa0de1566c918632383aa99aa8ac50c8fa88e2",
+        "tested_merge_base_sha": "fdfc88555b61ec51be62967e7be1202246e9d77d",
+        "ci_nix_version": "2.35.6",
+        "attempts": [
+          {
+            "attempt": 1,
+            "debug": false,
+            "run_id": 44214157324,
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/attempts/1",
+            "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/job/134499667292",
+            "head_sha": "40b4243f48fc0eef05067eb1c864271e43d85b74",
+            "tested_merge_sha": "e6fa0de1566c918632383aa99aa8ac50c8fa88e2",
+            "conclusion": "success",
+            "job_started_at_utc": "2026-11-18T01:13:44Z",
+            "job_completed_at_utc": "2026-11-18T01:15:57Z",
+            "nix_setup_step": {
+              "name": "Run ./.github/actions/setup-nix-devtools",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-11-18T01:13:54Z",
+              "completed_at": "2026-11-18T01:14:08Z"
+            },
+            "profile_install_seconds": 10.691
+          },
+          {
+            "attempt": 2,
+            "debug": true,
+            "run_id": 44214157324,
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/attempts/2",
+            "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/job/134500948472",
+            "head_sha": "40b4243f48fc0eef05067eb1c864271e43d85b74",
+            "tested_merge_sha": "e6fa0de1566c918632383aa99aa8ac50c8fa88e2",
+            "conclusion": "success",
+            "job_started_at_utc": "2026-11-18T01:17:12Z",
+            "job_completed_at_utc": "2026-11-18T01:18:34Z",
+            "nix_setup_step": {
+              "name": "Run ./.github/actions/setup-nix-devtools",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-11-18T01:17:23Z",
+              "completed_at": "2026-11-18T01:17:37Z"
+            },
+            "profile_install_seconds": 10.439
+          }
+        ],
+        "native_requests": [
+          {
+            "url": "https://cache.nixos.org/nix-cache-info",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 51,
+            "nix_reported_seconds": 0.16,
+            "completed_log_at_utc": "2026-11-18T01:17:28.4469519Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.allegedly.works/public/nix-cache-info",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 51,
+            "nix_reported_seconds": 0.22,
+            "completed_log_at_utc": "2026-11-18T01:17:28.6650671Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.nixos.org/ak757c8kik76ip5xm8xkkxs9fkwr5iz7.narinfo",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 511,
+            "nix_reported_seconds": 0.03,
+            "completed_log_at_utc": "2026-11-18T01:17:28.6922587Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.nixos.org/nar/12h7i5c694z35pwx94vv2ppmhy447l854v8ppkcfc2vhx9q8zyr1.nar.zst",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 36088314,
+            "nix_reported_seconds": 4.42,
+            "completed_log_at_utc": "2026-11-18T01:17:33.1394347Z",
+            "download_buffer_full_events": 26
+          },
+          {
+            "url": "https://cache.nixos.org/78svwx8cmjzsq881nzlgmdpjqy7lsfi3.narinfo",
+            "curl_status": 0,
+            "http_status": 404,
+            "body_bytes": 3,
+            "nix_reported_seconds": 0.09,
+            "completed_log_at_utc": "2026-11-18T01:17:36.7718226Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.nixos.org/d3y379kbymrx6a3hxc57jmbyglxc6phj.narinfo",
+            "curl_status": 0,
+            "http_status": 404,
+            "body_bytes": 3,
+            "nix_reported_seconds": 0.14,
+            "completed_log_at_utc": "2026-11-18T01:17:36.8228793Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.allegedly.works/public/78svwx8cmjzsq881nzlgmdpjqy7lsfi3.narinfo",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 345,
+            "nix_reported_seconds": 0.05,
+            "completed_log_at_utc": "2026-11-18T01:17:36.8259040Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.allegedly.works/public/d3y379kbymrx6a3hxc57jmbyglxc6phj.narinfo",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 343,
+            "nix_reported_seconds": 0.05,
+            "completed_log_at_utc": "2026-11-18T01:17:36.8773447Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.allegedly.works/public/nar/78svwx8cmjzsq881nzlgmdpjqy7lsfi3.nar",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 7465333,
+            "nix_reported_seconds": 0.53,
+            "completed_log_at_utc": "2026-11-18T01:17:37.5250313Z",
+            "download_buffer_full_events": 0
+          },
+          {
+            "url": "https://cache.allegedly.works/public/nar/d3y379kbymrx6a3hxc57jmbyglxc6phj.nar",
+            "curl_status": 0,
+            "http_status": 200,
+            "body_bytes": 24431536,
+            "nix_reported_seconds": 0.77,
+            "completed_log_at_utc": "2026-11-18T01:17:37.8184046Z",
+            "download_buffer_full_events": 0
+          }
+        ],
+        "native_realization_activities": [
+          {
+            "fields": [
+              "/nix/store/ak757c8kik76ip5xm8xkkxs9fkwr5iz7-source",
+              "https://cache.nixos.org",
+              "local"
+            ],
+            "text": "copying path '/nix/store/ak757c8kik76ip5xm8xkkxs9fkwr5iz7-source' from 'https://cache.nixos.org'",
+            "type": 100,
+            "started_at_utc": "2026-11-18T01:17:28.6932687Z",
+            "completed_at_utc": "2026-11-18T01:17:35.8497717Z",
+            "seconds": 7.156503
+          },
+          {
+            "fields": [
+              "/nix/store/d3y379kbymrx6a3hxc57jmbyglxc6phj-bb-5.0.500",
+              "https://cache.allegedly.works/public",
+              "local"
+            ],
+            "text": "copying path '/nix/store/d3y379kbymrx6a3hxc57jmbyglxc6phj-bb-5.0.500' from 'https://cache.allegedly.works/public'",
+            "type": 100,
+            "started_at_utc": "2026-11-18T01:17:36.8803752Z",
+            "completed_at_utc": "2026-11-18T01:17:37.8190679Z",
+            "seconds": 0.938692
+          },
+          {
+            "fields": [
+              "/nix/store/78svwx8cmjzsq881nzlgmdpjqy7lsfi3-bbapi-latest",
+              "https://cache.allegedly.works/public",
+              "local"
+            ],
+            "text": "copying path '/nix/store/78svwx8cmjzsq881nzlgmdpjqy7lsfi3-bbapi-latest' from 'https://cache.allegedly.works/public'",
+            "type": 100,
+            "started_at_utc": "2026-11-18T01:17:36.8804589Z",
+            "completed_at_utc": "2026-11-18T01:17:37.5252520Z",
+            "seconds": 0.644794
+          }
+        ],
+        "native_request_duration_interpretation": "Nix transfer wall time can include client sink backpressure, not pure network/server time. Source transfer logged 26 full-buffer pauses; both Attic NARs logged zero. No retry messages occurred.",
+        "local_tail": {
+          "source_copy_after_last_nar_request_completed_seconds": 2.710337,
+          "bb_copy_after_request_completed_seconds": 0.000663,
+          "bbapi_copy_after_request_completed_seconds": 0.000221,
+          "last_attic_copy_stop_to_install_action_complete_seconds": 0.009331,
+          "interpretation": "Observed residual intervals; source tail includes local realization but these clocks do not independently split unpack, hashing, registration, and filesystem work."
+        },
+        "normal_attic_copy_start_to_action_complete_seconds": 1.492586,
+        "compressed_size_metadata": {
+          "FileSize_present": false,
+          "NarSize_total_bytes": 103895840,
+          "actual_attic_nar_http_body_total_bytes": 31896869,
+          "interpretation": "Missing compressed-size metadata explains 0.0 KiB estimate; actual network transfer is nonzero."
+        },
+        "local_curl": {
+          "completed_file_mtime_utc": "2026-11-18T01:10:39.499531+00:00",
+          "scope": "Current anonymous local-host reachability only, not reproduction or explanation of historical GitHub runner slowdown. Standard curl timing fields.",
+          "requests": [
+            {
+              "output": "bb",
+              "http_status": 200,
+              "body_bytes": 24431536,
+              "first_byte_seconds": 0.137458,
+              "total_seconds": 0.856787
+            },
+            {
+              "output": "bbapi",
+              "http_status": 200,
+              "body_bytes": 7465333,
+              "first_byte_seconds": 0.116529,
+              "total_seconds": 0.427524
+            }
+          ]
+        },
+        "historical": {
+          "fast_run_url": "https://github.com/agentydragon/ducktape/actions/runs/44115300261",
+          "slow_run_url": "https://github.com/agentydragon/ducktape/actions/runs/44117531995",
+          "fast_profile_seconds": 7.181,
+          "slow_profile_seconds": 115.008,
+          "slow_attic_copy_start_to_action_complete_seconds": 105.742351,
+          "cause": "unknown",
+          "visibility_bound": "Historical normal logs contain copy starts and action completion, without per-request completion/activity boundaries. Live Attic pod logs returned zero lines since 2026-11-17T15:40:00Z; deployed RUST_LOG=error,attic_server::gc=info records no HTTP request timing."
+        },
+        "pr_state": {
+          "headRefOid": "40b4243f48fc0eef05067eb1c864271e43d85b74",
+          "mergeCommit": {
+            "oid": "72137dbd342de2ed6005d5966dfce49e7bb2aef9"
+          },
+          "mergedAt": "2026-11-18T01:54:42Z",
+          "state": "MERGED",
+          "url": "https://github.com/agentydragon/ducktape/pull/17480"
+        },
+        "exact_head_checks": [
+          {
+            "name": "release",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/job/134501815401"
+          },
+          {
+            "name": "push-images",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/job/134501815292"
+          },
+          {
+            "name": "PR visual review",
+            "status": "completed",
+            "conclusion": "neutral",
+            "url": "https://github.com/agentydragon/ducktape/runs/134501608625"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157324/job/134500948472"
+          },
+          {
+            "name": "fork-context / Resolve fork PR context",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157600/job/134499736948"
+          },
+          {
+            "name": "bazel-ci",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157600/job/134499718024"
+          },
+          {
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157600/job/134499677322"
+          },
+          {
+            "name": "nix-wheel-check",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157600/job/134499676366"
+          },
+          {
+            "name": "Nix runner image (publish and pin)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157304/job/134499668176"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157329/job/134499667650"
+          },
+          {
+            "name": "Pre-commit checks",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157319/job/134499667088"
+          },
+          {
+            "name": "Nix runner image (build only)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/44214157304/job/134499666645"
+          }
+        ],
+        "next_action": "On recurrence, rerun the affected CI job with --debug and compare native request/backpressure, copy and profile activity boundaries. No cache or retry-policy repair is established.",
+        "limitations": [
+          "Opt-in debug logging adds overhead; this is no measured speedup.",
+          "Current fast CI transfers do not prove the mechanism of the older 115-second install.",
+          "No private credentials were read or introduced into untrusted CI.",
+          "Normal VM routing is unchanged."
+        ],
+        "pre_merge_rest_state": {
+          "base_sha": "fdfc88555b61ec51be62967e7be1202246e9d77d",
+          "head_sha": "40b4243f48fc0eef05067eb1c864271e43d85b74",
+          "mergeable": true,
+          "mergeable_state": "clean",
+          "state": "open"
+        }
+      }
+    },
+    "firecracker": {
+      "summary": "The existing Firecracker acceptance scenarios run in Docker on the kvm-vm pool. K3s and PKI are retained; guests, workloads, credentials, storage and the KVM device-plugin namespace remain fresh. Required routing stays unchanged.",
+      "headers": [
+        "Arm / JUnit",
+        "Fixture",
+        "Queue / preparation",
+        "Test process",
+        "Stack setup",
+        "Scenario envelope",
+        "VM companion",
+        "Pair submission \u2192 results"
+      ],
+      "rows": [
+        [
+          "Control 1; 2 pass",
+          "cold",
+          "Unknown / 4.441s",
+          "405.994s",
+          "121.000s",
+          "227.321s",
+          "other worker; 306.718s overlap",
+          "470.540s"
+        ],
+        [
+          "Recycled cold seed; 2 pass",
+          "cold",
+          "Unknown / 1.252s",
+          "348.770s",
+          "92.064s",
+          "207.204s",
+          "other worker; 274.121s overlap",
+          "404.488s"
+        ],
+        [
+          "Controlled warm; 2 pass",
+          "warm",
+          "200.149s / 1.511s",
+          "287.877s",
+          "38.728s",
+          "199.667s",
+          "same worker; 0.000s overlap",
+          "540.513s"
+        ],
+        [
+          "Control 2; 2 pass",
+          "cold",
+          "Unknown / 0.529s",
+          "370.197s",
+          "109.455s",
+          "204.518s",
+          "other worker; 207.250s overlap",
+          "431.017s"
+        ],
+        [
+          "Ordinary probe (cold); 2 pass",
+          "cold",
+          "3.595s / 1.376s",
+          "293.600s",
+          "75.649s",
+          "167.100s",
+          "other worker; 196.117s overlap",
+          "350.662s"
+        ]
+      ],
+      "chart": [
+        {
+          "label": "Control 1",
+          "Test process": 405.99393
+        },
+        {
+          "label": "Recycled cold seed",
+          "Test process": 348.770362
+        },
+        {
+          "label": "Controlled warm",
+          "Test process": 287.877167
+        },
+        {
+          "label": "Control 2",
+          "Test process": 370.197162
+        },
+        {
+          "label": "Ordinary probe (cold)",
+          "Test process": 293.599581
+        }
+      ],
+      "findings": [
+        "One cold-to-warm chain passed 42 identity, isolation and cleanup checks after a non-recycled VM ran on the same executor. Native runner, Docker namespaces, K3s process/node and PKI controllers stayed stable; fixture and device-plugin identities changed. Candidate Action input roots, Commands and platforms match exactly.",
+        "Observed setup was 121.000s and 109.455s in the non-recycled controls, 92.064s in the cold candidate, and 38.728s warm. Warm process time was 287.877s. Scenario work still took 199.667s; setup, process and scenario clocks nest and must not be added.",
+        "The controlled warm action queued 200.149s while its pinned executor ran the VM companion. Their native process windows had zero overlap. The paired command clock was 540.513s, versus 470.540s and 431.017s for the controls. A faster test process did not make this pinned pair faster.",
+        "The adaptive ordinary-scheduler probe selected a fresh K3s baseline on another executor: queue 3.595s, process 293.600s, paired command feedback 350.662s and 196.117s of VM/Firecracker process overlap. This was one ordinary selection and no warm hit; its result cannot establish a fleet warm-hit rate or a causal before/after speedup.",
+        "RAM coexistence passed on the original 8-GiB worker: both VM guests powered off orderly, the paused Firecracker baseline survived, and the subsequent Firecracker action reused it. Candidate cgroup memory after the cold action's reclamation was 1,395,810,304 bytes; after the VM it was 855,597,056 bytes. Its kernel lifetime peak was 5,516,976,128 bytes, including file cache. Candidate cgroup OOM counters stayed zero. These observations do not establish fleet capacity or safe additional replicas.",
+        "Two collection-only actions reused the exact observed native/Docker runner chains and requested discard. Both returned zero without running scenario bodies. The following six-worker inventory observed both original kernels, zero owned containers and zero owned loop mappings; both recorded sparse backing files were absent from their original Docker upper layers. Disposal is excluded from all scenario and timing populations.",
+        "Ordinary PR CI initially failed when a managed TCG guest lost CPU 0 timer/RCU progress before Runtime connected; cleanup then rejected a remaining Sandbox. One job retry passed using cached test results, and #17485 merged. No fresh managed-VM validation is claimed by that retry. The original serial and QEMU snapshot remain in the evidence. The timer stall is unresolved and distinct from the earlier Kine fatal and QEMU IOTLB assertion.",
+        "Keep Firecracker retention manual while measuring natural reuse and eviction under representative parallel load. Allow ordinary scheduler fallback; a worker pin is useful for identity proof and can create its own head-of-line wait. Required-check feedback remains the acceptance clock for a routing proposal."
+      ],
+      "links": [
+        {
+          "label": "Merged manual benchmark #17485",
+          "url": "https://github.com/agentydragon/ducktape/pull/17485"
+        },
+        {
+          "label": "Control 1",
+          "url": "https://app.buildbuddy.io/invocation/357ec96e-9de7-439e-a0c5-1163f698c96a"
+        },
+        {
+          "label": "Recycled cold seed",
+          "url": "https://app.buildbuddy.io/invocation/2c9963f3-f2f7-4361-8353-da592c630a21"
+        },
+        {
+          "label": "Controlled warm",
+          "url": "https://app.buildbuddy.io/invocation/9143613a-31b5-4cbc-98cd-b1458f5b8027"
+        },
+        {
+          "label": "Control 2",
+          "url": "https://app.buildbuddy.io/invocation/c9962709-683b-4d1c-8128-5f923fdd32f0"
+        },
+        {
+          "label": "Ordinary probe (cold)",
+          "url": "https://app.buildbuddy.io/invocation/68b9d663-c6d9-45a6-9056-dc46e76d5fe0"
+        },
+        {
+          "label": "Same-worker VM coexistence",
+          "url": "https://app.buildbuddy.io/invocation/6852c5a7-6644-4337-b368-df2a5b5ecdab"
+        },
+        {
+          "label": "Ordinary CI failure and retry",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/44216265763"
+        }
+      ],
+      "evidence": {
+        "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+        "source_pr": "https://github.com/agentydragon/ducktape/pull/17485",
+        "protocol": {
+          "purpose": "Manual Firecracker fixture-lifetime experiment on the existing KVM pool; selected benchmark, not required-check feedback",
+          "required_routing_changed": false,
+          "resource_policy_changed": false,
+          "source_policy": "Freeze one reviewed benchmark commit before measured work. Prebuild controls, candidate and the existing manual non-recycled KVM VM companion without executor pin. Record native Action/Command identities and all physical attempts.",
+          "planned_sequence": [
+            "non-recycled-control-first",
+            "recycled-cold-seed",
+            "same-executor-nonrecycled-VM-while-FC-baseline-paused-if-seed-passes",
+            "recycled-warm-repeat-if-seed-passes",
+            "non-recycled-control-repeat-if-first-passes"
+          ],
+          "coexistence": "Start one ordinary-scheduler non-recycled KVM VM companion alongside each measured Firecracker action. Native start/end clocks establish whether they actually overlap; submission together alone does not prove concurrency. Ambient CI is observed separately.",
+          "affinity": "Controlled Firecracker reuse may pin the observed executor registration after prebuilding. This does not qualify ordinary scheduler hit rate. VM companions retain ordinary scheduling.",
+          "cache_policy": "--nocache_test_results --flaky_test_attempts=1 --runs_per_test=1; dependencies retain normal cache; inspect native skipCacheLookup and invocationLinkType",
+          "coverage": "Existing two Firecracker scenarios and existing VM companion scenarios, fresh namespaces, credentials and storage; unchanged scenario assertions and normal required suite routing",
+          "stop_policy": "No repeat after a failed arm; preserve the failure and all native attempts. Stop if memory/OOM evidence threatens the worker. No retries disguised as new samples.",
+          "reuse_gate": "Same native runner, executor registration, Docker container and namespaces, exact previous-action receipt, same K3s PID/start/node/controllers, warm fixture outcome, fresh per-action resources and complete cleanup",
+          "resource_gate": "Action cgroup current/peak/events, guest MemAvailable/OOM/PSI and pool registration/activity clocks. Samples include ambient traffic and are not peak or fleet capacity proof.",
+          "disposal_gate": "Collection-only explicit discard on exact observed executor/key/runner; verify same previous-action receipt and native exit, then read-only worker kernel inventory for owned container and backing-loop release. Disposal is outside scenario/timing population.",
+          "limits": [
+            "Small sequential sample",
+            "Controlled affinity is distinct from normal scheduler affinity",
+            "Cold fixture state does not imply cold image or host disk cache",
+            "Action and selected-batch clocks do not establish required-gate or fleet latency savings",
+            "Unknown/inverted queue clocks stay unknown"
+          ],
+          "recorded_before_measurements_at_utc": "2026-11-18T01:13:41.083107+00:00",
+          "paused_baseline_coexistence": "After the cold candidate is retained, run one already prebuilt non-recycled manual VM target pinned to its exact executor, before Firecracker warm repeat. Record the paused FC container and memory before/during/after; ordinary active-task capacity is unchanged. This VM action is a distinct RAM/coexistence population.",
+          "amended_before_measurements_at_utc": "2026-11-18T01:20:59.697004+00:00",
+          "frozen_benchmark_source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+          "source_pr": "https://github.com/agentydragon/ducktape/pull/17485",
+          "preparatory_attempts": [
+            {
+              "invocation": "a3551a11-0fce-4ed2-9cda-38dadb700cb1",
+              "source": "eb0c1eedb7b685c5e23ea26e66397fbdaf4dc345",
+              "outcome": "Bazel analysis failed: scenario package visibility excluded new manual target package. No scenario TestRunner ran. Fixed in8c2b75a379 before measured work."
+            }
+          ],
+          "adaptive_followup": {
+            "recorded_before_probe_at_utc": "2026-11-18T02:17:25.715648+00:00",
+            "after": "preplanned control-2 completes",
+            "sequence": [
+              "one ordinary-scheduler recycled Firecracker action alongside one ordinary VM companion"
+            ],
+            "reason": "Controlled warm reuse passed but its executor pin queued 200.149s behind the VM companion on the same executor. Test whether ordinary scheduling chooses a useful reuse/cold-start path without this artificial pin.",
+            "source_policy": "Same frozen8c2b75a379 and target/key; no source or policy change, no retries",
+            "population": "Separate adaptive scheduling probe; do not mix into preplanned control/cold/warm summary or claim fleet hit rate",
+            "disposal": "Track and explicitly discard every newly observed owned runner; preserve the existing warm chain too."
+          }
+        },
+        "firecracker_actions": [
+          {
+            "name": "control-1",
+            "group": "firecracker-runs",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "357ec96e-9de7-439e-a0c5-1163f698c96a",
+            "invocation_url": "https://app.buildbuddy.io/invocation/357ec96e-9de7-439e-a0c5-1163f698c96a",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "a2475f16ae724215e7d8ccfdf6c37bbbcc6910ff3719862fe03b757449847c6d",
+              "action_digest": {
+                "hash": "a2475f16ae724215e7d8ccfdf6c37bbbcc6910ff3719862fe03b757449847c6d",
+                "sizeBytes": "1350"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "runner-recycling-max-wait": "5s",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T01:33:53.535670Z",
+                  "quality": "valid",
+                  "seconds": 4.128887,
+                  "start": "2026-11-18T01:33:49.406783Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T01:40:41.887018Z",
+                  "quality": "valid",
+                  "seconds": 2.357417,
+                  "start": "2026-11-18T01:40:39.529601Z"
+                },
+                "process": {
+                  "end": "2026-11-18T01:40:39.529600Z",
+                  "quality": "valid",
+                  "seconds": 405.99393,
+                  "start": "2026-11-18T01:33:53.535670Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T01:33:49.094896Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T01:33:50.083186Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T01:33:53.535670Z",
+                  "quality": "valid",
+                  "seconds": 4.440774,
+                  "start": "2026-11-18T01:33:49.094896Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "973e4dd1e0e6f2db7ebc4ddbeb706ce32997fbf54f5c82f6af98884ec6985b54",
+              "command_digest": {
+                "hash": "973e4dd1e0e6f2db7ebc4ddbeb706ce32997fbf54f5c82f6af98884ec6985b54",
+                "sizeBytes": "5904"
+              },
+              "errors": [],
+              "execution_fingerprint": "04b2d0e2e22b",
+              "executor_fingerprint": "154062fd54b9",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": false,
+              "recycling_key_sha256": "df3b020cd9f79c0d0dba541d03a07b310d0d541505a2b2e06a4320a13415ebfb",
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "636e698013b4",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+              "worker_fingerprint": "ccc2883659bb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "2132fa2405e75ccaa4e3d396126417535a53024105ca886c6dfe46bac596871e",
+                "artifact_sha256": "2132fa2405e75ccaa4e3d396126417535a53024105ca886c6dfe46bac596871e",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_firecracker_preserves_live_guest",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "2132fa2405e75ccaa4e3d396126417535a53024105ca886c6dfe46bac596871e",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "04b2d0e2e22b",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/firecracker/test_firecracker_control/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 546,
+                "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_control"
+              }
+            ],
+            "receipt_summaries": [
+              {
+                "attempt": 1,
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+                "persistence_suite": {
+                  "cas_digest": "8de6b634d0daacce9ce33cad7f5e4ce6f8459aaa99220607e6ea9952f11e6b5b",
+                  "cleanup": "complete",
+                  "download_status": "downloaded",
+                  "fixture_resource_identity_fields_present": true,
+                  "k3s_identity_fields_present": true,
+                  "outcome": "cold",
+                  "pki_controller_identities_present": true,
+                  "receipt_fingerprint": "bf07f63f6b5d",
+                  "sha256": "8de6b634d0daacce9ce33cad7f5e4ce6f8459aaa99220607e6ea9952f11e6b5b",
+                  "vm_controller_identities_present": false,
+                  "workspace_loop_devices_released": 0
+                },
+                "recycled_runner": {
+                  "action_fingerprint": "0596e4ac9199",
+                  "cas_digest": "8d2d37fb8d4db770e421ff8618f6635b128eef5a51f50588e92fccf0ad7c8e9b",
+                  "container_hostname_fingerprint": "9acd624d8d37",
+                  "data_directory_is_private_recycled_path": true,
+                  "data_mount_ext4": true,
+                  "data_mount_loop_device": true,
+                  "data_mount_present": true,
+                  "discard_requested": true,
+                  "download_status": "downloaded",
+                  "exit_status": 0,
+                  "previous_action_fingerprint": null,
+                  "runner_fingerprint": "70059c413280",
+                  "sha256": "8d2d37fb8d4db770e421ff8618f6635b128eef5a51f50588e92fccf0ad7c8e9b"
+                },
+                "run": 1,
+                "shard": 1
+              }
+            ],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 0,
+              "guests": [],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 0,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T01:32:58.052009+00:00",
+            "result_observed_at_utc": "2026-11-18T01:40:48.137587+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 227.311682,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:39:53.696290Z",
+                  "quality": "valid",
+                  "seconds": 227.321138,
+                  "start": "2026-11-18T01:36:06.375152Z"
+                }
+              },
+              "system_test.stack.cleanup": {
+                "name": "system_test.stack.cleanup",
+                "span_count": 1,
+                "span_seconds_sum": 37.450479,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:40:33.186214Z",
+                  "quality": "valid",
+                  "seconds": 37.450479,
+                  "start": "2026-11-18T01:39:55.735735Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 121.000472,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:36:04.798426Z",
+                  "quality": "valid",
+                  "seconds": 121.000472,
+                  "start": "2026-11-18T01:34:03.797954Z"
+                }
+              }
+            },
+            "memory": {
+              "memory_before_reclaim": {
+                "current": 4928741376,
+                "peak": 6094516224,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "62031",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              },
+              "memory_after_reclaim": {
+                "current": 4928733184,
+                "peak": 6094516224,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "62031",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              }
+            },
+            "reclaim_errno": null,
+            "discard_requested": true,
+            "fixture": "cold",
+            "cleanup": "complete",
+            "layers_in_memory": false,
+            "runtime_cleanup": "complete",
+            "runtime_receipt_sha256": "b4827bae256b610361a8f6b15639438fb726f80f328a472fb9b6f16f622fc0d0"
+          },
+          {
+            "name": "cold-seed",
+            "group": "firecracker-runs",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "2c9963f3-f2f7-4361-8353-da592c630a21",
+            "invocation_url": "https://app.buildbuddy.io/invocation/2c9963f3-f2f7-4361-8353-da592c630a21",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+              "action_digest": {
+                "hash": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+                "sizeBytes": "1349"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "true",
+                "runner-recycling-max-wait": "5s",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T01:43:43.386244Z",
+                  "quality": "valid",
+                  "seconds": 1.24898,
+                  "start": "2026-11-18T01:43:42.137264Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T01:49:33.162356Z",
+                  "quality": "valid",
+                  "seconds": 1.005749,
+                  "start": "2026-11-18T01:49:32.156607Z"
+                },
+                "process": {
+                  "end": "2026-11-18T01:49:32.156606Z",
+                  "quality": "valid",
+                  "seconds": 348.770362,
+                  "start": "2026-11-18T01:43:43.386244Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T01:43:42.134073Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T01:43:42.931696Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T01:43:43.386244Z",
+                  "quality": "valid",
+                  "seconds": 1.252171,
+                  "start": "2026-11-18T01:43:42.134073Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+              "command_digest": {
+                "hash": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+                "sizeBytes": "5903"
+              },
+              "errors": [],
+              "execution_fingerprint": "a5948943664d",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": false,
+              "recycling_key_sha256": "df3b020cd9f79c0d0dba541d03a07b310d0d541505a2b2e06a4320a13415ebfb",
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "a2d86c69883f",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "1ba3a6866ded0ff61d48e9c46fc0c437abf64bd75b5d67d73e2df232cf23d0fd",
+                "artifact_sha256": "1ba3a6866ded0ff61d48e9c46fc0c437abf64bd75b5d67d73e2df232cf23d0fd",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_firecracker_preserves_live_guest",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "1ba3a6866ded0ff61d48e9c46fc0c437abf64bd75b5d67d73e2df232cf23d0fd",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "a5948943664d",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/firecracker/test_firecracker_recycled/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 546,
+                "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled"
+              }
+            ],
+            "receipt_summaries": [
+              {
+                "attempt": 1,
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "persistence_suite": {
+                  "cas_digest": "2dcd7e0954f8391bc6ef48bc5bf469667148fb3d8efeded3040029b64aad04e5",
+                  "cleanup": "complete",
+                  "download_status": "downloaded",
+                  "fixture_resource_identity_fields_present": true,
+                  "k3s_identity_fields_present": true,
+                  "outcome": "cold",
+                  "pki_controller_identities_present": true,
+                  "receipt_fingerprint": "bf07f63f6b5d",
+                  "sha256": "2dcd7e0954f8391bc6ef48bc5bf469667148fb3d8efeded3040029b64aad04e5",
+                  "vm_controller_identities_present": false,
+                  "workspace_loop_devices_released": 0
+                },
+                "recycled_runner": {
+                  "action_fingerprint": "1205eec9db93",
+                  "cas_digest": "2abea96fa6ba687dd09c9883da9b462e99729f2d4392cf54788e1b61bd804f59",
+                  "container_hostname_fingerprint": "cabd5f33fb64",
+                  "data_directory_is_private_recycled_path": true,
+                  "data_mount_ext4": true,
+                  "data_mount_loop_device": true,
+                  "data_mount_present": true,
+                  "discard_requested": false,
+                  "download_status": "downloaded",
+                  "exit_status": 0,
+                  "previous_action_fingerprint": null,
+                  "runner_fingerprint": "5dd09e5a7629",
+                  "sha256": "2abea96fa6ba687dd09c9883da9b462e99729f2d4392cf54788e1b61bd804f59"
+                },
+                "run": 1,
+                "shard": 1
+              }
+            ],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 0,
+              "guests": [],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 0,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T01:42:57.206193+00:00",
+            "result_observed_at_utc": "2026-11-18T01:49:38.987589+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 207.20288,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:48:52.314141Z",
+                  "quality": "valid",
+                  "seconds": 207.204449,
+                  "start": "2026-11-18T01:45:25.109692Z"
+                }
+              },
+              "system_test.stack.cleanup": {
+                "name": "system_test.stack.cleanup",
+                "span_count": 1,
+                "span_seconds_sum": 36.395451,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:49:30.510311Z",
+                  "quality": "valid",
+                  "seconds": 36.395451,
+                  "start": "2026-11-18T01:48:54.114860Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 92.063503,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:45:23.861576Z",
+                  "quality": "valid",
+                  "seconds": 92.063503,
+                  "start": "2026-11-18T01:43:51.798073Z"
+                }
+              }
+            },
+            "memory": {
+              "memory_before_reclaim": {
+                "current": 4537073664,
+                "peak": 5516976128,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "60400",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              },
+              "memory_after_reclaim": {
+                "current": 1395810304,
+                "peak": 5516976128,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "60400",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              }
+            },
+            "reclaim_errno": null,
+            "discard_requested": false,
+            "fixture": "cold",
+            "cleanup": "complete",
+            "layers_in_memory": false,
+            "runtime_cleanup": "complete",
+            "runtime_receipt_sha256": "2ae9df2a7d4b2f659e65832ea40ea4081ecb547d6242a808cb8d62406a3f1d89"
+          },
+          {
+            "name": "warm-repeat",
+            "group": "firecracker-runs",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "9143613a-31b5-4cbc-98cd-b1458f5b8027",
+            "invocation_url": "https://app.buildbuddy.io/invocation/9143613a-31b5-4cbc-98cd-b1458f5b8027",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+              "action_digest": {
+                "hash": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+                "sizeBytes": "1349"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "true",
+                "runner-recycling-max-wait": "5s",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:05:11.619215Z",
+                  "quality": "valid",
+                  "seconds": 1.459228,
+                  "start": "2026-11-18T02:05:10.159987Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:10:00.568342Z",
+                  "quality": "valid",
+                  "seconds": 1.071959,
+                  "start": "2026-11-18T02:09:59.496383Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:09:59.496382Z",
+                  "quality": "valid",
+                  "seconds": 287.877167,
+                  "start": "2026-11-18T02:05:11.619215Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:05:10.108305Z",
+                  "quality": "valid",
+                  "seconds": 200.149075,
+                  "start": "2026-11-18T02:01:49.959230Z"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:05:11.619215Z",
+                  "quality": "valid",
+                  "seconds": 1.51091,
+                  "start": "2026-11-18T02:05:10.108305Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+              "command_digest": {
+                "hash": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+                "sizeBytes": "5903"
+              },
+              "errors": [],
+              "execution_fingerprint": "3e0edd2dc979",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": false,
+              "recycling_key_sha256": "df3b020cd9f79c0d0dba541d03a07b310d0d541505a2b2e06a4320a13415ebfb",
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "a2d86c69883f",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "9af6b5c12c828347c197b0869ef2fb64bd8d6af175f1f84405c8a67c609d4b3e",
+                "artifact_sha256": "9af6b5c12c828347c197b0869ef2fb64bd8d6af175f1f84405c8a67c609d4b3e",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_firecracker_preserves_live_guest",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "9af6b5c12c828347c197b0869ef2fb64bd8d6af175f1f84405c8a67c609d4b3e",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "3e0edd2dc979",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/firecracker/test_firecracker_recycled/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 546,
+                "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled"
+              }
+            ],
+            "receipt_summaries": [
+              {
+                "attempt": 1,
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "persistence_suite": {
+                  "cas_digest": "b88c260904b6c20b778c8d653ec83f8a3af499b89fddaa44f00fffd95e3c31fa",
+                  "cleanup": "complete",
+                  "download_status": "downloaded",
+                  "fixture_resource_identity_fields_present": true,
+                  "k3s_identity_fields_present": true,
+                  "outcome": "warm",
+                  "pki_controller_identities_present": true,
+                  "receipt_fingerprint": "bf07f63f6b5d",
+                  "sha256": "b88c260904b6c20b778c8d653ec83f8a3af499b89fddaa44f00fffd95e3c31fa",
+                  "vm_controller_identities_present": false,
+                  "workspace_loop_devices_released": 0
+                },
+                "recycled_runner": {
+                  "action_fingerprint": "43719090c468",
+                  "cas_digest": "523eb97b248cb27a9702da4054c4fa2e78064069d5a800ca6cb45f12d1a9cb13",
+                  "container_hostname_fingerprint": "cabd5f33fb64",
+                  "data_directory_is_private_recycled_path": true,
+                  "data_mount_ext4": true,
+                  "data_mount_loop_device": true,
+                  "data_mount_present": true,
+                  "discard_requested": false,
+                  "download_status": "downloaded",
+                  "exit_status": 0,
+                  "previous_action_fingerprint": "1205eec9db93",
+                  "runner_fingerprint": "5dd09e5a7629",
+                  "sha256": "523eb97b248cb27a9702da4054c4fa2e78064069d5a800ca6cb45f12d1a9cb13"
+                },
+                "run": 1,
+                "shard": 1
+              }
+            ],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 0,
+              "guests": [],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 0,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:01:07.561887+00:00",
+            "result_observed_at_utc": "2026-11-18T02:10:06.495168+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 199.664331,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:09:20.026949Z",
+                  "quality": "valid",
+                  "seconds": 199.666503,
+                  "start": "2026-11-18T02:06:00.360446Z"
+                }
+              },
+              "system_test.stack.cleanup": {
+                "name": "system_test.stack.cleanup",
+                "span_count": 1,
+                "span_seconds_sum": 36.024834,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:09:57.916981Z",
+                  "quality": "valid",
+                  "seconds": 36.024834,
+                  "start": "2026-11-18T02:09:21.892147Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 38.727693,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:05:59.185198Z",
+                  "quality": "valid",
+                  "seconds": 38.727693,
+                  "start": "2026-11-18T02:05:20.457505Z"
+                }
+              }
+            },
+            "memory": {
+              "memory_before_reclaim": {
+                "current": 4519215104,
+                "peak": 5934125056,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "120140",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              },
+              "memory_after_reclaim": {
+                "current": 1441652736,
+                "peak": 5934125056,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "120140",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              }
+            },
+            "reclaim_errno": null,
+            "discard_requested": false,
+            "fixture": "warm",
+            "cleanup": "complete",
+            "layers_in_memory": false,
+            "runtime_cleanup": "complete",
+            "runtime_receipt_sha256": "53da7c16a5b047f1c86af818ed4c54cbf644e4ccfe7f28c3ed3f7799f571b2f3"
+          },
+          {
+            "name": "control-2",
+            "group": "firecracker-runs",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "c9962709-683b-4d1c-8128-5f923fdd32f0",
+            "invocation_url": "https://app.buildbuddy.io/invocation/c9962709-683b-4d1c-8128-5f923fdd32f0",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "a2475f16ae724215e7d8ccfdf6c37bbbcc6910ff3719862fe03b757449847c6d",
+              "action_digest": {
+                "hash": "a2475f16ae724215e7d8ccfdf6c37bbbcc6910ff3719862fe03b757449847c6d",
+                "sizeBytes": "1350"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "runner-recycling-max-wait": "5s",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:14:27.873051Z",
+                  "quality": "valid",
+                  "seconds": 0.474595,
+                  "start": "2026-11-18T02:14:27.398456Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:20:38.845744Z",
+                  "quality": "valid",
+                  "seconds": 0.775531,
+                  "start": "2026-11-18T02:20:38.070213Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:20:38.070213Z",
+                  "quality": "valid",
+                  "seconds": 370.197162,
+                  "start": "2026-11-18T02:14:27.873051Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:14:27.343702Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T02:14:28.311984Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:14:27.873051Z",
+                  "quality": "valid",
+                  "seconds": 0.529349,
+                  "start": "2026-11-18T02:14:27.343702Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "973e4dd1e0e6f2db7ebc4ddbeb706ce32997fbf54f5c82f6af98884ec6985b54",
+              "command_digest": {
+                "hash": "973e4dd1e0e6f2db7ebc4ddbeb706ce32997fbf54f5c82f6af98884ec6985b54",
+                "sizeBytes": "5904"
+              },
+              "errors": [],
+              "execution_fingerprint": "bb77cd72dd1b",
+              "executor_fingerprint": "154062fd54b9",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": false,
+              "recycling_key_sha256": "df3b020cd9f79c0d0dba541d03a07b310d0d541505a2b2e06a4320a13415ebfb",
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "b448cd877a82",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+              "worker_fingerprint": "ccc2883659bb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "1d79897d4652d816b816ee82616b13b63b90a3f3dbb4c1e18b45712bbff2620e",
+                "artifact_sha256": "1d79897d4652d816b816ee82616b13b63b90a3f3dbb4c1e18b45712bbff2620e",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_firecracker_preserves_live_guest",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "1d79897d4652d816b816ee82616b13b63b90a3f3dbb4c1e18b45712bbff2620e",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "bb77cd72dd1b",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/firecracker/test_firecracker_control/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 546,
+                "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_control"
+              }
+            ],
+            "receipt_summaries": [
+              {
+                "attempt": 1,
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_control",
+                "persistence_suite": {
+                  "cas_digest": "fe349c1ea9ec9e8466e21c072343df8d4e7a650c7ace3aa937438ac10f45e07c",
+                  "cleanup": "complete",
+                  "download_status": "downloaded",
+                  "fixture_resource_identity_fields_present": true,
+                  "k3s_identity_fields_present": true,
+                  "outcome": "cold",
+                  "pki_controller_identities_present": true,
+                  "receipt_fingerprint": "bf07f63f6b5d",
+                  "sha256": "fe349c1ea9ec9e8466e21c072343df8d4e7a650c7ace3aa937438ac10f45e07c",
+                  "vm_controller_identities_present": false,
+                  "workspace_loop_devices_released": 0
+                },
+                "recycled_runner": {
+                  "action_fingerprint": "0060e446a4bb",
+                  "cas_digest": "3ce6fdbd0d368af9859967846f949818a5b5d286c1f3b70ab985f7a152e8d244",
+                  "container_hostname_fingerprint": "3c295debd3e8",
+                  "data_directory_is_private_recycled_path": true,
+                  "data_mount_ext4": true,
+                  "data_mount_loop_device": true,
+                  "data_mount_present": true,
+                  "discard_requested": true,
+                  "download_status": "downloaded",
+                  "exit_status": 0,
+                  "previous_action_fingerprint": null,
+                  "runner_fingerprint": "8a7a0b58d57f",
+                  "sha256": "3ce6fdbd0d368af9859967846f949818a5b5d286c1f3b70ab985f7a152e8d244"
+                },
+                "run": 1,
+                "shard": 1
+              }
+            ],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 0,
+              "guests": [],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 0,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:13:34.993412+00:00",
+            "result_observed_at_utc": "2026-11-18T02:20:44.781850+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 204.516386,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:19:52.963927Z",
+                  "quality": "valid",
+                  "seconds": 204.518381,
+                  "start": "2026-11-18T02:16:28.445546Z"
+                }
+              },
+              "system_test.stack.cleanup": {
+                "name": "system_test.stack.cleanup",
+                "span_count": 1,
+                "span_seconds_sum": 36.551752,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:20:31.504955Z",
+                  "quality": "valid",
+                  "seconds": 36.551752,
+                  "start": "2026-11-18T02:19:54.953203Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 109.454673,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:16:27.112493Z",
+                  "quality": "valid",
+                  "seconds": 109.454673,
+                  "start": "2026-11-18T02:14:37.657820Z"
+                }
+              }
+            },
+            "memory": {
+              "memory_before_reclaim": {
+                "current": 4745805824,
+                "peak": 5953863680,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "61393",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              },
+              "memory_after_reclaim": {
+                "current": 4745805824,
+                "peak": 5953863680,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "61393",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              }
+            },
+            "reclaim_errno": null,
+            "discard_requested": true,
+            "fixture": "cold",
+            "cleanup": "complete",
+            "layers_in_memory": false,
+            "runtime_cleanup": "complete",
+            "runtime_receipt_sha256": "10e322c7a10d7bf54d31904c89542fa19cb268a664d09d7dadd304cb8b3f875a"
+          },
+          {
+            "name": "ordinary-probe",
+            "group": "firecracker-runs",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "68b9d663-c6d9-45a6-9056-dc46e76d5fe0",
+            "invocation_url": "https://app.buildbuddy.io/invocation/68b9d663-c6d9-45a6-9056-dc46e76d5fe0",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+              "action_digest": {
+                "hash": "874061b30119f65e5ca5ef9e3df8d589aa4f0ccf97cda6624dda3769608faabe",
+                "sizeBytes": "1349"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "20GB",
+                "EstimatedMemory": "6GB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "true",
+                "runner-recycling-max-wait": "5s",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:23:36.108027Z",
+                  "quality": "valid",
+                  "seconds": 1.373742,
+                  "start": "2026-11-18T02:23:34.734285Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:28:30.642094Z",
+                  "quality": "valid",
+                  "seconds": 0.934486,
+                  "start": "2026-11-18T02:28:29.707608Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:28:29.707608Z",
+                  "quality": "valid",
+                  "seconds": 293.599581,
+                  "start": "2026-11-18T02:23:36.108027Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:23:34.732453Z",
+                  "quality": "valid",
+                  "seconds": 3.594782,
+                  "start": "2026-11-18T02:23:31.137671Z"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:23:36.108027Z",
+                  "quality": "valid",
+                  "seconds": 1.375574,
+                  "start": "2026-11-18T02:23:34.732453Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+              "command_digest": {
+                "hash": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+                "sizeBytes": "5903"
+              },
+              "errors": [],
+              "execution_fingerprint": "8b5b72cdcf89",
+              "executor_fingerprint": "d99e4df7ae12",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": false,
+              "recycling_key_sha256": "df3b020cd9f79c0d0dba541d03a07b310d0d541505a2b2e06a4320a13415ebfb",
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "8b53abbaec3f",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+              "worker_fingerprint": "d6ae19c1127f"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "a046d639a73c664f68f2bb54b31186b5a27388bf56546e31214f64750a526489",
+                "artifact_sha256": "a046d639a73c664f68f2bb54b31186b5a27388bf56546e31214f64750a526489",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_firecracker_preserves_live_guest",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_firecracker",
+                    "name": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "a046d639a73c664f68f2bb54b31186b5a27388bf56546e31214f64750a526489",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "8b5b72cdcf89",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/firecracker/test_firecracker_recycled/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 546,
+                "target_label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled"
+              }
+            ],
+            "receipt_summaries": [
+              {
+                "attempt": 1,
+                "label": "//agentplane/system_tests/x/firecracker:test_firecracker_recycled",
+                "persistence_suite": {
+                  "cas_digest": "18f27642268805f9d3f57319971642337ba5e158b06b65727c2b8116285d1851",
+                  "cleanup": "complete",
+                  "download_status": "downloaded",
+                  "fixture_resource_identity_fields_present": true,
+                  "k3s_identity_fields_present": true,
+                  "outcome": "cold",
+                  "pki_controller_identities_present": true,
+                  "receipt_fingerprint": "bf07f63f6b5d",
+                  "sha256": "18f27642268805f9d3f57319971642337ba5e158b06b65727c2b8116285d1851",
+                  "vm_controller_identities_present": false,
+                  "workspace_loop_devices_released": 0
+                },
+                "recycled_runner": {
+                  "action_fingerprint": "5b1d21d0ac53",
+                  "cas_digest": "838ee0776adcf27ad2ecb4fcc3574047266a9fd5ab6001422d06527dcafdf7a1",
+                  "container_hostname_fingerprint": "9e87535ff0f8",
+                  "data_directory_is_private_recycled_path": true,
+                  "data_mount_ext4": true,
+                  "data_mount_loop_device": true,
+                  "data_mount_present": true,
+                  "discard_requested": false,
+                  "download_status": "downloaded",
+                  "exit_status": 0,
+                  "previous_action_fingerprint": null,
+                  "runner_fingerprint": "99aeb5de4fd2",
+                  "sha256": "838ee0776adcf27ad2ecb4fcc3574047266a9fd5ab6001422d06527dcafdf7a1"
+                },
+                "run": 1,
+                "shard": 1
+              }
+            ],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 0,
+              "guests": [],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 0,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:22:46.289396+00:00",
+            "result_observed_at_utc": "2026-11-18T02:28:36.951709+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 167.098108,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:27:48.674000Z",
+                  "quality": "valid",
+                  "seconds": 167.100288,
+                  "start": "2026-11-18T02:25:01.573712Z"
+                }
+              },
+              "system_test.stack.cleanup": {
+                "name": "system_test.stack.cleanup",
+                "span_count": 1,
+                "span_seconds_sum": 37.081686,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:28:27.961720Z",
+                  "quality": "valid",
+                  "seconds": 37.081686,
+                  "start": "2026-11-18T02:27:50.880034Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 75.64913,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:25:00.451685Z",
+                  "quality": "valid",
+                  "seconds": 75.64913,
+                  "start": "2026-11-18T02:23:44.802555Z"
+                }
+              }
+            },
+            "memory": {
+              "memory_before_reclaim": {
+                "current": 4646170624,
+                "peak": 5887639552,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "59405",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              },
+              "memory_after_reclaim": {
+                "current": 1417535488,
+                "peak": 5887639552,
+                "events": {
+                  "low": "0",
+                  "high": "0",
+                  "max": "59405",
+                  "oom": "0",
+                  "oom_kill": "0",
+                  "oom_group_kill": "0"
+                }
+              }
+            },
+            "reclaim_errno": null,
+            "discard_requested": false,
+            "fixture": "cold",
+            "cleanup": "complete",
+            "layers_in_memory": false,
+            "runtime_cleanup": "complete",
+            "runtime_receipt_sha256": "4b1bc52c3f1ed6c6cdc7f354d22047dd6fda3fe9bbd507aed7b7ae82c81102c9"
+          }
+        ],
+        "vm_actions": [
+          {
+            "name": "control-1",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "072b3bbc-a5b1-4a18-b6dd-377180c84e28",
+            "invocation_url": "https://app.buildbuddy.io/invocation/072b3bbc-a5b1-4a18-b6dd-377180c84e28",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T01:33:59.385716Z",
+                  "quality": "valid",
+                  "seconds": 10.385065,
+                  "start": "2026-11-18T01:33:49.000651Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T01:39:08.774321Z",
+                  "quality": "valid",
+                  "seconds": 2.671008,
+                  "start": "2026-11-18T01:39:06.103313Z"
+                },
+                "process": {
+                  "end": "2026-11-18T01:39:06.103310Z",
+                  "quality": "valid",
+                  "seconds": 306.717594,
+                  "start": "2026-11-18T01:33:59.385716Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T01:33:48.805422Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T01:33:50.537182Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T01:33:59.385716Z",
+                  "quality": "valid",
+                  "seconds": 10.580294,
+                  "start": "2026-11-18T01:33:48.805422Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "b67f2dc7082a",
+              "executor_fingerprint": "9b912bb994bb",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "2e7086b3e630",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "fe47b7df726a"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "6443ee5d0c6669fe86cfda18f5d1889c59b106f8f01a4c45ef4d8f28257f6989",
+                "artifact_sha256": "6443ee5d0c6669fe86cfda18f5d1889c59b106f8f01a4c45ef4d8f28257f6989",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "6443ee5d0c6669fe86cfda18f5d1889c59b106f8f01a4c45ef4d8f28257f6989",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "b67f2dc7082a",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 471,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:38:34.612568872Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:38:30.102655466Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "27f93125645a",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:38:34.612568Z",
+                    "quality": "valid",
+                    "seconds": 4.509913,
+                    "start": "2026-11-18T01:38:30.102655Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:38:34.468431216Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:38:30.999617322Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "9540a89be1d7",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:38:34.468431Z",
+                    "quality": "valid",
+                    "seconds": 3.468814,
+                    "start": "2026-11-18T01:38:30.999617Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T01:32:57.597977+00:00",
+            "result_observed_at_utc": "2026-11-18T01:39:16.457376+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 202.573585,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:38:46.901997Z",
+                  "quality": "valid",
+                  "seconds": 101.404862,
+                  "start": "2026-11-18T01:37:05.497135Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 164.309198,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:37:05.489793Z",
+                  "quality": "valid",
+                  "seconds": 164.309198,
+                  "start": "2026-11-18T01:34:21.180595Z"
+                }
+              }
+            }
+          },
+          {
+            "name": "cold-seed",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "dacbcd94-de18-48a0-afdd-7b6e838d87f7",
+            "invocation_url": "https://app.buildbuddy.io/invocation/dacbcd94-de18-48a0-afdd-7b6e838d87f7",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T01:44:39.393795Z",
+                  "quality": "valid",
+                  "seconds": 15.593314,
+                  "start": "2026-11-18T01:44:23.800481Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T01:49:14.548647Z",
+                  "quality": "valid",
+                  "seconds": 1.033542,
+                  "start": "2026-11-18T01:49:13.515105Z"
+                },
+                "process": {
+                  "end": "2026-11-18T01:49:13.515104Z",
+                  "quality": "valid",
+                  "seconds": 274.121308,
+                  "start": "2026-11-18T01:44:39.393796Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T01:43:40.457165Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T01:43:40.816003Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T01:44:39.393796Z",
+                  "quality": "valid",
+                  "seconds": 58.936631,
+                  "start": "2026-11-18T01:43:40.457165Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "f9cca8f50b9b",
+              "executor_fingerprint": "60342d3c8332",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "30a09e9a2d30",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "710f9d5a9fc3"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "9ff59cfa7104bd5971b563962b22151fab634dbee61009869937636f90e8532b",
+                "artifact_sha256": "9ff59cfa7104bd5971b563962b22151fab634dbee61009869937636f90e8532b",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "9ff59cfa7104bd5971b563962b22151fab634dbee61009869937636f90e8532b",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "f9cca8f50b9b",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 469,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:48:44.839378319Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:48:40.142129405Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "3c9bae6e0b29",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:48:44.839378Z",
+                    "quality": "valid",
+                    "seconds": 4.697249,
+                    "start": "2026-11-18T01:48:40.142129Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:48:45.744168532Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:48:41.157292864Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "e32bfd5377d0",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:48:45.744168Z",
+                    "quality": "valid",
+                    "seconds": 4.586876,
+                    "start": "2026-11-18T01:48:41.157292Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T01:42:54.499428+00:00",
+            "result_observed_at_utc": "2026-11-18T01:49:20.301956+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 177.445041,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:48:55.752132Z",
+                  "quality": "valid",
+                  "seconds": 89.108224,
+                  "start": "2026-11-18T01:47:26.643908Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 153.581728,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:47:26.635761Z",
+                  "quality": "valid",
+                  "seconds": 153.581728,
+                  "start": "2026-11-18T01:44:53.054033Z"
+                }
+              }
+            }
+          },
+          {
+            "name": "paused-baseline",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "6852c5a7-6644-4337-b368-df2a5b5ecdab",
+            "invocation_url": "https://app.buildbuddy.io/invocation/6852c5a7-6644-4337-b368-df2a5b5ecdab",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T01:54:07.336732Z",
+                  "quality": "valid",
+                  "seconds": 8.716775,
+                  "start": "2026-11-18T01:53:58.619957Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T01:58:11.239804Z",
+                  "quality": "valid",
+                  "seconds": 1.331449,
+                  "start": "2026-11-18T01:58:09.908355Z"
+                },
+                "process": {
+                  "end": "2026-11-18T01:58:09.908355Z",
+                  "quality": "valid",
+                  "seconds": 242.571623,
+                  "start": "2026-11-18T01:54:07.336732Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T01:53:58.555819Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T01:53:59.315485Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T01:54:07.336732Z",
+                  "quality": "valid",
+                  "seconds": 8.780913,
+                  "start": "2026-11-18T01:53:58.555819Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "51f799d4e5f8",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "f7f58be8b15a",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "491a851fbaa810ac85dbd04a91d09d50720549a9b552f9ab2bc05c785010734a",
+                "artifact_sha256": "491a851fbaa810ac85dbd04a91d09d50720549a9b552f9ab2bc05c785010734a",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "491a851fbaa810ac85dbd04a91d09d50720549a9b552f9ab2bc05c785010734a",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "51f799d4e5f8",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 469,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:57:41.254993215Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:57:37.47869942Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "652ba7d91ce4",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:57:41.254993Z",
+                    "quality": "valid",
+                    "seconds": 3.776294,
+                    "start": "2026-11-18T01:57:37.478699Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T01:57:42.726480398Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T01:57:38.730360526Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "3eec599f2bca",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T01:57:42.726480Z",
+                    "quality": "valid",
+                    "seconds": 3.99612,
+                    "start": "2026-11-18T01:57:38.730360Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T01:53:09.579892+00:00",
+            "result_observed_at_utc": "2026-11-18T01:58:17.030582+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 170.032479,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:57:53.379823Z",
+                  "quality": "valid",
+                  "seconds": 85.958546,
+                  "start": "2026-11-18T01:56:27.421277Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 129.605734,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T01:56:27.414690Z",
+                  "quality": "valid",
+                  "seconds": 129.605734,
+                  "start": "2026-11-18T01:54:17.808956Z"
+                }
+              }
+            }
+          },
+          {
+            "name": "warm-repeat",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "7d87516c-9371-45ca-a76b-ce9ae51a22f9",
+            "invocation_url": "https://app.buildbuddy.io/invocation/7d87516c-9371-45ca-a76b-ce9ae51a22f9",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:01:49.196849Z",
+                  "quality": "valid",
+                  "seconds": 0.25883,
+                  "start": "2026-11-18T02:01:48.938019Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:05:09.790431Z",
+                  "quality": "valid",
+                  "seconds": 1.650598,
+                  "start": "2026-11-18T02:05:08.139833Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:05:08.139833Z",
+                  "quality": "valid",
+                  "seconds": 198.942984,
+                  "start": "2026-11-18T02:01:49.196849Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:01:48.935314Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T02:01:49.689273Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:01:49.196849Z",
+                  "quality": "valid",
+                  "seconds": 0.261535,
+                  "start": "2026-11-18T02:01:48.935314Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "ec3f522cf560",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "e33736962f77",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "2ab09c79fa6e7aec60d47c6680f4b66f9636d8699278842c49229cb22b75a90e",
+                "artifact_sha256": "2ab09c79fa6e7aec60d47c6680f4b66f9636d8699278842c49229cb22b75a90e",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "2ab09c79fa6e7aec60d47c6680f4b66f9636d8699278842c49229cb22b75a90e",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "ec3f522cf560",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 469,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:04:40.884510126Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:04:38.215257682Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "282e28d459e3",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:04:40.884510Z",
+                    "quality": "valid",
+                    "seconds": 2.669253,
+                    "start": "2026-11-18T02:04:38.215257Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:04:40.990628418Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:04:37.560642365Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "384b5082c445",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:04:40.990628Z",
+                    "quality": "valid",
+                    "seconds": 3.429986,
+                    "start": "2026-11-18T02:04:37.560642Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:01:05.982637+00:00",
+            "result_observed_at_utc": "2026-11-18T02:05:15.753595+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 162.599852,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:04:51.952405Z",
+                  "quality": "valid",
+                  "seconds": 81.337329,
+                  "start": "2026-11-18T02:03:30.615076Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 91.967687,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:03:30.609152Z",
+                  "quality": "valid",
+                  "seconds": 91.967687,
+                  "start": "2026-11-18T02:01:58.641465Z"
+                }
+              }
+            }
+          },
+          {
+            "name": "control-2",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "cde38e38-a92b-48da-856d-e8d217a9e662",
+            "invocation_url": "https://app.buildbuddy.io/invocation/cde38e38-a92b-48da-856d-e8d217a9e662",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:14:28.953612Z",
+                  "quality": "valid",
+                  "seconds": 0.193797,
+                  "start": "2026-11-18T02:14:28.759815Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:17:57.186164Z",
+                  "quality": "valid",
+                  "seconds": 0.982611,
+                  "start": "2026-11-18T02:17:56.203553Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:17:56.203553Z",
+                  "quality": "valid",
+                  "seconds": 207.249941,
+                  "start": "2026-11-18T02:14:28.953612Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:14:28.514567Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T02:14:29.277850Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:14:28.953612Z",
+                  "quality": "valid",
+                  "seconds": 0.439045,
+                  "start": "2026-11-18T02:14:28.514567Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "72be814e481b",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "86e1124a7fcb",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "b0987931953710d9672fd61e7b5ef17a5e1820fc286fbe5d3b9cca0d3733582d",
+                "artifact_sha256": "b0987931953710d9672fd61e7b5ef17a5e1820fc286fbe5d3b9cca0d3733582d",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "b0987931953710d9672fd61e7b5ef17a5e1820fc286fbe5d3b9cca0d3733582d",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "72be814e481b",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 469,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:17:31.058237842Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:17:27.364128385Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "59f35617f76a",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:17:31.058237Z",
+                    "quality": "valid",
+                    "seconds": 3.694109,
+                    "start": "2026-11-18T02:17:27.364128Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:17:29.117533985Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:17:24.694571453Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "739ac6733fb4",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:17:29.117533Z",
+                    "quality": "valid",
+                    "seconds": 4.422962,
+                    "start": "2026-11-18T02:17:24.694571Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:13:33.764392+00:00",
+            "result_observed_at_utc": "2026-11-18T02:18:02.983275+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 163.356863,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:17:40.724952Z",
+                  "quality": "valid",
+                  "seconds": 82.252914,
+                  "start": "2026-11-18T02:16:18.472038Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 100.174227,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:16:18.466244Z",
+                  "quality": "valid",
+                  "seconds": 100.174227,
+                  "start": "2026-11-18T02:14:38.292017Z"
+                }
+              }
+            }
+          },
+          {
+            "name": "ordinary-probe",
+            "group": "vm-companions",
+            "source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "invocation": "e7e7ae28-e96d-4f50-a7ea-c765977d3770",
+            "invocation_url": "https://app.buildbuddy.io/invocation/e7e7ae28-e96d-4f50-a7ea-c765977d3770",
+            "native": {
+              "action_blob_digest_verified": true,
+              "action_blob_sha256": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+              "action_digest": {
+                "hash": "c34bdb207b15f5b241c76e337de40dd6664b1ebfc44c249a1f8e501cc6b9073d",
+                "sizeBytes": "596"
+              },
+              "action_do_not_cache": true,
+              "action_mnemonic": "TestRunner",
+              "action_platform_allowlist": {
+                "Arch": "amd64",
+                "EstimatedCPU": "4",
+                "EstimatedComputeUnits": "3",
+                "EstimatedFreeDiskBytes": "50GB",
+                "EstimatedMemory": "7GiB",
+                "OSFamily": "Linux",
+                "Pool": "kvm-vm",
+                "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+                "dockerNetwork": "bridge",
+                "init-dockerd": "false",
+                "recycle-runner": "false",
+                "use-self-hosted-executors": "true",
+                "workload-isolation-type": "docker"
+              },
+              "cache_observation": "uncached_lookup_confirmed",
+              "clocks": {
+                "input_fetch": {
+                  "end": "2026-11-18T02:23:30.452216Z",
+                  "quality": "valid",
+                  "seconds": 0.242947,
+                  "start": "2026-11-18T02:23:30.209269Z"
+                },
+                "output_upload": {
+                  "end": "2026-11-18T02:26:53.345583Z",
+                  "quality": "valid",
+                  "seconds": 1.120135,
+                  "start": "2026-11-18T02:26:52.225448Z"
+                },
+                "process": {
+                  "end": "2026-11-18T02:26:52.225447Z",
+                  "quality": "valid",
+                  "seconds": 201.773231,
+                  "start": "2026-11-18T02:23:30.452216Z"
+                },
+                "queue": {
+                  "end": "2026-11-18T02:23:30.198586Z",
+                  "quality": "unknown",
+                  "seconds": null,
+                  "start": "2026-11-18T02:23:30.962499Z",
+                  "unknown_reason": "inverted_timestamp_order"
+                },
+                "worker_preparation": {
+                  "end": "2026-11-18T02:23:30.452216Z",
+                  "quality": "valid",
+                  "seconds": 0.25363,
+                  "start": "2026-11-18T02:23:30.198586Z"
+                }
+              },
+              "command_blob_digest_verified": true,
+              "command_blob_sha256": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+              "command_digest": {
+                "hash": "76ca4eae74dfbefc0924536cf9ea066b735cba0631376fb701fc1858e50b1014",
+                "sizeBytes": "4504"
+              },
+              "errors": [],
+              "execution_fingerprint": "3ac34790a98b",
+              "executor_fingerprint": "a0a53e4a69aa",
+              "invocation_link_type": 1,
+              "native_do_not_cache": true,
+              "native_exit_code": 0,
+              "native_isolation_type": "docker",
+              "native_platform_overrides_allowlist": {
+                "use-oci-fetcher": "true"
+              },
+              "native_response_result_present": true,
+              "native_skip_cache_lookup": true,
+              "native_status_code": 0,
+              "physical_execution_confirmed": true,
+              "recycling_key_is_canary_prefix": null,
+              "recycling_key_sha256": null,
+              "requested_isolation_type": "docker",
+              "row_index": 0,
+              "run_from_output_path": null,
+              "runner_fingerprint": "d2ba5cc7114b",
+              "shard_from_output_path": null,
+              "stage": "COMPLETED",
+              "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+              "worker_fingerprint": "bdbf5ca184fb"
+            },
+            "junit": [
+              {
+                "artifact_cas_digest": "5e55a76cbc2fe26844714125dde6e1bcf209a5f495293c62b72f839b4e4adf72",
+                "artifact_sha256": "5e55a76cbc2fe26844714125dde6e1bcf209a5f495293c62b72f839b4e4adf72",
+                "attempt": 1,
+                "case_verdict_counts": {
+                  "passed": 2
+                },
+                "cases": [
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[claude]",
+                    "verdict": "passed"
+                  },
+                  {
+                    "classname": "agentplane.system_tests.suites.test_vm",
+                    "name": "test_vm_scenarios[codex]",
+                    "verdict": "passed"
+                  }
+                ],
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "run": 1,
+                "shard": 1,
+                "suite_counts": {
+                  "errors": 0,
+                  "failures": 0,
+                  "skipped": 0,
+                  "tests": 2
+                }
+              }
+            ],
+            "native_bes_digest_joins": [
+              {
+                "artifact_event_index": 0,
+                "artifact_name": "test.xml",
+                "artifact_output_index": 1,
+                "attempt": 1,
+                "cas_digest": "5e55a76cbc2fe26844714125dde6e1bcf209a5f495293c62b72f839b4e4adf72",
+                "exact_hash_size_path_match": true,
+                "native_execution_fingerprint": "3ac34790a98b",
+                "native_output_path": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.xml",
+                "native_row_index": 0,
+                "run": 1,
+                "shard": 1,
+                "size_bytes": 469,
+                "target_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm"
+              }
+            ],
+            "receipt_summaries": [],
+            "strict_vm_shutdown_evidence": {
+              "guest_incarnation_count": 2,
+              "guests": [
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:26:24.064366272Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:26:19.266582029Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "63b47f35b091",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:26:24.064366Z",
+                    "quality": "valid",
+                    "seconds": 4.797784,
+                    "start": "2026-11-18T02:26:19.266582Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                },
+                {
+                  "attempt": 1,
+                  "cri_logs_present": true,
+                  "cri_powerdown_seen": true,
+                  "cri_shutdown_complete_at": "2026-11-18T02:26:23.700550365Z",
+                  "evidence_verdict": "pass",
+                  "guest_shutdown_requested_at": "2026-11-18T02:26:18.297326682Z",
+                  "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                  "launcher_fingerprint": "ce760ccba589",
+                  "libvirt_crashed_events": 0,
+                  "libvirt_destroyed_events": 0,
+                  "libvirt_launcher_logs_present": true,
+                  "libvirt_orderly_shutdown_events": 1,
+                  "missing_log_channel": false,
+                  "raw_serial_logs_present": true,
+                  "raw_serial_powerdown_seen": true,
+                  "raw_serial_shutdown_complete_seen": true,
+                  "request_to_complete": {
+                    "end": "2026-11-18T02:26:23.700550Z",
+                    "quality": "valid",
+                    "seconds": 5.403224,
+                    "start": "2026-11-18T02:26:18.297326Z"
+                  },
+                  "run": 1,
+                  "shard": 1
+                }
+              ],
+              "interpretation": "A missing receipt or shutdown marker is unknown. Managed shutdown failure does not establish final loop state, a leak, or successful cleanup.",
+              "strict_fail_count": 0,
+              "strict_pass_count": 2,
+              "unknown_count": 0
+            },
+            "submitted_at_utc": "2026-11-18T02:22:47.051382+00:00",
+            "result_observed_at_utc": "2026-11-18T02:26:59.167977+00:00",
+            "named_phases": {
+              "system_test.case": {
+                "name": "system_test.case",
+                "span_count": 2,
+                "span_seconds_sum": 166.810126,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:26:35.360555Z",
+                  "quality": "valid",
+                  "seconds": 83.478919,
+                  "start": "2026-11-18T02:25:11.881636Z"
+                }
+              },
+              "system_test.stack.setup": {
+                "name": "system_test.stack.setup",
+                "span_count": 1,
+                "span_seconds_sum": 92.15957,
+                "wall_clock_envelope": {
+                  "end": "2026-11-18T02:25:11.875683Z",
+                  "quality": "valid",
+                  "seconds": 92.15957,
+                  "start": "2026-11-18T02:23:39.716113Z"
+                }
+              }
+            }
+          }
+        ],
+        "pairs": [
+          {
+            "name": "control-1",
+            "same_executor": false,
+            "process_overlap_seconds": 306.717594,
+            "native_process_envelope_seconds": 405.99393,
+            "paired_command_wall_seconds": 470.53961,
+            "clock": "Earlier local command submission to later observed completion of both independent bbr calls; not GitHub required-result feedback"
+          },
+          {
+            "name": "cold-seed",
+            "same_executor": false,
+            "process_overlap_seconds": 274.121308,
+            "native_process_envelope_seconds": 348.770362,
+            "paired_command_wall_seconds": 404.488161,
+            "clock": "Earlier local command submission to later observed completion of both independent bbr calls; not GitHub required-result feedback"
+          },
+          {
+            "name": "warm-repeat",
+            "same_executor": true,
+            "process_overlap_seconds": 0,
+            "native_process_envelope_seconds": 490.299533,
+            "paired_command_wall_seconds": 540.512531,
+            "clock": "Earlier local command submission to later observed completion of both independent bbr calls; not GitHub required-result feedback"
+          },
+          {
+            "name": "control-2",
+            "same_executor": false,
+            "process_overlap_seconds": 207.249941,
+            "native_process_envelope_seconds": 370.197162,
+            "paired_command_wall_seconds": 431.017458,
+            "clock": "Earlier local command submission to later observed completion of both independent bbr calls; not GitHub required-result feedback"
+          },
+          {
+            "name": "ordinary-probe",
+            "same_executor": false,
+            "process_overlap_seconds": 196.11742,
+            "native_process_envelope_seconds": 299.255392,
+            "paired_command_wall_seconds": 350.662313,
+            "clock": "Earlier local command submission to later observed completion of both independent bbr calls; not GitHub required-result feedback"
+          }
+        ],
+        "warm_chain": {
+          "verified": true,
+          "checks": {
+            "cold_seed": true,
+            "warm_repeat": true,
+            "same_native_runner": true,
+            "same_executor_registration": true,
+            "exact_previous_action": true,
+            "previous_exit_zero": true,
+            "new_action_instance": true,
+            "same_compatibility_fingerprint": true,
+            "first_cleanup": true,
+            "repeat_cleanup": true,
+            "both_exit_zero": true,
+            "both_retained": true,
+            "same_runner_instance": true,
+            "same_container_hostname": true,
+            "same_pid_namespace": true,
+            "same_mount_namespace": true,
+            "same_cgroup_namespace": true,
+            "same_k3s_boot_id": true,
+            "same_k3s_pid": true,
+            "same_k3s_process_start_ticks": true,
+            "same_k3s_namespace_uid": true,
+            "same_k3s_node_uid": true,
+            "same_pki_controller_uids": true,
+            "fresh_namespace_uid": true,
+            "fresh_postgres_pod_uid": true,
+            "fresh_root_certificate_uid": true,
+            "fresh_root_secret_uid": true,
+            "fresh_collector_namespace_uid": true,
+            "both_runtime_cleanup": true,
+            "fresh_device_plugin_namespace": true,
+            "fresh_device_plugin_daemonset": true,
+            "fresh_device_plugin_pods": true,
+            "disk_backed_layers": true,
+            "no_recorded_oom_0": true,
+            "no_recorded_oom_1": true,
+            "frozen_source_0": true,
+            "uncached_native_0": true,
+            "same_two_scenarios_0": true,
+            "frozen_source_1": true,
+            "uncached_native_1": true,
+            "same_two_scenarios_1": true,
+            "no_retained_kubevirt": true
+          },
+          "native_test_input_comparison": {
+            "inputRootDigest": true,
+            "commandDigest": true,
+            "platform": true
+          },
+          "input_roots": [
+            {
+              "hash": "be8c696b694ea48953c20c8e234793207c4801bcc3f73d1882f3bc7cdf537b64",
+              "sizeBytes": "165"
+            },
+            {
+              "hash": "be8c696b694ea48953c20c8e234793207c4801bcc3f73d1882f3bc7cdf537b64",
+              "sizeBytes": "165"
+            }
+          ],
+          "command_digests": [
+            {
+              "hash": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+              "sizeBytes": "5903"
+            },
+            {
+              "hash": "1d60913d37edd13ed3cd9f8fac7bd60518cf5fd84ce37600c25fdf1118bbdbdd",
+              "sizeBytes": "5903"
+            }
+          ],
+          "limits": "One controlled-affinity chain after a non-recycled VM action on the same executor. This proves reuse and fresh-state cleanup; it does not establish ordinary-scheduler hit rate or required CI savings. Native queue and paired workload wall time remain separate."
+        },
+        "disposal": {
+          "verified": true,
+          "checks": {
+            "both_original_kernels_observed": true,
+            "no_owned_containers": true,
+            "no_owned_loop_mappings": true,
+            "both_backing_files_absent": true
+          },
+          "actions": [
+            {
+              "name": "disposal-warm",
+              "invocation": "aa857a62-e47d-4a7c-8b2c-60b5c3869db9",
+              "checks": {
+                "source_matches": true,
+                "same_native_runner": true,
+                "same_executor": true,
+                "same_docker_container": true,
+                "same_runner_receipt": true,
+                "exact_previous_action": true,
+                "discard_requested": true,
+                "pytest_exit_zero": true,
+                "native_exit_zero": true,
+                "uncached_native_request": true,
+                "collection_only": true,
+                "explicit_discard_argument": true,
+                "no_scenario_verdicts": true
+              },
+              "verified": true,
+              "receipt_sha256": "5992a9126a6b09cdece885b561444b975a8820ec88b29e0761c8eaba8ab8e077"
+            },
+            {
+              "name": "disposal-ordinary",
+              "invocation": "2b160538-383f-442c-a0ef-4fbd25d69b17",
+              "checks": {
+                "source_matches": true,
+                "same_native_runner": true,
+                "same_executor": true,
+                "same_docker_container": true,
+                "same_runner_receipt": true,
+                "exact_previous_action": true,
+                "discard_requested": true,
+                "pytest_exit_zero": true,
+                "native_exit_zero": true,
+                "uncached_native_request": true,
+                "collection_only": true,
+                "explicit_discard_argument": true,
+                "no_scenario_verdicts": true
+              },
+              "verified": true,
+              "receipt_sha256": "556fde0364209d700bc62927d16bcfcdbbb1311c030976d0621e98d6e4b7ff5b"
+            }
+          ],
+          "before_utc": "2026-11-18T02:33:56.354825+00:00",
+          "after_utc": "2026-11-18T02:41:11.760623+00:00",
+          "current_workers_scanned": 6,
+          "owned_containers_remaining": 0,
+          "owned_loop_mappings_remaining": 0,
+          "summary": "Two collection-only actions reused the exact observed native/Docker runner chains and requested discard. Both returned zero without running scenario bodies. The following six-worker inventory observed both original kernels, zero owned containers and zero owned loop mappings; both recorded sparse backing files were absent from their original Docker upper layers. Disposal is excluded from all scenario and timing populations.",
+          "inventory_sha256": {
+            "before": "8d28638d41e4b8d2bdef80f145bb56e84487f0708cc92d232029abca5ce09563",
+            "after": "ea3efc0511bb70dc60325db9c8b6f83d47b71663192c33a63df325d841f0d317",
+            "files": "130d93f218c6ed798e315a479692181f720aa4adb551eddbb35cfe0f62873b6b"
+          }
+        },
+        "ci_validation": {
+          "source_pr": "https://github.com/agentydragon/ducktape/pull/17485",
+          "head": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+          "merge_state": {
+            "headRefOid": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "mergeCommit": {
+              "oid": "faad706002fba8c4cb2a01c62400580e8bca049c"
+            },
+            "mergedAt": "2026-11-18T02:07:26Z",
+            "state": "MERGED",
+            "url": "https://github.com/agentydragon/ducktape/pull/17485"
+          },
+          "current_checks_observed_at_utc": "2026-11-18T02:26:42.285079+00:00",
+          "current_checks": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:30:02Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216259995/job/134506776703",
+              "name": "fork-context / Resolve fork PR context",
+              "startedAt": "2026-11-18T01:30:03Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:07:05Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216265763/job/134520703940",
+              "name": "bazel-ci / Test & Build",
+              "startedAt": "2026-11-18T02:03:44Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:07:46Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44220927426/job/134522267567",
+              "name": "cancel-closed-pr-ci",
+              "startedAt": "2026-11-18T02:07:32Z",
+              "status": "COMPLETED",
+              "workflowName": "Cancel CI for closed PR"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:31:38Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216265687/job/134506775228",
+              "name": "Build artifacts + imports check",
+              "startedAt": "2026-11-18T01:30:05Z",
+              "status": "COMPLETED",
+              "workflowName": "Nix wheel check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:31:10Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216265705/job/134506775306",
+              "name": "Pre-commit checks",
+              "startedAt": "2026-11-18T01:30:04Z",
+              "status": "COMPLETED",
+              "workflowName": "Pre-commit checks"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:07:05Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216265763/job/134522098040",
+              "name": "release",
+              "startedAt": "2026-11-18T02:07:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:30:03Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216259995/job/134506780241",
+              "name": "bazel-ci",
+              "startedAt": "2026-11-18T01:30:04Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:30:03Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216259995/job/134506780227",
+              "name": "nix-wheel-check",
+              "startedAt": "2026-11-18T01:30:04Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:07:05Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216265763/job/134522097808",
+              "name": "push-images",
+              "startedAt": "2026-11-18T02:07:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T01:30:03Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/44216259995/job/134506781336",
+              "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+              "startedAt": "2026-11-18T01:30:04Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:10:11Z",
+              "conclusion": "NEUTRAL",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/runs/134523381428",
+              "name": "PR visual diffs",
+              "startedAt": "2026-11-18T02:10:11Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-11-18T02:10:17Z",
+              "conclusion": "NEUTRAL",
+              "detailsUrl": "https://github.com/agentydragon/ducktape/runs/134520993328",
+              "name": "PR visual review",
+              "startedAt": "2026-11-18T02:04:23Z",
+              "status": "COMPLETED",
+              "workflowName": "Trusted fork PR CI"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "BuildBuddy / Bazel ordinary tests (live)",
+              "startedAt": "2026-11-18T02:06:33Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://app.buildbuddy.io/invocation/11ff3582-e52e-5355-b393-c0c438906669"
+            }
+          ],
+          "failed_attempt": {
+            "run_id": 44216265763,
+            "tested_merge": "059e44c3330b4db9b56b26a8b0649d1bf6269631",
+            "invocation": "b0d87b3a-da50-57d7-b670-580105dab390",
+            "vm_process_seconds": 1048.437709,
+            "firecracker_process_seconds": 383.16873,
+            "vm_junit": "one failed scenario, one passed scenario, one teardown error",
+            "boundary": "Managed TCG guest never connected Runtime. Raw serial reports CPU0 zero timer ticks, RCU stalls and missed timer wakeups; the readiness snapshot retained CPU0/TCG andCPU1/TCG. Cleanup timed out and baseline certification rejected one remaining Sandbox.",
+            "first_serial_stall_guest_uptime_seconds": 25.89629,
+            "first_serial_stall_line": 733,
+            "snapshot_captured_at_utc": "2026-11-18T01:44:48.296667+00:00",
+            "snapshot_cas_sha256": "26de09bcfa7699ca1c4ff6bd2a308e3ca39034a9805f3b1b018046dbc95444fa",
+            "known_boundary_url": "https://github.com/agentydragon/ducktape/blob/9735c7e9e84ed2d17d2574b582d50341bf1c3c47/agentplane/system_tests/debug/vm_runtime_connection_2026_11_17.md",
+            "cause": "The exact lost timer/interrupt progress remains unobserved. This is distinct from the earlier Kine transaction fatal and QEMU IOTLB assertion."
+          },
+          "retry": {
+            "requested_at_utc": "2026-11-18T02:03:40.423924+00:00",
+            "run_id": 44216265763,
+            "job_id": 134506775725,
+            "source_pr_head": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
+            "first_tested_merge": "059e44c3330b4db9b56b26a8b0649d1bf6269631",
+            "first_inner_invocation": "b0d87b3a-da50-57d7-b670-580105dab390",
+            "first_failure": "Managed TCG guest CPU0 timer/RCU stall, no Runtime connection, Sandbox readiness and cleanup timeout",
+            "purpose": "One normal-CI job retry, which passed using cached test results. Original physical failure retained; no fresh managed-VM qualification or fix is claimed.",
+            "maximum_requested_retries": 1,
+            "invocation": "11ff3582-e52e-5355-b393-c0c438906669",
+            "tested_merge": "059e44c3330b4db9b56b26a8b0649d1bf6269631",
+            "bazel_exit_code": "SUCCESS",
+            "actual_tested_merge_matches_first": true,
+            "fresh_test_executions": 0,
+            "test_result_events": 2062,
+            "cached_locally": 1590,
+            "cached_remotely": 472,
+            "managed_vm_cached_locally": false,
+            "managed_vm_cached_remotely": true
+          },
+          "interpretation": "The normal-CI job retry passed entirely from test caches. All 22 manual case executions were fresh native work; the managed timer stall remains unresolved. No routing, timeout, retry policy or assertion was weakened."
+        },
+        "paused_baseline_memory": {
+          "during-vm": {
+            "at": "2026-11-18T01:55:20.882031+00:00",
+            "stage": "during-vm",
+            "memory": {
+              "current": 1158889472,
+              "lifetime_peak": 5516976128,
+              "counters": {
+                "anon": "725733376",
+                "file": "379559936",
+                "kernel": "53592064",
+                "kernel_stack": "2719744",
+                "pagetables": "4833280",
+                "sec_pagetables": "0",
+                "percpu": "300288",
+                "sock": "4096",
+                "vmalloc": "245760",
+                "shmem": "86016",
+                "zswap": "0",
+                "zswapped": "0",
+                "file_mapped": "123887616",
+                "file_dirty": "0",
+                "file_writeback": "0",
+                "swapcached": "0",
+                "anon_thp": "0",
+                "file_thp": "0",
+                "shmem_thp": "0",
+                "inactive_anon": "412749824",
+                "active_anon": "312954880",
+                "inactive_file": "269148160",
+                "active_file": "110354432",
+                "unevictable": "86016",
+                "slab_reclaimable": "40969184",
+                "slab_unreclaimable": "4166048",
+                "slab": "45135232",
+                "workingset_refault_anon": "0",
+                "workingset_refault_file": "3533175",
+                "workingset_activate_anon": "0",
+                "workingset_activate_file": "2627610",
+                "workingset_restore_anon": "0",
+                "workingset_restore_file": "356189",
+                "workingset_nodereclaim": "42112",
+                "pgdemote_kswapd": "0",
+                "pgdemote_direct": "0",
+                "pgdemote_khugepaged": "0",
+                "pgpromote_success": "0",
+                "pgscan": "11741178",
+                "pgsteal": "11113764",
+                "pgscan_kswapd": "3070841",
+                "pgscan_direct": "8670337",
+                "pgscan_khugepaged": "0",
+                "pgsteal_kswapd": "2916048",
+                "pgsteal_direct": "8197716",
+                "pgsteal_khugepaged": "0",
+                "pgfault": "6867593",
+                "pgmajfault": "14071",
+                "pgrefill": "228451",
+                "pgactivate": "509207",
+                "pgdeactivate": "0",
+                "pglazyfree": "0",
+                "pglazyfreed": "0",
+                "swpin_zero": "0",
+                "swpout_zero": "0",
+                "zswpin": "0",
+                "zswpout": "0",
+                "zswpwb": "0",
+                "thp_fault_alloc": "0",
+                "thp_collapse_alloc": "0",
+                "thp_swpout": "0",
+                "thp_swpout_fallback": "0",
+                "numa_pages_migrated": "0",
+                "numa_pte_updates": "0",
+                "numa_hint_faults": "0",
+                "low": "0",
+                "high": "0",
+                "max": "60400",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            },
+            "guest_mem_available_bytes": 4104962048,
+            "worker_fingerprint": "3e51f5c5bc42",
+            "vmi_fingerprint": "10ca34ebc6d4",
+            "container_fingerprint": "9ad3a412c390"
+          },
+          "after-vm": {
+            "at": "2026-11-18T01:59:26.980963+00:00",
+            "stage": "after-vm",
+            "memory": {
+              "current": 855597056,
+              "lifetime_peak": 5516976128,
+              "counters": {
+                "anon": "725725184",
+                "file": "91910144",
+                "kernel": "37957632",
+                "kernel_stack": "2719744",
+                "pagetables": "4833280",
+                "sec_pagetables": "0",
+                "percpu": "281280",
+                "sock": "4096",
+                "vmalloc": "245760",
+                "shmem": "86016",
+                "zswap": "0",
+                "zswapped": "0",
+                "file_mapped": "87429120",
+                "file_dirty": "0",
+                "file_writeback": "0",
+                "swapcached": "0",
+                "anon_thp": "0",
+                "file_thp": "0",
+                "shmem_thp": "0",
+                "inactive_anon": "149450752",
+                "active_anon": "576253952",
+                "inactive_file": "80650240",
+                "active_file": "11194368",
+                "unevictable": "86016",
+                "slab_reclaimable": "25373640",
+                "slab_unreclaimable": "4155128",
+                "slab": "29528768",
+                "workingset_refault_anon": "0",
+                "workingset_refault_file": "3533175",
+                "workingset_activate_anon": "0",
+                "workingset_activate_file": "2627610",
+                "workingset_restore_anon": "0",
+                "workingset_restore_file": "356189",
+                "workingset_nodereclaim": "52992",
+                "pgdemote_kswapd": "0",
+                "pgdemote_direct": "0",
+                "pgdemote_khugepaged": "0",
+                "pgpromote_success": "0",
+                "pgscan": "11812861",
+                "pgsteal": "11183991",
+                "pgscan_kswapd": "3142523",
+                "pgscan_direct": "8670338",
+                "pgscan_khugepaged": "0",
+                "pgsteal_kswapd": "2986275",
+                "pgsteal_direct": "8197716",
+                "pgsteal_khugepaged": "0",
+                "pgfault": "6867593",
+                "pgmajfault": "14071",
+                "pgrefill": "230874",
+                "pgactivate": "509686",
+                "pgdeactivate": "0",
+                "pglazyfree": "0",
+                "pglazyfreed": "0",
+                "swpin_zero": "0",
+                "swpout_zero": "0",
+                "zswpin": "0",
+                "zswpout": "0",
+                "zswpwb": "0",
+                "thp_fault_alloc": "0",
+                "thp_collapse_alloc": "0",
+                "thp_swpout": "0",
+                "thp_swpout_fallback": "0",
+                "numa_pages_migrated": "0",
+                "numa_pte_updates": "0",
+                "numa_hint_faults": "0",
+                "low": "0",
+                "high": "0",
+                "max": "60400",
+                "oom": "0",
+                "oom_kill": "0",
+                "oom_group_kill": "0"
+              }
+            },
+            "guest_mem_available_bytes": 6640451584,
+            "worker_fingerprint": "3e51f5c5bc42",
+            "vmi_fingerprint": "10ca34ebc6d4",
+            "container_fingerprint": "9ad3a412c390"
+          }
+        }
+      }
+    },
+    "methods": [
+      "All manual actions use frozen source 8c2b75a3798f4d45b07604375a66c7a3c45811d4, with native BuildMetadata verification. Test-result caching was bypassed, body retries were disabled, and all native TestRunner attempts and exact native/BES/JUnit CAS joins are retained. Eleven scenario actions ran 22 passing case executions; two collection-only disposal actions are separate.",
+      "The two manual Firecracker targets share 4-CPU/6-GB/20-GB scheduling estimates, private ext4 data, executor persistence permission and the existing scenario bodies. The control explicitly discards its runner. These are estimates; the worker's physical RAM remains 8 GiB. Retention configuration stays 10 GB with the existing 7-GiB executor clamp.",
+      "Preplanned sequence: control, recycled cold seed, non-recycled VM on that exact worker while the baseline was paused, controlled warm repeat, second control. One ordinary VM companion accompanied each Firecracker arm. After the pinned wait was observed, one additional unpinned pair tested scheduler fallback; it is a separate adaptive population.",
+      "Test process and stage clocks come from native execution metadata and existing fixture spans. Paired feedback is earlier local bbr command submission to later completion of both independent calls. It includes outer runner setup, Bazel work and queues; it is not GitHub required-result or auto-merge feedback. Inverted queue timestamps remain Unknown.",
+      "The warm VM companion and Firecracker action executed sequentially on the same executor; the other pairs' process windows overlap. Inputs match across the controlled candidate chain. Read-only owned-container diagnostics near the end of the warm action are recorded separately; no QMP or new timing instrumentation was added.",
+      "Nix diagnostics were verified with ordinary and debug attempts on the same tested merge. Native request durations can include client backpressure. Local curl results only establish contemporary reachability; the historical 115-second cause was not recovered."
+    ],
+    "limits": [
+      "One controlled chain, two sequential manual controls and one ordinary-scheduler selection are not a representative PR cohort, recurrence estimate, p90, fleet throughput or memory-capacity qualification. Ambient work, worker image caches and pool size vary; no resource policy was changed.",
+      "The matched manual control uses the candidate's disk-backed persistence setup and then discards it. The required Firecracker target uses fresh K3s with an in-memory database. Manual control/warm differences are not a direct before/after measurement of that required target.",
+      "Cgroup peak is a runner-lifetime peak including file cache. memory.events aggregates descendant cgroups; its max counter alone does not establish that worker RAM was exhausted. Guest metrics are sampled, and absent/stale series are not zero. No Docker hard-memory limit or new active-task capacity is claimed.",
+      "Normal CI validation and its managed-VM failure/retry are separate from the manual performance population. A green retry does not repair the timer stall. The prior routing canary remains reverted; neither this benchmark nor the Nix diagnostic PR changes required routing.",
+      "The standing Runtime lifecycle follow-up still needs a real shutdown CPU profile before simplifying reconciliation ownership. This experiment does not change that lifecycle."
+    ]
   }
 }
