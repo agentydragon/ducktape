@@ -21,12 +21,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
-use crate::candidate_assessment::EffectAssessmentUnavailable;
-use pipeline::{AnalysisArtifactInput, TransformRequest, assess_candidate_effect_relocation};
+use crate::candidate_assessment::{EffectAssessmentUnavailable, ResolvedCandidateEffectAssessment};
 use spec::{
     BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath, SourceMatchBinding,
     SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
@@ -619,13 +617,6 @@ pub struct AssignOutcome {
     pub effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
 
-#[derive(Clone, Copy)]
-pub struct CandidateEffectAssessmentContext<'a> {
-    pub transform: &'a TransformRequest,
-    pub analysis: AnalysisArtifactInput<'a>,
-    pub graph_source: &'a VerifiedGraphSourceContext,
-}
-
 /// Parse a positional `<sym>:<module>[:<readable>]` triple.
 pub fn parse_move_triple(s: &str) -> Result<Move> {
     let parts: Vec<&str> = s.splitn(3, ':').collect();
@@ -687,7 +678,7 @@ pub fn run_bindings_assign(
     moves: Vec<Move>,
     dry_run: bool,
     gate: Gate<'_>,
-    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
+    effect_assessment_context: Option<&ResolvedCandidateEffectAssessment<'_>>,
 ) -> Result<AssignOutcome> {
     let no_moves = moves.is_empty();
     if no_moves && effect_assessment_context.is_none() {
@@ -926,22 +917,7 @@ pub fn run_bindings_assign(
             modules_root,
             &post_edit_spec_from_docs(&docs, &to_delete)?,
         )?;
-        let candidate_modules = docs
-            .iter()
-            .filter(|(path, _)| !to_delete.contains(*path))
-            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
-            .collect();
-        Some(command_diagnostics::run(stderr, |diagnostics| {
-            assess_candidate_effect_relocation(
-                context.transform,
-                context.analysis,
-                context.graph_source,
-                modules_root,
-                &candidate_modules,
-                &priority,
-                diagnostics,
-            )
-        })?)
+        Some(context.assess(stderr, modules_root, &docs, &to_delete, &priority)?)
     } else {
         None
     };
@@ -1255,7 +1231,7 @@ pub fn run_bindings_unassign(
     syms: Vec<String>,
     dry_run: bool,
     gate: Gate<'_>,
-    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
+    effect_assessment_context: Option<&ResolvedCandidateEffectAssessment<'_>>,
 ) -> Result<UnassignOutcome> {
     let no_symbols = syms.is_empty();
     if no_symbols && effect_assessment_context.is_none() {
@@ -1321,22 +1297,7 @@ pub fn run_bindings_unassign(
             modules_root,
             &post_edit_spec_from_docs(&docs, &to_delete)?,
         )?;
-        let candidate_modules = docs
-            .iter()
-            .filter(|(path, _)| !to_delete.contains(*path))
-            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
-            .collect();
-        Some(command_diagnostics::run(stderr, |diagnostics| {
-            assess_candidate_effect_relocation(
-                context.transform,
-                context.analysis,
-                context.graph_source,
-                modules_root,
-                &candidate_modules,
-                &priority,
-                diagnostics,
-            )
-        })?)
+        Some(context.assess(stderr, modules_root, &docs, &to_delete, &priority)?)
     } else {
         None
     };

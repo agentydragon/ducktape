@@ -1,9 +1,9 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, CandidateEffectAssessmentContext, Move, Rename,
-    UnassignOutcome, parse_batch_json, parse_move_triple, rename_binding, rename_bindings,
-    run_bindings_assign, run_bindings_list, run_bindings_unassign,
+    AssignOutcome, BindingsListFilters, Move, Rename, UnassignOutcome, parse_batch_json,
+    parse_move_triple, rename_binding, rename_bindings, run_bindings_assign, run_bindings_list,
+    run_bindings_unassign,
 };
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
@@ -14,7 +14,6 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
-use pipeline::AnalysisArtifactInput;
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -364,31 +363,22 @@ fn run_bindings_assign_cmd(
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    let candidate_context = args
-        .effect_assessment
-        .resolve_for_verified_write(&args.edit, source_context)?;
+    let candidate_context = args.effect_assessment.resolve_for_verified_write(
+        &args.edit,
+        source_context,
+        analysis_engine_sha256,
+    )?;
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
     let gate = args.edit.gate(source_context)?;
-    let effect_assessment =
-        candidate_context
-            .as_ref()
-            .map(|context| CandidateEffectAssessmentContext {
-                transform: &context.transform,
-                analysis: AnalysisArtifactInput {
-                    path: &context.analysis_path,
-                    analysis_engine_sha256,
-                },
-                graph_source: context.graph_source,
-            });
     let out = match run_bindings_assign(
         stderr,
         &args.edit.modules_root,
         moves,
         args.edit.dry_run,
         gate,
-        effect_assessment,
+        candidate_context.as_ref(),
     ) {
         Ok(out) => out,
         Err(err) => {
@@ -411,18 +401,9 @@ fn run_bindings_unassign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
-    let effect_assessment =
-        candidate_context
-            .as_ref()
-            .map(|context| CandidateEffectAssessmentContext {
-                transform: &context.transform,
-                analysis: AnalysisArtifactInput {
-                    path: &context.analysis_path,
-                    analysis_engine_sha256,
-                },
-                graph_source: context.graph_source,
-            });
+    let candidate_context =
+        args.effect_assessment
+            .resolve(&args.edit, source_context, analysis_engine_sha256)?;
     let gate = args.edit.gate(source_context)?;
     let out = match run_bindings_unassign(
         stderr,
@@ -430,7 +411,7 @@ fn run_bindings_unassign_cmd(
         args.syms,
         args.edit.dry_run,
         gate,
-        effect_assessment,
+        candidate_context.as_ref(),
     ) {
         Ok(out) => out,
         Err(err) => {

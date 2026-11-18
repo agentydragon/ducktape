@@ -5,15 +5,15 @@
 //! graph gate is still authoritative, while an assessment requires a verified
 //! staged artifact and the full tree transform context.
 
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use transform_command::{TransformContextArgs, TransformContextAuxArgs};
 
 use anyhow::{Context, Result, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
 use pipeline::{AnalysisArtifactInput, TransformRequest};
-use spec::LogicalModule;
 
+use crate::binding::ModuleDocs;
 use crate::edit_gate::GraphEditArgs;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -50,9 +50,10 @@ pub struct CandidateEffectAssessmentExistingTreeArgs {
 
 /// Inputs resolved once for an explicit effect assessment request.
 pub struct ResolvedCandidateEffectAssessment<'a> {
-    pub transform: TransformRequest,
-    pub analysis_path: PathBuf,
-    pub graph_source: &'a VerifiedGraphSourceContext,
+    transform: TransformRequest,
+    analysis_path: PathBuf,
+    graph_source: &'a VerifiedGraphSourceContext,
+    analysis_engine_sha256: &'static str,
 }
 
 impl CandidateEffectAssessmentArgs {
@@ -63,8 +64,9 @@ impl CandidateEffectAssessmentArgs {
         &self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
+        analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, false)
+        self.resolve_with_write_policy(edit, source_context, false, analysis_engine_sha256)
     }
 
     /// Callers use this only when they assess final candidate documents and
@@ -73,8 +75,9 @@ impl CandidateEffectAssessmentArgs {
         &self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
+        analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, true)
+        self.resolve_with_write_policy(edit, source_context, true, analysis_engine_sha256)
     }
 
     fn resolve_with_write_policy<'a>(
@@ -82,6 +85,7 @@ impl CandidateEffectAssessmentArgs {
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         allow_write: bool,
+        analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis_path) = &self.analysis else {
             ensure!(
@@ -111,6 +115,7 @@ impl CandidateEffectAssessmentArgs {
             transform: self.transform.clone().resolve()?,
             analysis_path: analysis_path.clone(),
             graph_source,
+            analysis_engine_sha256,
         }))
     }
 }
@@ -121,16 +126,7 @@ impl CandidateEffectAssessmentExistingTreeArgs {
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         tree_config: Option<&std::path::Path>,
-    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, tree_config, true)
-    }
-
-    fn resolve_with_write_policy<'a>(
-        &self,
-        edit: &GraphEditArgs,
-        source_context: Option<&'a VerifiedGraphSourceContext>,
-        tree_config: Option<&std::path::Path>,
-        allow_write: bool,
+        analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis) = &self.analysis else {
             ensure!(
@@ -150,7 +146,7 @@ impl CandidateEffectAssessmentExistingTreeArgs {
             },
             analysis: Some(analysis.clone()),
         };
-        args.resolve_with_write_policy(edit, source_context, allow_write)
+        args.resolve_for_verified_write(edit, source_context, analysis_engine_sha256)
     }
 }
 
@@ -161,24 +157,28 @@ impl ResolvedCandidateEffectAssessment<'_> {
         &self,
         stderr: &mut (dyn std::io::Write + Send),
         edit_modules_root: &std::path::Path,
-        candidate_modules: &BTreeMap<String, LogicalModule>,
+        docs: &ModuleDocs,
+        deleted: &BTreeSet<String>,
         import_order: &[spec::ModulePath],
-        analysis_engine_sha256: &'static str,
     ) -> Result<gate::CandidateRelocationAssessmentReport> {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !deleted.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
         command_diagnostics::run(stderr, |diagnostics| {
             pipeline::assess_candidate_effect_relocation(
                 &self.transform,
                 AnalysisArtifactInput {
                     path: &self.analysis_path,
-                    analysis_engine_sha256,
+                    analysis_engine_sha256: self.analysis_engine_sha256,
                 },
                 self.graph_source,
                 edit_modules_root,
-                candidate_modules,
+                &candidate_modules,
                 import_order,
                 diagnostics,
             )
         })
-        .context("candidate effect assessment failed")
     }
 }
