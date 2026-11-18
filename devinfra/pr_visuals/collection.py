@@ -174,26 +174,6 @@ def _result_key(listed: ListedArtifact) -> ResultKey:
     )
 
 
-def _download_records(
-    records: list[ListedArtifact], *, bbapi: Path, run: Runner
-) -> tuple[dict[int, bytes], str | None]:
-    if not records:
-        return {}, None
-    with tempfile.TemporaryDirectory(prefix="test-output-records-") as directory:
-        downloads = [
-            Download(item.artifact.file.uri, item.invocation_id, Path(directory) / f"{index}.json")
-            for index, item in enumerate(records)
-        ]
-        error = download_blobs(downloads, bbapi=bbapi, run=run)
-        # Keep any materialized records for diagnostics even if the batch failed.
-        contents = {
-            id(item): download.destination.read_bytes()
-            for item, download in zip(records, downloads, strict=True)
-            if download.destination.is_file()
-        }
-    return contents, f"bbapi record download failed: {error}" if error is not None else None
-
-
 def collect_outputs(
     invocations: list[str],
     repository: str,
@@ -218,7 +198,25 @@ def collect_outputs(
             by_result[key].append(item)
     records = [item for items in by_result.values() for item in items if _record_name(item.artifact.file.name)]
     logger.info("Listed %d artifacts; downloading %d output records", len(listed), len(records))
-    contents, download_error = _download_records(records, bbapi=bbapi, run=run)
+    contents: dict[int, bytes] = {}
+    download_issue: str | None = None
+    if records:
+        with tempfile.TemporaryDirectory(prefix="test-output-records-") as directory:
+            downloads = [
+                Download(item.artifact.file.uri, item.invocation_id, Path(directory) / f"{index}.json")
+                for index, item in enumerate(records)
+            ]
+            try:
+                download_blobs(downloads, bbapi=bbapi, run=run)
+            except subprocess.CalledProcessError as error:
+                detail = (error.stderr or "").strip() or str(error)
+                download_issue = f"bbapi record download failed: {detail}"
+            # Keep materialized records for diagnostics even when the batch fails.
+            contents = {
+                id(item): download.destination.read_bytes()
+                for item, download in zip(records, downloads, strict=True)
+                if download.destination.is_file()
+            }
     logger.info("Selecting outputs from %d records", len(contents))
     sources: list[SourceResult] = []
     for key, items in by_result.items():
@@ -229,8 +227,8 @@ def collect_outputs(
             source_issues.append(f"conflicting statuses {sorted(str(s) for s in statuses)}")
         if len(summaries) != 1:
             source_issues.append("missing or inconsistent test summary")
-        if download_error is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
-            source_issues.append(download_error)
+        if download_issue is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
+            source_issues.append(download_issue)
         summary = items[0].artifact.test_summary
         files = []
         for item in items:
