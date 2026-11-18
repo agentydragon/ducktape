@@ -2,35 +2,27 @@ package dispatcher
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 // WatchActivity owns one connection and never decodes a Session before validating the wire version.
 func (r *HarnessHostClient) WatchActivity(ctx context.Context, sandbox SandboxSnapshot, apply func(*harnesshostpb.WatchSessionsResponse) error) error {
-	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace != r.Namespace {
-		return errors.New("complete in-namespace Sandbox identity is required")
+	target, err := r.proxyTarget(sandbox)
+	if err != nil {
+		return err
 	}
-	conn, err := bearer.Dial(r.target(sandbox.Name), r.TokenFile, r.Timeout, r.GatewayTLS)
+	conn, err := bearer.Dial(target.address, target.tokenFile, r.Timeout, target.tls)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		sandboxapi.RuntimeProxySandboxMetadataKey, sandbox.Name,
-		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, sandbox.Namespace,
-		sandboxapi.RuntimeProxySandboxUIDMetadataKey, sandbox.UID,
-		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, sandbox.Namespace,
-		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, sandbox.Name,
-	))
-	return watchActivity(ctx, conn, r.Timeout, apply)
+	return watchActivity(metadata.NewOutgoingContext(ctx, target.metadata), conn, r.Timeout, apply)
 }
 
 type CentralActivityClient struct {
