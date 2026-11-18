@@ -4,7 +4,7 @@ import json
 from urllib.parse import urlsplit
 
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting
+from cdk8s import App, Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.platform_sessions import app, config, remote
 
@@ -110,6 +110,22 @@ def test_scheduler_has_one_owner_of_state(scratch_app: App) -> None:
     assert remote.CONFIG.data is not None
     integration = json.loads(remote.CONFIG.data["quest-scheduler-integration.json"])["integrations"][0]
     assert integration["state_dir"] == "/data/session/quest-scheduler"
+
+
+def test_myquest_type_gets_bounded_startup_grace_without_changing_liveness(scratch_app: App) -> None:
+    for instance, provider_type in (("myquest-canary", "myquest"), ("other-canary", "openai")):
+        chart = Chart(scratch_app, instance)
+        remote._provider_workload(chart, instance, provider_type=provider_type, record_upstream_traffic=False)
+        deployment = next(item for item in Cdk8sTesting.synth(chart) if item["kind"] == "Deployment")
+        provider = deployment["spec"]["template"]["spec"]["containers"][0]
+        health = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}}
+        assert provider["readinessProbe"] == provider["livenessProbe"] == health
+        if provider_type == "myquest":
+            startup = provider["startupProbe"]
+            assert startup["httpGet"] == health["httpGet"]
+            assert 32 <= startup["periodSeconds"] * startup["failureThreshold"] <= 60
+        else:
+            assert "startupProbe" not in provider
 
 
 def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:

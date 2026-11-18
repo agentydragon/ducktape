@@ -2351,6 +2351,13 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 12
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/platform-sessions
               name: config
@@ -2755,6 +2762,13 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 12
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
           volumeMounts:
             - mountPath: /etc/platform-sessions
               name: config
