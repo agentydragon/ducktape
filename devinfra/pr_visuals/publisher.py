@@ -54,6 +54,7 @@ from devinfra.pr_visuals.metadata import (
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, test_impact_key
 from devinfra.pr_visuals.visual_diff import compare_pngs
+from devinfra.testing.output_records import output_key
 
 if TYPE_CHECKING:
     from types_boto3_s3.client import S3Client
@@ -110,8 +111,7 @@ class CollectedAsset:
 
     @property
     def review_filename(self) -> str:
-        identity = json.dumps([self.case_id, self.checkpoint, self.role], ensure_ascii=False, separators=(",", ":"))
-        return f"{hashlib.sha256(identity.encode()).hexdigest()}.png"
+        return f"{output_key(self.case_id, self.checkpoint, self.role)}.png"
 
 
 @dataclass(frozen=True)

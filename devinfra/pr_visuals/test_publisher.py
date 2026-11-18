@@ -676,7 +676,7 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
     artifacts: dict[str, list[BuildBuddyArtifact]] = {}
     blobs: dict[str, bytes] = {}
     downloaded: set[str] = set()
-    identities = {("dialog/mobile", None), ("dialog/mobile", "expanded"), ("dialog/desktop", None)}
+    filenames: dict[tuple[str, str | None], str] = {}
     specs = [
         ("first", 1, 1, "FAILED"),
         ("first", 1, 2, "PASSED"),
@@ -689,13 +689,14 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
         case_id = "dialog/mobile" if shard == 1 else "dialog/desktop"
         outputs = BoundTestOutputs(output_dir=root, case_id=case_id)
         for checkpoint in [None, "expanded"] if shard == 1 else [None]:
-            outputs.publish(
+            payload = outputs.publish(
                 checkpoint=checkpoint,
                 role="screenshot",
                 data=failed_image if status == "FAILED" else image,
                 suffix="png",
                 title="Dialog states",
             )
+            filenames[case_id, checkpoint] = payload.name
         outputs.publish(role="trace", data=b"diagnostics", suffix="zip")
         result = ResultKey(invocation, "//ui:visual", "config-a", 1, shard, attempt)
         summary = BESTestSummary(
@@ -753,8 +754,9 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
     assert review.baseline_eligible
     assert not review.issues
     assert review.notices
-    assert {(asset.case_id, asset.checkpoint) for asset in review.assets} == identities
-    assert len({asset.path for asset in review.assets}) == len(identities)
+    assert len(review.assets) == len(filenames)
+    assert len({asset.path for asset in review.assets}) == len(filenames)
+    assert {(asset.case_id, asset.checkpoint): asset.path for asset in review.assets} == filenames
     assert all(asset.classification == "new" for asset in review.assets)
     for asset in review.assets:
         assert len(asset.variants) == 1
