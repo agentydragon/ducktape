@@ -179,8 +179,9 @@ The explicit `dex` profile permits this absence while still rejecting a supplied
 `azp`. Both profiles require RS256, a pinned issuer/JWKS, a single string audience equal to the
 configured client, a nonblank subject, and valid integral `iat`/`exp`. Multiple audiences and
 cross-client Dex grants are not supported. Authentik's required `azp` contract is unchanged,
-including for Haku and MCP enrollment callers. The shared implementation lives in
-[`finance/plaid/spend/oidc_principal.py`](../../finance/plaid/spend/oidc_principal.py).
+including for Haku and MCP enrollment callers. The profile logic lives in
+[`agentplane/identity/operator/verifier.go`](../identity/operator/verifier.go) for the Action Service and MCP edge,
+and in [`agentplane/app/internal/federation/verify.go`](../app/internal/federation/verify.go) for the app.
 
 To activate Dex, first deploy app and Action Service images supporting the profile, then set
 `login_token_profile`, `target.token_profile`, and Action Service `token_profile` to `dex` in
