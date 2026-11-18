@@ -2148,21 +2148,6 @@ function collapsibleCommandRows(threadId: string, below: number): Record<string,
   return [{ ...viewState(cursor, null), thread_id: threadId }, ...rows];
 }
 
-function historyProfileRows(threadId: string, rowCount: number): Record<string, unknown>[] {
-  if (!Number.isInteger(rowCount) || rowCount < 1 || rowCount > 5000) {
-    throw new RangeError(`History profile row count must be between 1 and 5000: ${rowCount}`);
-  }
-  return [
-    { ...viewState(rowCount, null), thread_id: threadId },
-    ...Array.from({ length: rowCount }, (_, index) =>
-      item(index + 1, `profile-row-${index}`, ItemKind.ASSISTANT_TEXT, `Profile history row ${index}.`, {
-        threadId,
-        turn: `profile-turn-${index}`,
-      })
-    ),
-  ];
-}
-
 function setupRows(threadId: string, running = false): Record<string, unknown>[] {
   const output = (cursor: number, channel: "stdout" | "stderr", text: string) =>
     lifecycle(
@@ -4311,17 +4296,6 @@ const visualHarness = {
         ? { ...thread, metadata: { ...thread.metadata, name: "Short thread arriving" } }
         : thread;
     threadEntityRows = shortThreadSwitchRows;
-  },
-  historyProfile(rowCount: number): void {
-    const rowsByThread = new Map<string, Record<string, unknown>[]>();
-    threadEntityRows = (threadId) => {
-      let rows = rowsByThread.get(threadId);
-      if (!rows) {
-        rows = historyProfileRows(threadId, rowCount);
-        rowsByThread.set(threadId, rows);
-      }
-      return rows;
-    };
   },
   rememberHistoryRowHeight: rememberRowHeight,
   lifecycleGroup(): void {

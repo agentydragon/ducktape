@@ -9,7 +9,6 @@
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 # gazelle:exclude test_visual_operation_presentation.py
-# gazelle:exclude test_history_profile.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
@@ -290,14 +289,6 @@ filegroup(
     name = "visual_bundle_css",
     testonly = True,
     srcs = ["harness/bundle.css"],
-)
-
-agentplane_visual_test(
-    name = "profile_history",
-    src = "test_history_profile.py",
-    publishes_screenshots = False,
-    tags = ["manual"],
-    title = "Agentplane: history CPU profiles",
 )
 
 agentplane_visual_test(
