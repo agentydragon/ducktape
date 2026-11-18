@@ -276,6 +276,7 @@ binding/watch recovery without replacing a Sandbox or invalidating its credentia
 First scale old Deployments to zero after S4/S5 evidence; retain their manifests/pins for the agreed
 rollback window. Before removing old Services, prove no live or suspended/checkpointed caller,
 queued target, reconnecting connection, launch configuration or supported rollback image needs them.
+Existing Central Sampler conversations may keep stale platform URLs in their stored guides.
 New template deployment alone is not that proof. Before deleting old SVID acceptance, additionally
 prove S6/S7 complete and no old leaf is in use; wait for old credentials to expire, including the
 rendered `24h` certificate validity and any later renewal. Stop old issuance before starting that
