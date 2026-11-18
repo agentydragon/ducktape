@@ -115,10 +115,9 @@ are `PyWheel` spawn outputs; the released Gazelle target is the compiled Go
 binary, not the template-expanded `//devinfra:gazelle` launcher. OCI layouts
 are directory outputs, which this flag does not cover.
 
-The `agentplane/x/runner_layering/README.md` build recipe explicitly opts in
-for `tools_rootfs` and `local_vm_probe`: the former exposes a Python module
-written by `oci_layout_py`'s `ctx.actions.write`, and the latter exposes a
-template-expanded Python launcher. The flag publishes their regular files;
-the documented local `bb run` remains responsible for the probe's runfiles
-and host execution. Archive, compiled-binary, library-validation, and
+The [runner-layering build recipe](../../../agentplane/x/runner_layering/README.md) opts in
+for `tools_rootfs`, whose Python locator module is written by
+`oci_layout_py`'s `ctx.actions.write`. The original audit also applied the flag
+to the since-retired local VM probe's generated launcher; the probe's local
+`bb run` resolved its runfiles and used host KVM. Archive, compiled-binary, library-validation, and
 `--nobuild` recipes keep their existing settings.

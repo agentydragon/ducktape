@@ -1,49 +1,23 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load(
     "//agentplane/env/e2e/testing:exec_properties.bzl",
     "NATIVE_RUNNER_DOCKER_ENV",
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
-load("//devinfra/cpio:defs.bzl", "cpio_archive")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.x.runner_layering.tools_rootfs //agentplane/x/runner_layering:tools_rootfs
 
 package(default_visibility = ["//visibility:public"])
 
 go_binary(
-    name = "boot_init",
-    srcs = ["boot_init.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/boot_init",
-    race = "off",
-)
-
-go_binary(
     name = "child_exec",
     srcs = ["child_exec.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/runner_layering/child_exec",
     race = "off",
-)
-
-pkg_files(
-    name = "boot_init_file",
-    srcs = [":boot_init"],
-    attributes = pkg_attributes(
-        gid = 0,
-        mode = "0755",
-        uid = 0,
-    ),
-    renames = {":boot_init": "init"},
-)
-
-cpio_archive(
-    name = "base_initramfs",
-    srcs = [":boot_init_file"],
-    out = "base-initramfs.cpio",
 )
 
 # The workload image extends the Debian tool closure with one workload-owned executable. Keeping
@@ -70,33 +44,6 @@ oci_layout_py(
     image = ":workload_tools_image",
 )
 
-py_binary(
-    name = "local_vm_probe",
-    args = ["--kernel-rlocation=$(rlocationpath @firecracker_vmlinux_6_1_128//file)"],
-    data = [
-        ":base_initramfs",
-        "//devinfra/x/firecracker:firecracker_layer",
-        "@agentplane_codex_cli_linux_x64//:codex_binary",
-        "@agentplane_codex_cli_linux_x64//:codex_bwrap",
-        "@claude_code_cli_linux_x64//:claude",
-        "@firecracker_vmlinux_6_1_128//file",
-    ],
-    main_module = "agentplane.x.runner_layering.local_vm",
-    deps = [
-        ":local_vm",
-    ],
-)
-
-py_library(
-    name = "local_vm",
-    srcs = ["local_vm.py"],
-    deps = [
-        "//agentplane/x/runner_layering:tools_rootfs",
-        "@pypi//httpx",
-        "@rules_python//python/runfiles",
-    ],
-)
-
 py_test(
     name = "test_sparse_root",
     size = "large",
@@ -115,7 +62,6 @@ py_test(
     ],
     deps = [
         ":conftest",
-        ":local_vm",
         "//:conftest",
         "//agentplane/env/e2e/testing:driver",
         "//agentplane/env/e2e/testing:events",

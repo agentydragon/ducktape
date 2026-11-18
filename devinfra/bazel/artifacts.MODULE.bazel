@@ -947,14 +947,6 @@ http_file(
     ],
 )
 
-# Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
-http_file(
-    name = "firecracker_vmlinux_6_1_128",
-    downloaded_file_path = "vmlinux-6.1.128",
-    sha256 = "27a8310b9a727517e9eb02044524b6ceb77de5728e3491b6974d5c846227ecc8",
-    urls = ["https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.12/x86_64/vmlinux-6.1.128"],
-)
-
 # Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by
 # development tooling and JavaScript tests.
 http_archive(
