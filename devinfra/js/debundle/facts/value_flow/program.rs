@@ -190,6 +190,7 @@ struct PropertyRange {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 struct CompletedSiteValues {
     all_properties: Option<Values>,
+    numeric_properties: Option<Values>,
     returns: Option<Values>,
 }
 
@@ -248,6 +249,14 @@ impl CompletedValueStore {
                 assert!(summary.is_none(), "duplicate completed property summary");
                 *summary = Some(values);
             }
+            FlowKey::NumericProperties(site) => {
+                let summary = &mut self.sites[site as usize].numeric_properties;
+                assert!(
+                    summary.is_none(),
+                    "duplicate completed numeric property summary"
+                );
+                *summary = Some(values);
+            }
             FlowKey::Return(site) => {
                 let summary = &mut self.sites[site as usize].returns;
                 assert!(summary.is_none(), "duplicate completed return summary");
@@ -287,6 +296,9 @@ impl CompletedValueStore {
                 self.property_values.get(row.start + index)
             }
             FlowKey::Properties(site) => self.sites.get(*site as usize)?.all_properties.as_ref(),
+            FlowKey::NumericProperties(site) => {
+                self.sites.get(*site as usize)?.numeric_properties.as_ref()
+            }
             FlowKey::Return(site) => self.sites.get(*site as usize)?.returns.as_ref(),
             _ => None,
         }
@@ -308,11 +320,12 @@ impl CompletedValueStore {
             .iter()
             .filter_map(Option::as_ref)
             .chain(self.property_values.iter())
-            .chain(
-                self.sites
+            .chain(self.sites.iter().flat_map(|site| {
+                site.all_properties
                     .iter()
-                    .flat_map(|site| site.all_properties.iter().chain(site.returns.iter())),
-            )
+                    .chain(site.numeric_properties.iter())
+                    .chain(site.returns.iter())
+            }))
     }
 }
 
