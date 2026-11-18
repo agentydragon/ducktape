@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from ai_session_archive.database_migrate import RUNNER
-from ai_session_archive.restic import ResticRepository
+from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
 
@@ -25,17 +25,6 @@ def postgres_engine(postgres_admin_url: str, database_names: DatabaseNames) -> I
             engine.dispose()
 
 
-def _restic_binary() -> str:
-    roots = [os.environ.get("RUNFILES_DIR"), os.environ.get("TEST_SRCDIR")]
-    for runfiles_root in roots:
-        if runfiles_root:
-            for workspace in ("_main", "ducktape"):
-                candidate = Path(runfiles_root) / workspace / "third_party/restic/restic_bin"
-                if candidate.is_file():
-                    return str(candidate)
-    raise AssertionError("pinned Restic binary is missing from test runfiles")
-
-
 def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     repository_path = tmp_path / "repository"
     environment = {
@@ -47,12 +36,13 @@ def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     }
     Path(environment["HOME"]).mkdir()
     Path(environment["RESTIC_CACHE_DIR"]).mkdir()
-    subprocess.run([_restic_binary(), "init"], env=environment, check=True, capture_output=True)
-    return ResticRepository(binary=_restic_binary(), environment=environment), environment
+    binary = find_pinned_restic_binary()
+    subprocess.run([binary, "init"], env=environment, check=True, capture_output=True)
+    return ResticRepository(binary=binary, environment=environment), environment
 
 
 def _backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
-    arguments = [_restic_binary(), "backup"]
+    arguments = [find_pinned_restic_binary(), "backup"]
     if force:
         arguments.append("--force")
     arguments.extend(("--host", "archive-test", "--", *(str(path) for path in source_paths)))
