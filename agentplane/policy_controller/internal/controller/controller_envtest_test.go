@@ -302,16 +302,11 @@ func TestRoleCreationBindsWhatTheBindingReportedMissing(t *testing.T) {
 
 func waitForBindingStatus(t *testing.T, c client.Client, name string, ready metav1.ConditionStatus, missingRoles []policyapi.MissingRole) {
 	t.Helper()
-	var binding *policyapi.PolicyBinding
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		binding = readPolicyBinding(t, c, name)
-		if condition := conditionFor(binding, KubernetesReady); condition != nil && condition.Status == ready && slices.Equal(binding.Status.MissingRoles, missingRoles) {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("PolicyBinding %s status = %+v, want KubernetesReady %s and missingRoles %+v", name, binding.Status, ready, missingRoles)
+	eventually(t, fmt.Sprintf("PolicyBinding %s to have KubernetesReady %s and missingRoles %+v", name, ready, missingRoles), func() (bool, string) {
+		binding := readPolicyBinding(t, c, name)
+		condition := conditionFor(binding, KubernetesReady)
+		return condition != nil && condition.Status == ready && slices.Equal(binding.Status.MissingRoles, missingRoles), fmt.Sprintf("%+v", binding.Status)
+	})
 }
 
 // startPolicyAPIServer returns a direct client, the manager's cached client and a Reconciler over
@@ -442,81 +437,58 @@ func reconcileRequest(name string) reconcile.Request {
 
 func waitForCached(t *testing.T, c client.Client, object client.Object, key client.ObjectKey) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		candidate := object.DeepCopyObject().(client.Object)
-		if err := c.Get(context.Background(), key, candidate); err == nil {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("%T %s did not appear in manager cache", object, key)
+	eventually(t, fmt.Sprintf("%T %s to appear in manager cache", object, key), func() (bool, string) {
+		err := c.Get(context.Background(), key, object.DeepCopyObject().(client.Object))
+		return err == nil, fmt.Sprint(err)
+	})
 }
 
 func waitForCachedNotFound(t *testing.T, c client.Client, object client.Object, key client.ObjectKey) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		candidate := object.DeepCopyObject().(client.Object)
-		if err := c.Get(context.Background(), key, candidate); apierrors.IsNotFound(err) {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("%T %s remained in manager cache", object, key)
+	eventually(t, fmt.Sprintf("%T %s to leave manager cache", object, key), func() (bool, string) {
+		err := c.Get(context.Background(), key, object.DeepCopyObject().(client.Object))
+		return apierrors.IsNotFound(err), fmt.Sprint(err)
+	})
 }
 
 func waitForCachedSubjectName(t *testing.T, c client.Client, object client.Object, subject string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	key := client.ObjectKeyFromObject(object)
+	eventually(t, fmt.Sprintf("%T %s to show subject %s in manager cache", object, key, subject), func() (bool, string) {
 		candidate := object.DeepCopyObject().(client.Object)
-		if err := c.Get(context.Background(), client.ObjectKeyFromObject(object), candidate); err == nil &&
-			slices.ContainsFunc(nativeSubjects(candidate), func(current rbacv1.Subject) bool { return current.Name == subject }) {
-			return
+		if err := c.Get(context.Background(), key, candidate); err != nil {
+			return false, err.Error()
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("%T %s did not show subject %s in manager cache", object, client.ObjectKeyFromObject(object), subject)
+		subjects := nativeSubjects(candidate)
+		return slices.ContainsFunc(subjects, func(current rbacv1.Subject) bool { return current.Name == subject }), fmt.Sprintf("subjects=%+v", subjects)
+	})
 }
 
 func waitForCachedRoleRef(t *testing.T, c client.Client, namespace, name, role string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	eventually(t, fmt.Sprintf("RoleBinding %s/%s to show roleRef %s in manager cache", namespace, name, role), func() (bool, string) {
 		var binding rbacv1.RoleBinding
-		if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &binding); err == nil && binding.RoleRef.Name == role {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("RoleBinding %s/%s did not show roleRef %s in manager cache", namespace, name, role)
+		err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &binding)
+		return err == nil && binding.RoleRef.Name == role, fmt.Sprintf("roleRef=%s err=%v", binding.RoleRef.Name, err)
+	})
 }
 
 func waitForCachedPolicySet(t *testing.T, c client.Client, name string, rules, namespaces int) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	eventually(t, fmt.Sprintf("PolicySet %s to show %d rules with %d namespaces in manager cache", name, rules, namespaces), func() (bool, string) {
 		var set policyapi.PolicySet
-		if err := c.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &set); err == nil && len(set.Spec.Rules) == rules && len(set.Spec.Rules[0].Namespaces) == namespaces {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("PolicySet %s did not show %d rules with %d namespaces in manager cache", name, rules, namespaces)
+		err := c.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &set)
+		return err == nil && len(set.Spec.Rules) == rules && len(set.Spec.Rules[0].Namespaces) == namespaces, fmt.Sprintf("rules=%+v err=%v", set.Spec.Rules, err)
+	})
 }
 
 func waitForCachedCondition(t *testing.T, c client.Client, name, conditionType string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	eventually(t, fmt.Sprintf("PolicyBinding %s to show condition %s in manager cache", name, conditionType), func() (bool, string) {
 		var binding policyapi.PolicyBinding
-		if err := c.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &binding); err == nil && conditionFor(&binding, conditionType) != nil {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("PolicyBinding %s did not show condition %s in manager cache", name, conditionType)
+		err := c.Get(context.Background(), client.ObjectKey{Namespace: policyNamespace, Name: name}, &binding)
+		return err == nil && conditionFor(&binding, conditionType) != nil, fmt.Sprintf("conditions=%+v err=%v", binding.Status.Conditions, err)
+	})
 }
 
 func nativeBindingsFor(t *testing.T, c client.Client, bindingName string) ([]*rbacv1.RoleBinding, []*rbacv1.ClusterRoleBinding) {
