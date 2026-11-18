@@ -351,13 +351,13 @@ fn reassigned_helper_binding_does_not_keep_a_stale_argument_summary() {
     assert_unsafe_return_summary_cut(
         r#"
 let later = 0;
-let chooseReplacement = false;
+let chooseReplacement = true;
 function stable(value) { return value; }
 function relay(value) { return chooseReplacement ? invoke(value) : stable(value); }
 function replacement(value) { return () => later; }
 let invoke = stable;
 invoke = replacement;
-const selected = relay(() => later);
+const selected = relay(() => 1);
 const observed = selected();
 later = 42;
 console.log(observed, later);
