@@ -92,7 +92,7 @@ export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree,
   const auxiliaryQueriesEnabled = !hasSeededSnapshot && snapshotQuery.isSuccess && treeQuery.isSuccess;
   const occurrenceStatsQuery = useQuery({
     queryKey: ["props", "snapshot-occurrence-stats", snapshotSlug],
-    queryFn: ({ signal }) => fetchOccurrenceStats(snapshotSlug, undefined, signal),
+    queryFn: ({ signal }) => fetchOccurrenceStats(snapshotSlug, signal),
     enabled: auxiliaryQueriesEnabled,
   });
   const clustersQuery = useQuery({

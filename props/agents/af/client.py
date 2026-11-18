@@ -1,9 +1,9 @@
 """Build a Microsoft Agent Framework chat client for the current agent run.
 
-Replaces agent_core's `create_bound_model_from_env`. The client is selected by the
-model's `api_shape` (chat-completions / responses / anthropic). Budget is enforced
-server-side by props-llm-proxy (`props/llm_proxy/routes.py:_check_budget`), so no
-budget logic lives here — over-budget requests are rejected by the proxy.
+The client is selected by the model's `api_shape` (chat-completions / responses /
+anthropic). Budget is enforced server-side by props-llm-proxy
+(`props/llm_proxy/routes.py:_check_budget`), so no budget logic lives here —
+over-budget requests are rejected by the proxy.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def build_chat_client(model: str, api_shape: LLMApiShape) -> ChatClientSetup:
     #
     # max_iterations caps LLM roundtrips within a single agent.run() burst; MAF defaults it to 40
     # and then forces a tool-less final response. Props drives completion itself via
-    # run_until_done()'s done()/max_turns outer loop (props/agents/af/loop.py), so the inner cap
+    # run_until_done()'s done() outer loop (props/agents/af/loop.py), so the inner cap
     # only truncates bursts prematurely. Raise it well past any realistic burst length.
     fn_config = FunctionInvocationConfiguration(include_detailed_errors=True, max_iterations=10_000)
 
