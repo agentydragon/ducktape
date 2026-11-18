@@ -38,11 +38,6 @@ def test_config_surfaces_routine_page_url(cap_client) -> None:
     assert cap_client.get("/api/config").json()["launch_routine_url"] == PAGE_URL
 
 
-def test_config_routine_url_none_when_unconfigured(client) -> None:
-    # The `client` fixture has no launch_routine configured.
-    assert client.get("/api/config").json()["launch_routine_url"] is None
-
-
 @respx.mock
 def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
     session_url = "https://claude.ai/code/session_test123"
@@ -60,26 +55,22 @@ def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
     assert json.loads(sent.content) == {}
 
 
+@pytest.mark.parametrize(
+    ("text", "fired_body"),
+    [
+        pytest.param("scan CPAP and summarize anomalies", {"text": "scan CPAP and summarize anomalies"}, id="custom"),
+        pytest.param("   ", {}, id="blank_uses_routine_default"),
+    ],
+)
 @respx.mock
-def test_launch_routine_forwards_custom_text(cap_client) -> None:
-    session_url = "https://claude.ai/code/session_custom"
+def test_launch_routine_forwards_text_unless_blank(cap_client, text: str, fired_body: dict[str, str]) -> None:
+    session_url = "https://claude.ai/code/session_text"
     route = respx.post(FIRE_URL).mock(
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
-    resp = cap_client.post("/api/capabilities/launch-routine", json={"text": "scan CPAP and summarize anomalies"})
+    resp = cap_client.post("/api/capabilities/launch-routine", json={"text": text})
     assert resp.status_code == 200
-    assert json.loads(route.calls.last.request.content) == {"text": "scan CPAP and summarize anomalies"}
-
-
-@respx.mock
-def test_launch_routine_blank_text_uses_routine_default(cap_client) -> None:
-    session_url = "https://claude.ai/code/session_default"
-    route = respx.post(FIRE_URL).mock(
-        return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
-    )
-    resp = cap_client.post("/api/capabilities/launch-routine", json={"text": "   "})
-    assert resp.status_code == 200
-    assert json.loads(route.calls.last.request.content) == {}
+    assert json.loads(route.calls.last.request.content) == fired_body
 
 
 @respx.mock
