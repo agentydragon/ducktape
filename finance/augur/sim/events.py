@@ -26,8 +26,8 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
         "to_agent_id": pl.Utf8(),
         "to_account_id": pl.Utf8(),
         "amount_quanta": pl.Int64(),
-        # Tax classification: when set (e.g. "ordinary" for W-2 wages),
-        # apply_events increments the recipient's ordinary_income_ytd.
+        # Tax classification: when set (e.g. "ordinary" for W-2 wages), the transfer
+        # accrues to the recipient's income for that source in the open tax year.
         # Null for non-income transfers (e.g. expense payments).
         "income_category": pl.Utf8(),
     }
@@ -36,8 +36,8 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
 # `TaxAccrual` records a year-end tax computation: a single
 # year's ordinary income for one agent under one jurisdiction has
 # been bracket-walked, and the resulting tax `amount_quanta` is now
-# owed. apply_events appends a row to `state.tax_liabilities` and
-# zeroes the agent's `ordinary_income_ytd` for the next year.
+# owed. `TaxAuthority.close_month` appends a row to `accounting.tax_liabilities` and
+# resets the agent's tax-year facts for the next year.
 TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),
@@ -51,8 +51,7 @@ TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
 )
 
 # `TaxBreakdown` records the inputs and component tax amounts behind
-# each year-end accrual. It is audit/output only; `apply_events` does
-# not mutate state from this frame.
+# each year-end accrual.
 TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),

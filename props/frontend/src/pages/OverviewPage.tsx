@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Button, Card, Center, Group, Loader, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
 
@@ -12,6 +13,7 @@ import { toast } from "../lib/toast";
 import type { RunModalPrefill } from "../lib/types";
 import type { CoverageResponse, OverviewResponse } from "../lib/schema";
 import { fetchCoverage, fetchOverview } from "../lib/api/client";
+import { overviewQueryKey } from "../lib/queryKeys";
 
 interface Props {
   initialData?: OverviewResponse;
@@ -25,36 +27,14 @@ type CoverageRequest =
 export default function OverviewPage({ initialData }: Props) {
   const navigate = useNavigate();
   const runModal = useRunModal();
-  const [overview, setOverview] = useState<OverviewResponse | null>(initialData ?? null);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<string | null>(null);
+  const overviewQuery = useQuery({ queryKey: overviewQueryKey(), queryFn: fetchOverview, enabled: !initialData });
+  const overview = initialData ?? overviewQuery.data;
+  const overviewLoaded = overview !== undefined;
   const [analysisSplit, setAnalysisSplit] = useState<"valid" | "train">("valid");
   const [coverageRequest, setCoverageRequest] = useState<CoverageRequest | null>(null);
 
   useEffect(() => {
-    if (initialData) return;
-
-    let current = true;
-    setLoading(true);
-    setError(null);
-    void fetchOverview()
-      .then((data) => {
-        if (current) setOverview(data);
-      })
-      .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Failed to load overview");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [initialData]);
-
-  useEffect(() => {
-    if (!overview) return;
+    if (!overviewLoaded) return;
     let current = true;
     setCoverageRequest({ split: analysisSplit, status: "loading" });
 
@@ -72,7 +52,7 @@ export default function OverviewPage({ initialData }: Props) {
     return () => {
       current = false;
     };
-  }, [overview, analysisSplit]);
+  }, [overviewLoaded, analysisSplit]);
 
   function handleNavigateToRuns(filters: RunModalPrefill) {
     const params = new URLSearchParams();
@@ -83,7 +63,14 @@ export default function OverviewPage({ initialData }: Props) {
     void navigate(query ? `/runs?${query}` : "/runs");
   }
 
-  if (loading) {
+  if (overviewQuery.error) {
+    return (
+      <Text c="red">
+        {overviewQuery.error instanceof Error ? overviewQuery.error.message : "Failed to load overview"}
+      </Text>
+    );
+  }
+  if (!overview) {
     return (
       <Center mih={160}>
         <Loader size="sm" />
@@ -91,8 +78,6 @@ export default function OverviewPage({ initialData }: Props) {
       </Center>
     );
   }
-  if (error) return <Text c="red">{error}</Text>;
-  if (!overview) return null;
 
   const currentCoverageRequest = coverageRequest?.split === analysisSplit ? coverageRequest : null;
 

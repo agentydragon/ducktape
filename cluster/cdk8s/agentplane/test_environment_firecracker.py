@@ -16,6 +16,7 @@ from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.pod_policy import harden, pod_spec
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
@@ -49,17 +50,11 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     assert pod["automountServiceAccountToken"] is False
     assert pod["restartPolicy"] == "Never"
     assert host["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": 9092}
-    guest_config = one(
-        doc
-        for doc in docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-config"
-    )
+    guest_config = find_resource(docs, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(guest_config["data"]["environment-runtime.json"])
     assert runtime["environment"]["block_devices"] == ["/dev/vdd"]
     assert runtime["harness_environment"]["values"]["HTTP_PROXY"] == "http://192.0.2.1:3128"
-    relay_config = one(
-        doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-relay"
-    )
+    relay_config = find_resource(docs, "ConfigMap", "environment-firecracker-relay")
     relay_settings = yaml.safe_load(relay_config["data"]["settings.yaml"])
     assert relay_settings["listen_address"] == "[::]:3128"
     platform = relay_settings["platform_routes"]
@@ -67,11 +62,7 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     target = urlsplit(f"//{runtime['model_config_target']}")
     assert listener.hostname == "0.0.0.0"
     assert (target.hostname, target.port) == (environment_firecracker.GATEWAY, listener.port)
-    launcher_config = one(
-        doc
-        for doc in docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-launcher"
-    )
+    launcher_config = find_resource(docs, "ConfigMap", "environment-firecracker-launcher")
     assert json.loads(launcher_config["data"]["config.json"])["platform_route_ports"] == [listener.port]
     assert "/agentplane.llm_ingress.v1.ModelConfigService/" in platform["routes"]["model-config"]["service_prefixes"]
     status_policy = one(doc for doc in docs if doc["kind"] == "CiliumNetworkPolicy")
@@ -112,16 +103,10 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
         harness_env=agent_cli_environment(service_urls(env, egress_host=environment_firecracker.GATEWAY)),
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    config_map = one(
-        doc
-        for doc in docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-config"
-    )
+    config_map = find_resource(docs, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(config_map["data"]["environment-runtime.json"])
     harness = runtime["harness_environment"]["values"]
-    relay = one(
-        doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-relay"
-    )
+    relay = find_resource(docs, "ConfigMap", "environment-firecracker-relay")
     listener = urlsplit(f"//{yaml.safe_load(relay['data']['settings.yaml'])['platform_routes']['listen_address']}")
     for url in (
         harness["AGENTPLANE_EGRESS_GRPC_URL"],

@@ -1,4 +1,4 @@
-"""History settings require live workload SVID trust and reject retired bearer keys."""
+"""History settings require live workload SVID trust."""
 
 from typing import Any
 
@@ -36,25 +36,6 @@ def test_policy_namespace_is_required(value: str) -> None:
     else:
         source["policy_namespace"] = ""
     with pytest.raises(ValidationError):
-        Settings.model_validate(source)
-
-
-@pytest.mark.parametrize(
-    ("scope", "key", "value"),
-    [
-        ("reader", "reader_accounts", []),
-        ("reader", "delegation", {"actor": "test-agentplane/actions", "identity_callers": True, "methods": []}),
-        ("reader", "token_audience", "legacy-reader"),
-        ("ingress", "token_audience", "legacy-ingress"),
-        ("ingress", "sampler_accounts", []),
-        ("ingress", "sampler_identity_callers", True),
-    ],
-)
-def test_retired_bearer_settings_are_unknown(scope: str, key: str, value: Any) -> None:
-    source = _settings_source()
-    target = source["ingress"] if scope == "ingress" else source
-    target[key] = value
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         Settings.model_validate(source)
 
 

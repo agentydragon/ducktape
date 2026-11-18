@@ -36,24 +36,6 @@ def list_versions(session: DbSession, *, session_id: UUID) -> list[SessionVersio
     ]
 
 
-def get_version(session: DbSession, *, session_id: UUID, version_id: UUID) -> SessionVersion | None:
-    row = session.scalar(
-        select(FileVersionRow).where(FileVersionRow.id == version_id, FileVersionRow.session_id == session_id)
-    )
-    if row is None:
-        return None
-    return SessionVersion(
-        id=row.id,
-        captured_at=row.first_seen_at,
-        sha256=row.sha256,
-        byte_size=row.byte_size,
-        source_path=row.source_path,
-        complete=row.complete,
-        parse_issue_count=row.parse_issue_count,
-        snapshot_id=row.first_snapshot_id,
-    )
-
-
 def list_events(
     session: DbSession,
     *,

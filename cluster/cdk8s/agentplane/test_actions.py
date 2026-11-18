@@ -34,6 +34,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.public_coder import egress as public_coder_egress
+from cluster.cdk8s.testing.manifests import find_resource
 
 # REST, docs, health and consent live behind the Action API's own authentication, never on
 # the public MCP origin.
@@ -52,9 +53,7 @@ _MCP_PROTOCOL_PATHS = {
 
 
 def test_public_route_exposes_protocol_paths_only(staging_manifests: list[dict[str, Any]]) -> None:
-    route = one(
-        doc for doc in staging_manifests if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "mcp-edge-mcp"
-    )
+    route = find_resource(staging_manifests, "HTTPRoute", "mcp-edge-mcp")
     paths = set()
     for rule in route["spec"]["rules"]:
         for match in rule["matches"]:
@@ -67,9 +66,7 @@ def test_public_route_exposes_protocol_paths_only(staging_manifests: list[dict[s
 
 
 def test_action_client_metadata_route_targets_mcp_edge(staging_manifests: list[dict[str, Any]]) -> None:
-    route = one(
-        doc for doc in staging_manifests if doc["kind"] == "HTTPRoute" and doc["metadata"]["name"] == "actions-mcp"
-    )
+    route = find_resource(staging_manifests, "HTTPRoute", "actions-mcp")
     metadata = staging.ENV.actions.mcp_client_metadata
     assert metadata is not None
     edge = mcp_edge.http_service(staging.ENV.namespace)
@@ -87,12 +84,12 @@ def test_mcp_edge_identity_reader_role_exists_without_oauth(scratch_app: App) ->
     mcp_edge.McpEdge(chart, "mcp-edge", env, database_url=EnvValue.from_value("postgres://unused"))
 
     documents = Cdk8sTesting.synth(chart)
-    role = one(doc for doc in documents if doc["kind"] == "Role" and doc["metadata"]["name"] == mcp_edge.NAME)
+    role = find_resource(documents, "Role", mcp_edge.NAME)
     assert role["metadata"]["namespace"] == env.namespace
     assert role["rules"] == [
         {"apiGroups": ["agentplane.allegedly.works"], "resources": ["identities"], "verbs": ["get", "list", "watch"]}
     ]
-    binding = one(doc for doc in documents if doc["kind"] == "RoleBinding" and doc["metadata"]["name"] == mcp_edge.NAME)
+    binding = find_resource(documents, "RoleBinding", mcp_edge.NAME)
     assert binding["metadata"]["namespace"] == env.namespace
     assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": mcp_edge.NAME}
     assert binding["subjects"] == [
@@ -101,9 +98,7 @@ def test_mcp_edge_identity_reader_role_exists_without_oauth(scratch_app: App) ->
 
 
 def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]]) -> None:
-    service = one(
-        doc for doc in staging_manifests if doc["kind"] == "Service" and doc["metadata"]["name"] == actions.NAME
-    )
+    service = find_resource(staging_manifests, "Service", actions.NAME)
     ports = {port["name"] for port in service["spec"]["ports"]}
     assert "grpc" in ports
     assert "http" not in ports
@@ -173,11 +168,7 @@ def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> No
 
 
 def _gaffer_approval(manifests: list[dict[str, Any]], action: str) -> dict[str, Any]:
-    policy = one(
-        doc
-        for doc in manifests
-        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "gaffer-private-branch-and-pr-creation"
-    )
+    policy = find_resource(manifests, "PolicySet", "gaffer-private-branch-and-pr-creation")
     return one(rule["policy"] for rule in policy["spec"]["rules"] if rule["policy"]["actions"] == {"github": [action]})
 
 
@@ -202,22 +193,14 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: l
 
 
 def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
+    deployment = find_resource(staging_manifests, "Deployment", "actions")
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
-    config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
-    )
+    config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     assert "reader_accounts" not in settings
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
-    action_policy = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == actions.NAME
-    )
+    action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
     assert any(
         endpoint.get("matchLabels") == sampler_labels
@@ -237,14 +220,10 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
 
 
 def test_action_service_allows_only_configured_service_callers(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
+    deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == "actions")
-    config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
-    )
+    config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
 
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
@@ -263,9 +242,7 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
 
 
 def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifests: list[dict[str, Any]]) -> None:
-    settings_config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
-    )
+    settings_config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(settings_config["data"]["settings.yaml"])
     assert public_coder_egress.NAMESPACE not in settings["caller_service_account_namespaces"]
     assert not any(
@@ -287,9 +264,7 @@ def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifest
 
 
 def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
+    deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     server = one(item for item in pod["containers"] if item["name"] == "actions")
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
@@ -304,9 +279,7 @@ def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[st
 
 
 def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
+    deployment = find_resource(staging_manifests, "Deployment", "actions")
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     env = {item["name"]: item.get("value") for item in container["env"]}
     assert env["OTEL_METRICS_EXPORTER"] == "otlp"
@@ -339,9 +312,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         environment_service_endpoint=environment_service.environments_service(env.namespace),
     )
     documents = Cdk8sTesting.synth(chart)
-    config = one(
-        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{actions.NAME}-settings"
-    )
+    config = find_resource(documents, "ConfigMap", f"{actions.NAME}-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     groups = settings["action_groups"]
     assert groups["environments"]["executor"]["kind"] == "session_delegation"
@@ -361,9 +332,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
     environments = environment_service.environments_service(env.namespace)
     assert settings["environment_service"]["target"] == f"{environments.fqdn}:{environments.port.number}"
     assert settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
-    deployment = one(
-        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == actions.NAME
-    )
+    deployment = find_resource(documents, "Deployment", actions.NAME)
     pod = deployment["spec"]["template"]["spec"]
     container = one(item for item in pod["containers"] if item["name"] == actions.NAME)
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
@@ -407,14 +376,10 @@ def test_central_sampler_session_trust_is_an_explicit_opt_in(scratch_app: App) -
     )
     action_component.add_platform_resources()
     documents = Cdk8sTesting.synth(chart)
-    config = one(
-        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
-    )
+    config = find_resource(documents, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
-    action_policy = one(
-        doc for doc in documents if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == actions.NAME
-    )
+    action_policy = find_resource(documents, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(env.namespace).pods.cilium
     action_port = str(actions.service(env.namespace).pod_port)
     assert any(

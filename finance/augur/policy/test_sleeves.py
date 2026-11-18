@@ -145,8 +145,7 @@ def session(lots: tuple[Lot, ...]) -> ActionSession:
 
 
 def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[Lot, ...]) -> None:
-    live = session(lots)
-    try:
+    with session(lots) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         first = sleeves.withdraw(
@@ -186,8 +185,6 @@ def test_fifo_withdrawal_and_exhaustion_preserve_unselected_books(lots: tuple[Lo
         finished = live.advance([DecisionActions(0, 1, remaining)])
         assert isinstance(finished, Finished)
         [result] = finished.rollouts
-    finally:
-        live.close()
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions
     assert sales.select("lot_id", "units_sold", "cost_basis_consumed_quanta", "proceeds_quanta").rows() == [
@@ -206,8 +203,7 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[Lot, ...], 
     if dust:
         opening_lots = tuple(lot for lot in lots if lot.lot_id != "test-newer")
         lots = (replace(opening_lots[0], units=1), *opening_lots[1:])
-    live = session(lots)
-    try:
+    with session(lots) as live:
         batch = live.start()
         for month in (0, 1):
             assert not isinstance(batch, Finished)
@@ -222,8 +218,6 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[Lot, ...], 
             batch = live.advance([DecisionActions(0, month, actions)])
         assert isinstance(batch, Finished)
         [result] = batch.rollouts
-    finally:
-        live.close()
     assert result.stop is None
     assert result.summary.cash[0].values == [7, 7, 7]
     assert result.trace is not None
@@ -243,8 +237,7 @@ def test_zero_target_full_exit_reentry_and_reserved_cash(lots: tuple[Lot, ...], 
 def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[Lot, ...], unheld: bool) -> None:
     if unheld:
         lots = tuple(lot for lot in lots if lot.asset_id != SECOND)
-    live = session(lots)
-    try:
+    with session(lots) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         observation = batch[0].observation
@@ -274,13 +267,10 @@ def test_deposit_reserves_cash_and_never_buys_zero_target(lots: tuple[Lot, ...],
             sleeves.withdraw(
                 observation, targets=targets, cash_account_id=AccountId("checking"), amount=True, cause_id="boolean"
             )
-    finally:
-        live.close()
 
 
 def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[Lot, ...]) -> None:
-    live = session(lots)
-    try:
+    with session(lots) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         actions = sleeves.withdraw(
@@ -302,8 +292,6 @@ def test_selected_pools_keep_their_own_economic_unit_scale(lots: tuple[Lot, ...]
         finished = live.advance([DecisionActions(0, 1, [])])
         assert isinstance(finished, Finished)
         [result] = finished.rollouts
-    finally:
-        live.close()
     assert result.trace is not None
     sales = result.trace.events.lot_dispositions
     assert sales.select("units_sold", "proceeds_quanta").rows() == [(0.7, 2), (1.0, 3)]

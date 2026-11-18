@@ -38,14 +38,11 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 NAME = "environment-vm"
 ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
 RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
-_ENVIRONMENT_RUNTIME_ENV_FILE = "environment-runtime.env"
 _WORKSPACE = "workspace"
 # A listed port keeps masquerade from forwarding every other port, including kubelet's probe of
 # the relay's readiness port, while exposing the Runner mTLS listener.
 _UNUSED_GUEST_PORT = 22
 _ENVIRONMENT_RUNTIME_PORT = 9090
-_ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
-_ENVIRONMENT_RUNTIME_TRUST_PATH = "/run/agentplane/environment-runtime-trust"
 
 
 def _memory_quantity(memory_bytes: int) -> str:

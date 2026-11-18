@@ -1,15 +1,11 @@
 """Mock factory to reduce fixture proliferation and provide flexible test doubles."""
 
-from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-from x.wt.client.view_formatter import ViewFormatter
-from x.wt.client.wt_client import WtClient
 from x.wt.server.git_manager import GitManager
 from x.wt.server.github_client import GitHubInterface
 from x.wt.server.worktree_service import WorktreeService
-from x.wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
 from x.wt.testing.data import MockBehaviors
 
 
@@ -57,48 +53,6 @@ class MockFactory:
 
         return _configure_return_values(mock, kwargs)
 
-    @staticmethod
-    def daemon_client(
-        *, status_response: StatusResponse | None = None, get_status_returns: StatusResponse | None = None, **kwargs
-    ) -> Mock:
-        mock = Mock(spec=WtClient)
-
-        # Default empty status response
-        default_response = status_response or StatusResponse(
-            items={},
-            total_processing_time_ms=0.0,
-            concurrent_requests=1,
-            daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
-        )
-
-        mock.get_status.return_value = get_status_returns or default_response
-        mock.create_worktree.return_value = Mock(success=True, absolute_path=Path("/test/path"))
-        mock.delete_worktree.return_value = Mock(success=True)
-        mock.list_worktrees.return_value = Mock(worktrees=[])
-
-        return _configure_return_values(mock, kwargs)
-
-    @staticmethod
-    def view_formatter(**kwargs) -> Mock:
-        mock = Mock(spec=ViewFormatter)
-        mock.render_worktree_status_all.return_value = None
-        mock.render_single_status.return_value = None
-        return _configure_return_values(mock, kwargs)
-
-    @staticmethod
-    def process_info_list(*, running_processes: list[dict[str, Any]] | None = None) -> list[Mock]:
-        if running_processes is None:
-            return []
-
-        processes = []
-        for proc_data in running_processes:
-            mock_proc = Mock()
-            mock_proc.pid = proc_data.get("pid", 1234)
-            mock_proc.name = proc_data.get("name", "test-process")
-            processes.append(mock_proc)
-
-        return processes
-
 
 class ServiceBuilder:
     def __init__(self, test_config):
@@ -110,41 +64,14 @@ class ServiceBuilder:
         self._use_real.add("git")
         return self
 
-    def with_mock_git(self, **behaviors):
-        self.mocks["git"] = MockFactory.git_manager(**behaviors)
-        return self
-
-    def with_real_github(self):
-        """Use real GitHub client (requires network)."""
-        self._use_real.add("github")
-        return self
-
     def with_mock_github(self, **behaviors):
         self.mocks["github"] = MockFactory.github_client(**behaviors)
         return self
 
-    def with_mock_daemon(self, **behaviors):
-        self.mocks["daemon"] = MockFactory.daemon_client(**behaviors)
-        return self
-
     def build_worktree_service(self):
         # Create real instances for components marked as 'real'
-        if "git" in self._use_real:
-            git_manager = GitManager(config=self.config)
-        else:
-            git_manager = self.mocks.get("git", MockFactory.git_manager())
+        git_manager = GitManager(config=self.config) if "git" in self._use_real else MockFactory.git_manager()
 
-        if "github" in self._use_real:
-            if self.config.github_repo is None:
-                raise ValueError("use_real('github') requires a configured github_repo")
-            github_client = GitHubInterface(self.config.github_repo)
-        else:
-            github_client = self.mocks.get("github", MockFactory.github_client())
+        github_client = self.mocks.get("github", MockFactory.github_client())
 
         return WorktreeService(git_manager, github_client)
-
-    def build_cli_dependencies(self):
-        formatter = MockFactory.view_formatter()
-        daemon_client = self.mocks.get("daemon", MockFactory.daemon_client())
-
-        return self.config, formatter, daemon_client

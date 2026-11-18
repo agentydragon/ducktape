@@ -413,8 +413,7 @@ class SqlStore:
 
     def replace_state_for_reset(self, s: Session, username: str) -> None:
         """Wipe sessions/prize_log for `username`, zero their balance and
-        streak state, keep their prize catalog. Equivalent to the legacy
-        `build_reset_casino` behaviour."""
+        streak state, keep their prize catalog."""
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = locked_balance(s, username)

@@ -16,8 +16,7 @@ route-specific cache headers.
   and location-sharing, screenshot-capture, and session-expiry indicators with trusted controls.
   The request drawer handles only Agent UI bridge geolocation and screenshot requests.
 - `settings_panel.tsx` — Agent access and deployment commit links.
-- `open_external.ts` — `openExternal(url)`: new tab, opener severed; used by the `openLink` bridge
-  action and the account-link popup.
+- `open_external.ts` — `openExternal(url)`: new tab, opener severed; used by the `openLink` bridge action.
 - `client.ts` — `openapi-fetch` client typed from the backend's OpenAPI schema (`:schema` runs
   `//haku/console:export_schema_bin`; Pydantic models are the wire contract), with config, operator,
   deployment, agent enrollment, and launch-routine helpers.

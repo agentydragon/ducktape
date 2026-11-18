@@ -16,13 +16,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rollouts", type=int, required=True)
     parser.add_argument("--horizon-months", type=int, required=True)
-    parser.add_argument("--native-threads", type=int, required=True)
     parser.add_argument("--capture", choices=("summary", "dense", "forensic"), required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    if args.native_threads <= 0:
-        raise ValueError("native threads must be positive")
-    os.environ["RAYON_NUM_THREADS"] = str(args.native_threads)
     args.output_dir.mkdir(parents=True, exist_ok=False)
     output_path = args.output_dir / "outcomes.json"
     case = situation(args.rollouts, args.horizon_months)
@@ -48,11 +44,10 @@ def main() -> None:
         "output_bytes": output_path.stat().st_size,
         "compact_sha256": compact_hash.hexdigest(),
         "logical_cpu_count": os.cpu_count(),
-        "rayon_num_threads": args.native_threads,
         "paths": "alternating fixed $100/$50 quotes; repeated paths, not probability samples",
         "financial_scope": "two-share liquidation, one $150 bill, synthetic 10% LTCG tax; poor-price paths stop month 0; surviving paths pay tax month 12; subsequent decisions are empty",
-        "timing_scope": "cProfile-instrumented Python-owned action session; includes per-path world composition, monthly Python policy/binding/native work, terminal JSON decoding and output file writing; excludes price-path preparation and file creation, not isolated native evaluation",
-        "memory_scope": "one process high-water mark includes path preparation, composed worlds, Python policy/observations/results and retained native state; no child executor, not isolated Rust heap",
+        "timing_scope": "cProfile-instrumented Python-owned action session; includes per-path world composition, monthly Python policy and session steps, terminal JSON encoding and output file writing; excludes price-path preparation and file creation",
+        "memory_scope": "one process high-water mark includes path preparation, composed worlds and Python policy/observations/results",
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, sort_keys=True))

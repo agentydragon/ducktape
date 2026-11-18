@@ -86,13 +86,13 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
         "--claude-root",
         action="append",
         default=[],
-        help="absolute Restic node root for CLAUDE_CONFIG_DIR (session_backup.sh uses /.claude); repeat for more roots",
+        help="absolute Restic node root for CLAUDE_CONFIG_DIR (session_backup.py uses /.claude); repeat for more roots",
     )
     parser.add_argument(
         "--codex-root",
         action="append",
         default=[],
-        help="absolute Restic node root for CODEX_HOME (session_backup.sh uses /.codex); repeat for more roots",
+        help="absolute Restic node root for CODEX_HOME (session_backup.py uses /.codex); repeat for more roots",
     )
     parser.add_argument(
         "--credentials-file",

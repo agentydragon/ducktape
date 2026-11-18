@@ -178,7 +178,7 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 // watch runs a policy informer of the namespace until the test ends, and returns its index once the index is available.
 func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
-	index := informer.NewIndex([]string{testNamespace})
+	index := informer.NewIndex()
 	policyInformer, err := informer.New(kube.Config, index, string(n))
 	if err != nil {
 		t.Fatal(err)

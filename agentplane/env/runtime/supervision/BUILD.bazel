@@ -57,7 +57,6 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
-        "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
     ],
 )

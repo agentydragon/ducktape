@@ -12,7 +12,7 @@ This package imports transcript file versions from one machine's Restic reposito
 
 Existing archive Postgres indexes may be discarded and reimported. Verify that retained Restic snapshots cover the transcripts you need before doing so. This rebuild affects only the derived Postgres index; it does not delete or recreate source data, including native Codex SQLite databases.
 
-Configure the Restic node roots explicitly. The repository's `session_backup.sh` changes to the workstation home and backs up relative `.claude` and `.codex` paths, so `restic ls` exposes the roots as `/.claude` and `/.codex`. Configure those paths even if `restic snapshots --json` lists the physical home paths in its `Paths` metadata:
+Configure the Restic node roots explicitly. The repository's [`session_backup.py`](../nix/home/services/session_backup.py) changes to the workstation home and backs up relative `.claude` and `.codex` paths, so `restic ls` exposes the roots as `/.claude` and `/.codex`. Configure those paths even if `restic snapshots --json` lists the physical home paths in its `Paths` metadata:
 
 ```sh
 DATABASE_URL='postgresql+psycopg://…' \

@@ -15,11 +15,8 @@ agent authoring ducktape changes still needs.
 The rest of this document is kept for the reasoning and the vendor research, which stay useful
 even though the zones do not.
 
-Archived, documented elsewhere:
+Documented elsewhere:
 
-- Dispatcher service + worker image: <../x/dispatch/README.md>
-- Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../x/dispatch/deploy/README.md>
-- Zone perimeters and the trust model: <../x/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
 - Settled options survey (dispatch plane, Centaur deep-eval, harness): <2026_07_02_dispatch_plane_options.md>
 
@@ -55,7 +52,7 @@ build-order steps 1–4 (PRs
 
 Deferred: grocery-order bounded-write MCP; PII check as a required CI status on PRs.
 
-New local-inference follow-up: <../x/dispatch/local_dispatch_zone.md>. It adapts the former zone
+New local-inference follow-up: `haku/x/dispatch/local_dispatch_zone.md`. It adapts the former zone
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 

@@ -1,8 +1,7 @@
 // Per-tool-type rendering for the remote `grocy-sf` MCP server (see grocy_mcp/README.md and
 // grocy_mcp/batch_tools.py). Anything not shaped as expected falls back to the generic raw-JSON
-// view: as with kubectl/requests.tsx, arguments are validated by the tool's own schema at execution
-// time, not at submission. Every approved call runs as the operator's own linked Grocy account
-// (operator_oauth).
+// view: arguments are validated by the tool's own schema at execution time, not at submission.
+// Every approved call runs as the operator's own linked Grocy account (operator_oauth).
 //
 // `product` / `location` / `qu` / `product_group` / `parent_product` / `shopping_list` arguments
 // accept either a name or a numeric ID (grocy_mcp's `GrocyClient` resolves either at execution

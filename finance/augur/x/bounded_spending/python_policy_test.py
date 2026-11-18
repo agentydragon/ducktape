@@ -280,8 +280,6 @@ def test_actual_profile_cli_uses_same_batch_session_for_both_authoring_forms(tmp
                 "3",
                 "--horizon-months",
                 "36",
-                "--native-threads",
-                "1",
                 "--authoring",
                 authoring,
                 "--capture",

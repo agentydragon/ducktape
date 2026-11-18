@@ -3,7 +3,6 @@ package rpc
 import (
 	"context"
 	"database/sql"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +28,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -431,15 +431,9 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	grpcServer := grpc.NewServer(append(methods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	address := listener.Addr().String()
+	address := grpcserver.Serve(t, grpcServer)
 	server.identityAddress, server.serviceAddress = address, address
 	identityConn := connectIdentityClient(t, server.ca, identityWorkload.Workload, address)
 	otherConn := connectIdentityClient(t, server.ca, otherWorkload.Workload, address)

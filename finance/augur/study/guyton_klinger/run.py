@@ -88,16 +88,13 @@ def run(
     if len(set(ids)) != len(ids):
         raise ValueError(f"{rollout_ids=} must be distinct")
     policy = Policy(cell)
-    session = ActionSession(
+    with ActionSession(
         {id_: compose_world(windows, id_, wealth=wealth[id_], weights=weights) for id_ in ids}, RETIREE, capture=capture
-    )
-    try:
+    ) as session:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(policy(batch))
         return batch.rollouts, policy
-    finally:
-        session.close()
 
 
 class YearAmounts(BaseModel):

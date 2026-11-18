@@ -248,18 +248,6 @@ class Store:
         await self._prefetch_content(ids)
         return [self._restore_record(api, content_id) for content_id in ids]
 
-    async def released_generation(self, session_id: str) -> int | None:
-        async with self.engine.connect() as connection:
-            generation = await connection.scalar(
-                text(
-                    "SELECT c.generation FROM sampler_conversation c "
-                    "JOIN sampler_session s ON s.conversation_id=c.id "
-                    "WHERE s.id=:session_id AND c.owner IS NULL"
-                ),
-                {"session_id": session_id},
-            )
-        return None if generation is None else int(generation)
-
     async def resident_generation(self, session_id: str) -> int | None:
         async with self.engine.connect() as connection:
             generation = await connection.scalar(

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "sops_stamps",
@@ -11,4 +11,29 @@ py_library(
     name = "sops",
     srcs = ["sops.py"],
     visibility = ["//cluster/rotators:__subpackages__"],
+    deps = [
+        "//devinfra:prettier_cli",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_sops",
+    srcs = ["test_sops.py"],
+    deps = [
+        ":sops",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_sops_stamps",
+    srcs = ["test_sops_stamps.py"],
+    deps = [
+        ":sops_stamps",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )

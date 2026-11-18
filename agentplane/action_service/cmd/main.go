@@ -427,7 +427,7 @@ func actionSessionDelegation(identities auth.IdentityUIDReader) (auth.Methods, e
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
+	policy := informer.NewIndex()
 	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc/peer"
@@ -79,10 +78,7 @@ func TestSecurityValidateAcceptsExplicitModes(t *testing.T) {
 }
 
 func TestSecurityMTLSMisconfigurationDoesNotFallBackToInsecure(t *testing.T) {
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "pod-uid")
 	security := peertls.Security{Mode: peertls.MutualTLS, TLS: &peertls.Config{
 		CertFile: "/tmp/runner-transport-test/missing.crt",
 		KeyFile:  "/tmp/runner-transport-test/missing.key",
@@ -120,14 +116,8 @@ func TestSecurityInsecureUsesPlaintextCredentialsAndSkipsPeerAuthentication(t *t
 
 func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherEnvironmentRuntimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "pod-uid")
+	otherEnvironmentRuntimeURI := workloadURI(t, "other-pod-uid")
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, peertls.GatewayURI)
 	runnerSecurity := peertls.Security{Mode: peertls.MutualTLS, TLS: &runnerTLS}

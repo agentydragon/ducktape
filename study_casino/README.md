@@ -5,8 +5,6 @@ tokens on self-chosen prizes. Credits → tokens is one-way (casino or explicit 
 winnings are never re-gambled. React PWA installable on Windows (Edge/Chrome) and iPhone
 (Safari → Add to Home Screen). Lives at <https://casino.allegedly.works>.
 
-Staged API change: [action result discriminator rollout](docs/action_result_discriminators.md).
-
 ## Layout
 
 - `app.py`: FastAPI REST + thin WebSocket fan-out, serves the frontend

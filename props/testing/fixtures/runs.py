@@ -20,13 +20,14 @@ from props.db.models import (
     AgentRunStatus,
     FileSetMember,
     GradingEdge,
+    LLMRequest,
     ReportedIssue,
     ReportedIssueOccurrence,
     Snapshot,
     TruePositiveOccurrenceORM,
 )
 from props.db.snapshots import LocationAnchor
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.constants import BUDGET_TEST_MODEL, DEFAULT_TEST_MODEL
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
 # Synthetic digests for DB-level tests (not real OCI images)
@@ -57,6 +58,8 @@ def make_fake_critic_run(
     model: str = DEFAULT_TEST_MODEL,
     status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
+    parent_agent_run_id: UUID | None = None,
+    budget_usd: float = 5.0,
 ) -> AgentRun:
     """Build AgentRun for critic with fake image digest.
 
@@ -72,10 +75,25 @@ def make_fake_critic_run(
     return AgentRun(
         agent_run_id=agent_run_id,
         image_digest=FAKE_CRITIC_DIGEST,
+        parent_agent_run_id=parent_agent_run_id,
         model=model,
         status=status,
         type_config=type_config,
-        budget_usd=5.0,
+        budget_usd=budget_usd,
+    )
+
+
+def make_llm_request(*, agent_run_id: UUID, input_tokens: int) -> LLMRequest:
+    """Build LLMRequest that spends `input_tokens` uncached input tokens at `BUDGET_TEST_MODEL`'s known pricing."""
+    return LLMRequest(
+        agent_run_id=agent_run_id,
+        model=BUDGET_TEST_MODEL,
+        request_body={"model": BUDGET_TEST_MODEL},
+        response_body={},
+        input_tokens=input_tokens,
+        cached_input_tokens=0,
+        output_tokens=0,
+        latency_ms=100,
     )
 
 

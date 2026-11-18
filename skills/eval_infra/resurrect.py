@@ -11,7 +11,7 @@ tool side-effects.
 
 Usage:
 
-    bazelisk run //skills/eval_infra:resurrect -- \\
+    bazelisk run //skills/eval_infra:resurrect_bin -- \\
       --transcript /path/to/transcript_skill_on.jsonl \\
       --question "Why did you start calling exec({}) with no arguments?" \\
       --output /path/to/transcript_skill_on.followup.jsonl

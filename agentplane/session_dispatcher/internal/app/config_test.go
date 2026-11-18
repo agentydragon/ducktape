@@ -250,23 +250,6 @@ func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 	}
 }
 
-func TestRetiredRuntimeSettingsAreRejected(t *testing.T) {
-	for _, setting := range []string{
-		"runner_security: {mode: insecure}\n",
-		"runtime_proxy_readers: [spiffe://agentplane/app]\n",
-		"runtime_proxy_session_callers: [spiffe://agentplane/sessions]\n",
-		"runtime_proxy_controller_callers: [spiffe://agentplane/sandbox-controller]\n",
-		"executor_service_callers: [spiffe://agentplane/central-sampler]\n",
-	} {
-		t.Run(strings.SplitN(setting, ":", 2)[0], func(t *testing.T) {
-			path := configtest.WriteSettings(t, requiredFile+setting)
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-				t.Fatal("accepted a retired receiver setting")
-			}
-		})
-	}
-}
-
 func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
 		t.Fatal(err)

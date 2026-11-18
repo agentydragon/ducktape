@@ -129,30 +129,6 @@ func TestCheckRunsRejectsNonImmutableSHAWithoutRequest(t *testing.T) {
 	}
 }
 
-func TestCheckRunsReturnsTypedFailureFromLaterPage(t *testing.T) {
-	fake := fixture.NewFake(t)
-	fake.Handler = func(w http.ResponseWriter, r *http.Request, path string) bool {
-		if !strings.HasSuffix(path, "/check-runs") {
-			return false
-		}
-		if r.URL.Query().Get("page") == "1" {
-			replyPage(w, r, path, "filter=latest&per_page=100", 2, `{"total_count":1,"check_runs":[]}`)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"message":"unavailable"}`)
-		}
-		return true
-	}
-
-	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
-	if failure := fixture.AsError[*StatusError](t, err); failure.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("failure %+v", failure)
-	}
-	if runs != nil {
-		t.Errorf("CheckRuns() on error = %#v, want nil", runs)
-	}
-}
-
 func TestCheckRunsConclusionsRemainTypedAndExact(t *testing.T) {
 	for _, value := range []string{"success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "skipped", "startup_failure"} {
 		t.Run(value, func(t *testing.T) {

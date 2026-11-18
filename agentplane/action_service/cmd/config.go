@@ -36,7 +36,7 @@ type config struct {
 	SessionDelegationService    string          `mapstructure:"session_delegation_service"`
 	DatabaseURL                 string          `mapstructure:"-"`
 	RPC                         listener.Config `mapstructure:"rpc"`
-	// CallerServiceAccountNamespaces scopes live WorkloadCredential reads and policy index watches.
+	// CallerServiceAccountNamespaces scopes live WorkloadCredential reads.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC operator.Settings `mapstructure:"operator_oidc"`

@@ -80,11 +80,11 @@ gzip -c /tmp/env-manager-new > devinfra/claude/web_env/reference/environment-man
 ### 2b. Version Snapshot
 
 ```bash
-bazel run //devinfra/claude/web_env/tools:capture_versions -- \
+bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- \
   > devinfra/claude/web_env/reference/versions-$(date +%Y-%m-%d).yaml
 
 # Diff against previous
-bazel run //devinfra/claude/web_env/tools:capture_versions -- \
+bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- \
   --diff devinfra/claude/web_env/reference/versions-YYYY-MM-DD.yaml
 ```
 
@@ -233,10 +233,10 @@ Then fetch packages and rebuild:
 
 ```bash
 # Fetch .deb packages from pinned Ubuntu snapshot archives (no dpkg-repack needed)
-bazel run //devinfra/claude/web_env/tools:fetch_debs
+bazel run //devinfra/claude/web_env/tools:fetch_debs_bin
 
 # Build and diff (also calls fetch_debs automatically)
-bazel run //devinfra/claude/web_env/tools:build_and_diff
+bazel run //devinfra/claude/web_env/tools:build_and_diff_bin
 ```
 
 Review `diff_report.md`. Update `exclusions.yaml` if new runtime artifacts

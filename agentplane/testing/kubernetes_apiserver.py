@@ -3,16 +3,17 @@
 import asyncio
 import subprocess
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.config import new_client_from_config
 from python.runfiles import Runfiles
-from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -67,6 +68,44 @@ class KubernetesApiServer:
             )
         )
         return await self.pod_token(account.namespace, pod_name, audiences)
+
+    @asynccontextmanager
+    async def impersonating(self, user: str) -> AsyncIterator[k8s_client.ApiClient]:
+        """A client acting as `user`, authorized as an administrator so that admission alone decides."""
+        async with await new_client_from_config(config_file=str(self.kubeconfig)) as api:
+            api.set_default_header("Impersonate-User", user)
+            api.set_default_header("Impersonate-Group", "system:masters")
+            yield api
+
+    async def install_admission_policy(
+        self, policy: dict[str, Any], binding: dict[str, Any], *, namespaces: Iterable[str]
+    ) -> None:
+        """Create `namespaces`, then the ValidatingAdmissionPolicy and its binding from their manifests."""
+        core = k8s_client.CoreV1Api(self.api)
+        for namespace in namespaces:
+            await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
+        admission = k8s_client.AdmissionregistrationV1Api(self.api)
+        # The client serializes a manifest dict as it would its own model, which is what its stubs name.
+        await admission.create_validating_admission_policy(cast(Any, policy))
+        await admission.create_validating_admission_policy_binding(cast(Any, binding))
+
+
+async def dry_run_admitted(write: Awaitable[object]) -> bool:
+    """Whether the API server admits the dry-run `write`: admission refuses with a 422, any other failure raises."""
+    try:
+        await write
+    except k8s_client.ApiException as error:
+        if error.status != 422:
+            raise
+        return False
+    return True
+
+
+async def wait_until_refused(admitted: Callable[[], Awaitable[bool]]) -> None:
+    """Wait until `admitted` is refused: a new policy loads in the background, with no sign that it has."""
+    async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
+        with attempt:
+            assert not await admitted()
 
 
 async def _created_or_present(creation: Awaitable[object]) -> None:

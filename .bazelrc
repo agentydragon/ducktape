@@ -124,7 +124,10 @@ common:quiet --show_progress_rate_limit=30
 
 # rustc emits .rmeta first so dependent crates start before codegen finishes. Measured
 # 2026-10-29 on the debundle chain: cold critical path 610 -> 536 s, elapsed 682 -> 653 s,
-# +14% actions; devinfra/debug/2026_10_29_rust_pipelined_compilation.md.
+# +14% actions. The first-party gain (-6%) is inside host variance; the rest is mostly
+# third-party crates, which PR CI has cached, so the expected saving is about 10-20 s per
+# debundle PR. Revisit if a proc-macro or build-script crate misbehaves under metadata-only
+# compiles.
 build --@rules_rust//rust/settings:pipelined_compilation=True
 
 # Keep the global Go race setting stable across test and build commands so

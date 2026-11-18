@@ -7,7 +7,6 @@
 package threadfold
 
 import (
-	"errors"
 	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -45,8 +44,6 @@ type ContractError struct {
 }
 
 func (e *ContractError) Error() string { return e.Message }
-
-var errBatchMismatch = errors.New("batch does not match projection")
 
 type Position struct {
 	SourceID        string

@@ -184,8 +184,6 @@ def test_profile_entrypoint_compares_matching_capture_workloads(runfiles: Runfil
                 "4",
                 "--horizon-months",
                 "13",
-                "--native-threads",
-                "1",
                 "--capture",
                 capture,
             ],

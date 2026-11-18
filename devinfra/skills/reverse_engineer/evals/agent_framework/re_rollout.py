@@ -20,7 +20,7 @@ harness. Outputs:
 
 Run with:
   bb run \\
-    //devinfra/skills/reverse_engineer/evals/agent_framework:re_rollout -- \\
+    //devinfra/skills/reverse_engineer/evals/agent_framework:re_rollout_bin -- \\
     --skill on --output-dir /tmp/re_eval/$(date -u +%Y%m%dT%H%M%SZ)
 """
 

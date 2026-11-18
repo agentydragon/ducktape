@@ -6,6 +6,7 @@ import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import app, frontend, staging
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_static_routes_leave_api_and_auth_on_the_app(staging_manifests: list[dict[str, Any]]) -> None:
@@ -32,12 +33,8 @@ def test_static_routes_leave_api_and_auth_on_the_app(staging_manifests: list[dic
 
 
 def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifests: list[dict[str, Any]]) -> None:
-    pod = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == frontend.NAME
-    )["spec"]["template"]["spec"]
-    account = one(
-        doc for doc in staging_manifests if doc["kind"] == "ServiceAccount" and doc["metadata"]["name"] == frontend.NAME
-    )
+    pod = find_resource(staging_manifests, "Deployment", frontend.NAME)["spec"]["template"]["spec"]
+    account = find_resource(staging_manifests, "ServiceAccount", frontend.NAME)
     assert pod["automountServiceAccountToken"] is False
     assert account["automountServiceAccountToken"] is False
     assert not pod.get("initContainers")
@@ -55,11 +52,7 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
         if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}
         for subject in doc.get("subjects", [])
     )
-    policy = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == frontend.NAME
-    )["spec"]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", frontend.NAME)["spec"]
     assert policy["egressDeny"] == [{"toEntities": ["all"]}]
     assert not policy.get("egress")
     assert one(policy["ingress"])["fromEntities"] == ["ingress"]

@@ -579,6 +579,10 @@ recipe on mixed clocks.
 - A runner waiting on `bb remote` still consumes a GitHub slot. Split outer runner
   startup, Bazel analysis, action queue and action execution. Profile configured
   target counts do not alone prove analysis-cache recomputation.
+- A cold A/B on `bb remote` needs cold runners: on a recycled runner, Skyframe kept
+  the baseline's outputs valid regardless of `--nouse_action_cache`. The 2026-10-29
+  pipelined-compilation pair used fresh `runner-recycling-key` values
+  (`rust-spike-cold-*`) and `--noremote_accept_cached`.
 - Keep required-gate feedback distinct from every visible check becoming terminal.
   Missing head checks, reruns, synthetic merge SHAs and fork trust paths need explicit
   treatment. Check ages start at check creation, not necessarily the latest push.
