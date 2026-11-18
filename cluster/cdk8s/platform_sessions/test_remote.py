@@ -135,7 +135,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
 
     assert config.RECORD_UPSTREAM_TRAFFIC
-    for instance in (item for item in remote.PROVIDERS if item != "myquest-canary"):
+    for instance in (item for item in remote.PROVIDERS if item not in {"myquest", "myquest-canary"}):
         name = remote._provider_name(instance)
         pod = resource("Deployment", instance)["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
@@ -244,8 +244,10 @@ def test_myquest_canary_proxy_switch_is_isolated(scratch_app: App, monkeypatch) 
         for item in deployments["myquest"]["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert "MYQUEST_BROWSER_RECORD_HAR" not in production_env
-    assert "MYQUEST_BROWSER_LAUNCH_MODE" not in production_env
-    assert production_env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
+    assert production_env["MYQUEST_BROWSER_LAUNCH_MODE"] == "cdp"
+    assert production_env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "false"
+    assert "HTTPS_PROXY" not in production_env
+    assert not deployments["myquest"]["spec"]["template"]["spec"].get("initContainers")
     assert (
         canary_pod["containers"][0]["image"]
         == deployments["myquest"]["spec"]["template"]["spec"]["containers"][0]["image"]

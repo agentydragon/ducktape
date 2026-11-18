@@ -469,18 +469,16 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 k8s.EnvVar(name="HOME", value="/tmp"),
                 *recorder_env,
                 *(
-                    [
-                        k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true"),
-                        *(
-                            []
-                            if record_upstream_traffic
-                            else [
-                                k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
-                                k8s.EnvVar(name="MYQUEST_BROWSER_LAUNCH_MODE", value="cdp"),
-                            ]
-                        ),
-                    ]
+                    [k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true")]
                     if instance == "myquest-canary"
+                    else []
+                ),
+                *(
+                    [
+                        k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
+                        k8s.EnvVar(name="MYQUEST_BROWSER_LAUNCH_MODE", value="cdp"),
+                    ]
+                    if instance in {"myquest", "myquest-canary"} and not record_upstream_traffic
                     else []
                 ),
             ],
@@ -560,15 +558,14 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     for integration in config.INTEGRATIONS["integrations"]:
         instance = str(integration["id"])
         _add_provider(chart, instance)
+        if instance == "myquest-canary":
+            provider_recording = config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
+        elif instance == "myquest":
+            provider_recording = False
+        else:
+            provider_recording = record_upstream_traffic
         _provider_workload(
-            chart,
-            instance,
-            provider_type=str(integration["type"]),
-            record_upstream_traffic=(
-                config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
-                if instance == "myquest-canary"
-                else record_upstream_traffic
-            ),
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
         )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
