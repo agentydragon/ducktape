@@ -302,7 +302,7 @@ when that proof is lost; otherwise keep the weak update.
 
 ### Next bounded callback slice
 
-The [November 16 checkpoint](../debug/2026_11_14_excalidraw_pipeline_performance.md#november-16-consolidation-checkpoint)
+The [November 16 checkpoint](../debug/excalidraw_pipeline_performance/README.md#november-16-consolidation-checkpoint)
 finds substantial remaining callback/getter cost, but does not establish a
 speedup or attribute all of that cost to one source shape. Start with
 `e2e/callbacks/iteration_receiver.rs`: preserve a confined dense receiver's
@@ -640,9 +640,9 @@ flags, thread count and machine. Verify the executable digest; a remote test doe
 not necessarily refresh the local CLI artifact. Record completed artifacts, CPU,
 wall time, peak RSS and source-analysis versus scheduling costs. A capped profile
 without an analysis artifact is diagnostic only. Existing prototype measurements and their limitations are in the
-[prototype report](../debug/2026_11_10_summary_effects_prototype.md); existing
+[prototype report](../debug/summary_effects/README.md); existing
 production measurements are in
-[the Excalidraw report](../debug/2026_11_14_excalidraw_pipeline_performance.md).
+[the Excalidraw report](../debug/excalidraw_pipeline_performance/README.md).
 Neither supplies a fresh devel-versus-candidate completion measurement.
 
 ## Avoid and close out

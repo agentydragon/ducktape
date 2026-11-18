@@ -1,6 +1,7 @@
 note: >-
   average remains in the editor entry because the current gate links its
-  initializer to the residual effect chain. See debug/2026_11_12_excalidraw_math_average.md.
+  initializer to the residual effect chain.
+  See debug/excalidraw_extraction/2026_11_12_excalidraw_math_average.md.
 # Upstream owner: packages/math/utils.ts (Excalidraw v0.18.1)
 source_matches:
   # The six neighboring exports form a distinctive math utility run in the

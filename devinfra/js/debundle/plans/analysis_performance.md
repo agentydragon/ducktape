@@ -479,9 +479,9 @@ alone does not eliminate repeated source promotion.
 
 Existing phase measurements are in <../perf/analysis_serial_phases.md>; the
 production Excalidraw investigation is in
-<../debug/2026_11_14_excalidraw_pipeline_performance.md>. The prototype's
+<../debug/excalidraw_pipeline_performance/README.md>. The prototype's
 measurements and limitations are in
-<../debug/2026_11_10_summary_effects_prototype.md>. They establish mechanisms for
+<../debug/summary_effects/README.md>. They establish mechanisms for
 their exact inputs, not a current canonical completion time. Compare candidates
 to frozen devel; an unmerged implementation is an optional third comparison.
 Do not use historical percentage ceilings to rank a changed implementation.

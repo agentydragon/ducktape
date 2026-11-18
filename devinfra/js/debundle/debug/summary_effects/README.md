@@ -2,7 +2,9 @@
 
 Interim. Question: can a summary-based, flow-insensitive analysis replace the
 execution-based effect producer in `facts/sync_effects/`? The prototype is
-report-only (`x/summary_effects/`); it changes no verdict.
+report-only ([`x/summary_effects/`](../../x/summary_effects/)) and leaves the
+gate verdict unchanged. The [independent soundness audit](2026_11_10_statement_class_independent_audit.md)
+records unsafe reorderings the prototype accepted.
 
 Two analyses share one binary, the parse (`js_ast`), source-unit ordinals and
 the swapped-pair sweep:
@@ -27,8 +29,7 @@ Swapped pairs left unproven:
 | Stress, `main`           | 169,613 |           0 |                 71,392 |     not run |     784 |
 
 The stress assignment is one module per atomic group (`per_atomic_group` for
-both chunks), built by the measurement in
-`2026_11_10_excalidraw_module_blockers.md`; its emitted tree passes the browser
+both chunks), built for the [current-engine module-boundary measurement](2026_11_10_excalidraw_module_blockers.md); its emitted tree passes the browser
 smoke, so every pair an analysis refuses there is a precision loss.
 
 Cost on the `editor` chunk (517 KB, 1,787 source units):

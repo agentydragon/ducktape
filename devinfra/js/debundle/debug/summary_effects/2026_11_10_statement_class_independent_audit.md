@@ -23,7 +23,7 @@ these are commutation checks, not pipeline-emitted-module tests.
 
 `export default` function and class declarations are classified as hoisted or
 pure, but their names are absent from the binding census in
-<../x/summary_effects/tier0.rs>. The missing function has no reachable node
+<../../x/summary_effects/tier0.rs>. The missing function has no reachable node
 and its body's writes are never enabled.
 
 ```js

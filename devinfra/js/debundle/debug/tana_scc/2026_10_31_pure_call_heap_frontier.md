@@ -85,7 +85,7 @@ roughly halves the surface to model.
 
 `Fx` (Tana's `UICommand`) is the largest route into Tana's callback pool:
 86 of 325 distinct escapes on devel `5dfe2142`, probed as in
-[the pool-composition note](2026_10_30_havoc_reach_pool_composition.md).
+[the pool-composition note](../havoc_reach_pool_probe/README.md).
 The chain starts at the helper factories `hO`/`fO` (statements 2698–2705).
 Each calls `Se({...})` with a literal record inside its own body.
 
@@ -170,7 +170,7 @@ statement can count in several rows.
 
 These are offline experiments on the saved graph. The chain is rebuilt from
 the remaining barriers, using the realizability emulator from
-[the Tana SCC note](2026_10_31_tana_scc_pessimism.md). Rebuilding the
+[the Tana SCC note](README.md). Rebuilding the
 unchanged chain gives Pass-1 SCCs of 970, 12 and 2; the engine gives 963
 and 2.
 

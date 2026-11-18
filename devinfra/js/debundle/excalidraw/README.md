@@ -36,7 +36,9 @@ source homes. [Vendor marks](spec/vendor_marks.yaml) configure package swaps.
 The spec is partial: unmatched code stays in each entry in source order.
 Acceptance of the whole tree does not measure readable extraction coverage.
 Generated `reports/output.json` records named-module size fractions;
-`reports/tree/<chunk>/modules.json` records the actual claimed members.
+`reports/tree/<chunk>/modules.json` records the actual claimed members. The
+[extraction investigation](../debug/excalidraw_extraction/README.md) records the
+November 13 checkpoint and boundary probes.
 
 `test_debundle_tree` verifies complete accepted output and resolvable static
 chunk imports. `spec_output_test` checks the spec's emitted contracts through

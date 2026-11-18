@@ -4,6 +4,10 @@ The target is a 3× improvement in fresh `project → analyze → apply`, with
 separate PRs for independent optimizations. The target is **not met**.
 Reusing an analysis artifact measures the assignment-edit loop, not this target.
 
+Paired measurements on this frozen workload also cover
+[indexed prefix reads](2026_11_14_indexed_prefix_reads.md) and
+[static owner effect views](2026_11_14_owner_effect_views.md).
+
 ## Workload and measurement
 
 The input/spec closure is frozen from
@@ -97,7 +101,7 @@ to fall from roughly 14 s to roughly 2.4 s unless apply also improves.
 ## Statement-summary stopping gate
 
 The report-only statement-class prototype has a substantially cheaper cost
-model, but its [independent audit](2026_11_10_statement_class_independent_audit.md)
+model, but its [independent audit](../summary_effects/2026_11_10_statement_class_independent_audit.md)
 found unsafe reorderings. Do not adopt it from historical zero-conflict counts.
 
 The existing base classifier was checked with all optional upgrades,
@@ -248,7 +252,7 @@ iteration argument (the array) to a host that invokes its first element really
 prints `ReferenceError` before `42`; that split must stay rejected.
 
 These three real CLI controls live in
-[`callbacks/iteration_receiver.rs`](../e2e/callbacks/iteration_receiver.rs).
+[`callbacks/iteration_receiver.rs`](../../e2e/callbacks/iteration_receiver.rs).
 The safe case deliberately records the current conservative refusal, alongside
 original/emitted execution. A future proof must change it to accepted emitted
 execution; this checkpoint does not fix it or weaken the gate. This case
@@ -260,7 +264,7 @@ iteration receiver across primitive-only opaque operands. It must preserve
 receiver slot knowledge without certifying the opaque call's completion or
 discarding its other effects. The precise admission, dependency and work-bound
 requirements belong in the existing
-[consolidation plan](../plans/analysis_consolidation.md#next-bounded-callback-slice).
+[consolidation plan](../../plans/analysis_consolidation.md#next-bounded-callback-slice).
 No broad callback-engine rewrite or LRU/world-result cache is justified by this
 checkpoint. Measure the same complete pipeline again after that independently
 reviewable slice; retain the 3× target and the conservative unsupported cases.

@@ -1,7 +1,7 @@
 # Excalidraw: what blocks module boundaries under the effect verdict (2026-11-10)
 
 The current engine's side of the stage 2 producer comparison
-(producer structure: <../plans/target_architecture.md#stage-2-producer>): which statements and
+(producer structure: <../../plans/target_architecture.md#stage-2-producer>): which statements and
 which missing rules leave swapped pairs unproven on the public corpus, for the
 committed spec and for a decompose-style stress assignment.
 
@@ -178,7 +178,7 @@ modules are still in one component. In `editor`, after six families (311 of
    `createContext` call reads a member of an unknown value. Together 395
    `main` and 167 `editor` statements. No Wave 3 row covers it; the nearest
    are row 3's unsummarized provider bodies and
-   <../plans/analysis_performance.md> option 5.
+   <../../plans/analysis_performance.md> option 5.
 2. **Cross-chunk callees without a summary.** `Y` is the `editor` chunk's
    `xp=e=>(r0=r0.concat(e),e)`, called by 90 `main` statements that carry 35%
    of the chunk's unproven pairs. `__publicField` and `__export` are the same
@@ -241,7 +241,7 @@ per statement: one remaining havoc statement conflicts with every definition
 it swaps with. On this corpus the unproven pairs are havoc statement against
 pure definition, and the havoc statement almost never references the
 definition. What decides module granularity here is what a havoc statement is
-taken to reach (<../plans/synchronous_execution_fallback.md>), or a producer
+taken to reach (<../../plans/synchronous_execution_fallback.md>), or a producer
 that gives every statement a complete effect set, more than any list of
 coverage rows.
 
