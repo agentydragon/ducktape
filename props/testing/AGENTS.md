@@ -25,6 +25,6 @@ scopes inline):
   `fp_id`, `fp_occurrence_id` (prefer these single-field ID fixtures; tuple fixtures are for
   iteration only)
 - `runs.py`: `make_fake_{critic,grader}_run`, `make_fake_grader_run_with_credit`,
-  `test_snapshot`, `test_validation_snapshot`
+  `test_snapshot`
 - `e2e_container.py`: `e2e_stack` (full Docker stack)
 - `db.py`: `synced_db`, `synced_test_session`

@@ -30,7 +30,6 @@ py_library(
         "//props/db/sync:model_metadata",
         "//util/testing:postgres",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",

@@ -255,42 +255,6 @@ def make_fake_grader_run_with_credit(
     return grader_run
 
 
-def make_critic_run_with_issues(db: Database, example: ExampleSpec, num_issues: int = 1) -> UUID:
-    """Create a committed critic run with ReportedIssue rows.
-
-    Returns the critic_run_id.
-    """
-    with db.session() as session:
-        critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.EXITED)
-        session.add(critic_run)
-        session.flush()
-
-        for i in range(1, num_issues + 1):
-            issue_id = f"input-{i:03d}"
-            session.add(
-                ReportedIssue(
-                    agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test input issue {i}"
-                )
-            )
-
-        session.commit()
-        return critic_run.agent_run_id
-
-
-def make_grader_run_for_critic(
-    db: Database, critic_run_id: UUID, status: AgentRunStatus = AgentRunStatus.EXITED
-) -> UUID:
-    """Create a grader run for a given critic run, deriving the snapshot from the critic config."""
-    with db.session() as session:
-        critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
-        snapshot_slug = critic_run.critic_config().example.snapshot_slug
-
-        grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, status=status)
-        session.add(grader_run)
-        session.commit()
-        return grader_run.agent_run_id
-
-
 def _make_example_with_runs(slug: SnapshotSlug, credit: float, db: Database) -> tuple[ExampleSpec, AgentRun, AgentRun]:
     """Helper to create example with multiple critic and grader runs."""
     with db.session() as session:
@@ -323,15 +287,6 @@ def test_trivial_snapshot(synced_db: Database) -> Snapshot:
     """Provide the train1 snapshot (train split)."""
     with synced_db.session() as session:
         snapshot = session.query(Snapshot).filter_by(slug="test-fixtures/train1").one()
-        session.expunge(snapshot)
-        return snapshot
-
-
-@pytest.fixture
-def test_validation_snapshot(synced_db: Database) -> Snapshot:
-    """Provide the valid1 snapshot (valid split)."""
-    with synced_db.session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug="test-fixtures/valid1").one()
         session.expunge(snapshot)
         return snapshot
 
