@@ -8,7 +8,7 @@ RECORD_UPSTREAM_TRAFFIC = True
 
 # Switch only the comparison instance between direct browser traffic and the
 # existing mitmproxy recorder. Keep the production MyQuest setting above.
-MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC = False
+MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC = True
 
 
 def myquest_canary_state_dir(record_upstream_traffic: bool) -> str:

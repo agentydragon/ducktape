@@ -71,7 +71,10 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
         ]
-        assert claims == [f"{name}-piraeus"]
+        expected_claims = [f"{name}-piraeus"]
+        if instance == "myquest-canary":
+            expected_claims.append(f"{name}-captures")
+        assert claims == expected_claims
         claim = resource("PersistentVolumeClaim", f"{name}-piraeus")
         assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
         assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
@@ -167,7 +170,7 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
 
 def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App) -> None:
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
-    for instance in remote.PROVIDERS:
+    for instance in (item for item in remote.PROVIDERS if item != "myquest-canary"):
         name = remote._provider_name(instance)
         pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == instance)[
             "spec"
@@ -180,7 +183,7 @@ def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App)
         )
 
 
-def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
+def test_myquest_canary_is_proxied_and_owner_only(scratch_app: App) -> None:
     objects = Cdk8sTesting.synth(remote.chart(scratch_app))
     canary = next(
         item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == "myquest-canary"
@@ -194,13 +197,13 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
     assert provider["image"] == f"{remote.REGISTRY}/platform-sessions-myquest:unset"
     assert provider["image"] == production["spec"]["template"]["spec"]["containers"][0]["image"]
     assert env["MYQUEST_BROWSER_RECORD_HAR"] == "true"
-    assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "false"
-    assert "HTTPS_PROXY" not in env
-    assert "SSL_CERT_FILE" not in env
-    assert not any(item["name"] == "upstream-recorder" for item in pod.get("initContainers", []))
+    assert env["PLATFORM_SESSIONS_PROXY_ENABLED"] == "true"
+    assert env["HTTPS_PROXY"] == "http://127.0.0.1:18080"
+    assert env["SSL_CERT_FILE"] == "/var/run/session-recorder-trust/ca-certificates.crt"
+    assert any(item["name"] == "upstream-recorder" for item in pod["initContainers"])
     assert {
         volume["persistentVolumeClaim"]["claimName"] for volume in pod["volumes"] if "persistentVolumeClaim" in volume
-    } == {"platform-sessions-myquest-canary-piraeus"}
+    } == {"platform-sessions-myquest-canary-piraeus", "platform-sessions-myquest-canary-captures"}
     assert all(
         route["instance"] != "myquest-canary" for bearer in config.BEARERS.values() for route in bearer.get("allow", [])
     )
@@ -208,7 +211,7 @@ def test_myquest_canary_is_direct_and_owner_only(scratch_app: App) -> None:
     assert json.loads(remote.CANARY_CONFIG.data["myquest-canary-integration.json"])["integrations"][0] == {
         "id": "myquest-canary",
         "type": "myquest",
-        "state_dir": config.myquest_canary_state_dir(False),
+        "state_dir": config.myquest_canary_state_dir(True),
         "poll_interval_seconds": 300,
     }
 
