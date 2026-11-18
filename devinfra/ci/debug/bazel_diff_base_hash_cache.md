@@ -21,8 +21,10 @@ warm-driver improvement from retaining the Bazel server between selection and
 test ([#9069](https://github.com/agentydragon/ducktape/pull/9069)). Preserve that reuse.
 
 The 30 October report incorrectly revived a 5–15 s cache saving without a matched
-intervention. That estimate is withdrawn. The older July transport sketch also
-predates these measurements; its per-command timings do not establish savings.
+intervention. That estimate is withdrawn. The
+[July transport sketch](https://github.com/agentydragon/ducktape/blob/1cebdb0f1f/devinfra/ci/plans/bazel_diff_base_hash_caching.md)
+predates these measurements. Its 25–35 s per-command estimate does not establish
+the claimed 30–60 s saving across the CI driver.
 
 ## 30 October matched experiment
 
