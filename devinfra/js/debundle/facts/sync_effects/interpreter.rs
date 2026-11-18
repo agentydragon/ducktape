@@ -254,8 +254,7 @@ fn emit_retained_decision(mut record: RetainedDecision) {
             ..RetainedDecisionOmitted::default()
         };
         for signature in &record.signatures {
-            record.omitted.arguments +=
-                signature.arguments.len() + signature.omitted.arguments;
+            record.omitted.arguments += signature.arguments.len() + signature.omitted.arguments;
             record.omitted.argument_values += signature
                 .arguments
                 .iter()
@@ -264,8 +263,7 @@ fn emit_retained_decision(mut record: RetainedDecision) {
                 + signature.omitted.argument_values;
             record.omitted.protected_functions += signature.protected_functions.len();
             record.omitted.escaped_functions += signature.escaped_functions.len();
-            record.omitted.protected_functions +=
-                signature.unidentified_protected_functions;
+            record.omitted.protected_functions += signature.unidentified_protected_functions;
             record.omitted.escaped_functions += signature.unidentified_escaped_functions;
             record.omitted.mutation_intersections += signature.mutation_intersections.len();
             record.omitted.mutation_intersections += signature.omitted.mutation_intersections;
@@ -6950,12 +6948,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         args: &[Values],
     ) -> Option<Values> {
         let contract = &self.inputs.index.retained_callback_calls.get(&site)?.call;
-        let result = self.retained_callbacks(
-            contract,
-            expressions,
-            args,
-            RetainedResultKind::Factory,
-        );
+        let result =
+            self.retained_callbacks(contract, expressions, args, RetainedResultKind::Factory);
         if let Some((owner, _)) = self.inputs.call_site_owners.get(&site)
             && selected_retained_decision(*owner, site)
         {
@@ -6979,24 +6973,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         const MAX_INTERSECTIONS: usize = 10_000;
 
         let (owner, _) = self.inputs.call_site_owners[&site];
-        let namespace_admitted = contract.namespace_member.as_ref().is_none_or(
-            |(namespace, member)| {
-                self.inputs
-                    .index
-                    .audited_factory_members
-                    .get(namespace)
-                    .is_some_and(|members| members.contains(member))
-            },
-        );
+        let namespace_admitted =
+            contract
+                .namespace_member
+                .as_ref()
+                .is_none_or(|(namespace, member)| {
+                    self.inputs
+                        .index
+                        .audited_factory_members
+                        .get(namespace)
+                        .is_some_and(|members| members.contains(member))
+                });
         let requested_write_starts = retained_write_starts();
         let mut omitted = RetainedDecisionOmitted::default();
         let mut signatures = Vec::new();
 
-        for (signature_index, signature) in contract
-            .signatures
-            .iter()
-            .take(MAX_SIGNATURES)
-            .enumerate()
+        for (signature_index, signature) in
+            contract.signatures.iter().take(MAX_SIGNATURES).enumerate()
         {
             let mut arguments = Vec::new();
             let mut omitted_arguments = 0;
@@ -7015,10 +7008,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && values.iter().all(|value| {
                         matches!(
                             value,
-                            AbstractValue::AuditedRetainedResult(
-                                RetainedResultKind::Factory,
-                                _
-                            )
+                            AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, _)
                         )
                     });
                 let binding_admitted = if let ValueExpr::Binding(binding) = expression {
@@ -7063,7 +7053,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 } else {
                                     "constructor_carrier"
                                 },
-                            *kind == RetainedResultKind::Factory && clean,
+                                *kind == RetainedResultKind::Factory && clean,
                                 Some(clean),
                                 None,
                             )
@@ -7266,12 +7256,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
 
-            let omitted_protected_functions = protected_functions
-                .len()
-                .saturating_sub(MAX_FUNCTIONS);
-            let omitted_escaped_functions = escaped_functions
-                .len()
-                .saturating_sub(MAX_FUNCTIONS);
+            let omitted_protected_functions =
+                protected_functions.len().saturating_sub(MAX_FUNCTIONS);
+            let omitted_escaped_functions = escaped_functions.len().saturating_sub(MAX_FUNCTIONS);
             let signature_omitted = RetainedDecisionOmitted {
                 arguments: omitted_arguments,
                 argument_values: omitted_argument_values,
@@ -7285,10 +7272,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             omitted.protected_functions += omitted_protected_functions;
             omitted.escaped_functions += omitted_escaped_functions;
             omitted.mutation_intersections += omitted_intersections;
-            let admitted = namespace_admitted
-                && arguments_admitted
-                && !has_mutation
-                && !any_retained_escaped;
+            let admitted =
+                namespace_admitted && arguments_admitted && !has_mutation && !any_retained_escaped;
             signatures.push(RetainedSignatureDecision {
                 signature: signature_index,
                 admitted,
@@ -7300,10 +7285,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .into_iter()
                     .take(MAX_FUNCTIONS)
                     .collect(),
-                escaped_functions: escaped_functions
-                    .into_iter()
-                    .take(MAX_FUNCTIONS)
-                    .collect(),
+                escaped_functions: escaped_functions.into_iter().take(MAX_FUNCTIONS).collect(),
                 unidentified_protected_functions,
                 unidentified_escaped_functions,
                 writes_examined,
