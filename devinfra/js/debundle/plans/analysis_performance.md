@@ -154,11 +154,6 @@ receipts in the private report.
    private path disappears, then rerun the unchanged passing assignment.
    Preserve existing finite-return and audited-factory regression controls.
 
-   Separately measure borrowed source-fact reads against the same frozen
-   production inputs. Keep reads, subscriptions, absent-versus-empty behavior
-   and effects unchanged. Publish the slice only with useful measured savings
-   and the Excalidraw check below; fewer temporary clones alone are insufficient.
-
 3. Finish with a fresh, unprofiled optimized pipeline within the budget and
    the normal emitted-program checks. Record exact revisions, input identities,
    resource bounds and raw artifact locations in the performance report.
