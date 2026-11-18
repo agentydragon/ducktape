@@ -54,7 +54,7 @@ the household's holding pool and lot, and the bill onto one world. It converts i
 dollar amounts with `USD.quanta` (`sim/money.py`) and its share count with
 `quantity_to_quanta`; both are exact and raise rather than round. `execute` drives
 those worlds through the in-process
-[action session](../../sim/docs/financial_engine.md#scoped-household-action-batches)
+[action session](../../sim/docs/financial_engine.md#preserved-invariants)
 in a Python monthly loop. Policies are ordinary Python functions; editing one
 requires no engine change. Core cannot depend on `x/`, so
 `sim/testing/funded_bill.py` restates this situation for `sim/test_results.py` and

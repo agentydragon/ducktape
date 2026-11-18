@@ -8,7 +8,7 @@ the limit (164 vs 30), and the addition of `--sandbox docker` (HumanEval
 scores by executing model-generated Python in a sandbox; binary pass /
 fail per problem; no regrade pass needed).
 
-This is the P0#1 item from <../../TODO.md#1-standard-coding-benchmark-on-gpt-oss20b>.
+This is the P0#1 item from <../../TODO.md>.
 
 ## Goals
 
