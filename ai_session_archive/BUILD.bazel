@@ -97,6 +97,7 @@ py_library(
     name = "restic",
     srcs = ["restic.py"],
     visibility = ["//visibility:public"],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 py_library(
