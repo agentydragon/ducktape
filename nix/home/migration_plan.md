@@ -74,10 +74,9 @@ switch`, remove the legacy role from `gpd.yaml` and delete:
 
 ### From K8s Sandbox Testing
 
-1. **Python version**: Use Python 3.12, not 3.13 (numpy compatibility)
-2. **Don't install home-manager via nix-env** — let `programs.home-manager.enable = true` handle it
-3. **File conflicts**: May need to remove existing files before first activation
-4. **dbus issues**: Expected in containers, won't affect real systems
+1. **Don't install home-manager via nix-env** — let `programs.home-manager.enable = true` handle it
+2. **File conflicts**: May need to remove existing files before first activation
+3. **dbus issues**: Expected in containers, won't affect real systems
 
 ### From Atlas Deployment (Debian/Proxmox)
 
