@@ -16,8 +16,8 @@ to produce correct parametric CAD models from natural language specifications.
 ## Running
 
 ```bash
-ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/eval-output
-ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/eval-output --model claude-opus-5
+ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval_bin -- /tmp/eval-output
+ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval_bin -- /tmp/eval-output --model claude-opus-5
 ```
 
 Requires Docker (the FreeCAD container runs via the `exec` MCP server).
