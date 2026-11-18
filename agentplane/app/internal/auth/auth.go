@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -160,14 +161,14 @@ func (a *Auth) RequireCaller(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller, status, message := a.caller(r)
 		if caller == nil {
-			writeError(w, status, message)
+			httpresponse.WriteDetailError(w, status, message)
 			return
 		}
 		// Only the ambient cookie needs a same-origin check; a bearer is never sent by the browser.
 		if session, ok := SessionFromContext(r.Context()); ok && session.Login != nil && !safeMethod(r.Method) {
 			expected := strings.TrimRight(a.cfg.OIDC.PublicBaseURL, "/")
 			if r.Header.Get("Origin") != expected {
-				writeError(w, http.StatusForbidden, "cross-origin request")
+				httpresponse.WriteDetailError(w, http.StatusForbidden, "cross-origin request")
 				return
 			}
 		}
@@ -394,24 +395,24 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	traceAuth(r, "login_started")
 	session, ok := SessionFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "session middleware is required")
+		httpresponse.WriteDetailError(w, http.StatusInternalServerError, "session middleware is required")
 		return
 	}
 	traceAuth(r, "discovery_started")
 	provider, err := a.openIDClient(r.Context())
 	traceAuth(r, "discovery_finished")
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "identity provider unavailable")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "identity provider unavailable")
 		return
 	}
 	state, err := randomURLToken(32)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not start login")
+		httpresponse.WriteDetailError(w, http.StatusInternalServerError, "could not start login")
 		return
 	}
 	nonce, err := randomURLToken(32)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not start login")
+		httpresponse.WriteDetailError(w, http.StatusInternalServerError, "could not start login")
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
@@ -426,28 +427,28 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	traceAuth(r, "callback_started")
 	if r.URL.Query().Get("error") != "" {
-		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
 	}
 	state := r.URL.Query().Get("state")
 	session, ok := SessionFromContext(r.Context())
 	if !ok || state == "" {
-		writeError(w, http.StatusUnauthorized, "OIDC state is missing")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC state is missing")
 		return
 	}
 	data, exists := session.pendingLogins[state]
 	if !exists || data.Nonce == "" || data.CodeVerifier == "" || !data.ExpiresAt.After(time.Now()) {
-		writeError(w, http.StatusUnauthorized, "OIDC state is invalid or expired")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC state is invalid or expired")
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		writeError(w, http.StatusUnauthorized, "OIDC authorization code is missing")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC authorization code is missing")
 		return
 	}
 	provider, err := a.openIDClient(r.Context())
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "identity provider unavailable")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "identity provider unavailable")
 		return
 	}
 	delete(session.pendingLogins, state)
@@ -459,26 +460,26 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	token, err := provider.oauth.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", data.CodeVerifier))
 	traceAuth(r, "exchange_finished")
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
 	}
 	if token.AccessToken == "" {
-		writeError(w, http.StatusBadGateway, "identity provider returned an invalid response")
+		httpresponse.WriteDetailError(w, http.StatusBadGateway, "identity provider returned an invalid response")
 		return
 	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
-		writeError(w, http.StatusBadGateway, "identity provider returned an invalid response")
+		httpresponse.WriteDetailError(w, http.StatusBadGateway, "identity provider returned an invalid response")
 		return
 	}
 	idToken, err := provider.verifier.Verify(ctx, rawIDToken)
 	if err != nil || idToken.Nonce != data.Nonce {
-		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
 	}
 	login, ok := a.operatorIdentity(idToken)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "OIDC identity is not accepted")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC identity is not accepted")
 		return
 	}
 	if a.cfg.StoreFederationTokens && token.AccessToken != "" && !token.Expiry.IsZero() && token.Expiry.After(time.Now()) {
@@ -511,7 +512,7 @@ func (a *Auth) operatorIdentity(idToken *oidc.IDToken) (OperatorSession, bool) {
 
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != strings.TrimRight(a.cfg.OIDC.PublicBaseURL, "/") {
-		writeError(w, http.StatusForbidden, "logout requires exact same-origin Origin")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "logout requires exact same-origin Origin")
 		return
 	}
 	if session, ok := SessionFromContext(r.Context()); ok {
@@ -523,10 +524,10 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) me(w http.ResponseWriter, r *http.Request) {
 	session, ok := SessionFromContext(r.Context())
 	if !ok || session.Login == nil {
-		writeError(w, http.StatusUnauthorized, "not logged in")
+		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "not logged in")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": session.Login.Username})
+	httpresponse.WriteJSON(w, http.StatusOK, map[string]string{"username": session.Login.Username})
 }
 
 func (a *Auth) caller(r *http.Request) (*Caller, int, string) {
@@ -624,18 +625,8 @@ func (e *responseError) Error() string { return e.message }
 func writeCommitError(w http.ResponseWriter, err error) {
 	var response *responseError
 	if errors.As(err, &response) {
-		writeError(w, response.status, response.message)
+		httpresponse.WriteDetailError(w, response.status, response.message)
 		return
 	}
-	writeError(w, http.StatusInternalServerError, "authentication session unavailable")
-}
-
-func writeError(w http.ResponseWriter, code int, message string) {
-	writeJSON(w, code, map[string]string{"detail": message})
-}
-
-func writeJSON(w http.ResponseWriter, code int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(value)
+	httpresponse.WriteDetailError(w, http.StatusInternalServerError, "authentication session unavailable")
 }
