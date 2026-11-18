@@ -183,85 +183,55 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	return client.OpenSession(request, directExecutionStream{Executor_OpenSessionServer: stream, ctx: streamCtx})
 }
 
-func (p *executionProxy) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+// forwardExecutionUnary holds the Runtime admission until the unary Executor call returns.
+func forwardExecutionUnary[Request interface {
+	GetScope() *executorpb.ExecutionScope
+}, Response any](
+	ctx context.Context, p *executionProxy, request Request,
+	call func(executorpb.ExecutorServer, context.Context, Request) (*Response, error),
+) (*Response, error) {
 	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
 	if err != nil {
 		return nil, err
 	}
 	defer finish()
-	return client.StartProcess(outgoing, request)
+	return call(client, outgoing, request)
+}
+
+func (p *executionProxy) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.StartProcess)
 }
 
 func (p *executionProxy) ReadProcess(ctx context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.ReadProcess(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.ReadProcess)
 }
 
 func (p *executionProxy) WriteProcess(ctx context.Context, request *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.WriteProcess(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.WriteProcess)
 }
 
 func (p *executionProxy) SignalProcess(ctx context.Context, request *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.SignalProcess(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.SignalProcess)
 }
 
 func (p *executionProxy) TerminateProcess(ctx context.Context, request *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.TerminateProcess(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.TerminateProcess)
 }
 
 func (p *executionProxy) GetFileMetadata(ctx context.Context, request *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.GetFileMetadata(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.GetFileMetadata)
 }
 
 func (p *executionProxy) OpenFile(ctx context.Context, request *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.OpenFile(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.OpenFile)
 }
 
 func (p *executionProxy) ReadFile(ctx context.Context, request *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.ReadFile(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.ReadFile)
 }
 
 func (p *executionProxy) CloseFile(ctx context.Context, request *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error) {
-	client, outgoing, finish, err := p.runtime.admitExecutionCall(ctx, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer finish()
-	return client.CloseFile(outgoing, request)
+	return forwardExecutionUnary(ctx, p, request, executorpb.ExecutorServer.CloseFile)
 }
 
 var (
