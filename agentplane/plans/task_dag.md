@@ -3852,11 +3852,11 @@ their deployed names change under `RUNNER_GATEWAY_RENAME`. The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1,
 2 and 4 are done; the others keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                            |
-| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                            |
+| Plan stage                      | DAG node                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                     |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
+| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                 |
 
 ```mermaid
 flowchart LR
@@ -3869,8 +3869,8 @@ flowchart LR
 
 **Review; audit released by operator, 2026-11-15.** The
 [caller inventory and disposition proposal](runtime_proxy_callers.md) records the production paths,
-exact methods and grants, direct Runtime channels and test-only clients. Remaining Sessions delivery
-moves onto HarnessHost under `HARNESS_HOST_EXTRACTION`. The App's dead raw-proxy target setting has
+exact methods and grants, direct Runtime channels and test-only clients. Session delivery uses
+HarnessHost. The App's dead raw-proxy target setting has
 its separate manifest-omission/config-rollout gate. The audit does not choose canonical Session
 status or require a Sandbox attachment on a Session.
 

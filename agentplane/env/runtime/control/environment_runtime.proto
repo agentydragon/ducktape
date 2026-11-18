@@ -4,7 +4,6 @@ syntax = "proto3";
 
 package agentplane.env.runtime.control;
 
-import "agentplane/proto/event_log.proto";
 import "agentplane/proto/session.proto";
 import "agentplane/proto/environment_runtime_state.proto";
 import "google/protobuf/empty.proto";
@@ -59,48 +58,4 @@ message PrepareSuspendRequest {
 
 message ResumeAdmissionRequest {
   int64 generation = 1;
-}
-
-// CLEANUP(added 2026-11-17): Remove these legacy command messages once #17429 removes the
-// Sampler service, their remaining caller after EnvironmentRuntime contraction.
-// Command responses carry durable CommandAdmitted evidence, before any required startup.
-// Startup and delivery continue after caller disconnect; later failures are journal outcomes.
-message SubmitInputRequest {
-  string session_id = 1;
-  string command_id = 2;
-  string text = 3;
-}
-
-message SubmitInputResponse {
-  agentplane.proto.EventEntry admission = 1;
-}
-
-message ChangeModelRequest {
-  string session_id = 1;
-  string command_id = 2;
-  string model = 3;
-}
-
-message ChangeModelResponse {
-  agentplane.proto.EventEntry admission = 1;
-}
-
-message ChangeReasoningEffortRequest {
-  string session_id = 1;
-  string command_id = 2;
-  string effort = 3;
-}
-
-message ChangeReasoningEffortResponse {
-  agentplane.proto.EventEntry admission = 1;
-}
-
-message InterruptTurnRequest {
-  string session_id = 1;
-  string command_id = 2;
-  string turn_id = 3;
-}
-
-message InterruptTurnResponse {
-  agentplane.proto.EventEntry admission = 1;
 }
