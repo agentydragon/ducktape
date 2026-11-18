@@ -18,6 +18,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc",
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/grpc/streaming",
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/identity/auth",

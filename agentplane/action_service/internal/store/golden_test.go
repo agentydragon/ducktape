@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/google/uuid"
 )
@@ -15,7 +16,7 @@ import (
 func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 	enums := loadGolden(t).Enums
 	for column, want := range map[string][]string{
-		"action_state":    storedStateNames(),
+		"action_state":    actionstate.StoredNames(),
 		"execution_state": toStrings(executionStates),
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
@@ -235,7 +236,7 @@ func TestHistoryCursorsSatisfyStoredContract(t *testing.T) {
 
 func mustStateFromStored(t *testing.T, stored string) action_servicepb.ActionState {
 	t.Helper()
-	state, known := stateFromStored(stored)
+	state, known := actionstate.FromStored(stored)
 	if !known {
 		t.Fatalf("unknown stored Action state %q", stored)
 	}

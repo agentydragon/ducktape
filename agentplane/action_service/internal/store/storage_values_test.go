@@ -4,18 +4,11 @@ import (
 	"errors"
 	"testing"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	identitypb "github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
+	"github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
-
-func storedStateNames() []string {
-	states := make([]string, len(storedStates))
-	for i, known := range storedStates {
-		states[i] = known.text
-	}
-	return states
-}
 
 func storedReasonCodeNames() []string {
 	codes := make([]string, len(storedReasonCodes))
@@ -57,23 +50,23 @@ func TestStoredStateNamesRoundTrip(t *testing.T) {
 		{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
 	}
 	for _, pair := range pairs {
-		state, ok := stateFromStored(pair.text)
+		state, ok := actionstate.FromStored(pair.text)
 		if !ok || state != pair.state {
 			t.Errorf("stored %q decoded as %v, %v; want %v", pair.text, state, ok, pair.state)
 		}
-		if got, ok := stateStored(pair.state); !ok || got != pair.text {
+		if got, ok := actionstate.Stored(pair.state); !ok || got != pair.text {
 			t.Errorf("state %v stored as %q, %v; want %q", pair.state, got, ok, pair.text)
 		}
 	}
-	if len(storedStateNames()) != len(pairs) {
-		t.Errorf("stored vocabulary has %d states, want %d", len(storedStateNames()), len(pairs))
+	if len(actionstate.StoredNames()) != len(pairs) {
+		t.Errorf("stored vocabulary has %d states, want %d", len(actionstate.StoredNames()), len(pairs))
 	}
 	for _, state := range []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, 99} {
-		if _, ok := stateStored(state); ok {
+		if _, ok := actionstate.Stored(state); ok {
 			t.Errorf("accepted state %v", state)
 		}
 	}
-	if _, ok := stateFromStored("future_state"); ok {
+	if _, ok := actionstate.FromStored("future_state"); ok {
 		t.Error("accepted unknown stored state")
 	}
 }

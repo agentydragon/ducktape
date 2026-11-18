@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "actionstate",
+    srcs = ["state.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/actionstate",
+    visibility = [
+        "//agentplane/action_service:__subpackages__",
+        "//agentplane/notification_service:__subpackages__",
+    ],
+    deps = ["//agentplane/action_service/api/contracts:action_service_go_proto"],
+)

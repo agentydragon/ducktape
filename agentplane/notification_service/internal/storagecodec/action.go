@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -69,7 +70,7 @@ func (e *ActionEvent) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
-	state, known := ActionStateFromStored(*wire.State)
+	state, known := actionstate.FromStored(*wire.State)
 	if !known {
 		return fmt.Errorf("unknown Action state %q", *wire.State)
 	}
@@ -92,7 +93,7 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 	if e.At.Nanosecond() != 0 {
 		layout += ".000000"
 	}
-	state, known := storedActionState(e.State)
+	state, known := actionstate.Stored(e.State)
 	if !known {
 		return nil, fmt.Errorf("unknown Action state %v", e.State)
 	}

@@ -9,41 +9,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
-// The Action Service stores states as these SQL text values. Keep the mapping explicit: protobuf enum names
-// and numbers are not a storage format.
-var storedStates = [...]struct {
-	state action_servicepb.ActionState
-	text  string
-}{
-	{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, "decision_pending"},
-	{action_servicepb.ActionState_ACTION_STATE_ALLOWED, "allowed"},
-	{action_servicepb.ActionState_ACTION_STATE_DENIED, "denied"},
-	{action_servicepb.ActionState_ACTION_STATE_DISPATCHING, "dispatching"},
-	{action_servicepb.ActionState_ACTION_STATE_RUNNING, "running"},
-	{action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, "succeeded"},
-	{action_servicepb.ActionState_ACTION_STATE_FAILED, "failed"},
-	{action_servicepb.ActionState_ACTION_STATE_CANCELLED, "cancelled"},
-	{action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, "execution_unknown"},
-}
-
-func stateFromStored(text string) (action_servicepb.ActionState, bool) {
-	for _, known := range storedStates {
-		if text == known.text {
-			return known.state, true
-		}
-	}
-	return action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, false
-}
-
-func stateStored(state action_servicepb.ActionState) (string, bool) {
-	for _, known := range storedStates {
-		if state == known.state {
-			return known.text, true
-		}
-	}
-	return "", false
-}
-
 // The `action_decision.provider` values: who decided, which also fixes which of the decider columns are set.
 const (
 	operatorProvider = "human_operator"
