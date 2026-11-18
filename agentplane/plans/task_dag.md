@@ -2238,7 +2238,9 @@ Boxes and Sandboxes are to converge into one object type
 for Agentplane services. Evaluate defining the schema in protobuf and loading it from YAML or
 textproto, alongside the current typed YAML approach. The design should show how the deployment
 renderer and service loaders use the same schema and handle unknown fields, defaults, and explicit
-runtime Secret inputs. Start from the [current settings contract](../AGENTS.md#settings).
+runtime Secret inputs. Decide whether the App’s generated configuration API can reuse settings
+schemas for the fields it exposes to the browser. Start from the
+[current settings contract](../AGENTS.md#settings).
 
 The shared strict YAML loader is the interim improvement. Choose the schema and file format before
 planning the service migrations.
