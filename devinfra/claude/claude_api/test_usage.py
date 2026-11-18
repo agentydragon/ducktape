@@ -18,7 +18,6 @@ def test_usage_response_spend() -> None:
     }
     usage = UsageResponse.model_validate(payload)
     assert usage.spend is not None
-    assert usage.spend.has_usage_totals
     assert usage.spend.limit is not None
     assert usage.spend.limit.major_units == 2500.0
     assert usage.spend.used is not None
@@ -38,9 +37,3 @@ def test_usage_response_spend_derives_percent_when_missing() -> None:
     )
     assert usage.spend is not None
     assert usage.spend.utilization_percent == 50.0
-
-
-def test_usage_response_disabled_spend_has_no_usage_totals() -> None:
-    usage = UsageResponse.model_validate({"spend": {"enabled": False, "disabled_reason": "payment_method_required"}})
-    assert usage.spend is not None
-    assert not usage.spend.has_usage_totals

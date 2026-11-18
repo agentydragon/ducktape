@@ -198,12 +198,12 @@ def render(
             cwd = "~" + cwd[len(home_str) :]
 
     # Per-session USD cost only applies to Anthropic per-token API billing.
-    # Hide it for Anthropic subscriptions, z.ai, and Codex (ChatGPT sub via
-    # CLIProxyAPI) — all flat-rate, so the per-token cost Claude Code derives
+    # Hide it for Anthropic subscriptions and Codex (ChatGPT sub via
+    # CLIProxyAPI) — both flat-rate, so the per-token cost Claude Code derives
     # is meaningless for them.
     # TODO: Wire up Admin API (/v1/organizations/cost_report) with a read-only
     # admin key to show current-month API cost in the statusline.
-    flat_rate = is_subscription or (quota_route is not None and quota_route.provider in ("zai", "codex"))
+    flat_rate = is_subscription or (quota_route is not None and quota_route.provider == "codex")
     if flat_rate:
         segments: list[Text] = [Text(f"{model_name} {cwd}")]
     else:
