@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic.json_schema import models_json_schema
 
 from airlock.models import (
     ConnectedOAuthStatus,
@@ -16,32 +15,22 @@ from airlock.models import (
     OAuthProviderStatus,
 )
 
-_MODELS_TO_EXPORT: list[type[Any]] = [
+_MODELS_TO_EXPORT = (
     ConnectedOAuthStatus,
     DeploymentInfo,
     DisconnectedOAuthStatus,
     ExpiredOAuthStatus,
     OAuthProviderStatus,
-]
+)
 
 
 def main() -> None:
-    all_defs: dict[str, Any] = {}
-
-    for model_class in _MODELS_TO_EXPORT:
-        type_name = model_class.__name__
-        schema = TypeAdapter(model_class).json_schema(mode="serialization")
-        if "$defs" in schema:
-            all_defs.update(schema["$defs"])
-        all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
-
-    unified_schema: dict[str, Any] = {
+    model_schemas, definitions = models_json_schema([(model, "serialization") for model in _MODELS_TO_EXPORT])
+    unified_schema = {
         "type": "object",
         "title": "AirlockTypes",
-        "properties": {
-            name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in _MODELS_TO_EXPORT]
-        },
-        "$defs": all_defs,
+        "properties": {model.__name__: schema for (model, _), schema in model_schemas.items()},
+        **definitions,
     }
 
     json.dump(unified_schema, sys.stdout, indent=2)
