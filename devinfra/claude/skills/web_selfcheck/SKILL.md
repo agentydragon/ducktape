@@ -63,7 +63,7 @@ order of "most likely to contain the smoking gun":
 | Path                                                 | What's in it                                                                                                                                                                      |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/tmp/claude-hd/<sid>/daemon.err.log`                | **Unhandled hook daemon errors** — check first.                                                                                                                                   |
-| `/tmp/claude-hd/<sid>/daemon.log`                    | Daemon stdout: startup and per-hook diagnostics.                                                                                                                                  |
+| `/tmp/claude-hd/<sid>/daemon.log`                    | Daemon stdout; the daemon logs through stderr, so nothing is expected here.                                                                                                       |
 | `/tmp/claude-hd/<sid>/startup_failure.json`          | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
 | `~/.claude/session-env/<sid>/sessionstart-hook-0.sh` | The env file the daemon wrote. Presence means SessionStart got far enough to write the agent shell environment.                                                                   |
 | `/tmp/web-setup.log`                                 | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
@@ -159,13 +159,13 @@ echo "exit: ${PIPESTATUS[0]}"
 Pass: exit 0 with every hook Passed/Skipped. No commit-msg trailer is required
 — a bare commit message is expected to go through.
 
-**C7 — hook daemon logs present, no unhandled exceptions.**
+**C7 — hook daemon error log present, no panics or failures.**
 
 ```bash
 LIVE=${CLAUDE_ENV_FILE:+$(basename "$(dirname "$CLAUDE_ENV_FILE")")}
 LIVE=${LIVE:-$(ps aux | grep '[c]laude-hook daemon' | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+' | head -1)}
-LOG="/tmp/claude-hd/$LIVE/daemon.log"
-[ -f "$LOG" ] && grep -cE 'ERROR|Traceback|Exception' "$LOG" || echo MISSING
+LOG="/tmp/claude-hd/$LIVE/daemon.err.log"
+[ -f "$LOG" ] && grep -cE 'ERROR|panicked|failed' "$LOG" || echo MISSING
 ```
 
 Pass: log exists, zero matches (or only expected warnings — use judgement).
@@ -288,8 +288,9 @@ Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no
 docker info >/dev/null 2>&1 && echo "present" || echo "absent (expected)"
 ```
 
-The web profile's `setup_docker` key is **ignored** by the Rust daemon — only
-the retired Python daemon started Docker (see `devinfra/claude/TODO.md`). So an
+The web profiles dropped their `setup_docker` key because the Rust daemon
+ignores it (see the note in
+`devinfra/claude/claude_hook/profiles/web/profile.yaml`). So an
 absent local Docker daemon is **expected, not a failure**: Docker-dependent
 tests run on BuildBuddy RBE workers, not locally. Report `present`/`absent`
 informationally; only flag if a workflow genuinely needs local Docker.
@@ -336,17 +337,15 @@ kinds of staleness to check:
 and sync workflow runs. The tag suffix is a content digest, not a source
 commit; on a **shallow clone** (Claude Code web clones ~50 commits — check
 `.git/shallow`), it cannot be compared directly with Git history. The practical
-signal for a hook incompatibility is a schema/template error in `daemon.err.log`.
+signal for a hook incompatibility is a schema error in `daemon.err.log`.
 
 **(b) Installed `.#devtools` closure is behind the pins** — on Firecracker web
 sessions with a persistent rootfs, `nix profile install` is a no-op when
 devtools is already installed, so the Rust dispatcher and Python statusline
 can remain at first-boot versions even though `nix/artifact-pins.json` moved
 forward. This is the class of failure described in `devinfra/claude/docs/web-setup-debug.md`
-"Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
-with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
-or silently missing env vars because `serde` ignores an unrecognized
-`profile.yaml` field.
+"Pin drift on persistent rootfs". Typical symptom: silently missing env
+vars because `serde` ignores an unrecognized `profile.yaml` field.
 
 ```bash
 # (a) Pin in artifact-pins vs HEAD
@@ -362,7 +361,7 @@ git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ nix/artifact-pin
 
 # (b) Inspect the installed Rust dispatcher; its version is not the artifact digest.
 claude-hook --version
-# Check daemon.err.log for template/schema crashes that indicate drift
+# Check daemon.err.log for schema crashes that indicate drift
 tail -50 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 ```
 
