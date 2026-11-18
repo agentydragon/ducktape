@@ -32,12 +32,17 @@
 
 use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
 use analysis_model::PrimKinds;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use js_ast::SourceLineIndex;
-use swc_common::{BytePos, Spanned};
+use swc_atoms::Atom;
+use swc_common::{BytePos, Spanned, SyntaxContext};
 use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
 use crate::analysis_inputs::{
@@ -52,7 +57,7 @@ use crate::analysis_inputs::{
 };
 use crate::execution_evidence::SourceLocator;
 
-use crate::facts::abstract_domain::value::Value;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::program_bindings::{
@@ -217,6 +222,201 @@ struct PreparationOptions {
     /// Retain exact mutation roots only for chunks named by an imported-array
     /// spread premise. The ordinary purity path does not need these facts.
     collect_imported_array_write_sites: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgramFlowShadowSelection {
+    module: String,
+    bindings: Vec<ProgramFlowShadowBinding>,
+    function_offsets: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProgramFlowShadowBinding {
+    name: String,
+    context: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct ProgramFlowShadowValueSummary {
+    complete: bool,
+    // Counts explicit primitive and allocation alternatives; Top is separate.
+    known_alternative_count: usize,
+    top: bool,
+    selected_function_intersections: Vec<u32>,
+    same_origins_as_reference_binding: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProgramFlowShadowBindingObservation<'a> {
+    #[serde(flatten)]
+    binding: &'a ProgramFlowShadowBinding,
+    full_program: ProgramFlowShadowValueSummary,
+    module_only: ProgramFlowShadowValueSummary,
+}
+
+#[derive(Debug, Serialize)]
+struct ProgramFlowShadowObservation<'a> {
+    scope: &'static str,
+    module: &'a str,
+    flow_call: usize,
+    complete: bool,
+    function_offsets: &'a [u32],
+    reference_binding: &'a ProgramFlowShadowBinding,
+    bindings: Vec<ProgramFlowShadowBindingObservation<'a>>,
+}
+
+static PROGRAM_FLOW_SHADOW_CALL: AtomicUsize = AtomicUsize::new(0);
+
+fn load_program_flow_shadow_selection() -> Result<Option<(PathBuf, ProgramFlowShadowSelection)>> {
+    const SELECTION_ENV: &str = "DEBUNDLE_DEBUG_PROGRAM_FLOW_SHADOW";
+    const MAX_BINDINGS: usize = 256;
+    const MAX_FUNCTIONS: usize = 256;
+    let Some(path) = std::env::var_os(SELECTION_ENV).map(PathBuf::from) else {
+        return Ok(None);
+    };
+    let contents = std::fs::read(&path)
+        .with_context(|| format!("read program-flow shadow selection {}", path.display()))?;
+    let selection: ProgramFlowShadowSelection = serde_json::from_slice(&contents)
+        .with_context(|| format!("parse program-flow shadow selection {}", path.display()))?;
+    ensure!(
+        !selection.module.is_empty(),
+        "shadow selection module is empty"
+    );
+    ensure!(
+        !selection.bindings.is_empty() && selection.bindings.len() <= MAX_BINDINGS,
+        "shadow selection must contain 1..={MAX_BINDINGS} bindings"
+    );
+    ensure!(
+        !selection.function_offsets.is_empty() && selection.function_offsets.len() <= MAX_FUNCTIONS,
+        "shadow selection must contain 1..={MAX_FUNCTIONS} function offsets"
+    );
+    let binding_ids: BTreeSet<_> = selection
+        .bindings
+        .iter()
+        .map(|binding| (binding.name.as_str(), binding.context))
+        .collect();
+    let function_offsets: BTreeSet<_> = selection.function_offsets.iter().copied().collect();
+    ensure!(
+        binding_ids.len() == selection.bindings.len()
+            && selection
+                .bindings
+                .iter()
+                .all(|binding| !binding.name.is_empty()),
+        "shadow selection bindings must be unique and named"
+    );
+    ensure!(
+        function_offsets.len() == selection.function_offsets.len(),
+        "shadow selection function offsets must be unique"
+    );
+    Ok(Some((path, selection)))
+}
+
+fn program_flow_shadow_output_path(request: &Path, flow_call: usize) -> Result<PathBuf> {
+    let mut name = request
+        .file_name()
+        .context("program-flow shadow selection path has no filename")?
+        .to_os_string();
+    name.push(format!(".flow-{flow_call}.observed.json"));
+    Ok(request.with_file_name(name))
+}
+
+fn observe_program_flow_shadow(
+    request_path: &Path,
+    selection: &ProgramFlowShadowSelection,
+    flow_call: usize,
+    bindings: &ProgramBindings,
+    shadow_module: crate::facts::ProgramFlowModule<'_>,
+    full_flows: &crate::facts::ProgramValueFlows,
+) -> Result<()> {
+    let module = shadow_module.module;
+    let full = full_flows
+        .get(module)
+        .with_context(|| format!("selected module {module} has no full program flow"))?;
+    let module_flows =
+        crate::facts::program_value_flows(bindings, [shadow_module], &Diagnostics::default());
+    let module_only = module_flows
+        .get(module)
+        .with_context(|| format!("selected module {module} has no module-only flow"))?;
+    let selected_functions: BTreeSet<_> = selection.function_offsets.iter().copied().collect();
+    for offset in &selection.function_offsets {
+        let value = Value::Alloc(Kind::Function, *offset);
+        ensure!(
+            full.has_function_at_source_offset(*offset)
+                && module_only.has_function_at_source_offset(*offset),
+            "selected function allocation {value:?} is absent from module {module}"
+        );
+    }
+    let reference = &selection.bindings[0];
+    let reference_id = (
+        Atom::from(reference.name.as_str()),
+        SyntaxContext::from_u32(reference.context),
+    );
+    ensure!(
+        full.is_declared(&reference_id) && module_only.is_declared(&reference_id),
+        "reference binding {:?} is absent from module {module}",
+        reference
+    );
+    let rows = selection
+        .bindings
+        .iter()
+        .map(|binding| {
+            let id = (
+                Atom::from(binding.name.as_str()),
+                SyntaxContext::from_u32(binding.context),
+            );
+            let full_summary = full
+                .diagnostic_binding_summary(&id, &selected_functions, &reference_id)
+                .with_context(|| format!("binding {binding:?} is absent from full program flow"))?;
+            let module_summary = module_only
+                .diagnostic_binding_summary(&id, &selected_functions, &reference_id)
+                .with_context(|| format!("binding {binding:?} is absent from module-only flow"))?;
+            let summary =
+                |(known_alternative_count, top, selected_function_intersections, same)| {
+                    ProgramFlowShadowValueSummary {
+                        complete: true,
+                        known_alternative_count,
+                        top,
+                        selected_function_intersections,
+                        same_origins_as_reference_binding: same,
+                    }
+                };
+            Ok(ProgramFlowShadowBindingObservation {
+                binding,
+                full_program: summary(full_summary),
+                module_only: summary(module_summary),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let observation = ProgramFlowShadowObservation {
+        scope: "full_program_vs_single_module_body",
+        module,
+        flow_call,
+        complete: true,
+        function_offsets: &selection.function_offsets,
+        reference_binding: reference,
+        bindings: rows,
+    };
+    let mut encoded = serde_json::to_vec(&observation)?;
+    encoded.push(b'\n');
+    let output_path = program_flow_shadow_output_path(request_path, flow_call)?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output_path)
+        .with_context(|| {
+            format!(
+                "create program-flow shadow output {}",
+                output_path.display()
+            )
+        })?;
+    output
+        .write_all(&encoded)
+        .with_context(|| format!("write program-flow shadow output {}", output_path.display()))?;
+    output.flush()?;
+    Ok(())
 }
 
 fn var_decl_for_source_item(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl> {
@@ -1249,6 +1449,7 @@ pub fn resolve_imported_callable_summaries(
         no_accessor_install_callables,
         intrinsics_never_written,
     } = inputs;
+    let program_flow_shadow = load_program_flow_shadow_selection()?;
     let required: BTreeSet<_> = bindings
         .modules()
         .flat_map(|module| bindings.imports(module).map(|(_, export)| export))
@@ -1619,6 +1820,37 @@ pub fn resolve_imported_callable_summaries(
         diagnostics,
     );
     diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
+    if let Some((request_path, selection)) = &program_flow_shadow {
+        let flow_call = PROGRAM_FLOW_SHADOW_CALL.fetch_add(1, Ordering::Relaxed);
+        let module = modules
+            .keys()
+            .find(|module| *module == &selection.module)
+            .with_context(|| {
+                format!("shadow selection names unknown module {}", selection.module)
+            })?;
+        let body = flow_views
+            .get(module)
+            .context("selected module has no prepared flow body")?;
+        observe_program_flow_shadow(
+            request_path,
+            selection,
+            flow_call,
+            bindings,
+            crate::facts::ProgramFlowModule {
+                module,
+                body,
+                fresh_factory_imports: &fresh_factory_imports[module],
+                fresh_factory_members: &fresh_factory_members[module],
+                native_operation_inputs: resolved_native_operation_inputs
+                    .get(module)
+                    .map_or(&[][..], Vec::as_slice),
+                inferred_sets: inferred_set_constructions
+                    .get(module)
+                    .unwrap_or(&empty_sets),
+            },
+            &structural_flows,
+        )?;
+    }
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {

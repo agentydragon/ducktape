@@ -1247,6 +1247,45 @@ impl ChunkValueFlow {
         })
     }
 
+    pub(crate) fn diagnostic_binding_summary(
+        &self,
+        id: &Id,
+        selected_functions: &BTreeSet<u32>,
+        reference: &Id,
+    ) -> Option<(usize, bool, Vec<u32>, bool)> {
+        if !self.is_declared(id) || !self.is_declared(reference) {
+            return None;
+        }
+        let values = self.values_of_binding(id);
+        let same_as_reference = values == self.values_of_binding(reference);
+        let mut concrete_count = 0;
+        let mut top = false;
+        let mut intersections = BTreeSet::new();
+        for value in values.iter() {
+            match value {
+                Value::Top => top = true,
+                Value::Alloc(Kind::Function, offset) => {
+                    concrete_count += 1;
+                    if selected_functions.contains(&offset) {
+                        intersections.insert(offset);
+                    }
+                }
+                _ => concrete_count += 1,
+            }
+        }
+        Some((
+            concrete_count,
+            top,
+            intersections.into_iter().collect(),
+            same_as_reference,
+        ))
+    }
+
+    pub(crate) fn has_function_at_source_offset(&self, offset: u32) -> bool {
+        self.callable_source_unit
+            .contains_key(&Value::Alloc(Kind::Function, offset))
+    }
+
     pub(crate) fn is_declared(&self, id: &Id) -> bool {
         self.declared_ids.contains(id)
     }
