@@ -105,9 +105,190 @@ use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
+
+// Temporary selected-call observer. Its output never feeds execution facts.
+#[derive(serde::Serialize)]
+struct RetainedDecision {
+    owner: usize,
+    span: [u32; 2],
+    actual_admitted: bool,
+    namespace_admitted: bool,
+    complete: bool,
+    omitted_counts_complete: bool,
+    omitted: RetainedDecisionOmitted,
+    signatures: Vec<RetainedSignatureDecision>,
+}
+
+#[derive(Default, serde::Serialize)]
+struct RetainedDecisionOmitted {
+    signatures: usize,
+    arguments: usize,
+    argument_values: usize,
+    protected_functions: usize,
+    escaped_functions: usize,
+    mutation_intersections: usize,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+struct RetainedFunctionIdentity {
+    owner: usize,
+    span: [u32; 2],
+}
+
+#[derive(serde::Serialize)]
+struct RetainedSignatureDecision {
+    signature: usize,
+    admitted: bool,
+    arguments_admitted: bool,
+    arguments: Vec<RetainedArgumentDecision>,
+    has_mutation: bool,
+    any_retained_escaped: bool,
+    protected_functions: Vec<RetainedFunctionIdentity>,
+    escaped_functions: Vec<RetainedFunctionIdentity>,
+    unidentified_protected_functions: usize,
+    unidentified_escaped_functions: usize,
+    writes_examined: usize,
+    matching_writes: usize,
+    mutation_intersections: Vec<RetainedMutationDecision>,
+    omitted: RetainedDecisionOmitted,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedArgumentDecision {
+    position: usize,
+    binding_debug: Option<String>,
+    rebound: Option<bool>,
+    origin_count: Option<usize>,
+    has_unknown_origin: Option<bool>,
+    multiple_origins: Option<bool>,
+    all_factory_carriers: bool,
+    binding_admitted: bool,
+    value_count: usize,
+    values_admitted: bool,
+    value_predicates: Vec<RetainedValuePredicate>,
+    omitted_values: usize,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedValuePredicate {
+    kind: &'static str,
+    admitted: bool,
+    unknown_alternative: bool,
+    carrier_clean: Option<bool>,
+    function: Option<RetainedFunctionIdentity>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct RetainedReceiverDecision {
+    binding_debug: String,
+    origin_count: usize,
+    has_unknown_origin: bool,
+    matched_functions: Vec<RetainedFunctionIdentity>,
+    unidentified_matches: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RetainedWriteKind {
+    Intrinsic,
+    TopCallbackResult,
+    CallableCallbackResult,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedMutationDecision {
+    kind: RetainedWriteKind,
+    owner: Option<usize>,
+    span: [u32; 2],
+    receiver: Option<RetainedReceiverDecision>,
+}
+
+fn selected_retained_decision(owner: SourceUnitOrdinal, site: CallSite) -> bool {
+    static SELECTOR: OnceLock<Option<(usize, u32, u32)>> = OnceLock::new();
+    let selector = SELECTOR.get_or_init(|| {
+        let raw = std::env::var("DEBUNDLE_DEBUG_RETAINED_CALLBACK_SITE").ok()?;
+        let mut parts = raw.split(':');
+        let selected = (
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        );
+        parts.next().is_none().then_some(selected)
+    });
+    let span = site.source_span();
+    *selector == Some((owner.0, span.lo.0, span.hi.0))
+}
+
+fn retained_write_starts() -> &'static BTreeSet<u32> {
+    static SELECTOR: OnceLock<BTreeSet<u32>> = OnceLock::new();
+    SELECTOR.get_or_init(|| {
+        std::env::var("DEBUNDLE_DEBUG_RETAINED_WRITE_STARTS")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|part| part.parse().ok())
+            .collect()
+    })
+}
+
+fn emit_retained_decision(mut record: RetainedDecision) {
+    const MAX_RECORDS: usize = 64;
+    const MAX_RECORD_BYTES: usize = 1_048_576;
+    static RECORDS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+    static OVERFLOW_EMITTED: OnceLock<Mutex<bool>> = OnceLock::new();
+
+    let records = RECORDS.get_or_init(|| Mutex::new(BTreeSet::new()));
+    let mut records = records.lock().expect("diagnostic mutex");
+    let serialized = serde_json::to_string(&record).expect("diagnostic serialization");
+    if records.contains(&serialized) {
+        return;
+    }
+    if serialized.len() > MAX_RECORD_BYTES {
+        record.complete = false;
+        record.omitted_counts_complete = record.omitted.signatures == 0;
+        let omitted_signatures = record.omitted.signatures;
+        record.omitted = RetainedDecisionOmitted {
+            signatures: record.signatures.len() + omitted_signatures,
+            ..RetainedDecisionOmitted::default()
+        };
+        for signature in &record.signatures {
+            record.omitted.arguments += signature.arguments.len() + signature.omitted.arguments;
+            record.omitted.argument_values += signature
+                .arguments
+                .iter()
+                .map(|argument| argument.value_predicates.len())
+                .sum::<usize>()
+                + signature.omitted.argument_values;
+            record.omitted.protected_functions += signature.protected_functions.len();
+            record.omitted.escaped_functions += signature.escaped_functions.len();
+            record.omitted.protected_functions += signature.unidentified_protected_functions;
+            record.omitted.escaped_functions += signature.unidentified_escaped_functions;
+            record.omitted.mutation_intersections += signature.mutation_intersections.len();
+            record.omitted.mutation_intersections += signature.omitted.mutation_intersections;
+        }
+        record.signatures.clear();
+    }
+    let serialized = serde_json::to_string(&record).expect("diagnostic serialization");
+    if records.contains(&serialized) {
+        return;
+    }
+    if records.len() == MAX_RECORDS {
+        let overflow = OVERFLOW_EMITTED.get_or_init(|| Mutex::new(false));
+        let mut overflow = overflow.lock().expect("diagnostic overflow mutex");
+        if !*overflow {
+            eprintln!(
+                "retained-decision-incomplete {{\"complete\":false,\"omitted_records\":null,\"reason\":\"distinct_record_limit\"}}"
+            );
+            *overflow = true;
+        }
+        return;
+    }
+    if records.insert(serialized.clone()) {
+        eprintln!("retained-decision {serialized}");
+    }
+}
 
 pub(super) enum NativeIdentitySource {
     Inferred {
@@ -6766,12 +6947,387 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        self.retained_callbacks(
-            &self.inputs.index.retained_callback_calls.get(&site)?.call,
-            expressions,
-            args,
-            RetainedResultKind::Factory,
-        )
+        let contract = &self.inputs.index.retained_callback_calls.get(&site)?.call;
+        let result =
+            self.retained_callbacks(contract, expressions, args, RetainedResultKind::Factory);
+        if let Some((owner, _)) = self.inputs.call_site_owners.get(&site)
+            && selected_retained_decision(*owner, site)
+        {
+            self.observe_retained_decision(site, contract, expressions, args, result.is_some());
+        }
+        result
+    }
+
+    fn observe_retained_decision(
+        &self,
+        site: CallSite,
+        contract: &RetainedCallbackCall,
+        expressions: &[ValueExpr],
+        args: &[Values],
+        actual_admitted: bool,
+    ) {
+        const MAX_SIGNATURES: usize = 512;
+        const MAX_ARGUMENTS: usize = 1_024;
+        const MAX_ARGUMENT_VALUES: usize = 10_000;
+        const MAX_FUNCTIONS: usize = 10_000;
+        const MAX_INTERSECTIONS: usize = 10_000;
+
+        let (owner, _) = self.inputs.call_site_owners[&site];
+        let namespace_admitted =
+            contract
+                .namespace_member
+                .as_ref()
+                .is_none_or(|(namespace, member)| {
+                    self.inputs
+                        .index
+                        .audited_factory_members
+                        .get(namespace)
+                        .is_some_and(|members| members.contains(member))
+                });
+        let requested_write_starts = retained_write_starts();
+        let mut omitted = RetainedDecisionOmitted::default();
+        let mut signatures = Vec::new();
+
+        for (signature_index, signature) in
+            contract.signatures.iter().take(MAX_SIGNATURES).enumerate()
+        {
+            let mut arguments = Vec::new();
+            let mut omitted_arguments = 0;
+            let mut omitted_argument_values = 0;
+            let mut candidate_callbacks = Values::new();
+            let mut arguments_admitted = true;
+
+            for (argument_index, position) in signature.callback_arguments.iter().enumerate() {
+                let expression = &expressions[*position];
+                let values = &args[*position];
+                let mut rebound = None;
+                let mut origin_count = None;
+                let mut has_unknown_origin = None;
+                let mut multiple_origins = None;
+                let all_factory_carriers = !values.is_empty()
+                    && values.iter().all(|value| {
+                        matches!(
+                            value,
+                            AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, _)
+                        )
+                    });
+                let binding_admitted = if let ValueExpr::Binding(binding) = expression {
+                    let origins = self.inputs.flow.values_of_binding(binding);
+                    let count = origins.iter().count();
+                    let was_rebound = self.inputs.facts.iter().any(|fact| {
+                        fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
+                    });
+                    let many = count > 1;
+                    rebound = Some(was_rebound);
+                    origin_count = Some(count);
+                    has_unknown_origin = Some(origins.iter().any(|value| value == Value::Top));
+                    multiple_origins = Some(many);
+                    !was_rebound && (!many || all_factory_carriers)
+                } else {
+                    true
+                };
+
+                let mut values_admitted = !values.is_empty();
+                let mut value_predicates = Vec::new();
+                for (value_index, value) in values.iter().enumerate() {
+                    let (kind, admitted, carrier_clean, function_key) = match value {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key)) => (
+                            "function",
+                            self.inputs.index.callables.contains_key(key)
+                                && !self.state.world.native.tainted_functions.contains(key),
+                            None,
+                            Some(*key),
+                        ),
+                        AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => (
+                            "closure",
+                            self.inputs.index.callables.contains_key(key)
+                                && !self.state.world.native.tainted_functions.contains(key),
+                            None,
+                            Some(*key),
+                        ),
+                        AbstractValue::AuditedRetainedResult(kind, captured) => {
+                            let clean = self.audited_result_is_clean(captured);
+                            (
+                                if *kind == RetainedResultKind::Factory {
+                                    "factory_carrier"
+                                } else {
+                                    "constructor_carrier"
+                                },
+                                *kind == RetainedResultKind::Factory && clean,
+                                Some(clean),
+                                None,
+                            )
+                        }
+                        _ => ("other", false, None, None),
+                    };
+                    values_admitted &= admitted;
+                    if value_index < MAX_ARGUMENT_VALUES {
+                        value_predicates.push(RetainedValuePredicate {
+                            kind,
+                            admitted,
+                            unknown_alternative: matches!(
+                                value,
+                                AbstractValue::Value(Value::Top | Value::Unavailable)
+                                    | AbstractValue::SymbolicInput(_)
+                            ),
+                            carrier_clean,
+                            function: function_key
+                                .and_then(|key| self.retained_function_identity(key)),
+                        });
+                    } else {
+                        omitted_argument_values += 1;
+                    }
+                }
+                arguments_admitted &= binding_admitted && values_admitted;
+                candidate_callbacks.extend(self.callback_values(values.iter()));
+
+                if argument_index < MAX_ARGUMENTS {
+                    arguments.push(RetainedArgumentDecision {
+                        position: *position,
+                        binding_debug: match expression {
+                            ValueExpr::Binding(binding) => Some(format!("{binding:?}")),
+                            _ => None,
+                        },
+                        rebound,
+                        origin_count,
+                        has_unknown_origin,
+                        multiple_origins,
+                        all_factory_carriers,
+                        binding_admitted,
+                        value_count: values.len(),
+                        values_admitted,
+                        value_predicates,
+                        omitted_values: values.len().saturating_sub(MAX_ARGUMENT_VALUES),
+                    });
+                } else {
+                    omitted_arguments += 1;
+                }
+            }
+
+            let protected_keys: BTreeSet<u32> = candidate_callbacks
+                .iter()
+                .filter_map(|value| match value {
+                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => Some(*key),
+                    _ => None,
+                })
+                .collect();
+            let mut protected_functions = BTreeSet::new();
+            let mut unidentified_protected_functions = 0;
+            for key in &protected_keys {
+                if let Some(identity) = self.retained_function_identity(*key) {
+                    protected_functions.insert(identity);
+                } else {
+                    unidentified_protected_functions += 1;
+                }
+            }
+            let mut escaped_keys = BTreeSet::new();
+            let mut any_retained_escaped = false;
+            for value in candidate_callbacks.iter() {
+                if self
+                    .state
+                    .world
+                    .publication
+                    .global_escaped_callbacks
+                    .contains(value)
+                {
+                    any_retained_escaped = true;
+                    if let AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                    | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) = value
+                    {
+                        escaped_keys.insert(*key);
+                    }
+                }
+            }
+            let mut escaped_functions = BTreeSet::new();
+            let mut unidentified_escaped_functions = 0;
+            for key in escaped_keys {
+                if let Some(identity) = self.retained_function_identity(key) {
+                    escaped_functions.insert(identity);
+                } else {
+                    unidentified_escaped_functions += 1;
+                }
+            }
+
+            let mut receiver_cache = BTreeMap::new();
+            let mut mutation_intersections = Vec::new();
+            let mut writes_examined = 0;
+            let mut matching_writes = 0;
+            let mut omitted_intersections = 0;
+            let mut seen_writes = BTreeSet::new();
+            let mut has_mutation = false;
+            let mut observe_write = |kind: RetainedWriteKind,
+                                     write_owner: Option<usize>,
+                                     span: Span,
+                                     expression: &ValueExpr| {
+                writes_examined += 1;
+                let mut root = expression;
+                while let ValueExpr::Member(receiver, _, _, _) = root {
+                    root = receiver;
+                }
+                let binding = match root {
+                    ValueExpr::Binding(binding) => Some(binding),
+                    _ => None,
+                };
+                let receiver = binding.map(|binding| {
+                    receiver_cache.entry(binding.clone()).or_insert_with(|| {
+                        let origins = self.inputs.flow.values_of_binding(binding);
+                        let mut matched_functions = BTreeSet::new();
+                        let mut unidentified_matches = 0;
+                        let mut has_unknown_origin = false;
+                        let mut origin_count = 0;
+                        for origin in origins.iter() {
+                            origin_count += 1;
+                            has_unknown_origin |= origin == Value::Top;
+                            if let Value::Alloc(Kind::Function, key) = origin
+                                && protected_keys.contains(&key)
+                            {
+                                if let Some(identity) = self.retained_function_identity(key) {
+                                    matched_functions.insert(identity);
+                                } else {
+                                    unidentified_matches += 1;
+                                }
+                            }
+                        }
+                        RetainedReceiverDecision {
+                            binding_debug: format!("{binding:?}"),
+                            origin_count,
+                            has_unknown_origin,
+                            matched_functions: matched_functions.into_iter().collect(),
+                            unidentified_matches,
+                        }
+                    })
+                });
+                let intersects = receiver.as_ref().is_some_and(|receiver| {
+                    !receiver.matched_functions.is_empty() || receiver.unidentified_matches > 0
+                });
+                has_mutation |= intersects;
+                matching_writes += usize::from(intersects);
+                let selected = requested_write_starts.contains(&span.lo.0);
+                if !intersects && !selected {
+                    return;
+                }
+                let receiver_key = binding.map(|binding| format!("{binding:?}"));
+                if !seen_writes.insert((kind, write_owner, span.lo.0, span.hi.0, receiver_key)) {
+                    return;
+                }
+                if mutation_intersections.len() == MAX_INTERSECTIONS {
+                    omitted_intersections += 1;
+                    return;
+                }
+                mutation_intersections.push(RetainedMutationDecision {
+                    kind,
+                    owner: write_owner,
+                    span: [span.lo.0, span.hi.0],
+                    receiver: receiver.cloned(),
+                });
+            };
+
+            for write in &self.inputs.index.intrinsic_writes {
+                observe_write(
+                    RetainedWriteKind::Intrinsic,
+                    Some(write.owner.0),
+                    write.span,
+                    &write.receiver,
+                );
+            }
+            for write in self
+                .inputs
+                .index
+                .top_callback_result_writes
+                .iter()
+                .flatten()
+            {
+                observe_write(
+                    RetainedWriteKind::TopCallbackResult,
+                    None,
+                    write.site.source_span(),
+                    &write.receiver,
+                );
+            }
+            for callable in self.inputs.index.callables.values() {
+                for write in &callable.callback_result_writes {
+                    observe_write(
+                        RetainedWriteKind::CallableCallbackResult,
+                        Some(callable.owner.0),
+                        write.site.source_span(),
+                        &write.receiver,
+                    );
+                }
+            }
+
+            let omitted_protected_functions =
+                protected_functions.len().saturating_sub(MAX_FUNCTIONS);
+            let omitted_escaped_functions = escaped_functions.len().saturating_sub(MAX_FUNCTIONS);
+            let signature_omitted = RetainedDecisionOmitted {
+                arguments: omitted_arguments,
+                argument_values: omitted_argument_values,
+                protected_functions: omitted_protected_functions,
+                escaped_functions: omitted_escaped_functions,
+                mutation_intersections: omitted_intersections,
+                ..RetainedDecisionOmitted::default()
+            };
+            omitted.arguments += omitted_arguments;
+            omitted.argument_values += omitted_argument_values;
+            omitted.protected_functions += omitted_protected_functions;
+            omitted.escaped_functions += omitted_escaped_functions;
+            omitted.mutation_intersections += omitted_intersections;
+            let admitted =
+                namespace_admitted && arguments_admitted && !has_mutation && !any_retained_escaped;
+            signatures.push(RetainedSignatureDecision {
+                signature: signature_index,
+                admitted,
+                arguments_admitted,
+                arguments,
+                has_mutation,
+                any_retained_escaped,
+                protected_functions: protected_functions
+                    .into_iter()
+                    .take(MAX_FUNCTIONS)
+                    .collect(),
+                escaped_functions: escaped_functions.into_iter().take(MAX_FUNCTIONS).collect(),
+                unidentified_protected_functions,
+                unidentified_escaped_functions,
+                writes_examined,
+                matching_writes,
+                mutation_intersections,
+                omitted: signature_omitted,
+            });
+        }
+
+        omitted.signatures = contract.signatures.len().saturating_sub(MAX_SIGNATURES);
+        let omitted_counts_complete = omitted.signatures == 0;
+        let complete = omitted_counts_complete
+            && omitted.arguments == 0
+            && omitted.argument_values == 0
+            && omitted.protected_functions == 0
+            && omitted.escaped_functions == 0
+            && omitted.mutation_intersections == 0
+            && signatures.iter().all(|signature| {
+                signature.unidentified_protected_functions == 0
+                    && signature.unidentified_escaped_functions == 0
+                    && signature.omitted.mutation_intersections == 0
+            });
+        let span = site.source_span();
+        emit_retained_decision(RetainedDecision {
+            owner: owner.0,
+            span: [span.lo.0, span.hi.0],
+            actual_admitted,
+            namespace_admitted,
+            complete,
+            omitted_counts_complete,
+            omitted,
+            signatures,
+        });
+    }
+
+    fn retained_function_identity(&self, key: u32) -> Option<RetainedFunctionIdentity> {
+        let callable = self.inputs.index.callables.get(&key)?;
+        let span = self.inputs.index.callable_spans.get(&key)?;
+        Some(RetainedFunctionIdentity {
+            owner: callable.owner.0,
+            span: [span.lo.0, span.hi.0],
+        })
     }
 
     fn retained_constructor_callbacks(

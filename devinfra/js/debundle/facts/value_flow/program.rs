@@ -16,6 +16,66 @@ pub(crate) struct ProgramFlowModule<'a> {
     pub inferred_sets: &'a BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 }
 
+impl ProgramFlowModule<'_> {
+    /// Resolve diagnostic references in this parse, using stable source spans.
+    /// Syntax contexts are intentionally not accepted across analysis stages.
+    pub(crate) fn diagnostic_binding_references(
+        &self,
+        selections: &[(String, [u32; 2])],
+    ) -> Result<Vec<Id>, String> {
+        struct References<'a> {
+            selections: &'a [(String, [u32; 2])],
+            by_name: BTreeMap<&'a str, Vec<usize>>,
+            matches: Vec<BTreeSet<Id>>,
+        }
+        impl Visit for References<'_> {
+            fn visit_ident(&mut self, ident: &Ident) {
+                if let Some(indices) = self.by_name.get(ident.sym.as_ref()) {
+                    for index in indices {
+                        let [lo, hi] = self.selections[*index].1;
+                        if ident.span.lo.0 >= lo && ident.span.hi.0 <= hi {
+                            self.matches[*index].insert(ident.to_id());
+                        }
+                    }
+                }
+            }
+        }
+        let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        for (index, (name, [lo, hi])) in selections.iter().enumerate() {
+            if name.is_empty() || lo >= hi {
+                return Err(format!(
+                    "invalid diagnostic binding selector {name:?} at {lo}..{hi}"
+                ));
+            }
+            by_name.entry(name).or_default().push(index);
+        }
+        let mut references = References {
+            selections,
+            by_name,
+            matches: vec![BTreeSet::new(); selections.len()],
+        };
+        for item in self.body {
+            item.as_module_item().visit_with(&mut references);
+        }
+        references
+            .matches
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut ids)| {
+                if ids.len() != 1 {
+                    return Err(format!(
+                        "diagnostic reference {:?} in {} resolves to {} bindings",
+                        selections[index],
+                        self.module,
+                        ids.len()
+                    ));
+                }
+                Ok(ids.pop_first().expect("one diagnostic binding"))
+            })
+            .collect()
+    }
+}
+
 /// Transient completed source flow. Saved analysis persists the derived chunk
 /// facts instead; loading those facts never starts another flow solve.
 #[derive(Default)]
@@ -545,6 +605,7 @@ impl ChunkProgramFlow {
             },
             &mut |key| self.shared.values.get(&key).cloned(),
             &mut |_| {},
+            None,
         );
         self.project(&result.finish(), flow)
     }
@@ -718,7 +779,26 @@ pub(crate) fn program_value_flows<'a>(
 ) -> ProgramValueFlows {
     let mut programs = Vec::new();
     let mut names = Vec::new();
+    let journal_selection = origin_trace::Selection::from_env()
+        .unwrap_or_else(|error| panic!("invalid origin journal selection: {error}"));
+    let mut journal_binding_ids = BTreeMap::new();
     for module in modules {
+        if let Some(selection) = &journal_selection {
+            let selected: Vec<_> = selection
+                .bindings
+                .iter()
+                .filter(|binding| binding.module == module.module)
+                .map(|binding| (binding.name.clone(), binding.span))
+                .collect();
+            if !selected.is_empty() {
+                let ids = module
+                    .diagnostic_binding_references(&selected)
+                    .unwrap_or_else(|error| panic!("invalid origin journal reference: {error}"));
+                for ((name, span), id) in selected.into_iter().zip(ids) {
+                    journal_binding_ids.insert((module.module.to_owned(), name, span), id);
+                }
+            }
+        }
         let importer = names.len();
         let mut imports = FreshFactoryImports {
             importer,
@@ -892,6 +972,120 @@ pub(crate) fn program_value_flows<'a>(
         }
     }
     let origins = Arc::new(OriginTable::from_origins(origins));
+    let trace = match journal_selection {
+        Some(_selection) if names.len() < 2 => {
+            eprintln!(
+                "origin-journal skipped modules={} reason=single-module-shadow",
+                names.len()
+            );
+            None
+        }
+        Some(selection) => {
+            let mut selected_origins = BTreeMap::new();
+            for selector in &selection.functions {
+                let Some(module) = names.iter().position(|name| name == &selector.module) else {
+                    eprintln!(
+                        "origin-journal unresolved_function module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                };
+                let Some(site) = site_maps[module].get(&selector.offset).copied() else {
+                    eprintln!(
+                        "origin-journal unresolved_function_site module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                };
+                let value = Value::Alloc(Kind::Function, site);
+                if !origins.origins.contains(&value) {
+                    eprintln!(
+                        "origin-journal unresolved_function_origin module={:?} offset={}",
+                        selector.module, selector.offset
+                    );
+                    continue;
+                }
+                selected_origins.insert(
+                    origins.id(value),
+                    (selector.module.clone(), selector.offset),
+                );
+            }
+            let mut targets = Vec::new();
+            for selector in &selection.bindings {
+                let module = names
+                    .iter()
+                    .position(|name| name == &selector.module)
+                    .expect("origin journal module must exist");
+                let id = journal_binding_ids
+                    .get(&(
+                        selector.module.clone(),
+                        selector.name.clone(),
+                        selector.span,
+                    ))
+                    .expect("origin journal binding reference must resolve");
+                let local = programs[module]
+                    .symbols
+                    .bindings
+                    .iter()
+                    .position(|candidate| candidate == id)
+                    .expect("resolved diagnostic binding must have a flow symbol");
+                let slot = binding_maps[module][local].expect("prepared diagnostic binding slot");
+                eprintln!(
+                    "origin-journal resolved_binding module={} name={:?} span={:?} context={}",
+                    selector.module,
+                    selector.name,
+                    selector.span,
+                    id.1.as_u32()
+                );
+                targets.push(origin_trace::Target {
+                    module: selector.module.clone(),
+                    name: selector.name.clone(),
+                    context: id.1.as_u32(),
+                    key: FlowKey::Binding(slot),
+                });
+            }
+            if selected_origins.is_empty() || targets.is_empty() {
+                eprintln!(
+                    "origin-journal disabled resolved_origins={} resolved_targets={}",
+                    selected_origins.len(),
+                    targets.len()
+                );
+                None
+            } else {
+                let mut binding_labels = vec![String::new(); declared.len()];
+                for (module, program) in programs.iter().enumerate() {
+                    for (local, id) in program.symbols.bindings.iter().enumerate() {
+                        if let Some(slot) = binding_maps[module][local] {
+                            binding_labels[slot.0 as usize] =
+                                format!("{}|{}|{}", names[module], id.0, id.1.as_u32());
+                        }
+                    }
+                }
+                let key_labels = origin_trace::KeyLabels {
+                    bindings: binding_labels,
+                    sites: sites
+                        .sources
+                        .iter()
+                        .map(|(module, offset)| (names[*module].clone(), *offset))
+                        .collect(),
+                    properties: property_names.properties.clone(),
+                };
+                eprintln!(
+                    "origin-journal enabled resolved_origins={} resolved_targets={} modules={}",
+                    selected_origins.len(),
+                    targets.len(),
+                    names.len()
+                );
+                Some(Rc::new(origin_trace::OriginTrace::new(
+                    selected_origins,
+                    origins.clone(),
+                    targets,
+                    key_labels,
+                )))
+            }
+        }
+        None => None,
+    };
     let mut importer_allocations = vec![RoaringBitmap::new(); names.len()];
     for (index, value) in origins.origins.iter().enumerate() {
         if let Value::Alloc(_, site) = value {
@@ -917,6 +1111,7 @@ pub(crate) fn program_value_flows<'a>(
             },
             declared: declared.clone(),
             numeric_properties,
+            trace: trace.clone(),
         },
         origins.clone(),
         &candidates,
@@ -924,6 +1119,9 @@ pub(crate) fn program_value_flows<'a>(
         cell_effects,
         diagnostics,
     );
+    if let Some(trace) = &trace {
+        trace.report_global(&facts);
+    }
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]
     let mut ordered_value_oracle = BTreeMap::new();
@@ -1017,8 +1215,40 @@ pub(crate) fn program_value_flows<'a>(
         for (local, global) in program.symbols.bindings.iter().zip(&binding_maps[module]) {
             let global = global.expect("prepared source binding");
             if let Some(values) = shared.values.get(&FlowKey::Binding(global)) {
-                flow.bindings
-                    .insert(local.clone(), view.prepare_projection(values, &flow));
+                let projected = view.prepare_projection(values, &flow);
+                if let Some(trace) = &trace
+                    && let Some(target) = trace.target_for_key(FlowKey::Binding(global))
+                {
+                    let selected_offsets: BTreeSet<_> = trace
+                        .selected_sources_for_module(&target.module)
+                        .into_iter()
+                        .map(|(_, offset)| offset)
+                        .collect();
+                    // Current candidate roots are object/array/set allocations,
+                    // so this exact lookup should ordinarily be empty for a
+                    // selected Function origin. Record the actual slots without
+                    // tracing candidate-closure provenance through carriers.
+                    let local_candidate_offsets: Vec<_> = view
+                        .candidates
+                        .values()
+                        .filter_map(|local_candidate| {
+                            let Value::Alloc(Kind::Function, offset) =
+                                flow.candidate_objects.get(*local_candidate as usize)?
+                            else {
+                                return None;
+                            };
+                            selected_offsets.contains(offset).then_some(*offset)
+                        })
+                        .collect();
+                    trace.report_projection(origin_trace::ProjectionReport {
+                        target,
+                        global: values,
+                        projected: &projected,
+                        local_origins: &flow.origin_table,
+                        local_candidate_offsets: &local_candidate_offsets,
+                    });
+                }
+                flow.bindings.insert(local.clone(), projected);
             }
             if let Some(bits) = candidate_bindings.get(&global) {
                 let key = Arc::as_ptr(bits) as usize;
