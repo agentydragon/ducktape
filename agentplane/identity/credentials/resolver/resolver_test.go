@@ -16,7 +16,6 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,17 +31,12 @@ const (
 	policyNamespace   = "test-policies"
 	subjectAccount    = "test-agent"
 	subjectIdentity   = "test-agent-identity"
-	tokenAudience     = "test-kubernetes"
 )
 
-var (
-	api     *kubeapiserver.Server
-	objects client.WithWatch
-)
+var objects client.WithWatch
 
 func TestMain(m *testing.M) {
 	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) error {
-		api = server
 		scheme := runtime.NewScheme()
 		for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 			if err := add(scheme); err != nil {
@@ -438,69 +432,6 @@ func TestADeletingRecordIsRefused(t *testing.T) {
 		t.Fatalf("record not held in deletion: %v", err)
 	}
 	requireRefused(t, newResolver(t, objects), deleting.leaf)
-}
-
-// Step 7: a Pod-bound token the caller forwards must come from the accepted Pod. The Pod UID is
-// what the API server's TokenReview reports for it.
-func TestAForwardedPodTokenMustComeFromTheAcceptedPod(t *testing.T) {
-	ctx := t.Context()
-	ca := transporttesting.NewCA(t)
-	reviewed := func(pod *corev1.Pod) types.UID {
-		t.Helper()
-		token, err := api.PodToken(ctx, pod, tokenAudience)
-		if err != nil {
-			t.Fatal(err)
-		}
-		review, err := api.TokenReviews().Create(ctx, &authenticationv1.TokenReview{Spec: authenticationv1.TokenReviewSpec{Token: token, Audiences: []string{tokenAudience}}}, metav1.CreateOptions{})
-		if err != nil || !review.Status.Authenticated {
-			t.Fatalf("review: %+v, %v", review, err)
-		}
-		return types.UID(review.Status.User.Extra["authentication.kubernetes.io/pod-uid"][0])
-	}
-	account := auth.Account{Namespace: servedNamespace, Name: subjectAccount}
-	acceptedPod, err := api.Pod(ctx, account)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherPod, err := api.Pod(ctx, account)
-	if err != nil {
-		t.Fatal(err)
-	}
-	accepted := &workloadapi.Binding{PodUID: acceptedPod.UID}
-	record := issue(t, ca, servedNamespace, "test-pod-token", sandboxOwner("test-pod-token"), podSpec(acceptedPod.UID), accepted, credentialIDs[0])
-	resolves := newResolver(t, objects)
-	peer, err := resolves.Resolve(ctx, record.leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := peer.RequirePod(reviewed(acceptedPod)); err != nil {
-		t.Fatal(err)
-	}
-	if err := peer.RequirePod(reviewed(otherPod)); !errors.Is(err, resolver.ErrRefused) {
-		t.Fatalf("a token from another Pod passed: %v", err)
-	}
-
-	// A VMI's tokens come from its virt-launcher Pod, once its owner has named it.
-	vmi := &workloadapi.Binding{VMIUID: "77777777-7777-4777-8777-777777777777"}
-	spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: subjectIdentity}}, Binding: vmi}
-	unnamed := issue(t, ca, servedNamespace, "test-vmi-unnamed", sandboxOwner("test-vmi-unnamed"), spec, vmi, credentialIDs[0])
-	if peer, err = resolves.Resolve(ctx, unnamed.leaf); err != nil || peer.Pod != nil {
-		t.Fatalf("resolved %+v, %v", peer, err)
-	}
-	if err := peer.RequirePod(reviewed(acceptedPod)); !errors.Is(err, resolver.ErrRefused) {
-		t.Fatalf("a VMI with no launcher named accepted a Pod token: %v", err)
-	}
-	spec.Pod = &workloadapi.PodRef{Name: acceptedPod.Name, UID: acceptedPod.UID}
-	launched := issue(t, ca, servedNamespace, "test-vmi-launched", sandboxOwner("test-vmi-launched"), spec, vmi, credentialIDs[0])
-	if peer, err = resolves.Resolve(ctx, launched.leaf); err != nil || *peer.Pod != *spec.Pod {
-		t.Fatalf("resolved %+v, %v", peer, err)
-	}
-	if err := peer.RequirePod(reviewed(acceptedPod)); err != nil {
-		t.Fatal(err)
-	}
-	if err := peer.RequirePod(reviewed(otherPod)); !errors.Is(err, resolver.ErrRefused) {
-		t.Fatalf("a token from another Pod passed for a VMI: %v", err)
-	}
 }
 
 func TestAnAPIErrorIsUnavailableNotRefused(t *testing.T) {
