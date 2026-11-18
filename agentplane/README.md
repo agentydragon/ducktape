@@ -12,12 +12,9 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
-- [Sessions](session_dispatcher/README.md): the Session Dispatcher durable queue and automatic wake
-  for admitted Session delivery. The `sessions` Deployment runs alongside `runner-gateway`, sharing
-  the queue database and delivery leases. Each serving process runs the queue migration before
-  starting ([deployment](session_dispatcher/README.md#deployment)). The `sessions:8080`,
-  `runner-gateway:8080` and `session-dispatcher:8080` Services select both Deployments using the
-  shared Sessions routing label, retaining server SVID `spiffe://agentplane/session-dispatcher`.
+- [Sessions](session_dispatcher/README.md) durably admits and delivers Session commands, serves
+  activity watches, and applies automatic wake policy for delivery. See
+  [deployment and schema migrations](session_dispatcher/README.md#deployment).
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Environment Runtime](env/README.md) and [native drivers](native/README.md): manage the Sandbox
@@ -28,13 +25,10 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant.
-- [Sandbox Controller](environments/README.md): reconciles `Sandbox` Identity credentials,
-  retained state PVCs and Pods or a KubeVirt VM; serves EnvironmentService inventory, creation,
-  management and explicit resume on every replica.
-  The `environments:8082` and `sandbox-controller:8082` Services select both the `environments`
-  and retained `sandbox-controller` Deployments through a shared routing label. Both use Lease
-  `agentplane-sandbox-controller` and server SVID `spiffe://agentplane/sandbox-controller`;
-  one metrics scrape still uses the old Service.
+- The [Sandbox Controller](environments/README.md) reconciles `Sandbox` Identity credentials,
+  retained state PVCs, and Pods or KubeVirt VMs. It serves EnvironmentService for inventory,
+  creation, management, and explicit resume on every replica. See
+  [deployment and runtime settings](environments/README.md#running).
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](x/indexing/README.md): Git semantic search.
@@ -75,7 +69,8 @@ bundle add `//third_party/debian_slim:cacerts`. Environment Runtime uses the env
 
 ## System overview
 
-Service boundaries and traffic are independent of environment or replica layout. The [system overview](docs/system_overview.md#system-overview) shows deployed services, traffic, database ownership and focused per-path diagrams.
+The [system overview](docs/system_overview.md#system-overview) shows service boundaries, traffic,
+database ownership, and rollout routing, with focused diagrams for each path.
 
 ## Implemented contracts
 
