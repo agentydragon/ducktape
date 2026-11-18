@@ -15,7 +15,17 @@ fn assert_factory_cut(
     mutate_second: bool,
     shape: ProviderShape,
     accepts: bool,
+    nested: bool,
 ) {
+    let callback = |source: &str| {
+        if nested {
+            format!("api.forward({source})")
+        } else {
+            source.to_owned()
+        }
+    };
+    let first = callback("() => later");
+    let second = callback("() => 0");
     let write = if mutate_second {
         "second.label = 'second';\n"
     } else {
@@ -29,8 +39,8 @@ fn assert_factory_cut(
     let source = format!(
         "import {{ factory, api }} from './peer.js';\n\
          {local_factory}\
-         const inner = factory(() => later);\n\
-         const second = factory(() => 0);\n\
+         const inner = factory({first});\n\
+         const second = factory({second});\n\
          {write}\
          const wrapped = api.make(inner, () => other);\n\
          const later = 42;\nconst other = 7;\n\
@@ -47,7 +57,10 @@ fn assert_factory_cut(
            {identity_branch}\
            return wrappers.wrap(callback);\n\
          }}\n\
-         export const api = {{ make(callback, compare) {{ return {{ invoke: callback, compare }}; }} }};\n"
+         export const api = {{\n\
+           forward(callback) {{ {identity_branch} return wrappers.wrap(callback); }} ,\n\
+           make(callback, compare) {{ return {{ invoke: callback, compare }}; }}\n\
+         }};\n"
     );
     match shape {
         ProviderShape::Independent => {},
@@ -78,8 +91,8 @@ fn assert_factory_cut(
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
             .with_callback_factories(&["factory"])
             .with_retained_callback_factory_member("api", "make", 2, &[0, 1])
-            .with_callback_factory_members("api", &["make"])
-            .with_namespace_independent_members("api", &["make"])
+            .with_callback_factory_members("api", &["make", "forward"])
+            .with_namespace_independent_members("api", &["make", "forward"])
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
@@ -116,27 +129,42 @@ fn assert_factory_cut(
 
 #[test]
 fn independent_factory_wrapper_mutation_keeps_a_valid_cut() {
-    assert_factory_cut(false, true, ProviderShape::Independent, true);
+    assert_factory_cut(false, true, ProviderShape::Independent, true, false);
 }
 
 #[test]
 fn independent_factory_wrapper_without_mutation_keeps_a_valid_cut() {
-    assert_factory_cut(false, false, ProviderShape::Independent, true);
+    assert_factory_cut(false, false, ProviderShape::Independent, true, false);
 }
 
 #[test]
 fn independent_factory_wrapper_always_fresh_mutation_keeps_a_valid_cut() {
-    assert_factory_cut(true, true, ProviderShape::Independent, true);
+    assert_factory_cut(true, true, ProviderShape::Independent, true, false);
+}
+
+#[test]
+fn nested_factory_wrapper_mutation_keeps_a_valid_cut() {
+    assert_factory_cut(false, true, ProviderShape::Independent, true, true);
+}
+
+#[test]
+fn nested_factory_wrapper_without_mutation_keeps_a_valid_cut() {
+    assert_factory_cut(false, false, ProviderShape::Independent, true, true);
+}
+
+#[test]
+fn nested_factory_wrapper_always_fresh_mutation_keeps_a_valid_cut() {
+    assert_factory_cut(true, true, ProviderShape::Independent, true, true);
 }
 
 #[test]
 fn provider_static_dependency_backedge_declines_fresh_result_refinement() {
-    assert_factory_cut(false, true, ProviderShape::DependencyBackedge, false);
+    assert_factory_cut(false, true, ProviderShape::DependencyBackedge, false, false);
 }
 
 #[test]
 fn provider_reexport_backedge_declines_fresh_result_refinement() {
-    assert_factory_cut(false, true, ProviderShape::ReexportBackedge, false);
+    assert_factory_cut(false, true, ProviderShape::ReexportBackedge, false, false);
 }
 
 fn assert_unsafe_cut(source: &str, provider: &str, members: &[&'static str], setup: &[&str]) {
