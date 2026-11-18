@@ -742,12 +742,14 @@ pub(crate) fn program_value_flows<'a>(
                 imports.members.insert(named.local.to_id(), members.clone());
             }
         }
-        programs.push(FlowProgram::structural_with_factory_imports(
-            module.body,
-            module.native_operation_inputs,
-            module.inferred_sets,
-            Arc::new(imports),
-        ));
+        programs.push(origin_trace::with_source_module(module.module, || {
+            FlowProgram::structural_with_factory_imports(
+                module.body,
+                module.native_operation_inputs,
+                module.inferred_sets,
+                Arc::new(imports),
+            )
+        }));
         names.push(module.module.to_owned());
     }
     let mut sites = Sites::default();
@@ -763,6 +765,14 @@ pub(crate) fn program_value_flows<'a>(
     let mut arguments = Vec::new();
     let mut return_summaries = BTreeMap::new();
     let mut linkage = BTreeMap::new();
+    let diagnostic_bindings: BTreeSet<String> =
+        std::env::var("DUCKTAPE_DEBUNDLE_DIAGNOSTIC_BINDINGS")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect();
+    let mut diagnostic_slots = BTreeMap::new();
     for (module, program) in programs.iter_mut().enumerate() {
         let mut source_sites = BTreeMap::new();
         for origin in &program.origin_table.origins {
@@ -817,6 +827,12 @@ pub(crate) fn program_value_flows<'a>(
                 .map(|site| mapping.site(*site)),
         );
         for (local, slot) in &program.module_bindings {
+            if diagnostic_bindings.contains(local) {
+                diagnostic_slots.insert(
+                    mapping.binding(*slot),
+                    (names[module].clone(), local.clone()),
+                );
+            }
             linkage.insert(
                 (names[module].clone(), local.clone()),
                 mapping.binding(*slot),
@@ -824,6 +840,13 @@ pub(crate) fn program_value_flows<'a>(
         }
         for event in &mut program.events {
             mapping.event(event);
+            if let FlowEvent::AssignBinding { id, .. } | FlowEvent::Variable { id, .. } = event
+                && let Some((module, name)) = diagnostic_slots.get(id)
+            {
+                eprintln!(
+                    "origin-trace selected-binding-ir module={module} name={name} event={event:?}"
+                );
+            }
         }
         for argument in &mut program.symbols.call_arguments {
             mapping.expression(argument);
@@ -905,8 +928,59 @@ pub(crate) fn program_value_flows<'a>(
     let return_summaries = Arc::new(return_summaries);
     let default_property = property_names.property_slots.get("default").copied();
     let numeric_properties = std::mem::take(&mut property_names.numeric_properties);
+    let mut summary_functions = BTreeSet::new();
+    for (name, offset) in origin_trace::summary_selections() {
+        let Some(module) = names.iter().position(|module| module == name) else {
+            eprintln!("return-summary-debug map source={name}:{offset} missing_module=true");
+            continue;
+        };
+        let Some(site) = site_maps[module].get(offset) else {
+            eprintln!("return-summary-debug map source={name}:{offset} missing_site=true");
+            continue;
+        };
+        summary_functions.insert(*site);
+        eprintln!(
+            "return-summary-debug map source={name}:{offset} global={site} admitted={:?}",
+            return_summaries.get(site)
+        );
+    }
+    origin_trace::set_summary_functions(summary_functions);
+    let trace = std::env::var("DEBUNDLE_DEBUG_SOURCE_ORIGIN")
+        .ok()
+        .map(|selection| {
+            let (module_name, offset) = selection.rsplit_once(':').expect("source module:offset");
+            let offset: u32 = offset.parse().expect("source offset");
+            let module = names
+                .iter()
+                .position(|name| name == module_name)
+                .expect("source module");
+            let site = site_maps[module][&offset];
+            let value = Value::Alloc(Kind::Function, site);
+            eprintln!("origin-trace selected source={selection} global={value:?}");
+            for (module, program) in programs.iter().enumerate() {
+                for (id, slot) in program.symbols.bindings.iter().zip(&binding_maps[module]) {
+                    eprintln!(
+                        "origin-trace binding global={:?} source={}:{id:?}",
+                        slot.expect("binding"),
+                        names[module]
+                    );
+                }
+            }
+            for (site, (module, offset)) in sites.sources.iter().enumerate() {
+                eprintln!(
+                    "origin-trace site global={site} source={}:{offset}",
+                    names[*module]
+                );
+            }
+            for (slot, name) in property_names.properties.iter().enumerate() {
+                eprintln!("origin-trace property global={slot} name={name:?}");
+            }
+            origin_trace::OriginTrace::new(origins.id(value))
+        });
+    let tracing = trace.is_some();
     let (facts, _flow_work_stats) = solve_flow_observed(
         FlowConstraints {
+            trace,
             events,
             returns: ReturnInputs {
                 arguments,
@@ -923,6 +997,23 @@ pub(crate) fn program_value_flows<'a>(
         cell_effects,
         diagnostics,
     );
+    if tracing {
+        eprintln!("origin-trace solve-complete");
+        for (slot, (module, name)) in &diagnostic_slots {
+            if let Some(FlowFact::Values(values)) = facts.get(&FlowKey::Binding(*slot)) {
+                eprintln!(
+                    "origin-trace selected-binding-final module={module} name={name} selected={} known={} unknown={}",
+                    origin_trace::selected_matches(values),
+                    values.bitmap.len(),
+                    values.unknown,
+                );
+            } else {
+                eprintln!(
+                    "origin-trace selected-binding-final module={module} name={name} selected=false absent=true"
+                );
+            }
+        }
+    }
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]
     let mut ordered_value_oracle = BTreeMap::new();

@@ -817,6 +817,7 @@ rust_library(
         "facts/value_flow/candidate_reachability.rs",
         "facts/value_flow/initialization.rs",
         "facts/value_flow/numeric_loop_reads.rs",
+        "facts/value_flow/origin_trace.rs",
         "facts/value_flow/program.rs",
         "facts/value_flow/program_tests.rs",
         "facts/value_flow/read_only_callbacks.rs",
