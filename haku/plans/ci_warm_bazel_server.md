@@ -24,7 +24,8 @@ independently if the runner ever accepts work from a different author or trust d
   results, but does not keep the Bazel server's analysis graph in RAM. Size and place the cache
   for concurrent jobs, node movement and bounded storage.
 - **Persistent builder:** host a separate in-cluster builder and workspace with a warm Bazel server,
-  rather than tying it to a single-use runner Pod. Define job admission, workspace preparation,
+  rather than tying it to a single-use runner Pod. A `docker://` job container starts with a clean
+  process tree, so a Bazel server inside one dies with its job even on a long-lived runner. Define job admission, workspace preparation,
   concurrency, cleanup, resource limits, image updates, failure recovery and lifecycle ownership.
   A shared Bazel output base cannot serve concurrent invocations without serialization or separate
   output bases; measure the resulting queue cost.

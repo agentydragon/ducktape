@@ -156,7 +156,11 @@ From the workflow scenarios, derive the tool inventory:
 
 3. **Define output schemas**. Use discriminated unions for results:
    `{kind: "ok", ...} | {kind: "error", error: str}`. Always include
-   names alongside IDs. Keep responses compact.
+   names alongside IDs. Keep responses compact. claude.ai rejects an
+   `outputSchema` whose top level is not `type: object` (a top-level
+   `oneOf`/`anyOf`/`allOf` fails), and one bad tool drops the whole
+   `tools/list` (anthropics/claude-ai-mcp#400). Keep the top level an object
+   or omit `outputSchema`, which is optional.
 
 4. **Decide batch vs single**. Batch tools (accept `list[Item]`) are
    good for operations the agent often does N times. Each item succeeds
