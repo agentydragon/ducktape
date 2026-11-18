@@ -48,10 +48,6 @@ func (h *localExecutionHandle) loseBackendAfterFence() {
 	h.exited <- childExit{code: 0}
 }
 
-func (h *localExecutionHandle) exitWithoutFence(code int) {
-	h.exited <- childExit{code: code}
-}
-
 func newExecutionRuntime(t *testing.T, url string, acquire func(context.Context) (string, error)) *Runtime {
 	t.Helper()
 	return newLifecycleRuntime(t, executionRuntimeConfig(t, url, acquire))

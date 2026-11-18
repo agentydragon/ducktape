@@ -21,8 +21,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -443,21 +441,6 @@ func removeAdmissionState(t *testing.T, r *Runtime) func() {
 			t.Errorf("restore admission accounting for teardown: %v", err)
 		}
 	}
-}
-
-// The controller creates its output; COSI watches creation and retries version conflicts.
-func modifyLifecycleForTest[T lifecycle.Spec[T]](ctx context.Context, r *Runtime, id, owner string, modify func(*T)) error {
-	var zero T
-	ptr := lifecycle.ResourceFor(id, zero).Metadata()
-	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycle.Extension[T]]](ctx, r.lifecycleState, ptr,
-		state.WithEventTypes(state.Created, state.Updated)); err != nil {
-		return err
-	}
-	_, err := safe.StateUpdateWithConflicts(ctx, r.lifecycleState, ptr, func(value *typed.Resource[T, lifecycle.Extension[T]]) error {
-		modify(value.TypedSpec())
-		return nil
-	}, state.WithUpdateOwner(owner))
-	return err
 }
 
 func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {

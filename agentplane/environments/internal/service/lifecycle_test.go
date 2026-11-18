@@ -50,8 +50,6 @@ const (
 	notificationUID       = "notifications-uid"
 )
 
-var executionAccount = auth.Account{Namespace: testNamespace, Name: testSandbox}
-
 type testWakeBudget struct {
 	mu    sync.Mutex
 	delay time.Duration

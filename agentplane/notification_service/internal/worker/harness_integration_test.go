@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	testNamespace  = "test-namespace"
 	testSandbox    = "test-sandbox"
 	testSandboxUID = "test-sandbox-uid"
 	testSession    = "test-session"
@@ -154,7 +153,6 @@ func dispatched(state dispatcherpb.DeliveryState, reason *string) *dispatcherpb.
 type fakeProvider struct {
 	mu         sync.Mutex
 	handle     func(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error
-	calls      []inboxstore.DueSubscription
 	reconciled chan inboxstore.DueSubscription
 }
 
@@ -164,7 +162,6 @@ func newFakeProvider() *fakeProvider {
 
 func (p *fakeProvider) Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error {
 	p.mu.Lock()
-	p.calls = append(p.calls, due)
 	handle := p.handle
 	p.mu.Unlock()
 	select {
@@ -187,12 +184,6 @@ func (p *fakeProvider) returns(err error) {
 	p.on(func(context.Context, inboxstore.Claim, inboxstore.DueSubscription) error { return err })
 }
 
-func (p *fakeProvider) callCount() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.calls)
-}
-
 // harness is a Worker over real PostgreSQL, with fakes for what it calls out to.
 type harness struct {
 	db           *sql.DB
@@ -210,11 +201,6 @@ type harness struct {
 func newHarness(t *testing.T, settings Settings) *harness {
 	t.Helper()
 	return newHarnessWithDatabaseURL(t, database.URL, settings)
-}
-
-func newIsolatedHarness(t *testing.T, settings Settings) *harness {
-	t.Helper()
-	return newHarnessWithDatabaseURL(t, database.Clone(t), settings)
 }
 
 func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
