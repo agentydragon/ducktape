@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "source_sha": "faad706002fba8c4cb2a01c62400580e8bca049c",
-  "observed_at_utc": "2026-11-18T02:10:00Z",
+  "source_sha": "b787f656b0e6be2b7ee3285f726205ac7fbe6a64",
+  "observed_at_utc": "2026-11-18T03:39:30Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1470,
@@ -441,7 +441,7 @@
           "role": "Converts a retained ActionRequest into the MCP result its tool returns.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "One result shape shared by the Action Service and the central sampler's code-mode Actions.",
+          "reason": "One result shape shared by the Action Service and the Sampler's code-mode Actions.",
           "gate": "",
           "evidence_paths": [
             "agentplane/action_service/actionresult/results.go"
@@ -488,7 +488,7 @@
           "role": "Executable composition, settings, listeners, dependency wiring and service tests.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The binary-only package main: composition, not a reusable service library, under cmd like the app, central_sampler and session_dispatcher commands. Python settings, catalog and docs stay at the component root.",
+          "reason": "The binary-only package main: composition, not a reusable service library, under cmd like the app, sampler and session_dispatcher commands. Python settings, catalog and docs stay at the component root.",
           "gate": "Preserve settings, listeners and the actions binary name.",
           "evidence_paths": [
             "agentplane/action_service/cmd/config.go",
@@ -1540,1044 +1540,6 @@
           "counts": {
             "non_test": 1,
             "tests": 1
-          }
-        }
-      ],
-      "tree_annotations": {
-        "current": [],
-        "goal": []
-      }
-    },
-    {
-      "id": "central_sampler",
-      "path": "agentplane/central_sampler",
-      "counts": {
-        "files": 187,
-        "directories": 32
-      },
-      "directories": [
-        {
-          "path": "agentplane/central_sampler/cmd",
-          "production": 2,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/cmd/main.go",
-            "agentplane/central_sampler/cmd/main_test.go",
-            "agentplane/central_sampler/cmd/ownership.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/historyexport",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/historyexport/exporter.go",
-            "agentplane/central_sampler/historyexport/exporter_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/actions",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/actions/client.go",
-            "agentplane/central_sampler/internal/actions/client_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/codemode",
-          "production": 5,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/codemode/journal.go",
-            "agentplane/central_sampler/internal/codemode/manager.go",
-            "agentplane/central_sampler/internal/codemode/process.go",
-            "agentplane/central_sampler/internal/codemode/process_test.go",
-            "agentplane/central_sampler/internal/codemode/session.go",
-            "agentplane/central_sampler/internal/codemode/wire.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/content",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/content/content.go",
-            "agentplane/central_sampler/internal/content/content_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/environmentcontext",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/environmentcontext/context.go",
-            "agentplane/central_sampler/internal/environmentcontext/context_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/eventcodec",
-          "production": 1,
-          "tests": 0,
-          "files": [
-            "agentplane/central_sampler/internal/eventcodec/event_storage.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executionstate",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/executionstate/status.go",
-            "agentplane/central_sampler/internal/executionstate/status_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executor",
-          "production": 7,
-          "tests": 5,
-          "files": [
-            "agentplane/central_sampler/internal/executor/bindings.go",
-            "agentplane/central_sampler/internal/executor/executor.go",
-            "agentplane/central_sampler/internal/executor/executor_evidence_test.go",
-            "agentplane/central_sampler/internal/executor/executor_resume_test.go",
-            "agentplane/central_sampler/internal/executor/executor_test.go",
-            "agentplane/central_sampler/internal/executor/failure.go",
-            "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/executor/processes.go",
-            "agentplane/central_sampler/internal/executor/transport_adapter.go",
-            "agentplane/central_sampler/internal/executor/unified_exec.go",
-            "agentplane/central_sampler/internal/executor/unified_exec_test.go",
-            "agentplane/central_sampler/internal/executor/view_image.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executor/transport",
-          "production": 6,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/executor/transport/api.go",
-            "agentplane/central_sampler/internal/executor/transport/failure_evidence.go",
-            "agentplane/central_sampler/internal/executor/transport/incarnation_fence.go",
-            "agentplane/central_sampler/internal/executor/transport/operations.go",
-            "agentplane/central_sampler/internal/executor/transport/session.go",
-            "agentplane/central_sampler/internal/executor/transport/transport.go",
-            "agentplane/central_sampler/internal/executor/transport/transport_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/jsonwire",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/jsonwire/json.go",
-            "agentplane/central_sampler/internal/jsonwire/json_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/outputbuffer",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/outputbuffer/buffer.go",
-            "agentplane/central_sampler/internal/outputbuffer/buffer_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/ownershiprewrite",
-          "production": 1,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/internal/ownershiprewrite/rewrite.go",
-            "agentplane/central_sampler/internal/ownershiprewrite/rewrite_integration_test.go",
-            "agentplane/central_sampler/internal/ownershiprewrite/rewrite_testmain_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/promptimage",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/promptimage/image_preparation.go",
-            "agentplane/central_sampler/internal/promptimage/image_preparation_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/providerio",
-          "production": 2,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/providerio/errors.go",
-            "agentplane/central_sampler/internal/providerio/providerio_test.go",
-            "agentplane/central_sampler/internal/providerio/timeouts.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/providerrequest",
-          "production": 2,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/internal/providerrequest/content.go",
-            "agentplane/central_sampler/internal/providerrequest/content_test.go",
-            "agentplane/central_sampler/internal/providerrequest/preparation.go",
-            "agentplane/central_sampler/internal/providerrequest/preparation_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime",
-          "production": 3,
-          "tests": 5,
-          "files": [
-            "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/residentruntime/provider_compaction_recovery_test.go",
-            "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime_test.go",
-            "agentplane/central_sampler/internal/residentruntime/provider_turn_progress_test.go",
-            "agentplane/central_sampler/internal/residentruntime/runtime.go",
-            "agentplane/central_sampler/internal/residentruntime/runtime_lifecycle_test.go",
-            "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
-            "agentplane/central_sampler/internal/residentruntime/runtime_slot.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime/session",
-          "production": 12,
-          "tests": 10,
-          "files": [
-            "agentplane/central_sampler/internal/residentruntime/session/anthropic_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_actions.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_actions_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_host.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/compaction.go",
-            "agentplane/central_sampler/internal/residentruntime/session/driver.go",
-            "agentplane/central_sampler/internal/residentruntime/session/host.go",
-            "agentplane/central_sampler/internal/residentruntime/session/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/interrupt.go",
-            "agentplane/central_sampler/internal/residentruntime/session/notification_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/protocol_adapter.go",
-            "agentplane/central_sampler/internal/residentruntime/session/provider_authorization_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/provider_compaction_control_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/provider_finish_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/provider_recovery.go",
-            "agentplane/central_sampler/internal/residentruntime/session/settings_fixture_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/setup.go",
-            "agentplane/central_sampler/internal/residentruntime/session/slot_fixture_test.go",
-            "agentplane/central_sampler/internal/residentruntime/session/tool_invocation.go",
-            "agentplane/central_sampler/internal/residentruntime/session/turn.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime/testing",
-          "production": 2,
-          "tests": 0,
-          "files": [
-            "agentplane/central_sampler/internal/residentruntime/testing/codemode_peer.go",
-            "agentplane/central_sampler/internal/residentruntime/testing/session_store.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/rpc",
-          "production": 4,
-          "tests": 4,
-          "files": [
-            "agentplane/central_sampler/internal/rpc/admin_service.go",
-            "agentplane/central_sampler/internal/rpc/harness_host.go",
-            "agentplane/central_sampler/internal/rpc/harness_host_test.go",
-            "agentplane/central_sampler/internal/rpc/provider_request_read.go",
-            "agentplane/central_sampler/internal/rpc/request_read_service_test.go",
-            "agentplane/central_sampler/internal/rpc/service.go",
-            "agentplane/central_sampler/internal/rpc/service_test.go",
-            "agentplane/central_sampler/internal/rpc/test_helpers_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/sessionstore",
-          "production": 28,
-          "tests": 12,
-          "files": [
-            "agentplane/central_sampler/internal/sessionstore/admission.go",
-            "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
-            "agentplane/central_sampler/internal/sessionstore/commands.go",
-            "agentplane/central_sampler/internal/sessionstore/content_request.go",
-            "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
-            "agentplane/central_sampler/internal/sessionstore/contentdb.go",
-            "agentplane/central_sampler/internal/sessionstore/conversations.go",
-            "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
-            "agentplane/central_sampler/internal/sessionstore/evidence.go",
-            "agentplane/central_sampler/internal/sessionstore/execution.go",
-            "agentplane/central_sampler/internal/sessionstore/execution_context.go",
-            "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go",
-            "agentplane/central_sampler/internal/sessionstore/exporter_test.go",
-            "agentplane/central_sampler/internal/sessionstore/host_status.go",
-            "agentplane/central_sampler/internal/sessionstore/host_status_test.go",
-            "agentplane/central_sampler/internal/sessionstore/integration_test.go",
-            "agentplane/central_sampler/internal/sessionstore/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/sessionstore/intents.go",
-            "agentplane/central_sampler/internal/sessionstore/leases.go",
-            "agentplane/central_sampler/internal/sessionstore/lifecycle_integration_test.go",
-            "agentplane/central_sampler/internal/sessionstore/native_context.go",
-            "agentplane/central_sampler/internal/sessionstore/native_context_test.go",
-            "agentplane/central_sampler/internal/sessionstore/native_store.go",
-            "agentplane/central_sampler/internal/sessionstore/notification.go",
-            "agentplane/central_sampler/internal/sessionstore/processes.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_attempt.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_attempt_test.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_command.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_evidence.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_recovery.go",
-            "agentplane/central_sampler/internal/sessionstore/provider_request.go",
-            "agentplane/central_sampler/internal/sessionstore/recovery.go",
-            "agentplane/central_sampler/internal/sessionstore/request_plan.go",
-            "agentplane/central_sampler/internal/sessionstore/request_plan_test.go",
-            "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
-            "agentplane/central_sampler/internal/sessionstore/sessions.go",
-            "agentplane/central_sampler/internal/sessionstore/status.go",
-            "agentplane/central_sampler/internal/sessionstore/status_test.go",
-            "agentplane/central_sampler/internal/sessionstore/store.go",
-            "agentplane/central_sampler/internal/sessionstore/types.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-          "production": 1,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/integration_test.go",
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/store.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/settings",
-          "production": 3,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/internal/settings/model.go",
-            "agentplane/central_sampler/internal/settings/settings.go",
-            "agentplane/central_sampler/internal/settings/settings_fixture_test.go",
-            "agentplane/central_sampler/internal/settings/settings_test.go",
-            "agentplane/central_sampler/internal/settings/validation.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/testsupport",
-          "production": 2,
-          "tests": 0,
-          "files": [
-            "agentplane/central_sampler/internal/testsupport/anthropic.go",
-            "agentplane/central_sampler/internal/testsupport/central_sampler.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/toolcontract",
-          "production": 5,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/internal/toolcontract/action_definition.go",
-            "agentplane/central_sampler/internal/toolcontract/description.go",
-            "agentplane/central_sampler/internal/toolcontract/description_test.go",
-            "agentplane/central_sampler/internal/toolcontract/rejection.go",
-            "agentplane/central_sampler/internal/toolcontract/sampler_tools.go",
-            "agentplane/central_sampler/internal/toolcontract/tool_protocol.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/internal/tooloutput",
-          "production": 3,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/internal/tooloutput/output.go",
-            "agentplane/central_sampler/internal/tooloutput/output_test.go",
-            "agentplane/central_sampler/internal/tooloutput/protocol.go",
-            "agentplane/central_sampler/internal/tooloutput/protocol_test.go",
-            "agentplane/central_sampler/internal/tooloutput/truncation.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/migrations",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/central_sampler/migrations/migrations.go"]
-        },
-        {
-          "path": "agentplane/central_sampler/protocol",
-          "production": 9,
-          "tests": 1,
-          "files": [
-            "agentplane/central_sampler/protocol/content.go",
-            "agentplane/central_sampler/protocol/context.go",
-            "agentplane/central_sampler/protocol/errors.go",
-            "agentplane/central_sampler/protocol/errors_test.go",
-            "agentplane/central_sampler/protocol/evidence.go",
-            "agentplane/central_sampler/protocol/instructions.go",
-            "agentplane/central_sampler/protocol/provider_hooks.go",
-            "agentplane/central_sampler/protocol/tool_definitions.go",
-            "agentplane/central_sampler/protocol/tool_invocation.go",
-            "agentplane/central_sampler/protocol/tool_surface.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/providers/anthropic",
-          "production": 7,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/providers/anthropic/anthropic.go",
-            "agentplane/central_sampler/providers/anthropic/anthropic_test.go",
-            "agentplane/central_sampler/providers/anthropic/compaction.go",
-            "agentplane/central_sampler/providers/anthropic/config.go",
-            "agentplane/central_sampler/providers/anthropic/context.go",
-            "agentplane/central_sampler/providers/anthropic/observations.go",
-            "agentplane/central_sampler/providers/anthropic/stored.go",
-            "agentplane/central_sampler/providers/anthropic/stored_test.go",
-            "agentplane/central_sampler/providers/anthropic/wire.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/providers/responses",
-          "production": 7,
-          "tests": 2,
-          "files": [
-            "agentplane/central_sampler/providers/responses/compaction.go",
-            "agentplane/central_sampler/providers/responses/config.go",
-            "agentplane/central_sampler/providers/responses/context.go",
-            "agentplane/central_sampler/providers/responses/observations.go",
-            "agentplane/central_sampler/providers/responses/provider.go",
-            "agentplane/central_sampler/providers/responses/responses.go",
-            "agentplane/central_sampler/providers/responses/responses_test.go",
-            "agentplane/central_sampler/providers/responses/stored.go",
-            "agentplane/central_sampler/providers/responses/stored_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/testing/exportfixture",
-          "production": 1,
-          "tests": 0,
-          "files": [
-            "agentplane/central_sampler/testing/exportfixture/source.go"
-          ]
-        },
-        {
-          "path": "agentplane/central_sampler/testing/wirefixture",
-          "production": 1,
-          "tests": 0,
-          "files": [
-            "agentplane/central_sampler/testing/wirefixture/wirefixture.go"
-          ]
-        }
-      ],
-      "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
-      "pending_tracks": [
-        "history-journals",
-        "settings-single-source",
-        "protobuf-alignment"
-      ],
-      "goal_note": "One shared JavaScript child and logical-session wire multiplexing; Model tool binding to an incarnation-fenced remote Executor; Replica scheduler and leased per-session execution; Transaction authority for durable sampler Sessions, intents and evidence; Provider-neutral context, tool and evidence contracts",
-      "decision": {
-        "state": "REWORK",
-        "role": "Sampling, durable state, Runner effects and resident scheduling",
-        "goal_summary": "One shared JavaScript child and logical-session wire multiplexing; Model tool binding to an incarnation-fenced remote Executor; Replica scheduler and leased per-session execution; Transaction authority for durable sampler Sessions, intents and evidence; Provider-neutral context, tool and evidence contracts",
-        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
-        "evidence_paths": [
-          "agentplane/central_sampler/internal/codemode/journal.go",
-          "agentplane/central_sampler/internal/executor/executor.go",
-          "agentplane/central_sampler/internal/residentruntime/session/codemode.go",
-          "agentplane/central_sampler/internal/sessionstore/admission.go",
-          "agentplane/central_sampler/protocol/content.go"
-        ],
-        "reviewed_package_paths": [
-          "agentplane/central_sampler/cmd",
-          "agentplane/central_sampler/historyexport",
-          "agentplane/central_sampler/internal/actions",
-          "agentplane/central_sampler/internal/codemode",
-          "agentplane/central_sampler/internal/content",
-          "agentplane/central_sampler/internal/environmentcontext",
-          "agentplane/central_sampler/internal/eventcodec",
-          "agentplane/central_sampler/internal/executionstate",
-          "agentplane/central_sampler/internal/executor",
-          "agentplane/central_sampler/internal/executor/transport",
-          "agentplane/central_sampler/internal/jsonwire",
-          "agentplane/central_sampler/internal/outputbuffer",
-          "agentplane/central_sampler/internal/ownershiprewrite",
-          "agentplane/central_sampler/internal/promptimage",
-          "agentplane/central_sampler/internal/providerio",
-          "agentplane/central_sampler/internal/providerrequest",
-          "agentplane/central_sampler/internal/residentruntime",
-          "agentplane/central_sampler/internal/residentruntime/session",
-          "agentplane/central_sampler/internal/residentruntime/testing",
-          "agentplane/central_sampler/internal/rpc",
-          "agentplane/central_sampler/internal/sessionstore",
-          "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-          "agentplane/central_sampler/internal/settings",
-          "agentplane/central_sampler/internal/testsupport",
-          "agentplane/central_sampler/internal/toolcontract",
-          "agentplane/central_sampler/internal/tooloutput",
-          "agentplane/central_sampler/migrations",
-          "agentplane/central_sampler/protocol",
-          "agentplane/central_sampler/providers/anthropic",
-          "agentplane/central_sampler/providers/responses",
-          "agentplane/central_sampler/testing/exportfixture",
-          "agentplane/central_sampler/testing/wirefixture"
-        ]
-      },
-      "package_decisions": [
-        {
-          "path": "agentplane/central_sampler/cmd",
-          "role": "Process composition, credentials, startup/migration and shutdown",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Keep a thin executable composition point; lifecycle coordination remains in the concrete runtime owners.",
-          "gate": "",
-          "evidence_paths": ["agentplane/central_sampler/cmd/main.go"],
-          "declared_packages": ["main"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/historyexport",
-          "role": "Durable sampler outbox to History ingress",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The public outbox contract supports real cross-service History acceptance without exposing Store internals.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/historyexport/exporter.go"
-          ],
-          "declared_packages": ["historyexport"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/actions",
-          "role": "The central sampler's delegated Action Service client for code-mode Actions, acting as the retained Session Identity.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Code-mode Actions act as the retained Session Identity, so the client stays private to the sampler.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/actions/client.go"
-          ],
-          "declared_packages": ["actions"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/codemode",
-          "role": "One shared JavaScript child and logical-session wire multiplexing",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "One owner: `Manager` routes replies and handles child death with private access to each `Session`'s journal and delegates, and the handshake sets the `Process`'s capabilities. At 1,495 lines in five files a split adds an import boundary without removing shared state. `CODE_MODE_HOST_DESIGN` (keep Codex's pinned JavaScript host or own a V8 host) decides this package's future.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/codemode/journal.go"
-          ],
-          "declared_packages": ["codemode"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 5,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/content",
-          "role": "Canonical content identity, encoding and typed reader/writer contract",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "A shared value/codec leaf is distinct from SQL persistence and provider-native request assembly.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/content/content.go"
-          ],
-          "declared_packages": ["content"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/environmentcontext",
-          "role": "Renders the model-visible environment context and its updates.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Rendering stays apart from the Store, which keeps the persisted baseline and clock.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/environmentcontext/context.go"
-          ],
-          "declared_packages": ["environmentcontext"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/eventcodec",
-          "role": "Sampler evidence to canonical History events",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Event interpretation has one owner shared by durable state and export; preserve wire and causal semantics.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/eventcodec/event_storage.go"
-          ],
-          "declared_packages": ["eventcodec"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executionstate",
-          "role": "Process and cell lifecycle vocabulary (`ProcessStatus`, `CellStatus`) and its validated parsing.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Store-private SQL adapters keep scan/value validation, and stored spellings stay distinct.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/executionstate/status.go"
-          ],
-          "declared_packages": ["executionstate"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executor",
-          "role": "Model tool facade over the remote Executor: tool mapping, workspace preparation, process and cursor settlement, and retirement.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The model-facing facade. Connection lifetime, handshake and reconnect, incarnation fencing, dispatch classification and wire evidence are in `executor/transport`; `transport_adapter.go` connects it to the Store's fenced journal operations.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/executor/executor.go"
-          ],
-          "declared_packages": ["executor"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 7,
-            "tests": 5
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/executor/transport",
-          "role": "Remote Executor transport: connection and execution-session lifetime, handshake and reconnect, incarnation fencing, dispatch classification and raw wire evidence.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "It has no Store dependency; the facade's journal adapter calls the Store's fenced operations.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/executor/transport/api.go",
-            "agentplane/central_sampler/internal/executor/transport/failure_evidence.go",
-            "agentplane/central_sampler/internal/executor/transport/incarnation_fence.go",
-            "agentplane/central_sampler/internal/executor/transport/operations.go",
-            "agentplane/central_sampler/internal/executor/transport/session.go",
-            "agentplane/central_sampler/internal/executor/transport/transport.go"
-          ],
-          "declared_packages": ["transport"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 6,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/jsonwire",
-          "role": "Strict JSON boundary decoding for sampler wire input: number fidelity, object-only values, trailing-input rejection.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The one strict decoder, private to the sampler rather than part of the public `protocol` package.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/jsonwire/json.go"
-          ],
-          "declared_packages": ["jsonwire"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/outputbuffer",
-          "role": "Bounded retained process output and omission accounting",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Its persisted representation and loss accounting form a cohesive leaf independent of scheduling.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/outputbuffer/buffer.go"
-          ],
-          "declared_packages": ["outputbuffer"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/ownershiprewrite",
-          "role": "Manifest-scoped Session owner cutover (`central-sampler ownership inventory|forward|reverse`), run as one-off Jobs from the sampler image.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Run as one-off Jobs from the sampler image (`central-sampler ownership`), so it stays private to the sampler.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/ownershiprewrite/rewrite.go"
-          ],
-          "declared_packages": ["ownershiprewrite"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/promptimage",
-          "role": "Bounded model-image preparation",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Image interpretation, resizing and budget behavior belong together and have focused tests.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/promptimage/image_preparation.go"
-          ],
-          "declared_packages": ["promptimage"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/providerio",
-          "role": "Provider I/O policy: response-header and semantic-idle budgets, retry-after parsing and phase cancellation errors",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Concrete provider I/O behavior the resident runtime composes; the protocol package keeps only the contracts the native adapters implement.",
-          "gate": "No move planned; preserve timeout classification and retry budgets.",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/providerio/errors.go",
-            "agentplane/central_sampler/internal/providerio/timeouts.go"
-          ],
-          "declared_packages": ["providerio"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/providerrequest",
-          "role": "Native provider request assembly: frozen authored prefixes, provider profiles and compaction recipes.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Store calls `Prepare` only inside its transaction; the builder has no commit or dispatch API, and no mutable Conversation, SQL transaction or Store callback crosses it.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/providerrequest/content.go",
-            "agentplane/central_sampler/internal/providerrequest/preparation.go"
-          ],
-          "declared_packages": ["providerrequest"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime",
-          "role": "Replica scheduler and leased per-session execution",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Replica scheduling: launch, recovery scan, capacity accounting, drain and the driver joins before shutdown ends. Each Session holds a slot carrying its scheduler contract; per-Session execution is in `session`, which does not import the scheduler.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/residentruntime/session/codemode.go"
-          ],
-          "declared_packages": ["residentruntime"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 3,
-            "tests": 5
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime/session",
-          "role": "One resident Session's execution: driver, turns, interrupts, compaction, setup, host attachment, provider recovery, provider adapters and Code Mode bindings, reaching the scheduler only through its slot.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "It reaches the scheduler only through its slot, so it does not import `residentruntime`.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/residentruntime/session/codemode.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_actions.go",
-            "agentplane/central_sampler/internal/residentruntime/session/codemode_host.go",
-            "agentplane/central_sampler/internal/residentruntime/session/compaction.go",
-            "agentplane/central_sampler/internal/residentruntime/session/driver.go",
-            "agentplane/central_sampler/internal/residentruntime/session/host.go",
-            "agentplane/central_sampler/internal/residentruntime/session/interrupt.go",
-            "agentplane/central_sampler/internal/residentruntime/session/protocol_adapter.go",
-            "agentplane/central_sampler/internal/residentruntime/session/provider_recovery.go",
-            "agentplane/central_sampler/internal/residentruntime/session/setup.go",
-            "agentplane/central_sampler/internal/residentruntime/session/tool_invocation.go",
-            "agentplane/central_sampler/internal/residentruntime/session/turn.go"
-          ],
-          "declared_packages": ["session"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 12,
-            "tests": 10
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/residentruntime/testing",
-          "role": "Shared test support for the scheduler and Session suites: the fake Code Mode wire and process peer and the store setup.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Both test packages share one fake instead of copying it.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/residentruntime/testing/codemode_peer.go",
-            "agentplane/central_sampler/internal/residentruntime/testing/session_store.go"
-          ],
-          "declared_packages": ["testing"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/rpc",
-          "role": "`SamplerAdmin` and HarnessHost RPC admission, authentication, streaming and error mapping",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Generated API handling is a boundary adapter; it delegates state and scheduling to existing owners.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/rpc/provider_request_read.go"
-          ],
-          "declared_packages": ["rpc"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 4,
-            "tests": 4
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/sessionstore",
-          "role": "Transaction authority for durable sampler Sessions, intents and evidence",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Conversation checkpoints, native decoding, execution snapshots, request projection and previous-request reads. Transaction-scoped content and context-chain persistence is in `internal/contentdb`, and the provider reference switch in `providerrequest`.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/sessionstore/admission.go"
-          ],
-          "declared_packages": ["sessionstore"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 28,
-            "tests": 12
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-          "role": "Transaction-scoped content-addressed content and immutable context-chain persistence over `sampler_content` and `sampler_context`; implements `providerrequest.Content` and imports no provider package.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Private to the Store's transactions. Whether the sampler keeps these tables at all is the Journal service direction (history-journals).",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/store.go"
-          ],
-          "declared_packages": ["contentdb"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/settings",
-          "role": "Deployment settings and model/provider contract validation",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Keep settings parsing separate from effectful provider I/O. Future request builders receive explicit validated inputs, not the entire settings aggregate.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/settings/model.go"
-          ],
-          "declared_packages": ["settings"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 3,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/testsupport",
-          "role": "Helpers shared by central sampler tests.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Shares test helpers across central sampler packages.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/testsupport/central_sampler.go"
-          ],
-          "declared_packages": ["testsupport"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 2,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/toolcontract",
-          "role": "Model-visible Code Mode schemas, descriptions and strict input decoding",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Schema and argument interpretation define the tool contract; provider transport and executor effects remain outside.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/toolcontract/description.go"
-          ],
-          "declared_packages": ["toolcontract"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 5,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/internal/tooloutput",
-          "role": "Typed Code Mode result rendering and truncation",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Formatting and loss accounting are cohesive and shared by immediate, yielded and notification output.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/internal/tooloutput/output.go"
-          ],
-          "declared_packages": ["tooloutput"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 3,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/migrations",
-          "role": "Embedded sampler schema history",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The serving binary owns startup migrations; History test consumers deliberately use the public migration fixture boundary.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/migrations/migrations.go"
-          ],
-          "declared_packages": ["migrations"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/protocol",
-          "role": "Provider-neutral context, tool and evidence contracts",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Provider-neutral contracts only; the process and cell status vocabulary is in `internal/executionstate` and the JSON helpers in `internal/jsonwire`.",
-          "gate": "",
-          "evidence_paths": ["agentplane/central_sampler/protocol/content.go"],
-          "declared_packages": ["protocol"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 9,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/providers/anthropic",
-          "role": "Native Anthropic wire/context/content codec",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Preserve native signed continuation and provider-specific compaction; the adapter remains usable by History projection fixtures.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/providers/anthropic/anthropic.go"
-          ],
-          "declared_packages": ["anthropic"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 7,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/providers/responses",
-          "role": "Native Responses wire/context/content codec",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Keep Responses dialect/tool encoding and native context together; do not force a lowest-common-denominator history model.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/providers/responses/compaction.go"
-          ],
-          "declared_packages": ["responses"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 7,
-            "tests": 2
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/testing/exportfixture",
-          "role": "Sampler-owned source fixture for History export/projection acceptance",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Cross-service tests use a deliberate test-only public boundary instead of importing internal durable state.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/testing/exportfixture/source.go"
-          ],
-          "declared_packages": ["exportfixture"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/central_sampler/testing/wirefixture",
-          "role": "Test support: encodes provider wire payloads for tests.",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The sampler's provider, prompt-image, store and Session tests share one wire encoder instead of copies.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/central_sampler/testing/wirefixture/wirefixture.go"
-          ],
-          "declared_packages": ["wirefixture"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
           }
         }
       ],
@@ -5606,11 +4568,11 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "The HarnessHost API shared by Environment Runtimes and the central sampler",
+      "goal_note": "The HarnessHost API shared by Environment Runtimes and the Sampler",
       "decision": {
         "state": "RETAIN",
         "role": "HarnessHost proto and its Session status wire handshake",
-        "goal_summary": "The HarnessHost API shared by Environment Runtimes and the central sampler",
+        "goal_summary": "The HarnessHost API shared by Environment Runtimes and the Sampler",
         "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
         "evidence_paths": [
           "agentplane/harness_host/BUILD.bazel",
@@ -8734,6 +7696,1020 @@
       }
     },
     {
+      "id": "sampler",
+      "path": "agentplane/sampler",
+      "counts": {
+        "files": 187,
+        "directories": 32
+      },
+      "directories": [
+        {
+          "path": "agentplane/sampler/cmd",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/cmd/main.go",
+            "agentplane/sampler/cmd/main_test.go",
+            "agentplane/sampler/cmd/ownership.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/historyexport",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/historyexport/exporter.go",
+            "agentplane/sampler/historyexport/exporter_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/actions",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/actions/client.go",
+            "agentplane/sampler/internal/actions/client_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/codemode",
+          "production": 5,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/codemode/journal.go",
+            "agentplane/sampler/internal/codemode/manager.go",
+            "agentplane/sampler/internal/codemode/process.go",
+            "agentplane/sampler/internal/codemode/process_test.go",
+            "agentplane/sampler/internal/codemode/session.go",
+            "agentplane/sampler/internal/codemode/wire.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/content",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/content/content.go",
+            "agentplane/sampler/internal/content/content_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/environmentcontext",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/environmentcontext/context.go",
+            "agentplane/sampler/internal/environmentcontext/context_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/eventcodec",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/sampler/internal/eventcodec/event_storage.go"]
+        },
+        {
+          "path": "agentplane/sampler/internal/executionstate",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/executionstate/status.go",
+            "agentplane/sampler/internal/executionstate/status_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/executor",
+          "production": 7,
+          "tests": 5,
+          "files": [
+            "agentplane/sampler/internal/executor/bindings.go",
+            "agentplane/sampler/internal/executor/executor.go",
+            "agentplane/sampler/internal/executor/executor_evidence_test.go",
+            "agentplane/sampler/internal/executor/executor_resume_test.go",
+            "agentplane/sampler/internal/executor/executor_test.go",
+            "agentplane/sampler/internal/executor/failure.go",
+            "agentplane/sampler/internal/executor/integration_testmain_test.go",
+            "agentplane/sampler/internal/executor/processes.go",
+            "agentplane/sampler/internal/executor/transport_adapter.go",
+            "agentplane/sampler/internal/executor/unified_exec.go",
+            "agentplane/sampler/internal/executor/unified_exec_test.go",
+            "agentplane/sampler/internal/executor/view_image.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/executor/transport",
+          "production": 6,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/executor/transport/api.go",
+            "agentplane/sampler/internal/executor/transport/failure_evidence.go",
+            "agentplane/sampler/internal/executor/transport/incarnation_fence.go",
+            "agentplane/sampler/internal/executor/transport/operations.go",
+            "agentplane/sampler/internal/executor/transport/session.go",
+            "agentplane/sampler/internal/executor/transport/transport.go",
+            "agentplane/sampler/internal/executor/transport/transport_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/jsonwire",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/jsonwire/json.go",
+            "agentplane/sampler/internal/jsonwire/json_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/outputbuffer",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/outputbuffer/buffer.go",
+            "agentplane/sampler/internal/outputbuffer/buffer_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/ownershiprewrite",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/internal/ownershiprewrite/rewrite.go",
+            "agentplane/sampler/internal/ownershiprewrite/rewrite_integration_test.go",
+            "agentplane/sampler/internal/ownershiprewrite/rewrite_testmain_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/promptimage",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/promptimage/image_preparation.go",
+            "agentplane/sampler/internal/promptimage/image_preparation_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/providerio",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/providerio/errors.go",
+            "agentplane/sampler/internal/providerio/providerio_test.go",
+            "agentplane/sampler/internal/providerio/timeouts.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/providerrequest",
+          "production": 2,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/internal/providerrequest/content.go",
+            "agentplane/sampler/internal/providerrequest/content_test.go",
+            "agentplane/sampler/internal/providerrequest/preparation.go",
+            "agentplane/sampler/internal/providerrequest/preparation_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime",
+          "production": 3,
+          "tests": 5,
+          "files": [
+            "agentplane/sampler/internal/residentruntime/integration_testmain_test.go",
+            "agentplane/sampler/internal/residentruntime/provider_compaction_recovery_test.go",
+            "agentplane/sampler/internal/residentruntime/provider_recovery_runtime_test.go",
+            "agentplane/sampler/internal/residentruntime/provider_turn_progress_test.go",
+            "agentplane/sampler/internal/residentruntime/runtime.go",
+            "agentplane/sampler/internal/residentruntime/runtime_lifecycle_test.go",
+            "agentplane/sampler/internal/residentruntime/runtime_replica.go",
+            "agentplane/sampler/internal/residentruntime/runtime_slot.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime/session",
+          "production": 12,
+          "tests": 10,
+          "files": [
+            "agentplane/sampler/internal/residentruntime/session/anthropic_test.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_actions.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_actions_test.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_host.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_test.go",
+            "agentplane/sampler/internal/residentruntime/session/compaction.go",
+            "agentplane/sampler/internal/residentruntime/session/driver.go",
+            "agentplane/sampler/internal/residentruntime/session/host.go",
+            "agentplane/sampler/internal/residentruntime/session/integration_testmain_test.go",
+            "agentplane/sampler/internal/residentruntime/session/interrupt.go",
+            "agentplane/sampler/internal/residentruntime/session/notification_test.go",
+            "agentplane/sampler/internal/residentruntime/session/protocol_adapter.go",
+            "agentplane/sampler/internal/residentruntime/session/provider_authorization_test.go",
+            "agentplane/sampler/internal/residentruntime/session/provider_compaction_control_test.go",
+            "agentplane/sampler/internal/residentruntime/session/provider_finish_test.go",
+            "agentplane/sampler/internal/residentruntime/session/provider_recovery.go",
+            "agentplane/sampler/internal/residentruntime/session/settings_fixture_test.go",
+            "agentplane/sampler/internal/residentruntime/session/setup.go",
+            "agentplane/sampler/internal/residentruntime/session/slot_fixture_test.go",
+            "agentplane/sampler/internal/residentruntime/session/tool_invocation.go",
+            "agentplane/sampler/internal/residentruntime/session/turn.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime/testing",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/sampler/internal/residentruntime/testing/codemode_peer.go",
+            "agentplane/sampler/internal/residentruntime/testing/session_store.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/rpc",
+          "production": 4,
+          "tests": 4,
+          "files": [
+            "agentplane/sampler/internal/rpc/admin_service.go",
+            "agentplane/sampler/internal/rpc/harness_host.go",
+            "agentplane/sampler/internal/rpc/harness_host_test.go",
+            "agentplane/sampler/internal/rpc/provider_request_read.go",
+            "agentplane/sampler/internal/rpc/request_read_service_test.go",
+            "agentplane/sampler/internal/rpc/service.go",
+            "agentplane/sampler/internal/rpc/service_test.go",
+            "agentplane/sampler/internal/rpc/test_helpers_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/sessionstore",
+          "production": 28,
+          "tests": 12,
+          "files": [
+            "agentplane/sampler/internal/sessionstore/admission.go",
+            "agentplane/sampler/internal/sessionstore/baseline_migration_test.go",
+            "agentplane/sampler/internal/sessionstore/commands.go",
+            "agentplane/sampler/internal/sessionstore/content_request.go",
+            "agentplane/sampler/internal/sessionstore/content_store_integration_test.go",
+            "agentplane/sampler/internal/sessionstore/contentdb.go",
+            "agentplane/sampler/internal/sessionstore/conversations.go",
+            "agentplane/sampler/internal/sessionstore/environment_context_test.go",
+            "agentplane/sampler/internal/sessionstore/evidence.go",
+            "agentplane/sampler/internal/sessionstore/execution.go",
+            "agentplane/sampler/internal/sessionstore/execution_context.go",
+            "agentplane/sampler/internal/sessionstore/exporter_outbox.go",
+            "agentplane/sampler/internal/sessionstore/exporter_test.go",
+            "agentplane/sampler/internal/sessionstore/host_status.go",
+            "agentplane/sampler/internal/sessionstore/host_status_test.go",
+            "agentplane/sampler/internal/sessionstore/integration_test.go",
+            "agentplane/sampler/internal/sessionstore/integration_testmain_test.go",
+            "agentplane/sampler/internal/sessionstore/intents.go",
+            "agentplane/sampler/internal/sessionstore/leases.go",
+            "agentplane/sampler/internal/sessionstore/lifecycle_integration_test.go",
+            "agentplane/sampler/internal/sessionstore/native_context.go",
+            "agentplane/sampler/internal/sessionstore/native_context_test.go",
+            "agentplane/sampler/internal/sessionstore/native_store.go",
+            "agentplane/sampler/internal/sessionstore/notification.go",
+            "agentplane/sampler/internal/sessionstore/processes.go",
+            "agentplane/sampler/internal/sessionstore/provider_attempt.go",
+            "agentplane/sampler/internal/sessionstore/provider_attempt_test.go",
+            "agentplane/sampler/internal/sessionstore/provider_command.go",
+            "agentplane/sampler/internal/sessionstore/provider_evidence.go",
+            "agentplane/sampler/internal/sessionstore/provider_recovery.go",
+            "agentplane/sampler/internal/sessionstore/provider_request.go",
+            "agentplane/sampler/internal/sessionstore/recovery.go",
+            "agentplane/sampler/internal/sessionstore/request_plan.go",
+            "agentplane/sampler/internal/sessionstore/request_plan_test.go",
+            "agentplane/sampler/internal/sessionstore/sampling_recovery.go",
+            "agentplane/sampler/internal/sessionstore/sessions.go",
+            "agentplane/sampler/internal/sessionstore/status.go",
+            "agentplane/sampler/internal/sessionstore/status_test.go",
+            "agentplane/sampler/internal/sessionstore/store.go",
+            "agentplane/sampler/internal/sessionstore/types.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/sessionstore/internal/contentdb",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/internal/sessionstore/internal/contentdb/integration_test.go",
+            "agentplane/sampler/internal/sessionstore/internal/contentdb/integration_testmain_test.go",
+            "agentplane/sampler/internal/sessionstore/internal/contentdb/store.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/settings",
+          "production": 3,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/internal/settings/model.go",
+            "agentplane/sampler/internal/settings/settings.go",
+            "agentplane/sampler/internal/settings/settings_fixture_test.go",
+            "agentplane/sampler/internal/settings/settings_test.go",
+            "agentplane/sampler/internal/settings/validation.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/testsupport",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/sampler/internal/testsupport/anthropic.go",
+            "agentplane/sampler/internal/testsupport/sampler.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/toolcontract",
+          "production": 5,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/internal/toolcontract/action_definition.go",
+            "agentplane/sampler/internal/toolcontract/description.go",
+            "agentplane/sampler/internal/toolcontract/description_test.go",
+            "agentplane/sampler/internal/toolcontract/rejection.go",
+            "agentplane/sampler/internal/toolcontract/sampler_tools.go",
+            "agentplane/sampler/internal/toolcontract/tool_protocol.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/internal/tooloutput",
+          "production": 3,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/internal/tooloutput/output.go",
+            "agentplane/sampler/internal/tooloutput/output_test.go",
+            "agentplane/sampler/internal/tooloutput/protocol.go",
+            "agentplane/sampler/internal/tooloutput/protocol_test.go",
+            "agentplane/sampler/internal/tooloutput/truncation.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/migrations",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/sampler/migrations/migrations.go"]
+        },
+        {
+          "path": "agentplane/sampler/protocol",
+          "production": 9,
+          "tests": 1,
+          "files": [
+            "agentplane/sampler/protocol/content.go",
+            "agentplane/sampler/protocol/context.go",
+            "agentplane/sampler/protocol/errors.go",
+            "agentplane/sampler/protocol/errors_test.go",
+            "agentplane/sampler/protocol/evidence.go",
+            "agentplane/sampler/protocol/instructions.go",
+            "agentplane/sampler/protocol/provider_hooks.go",
+            "agentplane/sampler/protocol/tool_definitions.go",
+            "agentplane/sampler/protocol/tool_invocation.go",
+            "agentplane/sampler/protocol/tool_surface.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/providers/anthropic",
+          "production": 7,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/providers/anthropic/anthropic.go",
+            "agentplane/sampler/providers/anthropic/anthropic_test.go",
+            "agentplane/sampler/providers/anthropic/compaction.go",
+            "agentplane/sampler/providers/anthropic/config.go",
+            "agentplane/sampler/providers/anthropic/context.go",
+            "agentplane/sampler/providers/anthropic/observations.go",
+            "agentplane/sampler/providers/anthropic/stored.go",
+            "agentplane/sampler/providers/anthropic/stored_test.go",
+            "agentplane/sampler/providers/anthropic/wire.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/providers/responses",
+          "production": 7,
+          "tests": 2,
+          "files": [
+            "agentplane/sampler/providers/responses/compaction.go",
+            "agentplane/sampler/providers/responses/config.go",
+            "agentplane/sampler/providers/responses/context.go",
+            "agentplane/sampler/providers/responses/observations.go",
+            "agentplane/sampler/providers/responses/provider.go",
+            "agentplane/sampler/providers/responses/responses.go",
+            "agentplane/sampler/providers/responses/responses_test.go",
+            "agentplane/sampler/providers/responses/stored.go",
+            "agentplane/sampler/providers/responses/stored_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/sampler/testing/exportfixture",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/sampler/testing/exportfixture/source.go"]
+        },
+        {
+          "path": "agentplane/sampler/testing/wirefixture",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/sampler/testing/wirefixture/wirefixture.go"]
+        }
+      ],
+      "context_paths": ["agentplane/sampler/api/sampler.proto"],
+      "pending_tracks": ["history-journals", "settings-single-source"],
+      "goal_note": "One shared JavaScript child and logical-session wire multiplexing; Model tool binding to an incarnation-fenced remote Executor; Replica scheduler and leased per-session execution; Transaction authority for durable sampler Sessions, intents and evidence; Provider-neutral context, tool and evidence contracts",
+      "decision": {
+        "state": "REWORK",
+        "role": "Sampling, durable state, Runner effects and resident scheduling",
+        "goal_summary": "One shared JavaScript child and logical-session wire multiplexing; Model tool binding to an incarnation-fenced remote Executor; Replica scheduler and leased per-session execution; Transaction authority for durable sampler Sessions, intents and evidence; Provider-neutral context, tool and evidence contracts",
+        "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
+        "evidence_paths": [
+          "agentplane/sampler/internal/codemode/journal.go",
+          "agentplane/sampler/internal/executor/executor.go",
+          "agentplane/sampler/internal/residentruntime/session/codemode.go",
+          "agentplane/sampler/internal/sessionstore/admission.go",
+          "agentplane/sampler/protocol/content.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/sampler/cmd",
+          "agentplane/sampler/historyexport",
+          "agentplane/sampler/internal/actions",
+          "agentplane/sampler/internal/codemode",
+          "agentplane/sampler/internal/content",
+          "agentplane/sampler/internal/environmentcontext",
+          "agentplane/sampler/internal/eventcodec",
+          "agentplane/sampler/internal/executionstate",
+          "agentplane/sampler/internal/executor",
+          "agentplane/sampler/internal/executor/transport",
+          "agentplane/sampler/internal/jsonwire",
+          "agentplane/sampler/internal/outputbuffer",
+          "agentplane/sampler/internal/ownershiprewrite",
+          "agentplane/sampler/internal/promptimage",
+          "agentplane/sampler/internal/providerio",
+          "agentplane/sampler/internal/providerrequest",
+          "agentplane/sampler/internal/residentruntime",
+          "agentplane/sampler/internal/residentruntime/session",
+          "agentplane/sampler/internal/residentruntime/testing",
+          "agentplane/sampler/internal/rpc",
+          "agentplane/sampler/internal/sessionstore",
+          "agentplane/sampler/internal/sessionstore/internal/contentdb",
+          "agentplane/sampler/internal/settings",
+          "agentplane/sampler/internal/testsupport",
+          "agentplane/sampler/internal/toolcontract",
+          "agentplane/sampler/internal/tooloutput",
+          "agentplane/sampler/migrations",
+          "agentplane/sampler/protocol",
+          "agentplane/sampler/providers/anthropic",
+          "agentplane/sampler/providers/responses",
+          "agentplane/sampler/testing/exportfixture",
+          "agentplane/sampler/testing/wirefixture"
+        ]
+      },
+      "package_decisions": [
+        {
+          "path": "agentplane/sampler/cmd",
+          "role": "Process composition, credentials, startup/migration and shutdown",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keep a thin executable composition point; lifecycle coordination remains in the concrete runtime owners.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/cmd/main.go"],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/historyexport",
+          "role": "Durable sampler outbox to History ingress",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The public outbox contract supports real cross-service History acceptance without exposing Store internals.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/historyexport/exporter.go"],
+          "declared_packages": ["historyexport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/actions",
+          "role": "The Sampler's delegated Action Service client for code-mode Actions, acting as the retained Session Identity.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Code-mode Actions act as the retained Session Identity, so the client stays private to the sampler.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/internal/actions/client.go"],
+          "declared_packages": ["actions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/codemode",
+          "role": "One shared JavaScript child and logical-session wire multiplexing",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "One owner: `Manager` routes replies and handles child death with private access to each `Session`'s journal and delegates, and the handshake sets the `Process`'s capabilities. At 1,495 lines in five files a split adds an import boundary without removing shared state. `CODE_MODE_HOST_DESIGN` (keep Codex's pinned JavaScript host or own a V8 host) decides this package's future.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/internal/codemode/journal.go"],
+          "declared_packages": ["codemode"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 5,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/content",
+          "role": "Canonical content identity, encoding and typed reader/writer contract",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "A shared value/codec leaf is distinct from SQL persistence and provider-native request assembly.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/internal/content/content.go"],
+          "declared_packages": ["content"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/environmentcontext",
+          "role": "Renders the model-visible environment context and its updates.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Rendering stays apart from the Store, which keeps the persisted baseline and clock.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/environmentcontext/context.go"
+          ],
+          "declared_packages": ["environmentcontext"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/eventcodec",
+          "role": "Sampler evidence to canonical History events",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Event interpretation has one owner shared by durable state and export; preserve wire and causal semantics.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/eventcodec/event_storage.go"
+          ],
+          "declared_packages": ["eventcodec"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/executionstate",
+          "role": "Process and cell lifecycle vocabulary (`ProcessStatus`, `CellStatus`) and its validated parsing.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Store-private SQL adapters keep scan/value validation, and stored spellings stay distinct.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/executionstate/status.go"
+          ],
+          "declared_packages": ["executionstate"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/executor",
+          "role": "Model tool facade over the remote Executor: tool mapping, workspace preparation, process and cursor settlement, and retirement.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The model-facing facade. Connection lifetime, handshake and reconnect, incarnation fencing, dispatch classification and wire evidence are in `executor/transport`; `transport_adapter.go` connects it to the Store's fenced journal operations.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/executor/executor.go"
+          ],
+          "declared_packages": ["executor"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 7,
+            "tests": 5
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/executor/transport",
+          "role": "Remote Executor transport: connection and execution-session lifetime, handshake and reconnect, incarnation fencing, dispatch classification and raw wire evidence.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "It has no Store dependency; the facade's journal adapter calls the Store's fenced operations.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/executor/transport/api.go",
+            "agentplane/sampler/internal/executor/transport/failure_evidence.go",
+            "agentplane/sampler/internal/executor/transport/incarnation_fence.go",
+            "agentplane/sampler/internal/executor/transport/operations.go",
+            "agentplane/sampler/internal/executor/transport/session.go",
+            "agentplane/sampler/internal/executor/transport/transport.go"
+          ],
+          "declared_packages": ["transport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 6,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/jsonwire",
+          "role": "Strict JSON boundary decoding for sampler wire input: number fidelity, object-only values, trailing-input rejection.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The one strict decoder, private to the sampler rather than part of the public `protocol` package.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/internal/jsonwire/json.go"],
+          "declared_packages": ["jsonwire"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/outputbuffer",
+          "role": "Bounded retained process output and omission accounting",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Its persisted representation and loss accounting form a cohesive leaf independent of scheduling.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/outputbuffer/buffer.go"
+          ],
+          "declared_packages": ["outputbuffer"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/ownershiprewrite",
+          "role": "Manifest-scoped Session owner cutover (`central-sampler ownership inventory|forward|reverse`), run as one-off Jobs from the sampler image.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Run as one-off Jobs from the sampler image (`central-sampler ownership`), so it stays private to the sampler.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/ownershiprewrite/rewrite.go"
+          ],
+          "declared_packages": ["ownershiprewrite"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/promptimage",
+          "role": "Bounded model-image preparation",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Image interpretation, resizing and budget behavior belong together and have focused tests.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/promptimage/image_preparation.go"
+          ],
+          "declared_packages": ["promptimage"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/providerio",
+          "role": "Provider I/O policy: response-header and semantic-idle budgets, retry-after parsing and phase cancellation errors",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Concrete provider I/O behavior the resident runtime composes; the protocol package keeps only the contracts the native adapters implement.",
+          "gate": "No move planned; preserve timeout classification and retry budgets.",
+          "evidence_paths": [
+            "agentplane/sampler/internal/providerio/errors.go",
+            "agentplane/sampler/internal/providerio/timeouts.go"
+          ],
+          "declared_packages": ["providerio"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/providerrequest",
+          "role": "Native provider request assembly: frozen authored prefixes, provider profiles and compaction recipes.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Store calls `Prepare` only inside its transaction; the builder has no commit or dispatch API, and no mutable Conversation, SQL transaction or Store callback crosses it.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/providerrequest/content.go",
+            "agentplane/sampler/internal/providerrequest/preparation.go"
+          ],
+          "declared_packages": ["providerrequest"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime",
+          "role": "Replica scheduler and leased per-session execution",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Replica scheduling: launch, recovery scan, capacity accounting, drain and the driver joins before shutdown ends. Each Session holds a slot carrying its scheduler contract; per-Session execution is in `session`, which does not import the scheduler.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/residentruntime/session/codemode.go"
+          ],
+          "declared_packages": ["residentruntime"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 3,
+            "tests": 5
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime/session",
+          "role": "One resident Session's execution: driver, turns, interrupts, compaction, setup, host attachment, provider recovery, provider adapters and Code Mode bindings, reaching the scheduler only through its slot.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "It reaches the scheduler only through its slot, so it does not import `residentruntime`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/residentruntime/session/codemode.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_actions.go",
+            "agentplane/sampler/internal/residentruntime/session/codemode_host.go",
+            "agentplane/sampler/internal/residentruntime/session/compaction.go",
+            "agentplane/sampler/internal/residentruntime/session/driver.go",
+            "agentplane/sampler/internal/residentruntime/session/host.go",
+            "agentplane/sampler/internal/residentruntime/session/interrupt.go",
+            "agentplane/sampler/internal/residentruntime/session/protocol_adapter.go",
+            "agentplane/sampler/internal/residentruntime/session/provider_recovery.go",
+            "agentplane/sampler/internal/residentruntime/session/setup.go",
+            "agentplane/sampler/internal/residentruntime/session/tool_invocation.go",
+            "agentplane/sampler/internal/residentruntime/session/turn.go"
+          ],
+          "declared_packages": ["session"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 12,
+            "tests": 10
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/residentruntime/testing",
+          "role": "Shared test support for the scheduler and Session suites: the fake Code Mode wire and process peer and the store setup.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Both test packages share one fake instead of copying it.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/residentruntime/testing/codemode_peer.go",
+            "agentplane/sampler/internal/residentruntime/testing/session_store.go"
+          ],
+          "declared_packages": ["testing"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/rpc",
+          "role": "`SamplerAdmin` and HarnessHost RPC admission, authentication, streaming and error mapping",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Generated API handling is a boundary adapter; it delegates state and scheduling to existing owners.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/rpc/provider_request_read.go"
+          ],
+          "declared_packages": ["rpc"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 4,
+            "tests": 4
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/sessionstore",
+          "role": "Transaction authority for durable sampler Sessions, intents and evidence",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Conversation checkpoints, native decoding, execution snapshots, request projection and previous-request reads. Transaction-scoped content and context-chain persistence is in `internal/contentdb`, and the provider reference switch in `providerrequest`.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/sessionstore/admission.go"
+          ],
+          "declared_packages": ["sessionstore"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 28,
+            "tests": 12
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/sessionstore/internal/contentdb",
+          "role": "Transaction-scoped content-addressed content and immutable context-chain persistence over `sampler_content` and `sampler_context`; implements `providerrequest.Content` and imports no provider package.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Private to the Store's transactions. Whether the sampler keeps these tables at all is the Journal service direction (history-journals).",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/sessionstore/internal/contentdb/store.go"
+          ],
+          "declared_packages": ["contentdb"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/settings",
+          "role": "Deployment settings and model/provider contract validation",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keep settings parsing separate from effectful provider I/O. Future request builders receive explicit validated inputs, not the entire settings aggregate.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/internal/settings/model.go"],
+          "declared_packages": ["settings"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 3,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/testsupport",
+          "role": "Helpers shared by Sampler tests.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Shares test helpers across Sampler packages.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/testsupport/sampler.go"
+          ],
+          "declared_packages": ["testsupport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/toolcontract",
+          "role": "Model-visible Code Mode schemas, descriptions and strict input decoding",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Schema and argument interpretation define the tool contract; provider transport and executor effects remain outside.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/toolcontract/description.go"
+          ],
+          "declared_packages": ["toolcontract"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 5,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/internal/tooloutput",
+          "role": "Typed Code Mode result rendering and truncation",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Formatting and loss accounting are cohesive and shared by immediate, yielded and notification output.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/internal/tooloutput/output.go"
+          ],
+          "declared_packages": ["tooloutput"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 3,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/migrations",
+          "role": "Embedded sampler schema history",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The serving binary owns startup migrations; History test consumers deliberately use the public migration fixture boundary.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/migrations/migrations.go"],
+          "declared_packages": ["migrations"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/sampler/protocol",
+          "role": "Provider-neutral context, tool and evidence contracts",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Provider-neutral contracts only; the process and cell status vocabulary is in `internal/executionstate` and the JSON helpers in `internal/jsonwire`.",
+          "gate": "",
+          "evidence_paths": ["agentplane/sampler/protocol/content.go"],
+          "declared_packages": ["protocol"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 9,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/sampler/providers/anthropic",
+          "role": "Native Anthropic wire/context/content codec",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Preserve native signed continuation and provider-specific compaction; the adapter remains usable by History projection fixtures.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/providers/anthropic/anthropic.go"
+          ],
+          "declared_packages": ["anthropic"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 7,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/providers/responses",
+          "role": "Native Responses wire/context/content codec",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keep Responses dialect/tool encoding and native context together; do not force a lowest-common-denominator history model.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/providers/responses/compaction.go"
+          ],
+          "declared_packages": ["responses"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 7,
+            "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/sampler/testing/exportfixture",
+          "role": "Sampler-owned source fixture for History export/projection acceptance",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Cross-service tests use a deliberate test-only public boundary instead of importing internal durable state.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/testing/exportfixture/source.go"
+          ],
+          "declared_packages": ["exportfixture"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/sampler/testing/wirefixture",
+          "role": "Test support: encodes provider wire payloads for tests.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "The sampler's provider, prompt-image, store and Session tests share one wire encoder instead of copies.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/sampler/testing/wirefixture/wirefixture.go"
+          ],
+          "declared_packages": ["wirefixture"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        }
+      ],
+      "tree_annotations": {
+        "current": [],
+        "goal": []
+      }
+    },
+    {
       "id": "session_dispatcher",
       "path": "agentplane/session_dispatcher",
       "counts": {
@@ -9325,7 +9301,7 @@
           "role": "Shared Session instruction composition",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Environment configuration and central sampler session creation both consume the same instruction contract; the single file has one clear responsibility.",
+          "reason": "Environment configuration and Sampler Session creation both consume the same instruction contract; the single file has one clear responsibility.",
           "gate": "Keep platform guidance, Session ID and user text ordering stable.",
           "evidence_paths": [
             "agentplane/session_instructions/BUILD.bazel",
@@ -9995,7 +9971,7 @@
       "source_owner": null,
       "id": "history-journals",
       "title": "Leave History in place until the Journal service is designed",
-      "components": ["history_service", "central_sampler"],
+      "components": ["history_service", "sampler"],
       "status": "OPEN DIRECTION",
       "kind": "service boundary design",
       "stage": 5,
@@ -10034,7 +10010,7 @@
       "components": [
         "action_service",
         "app",
-        "central_sampler",
+        "sampler",
         "egress",
         "history_service",
         "identity",
@@ -10075,7 +10051,6 @@
       "components": [
         "action_service",
         "app",
-        "central_sampler",
         "egress",
         "env",
         "environments",
@@ -10095,7 +10070,6 @@
         "agentplane/action_service/api/contracts/operator_action_service.proto",
         "agentplane/action_service/api/web_push/web_push_service.proto",
         "agentplane/app/app_service.proto",
-        "agentplane/central_sampler/api/sampler.proto",
         "agentplane/egress/api/admin/egress_admin.proto",
         "agentplane/egress/api/rules/egress_rules.proto",
         "agentplane/env/firecracker/management.proto",
@@ -10140,7 +10114,6 @@
         "agentplane/action_service/api/contracts/operator_action_service.proto",
         "agentplane/action_service/api/web_push/web_push_service.proto",
         "agentplane/app/app_service.proto",
-        "agentplane/central_sampler/api/sampler.proto",
         "agentplane/egress/api/admin/egress_admin.proto",
         "agentplane/egress/api/rules/egress_rules.proto",
         "agentplane/env/firecracker/management.proto",
@@ -10212,7 +10185,7 @@
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "faad706002fba8c4cb2a01c62400580e8bca049c",
+    "review_source_sha": "b787f656b0e6be2b7ee3285f726205ac7fbe6a64",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10225,12 +10198,6 @@
         "components": ["app"],
         "packages": 22,
         "go_files": 76
-      },
-      {
-        "slice": "central_sampler",
-        "components": ["central_sampler"],
-        "packages": 32,
-        "go_files": 187
       },
       {
         "slice": "cli",
@@ -10383,6 +10350,12 @@
         "go_files": 0
       },
       {
+        "slice": "sampler",
+        "components": ["sampler"],
+        "packages": 32,
+        "go_files": 187
+      },
+      {
         "slice": "session_dispatcher",
         "components": ["session_dispatcher"],
         "packages": 11,
@@ -10444,8 +10417,8 @@
       "A requested stop wins. Holds never keep running, or bring back, a Sandbox someone stopped; a hold request on a stopped or quiescing Sandbox is refused with the Sandbox's state, as a wake assessment is today.",
       "Expiry only suspends. When the last hold lapses the ordinary idle rule applies again, timed from the later of the lapse and the Runtime's `idle-since`; a lapse never quiesces, deletes or stops anything itself.",
       "Event-driven. The controller watches hold records and re-evaluates the Sandbox on every change, and schedules its next evaluation at the effective expiry, a known deadline like today's idle timer. Nothing polls.",
-      "Authority. Holding a running Sandbox is weaker than resuming it, so whoever may resume a Sandbox may hold it: operators, its Identity under `resumePolicy` or the environment rule's resume operation, and configured wake brokers. The central sampler may hold the exact executor environment named in a central Session it runs. A configured maximum hold length bounds each request.",
-      "First holders: the central sampler holds its executor environment while a turn runs, model time between tool calls included; people hold from the app or CLI (\"until 18:00\"). Sessions delivery needs none.",
+      "Authority. Holding a running Sandbox is weaker than resuming it, so whoever may resume a Sandbox may hold it: operators, its Identity under `resumePolicy` or the environment rule's resume operation, and configured wake brokers. The Sampler may hold the exact executor environment named in a central Session it runs. A configured maximum hold length bounds each request.",
+      "First holders: the Sampler holds its executor environment while a turn runs, model time between tool calls included; people hold from the app or CLI (\"until 18:00\"). Sessions delivery needs none.",
       "Storage: Kubernetes Lease objects, one per Sandbox and holder, owned by the Sandbox so deletion removes them and written only by the Environments binary after authorization. Durable and watchable without a database for the Environments binary; writes happen per request or renewal, never per command.",
       "Central executor wake: following the card, the Sessions binary wakes a central Session's executor environment when it delivers input to that Session, still delivering to the sampler without waiting for Ready, and the sampler then holds it."
     ],
@@ -10457,7 +10430,7 @@
       "agentplane/environments/internal/controller/idle.go",
       "agentplane/sandboxes/api/types.go",
       "agentplane/session_dispatcher/dispatcher/README.md",
-      "agentplane/central_sampler/internal/executor/transport/session.go"
+      "agentplane/sampler/internal/executor/transport/session.go"
     ]
   }
 }
