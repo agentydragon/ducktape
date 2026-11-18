@@ -32,4 +32,6 @@ Pick a bounded area for each pass and prioritize changes that make it easier to 
 
 Open PRs directly for clear low-risk wins, including documentation-only changes and pure refactors. Use a PR stack when it helps avoid conflicts or expresses a dependency. [PR workflow](../../AGENTS.md#splitting-work-into-prs)
 
+Group small related changes into medium or large PRs, roughly 100 to 1,000 changed lines, where that stays easy to review. Group by area or by topic. Examples: all dead code, config and dependencies in one area; all stale pointer and claim repairs; all retirements of one kind of note; all test-helper sharing in one package. Keep each change as its own commit and list the changes in the description, so the owner can review commit by commit. Keep a change in its own PR when it carries material risk, needs an owner decision, or is already large. When several small PRs on one area or topic are pending, replace them with one grouped PR and close the originals.
+
 Open a PR for a promising change with material risk, too. Put the risk or requirement in the title and near the top of the description. Use explicit wording such as `[Migration required]` or `[Ordered rollout]`. Describe the affected consumers and the conditions for merging or deploying. For a protocol change that requires a stack, give the rollout order and when each step is safe to deploy.
