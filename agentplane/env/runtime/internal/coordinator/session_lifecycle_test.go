@@ -907,17 +907,17 @@ func TestCloseProgressesForEmptyRuntime(t *testing.T) {
 	}
 }
 
-func TestJournalChangesWakeObservers(t *testing.T) {
+func TestJournalChangesWakeSessionSummaryObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	changes := r.changesSince()
+	summaryChanges := r.sessions.SummaryChangesSince()
 	inventoryChanges := r.sessions.InventoryChangesSince()
 	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-changes:
+	case <-summaryChanges:
 	default:
-		t.Fatal("journal change did not wake Runtime observers")
+		t.Fatal("journal change did not wake Session summary observers")
 	}
 	select {
 	case <-inventoryChanges:
