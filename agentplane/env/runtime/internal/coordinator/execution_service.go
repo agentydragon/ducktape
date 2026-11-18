@@ -22,6 +22,7 @@ const (
 // ErrFencedStartup marks an interrupted embedded start whose service lifetime
 // has already been joined and fenced. A later caller may request it again
 // without adopting work from the canceled startup.
+// That retry is unproven for a replacement incarnation's canceled start: https://github.com/agentydragon/ducktape/issues/16412
 var ErrFencedStartup = errors.New("embedded Execution startup was fenced")
 
 // executionServiceHandle owns one in-process Go Execution API lifetime. The
