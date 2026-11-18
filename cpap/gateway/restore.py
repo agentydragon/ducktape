@@ -154,7 +154,17 @@ def _login(opener: urllib.request.OpenerDirector, base: str, password: str, expe
 
 
 def restore_card(*, base_url: str, expected_mac: str, ssid: str, wifi_password: str, admin_password: str) -> None:
-    """Restore credentials only after verifying the default card identity and login."""
+    """Restore credentials only after verifying the default card identity and login.
+
+    Uses the settings API that the firmware's own `/i-share/res/help.js` and `config.js` call:
+
+    1. `/publicdir/sendurl?client=1&password=<admin>` answers `clientLogin=1` and the device MAC when
+       the administrator password is right, and `clientLogin=-1` when it is wrong.
+    2. `/config?vtype=0` returns the settings form, including the current channel.
+    3. `/config?auth=<admin>&ssid=<ssid>&pass=<wifi>&channel=<channel>` saves the settings; the
+       response must contain `config_success`.
+    4. `/config?reset=1` applies the saved settings and restarts WiFi. It does not reset to defaults.
+    """
     if (
         not _valid_mac(expected_mac)
         or re.fullmatch(r"[A-Za-z0-9_ ]{1,32}", ssid) is None

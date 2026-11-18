@@ -34,12 +34,11 @@
 - `GET /client?command=Getallfiles` — returns empty `<photos/>`
 - `GET /client?command=GetFolders` — returns bare XML declaration
 - `GET /pdclient.cgi?command=getcardmode` — redirects to welcome page without login
+- `/pdclient.cgi?command=gconfig` / `sconfig` / `Login` / `reboot` — the firmware's own scripts
+  use `/publicdir/sendurl` and `/config` for login and settings instead; see `gateway/restore.py`
 
 ### Unverified (not tested on this firmware)
 
-- `/pdclient.cgi?command=gconfig` / `sconfig` — card WiFi config read/write
-- `/pdclient.cgi?command=Login` — admin login
-- `/pdclient.cgi?command=reboot` — reboot card
 - `/upload` (POST) — file upload
 - `/upload?DEL=` — file delete
 """
