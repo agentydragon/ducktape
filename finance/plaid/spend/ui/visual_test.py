@@ -241,6 +241,12 @@ async def test_net_worth_navigation_and_history(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Net Worth")
     await expect(page).to_have_url(f"{dashboard_url}/#/net-worth")
+    if width == 1280:
+        spending = await page.get_by_role("tab", name="Spending", exact=True).bounding_box()
+        net_worth = await page.get_by_role("tab", name="Net Worth", exact=True).bounding_box()
+        assert spending is not None
+        assert net_worth is not None
+        assert net_worth["y"] == spending["y"]
     await expect(page.get_by_text("Plaid-linked USD accounts only", exact=False)).to_be_visible()
     await expect(page.get_by_text("$180,000", exact=True)).to_be_visible()
     await expect(page.get_by_text("Gaps mark days", exact=False)).to_be_visible()

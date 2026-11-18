@@ -17,13 +17,12 @@ import { money } from "./spend_display";
 Chart.register(CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact" });
-const dayLabel = (day: string, full = false) =>
-  new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    ...(full ? { year: "numeric" } : {}),
-  });
+const shortDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+const datedDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+const dayLabel = (day: string) => {
+  const date = new Date(`${day}T00:00:00Z`);
+  return (date.getUTCFullYear() === new Date().getFullYear() ? shortDay : datedDay).format(date);
+};
 const observedTime = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 
 function NetWorthChart({ days }: NetWorthHistory) {
@@ -71,10 +70,10 @@ function NetWorthChart({ days }: NetWorthHistory) {
         interaction: { mode: "index", intersect: false },
         elements: { point: { radius: days.length < 3 ? 3 : 1, hoverRadius: 4 } },
         plugins: {
-          legend: { labels: { color: color("text"), boxWidth: 22 } },
+          legend: { labels: { color: color("text"), usePointStyle: true, pointStyle: "line", pointStyleWidth: 22 } },
           tooltip: {
             callbacks: {
-              title: (items) => (items[0] ? dayLabel(days[items[0].dataIndex].date, true) : ""),
+              title: (items) => (items[0] ? dayLabel(days[items[0].dataIndex].date) : ""),
               label: ({ dataset, parsed }) => `${dataset.label ?? ""}: ${money(parsed.y, "USD")}`,
               footer: (items) => {
                 const totals = items[0] ? days[items[0].dataIndex].totals : null;
@@ -157,9 +156,7 @@ export function NetWorthPage() {
                 {money(latest.totals.net_minor_units, "USD")}
               </Text>
               <Text size="sm" c="dimmed">
-                {first === latest
-                  ? dayLabel(latest.date, true)
-                  : `${dayLabel(first.date, true)} – ${dayLabel(latest.date, true)}`}
+                {first === latest ? dayLabel(latest.date) : `${dayLabel(first.date)} – ${dayLabel(latest.date)}`}
               </Text>
             </div>
             <NetWorthChart days={days} />

@@ -59,12 +59,12 @@ function App() {
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
-              <Grid.Col span={{ base: 6, lg: 3 }} order={1}>
+              <Grid.Col span={{ base: 6, lg: 2 }} order={1}>
                 <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, lg: 3 }} order={{ base: 2, lg: 3 }}>
+              <Grid.Col span={{ base: 6, lg: 2 }} order={{ base: 2, lg: 3 }}>
                 <Group justify="flex-end" gap="xs">
                   <Box>
                     <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
@@ -98,7 +98,7 @@ function App() {
                   </Box>
                 </Group>
               </Grid.Col>
-              <Grid.Col span={6} order={2} visibleFrom="lg">
+              <Grid.Col span={8} order={2} visibleFrom="lg">
                 <Center>
                   <Tabs.List aria-label="Spend pages">
                     {spendTabs.map((tab) => (
