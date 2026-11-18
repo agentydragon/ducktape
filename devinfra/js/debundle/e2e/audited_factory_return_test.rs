@@ -167,21 +167,21 @@ fn provider_reexport_backedge_declines_fresh_result_refinement() {
     assert_factory_cut(false, true, ProviderShape::ReexportBackedge, false, false);
 }
 
-fn assert_named_factory_cut(effectful_identity_helper: bool, write_second_metadata: bool) {
+fn assert_named_factory_cut(conditional_identity_helper: bool, write_second_metadata: bool) {
     let second_write = if write_second_metadata {
         "second.displayName = 'second';\n"
     } else {
         ""
     };
-    let identity_helper = if effectful_identity_helper {
-        "function identityAfterEffect(value) { state.count += 1; return value; }\n"
+    let identity_helper = if conditional_identity_helper {
+        "function identityAfterSetup(value) { const marker = 0; return (marker, value); }\n"
     } else {
         ""
     };
-    let factory_body = if effectful_identity_helper {
-        "if (typeof callback !== 'function') return identityAfterEffect(callback);\n  return wrapAfterEffect(callback);"
+    let factory_body = if conditional_identity_helper {
+        "return typeof callback !== 'function' ? identityAfterSetup(callback) : wrap(callback);"
     } else {
-        "return wrapAfterEffect(callback);"
+        "return wrap(callback);"
     };
     let writes = if write_second_metadata {
         vec![
@@ -193,19 +193,18 @@ fn assert_named_factory_cut(effectful_identity_helper: bool, write_second_metada
     };
     let source = format!(
         "import {{ factory, api }} from './peer.js';\n\
-         function callback() {{ return later; }}\n\
+         function callback() {{ return 0; }}\n\
          callback.displayName = 'callback';\n\
-         const first = factory(callback);\n\
-         const second = factory(() => 0);\n\
+         const first = factory(() => later);\n\
+         const second = factory(callback);\n\
          {second_write}\
          const wrapped = api.make(first, () => other);\n\
          const later = 42;\nconst other = 7;\n\
          console.log(wrapped.invoke(), wrapped.compare());\n"
     );
     let provider = format!(
-        "const state = {{ count: 0 }};\n\
-         {identity_helper}\
-         function wrapAfterEffect(value) {{ state.count += 1; return (...args) => value(...args); }}\n\
+        "{identity_helper}\
+         function wrap(value) {{ return (...args) => value(...args); }}\n\
          export function factory(callback) {{\n  {factory_body}\n}}\n\
          export const api = {{ make(callback, compare) {{ return {{ invoke: callback, compare }}; }} }};\n"
     );
@@ -239,7 +238,7 @@ fn assert_named_factory_cut(effectful_identity_helper: bool, write_second_metada
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),
-            "named callback factory split rejected (effectful_identity_helper={effectful_identity_helper}, write_second_metadata={write_second_metadata}):\n{}",
+            "named callback factory split rejected (conditional_identity_helper={conditional_identity_helper}, write_second_metadata={write_second_metadata}):\n{}",
             invocation.result.stderr,
         );
         assert_node_output(
@@ -252,12 +251,12 @@ fn assert_named_factory_cut(effectful_identity_helper: bool, write_second_metada
 }
 
 #[test]
-fn effectful_identity_helper_preserves_named_callback_factory_cut() {
+fn conditional_identity_helper_preserves_named_callback_factory_cut() {
     assert_named_factory_cut(true, true);
 }
 
 #[test]
-fn effectful_identity_helper_without_second_metadata_write_keeps_cut_valid() {
+fn conditional_identity_helper_without_second_metadata_write_keeps_cut_valid() {
     assert_named_factory_cut(true, false);
 }
 
