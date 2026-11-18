@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
