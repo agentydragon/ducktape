@@ -33,6 +33,7 @@ import {
   fetchSnapshotFile,
   fetchSnapshotTree,
 } from "../lib/api/client";
+import { splitColor } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";
 import { useSearchParams } from "react-router";
 import { toast } from "../lib/toast";
@@ -53,19 +54,6 @@ type SnapshotIssue =
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to load snapshot";
-}
-
-function splitColor(split: string): string {
-  switch (split) {
-    case "train":
-      return "blue";
-    case "valid":
-      return "green";
-    case "test":
-      return "violet";
-    default:
-      return "gray";
-  }
 }
 
 export default function SnapshotDetailPage({ slug, initialSnapshot, initialTree, initialClusters }: Props) {
