@@ -37,25 +37,6 @@ checked-in Agentplane code directly loading these finance datasets.
 
 ## Findings
 
-### A. Calendar gaps in fitting and scoring: addressed in code
-
-[`load_evidence_segments`](../fit/data.py) retains aligned observed monthly levels and their
-calendar labels in `DatedHistoricalSeries`. The full and FRED-only paths derive returns only
-for adjacent calendar months; `load_evidence` rejects a gapped history when a caller requires
-`HistoricalSeries`.
-
-The VECM keeps all observed levels in one per-factor normalization and uses only within-segment
-one-month transitions. It records segments and gaps in its fitted state; the terminal latent
-state and absolute factor anchors use the same final common as-of month. The main SP500 model
-factor is Yahoo SPY adjusted USD. State-space fitting uses dated one-month returns, and its
-private-equity/SP500 coupling excludes intervals missing any calendar month. Scoring reports
-coverage and excludes cross-gap transitions and multi-step origins.
-
-The focused regressions cover gapped loader-to-fit/score paths and continuous input. The
-October 2025 CPI gap observed in the earlier evidence review motivated this work; this refresh
-did not recheck the current evidence or run a full real-evidence fit. A fresh fit and coverage
-review remain useful before relying on a new artifact.
-
 ### B. CPI history and publication lag: partially addressed
 
 [`resolve_anchors`](../calibration/macro_anchors.py) now retains CPI history by its actual
@@ -69,13 +50,6 @@ observation on or before the model anchor month, and calibration uses that value
 even if it was observed earlier. Decide whether to start the CPI path at the observed month,
 model the intervening months, or make affected outcomes unavailable; test the chosen policy
 through calibration. Dated lookbacks alone do not resolve this starting-point question.
-
-### C. Nonpositive FRED observations: addressed in code
-
-[`fred_series_frame` and `monthly_last`](../../evidence/loading.py) retain finite zero and
-negative values, which can be valid rates. Operations requiring a positive level, such as
-logarithms or price/index anchors, validate positivity at their own boundaries. Tests cover
-nonpositive rates and invalid index inputs.
 
 ### D. Source tables versus selected views: partially addressed
 
