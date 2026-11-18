@@ -152,6 +152,9 @@ discoverable and are replaced without parsing their display text.
   advancement.
 - Existing commit bundles are not migrated.
 
+Validate deployed publication with an anonymous read of every linked HTML page
+and image, including shared PNGs.
+
 ## Released commands
 
 `//devinfra/pr_visuals:wheel` builds the `pr-visuals` wheel (`pr-visuals-announce`
