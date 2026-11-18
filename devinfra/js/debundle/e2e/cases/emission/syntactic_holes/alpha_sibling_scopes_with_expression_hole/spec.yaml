@@ -1,0 +1,18 @@
+logical_modules:
+  static/app:
+    format:
+      source_matches:
+        - match: |-
+            function readable(items) {
+              return items
+                .map((item) => EXPR)
+                .filter((line) => line !== "")
+                .map((line) => line.toUpperCase())
+                .join(",");
+            }
+          bindings:
+            - { local: readable, name: format_items }
+import_order:
+  static/app: [format]
+unassigned_mode:
+  static/app: { kind: catchall_file }

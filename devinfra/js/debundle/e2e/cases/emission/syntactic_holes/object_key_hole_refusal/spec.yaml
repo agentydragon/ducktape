@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    config:
+      source_matches:
+        - match: 'const readable = { ANYTHING: "runtime" };'
+          bindings:
+            - { local: readable, name: makeConfig }
+import_order:
+  static/app: [config]
+unassigned_mode:
+  static/app: { kind: catchall_file }

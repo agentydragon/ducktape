@@ -1,0 +1,10 @@
+logical_modules:
+  static/app:
+    limits:
+      source_matches:
+        - match: "const ANYTHING = new WeakMap(), maxEntries = 10;"
+          bindings: [maxEntries]
+import_order:
+  static/app: [limits, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

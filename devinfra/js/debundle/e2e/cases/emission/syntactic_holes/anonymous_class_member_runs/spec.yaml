@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    counter:
+      source_matches:
+        - match: |-
+            class Counter {
+              ANYTHING;
+              label() {
+                ANYTHING;
+              }
+              ANYTHING;
+            }
+          bindings: [Counter]
+import_order:
+  static/app: [counter, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

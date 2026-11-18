@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    shapes:
+      source_matches:
+        - match: |-
+            class K {
+              ANYTHING;
+              run(value) {
+                return value * 2;
+              }
+            }
+          bindings:
+            - { local: K, name: Counter }
+import_order:
+  static/app: [residual, shapes]
+unassigned_mode:
+  static/app: { kind: catchall_file }

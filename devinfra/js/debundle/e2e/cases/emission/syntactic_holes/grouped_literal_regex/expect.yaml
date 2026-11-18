@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Token-primary-101:Token-secondary-202\n"
+    source:
+      static/app/modules/styles/tokens.js:
+        contains: ['const primaryStyleToken = "Token-primary-101"', 'secondaryStyleToken = "Token-secondary-202"']
+        excludes: [STR_LITERAL_MATCHING_RE]

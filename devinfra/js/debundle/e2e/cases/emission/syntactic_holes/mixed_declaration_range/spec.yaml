@@ -1,0 +1,16 @@
+logical_modules:
+  static/app:
+    styles/mixed-widget:
+      source_matches:
+        - match: |-
+            const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+            const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+            function makeStyles(first, second) {
+              return { first, second };
+            }
+            const styles = makeStyles(firstClassName, secondClassName);
+          bindings: [makeStyles, styles]
+import_order:
+  static/app: [styles/mixed-widget, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

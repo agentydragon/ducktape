@@ -1,0 +1,18 @@
+logical_modules:
+  static/app:
+    resource:
+      source_matches:
+        - match: |-
+            function readable(cache, label) {
+              let memo;
+              return (EXPR ? (memo = async (id) => {
+                const base = `load:${label}`;
+                return `${base}:${id}`;
+              }, SEQ_EXPRS) : memo = EXPR), memo;
+            }
+          bindings:
+            - { local: readable, name: label_resource }
+import_order:
+  static/app: [residual, resource]
+unassigned_mode:
+  static/app: { kind: catchall_file }

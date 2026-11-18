@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "stable|ignored:left|important|ignored:right\n"
+    exports:
+      static/app/modules/joined.js:
+        include: [joinedValue]
+        exclude: [actual]
+    source:
+      static/app/modules/joined.js:
+        contains: ['ignoredPart("left")', importantValue, 'ignoredPart("right")']
+        excludes: [ARGS_BEFORE, ARGS_AFTER]

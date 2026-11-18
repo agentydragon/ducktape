@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "alpha:beta middle\n"
+    exports:
+      static/app/modules/selected/gapped-range.js:
+        include: [first, second]
+        exclude: [ignoredMiddle]
+    source:
+      static/app/modules/selected/gapped-range.js:
+        contains: ["const first", "function second", alpha]
+        excludes: [ignoredMiddle, STMT_LIST]

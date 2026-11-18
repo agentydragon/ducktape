@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "OK\n"
+    exports:
+      static/app/modules/factory.js:
+        include: [widget_factory]
+        exclude: [makeWidget]
+    source:
+      static/app/modules/factory.js:
+        contains: ["const widget_factory", "({", 'kind: "widget"', render]
+        excludes: [ANYTHING, readable]

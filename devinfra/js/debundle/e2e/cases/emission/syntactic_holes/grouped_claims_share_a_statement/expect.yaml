@@ -1,0 +1,8 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "10\n"
+    source:
+      static/app/modules/cache.js:
+        contains: ["const propertyCache = new WeakMap()", "function getCached"]
+        excludes: ["const propertyCache = 10"]

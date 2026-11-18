@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    pipeline:
+      source_matches:
+        - match: |-
+            function readable(flags) {
+              return (SEQ_EXPRS, "marker", SEQ_EXPRS);
+            }
+          bindings:
+            - { local: readable, name: marked_pipeline }
+import_order:
+  static/app: [pipeline, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

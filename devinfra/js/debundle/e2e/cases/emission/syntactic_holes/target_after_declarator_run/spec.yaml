@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    cache:
+      source_matches:
+        - match: |-
+            const DECLARATORS, propertyCache = new WeakMap();
+            function lookupCached(n) {
+              return propertyCache.get(n) ?? ANYTHING;
+            }
+          bindings: [propertyCache]
+import_order:
+  static/app: [cache, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

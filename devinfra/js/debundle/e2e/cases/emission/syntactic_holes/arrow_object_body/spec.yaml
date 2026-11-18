@@ -1,0 +1,15 @@
+logical_modules:
+  static/app:
+    factory:
+      source_matches:
+        - match: |-
+            const readable = (props) => ({
+              kind: "widget",
+              ANYTHING,
+            });
+          bindings:
+            - { local: readable, name: widget_factory }
+import_order:
+  static/app: [factory]
+unassigned_mode:
+  static/app: { kind: catchall_file }

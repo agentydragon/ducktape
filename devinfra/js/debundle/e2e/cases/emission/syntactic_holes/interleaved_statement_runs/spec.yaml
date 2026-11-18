@@ -1,0 +1,19 @@
+logical_modules:
+  static/app:
+    init:
+      members:
+        - { name: marker, selector: { binding: { name: marker } } }
+      anonymous_statements:
+        - source_match:
+            match: |-
+              if (true) {
+                STMT_LIST_HEAD;
+                console.log("pinned1");
+                STMT_LIST_MID;
+                console.log("pinned2");
+                STMT_LIST_TAIL;
+              }
+import_order:
+  static/app: [init]
+unassigned_mode:
+  static/app: { kind: catchall_file }

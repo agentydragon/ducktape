@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "prefix BUILD:ONE suffix\n"
+    exports:
+      static/app/modules/display.js:
+        include: [readDisplayValue]
+        exclude: [runtimeRead]
+    source:
+      static/app/modules/display.js:
+        contains: ["const readDisplayValue", ".toUpperCase()"]
+        excludes: [runtimePrefix, runtimeSuffix, ANYTHING]

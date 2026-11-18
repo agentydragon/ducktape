@@ -1,0 +1,7 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "setup\ndone\n"
+    source:
+      static/app/modules/init.js:
+        contains: ['console.log("setup")', 'console.log("done")', "const marker"]

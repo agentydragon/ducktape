@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "REQUIRED ANOTHER SPREAD\n"
+    exports:
+      static/app/modules/config.js:
+        include: [config_object]
+        exclude: [actual]
+    source:
+      static/app/modules/config.js:
+        contains: ["const config_object", generatedAlpha, spreadValue, anotherKey]
+        excludes: [ANYTHING, readable]

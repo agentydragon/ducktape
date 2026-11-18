@@ -1,0 +1,17 @@
+logical_modules:
+  static/app:
+    shapes:
+      source_matches:
+        - match: |-
+            class K {
+              constructor() {
+                STMT_LIST_CTOR;
+              }
+              ANYTHING;
+            }
+          bindings:
+            - { local: K, name: Counter }
+import_order:
+  static/app: [residual, shapes]
+unassigned_mode:
+  static/app: { kind: catchall_file }

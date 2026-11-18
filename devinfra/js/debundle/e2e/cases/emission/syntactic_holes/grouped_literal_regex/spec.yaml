@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    styles/tokens:
+      source_matches:
+        - match: |-
+            const primaryToken = STR_LITERAL_MATCHING_RE("^Token-primary-[0-9]+$"),
+              secondaryToken = STR_LITERAL_MATCHING_RE("^Token-secondary-[0-9]+$");
+          bindings:
+            - { local: primaryToken, name: primaryStyleToken }
+            - { local: secondaryToken, name: secondaryStyleToken }
+import_order:
+  static/app: [styles/tokens]
+unassigned_mode:
+  static/app: { kind: catchall_file }

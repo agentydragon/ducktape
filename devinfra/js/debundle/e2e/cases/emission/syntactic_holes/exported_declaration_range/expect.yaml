@@ -1,0 +1,17 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Widget-module_first__exp1 Widget-module_second__exp2\n"
+    exports:
+      static/app/modules/styles/exported-widget.js:
+        include: [firstClassName, secondClassName, styles]
+        exclude: [runtimeFirstClassName, runtimeSecondClassName, runtimeStyles]
+    source:
+      static/app/modules/styles/exported-widget.js:
+        contains:
+          [
+            'const firstClassName = "Widget-module_first__exp1"',
+            'const secondClassName = "Widget-module_second__exp2"',
+            "const styles = {",
+          ]
+        excludes: [STR_LITERAL_MATCHING_RE]

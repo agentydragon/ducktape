@@ -1,0 +1,14 @@
+logical_modules:
+  static/app:
+    display:
+      source_matches:
+        - match: |-
+            const ANYTHING = ANYTHING,
+              buildDisplayValue = (value) => `build:${value}`,
+              readDisplayValue = (value) => buildDisplayValue(value).toUpperCase(),
+              ANYTHING = ANYTHING;
+          bindings: [readDisplayValue]
+import_order:
+  static/app: [display, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

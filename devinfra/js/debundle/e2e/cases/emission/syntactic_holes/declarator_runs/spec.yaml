@@ -1,0 +1,18 @@
+logical_modules:
+  static/app:
+    display:
+      source_matches:
+        - match: |-
+            const DECLARATORS_BEFORE = null,
+              formatDisplayLabel = EXPR_FORMAT,
+              displayLabels = new Map([
+                ["left", "Left"],
+                ["right", "Right"],
+              ]),
+              readDisplayLabel = EXPR_READ,
+              DECLARATORS_AFTER = null;
+          bindings: [readDisplayLabel]
+import_order:
+  static/app: [display, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

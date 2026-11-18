@@ -1,0 +1,22 @@
+logical_modules:
+  static/app:
+    shapes:
+      source_matches:
+        - match: |-
+            class K {
+              ANYTHING;
+              open() {
+                STMT_LIST_O;
+              }
+              ANYTHING;
+              close() {
+                STMT_LIST_C;
+              }
+              ANYTHING;
+            }
+          bindings:
+            - { local: K, name: Widget }
+import_order:
+  static/app: [shapes]
+unassigned_mode:
+  static/app: { kind: catchall_file }

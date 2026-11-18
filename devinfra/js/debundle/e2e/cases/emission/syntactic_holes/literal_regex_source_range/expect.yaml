@@ -1,0 +1,19 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "Widget-module_first__a1B-2 Widget-module_second__Z9_x\n"
+    exports:
+      static/app/modules/styles/widget.js:
+        include: [firstClassName, secondClassName, styles]
+        exclude: [runtimeFirstClassName, runtimeSecondClassName, runtimeStyles]
+    source:
+      static/app/modules/styles/widget.js:
+        contains:
+          [
+            'const firstClassName = "Widget-module_first__a1B-2"',
+            'const secondClassName = "Widget-module_second__Z9_x"',
+            "const styles = {",
+            "first: firstClassName",
+            "second: secondClassName",
+          ]
+        excludes: [STR_LITERAL_MATCHING_RE]

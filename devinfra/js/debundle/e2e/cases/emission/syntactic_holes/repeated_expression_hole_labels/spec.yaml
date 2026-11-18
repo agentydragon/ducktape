@@ -1,0 +1,11 @@
+logical_modules:
+  static/app:
+    calc:
+      source_matches:
+        - match: "const readable = Math.max(EXPR_VALUE, EXPR_VALUE);"
+          bindings:
+            - { local: readable, name: calc_value }
+import_order:
+  static/app: [calc]
+unassigned_mode:
+  static/app: { kind: catchall_file }

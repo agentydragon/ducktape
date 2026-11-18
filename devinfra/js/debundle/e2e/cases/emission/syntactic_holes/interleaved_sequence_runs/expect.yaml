@@ -1,0 +1,12 @@
+spec.yaml:
+  accept:
+    entry: static/app
+    stdout: "right\nother\n"
+    exports:
+      static/app/modules/pipeline.js:
+        include: [marked_pipeline]
+        exclude: [runPipeline, otherPipeline]
+    source:
+      static/app/modules/pipeline.js:
+        contains: ["function marked_pipeline", '"marker"', flags.off]
+        excludes: [SEQ_EXPRS, readable]
