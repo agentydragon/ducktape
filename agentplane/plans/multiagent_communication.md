@@ -1,8 +1,8 @@
 # Cross-agent communication and authorization: design space
 
-Status: **messaging and same-principal delegation implemented; broader cross-SA reads, archive
-policy and Sandbox launch open.** The send rule (`session_inbox_access`), inbox tags, peer messages,
-receipts and notices are the Notification Service's contract
+Status: **messaging and [same-principal delegation](session_delegation_workflows.md) implemented;
+broader cross-SA reads, archive policy and Sandbox launch open.** The send rule
+(`session_inbox_access`), inbox tags, peer messages, receipts and notices are the Notification Service's contract
 ([API](../notification_service/docs/api.md#messages)). This plan keeps the agreed requirements and
 the open design: the read rule and the
 [archive split](#option-authorize-the-archive-apart-from-live-objects), broader delegation
@@ -17,20 +17,6 @@ The later Session–Environment separation discussion also reopens the Sandbox a
 of inbox and proposed history grouping; see
 [`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
 The historical Sandbox-scoped examples below do not decide the independent-Session contract.
-
-## Selected first workflow, 2026-10-30 PDT
-
-The [stakeholder priority order](task_dag.md#stakeholder-priorities-2026-10-30-pdt) selects
-Agentplane-level Session spawning at the caller's privilege level, including reuse of its
-environment with separate directories. Starting less-privileged agents can wait. The first
-concrete standing-agent example is daily CI-latency maintenance and fix PRs, with child Sessions
-for delegated work; persistent reactive roles and agents pursuing ongoing goals are both desired.
-
-Same-privilege spawning shipped as the [caller-privilege delegation](session_delegation_workflows.md)
-workflow without settling the complete management/delegation vocabulary or native-child Session
-projection; its natural-agent usability and fresh provisioning remain there. Cross-access
-cooperation remains a product goal; the broader requirements below were not prerequisites for
-same-privilege spawning.
 
 ## Requirements and preferences
 
@@ -81,8 +67,9 @@ them must be explicit policy.
 
 Evaluate each proposed abstraction by asking what useful configurations it makes impossible and
 what exact operations it permits or denies. Impose structural constraints only where an actual
-security or execution requirement needs them. The existing Sandbox isolation and persistence
-boundaries below are such constraints.
+security or execution requirement needs them. The existing Sandbox
+[isolation](../docs/thread_layering.md#sandbox-isolation-boundary) and [persistence](../docs/sandbox_storage.md)
+boundaries are such constraints.
 
 **Caller attribution agreed with the operator, 2026-10-16:** Sandbox/ServiceAccount-level caller
 attribution is sufficient for v1, as for existing Kubernetes and Action permissions. Authenticated
@@ -155,34 +142,8 @@ They may be configured together without becoming one opaque object. Editing inst
 a model should not silently change grants. Creator, manager and parent/provenance are separate
 relationships; none needs to imply authority automatically.
 
-V1 reuses authenticated SA identities; it requires no additional persistent logical-agent identity.
-An optional future logical-agent object would need authenticated workload bindings, replacement and
-revocation rules, and would not preserve a deleted Sandbox's Sessions. Standing roles do not
-themselves require such an object. Human and agent subjects could share an authorization vocabulary
-while retaining different authentication and explicit delegation.
-
-The current [Sandbox boundary](../docs/thread_layering.md#sandbox-isolation-boundary) is a constraint:
-co-resident Sessions share filesystem, credentials and SA authority. Session ACLs can restrict outside
-callers but cannot establish confidentiality between co-resident agents. Incompatible trust or
-credentials need separate Sandboxes under the current architecture. A caller-supplied `from_session`
-is not verified authorship merely because its workload token is valid. V1 requires only
-Sandbox/SA-level caller attribution. Any supplied originating-Session identifier is attribution
-metadata, not a separately authenticated principal or a basis for stronger intra-Sandbox isolation.
-
-### Sandbox and Session persistence
-
-The existing [storage contract](../docs/sandbox_storage.md) distinguishes workload replacement from
-Sandbox deletion. Suspension or Pod/VM replacement retains the Sandbox's owned PVCs and permits
-Session continuation on retained state. Deleting the Sandbox deletes its owned PVCs and ends the
-ability to deliver into or continue its Sessions. A newly created Sandbox, including one with the
-same name, cannot continue those Sessions. The History Service retains their history for separately
-authorized reads; retained history is not executable native Session state.
-
-The [Dispatcher deletion contract](../docs/adr_sandbox_session_control.md)
-already ends the deleted Sandbox's outstanding commands; retries must not retarget a new Sandbox.
-Optional standing addresses or independently retained mailboxes would need an explicit contract for
-addressing a different Session. They cannot make a deleted Session deliverable or resumable, and
-continuation after Sandbox deletion is not an open multiagent requirement.
+Human and agent subjects could share an authorization vocabulary while retaining different
+authentication and explicit delegation.
 
 ## Independent permissions and static rules
 
