@@ -969,7 +969,7 @@ impl OriginTrace {
             FlowValueExpr::Call {
                 callee,
                 argument: Some(argument),
-                ..
+                factory_importer,
             } => {
                 let Some(targets) =
                     self.evaluate_expr(callee, facts, returns, declared, evaluations)
@@ -981,6 +981,24 @@ impl OriginTrace {
                     let Value::Alloc(Kind::Function, function) = target else {
                         continue;
                     };
+                    let target_call = FlowValueExpr::Call {
+                        callee: Box::new(FlowValueExpr::Value(Value::Alloc(
+                            Kind::Function,
+                            function,
+                        ))),
+                        argument: Some(*argument),
+                        factory_importer: *factory_importer,
+                    };
+                    if !self.expression_has_origin(
+                        &target_call,
+                        origin,
+                        facts,
+                        returns,
+                        declared,
+                        evaluations,
+                    ) {
+                        continue;
+                    }
                     match returns.summaries.get(&function) {
                         Some(ReturnSummary::Argument) => self.source_keys_for_expr(
                             actual,
@@ -1071,7 +1089,7 @@ impl OriginTrace {
             FlowValueExpr::Call {
                 callee,
                 argument: None,
-                ..
+                factory_importer,
             } => {
                 let Some(targets) =
                     self.evaluate_expr(callee, facts, returns, declared, evaluations)
@@ -1080,7 +1098,24 @@ impl OriginTrace {
                 };
                 for target in &targets {
                     if let Value::Alloc(Kind::Function, function) = target {
-                        keys.push(FlowKey::Return(function));
+                        let target_call = FlowValueExpr::Call {
+                            callee: Box::new(FlowValueExpr::Value(Value::Alloc(
+                                Kind::Function,
+                                function,
+                            ))),
+                            argument: None,
+                            factory_importer: *factory_importer,
+                        };
+                        if self.expression_has_origin(
+                            &target_call,
+                            origin,
+                            facts,
+                            returns,
+                            declared,
+                            evaluations,
+                        ) {
+                            keys.push(FlowKey::Return(function));
+                        }
                     }
                 }
             }
