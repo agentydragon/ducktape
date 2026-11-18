@@ -230,23 +230,14 @@ def main(argv: list[str] | None = None) -> None:
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
-    reusable_tests = set()
-    blocked_tests = set()
-    for decision in decisions:
-        selector = decision.image.test
-        if not decision.needs_push or not selector:
-            continue
-        blocked, why = evidence.tests.already_failed(selector)
-        if blocked:
-            blocked_tests.add(selector)
-            print(f"::warning::{decision.image.name}: not pushed, {why}", file=sys.stderr)
-            continue
-        covered, reason = evidence.tests.is_covered(selector)
-        if covered:
-            reusable_tests.add(selector)
-            print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
-        else:
-            print(f"::notice::{decision.image.name}: retaining its test gate ({reason})", file=sys.stderr)
+    reusable_tests, blocked_tests = evidence.test_gates(
+        (
+            publication_evidence.TestGateCandidate(decision.image.name, decision.image.test)
+            for decision in decisions
+            if decision.needs_push
+        ),
+        action="pushed",
+    )
     include = matrix_include(decisions, reusable_tests, blocked_tests)
 
     for d in sorted(decisions, key=lambda d: d.image.name):

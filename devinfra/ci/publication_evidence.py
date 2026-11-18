@@ -9,16 +9,46 @@ from __future__ import annotations
 import dataclasses
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, merge, read
 from devinfra.ci.publication_test_verdicts import TestEvidence, effective_rbe_image, verify
 
 
 @dataclasses.dataclass(frozen=True)
+class TestGateCandidate:
+    artifact: str
+    selector: str | None
+    uses_default_config: bool = True
+
+
+@dataclasses.dataclass(frozen=True)
 class PublicationEvidence:
     outputs: Invocation | None
     tests: TestEvidence
+
+    def test_gates(self, candidates: Iterable[TestGateCandidate], *, action: str) -> tuple[set[str], set[str]]:
+        """Return reusable and blocked selectors for the proposed publication jobs."""
+        reusable: set[str] = set()
+        blocked: set[str] = set()
+        for candidate in candidates:
+            if not (selector := candidate.selector):
+                continue
+            failed, reason = self.tests.already_failed(selector)
+            if failed:
+                blocked.add(selector)
+                print(f"::warning::{candidate.artifact}: not {action}, {reason}", file=sys.stderr)
+                continue
+            if not candidate.uses_default_config:
+                continue
+            covered, reason = self.tests.is_covered(selector)
+            if covered:
+                reusable.add(selector)
+                message = "reusing the verified bazel-ci test verdict"
+            else:
+                message = f"retaining its test gate ({reason})"
+            print(f"::notice::{candidate.artifact}: {message}", file=sys.stderr)
+        return reusable, blocked
 
 
 def _final_test_invocation(initial_id: str, read_invocation: Callable[[str], Invocation]) -> Invocation:

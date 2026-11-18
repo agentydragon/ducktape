@@ -111,6 +111,17 @@ def test_a_verified_successful_sweep_can_supply_a_passing_verdict(summaries: lis
     assert not evidence.already_failed("//a:test")[0]
 
 
+def test_custom_publication_configuration_keeps_its_test_gate() -> None:
+    candidate = publication_evidence.TestGateCandidate("optimized", "//a:test", uses_default_config=False)
+    passing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "PASSED")])))
+    assert passing.test_gates([candidate], action="released") == (set(), set())
+    default_config = dataclasses.replace(candidate, uses_default_config=True)
+    assert passing.test_gates([default_config], action="released") == ({"//a:test"}, set())
+
+    failing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "FAILED")])))
+    assert failing.test_gates([candidate], action="released") == (set(), {"//a:test"})
+
+
 def test_passing_tests_from_a_failed_sweep_are_not_reused() -> None:
     evidence = evidence_for(push_sweep([summary("//a:test", "PASSED"), summary("//b:test", "FAILED")]))
     assert not evidence.is_covered("//a:test")[0]
