@@ -17,11 +17,11 @@ replication** (GitLab's Gitaly Cluster / Praefect, or GitHub's Spokes) is both f
 genuinely HA. Measured HA-to-HA, GitLab Gitaly Cluster beats Forgejo's 2-replica RWX on
 every operation and in every storage cell tested.
 
-Reproduction harness and raw CSVs: <gitlab_gitaly_storage_bench/>.
+Reproduction harness and raw CSVs: <../gitlab_gitaly_storage_bench/>.
 
 A later single-writer RWO canary compared local-path HDD, the deployed-default SeaweedFS
 class, and one- and two-copy Piraeus FILE_THIN volumes:
-<piraeus_migration/benchmarks/README.md>. It is a separate storage experiment; the two-copy
+<../piraeus_migration/benchmarks/README.md>. It is a separate storage experiment; the two-copy
 Piraeus arm was not failure-tested and is not an HA-equivalent Forgejo topology.
 
 ---
@@ -29,7 +29,7 @@ Piraeus arm was not failure-tested and is not an HA-equivalent Forgejo topology.
 ## 1. SeaweedFS attribution (2026-07-10)
 
 Is it Forgejo being slow or SeaweedFS being slow? Companion to
-<sqlite_storage_bench/seaweedfs_latency_forensics.md>, which established the mechanism
+<../sqlite_storage_bench/seaweedfs_latency_forensics.md>, which established the mechanism
 (per-op FUSE→filer→volume round-trips dominate; disk class barely matters).
 
 **Method.** End-to-end from a web container: timed `/api/v1/version` (floor), contents-API
@@ -65,6 +65,8 @@ off network filesystems). Recommendation at the time: give the git store a singl
 writer on fast local storage, with replication at the app layer.
 
 ## 2. Rook / CephFS trial (2026-07-11)
+
+[Retained CSV results](rook_ceph_forgejo_2026_07_11/).
 
 Does a _better filesystem_ fix it? A disposable Rook/Ceph cluster (Ceph v20.2.2, loop-backed
 OSDs, kernel CephFS CSI, pod networking) ran two Forgejo replicas on a CephFS `RWX` PVC vs
@@ -140,10 +142,10 @@ catch up), with automatic failover.
 replicas + Praefect + 3 Gitaly nodes (`replaceInternalGitaly`). Only Gitaly's storage class
 varies per cell; PG/Redis/MinIO stay on `local-path-ovh-ssd`. Same four operations / 20
 samples as the Forgejo bench, hitting the webservice ClusterIP. Harness + per-cell run
-recipe: <gitlab_gitaly_storage_bench/README.md>.
+recipe: <../gitlab_gitaly_storage_bench/README.md>.
 
 Full `{rook, seaweedfs} × {ssd, hdd}` matrix, median seconds
-(<gitlab_gitaly_storage_bench/results/praefect_3node/>):
+(<../gitlab_gitaly_storage_bench/results/praefect_3node/>):
 
 | Storage cell    | version | contents read | contents write | git push |
 | --------------- | ------: | ------------: | -------------: | -------: |
@@ -160,7 +162,7 @@ The two multi-node HA shapes, head to head on `seaweedfs-ssd`:
 | Forgejo 2-replica RWX                |   0.349 |         0.499 |          3.356 |    1.630 |
 
 For reference, a **single** Gitaly (RWO, SPOF — not HA) on seaweedfs-ssd pushed at 1.010 s
-(<gitlab_gitaly_storage_bench/results/single_gitaly_baseline/>): Praefect's 3-way async
+(<../gitlab_gitaly_storage_bench/results/single_gitaly_baseline/>): Praefect's 3-way async
 replication adds only ~14% over that while providing HA.
 
 ## Findings
@@ -194,7 +196,7 @@ gateway; the anti-pattern is POSIX-FUSE-mounting it under many-tiny-ops workload
 
 ## Reproduction & incidental notes
 
-- **Harness:** <gitlab_gitaly_storage_bench/> — values template, Praefect overlay, bench
+- **Harness:** <../gitlab_gitaly_storage_bench/> — values template, Praefect overlay, bench
   script, job template, `rook-hdd-arm.yaml`, and a README with the per-cell run recipe and
   the rook rebuild/teardown playbook (finalizer/mon-state gotchas from the SSD→HDD rebuild).
 - **CSI scheduling landmine:** `seaweedfs-csi-driver-mount` runs only on the five `ovh-*`

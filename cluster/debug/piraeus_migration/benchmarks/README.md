@@ -22,12 +22,12 @@ fresh-PVC retries later that morning, pooled into one row; the original
 initialization failure is retained below. The direct filesystem cells were not rerun.
 
 The historical row reads the preserved
-[`direct-storage-ssd-control.csv`](../../results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
-and [`forgejo-e2e-ssd-control.csv`](../../results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv),
+[`direct-storage-ssd-control.csv`](../../git_storage_latency/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv)
+and [`forgejo-e2e-ssd-control.csv`](../../git_storage_latency/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv),
 selecting only `seaweedfs-ssd`. It has five samples per filesystem operation and 20
 per Forgejo operation. July used **two Forgejo replicas sharing RWX**, while October
 used **one active replica**. Media, dates, and run conditions differ; the July row
-provides historical context. See the [original investigation](../../git_storage_latency_and_ha.md).
+provides historical context. See the [original investigation](../../git_storage_latency/README.md).
 
 The tables below contain the October measurements.
 
@@ -120,7 +120,7 @@ about 10 ms resolution, limiting interpretation of near-zero clone times.
   same actual app image `15.0.8-rootless` / image ID in every cell. The chart's
   `appVersion` metadata says 15.0.3; the running container image is the recorded 15.0.8.
   The historical reference in the figure comes from the separate July deployment
-  described in [`../../git_storage_latency_and_ha.md`](../../git_storage_latency_and_ha.md).
+  described in [`../../git_storage_latency/README.md`](../../git_storage_latency/README.md).
 - PostgreSQL 18.1 ran as one disposable CNPG instance on `ovh-ns104952`, with a fixed
   5 GiB `local-path-ovh-ssd` volume; each Forgejo cell had a separate database. Valkey
   9.1.2 also stayed on that node with no PVC; `--save ""` and `--appendonly no`
@@ -192,7 +192,7 @@ The plot reads only the committed CSVs. From the repository root in the Nix devs
 ```sh
 bb run //cluster/debug/piraeus_migration/benchmarks:plot_results_bin -- \
   --results-dir "$PWD/cluster/debug/piraeus_migration/benchmarks/results" \
-  --historical-dir "$PWD/cluster/debug/results/rook_ceph_forgejo_2026_07_11" \
+  --historical-dir "$PWD/cluster/debug/git_storage_latency/rook_ceph_forgejo_2026_07_11" \
   --output "$PWD/cluster/debug/piraeus_migration/benchmarks/results/overview.svg"
 ```
 

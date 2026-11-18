@@ -47,7 +47,7 @@ result is implied by successful synthesis, chart rendering or CI.
 
 ## Recorded performance references
 
-Median seconds from the [July investigation](../../debug/git_storage_latency_and_ha.md):
+Median seconds from the [July investigation](../../debug/git_storage_latency/README.md):
 
 | July topology on SeaweedFS SSD       | Version | Contents read | Contents write | Tiny push |
 | ------------------------------------ | ------: | ------------: | -------------: | --------: |
