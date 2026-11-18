@@ -4,6 +4,7 @@
 //! infer a loop bound, or make claims about purity or completion.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::OnceLock;
 
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
@@ -15,6 +16,59 @@ use binding_targets::{
 };
 
 use super::guarded_member_reads::{GuardedSnapshotUse, guarded_snapshot_uses};
+
+#[derive(Clone, Copy)]
+struct DiagnosticSpanSelector {
+    lo: u32,
+    hi: u32,
+}
+
+impl DiagnosticSpanSelector {
+    fn parse(value: &str) -> Option<Self> {
+        let value = value.trim();
+        let (lo, hi) = value.split_once("..").or_else(|| value.split_once(':'))?;
+        let lo: u32 = lo.parse().ok()?;
+        let hi: u32 = hi.parse().ok()?;
+        (lo <= hi).then_some(Self { lo, hi })
+    }
+
+    fn selects(self, span: Span) -> bool {
+        self.lo <= span.lo.0 && span.hi.0 <= self.hi
+    }
+
+    fn overlaps(self, span: Span) -> bool {
+        self.lo <= span.hi.0 && span.lo.0 <= self.hi
+    }
+}
+
+fn diagnostic_selector() -> Option<DiagnosticSpanSelector> {
+    // Diagnostic-only selector: either `lo..hi` or `lo:hi` selects candidate
+    // spans contained by the supplied source-span window.
+    static SELECTOR: OnceLock<Option<DiagnosticSpanSelector>> = OnceLock::new();
+    *SELECTOR.get_or_init(|| {
+        std::env::var("DEBUNDLE_DEBUG_GUARDED_MEMBER_READ_SPAN")
+            .ok()
+            .and_then(|value| DiagnosticSpanSelector::parse(&value))
+    })
+}
+
+fn emit_selected_diagnostic(message: impl std::fmt::Display) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LINES: AtomicUsize = AtomicUsize::new(0);
+    if LINES.fetch_add(1, Ordering::Relaxed) < 12 {
+        eprintln!("[guarded-member-census] {message}");
+    }
+}
+
+fn local_binding_id(id: &Id, ids: &mut Vec<Id>) -> usize {
+    if let Some(index) = ids.iter().position(|known| known == id) {
+        index
+    } else {
+        ids.push(id.clone());
+        ids.len() - 1
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct MemberReadCertificates {
@@ -164,36 +218,91 @@ impl FunctionCensus {
                 self.functions[parent].nested_dynamic_scope = true;
             }
         }
-        for function in &mut self.functions {
+        for (function_index, function) in self.functions.iter_mut().enumerate() {
             for writes in function.writes.values_mut() {
                 writes.sort_unstable_by_key(|span| span.lo.0);
             }
             for reads in function.member_reads.values_mut() {
                 reads.sort_unstable_by_key(|span| span.lo.0);
             }
-            if function.is_async
+            let function_scope_blocked = function.is_async
                 || function.is_generator
                 || function.dynamic_scope
-                || function.nested_dynamic_scope
-            {
-                continue;
-            }
-            if function.certifiable_loops {
-                for use_ in &function.guarded_uses {
-                    if [&use_.receiver, &use_.key, &use_.snapshot]
-                        .into_iter()
-                        .all(|id| {
-                            function.declarations.contains_key(id)
-                                && !function.captured_bindings.contains(id)
-                                && !ambiguous.contains(id)
+                || function.nested_dynamic_scope;
+            for use_ in &function.guarded_uses {
+                let roles = [&use_.receiver, &use_.key, &use_.snapshot];
+                let roles_eligible = roles.into_iter().all(|id| {
+                    function.declarations.contains_key(id)
+                        && !function.captured_bindings.contains(id)
+                        && !ambiguous.contains(id)
+                });
+                let admitted =
+                    function.certifiable_loops && !function_scope_blocked && roles_eligible;
+
+                if diagnostic_selector().is_some_and(|selector| selector.selects(use_.span)) {
+                    let mut local_ids = Vec::new();
+                    let binding_ids = roles.map(|id| local_binding_id(id, &mut local_ids));
+                    let declared = roles.map(|id| function.declarations.contains_key(id));
+                    let captured = roles.map(|id| function.captured_bindings.contains(id));
+                    let role_ambiguous = roles.map(|id| ambiguous.contains(id));
+                    let same_owner = roles.iter().all(|id| {
+                        owners.get(*id).is_some_and(|owners| {
+                            owners.len() == 1 && owners.contains(&function_index)
                         })
-                    {
-                        guarded.insert(
-                            (use_.span.lo.0, use_.span.hi.0),
-                            (use_.receiver.clone(), use_.property.clone()),
-                        );
-                    }
+                    });
+                    let declarations = roles.map(|id| {
+                        function
+                            .declarations
+                            .get(id)
+                            .map(|spans| {
+                                spans
+                                    .iter()
+                                    .map(|(lo, hi)| format!("{lo}..{hi}"))
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            })
+                            .unwrap_or_else(|| "-".to_owned())
+                    });
+                    emit_selected_diagnostic(format_args!(
+                        "use={}..{} property={} function={} local_ids=receiver:{},key:{},snapshot:{} declarations=[{},{},{}] same_owner={} declared=[{},{},{}] captured=[{},{},{}] ambiguous=[{},{},{}] certifiable={} async={} generator={} dynamic_scope={} nested_dynamic_scope={} admitted={}",
+                        use_.span.lo.0,
+                        use_.span.hi.0,
+                        use_.property,
+                        function_index,
+                        binding_ids[0],
+                        binding_ids[1],
+                        binding_ids[2],
+                        declarations[0],
+                        declarations[1],
+                        declarations[2],
+                        same_owner,
+                        declared[0],
+                        declared[1],
+                        declared[2],
+                        captured[0],
+                        captured[1],
+                        captured[2],
+                        role_ambiguous[0],
+                        role_ambiguous[1],
+                        role_ambiguous[2],
+                        function.certifiable_loops,
+                        function.is_async,
+                        function.is_generator,
+                        function.dynamic_scope,
+                        function.nested_dynamic_scope,
+                        admitted,
+                    ));
                 }
+
+                if admitted {
+                    guarded.insert(
+                        (use_.span.lo.0, use_.span.hi.0),
+                        (use_.receiver.clone(), use_.property.clone()),
+                    );
+                }
+            }
+            if function_scope_blocked {
+                continue;
             }
             for loop_ in &function.loops {
                 let declarations = function.declarations.get(&loop_.binding);
@@ -429,8 +538,20 @@ impl Visit for FunctionCensus {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        let uses = guarded_snapshot_uses(node);
+        if let Some(selector) = diagnostic_selector()
+            && selector.overlaps(node.span)
+            && !uses.iter().any(|use_| selector.selects(use_.span))
+        {
+            emit_selected_diagnostic(format_args!(
+                "loop={}..{} candidate=none candidate_count={}",
+                node.span.lo.0,
+                node.span.hi.0,
+                uses.len(),
+            ));
+        }
         if let Some(function) = self.current_mut() {
-            function.guarded_uses.extend(guarded_snapshot_uses(node));
+            function.guarded_uses.extend(uses);
         }
         let mut writes = WriteIds::default();
         if let ForHead::Pat(pattern) = &node.left {
