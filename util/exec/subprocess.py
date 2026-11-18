@@ -63,7 +63,7 @@ class DirectExecArgs(ExecArgsBase):
     # Exposing an optional `list[EnvVar] | None` broke tool-calling for models that
     # serialize optional args as JSON strings (e.g. glm-4.6 sent env="null" / "[]"),
     # which strict list validation rejected — failing 100% of exec calls.
-    # See props/debug/glm46_exec_env_stringification.md.
+    # See docs/zai_api.md (Tool Use / Function Calling).
     # Stdin is intentionally not model-controlled for the same reason.
 
 
