@@ -1,53 +1,31 @@
-# Runner shutdown retry policy probe
+# Runtime shutdown retry policy probe
 
-`Runner.Close` caches its first cleanup result with `sync.Once`. A transient failure before
-finalization therefore prevents a later caller from completing cleanup. Repeating the whole
-function is unsafe: several resource closers forget their handles before reporting an error.
+[`Runtime.Close`](../env/runtime/internal/coordinator/runtime.go) closes admission, cancels
+start work, and runs one shared shutdown. Later callers observe its cached result. Caller
+cancellation only ends that caller's wait. A recoverable failure before finalization can
+therefore strand the current instance in shutdown. Which boundary can recover safely is still
+open.
 
-This source review uses devel `c4d5353a42e0ad6d77422b2b3b6961f34b3f170f` and
-[PR #12759](https://github.com/agentydragon/ducktape/pull/12759) at
-`57682e2437670dcda5c7c9ed7e962af791e75c42`. That PR separates shared cleanup from caller waits
-and observes engine exit; it preserves the first-result cache. No retry behavior is implemented
-by this note, and no cleanup failure injection was run for this probe.
+| Owner                                                                                                                    | Shutdown boundary                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Runtime coordinator](../env/runtime/internal/coordinator/runtime.go)                                                    | Settle the prior transition fence, preserve an existing seal UID, publish one `Closing` generation, and wait for its status. A publication error returns before the in-memory desired state advances.                                                             |
+| [Close controller](../env/runtime/internal/coordinator/lifecycle_controller.go)                                          | Reconcile that generation through native stop, execution fencing and bootstrap settlement. `ReadyToJoin` allows Runtime to stop and join the lifecycle engine, then join Session and lifecycle workers. Runtime retains ownership if Session cleanup is unproved. |
+| [Process supervision](../env/runtime/supervision/host.go)                                                                | Install one stop slot per process entry, cancel and join an in-flight launch, then fence the actual instance. Reissuing the stop request reuses this slot. Process cleanup and ingress acknowledgement have separate owners.                                      |
+| [Session journal](../env/runtime/journal/journal.go) and [bootstrap event log](../env/runtime/internal/bootstrap/log.go) | Latch uncertain writes. Journal closure marks the handle closed before releasing SQL resources. A later no-op closure cannot prove that the first attempt succeeded.                                                                                              |
+| [COSI backing store](../env/runtime/internal/cosistate/state.go)                                                         | Own the lifetime of the exclusive bbolt lock. Runtime closes it after joining work and applying any PID namespace fence.                                                                                                                                          |
 
-## Boundaries and evidence
+Start with a fault at the `Closing` publication boundary. Exercise both a rejected publication
+and a publication that took effect before reporting failure. Re-read the desired resource before
+selecting a retry. Require a live controller, the same closing goal, a preserved seal UID, and
+closed admission. Prove that the controller sees one closing generation and that concurrent
+waiters share its result.
 
-| Boundary                            | Observed behavior                                                                                                                                                                                                                                                                                                           | Proposed retry rule                                                                                                                                                                                                                                     |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Publish `Closing`                   | [`setDesiredState`](../env/runtime/harnesshost/lifecycle_runtime.go) preserves an existing seal UID and can advance the generation after a reported error.                                                                                                                                                                  | Re-read desired state after a publication error. Reconcile the same closing goal only while the engine is alive; preserve its seal UID and admission barrier.                                                                                           |
-| Halt, stop, inspect, seal           | [`lifecycle_controller.go`](../env/runtime/harnesshost/lifecycle_controller.go) requires current-generation outcomes, completed process cleanup, no finalizers, settled inspections, and required seals before `Closed`. Accepted setup/bootstrap must finish naturally.                                                    | Retry only an operation whose owner can establish a safe second attempt. A generation bump alone is insufficient: [`Host.requestStop`](../runner/supervision/host.go) reuses the original stop slot, including its error. Pending work remains pending. |
-| Engine exit or journal failure      | Engine completion is terminal in #12759. [`Journal.write`](../env/runtime/journal/journal.go) latches uncertain storage failures until reopen.                                                                                                                                                                              | Terminal for this Runner instance. Do not restart the engine, clear a journal failure, or admit new work as a cleanup retry. Replacement still requires native fencing and retained-state recovery.                                                     |
-| Stop controllers and join workers   | [`Close`](../runner/runner.go) cancels only after `Closed`, waits for engine exit, then joins lifecycle and Session workers.                                                                                                                                                                                                | Perform once after teardown is proven complete. Keep finalization under one owner; later waiters observe its result.                                                                                                                                    |
-| Close journals and bootstrap events | [`Journal.Close`](../env/runtime/journal/journal.go) sets `closed` before closing SQL handles. Bootstrap output now uses persistent COSI resources; Runtime closes their backing store after the lifecycle engine and workers stop. An uncertain event write poisons the writer until restart reloads the durable sequence. | Keep journal close errors terminal. Do not retry an uncertain event create or append another event at its sequence in the same Runtime process.                                                                                                         |
-| Release state ownership             | [`Owner.Close`](../env/runtime/internal/retained/retained.go) clears its file field, then attempts unlock and close. It runs only after journal/log closure succeeds.                                                                                                                                                       | Release last and only once. Preserve any release error; after a release attempt, an error does not prove that the lock is still held.                                                                                                                   |
+Keep engine exit, uncertain journal writes, and ambiguous handle release terminal for the
+current instance. Consider a native stop retry only once the process owner can prove that a
+second fence targets the same instance. Then validate one supported retry against coordinator
+and supervision races and native restart recovery.
 
-## Proposed shape
-
-Keep teardown convergence in the existing COSI controllers. Separate its retryable operations
-from irreversible finalization, with a single shared cleanup coordinator recording phase and
-resource outcomes. Caller cancellation ends only that caller's wait. It neither resets cleanup
-nor advances the phase. Preserve terminal errors instead of converting a later no-op to success.
-
-The first implementation should support only an explicitly classified, owner-controlled retry
-before finalization. Do not replace `closeOnce` with an unrestricted loop or add a second
-imperative teardown path. Process cleanup remains distinct from `Quiesce`: it preserves any
-selected seal but does not require ingress acknowledgement.
-
-## Smallest implementation probe
-
-1. Inject a desired-state publication failure, including a write that succeeded before returning
-   an error. Prove that another attempt preserves the closing goal, seal UID, and admission fence.
-2. Inject a process stop failure. Establish whether the same process instance can safely retry
-   its fence before adding a retry mechanism to its owner; retain its finalizer until proven stopped.
-3. Inject journal/log close and owner-release errors. Prove that repeated waiters retain the
-   original outcome and that a later no-op never reports recovered cleanup.
-4. Add those cases to the Runner race and supervision suites, then validate native restart:
-
-   ```bash
-   bbr test //agentplane/env/runtime:harnesshost_test //agentplane/env/runtime/supervision:supervision_test
-   bbr test //agentplane/env/e2e:test_restart
-   ```
-
-Proceed only if the first recoverable case has an explicit owner and a checkable success
-condition. Keep engine death, uncertain journal state, and ambiguous handle closure terminal;
-they need recovery semantics before a retry policy can be honest.
+```bash
+bbr test //agentplane/env/runtime/internal/coordinator:coordinator_test //agentplane/env/runtime/supervision:supervision_test
+bbr test //agentplane/env/e2e:test_restart
+```
