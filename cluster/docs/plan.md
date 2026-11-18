@@ -79,9 +79,7 @@ editing a route.
       daily, 4 weekly, 6 monthly) — Restic dedupes so retention is cheap,
       and a source going empty only adds a new snapshot, not destroys
       old ones. Overlaps with the off-cluster object-storage decision in
-      the items above. See
-      <../debug/2026-06-03-ns103711-seaweedfs-data-volume-mount-missing.md>
-      for the close call.
+      the items above.
 - [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
       Mimir, and Tempo all lost data in the rename. If those backends are
       supposed to survive node-rotation incidents, they should live on
