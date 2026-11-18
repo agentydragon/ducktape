@@ -164,7 +164,7 @@ Sandbox incarnation and uncertain-effect boundaries in those checks.
 
 ## Investigate VM executor health loss during tool OOM
 
-The [VM OOM failure record](runtime/debug/2026_11_02_vm_executor_replacement_ci.md) shows a tool
+The [VM OOM failure record](../system_tests/debug/codex_tool_oom/2026_11_02_vm_executor_replacement_ci.md) shows a tool
 OOM followed by an exec-server health deadline, native fencing and executor replacement; the reason
 the local WebSocket handshake stalled is not established. On recurrence, capture per-probe timing
 and exec-server process and socket evidence before the fence, then distinguish OOM effects from

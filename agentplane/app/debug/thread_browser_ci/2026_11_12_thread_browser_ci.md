@@ -14,6 +14,6 @@ timestamps on Go's outbound discovery, token and key requests, which carry no tr
 app admission and session load, provider discovery and exchange, session commit, and the
 client's receipt of headers. [Landed instrumentation](https://github.com/agentydragon/ducktape/commit/55c4616002c293ddf733ee39b3b34f3d318d9c51).
 
-The [controlled TLS discovery stall](../app/debug/2026_11_12_thread_browser_auth_setup_timeout.md)
+The [controlled TLS discovery stall](2026_11_12_thread_browser_auth_setup_timeout.md)
 shows how to reproduce the timeout signature and read the traces. The natural failure's cause
 remains open.

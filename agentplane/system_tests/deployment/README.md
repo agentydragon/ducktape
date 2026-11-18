@@ -81,7 +81,7 @@ fixture root and workload CA while preserving unrelated PKI resources and the re
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
 guest shutdown checks and the selected boot/profile settings are preserved. k3s and the retained
 controllers remain running after successful teardown.
-See the [persistence evidence](../../debug/k3s_persistence.md).
+See the [persistence evidence](../k3s/debug/retained_baseline/k3s_persistence.md).
 
 Setup, each image import and teardown use the same OpenTelemetry tracer as the scenarios,
 writing completed spans immediately to `test-spans.jsonl` in undeclared outputs. The test log prints
@@ -279,7 +279,7 @@ looks for it only at start. The stack writes KubeVirt's and Kyverno's view of th
 serial console and any image a Pod pulled from a registry to `test.outputs/vm-sandboxes.txt`.
 The manual `test_vm_profile` variant adds a perf-capable guest root for native app-server
 startup profiling; its runtime opt-in, repeat commands, and artifact path are in the
-[native startup profile note](../../debug/2026_10_31_vm_native_startup_profile.md).
+[native startup profile note](../../debug/vm_startup_latency/2026_10_31_vm_native_startup_profile.md).
 
 The template boots the [test guest](../vm/guest/BUILD.bazel) instead of production's NixOS image, which sits
 in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots
@@ -336,7 +336,7 @@ to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted up
 The OOM template explicitly sets `agentplane.cgroup-observer=1`, starting a root observer outside
 the execution slices to publish read-only snapshots of executor limits and OOM counters. Other
 guests retain the observer unit for the unprivileged restart-denial check without starting its
-polling process ([native CPU evidence](../debug/vm_observer_scope.md)). Tool processes retain
+polling process ([native CPU evidence](../debug/codex_tool_oom/vm_observer_scope.md)). Tool processes retain
 production's UID and cgroup permissions.
 The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
 victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
@@ -346,7 +346,7 @@ binaries; it does not boot the production NixOS image or force exec-server death
 Only this OOM sandbox selects the `environment-vm-codex-oom` template to enable the guest
 cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
 256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
-path while the Codex session remains active; see [the measured budget probe](../debug/vm_oom_budget.md).
+path while the Codex session remains active; see [the measured budget probe](../debug/codex_tool_oom/vm_oom_budget.md).
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the

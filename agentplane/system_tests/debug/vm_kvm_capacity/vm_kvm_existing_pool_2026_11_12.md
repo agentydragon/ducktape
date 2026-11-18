@@ -40,7 +40,7 @@ bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 Claude turn, Codex turn, and Codex tool OOM scenarios all completed. The deliberate OOM occurred in the
 inner guest's 256-MiB native service: tool exit 137, OOM-kill counter increased, follow-up exited 0.
 It was not an OOM in the outer worker. This successful attempt does not repair the separately recorded
-[Codex memory capability limitation](../../env/runtime/debug/2026_11_12_codex_memory_capability.md).
+[Codex memory capability limitation](../codex_tool_oom/2026_11_12_codex_memory_capability.md).
 
 ## Measurement limits
 

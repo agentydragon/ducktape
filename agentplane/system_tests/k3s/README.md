@@ -46,5 +46,5 @@ For example, collect the native profiles on a VM suite with
 `bbr test --test_env=AGENTPLANE_PROFILE_IMAGE_IMPORTS=1 //agentplane/system_tests/suites:test_vm`.
 
 See the [deployment guide](../deployment/README.md) for the composed lifecycle, image handling,
-diagnostics and suite behavior, and [persistence evidence](../../debug/k3s_persistence.md) for the
+diagnostics and suite behavior, and [persistence evidence](debug/retained_baseline/k3s_persistence.md) for the
 original measurements.

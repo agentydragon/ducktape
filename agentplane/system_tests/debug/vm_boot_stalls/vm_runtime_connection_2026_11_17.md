@@ -2,7 +2,7 @@
 
 The Codex VM in [manual invocation 7ba9c250](https://app.buildbuddy.io/invocation/7ba9c250-4568-467b-9ab6-8496e2e2a795) never reached userspace or Environment Runtime in the retained serial output. A later natural [devel failure `94f0de0c`](https://app.buildbuddy.io/invocation/94f0de0c-a4d1-59b9-a465-2d9790f4f2aa) records QEMU returning from timer interrupt dispatch with the expected guest entry PC, followed by a timer left in service while later IPIs are acknowledged. The exact instruction or emulator mutation that first lost timer progress remains unobserved. Cleanup reaches the controller's deliberate quiescence fence; weakening that fence would not repair timer delivery.
 
-This is distinct from the [admitted-turn stall](vm_guest_progress_and_host_crashes_2026_11_12.md), the inner QEMU IOTLB assertion (#16057), and the outer Firecracker failures (#14952). The report's original seven-day population and interim baseline census retain their original windows; the samples below are selected forensic observations.
+This is distinct from the [admitted-turn stall](../vm_guest_progress_and_host_crashes_2026_11_12.md), the inner QEMU IOTLB assertion (#16057), and the outer Firecracker failures (#14952). The report's original seven-day population and interim baseline census retain their original windows; the samples below are selected forensic observations.
 
 ## Samples and clocks
 
@@ -180,7 +180,7 @@ the [historical Actions grants report](https://github.com/agentydragon/ducktape/
 | 08:37:23     | Same UID retains deletion timestamp and `state-volume` finalizer, `stopStage=Quiescing`, no quiesce receipt and a retry for the same Pod UID. VM/Pod still alive. |
 | 08:37:23.797 | Cleanup ends with its 300.275-second timeout.                                                                                                                     |
 
-The [driver](../driver/app_sandbox.py) waits for disappearance of the exact UID; [owned cleanup](../driver/cleanup.py) drains despite caller cancellation and retains its failure. The [controller finalizer](../../environments/internal/controller/controller.go) seals published incarnations before deleting workloads/state. `TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot` expressly preserves this rule after controller takeover: absent observation cannot prove absence of previously admitted Sessions.
+The [driver](../../driver/app_sandbox.py) waits for disappearance of the exact UID; [owned cleanup](../../driver/cleanup.py) drains despite caller cancellation and retains its failure. The [controller finalizer](../../../environments/internal/controller/controller.go) seals published incarnations before deleting workloads/state. `TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot` expressly preserves this rule after controller takeover: absent observation cannot prove absence of previously admitted Sessions.
 
 The Runtime remains unreachable, so it cannot produce that seal. The first Quiesce RPC result predates the captured controller log window; later connection failures, the final retry status and the still-live QEMU are retained. The successful comparator completes exact-UID deletion in 18.671 seconds. No missed deletion, cancellation race or duplicate mutation owner was established.
 

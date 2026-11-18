@@ -34,9 +34,9 @@ and [the historical census](historical_census.md).
   CPU 1 stall and a paired grants control with no recurrence. Separate captures
   show early PCI/ACPI silence and PID 1 waiting in cgroup/RCU code after ACPI
   during cleanup of a guest that had never become Ready. See
-  [the managed timer recurrence](../vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes),
-  [the earlier timer stalls and paired control](../vm_runtime_connection_2026_11_17.md#earlier-managed-tcg-failures),
-  [early PCI/ACPI silence](../vm_boot_before_userspace_2026_11_09.md),
+  [the managed timer recurrence](../vm_boot_stalls/vm_runtime_connection_2026_11_17.md#natural-devel-recurrence-with-exact-probes),
+  [the earlier timer stalls and paired control](../vm_boot_stalls/vm_runtime_connection_2026_11_17.md#earlier-managed-tcg-failures),
+  [early PCI/ACPI silence](../vm_boot_stalls/vm_boot_before_userspace_2026_11_09.md),
   and [the readiness-cleanup RCU wait](five_run_full_suite_rcu.md).
 - **QEMU boot assertion.** An original launcher aborted in
   `iotlb_to_section` before userspace. Its replacement completed the scenario

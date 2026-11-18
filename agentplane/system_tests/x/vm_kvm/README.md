@@ -5,7 +5,7 @@ Run [`test_vm.py`](../../suites/test_vm.py) with KubeVirt hardware acceleration 
 
 An earlier three-scenario suite passed on the existing 4-CPU/8-GiB KubeVirt worker with a 7-GiB
 scheduling estimate: 276.857s, a 5.51-GiB action cgroup peak, and no worker OOM or swap use. See the
-[measurement and its limits](../../debug/vm_kvm_existing_pool_2026_11_12.md). No separate canary or
+[measurement and its limits](../../debug/vm_kvm_capacity/vm_kvm_existing_pool_2026_11_12.md). No separate canary or
 worker resize is needed for this measured run; CI routing and fleet concurrency remain separate decisions.
 The shared suite now runs the two harness-turn scenarios; the OOM probe has its own manual target.
 

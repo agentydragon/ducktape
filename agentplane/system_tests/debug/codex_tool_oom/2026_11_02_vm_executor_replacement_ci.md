@@ -33,15 +33,15 @@ this was separate from the boot-evidence teardown failures seen on other runs.
   the OOM, Runtime had also logged timed-out systemd observations for the old
   executor service and an unrelated native service.
 
-`MEMORY_PROBE` in [the scenario](../../../system_tests/scenarios/vm_sandbox.py)
+`MEMORY_PROBE` in [the scenario](../../scenarios/vm_sandbox.py)
 reads `/proc/self/cgroup` and selects the observer snapshot for that path. The
 paths therefore identify the services that ran the two commands, rather than
-an observer choosing the wrong leaf. The [systemd launcher](../supervision/systemd_launcher.go)
-uses a stable owner-scope prefix; [each transient service launch](../supervision/systemd.go)
+an observer choosing the wrong leaf. The [systemd launcher](../../../env/runtime/supervision/systemd_launcher.go)
+uses a stable owner-scope prefix; [each transient service launch](../../../env/runtime/supervision/internal/systemd/backend.go)
 gets a new UUID. The different UUIDs establish executor service replacement.
-The [health monitor](../execution/codexexecserver/server.go) probes every five
+The [health monitor](../../../env/runtime/execution/codexexecserver/server.go) probes every five
 seconds, with a three-second deadline and three-failure limit. A backend loss
-then goes through [embedded Execution fencing](../execution/service/service.go).
+then goes through [embedded Execution fencing](../../../env/runtime/execution/service/service.go).
 The scenario's Runner status checks track the Codex harness and Session, not
 this separate embedded Execution service. They establish harness survival,
 not executor continuity.
@@ -69,10 +69,10 @@ chain was `execution backend lost` → `execution backend stopped responding`
 `context deadline exceeded`. The successor unit started at 23:25:39.883Z and
 was active at 23:25:41.790Z.
 
-The monitor in [the executor service](../execution/codexexecserver/server.go)
+The monitor in [the executor service](../../../env/runtime/execution/codexexecserver/server.go)
 uses a five-second interval, three-second deadline, and three consecutive
 failures. It logs only the final error, not each failed probe or its timestamp.
-The [native unit configuration](../supervision/systemd.go) sets
+The [native unit configuration](../../../env/runtime/supervision/internal/systemd/backend.go) sets
 `KillMode=control-group` and `KillSignal=15` (`SIGTERM`). The stop request
 preceded the command's exit, so the 143 result is strongly consistent with
 Runtime stopping the executor unit after health failure and the unit's SIGTERM
