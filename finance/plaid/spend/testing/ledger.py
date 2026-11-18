@@ -90,7 +90,7 @@ def transactions() -> list[Transaction]:
                         "entity_id": "synthetic-merchant",
                         "website": "https://example.invalid/shipping",
                     },
-                    {"name": "Example Marketplace", "type": "marketplace"},
+                    {"name": "Example Marketplace", "type": "marketplace", "logo_url": ""},
                 ]
             ),
         ),
@@ -218,6 +218,7 @@ def details() -> dict[tuple[str, str], PlaidTransactionDetails]:
             transaction_id="shipping",
             amount=Decimal("18.50"),
             iso_currency_code="USD",
+            category=[],
             original_description="EXAMPLE SHIPPING PAYMENT",
             authorized_date=date(2026, 10, 13),
             payment_channel="in store",

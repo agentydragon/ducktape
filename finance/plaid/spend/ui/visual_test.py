@@ -535,6 +535,7 @@ async def _expect_shipping_plaid_fields(original: Locator) -> None:
     counterparties = original.locator(".cm-content")
     await expect(counterparties).to_contain_text('"confidence_level": "HIGH"')
     await expect(counterparties).to_contain_text('"name": "Example Marketplace"')
+    await expect(counterparties).to_contain_text('"logo_url": ""')
 
     panel = await _open_plaid_fields(original)
     await expect(panel.get_by_text("in major currency units", exact=False)).to_be_visible()
@@ -545,7 +546,8 @@ async def _expect_shipping_plaid_fields(original: Locator) -> None:
         '"city": "Example City"',
         '"reference_number": "synthetic-reference"',
         '"detailed": "TRANSPORTATION_SHIPPING"',
-        '"plaid_date": "2026-10-14"',
+        '"pending_transaction_id": null',
+        '"category": []',
     ):
         await expect(source).to_contain_text(field)
 
@@ -556,7 +558,7 @@ async def _capture_pending_empty_plaid_fields(page: Page, view: VisualPage, *, t
     pending = page.locator(".mantine-Accordion-item").filter(has=control)
     await expect(pending.get_by_text("Pending", exact=True)).to_be_visible()
     panel = await _open_plaid_fields(pending)
-    await expect(panel.get_by_text("No additional Plaid fields supplied.", exact=True)).to_be_visible()
+    await expect(panel.locator(".cm-content")).to_contain_text('"amount": null')
     await view.capture(
         f"transactions-pending-empty-plaid-fields-{theme}",
         label=f"390px {theme} pending transaction with empty Plaid source fields",
@@ -749,7 +751,7 @@ async def test_full_reversal_transaction_explanation(
     await expect(original_details.get_by_text("Classification rule is shown as context", exact=False)).to_be_visible()
     await expect(original_details.get_by_text("Allowance balance effect: $0", exact=False)).to_be_visible()
     panel = await _open_plaid_fields(original_details)
-    await expect(panel.get_by_text("No additional Plaid fields supplied.", exact=True)).to_be_visible()
+    await expect(panel.locator(".cm-content")).to_contain_text('"amount": null')
     await view.capture(
         f"full-reversal-transaction-explanation-{width}{dark_suffix}",
         label=f"{width}px full reversal explanation",

@@ -152,23 +152,8 @@ function TransactionTitle({ row }: { row: SpendTransactionRow }) {
   );
 }
 
-// The authenticated response models allowlist these Plaid fields before they reach the browser.
-function suppliedPlaidFields(value: object): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, field]: [string, unknown]) => {
-      if (field == null || field === "") return [];
-      if (Array.isArray(field)) return field.some((item) => item !== "") ? [[key, field]] : [];
-      if (typeof field === "object") {
-        const nested = suppliedPlaidFields(field);
-        return Object.keys(nested).length ? [[key, nested]] : [];
-      }
-      return [[key, field]];
-    })
-  );
-}
-
 function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
-  const details = suppliedPlaidFields(row.transaction.details ?? {});
+  const details = row.transaction.details;
   return (
     <Accordion variant="contained">
       <Accordion.Item value="plaid-fields">
@@ -178,8 +163,8 @@ function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
             Original amount and running balance are in major currency units. The table and allowance effects use integer
             minor units.
           </Text>
-          {Object.keys(details).length ? (
-            <JsonView value={{ ...details, plaid_date: row.transaction.plaid_date ?? row.transaction.date }} />
+          {details != null ? (
+            <JsonView value={details} />
           ) : (
             <Text size="sm" c="dimmed">
               No additional Plaid fields supplied.
@@ -334,7 +319,7 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
           <Text size="sm" fw={650}>
             Plaid counterparties
           </Text>
-          <JsonView value={counterparties.map(suppliedPlaidFields)} />
+          <JsonView value={counterparties} />
         </Stack>
       )}
       <PlaidSourceFields row={row} />
