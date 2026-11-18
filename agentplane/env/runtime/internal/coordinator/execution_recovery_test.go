@@ -408,11 +408,7 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	if err != nil || response.GetStatus().GetOutcome().String() != "OUTCOME_COMPLETED" {
 		t.Fatalf("initial OpenSession response=%v, err=%v", response, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("initial native executor session did not open")
-	}
+	waitSignal(t, opened, "initial native executor session did not open")
 	if got := <-events; got != "start" {
 		t.Fatalf("first lifecycle event=%q, want start", got)
 	}
@@ -464,11 +460,7 @@ func TestFencedExecutionLossRestartsAPIForSameIncarnation(t *testing.T) {
 	if err != nil || response.GetStatus().GetOutcome().String() != "OUTCOME_COMPLETED" {
 		t.Fatalf("new OpenSession response=%v, err=%v", response, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("fresh operation did not reach the recovered Execution service")
-	}
+	waitSignal(t, opened, "fresh operation did not reach the recovered Execution service")
 	_ = newStream.CloseSend()
 }
 
