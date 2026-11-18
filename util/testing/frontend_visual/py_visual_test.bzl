@@ -20,6 +20,7 @@ def py_visual_test(
         test_deps = [],
         env = {},
         tags = [],
+        publishes_screenshots = True,
         **kwargs):
     """Run Python tests with hermetic browser assets and visual-review metadata.
 
@@ -28,6 +29,7 @@ def py_visual_test(
     `inline_page` assembles the bundle and stylesheets in memory. `page_url` gives
     that document an origin; `served_documents` supplies mocked iframe documents.
     `devtools_viewport` preserves existing device-pixel viewport captures.
+    Set `publishes_screenshots` to False for diagnostics-only uses of the harness.
     """
     if fonts != None and font_family == None:
         fail("py_visual_test(%s) brings its own fonts, so it must name the font_family they force; " % name +
@@ -67,7 +69,7 @@ def py_visual_test(
         data = assets + stylesheets + served_documents.values() + [harness] +
                ([fonts] if fonts != None else []),
         env = visual_env,
-        tags = tags + ["visual"],
+        tags = tags + (["visual"] if publishes_screenshots else []),
         deps = [
             "//:conftest",
             "//util/testing/frontend_visual:fixtures",

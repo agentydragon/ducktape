@@ -243,7 +243,6 @@ py_test(
             "roughjs": "$(rlocationpath //:node_modules/roughjs/dir)",
         }),
     },
-    tags = ["visual"],
     deps = [
         "//:conftest",
         "//util/testing:asgi",

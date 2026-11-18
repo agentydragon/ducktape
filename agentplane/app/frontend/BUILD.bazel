@@ -295,6 +295,7 @@ filegroup(
 agentplane_visual_test(
     name = "profile_history",
     src = "test_history_profile.py",
+    publishes_screenshots = False,
     tags = ["manual"],
     title = "Agentplane: history CPU profiles",
 )

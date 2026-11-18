@@ -2,7 +2,7 @@
 
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
-def agentplane_visual_test(name, src, title, shard_count = 1, tags = [], test_deps = []):
+def agentplane_visual_test(name, src, title, shard_count = 1, tags = [], test_deps = [], publishes_screenshots = True):
     """Run one test file against the app's callable fixture harness."""
     py_visual_test(
         name = name,
@@ -15,6 +15,7 @@ def agentplane_visual_test(name, src, title, shard_count = 1, tags = [], test_de
         # Retain the published phone images' fractional device-pixel geometry.
         devtools_viewport = True,
         harness = ":visual_bundle_js",
+        publishes_screenshots = publishes_screenshots,
         shard_count = shard_count,
         tags = tags,
         test_deps = test_deps + [

@@ -28,7 +28,6 @@ py_test(
     name = "test_context",
     srcs = ["test_context.py"],
     data = ["//util:playwright"],
-    tags = ["visual"],
     deps = [
         ":context",
         "//:conftest",
