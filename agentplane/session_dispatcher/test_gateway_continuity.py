@@ -13,23 +13,16 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
+from agentplane.env.e2e.testing.runtime_with_history import run_runtime_with_history
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import CodexExecServerContainer
 from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
-from agentplane.net.peertls.config import (
-    APP_URI,
-    CENTRAL_SAMPLER_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
-    MTLS,
-    SANDBOX_CONTROLLER_URI,
-)
+from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, GATEWAY_RUNTIME_PROXY_URI
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient
@@ -86,42 +79,16 @@ async def runner(
     api_server: KubernetesApiServer,
     tmp_path: Path,
 ) -> AsyncIterator[RunningRunner]:
-    control = EnvironmentRuntimeControl(
-        listen_address="127.0.0.1:9090",
-        security=MTLS(
-            tls=gateway_service.environment_service.issue_workload_tls(
-                sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
-            )
-        ),
-    )
-    launched = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
-    ingress_directory = tmp_path / "runner-history"
-    ingress_directory.mkdir()
-    async with (
-        go_history_service(
-            history_service.database_url,
-            api=api_server,
-            directory=ingress_directory,
-            writer_namespaces=(sandbox.namespace,),
-            svid_ca=gateway_service.environment_service.ca,
-            policy_namespace=sandbox.namespace,
-        ) as ingress_service,
-        history_tunnel(ingress_service.ingress_target) as proxy,
-        RunningRunner(
-            launched,
-            runner_gateway,
-            history=history_service.reader,
-            control_endpoint=control,
-            ingress_endpoint=Endpoint(
-                target=ingress_service.ingress_target,
-                svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
-            ),
-            observe_control=False,
-            controller_credentials=gateway_service.environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
-            incarnation_uid=sandbox.pod_uid,
-        ) as started,
-    ):
-        await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
+    async with run_runtime_with_history(
+        config,
+        runner_gateway,
+        history_service,
+        sandbox,
+        gateway_service.environment_service,
+        sandbox_control,
+        api=api_server,
+        directory=tmp_path,
+    ) as started:
         yield started
 
 
