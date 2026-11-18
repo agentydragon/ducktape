@@ -170,12 +170,10 @@ caller-authored event actors record their verified UID when known.
 
 A `PolicySet` holds typed policies as `action_auto_approve` rules; a `PolicyBinding` joins either
 an Identity or a namespaced ServiceAccount subject to sets by name, optionally until `expiresAt`.
-Workload and MCP Connection bindings name Identities; direct component callers may use labeled,
-configured ServiceAccount subjects. Both are namespaced Kubernetes objects the service watches in its
-configured policy namespace. Labeled caller ServiceAccounts are
-watched independently in configured caller namespaces, so a binding can target an account outside
-the policy namespace. The service reads `spec` only. A set with a rule that does not parse
-contributes nothing; a set a binding names that is missing or refused does not stop its other sets
+Both are namespaced Kubernetes objects the service watches in its configured policy namespace.
+Every caller is an Identity: workload and MCP Connection bindings name Identities, and a
+ServiceAccount subject admits no caller. The service reads `spec` only. A set with a rule that does
+not parse contributes nothing; a set a binding names that is missing or refused does not stop its other sets
 from granting. The service reports which in the binding's `ActionsReady` condition, beside the other
 readers' conditions, and never judges a binding's `expiresAt`: the Policy Controller deletes an
 expired binding.
