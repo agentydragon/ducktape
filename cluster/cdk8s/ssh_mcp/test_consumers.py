@@ -22,6 +22,7 @@ from cdk8s import (
 from more_itertools import one
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
+from cluster.cdk8s.testing.manifests import find_resource
 from cluster.scripts import nebula_mesh
 
 
@@ -43,19 +44,13 @@ def test_actions_binding_uses_the_bearer_ssh_mcp_mints(
     staging_manifests: list[dict[str, Any]], ssh_resources: list[dict[str, Any]]
 ) -> None:
     settings = yaml.safe_load(
-        one(
-            doc
-            for doc in staging_manifests
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
-        )["data"]["settings.yaml"]
+        find_resource(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"]
     )
     config = settings["action_groups"]["ssh"]["executor"]["config"]
     assert config["auth"] == "static_bearer"
     assert config["url"] == ssh_mcp_config.MCP_URL
     bearer_file = Path(config["bearer_file"])
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
-    )
+    deployment = find_resource(staging_manifests, "Deployment", "actions")
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
     mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == bearer_file.parent)

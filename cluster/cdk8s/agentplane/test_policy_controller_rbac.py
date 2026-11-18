@@ -14,6 +14,7 @@ from more_itertools import one
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
+from cluster.cdk8s.testing.manifests import find_resource
 
 _GROUP = "agentplane.allegedly.works"
 
@@ -52,11 +53,7 @@ def _allowed(documents: list[dict[str, Any]], group: str, resource: str, verbs: 
 
 
 def _settings(documents: list[dict[str, Any]]) -> dict[str, Any]:
-    config = one(
-        doc
-        for doc in documents
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "policy-controller-settings"
-    )
+    config = find_resource(documents, "ConfigMap", "policy-controller-settings")
     return cast(dict[str, Any], yaml.safe_load(one(config["data"].values())))
 
 

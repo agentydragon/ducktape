@@ -32,10 +32,7 @@ from cluster.cdk8s.agentplane import (
     staging,
     workload_tls,
 )
-
-
-def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
-    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
@@ -55,8 +52,8 @@ def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
 
 def test_central_sampler_workload_and_cross_service_grants(staging_manifests: list[dict[str, Any]]) -> None:
     namespace = staging.ENV.namespace
-    assert _resource(staging_manifests, "Database", "central-sampler")["spec"]["databaseReclaimPolicy"] == "retain"
-    deployment = _resource(staging_manifests, "Deployment", central_sampler.NAME)
+    assert find_resource(staging_manifests, "Database", "central-sampler")["spec"]["databaseReclaimPolicy"] == "retain"
+    deployment = find_resource(staging_manifests, "Deployment", central_sampler.NAME)
     assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
         "central-sampler-settings",
         "public-web-pki",
@@ -68,19 +65,19 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "type": "RollingUpdate",
         "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0},
     }
-    assert _resource(staging_manifests, "Deployment", "sessions")["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert _resource(staging_manifests, "PodDisruptionBudget", central_sampler.NAME)["spec"]["minAvailable"] == 1
+    assert find_resource(staging_manifests, "Deployment", "sessions")["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert find_resource(staging_manifests, "PodDisruptionBudget", central_sampler.NAME)["spec"]["minAvailable"] == 1
     assert pod["serviceAccountName"] == central_sampler.NAME
     assert not pod.get("initContainers")
 
     container = one(pod["containers"])
-    serving_certificate = _resource(staging_manifests, "Certificate", f"{central_sampler.NAME}-workload")
+    serving_certificate = find_resource(staging_manifests, "Certificate", f"{central_sampler.NAME}-workload")
     assert serving_certificate["spec"]["uris"] == [CENTRAL_SAMPLER_URI]
     assert any(
         volume.get("secret", {}).get("secretName") == f"{central_sampler.NAME}-workload-tls"
         for volume in pod["volumes"]
     )
-    service = _resource(staging_manifests, "Service", central_sampler.NAME)["spec"]
+    service = find_resource(staging_manifests, "Service", central_sampler.NAME)["spec"]
     assert service["selector"]
     assert all(
         deployment["spec"]["template"]["metadata"]["labels"][key] == value for key, value in service["selector"].items()
@@ -111,7 +108,9 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         for mount in container["volumeMounts"]
     )
 
-    config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
+    config = json.loads(
+        find_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
+    )
     assert "database_url" not in config
     assert "executor_reconnect_timeout_seconds" not in config
     assert "turn_timeout_seconds" not in config
@@ -163,7 +162,9 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         for route in staging.STAGING_APP_MODELS.central_sampler
         if route.upstream.provider.value == "anthropic-api"
     }
-    catalog = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])["models"]
+    catalog = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
+        "models"
+    ]
     assert set(latest_anthropic).issubset(catalog["harnesses"][Harness.CENTRAL_SAMPLER.value])
     assert not set(latest_anthropic) & set(catalog["harnesses"][Harness.CODEX.value])
     assert not set(latest_anthropic) & set(catalog["harnesses"][Harness.CLAUDE.value])
@@ -189,7 +190,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     )
 
     gateway = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+        find_resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
     target = gateway["central_sampler"]
     assert target["target"] == central_sampler.target(namespace)
@@ -199,30 +200,30 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     for field in ("cert_file", "key_file", "ca_file"):
         assert target["tls"][field] == gateway["gateway_tls"][field]
     controller = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+        find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
     )
     assert controller["environment_service"]["runtime_proxy"]["executor_callers"] == serving_certificate["spec"]["uris"]
 
-    app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    app_config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
     assert app_config["policy_service_tls"]["server_uri"] == POLICY_CONTROLLER_URI
 
     history = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
+        find_resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
     assert history["policy_namespace"] == namespace
     assert serving_certificate["spec"]["uris"] == [history["ingress"]["sampler_service_actor"]]
-    llm = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    llm = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm["policy_namespace"] == namespace
     assert "central_sampler_accounts" not in llm
     assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
     assert llm["central_sampler_identity_callers"] is True
 
-    environments = _resource(staging_manifests, "CiliumNetworkPolicy", "environments")["spec"]
+    environments = find_resource(staging_manifests, "CiliumNetworkPolicy", "environments")["spec"]
     assert _admits(environments, source=central_sampler.NAME, port=8082)
-    sampler_environments = _resource(staging_manifests, "CiliumNetworkPolicy", "environments-client-central-sampler")[
-        "spec"
-    ]
+    sampler_environments = find_resource(
+        staging_manifests, "CiliumNetworkPolicy", "environments-client-central-sampler"
+    )["spec"]
     assert sampler_environments["endpointSelector"]["matchLabels"] == {"app.kubernetes.io/name": central_sampler.NAME}
     assert sampler_environments["egress"] == [
         {
@@ -238,29 +239,29 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         }
     ]
 
-    sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
+    sampler_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
     assert not _admits(sampler_policy, source=runner_gateway.NAME, port=8080)
     assert _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", "sessions-sampler")["spec"],
+        find_resource(staging_manifests, "CiliumNetworkPolicy", "sessions-sampler")["spec"],
         source=runner_gateway.NAME,
         port=central_sampler.PORT,
     )
     assert not _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],
+        find_resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],
         source=central_sampler.NAME,
         port=runner_gateway.sessions_service(namespace).pod_port,
     )
     assert _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", history_service.NAME)["spec"],
+        find_resource(staging_manifests, "CiliumNetworkPolicy", history_service.NAME)["spec"],
         source=central_sampler.NAME,
         port=history_service.service(namespace).pod_port,
     )
     assert _admits(
-        _resource(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"],
+        find_resource(staging_manifests, "CiliumNetworkPolicy", "llm-ingress")["spec"],
         source=central_sampler.NAME,
         port=llm_ingress.service(namespace).pod_port,
     )
-    sampler_policy = _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
+    sampler_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"]
     anthropic_egress = one(rule for rule in sampler_policy["egress"] if "toFQDNs" in rule)
     assert anthropic_egress["toFQDNs"] == [{"matchName": "api.anthropic.com"}]
     assert anthropic_egress["toPorts"] == [
@@ -273,7 +274,7 @@ def test_central_sampler_turn_timeout_option_is_rendered(scratch_app_factory: Ca
     assert sampler is not None
     env = replace(staging.ENV, central_sampler=replace(sampler, turn_timeout_seconds=123))
     manifests = Cdk8sTesting.synth(staging.chart(scratch_app_factory(), env))
-    config = json.loads(_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
+    config = json.loads(find_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert config["turn_timeout_seconds"] == 123
 
 
