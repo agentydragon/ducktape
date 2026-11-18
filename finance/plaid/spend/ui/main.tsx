@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Anchor, Box, Burger, Center, Container, Grid, Group, MantineProvider, Menu, Paper, Tabs } from "@mantine/core";
+import {
+  Anchor,
+  Box,
+  Burger,
+  Center,
+  Container,
+  Grid,
+  Group,
+  MantineProvider,
+  Menu,
+  Paper,
+  Tabs,
+  VisuallyHidden,
+} from "@mantine/core";
 import "@mantine/core/styles.css";
 import "./styles.css";
 
@@ -113,6 +126,7 @@ function App() {
           </Container>
         </Paper>
         <Container component="main" size="lg" py="xl">
+          <VisuallyHidden component="h1">{spendTabs.find((tab) => tab.value === activeTab)?.label}</VisuallyHidden>
           <Tabs.Panel value="spending">
             <SpendingPage
               view={spendData.view}

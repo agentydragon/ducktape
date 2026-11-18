@@ -490,18 +490,21 @@ export function SpendingPage({
   onEstimatePeriodChange: (periodId: EstimatePeriodId) => void;
 }) {
   const cards = view?.cards || [];
+  const connectionBadge = (
+    <Badge color={connectionState === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
+      {connectionState}
+    </Badge>
+  );
   return (
     <Stack gap="xl">
-      <Group justify="space-between" gap="md">
-        <Title order={1} size="h3">
-          Flexible spending
-        </Title>
-        <Badge color={connectionState === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
-          {connectionState}
-        </Badge>
-      </Group>
-      {view?.allowance?.status === "active" && (
-        <SpendingHistoryChart allowance={view.allowance} revision={view.generated_at} />
+      {view?.allowance?.status === "active" ? (
+        <SpendingHistoryChart
+          allowance={view.allowance}
+          revision={view.generated_at}
+          connectionBadge={connectionBadge}
+        />
+      ) : (
+        <Group justify="flex-end">{connectionBadge}</Group>
       )}
       {error && (
         <Alert color="red" title="Couldn't refresh your view">

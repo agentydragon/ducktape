@@ -283,7 +283,10 @@ async def test_spending_decision_render(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await page.locator("canvas[aria-label]").wait_for()
     await page.get_by_text("$200", exact=True).wait_for()
-    await expect(page.get_by_role("heading", name="Flexible spending", level=1)).to_have_count(1)
+    await expect(page.get_by_role("heading", name="Spending", level=1)).to_have_count(1)
+    await expect(
+        page.get_by_role("region", name="Spending over time").get_by_text("Live updates", exact=True)
+    ).to_be_visible()
     await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_hidden()
     await page.get_by_text("How this chart works", exact=True).click()
     await expect(page.get_by_text("Bars include recorded positive flexible purchases", exact=False)).to_be_visible()
@@ -1325,7 +1328,7 @@ async def test_sustainability_scenario_marker_supports_touch(touch_view: VisualP
         full_page=True,
         animations="disabled",
     )
-    await touch_page.get_by_role("heading", name="Sustainability", exact=True).tap()
+    await touch_page.get_by_role("heading", name="Spending and funding history", exact=True).tap()
     await _expect_tooltip_hidden(tooltip)
     await marker.tap()
     await _expect_tooltip_rendered(tooltip)
@@ -1562,7 +1565,7 @@ async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> No
     await _expect_tooltip_hidden(tooltip)
     await help_button.tap()
     await _expect_tooltip_rendered(tooltip)
-    await touch_page.get_by_role("heading", name="Flexible spending", exact=True).tap()
+    await touch_page.get_by_role("heading", name="Spending over time", exact=True).tap()
     await _expect_tooltip_hidden(tooltip)
 
 
