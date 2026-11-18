@@ -141,7 +141,7 @@ fn fixture(
     write: &str,
     before_later: &str,
     after_later: &str,
-) -> debundle_e2e_support::saved_analysis::StagedInvocation {
+) -> debundle_e2e_support::saved_analysis::Staged {
     let route = if selection == "record.payload" {
         ""
     } else {
@@ -221,7 +221,7 @@ __LOG__
 }
 
 fn assert_unsafe_cut_rejected(
-    stage: &debundle_e2e_support::saved_analysis::StagedInvocation,
+    stage: &debundle_e2e_support::saved_analysis::Staged,
     original: &str,
     deliberately_unsafe_emission: &str,
 ) {
