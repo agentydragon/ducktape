@@ -54,8 +54,7 @@ Notes:
 ## Observations
 
 1. **OLLAMA_NUM_CTX=1048576 likely causes excessive KV cache preallocation**, degrading
-   both throughput and NIAH recall compared to the earlier OLLAMA_NUM_CTX=131072 benchmark
-   (which showed pp scaling from 3.5k to 133k t/s and perfect NIAH at 128k).
+   both throughput and NIAH recall compared to the earlier OLLAMA_NUM_CTX=131072 benchmark.
 2. **120b outperforms 20b on NIAH** despite being 6x larger — better long-context capability.
 3. **Both models converge to ~1.5k t/s at 128k+** — likely memory-bandwidth bottleneck.
 4. **Sample counts are low** at large contexts (1 per size) due to 60s time limit.
