@@ -72,21 +72,17 @@ func (environmentDesiredExtension) ResourceDefinition() spec.ResourceDefinitionS
 }
 
 func ReadEnvironmentDesired(ctx context.Context, reader controller.Reader) (EnvironmentDesired, bool, error) {
-	value, err := safe.ReaderGetByID[*typed.Resource[EnvironmentDesired, environmentDesiredExtension]](ctx, reader, EnvironmentResourceID)
-	if state.IsNotFoundError(err) {
-		return EnvironmentDesired{}, false, nil
-	}
-	if err != nil {
-		return EnvironmentDesired{}, false, err
-	}
-	return *value.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, environmentDesiredResource(EnvironmentDesired{}))
 }
 
 func PublishEnvironmentDesired(ctx context.Context, writer state.State, value EnvironmentDesired) error {
-	resource := typed.NewResource[EnvironmentDesired, environmentDesiredExtension](
+	return cosi.Publish(ctx, writer, environmentDesiredResource(value), value, EnvironmentOwner)
+}
+
+func environmentDesiredResource(value EnvironmentDesired) *typed.Resource[EnvironmentDesired, environmentDesiredExtension] {
+	return typed.NewResource[EnvironmentDesired, environmentDesiredExtension](
 		resource.NewMetadata(Namespace, EnvironmentDesiredStateType, EnvironmentResourceID, resource.VersionUndefined), value,
 	)
-	return cosi.Publish(ctx, writer, resource, value, EnvironmentOwner)
 }
 
 // Blocker identifies the first unmet predicate in the aggregate Session barrier. It is written with
@@ -145,14 +141,7 @@ func (statusExtension) ResourceDefinition() spec.ResourceDefinitionSpec {
 }
 
 func ReadStatus(ctx context.Context, reader controller.Reader) (Status, bool, error) {
-	resource, err := safe.ReaderGetByID[*typed.Resource[Status, statusExtension]](ctx, reader, ResourceID)
-	if state.IsNotFoundError(err) {
-		return Status{}, false, nil
-	}
-	if err != nil {
-		return Status{}, false, err
-	}
-	return *resource.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, statusResource(Status{}))
 }
 
 func WatchStatus(ctx context.Context, reader state.State, condition func(Status) (bool, error)) error {
