@@ -137,8 +137,8 @@ where the page is served:
   `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
   for uncaught page errors, including errors after the last screenshot. If another error is
   already propagating, the page error is attached to it as a note.
-- Native UI (GNOME shell, ...): `publish_output()` (`devinfra/testing/output_writer.py`), as
-  `gnome/testing/session.py` does.
+- Native UI such as GNOME Shell: use the `test_outputs` fixture and call its
+  `publish` method, as `gnome/testing/session.py` does.
 
 Traps, each of which renders differently from one execution to the next or hides a failure:
 

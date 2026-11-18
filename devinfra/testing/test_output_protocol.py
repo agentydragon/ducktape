@@ -13,18 +13,13 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from devinfra.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
-from devinfra.testing.output_writer import open_output, publish_file, publish_output
+from devinfra.testing.output_writer import BoundTestOutputs
 
 
 def _publish_from_process(output_dir: str, suffix: str) -> str:
     try:
-        publish_output(
-            Path(output_dir),
-            case_id="concurrent/example",
-            checkpoint="ready",
-            role="screenshot",
-            data=b"same payload",
-            suffix=suffix,
+        BoundTestOutputs(Path(output_dir), "concurrent/example").publish(
+            checkpoint="ready", role="screenshot", data=b"same payload", suffix=suffix
         )
     except FileExistsError:
         return "duplicate"
@@ -81,9 +76,7 @@ def test_record_rejects_unsafe_paths(path: str) -> None:
 
 
 def test_publish_output_writes_payload_before_record_with_stable_paths(tmp_path: Path) -> None:
-    payload_path = publish_output(
-        tmp_path,
-        case_id="dialog/mobile",
+    payload_path = BoundTestOutputs(tmp_path, "dialog/mobile").publish(
         checkpoint="expanded",
         role="screenshot",
         data=b"complete image bytes",
@@ -110,14 +103,8 @@ def test_publish_file_copies_source_and_preserves_compound_suffixes(tmp_path: Pa
     source = tmp_path / "trace.tar.gz"
     source.write_bytes(b"compressed trace")
 
-    payload_path = publish_file(
-        tmp_path / "outputs",
-        case_id="dialog/mobile",
-        checkpoint=None,
-        role="diagnostics",
-        source=source,
-        label="Browser trace",
-        title="Diagnostic capture",
+    payload_path = BoundTestOutputs(tmp_path / "outputs", "dialog/mobile").publish_file(
+        checkpoint=None, role="diagnostics", source=source, label="Browser trace", title="Diagnostic capture"
     )
 
     key = output_key("dialog/mobile", None, "diagnostics")
@@ -136,27 +123,30 @@ def test_publish_file_copies_source_and_preserves_compound_suffixes(tmp_path: Pa
 
 
 def test_publish_output_accepts_utf8_text(tmp_path: Path) -> None:
-    payload = publish_output(tmp_path, case_id="example", role="diagnostics", data='{"message":"猫"}', suffix="json")
+    payload = BoundTestOutputs(tmp_path, "example").publish(role="diagnostics", data='{"message":"猫"}', suffix="json")
     assert payload.read_bytes() == b'{"message":"\xe7\x8c\xab"}'
 
 
 def test_open_output_publishes_text_and_binary_after_successful_close(tmp_path: Path) -> None:
-    with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+    outputs = BoundTestOutputs(tmp_path, "example")
+    with outputs.open(role="diagnostics", suffix="json") as output:
         output.write('{"message":"猫"}')
         assert output.seekable()
         assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
     text_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'diagnostics')}.json"
     assert text_path.read_text() == '{"message":"猫"}'
 
-    with open_output(tmp_path, case_id="example", role="screenshot", suffix="png", mode="wb") as output:
+    with outputs.open(role="screenshot", suffix="png", mode="wb") as output:
         output.write(b"image bytes")
     image_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'screenshot')}.png"
     assert image_path.read_bytes() == b"image bytes"
 
 
 def test_open_output_exception_discards_data_and_duplicate_claim_preserves_original(tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example")
+
     def fail_during_write() -> None:
-        with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+        with outputs.open(role="diagnostics", suffix="json") as output:
             output.write("incomplete")
             raise RuntimeError("capture failed")
 
@@ -165,11 +155,11 @@ def test_open_output_exception_discards_data_and_duplicate_claim_preserves_origi
     assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
     assert list((tmp_path / "test-outputs" / FILES_DIR).iterdir()) == []
 
-    with open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output:
+    with outputs.open(role="diagnostics", suffix="json") as output:
         output.write("complete")
     with (
         pytest.raises(FileExistsError, match="already claimed"),
-        open_output(tmp_path, case_id="example", role="diagnostics", suffix="json") as output,
+        outputs.open(role="diagnostics", suffix="json") as output,
     ):
         output.write("replacement")
     key = output_key("example", None, "diagnostics")
@@ -179,28 +169,24 @@ def test_open_output_exception_discards_data_and_duplicate_claim_preserves_origi
 
 
 def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
+    outputs = BoundTestOutputs(tmp_path / "outputs", "example")
     source = tmp_path / "capture.png"
     source.write_bytes(b"image bytes")
 
-    first = publish_file(
-        tmp_path / "outputs", case_id="example", checkpoint="default", role="screenshot", source=source
-    )
+    first = outputs.publish_file(checkpoint="default", role="screenshot", source=source)
     with pytest.raises(FileExistsError):
-        publish_file(tmp_path / "outputs", case_id="example", checkpoint="default", role="screenshot", source=source)
+        outputs.publish_file(checkpoint="default", role="screenshot", source=source)
 
     assert first.read_bytes() == b"image bytes"
     assert len(list((tmp_path / "outputs" / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
 def test_duplicate_claim_across_writers_fails_even_when_payload_is_equal(tmp_path: Path) -> None:
-    first = publish_output(
-        tmp_path, case_id="example", checkpoint=None, role="diagnostics", data=b"same", suffix="json"
-    )
+    outputs = BoundTestOutputs(tmp_path, "example")
+    first = outputs.publish(checkpoint=None, role="diagnostics", data=b"same", suffix="json")
     with (
         pytest.raises(FileExistsError),
-        open_output(
-            tmp_path, case_id="example", checkpoint=None, role="diagnostics", suffix="txt", mode="wb"
-        ) as output,
+        outputs.open(checkpoint=None, role="diagnostics", suffix="txt", mode="wb") as output,
     ):
         output.write(b"same")
     assert first.read_bytes() == b"same"
@@ -208,8 +194,8 @@ def test_duplicate_claim_across_writers_fails_even_when_payload_is_equal(tmp_pat
 
 
 def test_writer_serializes_null_checkpoint_and_omits_optional_gallery_fields(tmp_path: Path) -> None:
-    payload = publish_output(
-        tmp_path, case_id="example", checkpoint=None, role="diagnostics", data=b"diagnostics", suffix="json"
+    payload = BoundTestOutputs(tmp_path, "example").publish(
+        checkpoint=None, role="diagnostics", data=b"diagnostics", suffix="json"
     )
     key = output_key("example", None, "diagnostics")
     record_path = tmp_path / "test-outputs" / RECORDS_DIR / f"{key}.json"
@@ -230,13 +216,8 @@ def test_writer_rejects_orphan_payload_without_overwriting_it(tmp_path: Path) ->
     payload_path.write_bytes(b"existing orphan")
 
     with pytest.raises(FileExistsError):
-        publish_output(
-            tmp_path,
-            case_id="orphaned",
-            checkpoint=None,
-            role="diagnostics",
-            data=b"replacement must fail",
-            suffix="json",
+        BoundTestOutputs(tmp_path, "orphaned").publish(
+            checkpoint=None, role="diagnostics", data=b"replacement must fail", suffix="json"
         )
 
     assert payload_path.read_bytes() == b"existing orphan"
@@ -256,13 +237,13 @@ def test_parallel_processes_claim_one_identity_once(tmp_path: Path, suffixes: tu
 
 
 def test_writer_hashes_unsafe_case_ids_and_rejects_unsafe_suffixes(tmp_path: Path) -> None:
-    path = publish_output(
-        tmp_path, case_id="../../outside", checkpoint=None, role="screenshot", data=b"safe", suffix="png"
+    path = BoundTestOutputs(tmp_path, "../../outside").publish(
+        checkpoint=None, role="screenshot", data=b"safe", suffix="png"
     )
     assert path.parent == tmp_path / "test-outputs" / FILES_DIR
     with pytest.raises(ValueError, match="suffix"):
-        publish_output(
-            tmp_path, case_id="other", checkpoint=None, role="screenshot", data=b"unsafe", suffix="../outside"
+        BoundTestOutputs(tmp_path, "other").publish(
+            checkpoint=None, role="screenshot", data=b"unsafe", suffix="../outside"
         )
     assert not (tmp_path / "outside").exists()
 
@@ -276,8 +257,8 @@ def test_writer_rejects_symlinked_payload_directory(tmp_path: Path) -> None:
     (root / FILES_DIR).symlink_to(external_dir, target_is_directory=True)
 
     with pytest.raises(ValueError, match="must not be a symlink or file"):
-        publish_output(
-            output_dir, case_id="example", checkpoint=None, role="diagnostics", data=b"must remain here", suffix="json"
+        BoundTestOutputs(output_dir, "example").publish(
+            checkpoint=None, role="diagnostics", data=b"must remain here", suffix="json"
         )
     assert list(external_dir.iterdir()) == []
 
