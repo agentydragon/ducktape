@@ -734,7 +734,7 @@ verbose daemon logging, boot/module dynamic debug, system-sleep snapshots and a
 60-second journal-based watchdog, with wedge dumps. It does not auto-recover or
 perform the proposed Claim/Release watchdog below. The host currently disables
 this high-volume mode after journal flooding caused desktop stalls
-([host config](../../nixos/hosts/rugged/default.nix), [stalls report](stalls/report.md)).
+([host config](../../nixos/hosts/rugged/default.nix), [stalls report](stalls/README.md)).
 These are capture options for an active investigation, not instructions to enable
 all instrumentation permanently.
 

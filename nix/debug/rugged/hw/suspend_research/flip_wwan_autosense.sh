@@ -4,7 +4,7 @@
 # \_SB.PC00.RP02.PXSX, which gates the kernel's ability to invoke the
 # platform's WWAN slot power-cycle (FHRF + SHRF in DSDT).
 #
-# Effect of flipping: see nix/debug/rugged/hw/modem_suspend_research.md
+# Effect of flipping: see nix/debug/rugged/hw/suspend_research/README.md
 #   §DSDT decompile findings.
 #
 # Flow:

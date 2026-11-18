@@ -55,7 +55,7 @@ PCIe/electrical cause:
   scraping (DCGM / `aer_dev_*` → Mimir). The **AMD Zen root ports (`00:01.1`, `00:01.3`) do
   not implement AER** — no `aer_dev_*`, only the basic `DevSta: CorrErr+` summary bit, which
   is what flagged the fault here. `pcie_ports=native` would only improve dmesg logging, not
-  add root-port counters. Details in <../../gpu_lockup_20260718_followups.md>.
+  add root-port counters. Details in <../followups.md>.
 
 ## Preserved telemetry
 
@@ -75,4 +75,4 @@ stays on wyrm2 at `/var/log/gpu-monitor/`.
 reads `ff ff ff ff` after the reboot (`hexdump -n4 -C /sys/bus/pci/devices/0000:03:00.0/config`),
 a full **cold power cycle** of atlas is required, and VM 110 autostart will fail until then.
 
-See <../../gpu_lockup_20260718_followups.md> for the prevention/detection plan.
+See <../followups.md> for the prevention/detection plan.

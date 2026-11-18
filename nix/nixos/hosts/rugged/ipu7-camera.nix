@@ -35,7 +35,7 @@ in
     #   >= 6.17   IPU7 camera driver mainlined in 6.17.
     #   >= 7.1.8  drm/xe TTM `beneficial_order` fix `ba7fd1634228`; without it this
     #             host hits a kswapd/Xe-shrinker swap storm. Confirmed present in
-    #             7.1.8 by reverse-patch test (<../../../../nix/debug/rugged/stalls/report.md>).
+    #             7.1.8 by reverse-patch test (<../../../../nix/debug/rugged/stalls/README.md>).
     boot.kernelPackages = pkgs.linuxPackages_latest;
 
     # Firmware for IPU and Intel Visual Sensing Controller

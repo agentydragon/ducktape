@@ -59,7 +59,7 @@ current kernel. See the [Cilium incident record](../../../../cluster/docs/lesson
 - At that investigation point, pinned `nixpkgs` and `nixpkgs-unstable` provided Linux
   7.1.2. The repo's pinned Nixpkgs master exposed `linux_testing` 7.2-rc2, which
   contains the exact Xe beneficial-order change.
-- The [later report](report.md#2026-08-26-xettm-fix-confirmed-backported-to-stable-rc-kernel-dropped)
+- The [later report](README.md#2026-08-26-xettm-fix-confirmed-backported-to-stable-rc-kernel-dropped)
   records the repair in stable 7.1.8 and the subsequent move to 7.2.7. The
   post-upgrade acceptance capture remains outstanding.
 

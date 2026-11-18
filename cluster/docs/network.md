@@ -200,7 +200,7 @@ A 1420 Nebula TUN MTU plus 60 bytes of measured IPv4 Nebula overhead yields a
 1480-byte outer IP packet, within the 1500-byte MTU observed on the two tested OVH
 IPv4 paths above. Other paths can be smaller: `rugged` (roaming laptop on
 cellular) has a historically smaller **Cilium-over-Nebula** usable path (see
-[the Rugged measurements](../../nix/debug/rugged/network.md#nebula-and-cilium-a-separate-real-cellular-mtu-problem)).
+[the Rugged measurements](../../nix/debug/rugged/network/README.md#nebula-and-cilium-a-separate-real-cellular-mtu-problem)).
 That result includes both overlays; it is not a
 direct-Fi or native-IPv6 measurement. The fix for roaming nodes is a measured
 host-specific MSS/PMTU mitigation, not the global MTU. In particular, a generic

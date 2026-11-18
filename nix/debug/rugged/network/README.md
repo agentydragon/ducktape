@@ -5,6 +5,9 @@ Do not change a NetworkManager profile or disconnect a link merely to reproduce
 an issue: record the baseline first, then make an explicitly approved,
 reversible experiment.
 
+The [mobile network capture script](rugged_mobile_net_diag.sh) writes its
+local captures under `rugged-mobile-net-diag/` beside the script.
+
 ## GitHub SSH delay with Wi-Fi and Google Fi connected (2026-07-13)
 
 ### Symptom
@@ -97,7 +100,7 @@ For a privileged, packet-level check of the two Fi-bound SSH attempts without
 altering any network state, run:
 
 ```bash
-bash nix/debug/rugged/fi-network-diagnose.sh
+bash nix/debug/rugged/network/fi-network-diagnose.sh
 ```
 
 It prompts for `sudo` only to capture TCP headers for the two GitHub endpoints.
@@ -168,12 +171,12 @@ A complete fix should make ordinary Git operations reliable while **Fi is the
 only usable uplink**, not merely avoid Fi while Wi-Fi is present. Do these
 experiments before choosing a permanent transport or DNS policy:
 
-1. Run `bash nix/debug/rugged/fi-network-diagnose.sh` and preserve the filtered
+1. Run `bash nix/debug/rugged/network/fi-network-diagnose.sh` and preserve the filtered
    `tcpdump` output for both GitHub SSH endpoints. Repeated outbound SYNs with
    no SYN-ACK locate the current failure beyond rugged's TCP stack; a reply
    changes the next diagnostic layer. Do not use only `ssh -b <Fi address>`:
    it does not bind egress to Fi on this route table.
-2. Run `bash nix/debug/rugged/fi-ipv4-mtu-probe.sh` to remeasure the direct Fi IPv4
+2. Run `bash nix/debug/rugged/network/fi-ipv4-mtu-probe.sh` to remeasure the direct Fi IPv4
    path with the temporary runtime MTU lift. This tells us whether the 1200
    cap is still necessary for direct traffic or only conservative protection.
 3. Create a temporary, reversible IPv4v6 Fi profile and test its address,
@@ -279,7 +282,7 @@ The apply completed after switching to Wi-Fi. These June observations cover
 only the Cilium-over-Nebula path to that pod over the tested Fi connection;
 they are not a direct-Fi PMTU or native-IPv6 measurement. The later Fi-only
 Nebula remeasurement below is separate. The cluster's authoritative MTU model
-is <../../../cluster/docs/network.md>.
+is <../../../../cluster/docs/network.md>.
 
 #### Fi-only Nebula remeasurement and mitigation (2026-07-13)
 
@@ -330,7 +333,7 @@ The symmetric routes size Rugged-originated traffic and remote-originated UDP,
 ICMP, and Cilium VXLAN before Nebula encryption. Ordinary TCP also negotiates
 the 1060-byte advertised MSS. Mobile Nebula cannot install Linux-style
 per-destination MTUs, so its generated import uses 1100 as the phone's global
-TUN MTU. Run `nix/debug/rugged/nebula-fi-mtu-probe.sh` on the Fi-only path to compare
+TUN MTU. Run `nix/debug/rugged/network/nebula-fi-mtu-probe.sh` on the Fi-only path to compare
 repeated baseline, route-MTU, and restored phases, including a real ClusterIP
 transfer and fragmentation counters.
 

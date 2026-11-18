@@ -6,13 +6,13 @@
 enable, and Google Fi connection all happen automatically via the NixOS
 module <../../../../nix/nixos/hosts/rugged/foxconn-wwan.nix>. Works alongside WiFi
 (IPv6 is temporarily disabled while we distinguish a proven IPv4 PMTU issue
-from untested native Fi IPv6; see <../network.md>).
+from untested native Fi IPv6; see <../network/README.md>).
 **Suspend/resume (2026-05-19)**: At least 2 suspend/resume cycles
 survived without a wedge (2026-05-18/19). The
 `--test-low-power-suspend-resume` MM flag appears to be doing its job.
 Modem re-enumerates on each resume (modem0 → modem1 → modem2) but
 connects to Google Fi reliably. No MHI/SBL wedge observed. See
-`modem_suspend_research.md` for the full workaround history.
+`suspend_research/README.md` for the full workaround history.
 **Runtime-PM wedge found (2026-06-08; recurred 2026-06-22)**: the
 system-suspend workaround left a gap — kernel _runtime-PM_ autosuspend
 (2s idle delay) was driving the modem into the same broken M3 path
@@ -27,7 +27,7 @@ start a `foxconn-wwan-disable-runtime-pm.service` verifier when `wwan0`
 appears. This is intentionally userspace-only for now: no local kernel patch
 is carried. Remaining upstream-grade work would be teaching the Linux MHI
 driver not to enter M3 for this SKU. See
-`modem_suspend_research.md` §"Runtime-PM recurrence after the udev rule"
+`suspend_research/README.md` §"Runtime-PM recurrence after the udev rule"
 and §"Avenues to attack".
 **Throttle appears lifted**: `curl --interface wwan0
 http://speedtest.tele2.net/1MB.zip` measured **~158 KB/s (~1.27 Mbps)**
@@ -59,8 +59,8 @@ make the down-and-back look alarming. See "Harden try-5g" TODO.
 | FCC unlock root cause + history      | <foxflss_wwan.md> §What Works, §Watchdog      |
 | eSIM provisioning & wedge debugging  | <foxflss_wwan.md> §Modem Reset Methods etc.   |
 | Throughput / throttle investigations | <foxflss_wwan.md> §Physical SIM throughput    |
-| Suspend/resume root cause + fix plan | <modem_suspend_research.md>                   |
-| Wi-Fi/WWAN DNS and Git SSH delays    | <../network.md>                               |
+| Suspend/resume root cause + fix plan | <suspend_research/README.md>                  |
+| Wi-Fi/WWAN DNS and Git SSH delays    | <../network/README.md>                        |
 
 ## Tools
 
@@ -106,7 +106,7 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   MM giving up on a future transient FoxFlss failure (per upstream
   contract, MM doesn't retry the script after one failure).
 - **Suspend/resume wedge — workaround confirmed (2026-05-19)**:
-  Full mechanism trace in <modem_suspend_research.md>. At least 2
+  Full mechanism trace in <suspend_research/README.md>. At least 2
   suspend/resume cycles survived without wedge (2026-05-18/19). The
   `--test-low-power-suspend-resume` MM flag in `foxconn-wwan.nix` is
   doing its job: MM puts the modem in LOW_POWER before suspend, modem
