@@ -116,6 +116,10 @@ doctrine change, not just a config line.
   whether the finance preset's GitHub read action sets (public repos, `ducktape`, its fork,
   `gaffer-private`) stay, since both presets already hold the `github-agentydragon-agent` PAT policy.
 
+- **Make the Claude web clone-complete check method-neutral.** `runtime/claude_web_env/bootstrap.sh`
+  announces `~/haku-state/items` as the readiness signal and `run.md` waits on
+  `~/haku-state/surface/items`. The atomic swap already makes the existence of `~/haku-state` the
+  signal, so the path check only ties the wait to haku-state's current layout.
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces
   `secrets/haku-k8s-jwt.yaml` (the `client_credentials`-as-`haku-k8s` flow with
   `expected_group: haku`). The web home's whole kubectl path depends on it.
