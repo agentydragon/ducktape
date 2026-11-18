@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -130,7 +129,3 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(
 def test_identity_config_rejects_empty_trust_domain() -> None:
     with pytest.raises(ValueError, match="trust_domain"):
         OperatorIdentityConfig(trust_domain="   ")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

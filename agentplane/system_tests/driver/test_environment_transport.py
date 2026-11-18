@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, Mock
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 
 from agentplane.environments.v1 import environment_service_pb2
@@ -63,7 +62,3 @@ async def test_environment_unary_and_watch_send_no_bearer(monkeypatch: pytest.Mo
     assert watch_call is not None
     assert watch_call.kwargs["metadata"] == ()
     assert stream.cancelled
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

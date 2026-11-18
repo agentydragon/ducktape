@@ -48,7 +48,6 @@ py_test(
         ":recorded",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -69,6 +68,5 @@ py_test(
     deps = [
         ":fixture_codec",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

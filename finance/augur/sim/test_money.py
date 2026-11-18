@@ -3,7 +3,6 @@
 from fractions import Fraction
 
 import pytest
-import pytest_bazel
 from hypothesis import assume, given, strategies as st
 
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
@@ -182,7 +181,3 @@ def test_explicit_count_and_intermediate_overflows() -> None:
 def test_inexact_counts_are_refused(inexact: int) -> None:
     with pytest.raises(TypeError):
         checked_count(inexact, "test")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

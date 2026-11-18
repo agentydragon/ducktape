@@ -14,7 +14,6 @@ import aiohttp
 import httpx
 import httpx2
 import pytest
-import pytest_bazel
 from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient, TestServer
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
@@ -342,7 +341,3 @@ async def test_authlib_error_description_does_not_escape_the_token_boundary(monk
     assert error.value.__cause__ is None
     assert store.refresh_token == "stored-refresh-token"
     assert store.clear_count == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 """The authored rule reserves already-due claims before proposing an opening buy."""
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
@@ -91,7 +90,3 @@ def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
     )
     assert result.stop == (None if paid else RejectedAction(month=0, action_index=0))
     assert financial.events.lot_dispositions.is_empty()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

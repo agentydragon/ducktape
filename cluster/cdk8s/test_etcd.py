@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import (
     Chart,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
@@ -23,7 +22,3 @@ def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Cha
         {"addresses": ["10.42.255.1"], "conditions": {"ready": True}, "hostname": "cp-a", "nodeName": "cp-a"},
         {"addresses": ["10.42.255.3"], "conditions": {"ready": True}, "hostname": "cp-c", "nodeName": "cp-c"},
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

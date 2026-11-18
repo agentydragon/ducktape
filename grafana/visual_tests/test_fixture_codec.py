@@ -4,7 +4,6 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from grafana.visual_tests.fixture_codec import compact_fixture, expand_fixture
 
@@ -66,7 +65,3 @@ def test_reserved_keys_cannot_silently_change_capture(fixture: dict[str, Any]) -
 def test_unknown_version_fails() -> None:
     with pytest.raises(ValueError, match="format"):
         expand_fixture({"recorded_format": "future"})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

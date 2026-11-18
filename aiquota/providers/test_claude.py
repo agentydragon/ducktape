@@ -4,7 +4,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 from pydantic import SecretStr
 
@@ -27,9 +26,6 @@ from aiquota.providers.cli_proxy_api import (
 from aiquota.providers.client import provider_client
 from devinfra.claude.claude_api.oauth_client import TOKEN_URL
 from devinfra.claude.claude_api.usage import UsageResponse
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 @pytest.mark.parametrize("enabled", [True, False, None])

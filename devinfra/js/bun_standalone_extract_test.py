@@ -5,7 +5,6 @@ import struct
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.bun_standalone_extract import (
     MODULE_ENTRY_SIZE,
@@ -235,7 +234,3 @@ def test_embedded_loaders_reject_an_unknown_loader(tmp_path: Path) -> None:
     binary.write_bytes(synthetic_graph([("/$bunfs/root/a.x", b"x")], loaders=(200,)))
     with pytest.raises(SystemExit, match="unknown Bun loader 200"):
         main([str(binary), str(tmp_path / "out"), "--embedded-loaders", str(tmp_path / "loaders.json")])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from dataclasses import dataclass, replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import assemble
@@ -251,7 +250,3 @@ def test_claim_views_keep_assembled_amount_identity_and_payer_scope(scoped: Scop
     assert view(world).claims[0].amount_due == 725
     world.claims.entries[0].paid = True
     assert [c.index for c in view(world).claims] == [1]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

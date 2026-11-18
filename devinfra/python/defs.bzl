@@ -59,7 +59,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
             Shard only tests whose per-case cost dominates their per-process setup --
             a suite that recompiles the same program in every shard pays that cost
             per shard instead of once.
-        **kwargs: Passed through to py_test.
+        **kwargs: Passed through to py_test. Without an explicit main/main_module,
+            a target-named source runs through pytest_bazel; custom entrypoints stay explicit.
     """
     if imports == None:
         imports = repo_imports()
@@ -81,6 +82,23 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     # Passed via the environment, not `args`: pydantic-settings classes with `cli_parse_args`
     # read sys.argv.
     env = {"PYTEST_ADDOPTS": "--import-mode=importlib -o consider_namespace_packages=true"} | (env or {})
+    if kwargs.get("main") == None and kwargs.get("main_module") == None:
+        srcs = kwargs.get("srcs", [])
+        if type(srcs) == "list":
+            mains = [src for src in srcs if str(src).split(":")[-1].split("/")[-1] == name + ".py"]
+            if len(mains) == 1:
+                source = str(mains[0])
+                if not (source.startswith("@") or source.startswith("//") or source.startswith(":")):
+                    source = ":" + source
+
+                # Keep collection paths out of sys.argv: application Settings can parse it
+                # while pytest imports a test. Root discovery must start at the workspace
+                # so its conftest chain and namespace packages are shared by every target.
+                env["PYTEST_ADDOPTS"] += " --rootdir=. $(location %s)" % source
+                kwargs["main_module"] = "pytest_bazel"
+                pytest_dep = Label("@pypi//pytest_bazel")
+                if pytest_dep not in [Label(str(dep)) for dep in base_deps]:
+                    base_deps.append(pytest_dep)
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         env = {"RYUK_CONTAINER_IMAGE": RYUK_TAG} | env

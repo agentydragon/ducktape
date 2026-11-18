@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-import pytest_bazel
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import Image
@@ -911,7 +910,3 @@ async def test_interactive_sign_in_visual(
         await expect(modal).to_have_count(0)
         await expect(card.get_by_text("Sign-in required")).to_be_visible()
         await view.capture("after-close", full_page=True, animations="disabled")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

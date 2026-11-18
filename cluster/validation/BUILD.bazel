@@ -32,7 +32,6 @@ py_test(
         ":flux",
         ":k8s",
         ":kustomize",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -174,7 +173,6 @@ py_test(
     deps = [
         ":k8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -187,7 +185,6 @@ py_test(
         ":kustomize",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -203,7 +200,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -215,7 +211,6 @@ py_test(
         ":flux_bootstrap_auth",
         "@pypi//durationpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -229,7 +224,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -243,7 +237,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -257,7 +250,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -271,7 +263,6 @@ py_test(
     deps = [
         ":helm_templates",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -284,7 +275,6 @@ py_test(
         "//cluster/scripts:nebula_mesh",
         "//cluster/scripts:nebula_mesh_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -313,7 +303,6 @@ py_test(
         "//cluster/cdk8s:manifest_roots",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
         "@rules_python//python/runfiles",
@@ -331,7 +320,6 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//cluster/cdk8s/authentik:jwt_rotation",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -347,7 +335,6 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -370,7 +357,6 @@ py_test(
         ":conftest",
         ":flux",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -382,7 +368,6 @@ py_test(
         ":image_automation",
         ":k8s",
         ":kustomize",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -397,7 +382,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//cluster/cdk8s:manifest_roots",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

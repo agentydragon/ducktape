@@ -7,7 +7,6 @@ from pathlib import Path
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionSealedError, refusal
@@ -271,7 +270,3 @@ async def test_setup_exit_before_consuming_stdin_keeps_its_exit_status(
     assert finished.event.setup_finished.exit_code == 3
     await first.drain_until_end()
     assert not events.of_kind(first.seen, "setup_interrupted")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

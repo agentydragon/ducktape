@@ -4,7 +4,6 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
-import pytest_bazel
 import respx
 
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
@@ -275,7 +274,3 @@ async def test_configure_core_is_idempotent(monkeypatch, home_assistant_client):
     await configure_core(home_assistant_client, CoreConfig(time_zone="Etc/GMT+5", location=location))
 
     assert calls == [{"type": "get_config"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

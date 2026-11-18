@@ -11,7 +11,6 @@ import math
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from finance.augur.calibration.calibration import (
     _fit_ladder_curve,
@@ -522,7 +521,3 @@ async def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameM
     assert by_id["M1"].p_market == 0.75
     assert by_id["KXIPOOPENAI-26SEP01"].platform == "kalshi"
     assert by_id["KXIPOOPENAI-26SEP01"].p_market == 0.50
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

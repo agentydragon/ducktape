@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
@@ -157,7 +156,3 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
 
 def test_staging_keeps_firecracker_disabled(staging_manifests: list[dict[str, Any]]) -> None:
     assert not any(doc["kind"] == "SandboxTemplate" and "firecracker" in doc["spec"] for doc in staging_manifests)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

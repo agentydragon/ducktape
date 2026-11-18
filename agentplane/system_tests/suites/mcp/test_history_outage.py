@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -23,7 +22,3 @@ async def test_history_outage_backfills_completed_turn(
     await central_sampler.history_outage_backfills_completed_turn(
         cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/history-outage")
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

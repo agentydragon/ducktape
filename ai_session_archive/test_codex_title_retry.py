@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import BinaryIO
 from unittest.mock import patch
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -73,7 +72,3 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
         assert new_observation is not None
         assert new_observation.title == "New on retry"
         assert new_observation.title_source == "session_index"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

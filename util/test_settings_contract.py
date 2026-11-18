@@ -1,7 +1,6 @@
 from typing import Annotated, Literal
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -160,7 +159,3 @@ def test_fragments_skip_required_and_cross_field_validation_but_full_settings_do
     validate_settings_fragment(_CatalogSettings, content)
     with pytest.raises(ValidationError, match="not a backend"):
         _CatalogSettings.model_validate(content)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

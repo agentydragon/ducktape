@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import validate_operator_dependencies
@@ -100,7 +99,3 @@ def test_custom_kind_without_provider_fails(tmp_path: Path) -> None:
     assert "test-app" in errors[0]
     assert "TestInstance" in errors[0]
     assert "test.example/v1" in errors[0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

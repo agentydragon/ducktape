@@ -51,7 +51,6 @@ py_test(
         ":invocation_census",
         ":invocation_ids",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -68,7 +67,6 @@ py_test(
     deps = [
         ":live_test_status",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -115,44 +113,31 @@ py_test(
         ":bes",
         "//devinfra/buildbuddy:cli",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_runner_probe",
     srcs = ["test_runner_probe.py"],
-    deps = [
-        ":runner_probe",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":runner_probe"],
 )
 
 py_test(
     name = "test_collect_profiles",
     srcs = ["test_collect_profiles.py"],
-    deps = [
-        ":collect_profiles",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":collect_profiles"],
 )
 
 py_test(
     name = "test_invocation_ids",
     srcs = ["test_invocation_ids.py"],
-    deps = [
-        ":invocation_ids",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":invocation_ids"],
 )
 
 py_test(
     name = "test_emit_remote_linkage",
     srcs = ["test_emit_remote_linkage.py"],
-    deps = [
-        ":emit_remote_linkage",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":emit_remote_linkage"],
 )
 
 py_test(
@@ -162,10 +147,7 @@ py_test(
         "cancel_invocations.py",
         "remote_log.sh",
     ],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    deps = ["@pypi//pytest"],
 )
 
 py_library(

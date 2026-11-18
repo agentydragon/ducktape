@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
-import pytest_bazel
 
 from aiquota.models import FetchError, FetchSuccess
 from aiquota.providers.client import provider_client
@@ -65,7 +64,3 @@ async def test_failed_fetch_does_not_report_zero(tmp_path):
         provider_client(transport=httpx.MockTransport(lambda request: httpx.Response(503))),
     )
     assert isinstance((await provider.fetch()).result, FetchError)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

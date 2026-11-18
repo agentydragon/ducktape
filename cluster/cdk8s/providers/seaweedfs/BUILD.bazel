@@ -94,6 +94,5 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/providers/seaweedfs:bucket",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )

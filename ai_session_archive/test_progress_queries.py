@@ -5,7 +5,6 @@
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import ORMExecuteState, sessionmaker
@@ -66,7 +65,3 @@ def test_new_machine_committed_during_progress_poll_is_seen_next_time(
         assert [machine.machine_id for machine in second_poll] == ["known", "new"]
         assert second_poll[1].known_snapshot_count == 1
         assert second_poll[1].pending_file_count == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

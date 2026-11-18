@@ -108,7 +108,6 @@ py_test(
         ":analyze_executions",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -119,7 +118,6 @@ py_test(
         ":artifact_tools",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -130,7 +128,6 @@ py_test(
         ":gate_headroom",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -141,7 +138,6 @@ py_test(
         ":snapshot_analysis",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -152,7 +148,6 @@ py_test(
         ":collect",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -31,9 +31,3 @@ def test_release_manifest_rejects_python_object_tags(tmp_path: Path) -> None:
 
     with pytest.raises(yaml.YAMLError):
         load_release_manifest(path, "unsafe-test")
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

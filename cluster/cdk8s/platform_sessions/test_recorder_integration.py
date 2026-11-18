@@ -12,7 +12,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import docker
-import pytest_bazel
 from cdk8s import App, Testing as Cdk8sTesting
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -526,7 +525,3 @@ def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> 
         for volume in volumes:
             volume.remove(force=True)
         client.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

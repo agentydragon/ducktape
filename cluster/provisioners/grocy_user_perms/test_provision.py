@@ -5,7 +5,6 @@ import json
 
 import httpx
 import pytest
-import pytest_bazel
 
 from cluster.provisioners.grocy_user_perms.provision import Policy, reconcile
 
@@ -84,7 +83,3 @@ def test_unknown_permission_name_rejected_before_any_write():
     with pytest.raises(ValueError, match="NOT_A_PERMISSION"):
         reconcile(make_client(fake), Policy(users={"test-admin": {"NOT_A_PERMISSION"}, "test-user": set()}))
     assert fake.puts == {}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

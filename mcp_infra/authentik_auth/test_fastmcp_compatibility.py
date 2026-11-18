@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from joserfc.errors import JoseError
@@ -227,7 +226,3 @@ async def test_public_refresh_revocation_deletes_only_refresh_metadata() -> None
     state._refresh_token_store.delete.assert_awaited_once()
     state._jti_mapping_store.delete.assert_not_awaited()
     state._upstream_token_store.delete.assert_not_awaited()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

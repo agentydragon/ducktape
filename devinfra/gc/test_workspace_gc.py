@@ -6,7 +6,6 @@ import threading
 from io import StringIO
 
 import pytest
-import pytest_bazel
 from rich.console import Console
 
 from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
@@ -387,7 +386,3 @@ def test_bazel_bases_view_looks_up_only_the_branches_of_base_workspaces(
     _scan_command("bazel-bases", checkout, root)
 
     assert pr_lookups.branch_sets == [{"has-a-base"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

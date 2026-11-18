@@ -3,7 +3,6 @@ import json
 
 import httpx2
 import pytest
-import pytest_bazel
 from textual.widgets import DataTable, Label, LoadingIndicator, Markdown, TabbedContent, TextArea
 
 from agentplane.x.authored_conversation.settings import Settings
@@ -204,7 +203,3 @@ async def test_quit_cancels_active_model_request(make_agent, settings: Settings)
         await pilot.press("ctrl+q")
     assert cancelled.is_set()
     assert not agent.active
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

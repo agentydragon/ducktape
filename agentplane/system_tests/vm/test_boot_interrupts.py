@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import boot_interrupts
 
@@ -342,7 +341,3 @@ def test_pending_or_helper_launcher_does_not_spend_observer_budget(
         "pod_uids": ["test-uid"],
         "errors": [],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 
 from finance.plaid.spend.allowance import (
     AccountingPolicy,
@@ -317,7 +316,3 @@ def test_credit_modes_and_currency_rounding() -> None:
         assert accounting_disposition(prepared.entries[0], view_policy) == disposition
     assert round_minor_units(Decimal("3.5"), 0) == 4
     assert round_minor_units(Decimal("3.1255"), 3) == 3126
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

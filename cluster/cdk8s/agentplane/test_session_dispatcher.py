@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -84,7 +83,3 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     assert "token_audience" not in app_config
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_container.get("args", []) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

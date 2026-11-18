@@ -10,7 +10,6 @@ two places they are supposed to work, which reads as flaky policy rather than a 
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -122,7 +121,3 @@ def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, 
     assert [policy for policy in claude if policy not in claude_only] == [
         policy for policy in haku if policy != haku_account_use
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

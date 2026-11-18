@@ -18,7 +18,6 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

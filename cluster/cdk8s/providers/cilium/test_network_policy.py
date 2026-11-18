@@ -1,7 +1,6 @@
 """`NetworkPolicy` refuses toFQDNs egress that Cilium's DNS proxy cannot see resolve."""
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
@@ -44,7 +43,3 @@ def test_dns_rule_or_no_fqdn_egress_is_accepted(
     scratch_chart: Chart, egress: list[CiliumNetworkPolicySpecEgress]
 ) -> None:
     _policy(scratch_chart, egress)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

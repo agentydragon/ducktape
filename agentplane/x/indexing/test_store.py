@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from datetime import timedelta
 
 import pytest
-import pytest_bazel
 from sqlalchemy import Text, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -219,7 +218,3 @@ async def test_new_layout_revives_cached_content(small_chunk_store: Store, embed
         content = await session.get(Content, content_sha("alpha"))
         assert content is not None
         assert content.unreachable_since is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

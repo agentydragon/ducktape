@@ -114,7 +114,6 @@ py_test(
         "//finance/augur/x/models:trained_private_equity",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -137,7 +136,6 @@ py_test(
         "//finance/plaid/db:read_model",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -169,7 +167,6 @@ py_test(
         "//finance/augur/sim:income",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -209,7 +206,6 @@ py_test(
         "//finance/augur/sim:ids",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -252,7 +248,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -282,7 +277,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -487,7 +481,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

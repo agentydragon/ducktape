@@ -11,7 +11,6 @@ from typing import override
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -336,7 +335,3 @@ async def test_metadata_first_write_without_history(http: httpx.AsyncClient, pee
     metadata = (await http.get(path)).json()
     assert metadata["name"] == "Test unrecorded Session"
     assert not metadata.get("archived", False)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,8 +2,6 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest_bazel
-
 from devinfra.ci import artifacts
 
 
@@ -52,7 +50,3 @@ def test_skill_artifacts_include_only_nix_enabled_skills(tmp_path: Path) -> None
         ("default", "default.skill", "default"),
         ("enabled", "enabled.skill", "enabled"),
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

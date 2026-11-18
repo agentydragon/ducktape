@@ -5,7 +5,6 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.plaid.spend.account_history import AccountHistory, AccountOpening, DocumentedHistory
@@ -636,7 +635,3 @@ def test_tax_fraction_requires_provenance_and_shared_classification() -> None:
         WithdrawalTax.model_validate({"rate": 0.2, "assumption_note": "Synthetic", "as_of": date(2026, 1, 1)})
     with pytest.raises(ValidationError):
         SustainabilityDisplay.model_validate({"reference_draw_rates": [0.04]})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

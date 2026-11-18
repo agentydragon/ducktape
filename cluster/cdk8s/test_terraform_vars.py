@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pygohcl
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 
@@ -33,7 +32,3 @@ def test_vars_model_matches_module(runfiles: Runfiles, model: type[BaseModel], m
     assert (
         {name for name, spec in declared.items() if "default" not in spec} <= set(model.model_fields) <= set(declared)
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

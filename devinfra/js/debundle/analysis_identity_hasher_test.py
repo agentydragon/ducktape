@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.js.debundle.analysis_identity_hasher import (
     AnalysisManifest,
@@ -151,7 +150,3 @@ def test_nested_directory_symlinks_are_rejected_in_both_modes(tmp_path: Path, mo
     uncached_manifest = AnalysisManifest(config=_CONFIG, files=("fixture/tree",), cached_files=())
     with pytest.raises(ValueError, match="unsupported directory symlink"):
         analysis_digest(uncached_manifest, ())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

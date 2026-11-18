@@ -5,7 +5,6 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
-import pytest_bazel
 from docker.models.containers import Container, ExecResult
 
 from gnome.testing import session
@@ -138,7 +137,3 @@ def test_session_always_saves_shell_log(monkeypatch: pytest.MonkeyPatch, tmp_pat
         run_session()
 
     assert (tmp_path / "session.shell.log").read_bytes() == b"shell diagnostics"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

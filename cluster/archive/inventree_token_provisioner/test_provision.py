@@ -3,7 +3,6 @@
 import datetime
 
 import pytest
-import pytest_bazel
 
 from cluster.archive.inventree_token_provisioner import provision
 from cluster.archive.inventree_token_provisioner.provision import (
@@ -121,7 +120,3 @@ def test_get_or_create_sandbox_user_creates_when_absent(monkeypatch: pytest.Monk
 
     assert get_or_create_sandbox_user(api=object()) == 9
     assert create_calls == [{"username": SANDBOX_USERNAME}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

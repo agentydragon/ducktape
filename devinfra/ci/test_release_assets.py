@@ -3,7 +3,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.release_assets import Release, nix_override_assets, release_paths, resolve_asset
@@ -68,7 +67,3 @@ def test_nix_overrides_cover_exactly_the_gated_pins(tmp_path: Path) -> None:
     )
     by_label = {"//:g": [out(f"{BIN}/g.whl", label="//:g")]}
     assert nix_override_assets(spec, by_label) == [("gated", by_label["//:g"][0])]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

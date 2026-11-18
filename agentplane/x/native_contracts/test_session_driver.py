@@ -9,7 +9,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
@@ -165,7 +164,3 @@ async def test_native_session_driver_reads_exact_turn_across_history_outage_and_
     assert [row.status for row in completed] == [event_pb2.TURN_STATUS_COMPLETED] * 3
     assert model.request_count == 3
     events.assert_contiguous(entries)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

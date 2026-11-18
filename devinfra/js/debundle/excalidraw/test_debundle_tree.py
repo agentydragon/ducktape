@@ -5,7 +5,6 @@ import os
 from pathlib import Path, PurePosixPath
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -64,7 +63,3 @@ def test_static_imports_resolve_to_emitted_chunks(out_dir: Path, chunk_ids_by_fi
         if PurePosixPath(chunk_import["source"]).name not in chunk_ids_by_file
     }
     assert unresolved == set()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

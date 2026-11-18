@@ -71,7 +71,6 @@ py_test(
         "//agentplane/app/frontend/serving/testing:image",
         "//devinfra/oci",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
         "@pypi//testcontainers",
     ],

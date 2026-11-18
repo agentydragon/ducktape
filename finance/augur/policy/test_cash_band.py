@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy.cash_band import Hold, Invest, Raise, cash_band
 
@@ -57,7 +56,3 @@ def test_noninteger_counts_are_rejected(field: str, value: Any) -> None:
 def test_unrepresentable_inputs_and_proposals(projected: int, floor: int, ceiling: int) -> None:
     with pytest.raises(OverflowError, match="64-bit money"):
         cash_band(projected_cash=projected, floor=floor, ceiling=ceiling)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

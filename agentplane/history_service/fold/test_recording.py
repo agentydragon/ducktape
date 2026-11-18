@@ -6,7 +6,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
 
@@ -403,7 +402,3 @@ async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbere
     assert before.items() <= positions.items()
     assert [index for _, _, index in after] == list(range(len(after)))
     assert positions[("item", "third")] == len(first_pass)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

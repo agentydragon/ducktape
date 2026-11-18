@@ -93,6 +93,5 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

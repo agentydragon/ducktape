@@ -11,7 +11,6 @@ from typing import cast
 
 import pytest
 import pytest_asyncio
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
@@ -234,7 +233,3 @@ async def action_cases(
 @pytest.mark.parametrize("case", CASES)
 async def test_mcp_actions(case: ActionCase, action_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
     await action_cases.report(request)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

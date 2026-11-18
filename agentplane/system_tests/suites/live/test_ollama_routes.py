@@ -6,8 +6,6 @@ import asyncio
 import json
 import os
 
-import pytest_bazel
-
 from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
 from agentplane.proto import event_pb2, session_pb2
@@ -111,7 +109,3 @@ async def test_ollama_tool_call(client: Client, dispatcher: SessionDispatcherCli
             raise ValueError(f"unknown OLLAMA_SMOKE_CASE: {selected}")
     for harness, route in cases:
         await _exercise_case(client, dispatcher, sandbox, catalog, harness, route)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

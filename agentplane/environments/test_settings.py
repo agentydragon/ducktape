@@ -1,7 +1,6 @@
 """The opt-in receiver settings preserve the existing deployment contract."""
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.environments.settings import EnvironmentService, RuntimeProxy, Settings
@@ -119,7 +118,3 @@ def test_receiver_rejects_unreviewed_authentication(updates: dict[str, object]) 
     settings = receiver_settings() | updates
     with pytest.raises(ValidationError):
         EnvironmentService.model_validate(settings)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

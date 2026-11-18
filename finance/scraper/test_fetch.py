@@ -7,7 +7,6 @@ from pathlib import Path
 import httpx
 import pygit2
 import pytest
-import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceKind, EvidenceSource
@@ -383,10 +382,6 @@ async def test_run_scrape_market_freshness(
         assert (SOURCE.upstream_url in calls) is source_called
     if market_called is not None:
         assert (f"{KALSHI_API}/markets/KXT-1" in calls) is market_called
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -> None:

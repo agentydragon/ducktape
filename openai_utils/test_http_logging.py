@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from openai_utils.http_logging import make_logger_logging_httpx_async_client, make_logging_httpx_async_client
 
@@ -107,7 +106,3 @@ async def test_unreadable_response_logs_empty_body_to_the_selected_destination(
         assert record["req_headers"]["authorization"] == "***"
     else:
         assert any(record.getMessage().endswith("\nResponse Body: ") for record in caplog.records)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -96,7 +96,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 ## Testing
 
 - Always via Bazel (`bbr test`), never direct pytest.
-- **Every `py_test` needs `pytest_bazel.main()`** under `if __name__ == "__main__":` (dep `@pypi//pytest_bazel`) — otherwise it exits 0 without running tests.
+- **Default `py_test` entrypoints** use `//devinfra/python:defs.bzl`: a target-named source is collected through `pytest_bazel` without a per-source main guard. Raw rules and custom entrypoints still need an explicit test runner; the entrypoint aspect checks native defaults.
 - pytest-asyncio auto mode is on; a test using a session-scoped async fixture (e.g. `playwright_driver`) needs `@pytest.mark.asyncio(loop_scope="session")` or browser startup can hang.
 - Never skip for missing tools; they come from runfiles or the RBE image.
 - **Test pins don't chase production pins.** A tool or harness version pinned for tests (e.g. the Claude/Codex CLIs in system-test images) may lag what production ships; bump it only when a test needs a newer version's behavior, not to match production.

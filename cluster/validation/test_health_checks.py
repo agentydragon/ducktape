@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, HealthCheck
@@ -117,7 +116,3 @@ class TestRetryPolicy:
     def test_sync_only_no_wait_no_retry_passes(self) -> None:
         """Sync-only health checks (Namespace) without wait don't need retryInterval."""
         check_retry_policy(self._make_cluster(health_check_kind="Namespace"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

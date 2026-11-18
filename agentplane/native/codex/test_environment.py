@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
@@ -42,7 +40,3 @@ async def test_shell_commands_see_the_agent_cli_environment(
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

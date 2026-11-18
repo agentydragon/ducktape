@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from aiohttp.test_utils import TestClient, TestServer
 from mitmproxy import connection, http
 
@@ -64,7 +63,3 @@ async def test_private_health_and_bounded_metrics() -> None:
         assert "test-private" not in exposition
         assert "x-ratelimit-used" not in exposition
         assert "api.github.com" not in exposition
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

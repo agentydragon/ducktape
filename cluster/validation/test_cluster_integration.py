@@ -19,7 +19,6 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.validation.checks import (
@@ -345,7 +344,3 @@ def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sRes
         resource.kind == "RoleBinding" and resource.name in {"agent-readable-metadata", "agent-readable-logs"}
         for resource in agent_permission_resources
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -7,7 +7,6 @@ from collections.abc import Callable
 
 import httpx
 import pytest
-import pytest_bazel
 import respx
 
 from devinfra.gc import github_prs
@@ -161,7 +160,3 @@ async def test_pr_states_never_exceeds_the_concurrency_bound(github_repo: pathli
 
     assert (await github_prs.pr_states(github_repo, many)).keys() == many
     assert peak <= github_prs._MAX_CONCURRENT_REQUESTS
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

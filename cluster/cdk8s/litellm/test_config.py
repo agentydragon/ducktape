@@ -5,7 +5,6 @@ import re
 from typing import Any
 
 import pytest
-import pytest_bazel
 from litellm.integrations.otel.model.baggage import DEFAULT_BAGGAGE_METADATA_KEYS, promoted_baggage
 from litellm.integrations.otel.model.config import CaptureMessageContent, ExporterOwner, OpenTelemetryV2Config
 from litellm.integrations.otel.model.metadata import RequestIdentity
@@ -167,7 +166,3 @@ def test_agentplane_header_metadata_is_promoted_to_otel_baggage() -> None:
     assert {key: promoted.get(key) for key in expected_baggage} == expected_baggage
     assert "litellm.metadata.spend_logs_metadata.agentplane.debug" not in promoted
     assert "litellm.metadata.spend_logs_metadata.operator_debug" not in promoted
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

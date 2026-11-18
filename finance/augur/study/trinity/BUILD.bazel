@@ -66,7 +66,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -86,7 +85,6 @@ py_test(
         "//finance/augur/sim:results",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -103,7 +101,6 @@ py_test(
         "//finance/augur/sim:events",
         "//finance/augur/sim:external_series",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

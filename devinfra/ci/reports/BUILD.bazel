@@ -14,6 +14,5 @@ py_test(
         ":publish",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

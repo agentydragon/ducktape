@@ -75,7 +75,6 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//syrupy",
     ],
 )

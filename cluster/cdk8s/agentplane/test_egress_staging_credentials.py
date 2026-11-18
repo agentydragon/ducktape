@@ -1,6 +1,5 @@
 """Staging's Forgejo credential reaches its credentials namespace through exact source access."""
 
-import pytest_bazel
 from cdk8s import Chart, Testing as Cdk8sTesting
 
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -155,7 +154,3 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
         ],
         "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     } in network["spec"]["egress"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

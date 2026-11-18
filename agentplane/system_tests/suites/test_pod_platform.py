@@ -11,7 +11,6 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-import pytest_bazel
 
 from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.cluster import Cluster
@@ -98,7 +97,3 @@ async def test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
     await egress_native.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
         cluster, native_sandbox, reader_svid_secret=NATIVE_CLIENT_SVID_SECRET
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

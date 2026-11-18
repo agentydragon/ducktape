@@ -1,7 +1,6 @@
 """Controller-managed deletion with an already-routed Session command."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
@@ -30,7 +29,3 @@ async def test_managed_cli_history_identity_uid_scope(
 ) -> None:
     del deployment
     await managed_cli_reads_retained_history_with_identity_uid_scope(cluster, scripted)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

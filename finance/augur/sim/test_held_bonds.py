@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.held_bonds import Bond, HeldBonds
@@ -55,7 +54,3 @@ def test_stopped_bond_snapshot_uses_the_last_observed_index(nominal: Bond) -> No
     _, bonds = bond_books(bond, (100, 110, 200, 300))
     assert bonds.snapshots(2, 1)[0].principal == 1100
     assert bonds.snapshots(2, 2)[0].principal == 2000
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

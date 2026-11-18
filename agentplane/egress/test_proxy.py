@@ -23,7 +23,6 @@ from uuid import UUID
 import aiohttp
 import grpc
 import pytest
-import pytest_bazel
 import yaml
 from aiohttp import web
 from cryptography import x509
@@ -1380,7 +1379,3 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     headers = dict(await requests.get())
     assert headers["x-buildbuddy-api-key"] == "contract-secret"
     assert "proxy-authorization" not in headers
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

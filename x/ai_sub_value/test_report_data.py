@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import pytest_bazel
 
 from x.ai_sub_value.plan_history import CodexPlanPeriod
 from x.ai_sub_value.report_data import assemble_usage, quota_weekly
@@ -124,7 +123,3 @@ def test_uncertain_plan_transition_rejects_a_poll_in_the_gap() -> None:
     }
     with pytest.raises(ValueError, match="outside the supplied plan history"):
         quota_weekly([row], periods)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

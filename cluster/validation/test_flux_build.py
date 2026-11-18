@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest_bazel
-
 from cluster.validation.flux import validate_flux_build
 
 
@@ -21,7 +19,3 @@ async def test_flux_build_renders_tree(k8s_dir: Path) -> None:
     """`flux build` of the whole tree succeeds and yields Kustomization + GitRepository resources."""
     errors = await validate_flux_build(k8s_dir)
     assert not errors, "\n".join(errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-import pytest_bazel
 from beancount import loader
 from beancount.core import data
 from beancount.core.amount import Amount
@@ -217,7 +216,3 @@ def test_empty_input_has_header_no_entries() -> None:
     ledger = render_ledger([], {}, {})
     assert 'option "title" "Budget"' in ledger
     assert _txns(_load(ledger)) == []
-
-
-if __name__ == "__main__":
-    raise SystemExit(pytest_bazel.main())

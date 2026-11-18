@@ -4,7 +4,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -68,7 +67,3 @@ def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine
         assert observation is not None
         assert observation.title == "retained title"
         assert observation.session_kind == "main"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

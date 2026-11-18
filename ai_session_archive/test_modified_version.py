@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-import pytest_bazel
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -80,7 +79,3 @@ def test_changed_file_version_is_kept_with_same_metadata_diff(tmp_path: Path, po
         changed_snapshot_row = db.get(ResticSnapshotRow, ("archive-modified-test", changed_snapshot.id))
         assert changed_snapshot_row is not None
         assert changed_snapshot_row.comparison_snapshot_id == initial_snapshot.id
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

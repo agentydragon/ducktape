@@ -67,7 +67,6 @@ py_test(
         ":wedge_repro",
         "//:conftest",
         "//mcp_infra:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -79,6 +78,5 @@ py_test(
         "//:conftest",
         "//mcp_infra:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
     ],
 )

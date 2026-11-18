@@ -36,7 +36,6 @@ py_test(
         ":sync_pins",
         "//:conftest",
         "@pypi//pytest",  # keep: the test uses parametrization and monkeypatch
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -57,7 +56,6 @@ py_test(
     deps = [
         ":prune_releases",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -220,19 +218,13 @@ py_binary(
 py_test(
     name = "test_artifacts",
     srcs = ["test_artifacts.py"],
-    deps = [
-        ":artifacts",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":artifacts"],
 )
 
 py_test(
     name = "test_release_metadata",
     srcs = ["test_release_metadata.py"],
-    deps = [
-        ":release_metadata",
-        "@pypi//pytest_bazel",
-    ],
+    deps = [":release_metadata"],
 )
 
 py_test(
@@ -243,7 +235,6 @@ py_test(
         ":release_assets",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -254,7 +245,6 @@ py_test(
         ":release_assets",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -266,7 +256,6 @@ py_test(
         "//devinfra/buildbuddy:cli",
         "//devinfra/buildbuddy/ci:bes",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -276,7 +265,6 @@ py_test(
     deps = [
         ":release_content_hash",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -293,7 +281,6 @@ py_test(
     deps = [
         ":bazel_ci",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -304,7 +291,6 @@ py_test(
     deps = [
         ":pr_mergeability",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -317,7 +303,6 @@ py_test(
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/oci:crane",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -332,7 +317,6 @@ py_test(
         "//devinfra/buildbuddy/ci:bes",
         "//devinfra/buildbuddy/ci:invocation_ids",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -343,7 +327,6 @@ py_test(
     deps = [
         ":image_registry",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -354,7 +337,6 @@ py_test(
     deps = [
         ":nix_images",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -367,7 +349,6 @@ py_test(
         ":image_registry",
         ":push_image",
         "//devinfra/oci:crane",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -379,7 +360,6 @@ py_test(
         ":precommit_file_selection",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -400,7 +380,6 @@ py_test(
     deps = [
         ":cancel_obsolete_pr_runs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

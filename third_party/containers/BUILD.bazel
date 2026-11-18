@@ -20,7 +20,6 @@ py_test(
     deps = [
         "//:conftest",
         "//third_party/containers:debian_slim",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

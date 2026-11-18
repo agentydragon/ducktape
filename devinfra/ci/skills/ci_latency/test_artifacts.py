@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from devinfra.ci.skills.ci_latency.scripts import attribution
 
@@ -39,7 +38,3 @@ def test_bad_values(triggers, seconds):
                 ],
             }
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -392,7 +391,3 @@ def test_environment_receiver_network_reachability_matches_enabled_callers(
             for rule in policy.get("egress", [])
             for target in rule.get("toEndpoints", [])
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

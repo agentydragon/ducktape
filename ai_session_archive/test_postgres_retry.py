@@ -6,7 +6,6 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import BinaryIO
 
-import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -216,7 +215,3 @@ def test_concurrent_import_does_not_hold_file_lock_during_restic_dump(tmp_path: 
         file_row = db.scalar(select(SnapshotFileRow))
         assert file_row is not None
         assert file_row.status in ("complete", "partial")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -77,7 +77,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -111,7 +110,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -136,7 +134,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -190,7 +187,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -213,7 +209,6 @@ py_test(
         "//model_catalog:catalog",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -239,7 +234,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -257,7 +251,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -299,7 +292,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -354,7 +346,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -428,7 +419,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -445,7 +435,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -492,7 +481,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -528,7 +516,6 @@ py_test(
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -544,7 +531,6 @@ py_test(
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -568,7 +554,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -685,7 +670,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -711,7 +695,6 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -755,7 +738,6 @@ py_test(
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -849,7 +831,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -868,7 +849,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -886,7 +866,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -925,7 +904,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -939,7 +917,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

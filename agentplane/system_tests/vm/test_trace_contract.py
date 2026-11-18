@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm.trace_contract import _codex_session_uids, _read_jsonl
 
@@ -26,7 +25,3 @@ def test_jsonl_reader_ignores_only_an_incomplete_trailing_record(tmp_path: Path)
     path.write_bytes(b'{"name": }')
     with pytest.raises(json.JSONDecodeError):
         _read_jsonl(path)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

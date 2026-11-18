@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from x.google_mcp_server.google_calendar_client import (
     CalendarReminder,
@@ -300,7 +299,3 @@ def test_list_event_instances_preserves_instance_linkage(
     assert page.events[0].recurring_event_id == "series1"
     assert page.events[0].original_start_time is not None
     assert service.events_.instances_listed == [{"calendarId": "primary", "eventId": "series1", "maxResults": 25}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

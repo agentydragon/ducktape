@@ -25,6 +25,5 @@ py_test(
         ":find_orphans",
         "//:conftest",
         "//devinfra/bazel:workspace",
-        "@pypi//pytest_bazel",
     ],
 )

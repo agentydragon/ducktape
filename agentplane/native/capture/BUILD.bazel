@@ -45,7 +45,6 @@ py_test(
         ":llm_recording_proxy",
         "//:conftest",
         "//agentplane/native:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

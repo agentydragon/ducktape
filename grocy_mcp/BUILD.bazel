@@ -154,7 +154,6 @@ py_test(
         "//:conftest",
         "//mcp_infra:persistence",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -173,7 +172,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//prometheus_client",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -189,7 +187,6 @@ py_test(
         ":server",
         "//:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -202,7 +199,6 @@ py_test(
         ":fix_openapi_spec",
         ":grocy_types",
         "//:conftest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -239,7 +235,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
         "@pypi//respx",
     ],
@@ -254,7 +249,6 @@ py_test(
         ":grocy_types",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
         "@pypi//respx",
     ],
@@ -278,7 +272,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -341,6 +334,5 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

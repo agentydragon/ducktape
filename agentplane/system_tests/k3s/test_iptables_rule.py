@@ -9,7 +9,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s.iptables_rule import IptablesCommandError, ensure_rule
@@ -207,7 +206,3 @@ def test_persistent_xtables_lock_fails_closed(iptables_binary: Path) -> None:
     finally:
         _run_iptables(iptables, "-t", "filter", "-F", chain)
         _run_iptables(iptables, "-t", "filter", "-X", chain)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

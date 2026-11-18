@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.fit import evidence_data
 from finance.augur.fit.data import aligned_as_of_observations, load_evidence, load_evidence_segments
@@ -160,7 +159,3 @@ def test_full_evidence_reads_each_zillow_table_once_for_all_cities(
     home = [point.value for key, point in evidence.latest_observations.items() if isinstance(key, HomeValueKey)]
     assert len(home) == 2
     assert home[0] != home[1]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

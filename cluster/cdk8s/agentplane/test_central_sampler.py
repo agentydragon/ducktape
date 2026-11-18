@@ -8,7 +8,6 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 
-import pytest_bazel
 import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting Testing as a test class
 from more_itertools import one
@@ -275,7 +274,3 @@ def test_central_sampler_turn_timeout_option_is_rendered(scratch_app_factory: Ca
     manifests = Cdk8sTesting.synth(staging.chart(scratch_app_factory(), env))
     config = json.loads(_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert config["turn_timeout_seconds"] == 123
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

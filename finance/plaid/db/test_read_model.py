@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
@@ -311,7 +310,3 @@ async def test_read_current_holdings_fails_closed_on_unapplied_successful_api_ev
     holdings = await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",))
     assert [holding.security_id for holding in holdings] == ["security-a"]
     assert holdings[0].institution_value == Decimal("11.02")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

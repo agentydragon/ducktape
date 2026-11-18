@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from cluster.rotators.forgejo_token_rotation import rotate
 from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Rotation, TeaSecretOutput
@@ -270,7 +269,3 @@ def test_tokens_to_prune_keeps_current_and_newest_previous():
         {"id": 1, "name": "manual-token"},
     ]
     assert tokens_to_prune(r, current, tokens) == [{"id": 2, "name": "forgejo-tea-haku-20260702000000"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

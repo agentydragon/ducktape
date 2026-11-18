@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import httpx
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -99,7 +98,3 @@ async def test_app_session_route_records_the_exact_dispatcher_session_and_thread
             assert summary.status_code == 200, summary.text
             assert summary.json()["sessionId"] == str(session_id)
             assert summary.json()["sandbox"] == {"namespace": sandbox.namespace, "name": SANDBOX, "uid": sandbox_uid}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

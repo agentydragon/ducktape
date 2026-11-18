@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from cluster.proxies.loki_read_proxy.main import (
@@ -436,7 +435,3 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NAMESPACE_ALLOWLIST")
     with pytest.raises(KeyError):
         Settings.from_env()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

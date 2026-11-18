@@ -14,8 +14,6 @@ import asyncio
 import logging
 from uuid import uuid4
 
-import pytest_bazel
-
 from openai_utils.testing.responses import PlayGen
 from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
@@ -151,7 +149,3 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
 
         # Assert no drift remains
         assert_no_pending(test_snapshot, db)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

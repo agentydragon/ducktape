@@ -13,6 +13,5 @@ py_test(
         ":build",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

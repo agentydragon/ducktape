@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
@@ -61,7 +60,3 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
             operator_bff, client, dispatcher, sandbox, harness, offered_model, scripted, policy_objects
         ),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

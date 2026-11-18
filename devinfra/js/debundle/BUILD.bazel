@@ -41,7 +41,6 @@ py_test(
         ":analysis_identity_hasher",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2150,7 +2149,6 @@ py_test(
     deps = [
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

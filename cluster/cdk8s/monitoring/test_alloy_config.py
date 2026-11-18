@@ -4,7 +4,6 @@ from contextlib import closing
 from pathlib import Path
 
 import docker
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.oci.oci import load_oci_image
@@ -31,7 +30,3 @@ def test_log_collection_configs(tmp_path: Path, runfiles: Runfiles) -> None:
                 network_disabled=True,
                 remove=True,
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -10,7 +10,6 @@ from typing import Any, cast
 
 import grpc
 import pytest
-import pytest_bazel
 from filelock import Timeout
 from google.protobuf import empty_pb2, json_format
 from google.protobuf.message import Message
@@ -581,7 +580,3 @@ async def test_drain_retains_instance_ownership_until_owner_is_stopped(tmp_path:
         await server.stop(grace=0)
         await service.drain()
         await service.close()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

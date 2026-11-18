@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -271,7 +270,3 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     assert len(status.processes) == 1
     summaries = await client.list_sessions()
     assert [summary.session_id for summary in summaries] == [str(session_id)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

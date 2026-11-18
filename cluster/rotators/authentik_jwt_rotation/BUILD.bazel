@@ -40,7 +40,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

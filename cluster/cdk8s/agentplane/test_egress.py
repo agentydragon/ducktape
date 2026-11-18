@@ -8,7 +8,6 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
@@ -809,10 +808,6 @@ def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_man
     # The kubelet mounts the API-server token here when the Pod automounts it.
     assert pod["automountServiceAccountToken"] is True
     assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:

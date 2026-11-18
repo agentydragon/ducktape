@@ -158,7 +158,6 @@ py_test(
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -208,7 +207,6 @@ py_test(
         "//model_catalog:catalog",
         "//model_catalog:policies",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -245,7 +243,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -275,7 +272,6 @@ py_test(
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -306,7 +302,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -339,7 +334,6 @@ py_test(
         ":generation",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -366,7 +360,6 @@ py_test(
         "//util:settings_contract",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -405,7 +398,6 @@ py_test(
         ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -454,7 +446,6 @@ py_test(
         ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -588,7 +579,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -714,7 +704,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1077,7 +1066,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pygohcl",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -1122,7 +1110,6 @@ py_test(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2018,7 +2005,6 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2086,7 +2072,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2109,7 +2094,6 @@ py_test(
         ":piraeus_metrics",
         "//:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2168,7 +2152,6 @@ py_test(
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2206,7 +2189,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -2227,7 +2209,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -2246,6 +2227,5 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

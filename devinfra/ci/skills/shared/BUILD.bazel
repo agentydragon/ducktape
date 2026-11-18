@@ -21,7 +21,6 @@ py_test(
     deps = [
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

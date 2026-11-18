@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 
@@ -100,7 +99,3 @@ async def test_late_repeated_cancellation_preserves_body_error_and_cleanup_cause
         with pytest.raises(asyncio.CancelledError) as caught_cancel:
             await owner
         assert caught_cancel.value.__cause__ is (failure if cleanup_fails else None)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

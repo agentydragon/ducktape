@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -141,7 +140,3 @@ def test_egress_sidecar_image_pin_reaches_launcher_relay_template(
     [policy] = yaml.safe_load_all(result.stdout)
     relay = policy["spec"]["rules"][0]["context"][0]["variable"]["value"]
     assert relay["image"] == f"{sidecar_image}:{sidecar_pin['newTag']}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

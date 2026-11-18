@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing import thread_browser
 
@@ -60,7 +59,3 @@ def test_watchdog_cleanup_preserves_startup_error(tmp_path: Path, monkeypatch: p
     ):
         raise TimeoutError("original browser startup failure")
     assert "watchdog thread did not stop" in (tmp_path / "browser-open-watchdog-error.txt").read_text()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

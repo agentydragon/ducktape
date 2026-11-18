@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Never
 
 import pytest
-import pytest_bazel
 
 from devinfra.claude.web_env.tools import build_and_diff
 
@@ -53,7 +52,3 @@ def test_capture_cleans_container_and_rootfs(
     assert not list(tmp_path.glob("built_rootfs_*"))
     result = subprocess.run(["docker", "inspect", container], check=False, capture_output=True)
     assert result.returncode != 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

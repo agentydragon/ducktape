@@ -7,7 +7,6 @@ from typing import Any
 
 import grpc
 import pytest
-import pytest_bazel
 from pydantic import SecretStr
 from sqlalchemy import text
 
@@ -375,6 +374,3 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
 
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
-
-if __name__ == "__main__":
-    pytest_bazel.main()

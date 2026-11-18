@@ -21,7 +21,6 @@ py_test(
         ":provision",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
@@ -160,7 +159,3 @@ def test_missing_display_name_is_not_prettified_from_a_slug() -> None:
     route = next(route for route in SERVED_ROUTES if isinstance(route, Route))
     with pytest.raises(ValueError, match="no display name"):
         _ = replace(route, model=Model("unknown-model")).display_name
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

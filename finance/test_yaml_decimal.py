@@ -2,7 +2,6 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 import yaml
 
 from finance.yaml_decimal import DecimalSafeLoader
@@ -43,7 +42,3 @@ def test_nonfinite_yaml_scalars_remain_decimals_for_model_validation(value: str)
 def test_decimal_loader_keeps_safe_loader_constructor_restrictions() -> None:
     with pytest.raises(yaml.constructor.ConstructorError):
         yaml.load("!!python/object:builtins.object {}", Loader=DecimalSafeLoader)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

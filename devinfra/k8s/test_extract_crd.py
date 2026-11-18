@@ -1,7 +1,6 @@
 import textwrap
 
 import pytest
-import pytest_bazel
 import yaml
 
 from devinfra.k8s.extract_crd import _remove_path, go_raw_string, wrap_schema
@@ -61,7 +60,3 @@ def test_wrap_schema_splits_name_into_plural_and_group() -> None:
         "scope": "Namespaced",
         "versions": [{"name": "v1", "served": True, "storage": True, "schema": schema}],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

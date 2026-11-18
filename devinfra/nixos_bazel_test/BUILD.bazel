@@ -7,7 +7,6 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

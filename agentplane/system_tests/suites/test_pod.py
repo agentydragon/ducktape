@@ -7,7 +7,6 @@ from typing import cast
 
 import pytest
 import pytest_asyncio
-import pytest_bazel
 
 from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_items
 from agentplane.system_tests.driver.cluster import Cluster
@@ -43,7 +42,3 @@ async def pod_cases(
 @pytest.mark.parametrize("case", SCENARIOS, ids=lambda case: "test_" + case.__name__)
 async def test_pod_scenarios(case: Scenario, pod_cases: CaseBatch, request: pytest.FixtureRequest) -> None:
     await pod_cases.report(request)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.ids import AgentId, JurisdictionId
 from finance.augur.sim.income import (
@@ -224,7 +223,3 @@ def test_state_surtax_on_taxable_income_above_a_million(facts: TaxFacts, surtax:
     assessment = assess(facts, rules)
     assert assessment.taxable_income_surtax == surtax
     assert assessment.total_tax == total
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

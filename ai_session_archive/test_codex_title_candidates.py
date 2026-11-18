@@ -6,7 +6,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import pytest_bazel
 from sqlalchemy import Engine, insert, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -173,7 +172,3 @@ def test_candidates_accept_long_physical_paths(postgres_engine: Engine) -> None:
         assert row is not None
         row.source_path = long_path
     assert _candidates(factory) == {(long_path, "title"): (f"{0:064x}", "Name 0")}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

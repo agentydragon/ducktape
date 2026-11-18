@@ -12,7 +12,6 @@ from typing import Any
 
 import aiohttp
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -414,7 +413,3 @@ async def test_worker_failure_reaches_the_fixture_owner(tmp_path: Path) -> None:
             ):
                 pytest.fail("provisioner accepted an unsupported workspace claim")
             assert not (await core.list_persistent_volume()).items
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

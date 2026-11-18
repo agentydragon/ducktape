@@ -23,7 +23,6 @@ py_test(
         ":restore",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -36,7 +35,6 @@ py_test(
         "//:conftest",
         "@pypi//dbus_fast",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

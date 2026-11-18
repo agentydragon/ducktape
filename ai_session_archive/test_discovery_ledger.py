@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from typing import BinaryIO
 from unittest.mock import patch
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -358,7 +357,3 @@ def test_independent_inventory_stops_version_inheritance(postgres_engine: Engine
         version = db.get(FileVersionRow, last.file_version_id)
         assert version is not None
         assert version.parent_version_id is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

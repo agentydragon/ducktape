@@ -6,7 +6,6 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from python.runfiles import Runfiles
@@ -217,7 +216,3 @@ def test_outpost_provider_references_resolve(blueprints_dir: Path) -> None:
     """Embedded-outpost refs are valid and do not target retired providers."""
     errors = check_outpost_provider_references(blueprints_dir)
     assert not errors, "\n".join(errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

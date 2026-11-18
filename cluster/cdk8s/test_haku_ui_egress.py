@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
@@ -170,7 +169,3 @@ def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str
         assert namespace in allowed
         assert ("workloadcredentials", "get") in _granted(resources, namespace, ("agentplane-staging", "egress"))
         assert (policy_namespace, record["spec"]["subject"]["identity"]["name"]) in identities
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
@@ -96,7 +95,3 @@ def test_composite_rejects_missing_required_private_equity_issuer() -> None:
                 required_private_equity_issuers=frozenset({IssuerId("different_issuer")}),
             )
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

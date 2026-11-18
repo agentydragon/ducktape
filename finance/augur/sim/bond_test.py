@@ -8,7 +8,6 @@ from decimal import Decimal
 from itertools import pairwise
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import IncomeState
@@ -189,7 +188,3 @@ def test_unfunded_accretion_tax_preserves_coupon_cash_and_stops() -> None:
     assert result.summary.ending_book.month == 13
     assert len(result.summary.cash[0].values) == 14
     assert result.summary.unpaid_claims
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

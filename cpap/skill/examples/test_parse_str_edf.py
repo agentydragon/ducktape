@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cpap.skill.examples.generate_test_edf import generate_str_edf
 from cpap.skill.examples.parse_str_edf import read_str_edf, report
@@ -75,7 +74,3 @@ def test_report_json(edf_path: Path, capsys: pytest.CaptureFixture[str]) -> None
     assert nights[0]["Date"] == "2026-04-10"
     assert abs(nights[0]["AHI"] - 2.5) < 0.1
     assert "MaskPress.50" in nights[0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

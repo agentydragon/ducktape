@@ -1,7 +1,6 @@
 """The production Runtime client routes through the authenticated Environments proxy."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
@@ -28,7 +27,3 @@ async def test_runner_client_routes_with_complete_sandbox_identity(
     with pytest.raises(ServiceError) as rejected:
         await sandbox_control.list_sessions(stale)
     assert rejected.value.code.name == "NOT_FOUND"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

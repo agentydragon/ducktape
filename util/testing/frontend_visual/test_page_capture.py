@@ -5,7 +5,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from PIL import Image
 from playwright.async_api import Browser, Page
 
@@ -202,7 +201,3 @@ async def test_devtools_viewport_captures_the_last_row_as_drawn_and_playwrights_
     last_row = (0, 1372, 618, 1373)
     assert set(devtools.crop(last_row).getdata()) == {(255, 255, 255)}
     assert set(playwright.crop(last_row).getdata()) != {(255, 255, 255)}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

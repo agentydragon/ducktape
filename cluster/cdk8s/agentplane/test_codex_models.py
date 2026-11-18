@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
@@ -46,7 +45,3 @@ def test_pinned_codex_reads_the_catalog(tmp_path: Path) -> None:
     windows = {route.id: RUNNER_CONTEXT_OVERRIDES[route] for route in routes if route in RUNNER_CONTEXT_OVERRIDES}
     assert windows
     assert windows.items() <= {slug: model["context_window"] for slug, model in models.items()}.items()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

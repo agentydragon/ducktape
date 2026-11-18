@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
-
 from haku.console.deployment import build_deployment_info
 
 
@@ -25,7 +23,3 @@ def test_build_deployment_info_tolerates_missing_projected_static_tag(tmp_path) 
     )
 
     assert info.frontend.source_commit == "bfad4bf"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

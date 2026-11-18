@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import dial
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
@@ -75,7 +74,3 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     await dispatcher.deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends(
         crictl_command, cluster
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -6,7 +6,6 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.budget.csv_export import build_summary_csv, build_transactions_csv
@@ -210,7 +209,3 @@ def test_budget_wire_rejects_nonfinite_money() -> None:
         )
     with pytest.raises(ValidationError):
         OverrideBudgetAdjustment(monthly=Decimal("Infinity"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

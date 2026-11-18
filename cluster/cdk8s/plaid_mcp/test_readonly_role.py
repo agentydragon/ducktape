@@ -1,4 +1,3 @@
-import pytest_bazel
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, func, select
 
@@ -34,7 +33,3 @@ def test_runtime_holdings_reads_and_payload_boundary(postgres_admin_url: str) ->
                     )
         finally:
             engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

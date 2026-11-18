@@ -153,7 +153,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

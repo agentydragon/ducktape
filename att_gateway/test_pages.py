@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from att_gateway.pages import (
     Bound,
@@ -116,7 +115,3 @@ def test_syslog() -> None:
 def test_syslog_rejects_login_page() -> None:
     with pytest.raises(ValueError, match="syslog form not found"):
         parse_syslog('<html><body><form><input type="hidden" name="nonce" value="ab12" /></form></body></html>')
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

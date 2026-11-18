@@ -4,7 +4,6 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any, cast
 
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
@@ -344,7 +343,3 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for rule in runner_listener["ingress"]
         for endpoint in rule.get("fromEndpoints", [])
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

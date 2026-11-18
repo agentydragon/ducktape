@@ -117,7 +117,6 @@ py_test(
         "//props:conftest",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -132,7 +131,6 @@ py_test(
         "//props:conftest",
         "//props/core:ids",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -157,6 +155,5 @@ py_test(
         "//props/testing/fixtures:scopes",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

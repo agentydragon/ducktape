@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import TypeAdapter, ValidationError
 from python.runfiles import Runfiles
@@ -54,7 +53,3 @@ def test_session_delegation_executor_binding_is_accepted() -> None:
 
     assert isinstance(group.executor, SessionDelegationExecutorBinding)
     assert group.executor.kind == "session_delegation"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

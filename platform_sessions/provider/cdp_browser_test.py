@@ -8,7 +8,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from playwright.sync_api import BrowserContext, Error, Playwright, Route, sync_playwright
 from websockets.sync.server import ServerConnection, serve
 
@@ -217,7 +216,3 @@ def test_viewer_websocket_connects_only_during_admission(
         finally:
             server.shutdown()
             thread.join(timeout=5)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

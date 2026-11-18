@@ -9,7 +9,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel
@@ -214,7 +213,3 @@ def test_offline_cli_replays_selected_original_windows(runfiles: Runfiles, tmp_p
         assert outcomes[trace.rollout_id].summary == trace.summary
         assert trace.trace is not None
         assert {row.action.kind for row in trace.trace.receipts} <= {"Sell", "PayClaim"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

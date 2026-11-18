@@ -45,7 +45,6 @@ py_test(
         "//:conftest",
         "//finance/budget:schema",
         "@pypi//beancount",
-        "@pypi//pytest_bazel",
     ],
 )
 

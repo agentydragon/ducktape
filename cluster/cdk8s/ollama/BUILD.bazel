@@ -22,7 +22,6 @@ py_test(
         "//:conftest",
         "@pypi//jinja2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

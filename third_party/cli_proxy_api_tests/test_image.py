@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from devinfra.oci.oci import load_oci_image
 from third_party.cli_proxy_api_tests import cli_proxy_api_image
@@ -73,7 +72,3 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
             assert v8_config.status_code == 200
             callback = client.get("/v8/management/auth/oidc/callback?code=invalid&state=invalid")
             assert callback.status_code == (400 if oidc_enabled else 404)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

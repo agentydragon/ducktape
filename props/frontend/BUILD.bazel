@@ -187,7 +187,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//props:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -206,7 +205,6 @@ py_test(
         "//props/db:database",
         "//props/testing/fixtures:db",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

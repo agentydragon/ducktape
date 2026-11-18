@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pygit2
-import pytest_bazel
 
 from devinfra.precommit.git_hook import _setup_tracing
 
@@ -60,7 +59,3 @@ def test_setup_tracing_works_in_normal_repo(tmp_path: Path) -> None:
     trace_file = Path(repo.path) / "precommit-traces.jsonl"
     assert trace_file.parent.is_dir()
     assert trace_file.parent == tmp_path / ".git"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

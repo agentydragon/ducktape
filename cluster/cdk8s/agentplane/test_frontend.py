@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import app, frontend, staging
@@ -63,7 +62,3 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
     assert policy["egressDeny"] == [{"toEntities": ["all"]}]
     assert not policy.get("egress")
     assert one(policy["ingress"])["fromEntities"] == ["ingress"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

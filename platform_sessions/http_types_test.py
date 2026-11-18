@@ -1,7 +1,6 @@
 """Session cookie validation preserves the accepted wire character sets."""
 
 import pytest
-import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from platform_sessions.http_types import CookieValue, HttpToken
@@ -27,7 +26,3 @@ def test_cookie_values_preserve_existing_accepted_values(value):
 def test_cookie_values_reject_delimiters_and_non_ascii(value):
     with pytest.raises(ValidationError):
         TypeAdapter(CookieValue).validate_python(value)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

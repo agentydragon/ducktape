@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import runfiles
 
@@ -188,7 +187,3 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
         assert actual.stdout == original_output == "7\n"
     shutil.copyfile(worker_manifest, evidence / "worker-baseline.json")
     shutil.copyfile(integration_manifest, evidence / "integration-baseline.json")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

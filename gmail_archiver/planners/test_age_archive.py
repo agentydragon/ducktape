@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-import pytest_bazel
 
 from gmail_api.labels import SystemLabel
 from gmail_archiver.inbox import GmailInbox
@@ -59,7 +58,3 @@ def test_plan_age_archive_preserves_date_and_label_decisions(make_email, monkeyp
     assert not plan.actions["already-labeled-old"].action.labels_to_add
     assert plan.actions["already-labeled-old"].action.labels_to_remove == {SystemLabel.INBOX}
     assert plan.messages == ["Archiving 2 old receipts (> 7 days)"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

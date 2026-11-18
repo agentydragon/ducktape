@@ -24,7 +24,6 @@ py_test(
         ":resigner",
         "//:conftest",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
     ],
 )
 

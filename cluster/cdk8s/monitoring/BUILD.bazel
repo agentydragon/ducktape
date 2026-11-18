@@ -242,7 +242,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -345,7 +344,6 @@ py_test(
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -370,7 +368,6 @@ py_test(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -458,7 +455,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:blackbox_exporter",
         "//util/testing:container_logs",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -525,7 +521,6 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -549,7 +544,6 @@ py_test(
         "//devinfra/oci",
         "//third_party/containers:alloy_config",
         "@pypi//docker",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -589,7 +583,6 @@ py_test(
         "//third_party/containers:alloy_config",
         "//third_party/containers:loki_test",
         "//util/testing:container_logs",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",
     ],

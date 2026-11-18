@@ -67,7 +67,6 @@ py_test(
         "//gnome/testing:session",
         "@pypi//pillow",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

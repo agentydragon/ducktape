@@ -64,7 +64,6 @@ py_test(
         "//homeassistant/provisioner:conftest",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",
     ],
 )

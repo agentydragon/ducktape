@@ -1,7 +1,5 @@
 import json
 
-import pytest_bazel
-
 from agentplane.x.authored_conversation.settings import Settings
 from agentplane.x.authored_conversation.store import Author, Message, Store
 from agentplane.x.authored_conversation.tools import Tools, run_command
@@ -66,7 +64,3 @@ async def test_command_output_is_bounded_and_timed_out_processes_are_reaped(sett
     result = await run_command("exec sleep 100", settings)
     assert result.status == "timeout"
     assert result.exit_code != 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

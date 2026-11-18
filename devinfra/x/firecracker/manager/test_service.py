@@ -3,7 +3,6 @@ import threading
 from collections.abc import Iterator
 
 import httpx
-import pytest_bazel
 
 from devinfra.x.firecracker.manager.service import _control_client, _firecracker_client, _require_auth, app
 
@@ -53,7 +52,3 @@ async def test_health_responds_while_boot_waits_for_firecracker() -> None:
         assert len(boots) == 1
     finally:
         app.dependency_overrides.clear()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

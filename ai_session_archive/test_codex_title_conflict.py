@@ -5,7 +5,6 @@
 import json
 from pathlib import Path
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -38,7 +37,3 @@ def test_index_title_requires_unique_native_identity(tmp_path: Path, postgres_en
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert [row.title for row in db.scalars(select(SessionRow))] == [None, None]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

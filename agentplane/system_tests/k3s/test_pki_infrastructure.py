@@ -1,7 +1,6 @@
 """CRD initialization failures must not abort or extend the readiness wait."""
 
 import pytest
-import pytest_bazel
 import yaml
 from tenacity import wait_none
 
@@ -96,7 +95,3 @@ def test_warm_prepare_retries_admission_until_both_webhooks_are_ready(monkeypatc
         ("Bundle", "trust.cert-manager.io/v1alpha1"),
         ("Bundle", "trust.cert-manager.io/v1alpha1"),
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

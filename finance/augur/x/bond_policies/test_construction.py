@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.x.bond_policies.construction import (
     Action,
@@ -116,7 +115,3 @@ def test_invalid_discount_factors_are_rejected_before_construction(curves: np.nd
     curves[1, 6, 12] = invalid
     with pytest.raises(ValueError, match="finite and positive"):
         construct(curves, hold)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

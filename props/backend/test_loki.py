@@ -6,8 +6,6 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import UUID
 
-import pytest_bazel
-
 from props.backend.loki import LOG_WINDOW_MARGIN, fetch_run_logs, parse_query_range, run_log_window
 
 RUN = UUID("11da4746-40f8-431a-a0f2-c11f23c1c056")
@@ -90,7 +88,3 @@ async def test_fetch_run_logs_queries_and_parses() -> None:
     # Window is bounded to the run's lifetime (nanosecond epoch), not a 14-day lookback.
     assert params["start"] == str(int(start.timestamp() * 1e9))
     assert params["end"] == str(int(end.timestamp() * 1e9))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

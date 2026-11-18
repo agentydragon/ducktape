@@ -22,7 +22,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

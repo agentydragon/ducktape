@@ -16,6 +16,5 @@ py_test(
         "@pypi//anthropic",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

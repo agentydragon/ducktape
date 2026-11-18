@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiException
 
@@ -249,7 +248,3 @@ async def test_invalid_persisted_state_is_ignored() -> None:
     core.state = '{"generation":"not-an-integer"}'
 
     assert await controller._read_state(core, _SETTINGS) is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

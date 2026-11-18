@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 
@@ -22,7 +21,3 @@ def test_occupancy_rates_preserve_base_and_interpolate(rate: Callable[..., float
 
 def test_vacant_insurance_returns_base() -> None:
     assert insurance_rate(base_annual_pct=0.4, occupancy_mode=OccupancyMode.OFF, rented_fraction=0.0) == 0.4
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

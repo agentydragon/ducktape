@@ -2,7 +2,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.release_content_hash import release_content_hash, release_content_hash_from_digests
 
@@ -45,10 +44,6 @@ def test_group_rejects_duplicate_release_filenames(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unique filenames"):
         release_content_hash([first, second])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_digest_form_matches_the_file_form(tmp_path: Path) -> None:

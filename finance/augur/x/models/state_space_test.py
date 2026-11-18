@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.conditioning import (
@@ -231,7 +230,3 @@ def _artifact(
             )
         },
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

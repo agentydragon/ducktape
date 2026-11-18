@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 
 import bcrypt
 import pytest
-import pytest_bazel
 import yaml
 from more_itertools import one
 from pydantic import AnyHttpUrl
@@ -998,7 +997,3 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
         "path": "/dev/net/tun",
         "type": "CharDevice",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

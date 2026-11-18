@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-import pytest_bazel
 from mitmproxy import connection, http
 from mitmproxy.flow import Error
 
@@ -103,7 +102,3 @@ def test_invalid_headers_are_unknown_without_exposing_values(flow: http.HTTPFlow
     assert record.github_request_id is None
     assert record.account_rate_used is None
     assert "test-private" not in json.dumps(asdict(record))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

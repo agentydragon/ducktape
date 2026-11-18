@@ -149,7 +149,6 @@ py_test(
         ":anthropic",
         ":conftest",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -160,7 +159,6 @@ py_test(
         ":conftest",
         ":square",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -187,6 +185,5 @@ py_test(
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

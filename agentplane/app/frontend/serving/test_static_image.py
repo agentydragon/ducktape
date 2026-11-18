@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest_bazel
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
@@ -77,7 +76,3 @@ def test_static_image_serves_assets_without_revalidation() -> None:
         assert "listen 8080;" in nginx_config
         assert "worker_processes 1;" in nginx_config
         assert "proxy_pass" not in nginx_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

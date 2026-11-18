@@ -6,7 +6,6 @@ import threading
 from collections.abc import Callable
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.port_forward import PortForward, PortForwardError, async_port_forward
 
@@ -166,7 +165,3 @@ async def _cancel_async_startup() -> None:
 
 def test_async_startup_cancellation_stops_process() -> None:
     asyncio.run(_cancel_async_startup())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-import pytest_bazel
 
 from cluster.x.forgejo_retention_report.forgejo_retention_report import (
     Protection,
@@ -73,7 +72,3 @@ def test_out_of_policy_groups_report_unrecognized_and_exclusive_bytes() -> None:
     assert "**UNRECOGNIZED**" in markdown(
         report | {"repos": [], "rollback_days": 0, "workload_counts": {}, "flux_sources": []}
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

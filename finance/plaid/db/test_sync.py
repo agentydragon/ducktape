@@ -9,7 +9,6 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_get_request import AccountsGetRequest
@@ -519,7 +518,3 @@ async def test_transaction_sync_restarts_mutated_pagination_from_saved_cursor() 
     assert len(storage.transaction_deltas) == 1
     assert [txn["transaction_id"] for txn in storage.transaction_deltas[0]["added"]] == ["stable"]
     assert storage.transaction_deltas[0]["next_cursor"] == "cursor-new"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

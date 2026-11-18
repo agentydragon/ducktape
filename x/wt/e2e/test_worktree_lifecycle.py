@@ -3,7 +3,6 @@
 from datetime import timedelta
 
 import pytest
-import pytest_bazel
 
 from x.wt.testing.data import WATCHER_DEBOUNCE_SECS
 from x.wt.testing.git_helpers import worktree_exists
@@ -75,7 +74,3 @@ def test_worktree_full_lifecycle(wt_cli, real_config, pygit2_repo):
 
     # Step 5: Status should no longer show the worktree
     wait_for_status_not_contains(wt_cli, "feature-test")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -75,7 +75,6 @@ py_test(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
@@ -126,7 +125,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -145,7 +143,6 @@ py_test(
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -188,6 +185,5 @@ py_test(
         "//agentplane/testing:tls",
         "@pypi//grpcio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

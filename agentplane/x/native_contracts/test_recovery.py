@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.e2e.testing import events
@@ -348,7 +347,3 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
     assert len(events.of_kind(final_entries, "turn_completed")) == 3
     assert model.request_count == 3
     events.assert_contiguous(final_entries)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

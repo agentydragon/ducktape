@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.env.config import CodexReadiness, Configuration, GuestResources, VMEnvironment
@@ -315,10 +314,6 @@ def test_vm_executor_accepts_endpoint_with_budget() -> None:
     config = Configuration.model_validate(_configuration() | {"environment": value})
     assert isinstance(config.environment, VMEnvironment)
     assert config.environment.executor is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 @pytest.mark.parametrize("level", [None, "debug", "info", "warn", "error"])

@@ -1,5 +1,3 @@
-import pytest_bazel
-
 from x.ai_sub_value.langfuse_usage_extract import normalize_row, resolve_provider
 
 
@@ -74,7 +72,3 @@ def test_transport_provider_does_not_override_model_family() -> None:
     assert resolve_provider(
         {"model": "gemini-3.5-flash-lite", "payment_lane": "unknown_route_scope", "provider_observed": "anthropic"}
     ) == ("unknown", "manufacturer_unresolved_provider_observed_not_authoritative")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

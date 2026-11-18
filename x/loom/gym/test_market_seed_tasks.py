@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from finance.evidence.markets import Platform, load_roster
@@ -62,7 +61,3 @@ def test_market_baseline_prob_never_reaches_question_text() -> None:
     # question text would hand contestants the crowd answer.
     for task in MARKET_SEED_TASKS:
         assert str(MARKET_PROB_AT_AS_OF[task.task_id]) not in task.question.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

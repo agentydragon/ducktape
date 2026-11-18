@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from inventree_utils.beautifier.fix_lcsc_links import normalize_url
 
@@ -16,7 +15,3 @@ from inventree_utils.beautifier.fix_lcsc_links import normalize_url
 )
 def test_normalize_url(url, expected):
     assert normalize_url(url) == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

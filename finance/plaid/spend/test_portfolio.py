@@ -8,7 +8,6 @@ from typing import cast
 import httpx
 import jwt
 import pytest
-import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr, ValidationError
@@ -1046,7 +1045,3 @@ def test_account_observation_rejects_malformed_amounts(amount: object) -> None:
     row["current"] = amount
     with pytest.raises(ValidationError):
         AccountObservation.model_validate(row)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

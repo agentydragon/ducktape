@@ -6,7 +6,6 @@ from collections.abc import Callable
 import numpy as np
 import numpy.typing as npt
 import pytest
-import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
@@ -1207,7 +1206,3 @@ def test_mint_streams_central_trajectory_does_not_collapse() -> None:
     assert 400.0 < mark_p50_120 < 5000.0, f"central mark at 10y outside expected range: ${mark_p50_120:.0f}"
     # V should grow in the central case (scale-reverting drift is positive at all sizes).
     assert val_p50_120 > 852e9, f"V central case did not grow: ${val_p50_120 / 1e9:.0f}B vs V0 = $852B"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

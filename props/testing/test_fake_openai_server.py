@@ -1,6 +1,5 @@
 import httpx
 import pytest
-import pytest_bazel
 
 from openai_utils.model import Model, ResponsesRequest, ResponsesResult, WireRequest
 from props.testing.fake_openai_server import FakeOpenAIServer
@@ -27,7 +26,3 @@ async def test_mock_error_is_raised_after_http_server_stops() -> None:
 
     with pytest.raises(RuntimeError, match="mock failure"):
         fake_openai.check_errors()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

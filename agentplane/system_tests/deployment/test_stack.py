@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment import rendered_fixture, stack
 from agentplane.system_tests.k3s import baseline
@@ -260,7 +259,3 @@ def test_enabled_image_import_profiles_cancel_incomplete_on_short_fixture_failur
         assert metadata["requested_duration_seconds"] == seconds
         assert metadata["status"] == "cancelled"
         assert metadata["complete"] is False
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

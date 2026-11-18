@@ -9,7 +9,6 @@ from unittest.mock import create_autospec
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
@@ -250,7 +249,3 @@ async def test_pod_case_can_disable_native_capture_and_still_delete_its_guests(
         await create("pod")
     assert LifecycleEvent("diagnostics", "pod") not in lifecycle
     assert lifecycle == [LifecycleEvent("delete", "pod"), LifecycleEvent("client-close", "pod")]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

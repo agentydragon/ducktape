@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci import bes
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary, merge, read
@@ -156,7 +155,3 @@ def test_merge_deduplicates_shared_outputs_and_combines_test_status() -> None:
     assert merged.outputs == [output]
     assert merged.test_status == {"//p:a": "PASSED", "//p:b": "FAILED"}
     assert merge([]) is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

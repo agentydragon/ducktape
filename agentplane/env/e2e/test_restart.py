@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript
@@ -1186,7 +1185,3 @@ async def test_codex_normal_interrupt_reconciles_on_the_live_command_loop(
         for item in pages_by_turn[active_turn]
     )
     await first_runner.stop()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

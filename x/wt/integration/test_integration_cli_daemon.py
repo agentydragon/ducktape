@@ -2,7 +2,6 @@
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from x.wt.testing.asserts import assert_output_contains
 
@@ -83,7 +82,3 @@ class TestRealGitOperations:
         worktree_path = real_temp_repo / "worktrees" / "test-branch"
         worktree_repo = pygit2.Repository(worktree_path)
         assert worktree_repo.head.shorthand == "test/test-branch"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

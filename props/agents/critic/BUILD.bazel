@@ -123,7 +123,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -149,7 +148,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -184,7 +182,6 @@ py_test(
         "//util/testing:postgres_fixtures",
         "@pypi//pyhamcrest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )
 

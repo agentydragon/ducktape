@@ -17,7 +17,6 @@ from datetime import date
 
 import aiohttp
 import pytest
-import pytest_bazel
 from mitmproxy.http import Headers
 from mitmproxy.test import tflow
 from yarl import URL
@@ -361,7 +360,3 @@ def test_config_from_env_uses_cache_for_availability(monkeypatch: pytest.MonkeyP
     config = Config.from_env()
     assert config.upstream == "http://wayback-cache.local:8080"
     assert config.availability_base == "http://wayback-cache.local:8080"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.native.codex import driver, wire
@@ -116,7 +115,3 @@ def test_extra_fields_on_known_frames_do_not_break_consumed_fields() -> None:
     # The transport retains the original frame; the typed model only promises
     # the fields its consumers read, not lossless serialization of known types.
     assert raw == original
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

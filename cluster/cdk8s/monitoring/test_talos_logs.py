@@ -10,7 +10,6 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-import pytest_bazel
 from python.runfiles import Runfiles
 from testcontainers.core.network import Network
 
@@ -156,7 +155,3 @@ def test_talos_tcp_delivery(tmp_path: Path, runfiles: Runfiles) -> None:
         entries = _entries(base_url, start_ns, 3)
         assert [line for _, line in entries] == lines
         assert all(start_ns <= timestamp <= time.time_ns() for timestamp, _ in entries)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

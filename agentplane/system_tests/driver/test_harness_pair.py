@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, create_autospec
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
@@ -82,7 +81,3 @@ async def test_nested_sandbox_cleanup_failure_preserves_body_error_and_stops_the
     assert isinstance(cause, ExceptionGroup)
     assert cause.subgroup(ValueError) is not None
     assert cause.subgroup(RuntimeError) is not None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

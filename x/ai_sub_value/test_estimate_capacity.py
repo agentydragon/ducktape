@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy
 import pytest
-import pytest_bazel
 
 from x.ai_sub_value.analyze import Poll
 from x.ai_sub_value.bootstrap import (
@@ -456,7 +455,3 @@ def test_day_blocks_capture_shared_day_errors_that_hour_resampling_loses() -> No
     hour_low, hour_high = intervals[BlockMethod.INDEPENDENT_HOURS]
     day_low, day_high = intervals[BlockMethod.ONE_DAY]
     assert day_high - day_low > 3 * (hour_high - hour_low)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
