@@ -55,7 +55,13 @@ from finance.plaid.spend.portfolio_models import (
     SourceValuation,
 )
 from finance.plaid.spend.service import SpendService
-from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
+from finance.plaid.spend.sustainability import (
+    AccountHistory,
+    AccountOpening,
+    DocumentedHistory,
+    SustainabilityDisplay,
+    SustainabilityPolicy,
+)
 from finance.plaid.spend.transaction_views import summarize_excluded_flows
 
 
@@ -839,6 +845,78 @@ async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
     assert gap is None
     assert last is not None
     assert (last.assets_minor_units, last.debt_minor_units, last.net_minor_units) == (104_000, -1_000, 105_000)
+
+
+@pytest.mark.parametrize("complete_from_opening", [True, False])
+async def test_net_worth_uses_dated_account_history(
+    connection: asyncpg.Connection, postgres_url: str, complete_from_opening: bool
+) -> None:
+    first_day = date(2026, 1, 1)
+    start = datetime(2026, 1, 2, 0, 10, tzinfo=UTC)
+    opening = first_day + timedelta(days=1)
+    authorization_day = first_day + timedelta(days=2)
+    posting_day = first_day + timedelta(days=3)
+    first_card_snapshot = first_day + timedelta(days=4)
+    await add_link(connection, "history-item", synced=start)
+    await add_account(connection, "history-bank", "history-item", type="depository")
+    await add_account(connection, "history-card", "history-item", type="credit")
+    await add_transaction(
+        connection,
+        "history-card",
+        "history-item",
+        "first-activity",
+        posting_day,
+        Decimal(5),
+        raw_json={"authorized_date": authorization_day.isoformat()},
+    )
+    await connection.executemany(
+        """INSERT INTO public.balance_snapshots (account_id, item_id, captured_at, current, iso_currency_code)
+           VALUES ($1, 'history-item', $2, $3, 'USD')""",
+        [("history-bank", start + timedelta(days=offset), 100) for offset in range(5)]
+        + [("history-card", start + timedelta(days=4), 5)],
+    )
+    source = "Synthetic card statement"
+    evidence = AccountHistory(
+        opening=AccountOpening(earliest=opening, latest=authorization_day, source=source, as_of=first_card_snapshot),
+        coverage=(
+            DocumentedHistory(complete_from=opening, as_of=first_card_snapshot, source=source)
+            if complete_from_opening
+            else None
+        ),
+    )
+    config = _sustainability_configuration(first_card_snapshot, "history-card")
+    assert config.sustainability is not None
+    config = config.model_copy(
+        update={
+            "sustainability": config.sustainability.model_copy(update={"account_history": {"history-card": evidence}})
+        }
+    )
+    reader = SpendService(postgres_url, config, dashboard_url="https://spend.test")
+    async with reader.lifespan():
+        history = await reader.read_net_worth()
+
+    assert [day.date for day in history.days] == [
+        first_day,
+        opening,
+        authorization_day,
+        posting_day,
+        first_card_snapshot,
+    ]
+    before_opening, after_opening, authorized, posted, observed = (day.totals for day in history.days)
+    assert before_opening is not None
+    assert before_opening.net_minor_units == 10_000
+    assert before_opening.inferred_zero_account_count == 1
+    if complete_from_opening:
+        assert after_opening is not None
+        assert after_opening.net_minor_units == 10_000
+        assert after_opening.inferred_zero_account_count == 1
+    else:
+        assert after_opening is None
+    assert authorized is None
+    assert posted is None
+    assert observed is not None
+    assert observed.net_minor_units == 9_500
+    assert observed.inferred_zero_account_count == 0
 
 
 @pytest.mark.asyncio

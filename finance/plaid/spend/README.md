@@ -59,9 +59,10 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
   effects under `statement`. Both effect objects are present even when their fields are unavailable or do not apply.
 - `GET /api/v1/net-worth` returns daily assets, debt and net worth using the mirror's existing balance snapshots
-  for currently linked USD depository, investment, credit and loan accounts. The first point needs a complete set
-  of balances. Later days without a complete set of observations within one hour have null totals.
-  Capture timestamps record when the mirror observed provider balances.
+  for currently linked USD depository, investment, credit and loan accounts. Dated account history covers days
+  before opening and supports zero before the first credit activity when history is complete from opening.
+  The series begins at the first complete day. Later days with missing observations or capture times more than
+  one hour apart have null totals. Capture timestamps record when the mirror observed provider balances.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
 - Allowance views mark relevant unresolved full reversal pairs as `Provisional:` in their existing note field;
   transaction rows identify both matched legs. The active/unavailable lifecycle and wire shape stay compatible

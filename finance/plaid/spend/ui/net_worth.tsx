@@ -54,7 +54,14 @@ function NetWorthChart({ days }: NetWorthHistory) {
                 if (!totals) return "";
                 const from = new Date(totals.observed_from);
                 const through = new Date(totals.observed_through);
-                return `Observed ${observedTime.formatRange(from, through)}`;
+                const lines = [`Observed ${observedTime.formatRange(from, through)}`];
+                const inferred = totals.inferred_zero_account_count ?? 0;
+                if (inferred > 0) {
+                  lines.push(
+                    `Account history establishes zero for ${inferred} ${inferred === 1 ? "account" : "accounts"}.`
+                  );
+                }
+                return lines;
               },
             },
           },

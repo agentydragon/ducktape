@@ -563,8 +563,15 @@ class SpendService:
 
     async def read_net_worth(self) -> NetWorthHistory:
         sessions = self._require_read_sessions()
-        async with sessions() as session:
-            return await read_net_worth(session, time_zone=self._configuration.time_zone, now=datetime.now(UTC))
+        policy = self._configuration.sustainability
+        async with sessions() as session, session.begin():
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            return await read_net_worth(
+                session,
+                time_zone=self._configuration.time_zone,
+                now=datetime.now(UTC),
+                account_history=policy.account_history if policy else {},
+            )
 
     async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
         policy = self._configuration.sustainability
