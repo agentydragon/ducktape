@@ -262,3 +262,68 @@ fn result_rebinding_to_original_callback_keeps_an_unsafe_cut_rejected() {
         &["callback = () => later;"],
     );
 }
+
+#[test]
+fn namespace_alias_mutation_keeps_an_unsafe_factory_cut_rejected() {
+    const SOURCE: &str = "import { factory, api } from './peer.js';\n\
+        let later = 0;\n\
+        const alias = api;\n\
+        alias.forward = callback => { const value = callback(); return () => value; };\n\
+        const wrapped = factory(api.forward(() => later));\n\
+        later = 42;\n\
+        const observed = wrapped();\n\
+        console.log(observed, later);\n";
+    const PROVIDER: &str = "const wrappers = { wrap(callback) { return (...args) => callback(...args); } };\n\
+        export function factory(callback) {\n\
+            if (typeof callback !== 'function') return callback;\n\
+            return wrappers.wrap(callback);\n\
+        }\n\
+        export const api = {\n\
+            forward(callback) {\n\
+                if (typeof callback !== 'function') return callback;\n\
+                return wrappers.wrap(callback);\n\
+            }\n\
+        };\n";
+    let (staged, _fixture) = stage(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/run",
+                    &binding_members(["alias", "wrapped", "observed"]),
+                    &["alias.forward = callback => { const value = callback(); return () => value; };"],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["later = 42;"],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_callback_factories(&["factory"])
+            .with_callback_factory_members("api", &["forward"])
+            .with_namespace_independent_members("api", &["forward"])
+            .build()])
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
+
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "a callback-factory member replaced through a namespace alias must not authorize this split:\n{}",
+            invocation.result.stderr,
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42 42\n",
+            "",
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}

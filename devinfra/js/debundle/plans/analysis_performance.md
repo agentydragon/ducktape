@@ -141,9 +141,9 @@ Remaining work:
 
 Every implementation slice must also pass a matched optimized Excalidraw
 regression check: no more than 10% wall-time slowdown on the same canonical
-spec and captured inputs. Use repeated, interleaved unprofiled runs and report
-metrics-disabled and metrics-enabled costs separately. Keep compilation and
-input staging outside the measured interval; compare output/gate behavior too.
+spec and captured inputs. Use repeated, interleaved unprofiled runs with metrics
+disabled. Keep compilation and input staging outside the measured interval;
+compare output/gate behavior too.
 If noise prevents a conclusion, collect more evidence instead of calling it a
 pass. Preserve the telemetry lifecycle and raw-artifact contract in
 <../docs/inference.md#opt-in-production-work-metrics> when extending coverage.
