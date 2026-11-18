@@ -278,24 +278,6 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 				logBytesWritten = true
 			}
 			lastChunkBuffer = append(lastChunkBuffer[:0], buffer...)
-			if chunk.GetNextChunkId() != "" {
-				chunkID = chunk.GetNextChunkId()
-				lastChunkBuffer = nil
-				if failFast {
-					label, err := failedTest(c, invocationID, groupID)
-					if err != nil {
-						return fmt.Errorf("check test results: %w", err)
-					}
-					if label != "" {
-						complete := inv.GetInvocationStatus() == invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
-						if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "failure", "test_failure", complete, label); err != nil {
-							return fmt.Errorf("first non-passing test result: %s (write result: %w)", label, err)
-						}
-						return fmt.Errorf("first non-passing test result: %s", label)
-					}
-				}
-				continue
-			}
 		} else if chunkID == "" && !inv.GetHasChunkedEventLogs() {
 			console := []byte(inv.GetConsoleBuffer())
 			if len(console) > consoleOffset {
@@ -319,6 +301,12 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 				}
 				return fmt.Errorf("first non-passing test result: %s", label)
 			}
+		}
+
+		if nextChunkID := chunk.GetNextChunkId(); nextChunkID != "" {
+			chunkID = nextChunkID
+			lastChunkBuffer = nil
+			continue
 		}
 
 		switch inv.GetInvocationStatus() {
