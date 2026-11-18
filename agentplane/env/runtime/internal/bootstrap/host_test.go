@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -880,12 +881,5 @@ func TestSelectionByteLimit(t *testing.T) {
 
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(bootstrapTestTimeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", path)
+	eventually.PathExists(t, path, 10*time.Millisecond, bootstrapTestTimeout)
 }

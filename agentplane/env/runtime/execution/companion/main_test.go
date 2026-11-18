@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -274,14 +275,5 @@ func waitForIdle(t *testing.T, client controlpb.CompanionControlClient, previous
 
 func waitForSocket(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no companion socket at %s", path)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	eventually.PathExists(t, path, 10*time.Millisecond, 10*time.Second)
 }

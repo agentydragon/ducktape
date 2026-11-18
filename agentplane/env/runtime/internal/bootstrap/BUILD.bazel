@@ -52,6 +52,7 @@ pid1_go_test(
         "//agentplane/env/runtime/supervision",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/testing/eventually",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",

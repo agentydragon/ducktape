@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"google.golang.org/grpc/codes"
@@ -243,18 +244,5 @@ func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'
 
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
-	defer cancel()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			t.Fatalf("missing marker %s", path)
-		}
-	}
+	eventually.PathExists(t, path, time.Millisecond, lifecycleTestTimeout)
 }
