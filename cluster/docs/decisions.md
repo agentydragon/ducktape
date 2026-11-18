@@ -331,7 +331,7 @@ See the facade Deployment in `cluster/cdk8s/tana_mcp.py` for a working example
   model names survived the swap: LiteLLM served them over CLIProxyAPI's native
   `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
   those names (<../images/agent-workspace/codex-config.toml>,
-  <../../x/codex_pod_image/home.nix>, `oai_lane_models`) needed no rebuild, and the `codex-*` entries
+  [retired Codex pod image](https://github.com/agentydragon/ducktape/tree/20eef06e669c3845cfa59805cf725b4a4b22c38e/x/codex_pod_image/home.nix), `oai_lane_models`) needed no rebuild, and the `codex-*` entries
   stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later established
   the account/wire/model naming scheme and retired both
   legacy name families. The CLIProxyAPI subscription routes now use
@@ -428,12 +428,9 @@ applications").
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
   `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
   under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure
-  manual-`kubectl apply` spikes). **codex-pod**: `x/codex_pod_image/deploy/` — its
-  manifests now live beside their ducktape-owned Nix image source; it was Flux-wired
-  once, but its Flux Kustomization had already been retired. The image source remains
-  in place for possible revival, though its flake evaluation currently fails. Its two
-  SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
-  them with runtime-managed credentials before reactivation.
+  manual-`kubectl apply` spikes). The former Flux-managed
+  [Codex pod experiment](../parked/codex-pod/README.md) has its recipe in Git history
+  and its encrypted recovery manifests in `cluster/parked/codex-pod/`.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's

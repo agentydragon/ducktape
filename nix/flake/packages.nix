@@ -150,18 +150,6 @@ ducktapePkgs
       {
         inherit pkgs self;
       };
-  # Parked Codex pod image experiment (plain Docker, no NixOS/systemd). Flake
-  # output retained; see x/codex_pod_image/deploy/README.md for status.
-  # Build: nix build .#codex-pod-image (currently fails at evaluation; see deployment README)
-  # Load:  docker load < result
-  codex-pod-image = import ../../x/codex_pod_image {
-    inherit
-      pkgs
-      pkgsUnstable
-      pkgsMaster
-      home-manager
-      ;
-  };
   # Public coder OpenClaw image (plain Docker archive, no Debian base).
   # The gateway and its Node dependency closure come from nix-openclaw;
   # openclaw/default.nix adds the proxy preload and command-line tools.

@@ -72,9 +72,8 @@ concrete authoring seam.
 - **Project-owned deployments:** `props/deploy` and `x/loom/wayback/deploy` retain raw
   resources and suspended, unwired Flux declarations. Haku's managed-agent package has a
   suspended node in the generated chart. Keep it in the adoption inventory and convert as
-  part of deliberate revival; do not reactivate to measure coverage. Other raw packages
-  (`devinfra/x/firecracker/deploy`, `x/codex_pod_image/deploy`) need an owner/use decision;
-  no active central node for them was found in this audit.
+  part of deliberate revival; do not reactivate to measure coverage. The raw
+  `devinfra/x/firecracker/deploy` package still needs an owner/use decision.
 - **Parked/vendor/example trees:** `cluster/parked`, vendored Browsertrix charts,
   archived experiments and documentation examples are outside the active conversion
   target. Their presence must not inflate an active-manifest completion percentage.
