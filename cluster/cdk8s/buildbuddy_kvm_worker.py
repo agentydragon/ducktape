@@ -66,6 +66,7 @@ _NODE_METRICS_PORT_NAME = "node-metrics"
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
+_MIN_REPLICA_COUNT = 2
 # Selects every worker's pods for one Service, whatever their names.
 _WORKER_LABELS = {"app.kubernetes.io/part-of": NAME}
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
@@ -280,9 +281,9 @@ def chart(app: App) -> Chart:
         spec=VirtualMachinePoolSpec(
             selector=VirtualMachinePoolSpecSelector(match_labels=_WORKER_LABELS),
             virtual_machine_template=_pool_worker_template(image_pull_secret=registry_credentials.name),
-            # The pool controller defaults to one, but the /scale subresource fails
-            # unless the field exists. Flux ignores subsequent HPA updates to it.
-            replicas=1,
+            # Set the initial count to KEDA's minimum; /scale fails if this field is absent.
+            # Flux ignores subsequent HPA updates to it.
+            replicas=_MIN_REPLICA_COUNT,
             # A template change replaces at most one VM at a time.
             max_unavailable=VirtualMachinePoolSpecMaxUnavailable.from_number(1),
         ),
@@ -389,12 +390,12 @@ def autoscaler_chart(app: App) -> Chart:
             scale_target_ref=keda.ScaledObjectSpecScaleTargetRef(
                 api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
             ),
-            min_replica_count=1,
+            min_replica_count=_MIN_REPLICA_COUNT,
             max_replica_count=8,
             polling_interval=30,
             fallback=keda.ScaledObjectSpecFallback(
                 failure_threshold=3,
-                replicas=1,
+                replicas=_MIN_REPLICA_COUNT,
                 behavior=keda.ScaledObjectSpecFallbackBehavior.CURRENT_REPLICAS_IF_HIGHER,
             ),
             advanced=keda.ScaledObjectSpecAdvanced(
