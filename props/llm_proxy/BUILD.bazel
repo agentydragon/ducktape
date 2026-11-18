@@ -42,9 +42,8 @@ py_library(
     deps = [
         ":routes",
         "//props:config",
+        "//props:data_plane",
         "//props/db:async_database",
-        "//props/db:config",
-        "//util:logging",
         "@pypi//fastapi",
     ],
 )
@@ -55,8 +54,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":app",
-        "@pypi//typer",
-        "@pypi//uvicorn",
+        "//props:data_plane",
     ],
 )
 
@@ -93,14 +91,12 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
-        ":cli",
         "//:conftest",
         "//props:config",
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
-        "@pypi//typer",
     ],
 )
 

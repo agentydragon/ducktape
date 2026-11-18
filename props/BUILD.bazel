@@ -4,6 +4,7 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/deps:check.bzl", "assert_no_deps")
 load("//devinfra/python:defs.bzl", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 exports_files([
     "config.toml",
@@ -26,6 +27,35 @@ py_library(
         "//openai_utils:api_shape",
         "//openai_utils:model_metadata",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "data_plane",
+    srcs = ["data_plane.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:async_database",
+        "//props/db:config",
+        "//util:logging",
+        "@pypi//fastapi",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_data_plane",
+    srcs = ["test_data_plane.py"],
+    deps = [
+        ":conftest",
+        ":data_plane",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+        "@pypi//uvicorn",
     ],
 )
 
