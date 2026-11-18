@@ -61,6 +61,12 @@ one deployment go here; reusable service scripts live with the workload
 
 ## Current state
 
+The [November refresh](runs/2026-11-18_ollama_refresh/README.md) remeasured the
+live Ollama routes, compares current runtime and quantization candidates, and
+records SSD placement for the trial. The
+[matched SSD run](runs/2026-11-18_dual_5090_exl3/README.md) measures IQ4_XS
+and EXL3 on the two 5090s using the same prompt and filesystem.
+
 As checked September 27, cluster **Ollama 0.34.4 / GGUF on wyrm2** serves
 Qwen3.8-Flash-Next IQ4_XS from the SSD-backed PV while retaining its HDD registry
 and other models. The [September 27 run](runs/2026-09-27_ollama_ssd/README.md)
