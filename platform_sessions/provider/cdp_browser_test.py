@@ -77,9 +77,11 @@ def test_provider_must_explicitly_continue_allowed_requests(
     guarded_browser(playwright_sync, tmp_path).guard_context(context)
     page = context.new_page()
     page.route("**/*", lambda route: route.fallback())
-    with pytest.raises(Error, match="ERR_FAILED"):
+    with pytest.raises(Error, match="net::ERR"):
         page.goto(origin + "/fallback")
     assert hits == []
+    page.close()
+    page = context.new_page()
     page.route(origin + "/explicit", lambda route: route.continue_())
     page.goto(origin + "/explicit")
     assert hits == ["/explicit"]
@@ -96,15 +98,15 @@ def test_only_admitted_viewer_page_can_use_network(
     background = context.new_page()
     admitted = True
     viewer.goto(origin + "/viewer")
-    with pytest.raises(Error, match="ERR_FAILED"):
+    with pytest.raises(Error, match="net::ERR"):
         background.goto(origin + "/background")
     admitted = False
-    with pytest.raises(Error, match="ERR_FAILED"):
+    with pytest.raises(Error, match="net::ERR"):
         viewer.goto(origin + "/disconnected")
     assert hits == ["/viewer"]
 
 
-def test_service_worker_registration_and_background_websocket_are_blocked(
+def test_service_worker_registration_is_blocked(
     playwright_sync: Playwright, context: BrowserContext, upstream: tuple[str, list[str]], tmp_path: Path
 ) -> None:
     origin, hits = upstream
@@ -116,12 +118,25 @@ def test_service_worker_registration_and_background_websocket_are_blocked(
         "async () => { try { await navigator.serviceWorker.register('/worker.js'); return false; }"
         "catch { return true; } }"
     )
-    assert page.evaluate(
-        "url => new Promise(resolve => {const socket = new WebSocket(url);"
-        "socket.onclose = () => resolve(true); socket.onerror = () => resolve(true); })",
+    assert context.service_workers == []
+    assert hits == ["/allowed"]
+
+
+def test_background_websocket_is_blocked(
+    playwright_sync: Playwright, context: BrowserContext, upstream: tuple[str, list[str]], tmp_path: Path
+) -> None:
+    origin, hits = upstream
+    guarded_browser(playwright_sync, tmp_path).guard_context(context)
+    page = context.new_page()
+    page.route(origin + "/allowed", lambda route: route.continue_())
+    page.goto(origin + "/allowed")
+    page.evaluate(
+        "url => {globalThis.socketClosed = false; const socket = new WebSocket(url);"
+        "socket.onclose = () => {globalThis.socketClosed = true;};"
+        "socket.onerror = () => {globalThis.socketClosed = true;}; }",
         origin.replace("http://", "ws://") + "/socket",
     )
-    assert context.service_workers == []
+    page.wait_for_function("globalThis.socketClosed", timeout=5000)
     assert hits == ["/allowed"]
 
 

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import re
+import socket
 import subprocess
-import time
+import threading
 from collections.abc import Callable, Mapping
+from concurrent.futures import Future
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -59,12 +62,14 @@ class CdpBrowser:
         self._process: subprocess.Popen[bytes] | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
+        self._stderr_thread: threading.Thread | None = None
 
     def __enter__(self) -> BrowserContext:
         if any(self._profile_dir.glob("*/Service Worker")):
             raise ValueError("CDP launch refuses profiles with service-worker storage; use a fresh profile and sign in")
-        endpoint_file = self._profile_dir / "DevToolsActivePort"
-        endpoint_file.unlink(missing_ok=True)
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            port = reserved.getsockname()[1]
         self._process = subprocess.Popen(
             [
                 self._options.get("executable_path") or self._playwright.chromium.executable_path,
@@ -81,25 +86,41 @@ class CdpBrowser:
                 "--media-cache-size=8388608",
                 f"--user-data-dir={self._profile_dir}",
                 "--remote-debugging-address=127.0.0.1",
-                "--remote-debugging-port=0",
+                # Port zero enables navigator.webdriver in Chromium. Use a nonzero
+                # port and trust only the endpoint emitted by our own process.
+                f"--remote-debugging-port={port}",
             ],
             env={**os.environ, "DISPLAY": self._display},
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         try:
-            deadline = time.monotonic() + self._timeout_seconds
-            while not endpoint_file.exists():
-                if self._process.poll() is not None:
-                    raise RuntimeError("ordinary Chromium exited before CDP became ready")
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("ordinary Chromium CDP did not start")
-                time.sleep(0.05)
-            endpoint = endpoint_file.read_text().splitlines()
-            if len(endpoint) != 2 or not endpoint[0].isdecimal() or not endpoint[1].startswith("/devtools/browser/"):
-                raise RuntimeError("invalid Chromium CDP endpoint")
+            ready: Future[str] = Future()
+            assert self._process.stderr is not None
+            stderr = self._process.stderr
+
+            def read_stderr() -> None:
+                for line in stderr:
+                    endpoint = re.fullmatch(
+                        rb"DevTools listening on (ws://127\.0\.0\.1:"
+                        + str(port).encode("ascii")
+                        + rb"/devtools/browser/[a-zA-Z0-9-]+)\s*",
+                        line.strip(),
+                    )
+                    if endpoint is not None and not ready.done():
+                        ready.set_result(endpoint[1].decode("ascii"))
+                if not ready.done():
+                    ready.set_exception(RuntimeError("ordinary Chromium exited before CDP became ready"))
+
+            # Continue draining after startup so Chromium cannot wedge on a full
+            # stderr pipe. Browser diagnostics can contain credentials; discard them.
+            self._stderr_thread = threading.Thread(target=read_stderr, name="chromium-stderr", daemon=True)
+            self._stderr_thread.start()
+            endpoint_url = ready.result(timeout=self._timeout_seconds)
+            if self._process.poll() is not None:
+                raise RuntimeError("ordinary Chromium exited before CDP attachment")
             self._browser = self._playwright.chromium.connect_over_cdp(
-                f"ws://127.0.0.1:{int(endpoint[0])}{endpoint[1]}", timeout=self._timeout_seconds * 1000
+                endpoint_url, timeout=self._timeout_seconds * 1000
             )
             context = self._browser.contexts[0]
             self._context = context
@@ -154,3 +175,7 @@ class CdpBrowser:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait(timeout=3)
+        if self._stderr_thread is not None:
+            self._stderr_thread.join(timeout=3)
+        if self._process is not None and self._process.stderr is not None:
+            self._process.stderr.close()
