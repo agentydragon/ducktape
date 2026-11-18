@@ -8,6 +8,7 @@ applies to each shard rather than to their sum.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -74,13 +75,24 @@ class TestRun:
     summary: TestSummary
 
 
-def _listing(invocation: str, *extra: str, bbapi: Path, run: Runner) -> list[TestRun] | None:
-    result = run([bbapi, "target", invocation, "--json", *extra], check=False, text=True, capture_output=True)
-    if result.returncode != 0:
-        if INVOCATION_ABSENT in result.stderr:
+def _target_listing_json(invocation: str, *, bbapi: Path, run: Runner, label: str | None = None) -> str:
+    command: list[str | Path] = [bbapi, "target", invocation, "--json"]
+    if label is not None:
+        command.extend(["--label", label])
+    result = run(command, check=False, text=True, capture_output=True)
+    result.check_returncode()
+    return result.stdout
+
+
+def _listing(invocation: str, *, bbapi: Path, run: Runner, label: str | None = None) -> list[TestRun] | None:
+    try:
+        body = _target_listing_json(invocation, bbapi=bbapi, run=run, label=label)
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip()
+        if INVOCATION_ABSENT in detail:
             return None
-        raise RuntimeError(f"listing targets of {invocation} failed: {result.stderr.strip()}")
-    listing = TargetListing.model_validate_json(result.stdout)
+        raise RuntimeError(f"listing targets of {invocation} failed: {detail or error}") from error
+    listing = TargetListing.model_validate_json(body)
     return [
         TestRun(target.metadata.label, target.status, target.test_summary)
         for group in listing.target_groups
@@ -108,8 +120,41 @@ def list_test_runs(
         return None
     missing = sorted(set(expected) - {test_run.label for test_run in runs})
     for label in missing:
-        additional_runs = _listing(invocation, "--label", label, bbapi=bbapi, run=run)
+        additional_runs = _listing(invocation, bbapi=bbapi, run=run, label=label)
         if additional_runs is None:
             return None
         runs.extend(additional_runs)
     return runs
+
+
+def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[str]:
+    """Return failed Bazel target labels, best-effort, from linked invocations.
+
+    A failed ``bazel test`` still uploads the artifacts for targets that completed
+    before the failure.  BuildBuddy's target summaries are the durable source for
+    identifying the targets that did not complete successfully; individual linked
+    invocations may disappear before the publisher gets to them, so an unavailable
+    query is intentionally not fatal to visual publication.
+    """
+    failures: set[str] = set()
+    for invocation in invocations:
+        try:
+            payload = json.loads(_target_listing_json(invocation, bbapi=bbapi, run=run))
+        except subprocess.CalledProcessError, json.JSONDecodeError:
+            continue
+        groups = payload.get("targetGroups") if isinstance(payload, dict) else None
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            targets = group.get("targets") if isinstance(group, dict) else None
+            if not isinstance(targets, list):
+                continue
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                if target.get("status") == "FAILED":
+                    metadata = target.get("metadata")
+                    label = metadata.get("label") if isinstance(metadata, dict) else None
+                    if isinstance(label, str):
+                        failures.add(label)
+    return sorted(failures)
