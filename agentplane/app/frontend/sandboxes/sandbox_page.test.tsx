@@ -882,7 +882,9 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
   expect((await createThreadTooltip())?.textContent).toContain("A thread is being created");
   await act(async () => createThreadButton().click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
+  await act(async () =>
+    fail(Response.json({ title: "Unprocessable Entity", status: 422, detail: "session refused" }, { status: 422 }))
+  );
   expect(createThreadButton().disabled).toBe(true);
   expect((await createThreadTooltip())?.textContent).toContain("Check its status");
   expect(container.textContent).toContain("session refused");

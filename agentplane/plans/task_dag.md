@@ -3243,11 +3243,9 @@ protocol-specific transport for now.
 Login/OAuth redirects, static assets, health probes, API documentation and OTLP telemetry are also
 protocol-specific HTTP surfaces, not application RPCs to convert mechanically.
 
-Session-opening follow-ups: replace the untyped override map with a typed contract while preserving
-omitted, null and empty semantics; retire mixed-version browser compatibility only after the
-replica, cached-bundle and rollback windows close; and preserve status information for non-JSON
-HTTP failures without treating uncertain openings as rejected. Details are in
-[generated HTTP facades](grpc_http_facade.md#open).
+Session-create follow-ups: replace the untyped override map with a typed contract while preserving
+omitted, null and empty semantics, and adopt generated route bindings when available. Details are
+in [generated HTTP facades](grpc_http_facade.md#open).
 
 **Prerequisites:** no dependency on a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's
@@ -3724,9 +3722,6 @@ a specific stopping condition.
   (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/sessions/local_commands.ts`)
   are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
   its Sandbox UID fence, and never replay an uncertain command. Source: [app TODO](../app/TODO.md).
-- **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
-  workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
-  and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

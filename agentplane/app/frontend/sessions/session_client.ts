@@ -68,26 +68,9 @@ export async function getSession(sessionId: string): Promise<Session> {
 
 /** Classify explicit create rejections; transport failures remain uncertain. */
 export function sessionCreateRejected(error: unknown): boolean {
-  if (!(error instanceof HttpError)) return false;
-  if (error.code !== undefined) {
-    // INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, PERMISSION_DENIED, FAILED_PRECONDITION,
-    // ABORTED and UNAUTHENTICATED describe a rejected submission. Other results remain uncertain.
-    return [3, 5, 6, 7, 9, 10, 16].includes(error.code);
-  }
-  // Older App replicas report Huma problem details. An intermediary's HTTP status alone
-  // cannot confirm that the App rejected this request.
-  const { body, status } = error;
-  return (
-    typeof body === "object" &&
-    body !== null &&
-    "status" in body &&
-    body.status === status &&
-    "title" in body &&
-    typeof body.title === "string" &&
-    status >= 400 &&
-    status < 500 &&
-    status !== 408
-  );
+  // INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, PERMISSION_DENIED, FAILED_PRECONDITION,
+  // ABORTED and UNAUTHENTICATED describe a rejected submission. Other results remain uncertain.
+  return error instanceof HttpError && error.code !== undefined && [3, 5, 6, 7, 9, 10, 16].includes(error.code);
 }
 
 export function sessionNotVisible(error: unknown): boolean {
