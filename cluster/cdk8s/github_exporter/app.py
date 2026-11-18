@@ -32,6 +32,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -138,13 +139,6 @@ def _deployment(
     )
 
 
-def _resources(memory_request: str, memory_limit: str) -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string(memory_request)},
-        limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string(memory_limit)},
-    )
-
-
 def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
     tcp_probe = k8s.TcpSocketAction(port=k8s.IntOrString.from_string(service.port.name))
     _deployment(
@@ -172,7 +166,7 @@ def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=30),
-            resources=_resources("32Mi", "64Mi"),
+            resources=container_resources(cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="64Mi"),
         ),
     )
 
@@ -208,7 +202,7 @@ def _graphql_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
             volume_mounts=[k8s.VolumeMount(name="github-token", mount_path=_TOKEN_DIR, read_only=True)],
             liveness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=10, period_seconds=30),
             readiness_probe=k8s.Probe(http_get=healthz, initial_delay_seconds=5, period_seconds=30),
-            resources=_resources("64Mi", "128Mi"),
+            resources=container_resources(cpu="10m", memory="64Mi", cpu_limit="100m", memory_limit="128Mi"),
         ),
     )
 

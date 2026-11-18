@@ -23,6 +23,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import pod_policy
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.node_scheduling import Placement
@@ -100,15 +101,8 @@ def _deployment(chart: Chart, source: str, addresses: list[str]) -> k8s.KubeDepl
                             liveness_probe=tcp,
                             readiness_probe=tcp,
                             security_context=k8s.SecurityContext(read_only_root_filesystem=True),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="64Mi"
                             ),
                         )
                     ],

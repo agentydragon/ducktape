@@ -16,6 +16,7 @@ from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE
@@ -94,13 +95,7 @@ def _deployment(chart: Chart) -> None:
                                     name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                    "cpu": k8s.Quantity.from_string("25m"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),

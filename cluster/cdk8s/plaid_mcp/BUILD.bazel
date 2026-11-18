@@ -8,6 +8,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -27,6 +28,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:backup",
@@ -50,6 +52,7 @@ py_library(
     deps = [
         ":db",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -67,6 +70,7 @@ py_library(
     deps = [
         ":db",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:secret_ref",

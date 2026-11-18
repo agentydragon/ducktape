@@ -8,6 +8,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -53,13 +54,7 @@ def chart(app: App) -> Chart:
                         k8s.Container(
                             name="provisioner",
                             image="python:3.14-alpine",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
                             command=[
                                 "sh",
                                 "-c",

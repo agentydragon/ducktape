@@ -34,6 +34,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -139,10 +140,6 @@ _BREAK_GLASS_PASSWORD = SecretRef(namespace=_NAMESPACE, name="home-assistant-bre
 _LOCATION = SecretRef(namespace=_NAMESPACE, name="home-assistant-location")
 
 
-def _quantities(**values: str) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> ConfigMap:
     return ConfigMap(
         scope,
@@ -196,13 +193,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                         k8s.Container(
                             name="provision-components",
                             image=_COMPONENT_INSTALLER_IMAGE,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
                             image_pull_policy="Always",
                             command=["/homeassistant/provisioner/components/install_bin"],
                             env=[_settings_env(components.Settings)],
@@ -228,9 +219,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                             ports=[_BACKEND.k8s_container_port()],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="250m", memory="512Mi"), limits=_quantities(memory="2Gi")
-                            ),
+                            resources=container_resources(cpu="250m", memory="512Mi", memory_limit="2Gi"),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
                                 k8s.VolumeMount(
@@ -252,9 +241,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                                 ),
                                 period_seconds=10,
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="32Mi"), limits=_quantities(memory="128Mi")
-                            ),
+                            resources=container_resources(cpu="20m", memory="32Mi", memory_limit="128Mi"),
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="caddy-config",
@@ -353,9 +340,7 @@ def _onboarding_job(scope: Construct) -> None:
                                     for key in ("latitude", "longitude")
                                 ),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
-                            ),
+                            resources=container_resources(cpu="20m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[_settings_mount("settings")],
                         )
                     ],
@@ -434,10 +419,7 @@ def _token_provisioner(scope: Construct) -> None:
                                         _settings_env(tokens.Settings),
                                         _BREAK_GLASS_PASSWORD.env_var(env_name(tokens.Settings, "owner_password")),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests=_quantities(cpu="20m", memory="64Mi"),
-                                        limits=_quantities(memory="256Mi"),
-                                    ),
+                                    resources=container_resources(cpu="20m", memory="64Mi", memory_limit="256Mi"),
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
@@ -557,7 +539,7 @@ def chart(app: App) -> Chart:
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name=_STORAGE_CLASS,
-            resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
+            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("32Gi")}),
         ),
     )
     # Retain storage class plus prune protection preserve these historical copies.
@@ -572,7 +554,7 @@ def chart(app: App) -> Chart:
             spec=k8s.PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteOnce"],
                 storage_class_name=_STORAGE_CLASS,
-                resources=k8s.VolumeResourceRequirements(requests=_quantities(storage=capacity)),
+                resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string(capacity)}),
             ),
         )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)

@@ -10,6 +10,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp import db
@@ -68,13 +69,6 @@ def _container_security_context() -> k8s.SecurityContext:
         run_as_group=1000,
         run_as_non_root=True,
         run_as_user=1000,
-    )
-
-
-def _resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
-        limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
     )
 
 
@@ -224,7 +218,9 @@ def _deployment(chart: Chart) -> None:
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
                             ],
-                            resources=_resources(),
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
+                            ),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=20, period_seconds=20),
                         )
