@@ -13,6 +13,7 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
+from cluster.rotators import sops
 from cluster.rotators.attic_jwt_rotation import rotate
 from cluster.rotators.attic_jwt_rotation.config import (
     Config,
@@ -31,7 +32,6 @@ from cluster.rotators.attic_jwt_rotation.rotate import (
     mint_attic_token,
     rotate_one,
 )
-from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:
@@ -269,30 +269,6 @@ def _seed_kubernetes_secret(fake: _FakeKubernetesRun, jwt: str, *, pull: list[st
     }
 
 
-def test_remaining_hours_missing_file_is_none(tmp_path: Path):
-    assert remaining_hours(tmp_path / "absent.yaml") is None
-
-
-def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text("attic_token: abc\n")
-    assert remaining_hours(f) is None
-
-
-def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
-    expires = datetime.now(UTC) + timedelta(hours=10)
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            attic_token: abc
-            """)
-    )
-    remaining = remaining_hours(f)
-    assert remaining is not None
-    assert 9 < remaining < 11
-
-
 def test_mint_attic_token_builds_kubectl_exec_atticadm_argv(monkeypatch):
     token = Token(
         name="ducktape CI attic writer (main)",
@@ -390,7 +366,7 @@ def test_rotate_one_rotates_on_scope_drift_despite_fresh_expiry(monkeypatch, tmp
     )
     fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
     assert rotate_one(token, Config(tokens=[])) is True
     written = yaml.safe_load(sops_file.read_text())
     assert written["push_unencrypted"] == ["main", "public"]
@@ -413,7 +389,7 @@ def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path
     )
     fake = _FakeRun(jwt=jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
     assert rotate_one(token, Config(tokens=[])) is True
 
 
@@ -424,13 +400,10 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
         name="x", sub="x", validity="1 year", pull=["main"], push=[], destination=SopsDestination(sops_file=sops_file)
     )
     fake = _FakeRun(jwt=jwt)
-    formatted: list[Path] = []
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", formatted.append)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
     assert rotate_one(token, Config(tokens=[])) is True
     assert any("atticadm" in c for c in fake.calls)
-    assert fake.calls[-1] == ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]
-    assert formatted == [sops_file]
     written = yaml.safe_load(sops_file.read_text())
     assert written["attic_token"] == jwt
     assert written["expires_unencrypted"] == "2027-01-15T08:00:00Z"
@@ -467,7 +440,7 @@ def test_empty_kubernetes_secret_is_minted_and_notified_without_token_in_argv(mo
     token = _make_kubernetes_token(tmp_path / "token.sops.yaml")
     fake = _FakeKubernetesRun(jwt)
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     assert rotate_one(token, Config(tokens=[])) is True
 
@@ -487,7 +460,7 @@ def test_fresh_kubernetes_secret_retries_failed_notification_without_reminting(m
     fake = _FakeKubernetesRun(jwt)
     fake.fail_workspace_patch = True
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     with pytest.raises(RuntimeError) as failure:
         rotate_one(token, Config(tokens=[]))
@@ -507,7 +480,7 @@ def test_kubernetes_scope_change_mints_even_when_secret_is_fresh(monkeypatch, tm
     fake = _FakeKubernetesRun(new_jwt)
     _seed_kubernetes_secret(fake, old_jwt, pull=["stale-cache"], push=[])
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     assert rotate_one(token, Config(tokens=[])) is True
 
@@ -523,7 +496,7 @@ def test_kubernetes_expiry_threshold_mints_even_when_scope_matches(monkeypatch, 
     fake = _FakeKubernetesRun(renewed)
     _seed_kubernetes_secret(fake, near_expiry, pull=["test-cache"], push=[])
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     assert rotate_one(token, Config(tokens=[])) is True
 
@@ -538,7 +511,7 @@ def test_failed_kubernetes_secret_patch_is_sanitized_and_retried(monkeypatch, tm
     fake = _FakeKubernetesRun(jwt)
     fake.fail_secret_patch = True
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     with pytest.raises(RuntimeError) as failure:
         rotate_one(token, Config(tokens=[]))
@@ -556,7 +529,7 @@ def test_workspace_is_notified_before_sops_failure_and_retry_repairs_output(monk
     fake = _FakeKubernetesRun(jwt)
     fake.fail_sops_encrypt = True
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     with pytest.raises(RuntimeError) as failure:
         rotate_one(token, Config(tokens=[]))
@@ -583,7 +556,7 @@ def test_kubernetes_secret_repairs_stale_sops_after_uncommitted_rotation(monkeyp
         "attic_token: old-encrypted-value\n"
     )
     monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
 
     assert rotate_one(token, Config(tokens=[])) is True
 

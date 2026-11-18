@@ -21,9 +21,8 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
-from cluster.rotators.sops import encrypt_sops_file
+from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
-from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
 
@@ -262,10 +261,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     if rotation.expected_claims:
         stamps["claims_unencrypted"] = {claim: final_payload.get(claim) for claim in rotation.expected_claims}
     stamps[rotation.token_field] = final_jwt
-    rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
-    encrypt_sops_file(rotation.sops_file)
-    prettier_format_yaml_in_place(rotation.sops_file)
+    write_sops_yaml(path=rotation.sops_file, document=stamps)
     logger.info("%s: wrote token expiring %s", rotation.name, expires_iso)
 
     if rotation.k8s_secret:
@@ -296,10 +292,7 @@ def write_k8s_secret(out: K8sSecretOutput, token: str, exp_epoch: int) -> None:
     stays plaintext. The exp epoch is the monotonic signal a consumer uses to know
     the token rotated (e.g. a Terraform write-only `*_wo_version`).
     """
-    out.path.parent.mkdir(parents=True, exist_ok=True)
-    out.path.write_text(yaml.safe_dump(build_secret_manifest(out, token, exp_epoch), sort_keys=False, width=2**31))
-    encrypt_sops_file(out.path)
-    prettier_format_yaml_in_place(out.path)
+    write_sops_yaml(path=out.path, document=build_secret_manifest(out, token, exp_epoch))
 
 
 def sparse_clone(config: Config, github_pat: str) -> None:

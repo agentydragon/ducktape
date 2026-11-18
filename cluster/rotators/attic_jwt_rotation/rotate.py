@@ -36,9 +36,8 @@ from cluster.rotators.attic_jwt_rotation.config import (
     SopsDestination,
     Token,
 )
-from cluster.rotators.sops import encrypt_sops_file
+from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
-from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
 
@@ -313,14 +312,11 @@ def _write_sops_token(
     if secret is not None:
         stamps[_SOPS_SECRET_UID_STAMP] = secret.uid
         stamps[_SOPS_SECRET_RESOURCE_VERSION_STAMP] = secret.resource_version
-    destination.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    destination.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     try:
-        encrypt_sops_file(destination.sops_file)
-        prettier_format_yaml_in_place(destination.sops_file)
+        write_sops_yaml(path=destination.sops_file, document=stamps)
     except subprocess.CalledProcessError, OSError:
         destination.sops_file.unlink(missing_ok=True)
-        raise RuntimeError(f"{token.name}: failed to encrypt or format SOPS token output") from None
+        raise RuntimeError(f"{token.name}: failed to write, encrypt or format SOPS token output") from None
     logger.info("%s: wrote token expiring %s", token.name, _iso_expiry(expires))
 
 
