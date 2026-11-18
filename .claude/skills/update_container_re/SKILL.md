@@ -226,8 +226,8 @@ Update the Dockerfile if the version diff (Phase 2b) revealed changes:
 - **Node.js/Bun versions**: Update download URLs
 - **npm globals**: Update version pins
 - **Go versions**: Update download URLs
-- **APT packages**: Update `live-dpkg-versions.txt` and optionally advance
-  `SNAPSHOT_DATE` in `fetch_debs.py`
+- **APT packages**: Update `live-dpkg-versions.txt` and optionally add a newer
+  date to `SNAPSHOT_DATES` in `fetch_debs.py`
 
 Then fetch packages and rebuild:
 
@@ -298,47 +298,12 @@ See `/reverse_engineer` skill for the detailed binary RE methodology.
 
 ---
 
-## Appendix: Docker Build Proxy Pitfalls
+## Appendix: Docker Build Proxy
 
-The gVisor sandbox requires an egress proxy for all network access. Docker
-build containers don't inherit host env vars, so the proxy must be passed via
-`--build-arg http_proxy=... --build-arg https_proxy=...`.
-
-**Critical issue: SHELL wrapper + eval + proxy URLs.**
-
-The Dockerfile uses a logging SHELL wrapper:
-
-```dockerfile
-SHELL ["/bin/bash", "-c", "exec 3>&2; set -euo pipefail; trap '...' ERR; exec > /tmp/build-step.log 2>&1; eval \"$0\""]
-```
-
-This wrapper uses `eval "$0"` to execute the actual RUN command. When the proxy
-URL contains special characters (JWT tokens with `=`, `+`, `/`, `@`), eval can
-corrupt the URL or prevent APT from parsing the proxy config correctly. Symptoms:
-`apt-get update` fails with "Temporary failure resolving" even though the proxy
-IS reachable (verified via `docker run`).
-
-**Fix: Use plain bash shell for APT-setup layers.** Before any RUN that writes
-APT proxy configuration or runs `apt-get update`, switch to:
-
-```dockerfile
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-```
-
-Then restore the logging wrapper afterward. The APT proxy config is written as:
-
-```bash
-printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' \
-  "${http_proxy:-}" "${https_proxy:-}" > /etc/apt/apt.conf.d/01proxy
-```
+Docker build containers don't inherit host env vars, so the proxy must be passed
+via `--build-arg http_proxy=... --build-arg https_proxy=...`.
 
 **Docker cache key behavior:** Docker excludes predefined proxy build-arg names
-(`http_proxy`, `https_proxy`, etc.) from cache keys. This means layer caching
-is preserved across sessions with different proxy JWTs. However, it also means
-changing the RUN instruction text is the only way to bust cache for these layers
-— clearing with `docker builder prune --all -f` is the nuclear option.
-
-**APT version alignment:** The snapshot date pins packages to a specific point
-in time, but the base image may have newer package versions. Use
-`apt-get dist-upgrade --allow-downgrades` to align before installing `-dev`
-packages, which have strict version dependencies on their library counterparts.
+(`http_proxy`, `https_proxy`, etc.) from cache keys, so cached layers are reused
+across sessions with different proxy settings. Change the RUN instruction text to
+bust a cached layer; `docker builder prune --all -f` is the nuclear option.
