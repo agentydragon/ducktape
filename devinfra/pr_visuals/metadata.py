@@ -106,7 +106,10 @@ class ReviewTest(BaseModel):
     def summary(self) -> ClassificationCounts | None:
         if not self.merge_base_sha:
             return None
-        counts = Counter(asset.classification for asset in self.assets if asset.classification is not None)
+        counts: Counter[str] = Counter()
+        for asset in self.assets:
+            if asset.classification is not None:
+                counts[asset.classification] += 1
         return ClassificationCounts(**counts)
 
 
