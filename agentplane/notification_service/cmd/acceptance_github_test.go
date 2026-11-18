@@ -21,6 +21,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -228,7 +229,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 	subscriptionID, inboxID := subscription["id"].(string), subscription["inboxId"].(string)
 
 	// The OPEN snapshot and empty GitHub collections establish a quiet baseline without webhook history.
-	eventually(t, "an empty GitHub baseline", func() bool {
+	eventually.Eventually(t, "an empty GitHub baseline", func() bool {
 		return hasGitHubBaseline(githubSubscription(t, service, subscriptionID))
 	})
 	if entries := inboxEntries(t, service); len(entries) != 0 {
@@ -259,7 +260,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 	// Startup must discover the recorded catch-up job without a new webhook, database notification or worker wake.
 	service = restart(t, tune)
 	var recovered []any
-	eventually(t, "four current GitHub facts read by the restarted source worker", func() bool {
+	eventually.Eventually(t, "four current GitHub facts read by the restarted source worker", func() bool {
 		recovered = inboxEntries(t, service)
 		return len(recovered) == 4
 	})
@@ -292,7 +293,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 	}
 
 	// The four persisted facts arrive through the worker's normal notice and History receipt path.
-	eventually(t, "a notice submitted to Dispatcher", func() bool { return len(dispatcher.commands()) > 0 })
+	eventually.Eventually(t, "a notice submitted to Dispatcher", func() bool { return len(dispatcher.commands()) > 0 })
 	submitted := dispatcher.commands()
 	for _, again := range submitted[1:] {
 		if again != submitted[0] {
@@ -311,7 +312,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 		}}}),
 	)
 	var confirmed map[string]any
-	eventually(t, "History confirmation of the notice", func() bool {
+	eventually.Eventually(t, "History confirmation of the notice", func() bool {
 		limit := int32(128)
 		code, page := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
@@ -399,7 +400,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 	}
 	queueGitHubAcceptanceCatchup(t, service, subscriptionID)
 	service = restart(t, tune)
-	eventually(t, "unchanged scheduled GitHub polls after restart", func() bool {
+	eventually.Eventually(t, "unchanged scheduled GitHub polls after restart", func() bool {
 		for path, previous := range counts {
 			if api.Count(path) <= previous {
 				return false
