@@ -17,15 +17,8 @@ from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import BuildBuddyArtifact
-from devinfra.pr_visuals.collection import (
-    CollectedOutputs,
-    CollectionIssue,
-    OutputKey,
-    ResultCoverage,
-    ResultKey,
-    SourceSummary,
-)
+from devinfra.pr_visuals.artifacts import BESTestSummary, BuildBuddyArtifact
+from devinfra.pr_visuals.collection import CollectedOutputs, CollectionIssue, OutputKey, ResultCoverage, ResultKey
 from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.github_comment import (
     COMMENT_BUDGET,
@@ -705,7 +698,13 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
             )
         outputs.publish(role="trace", data=b"diagnostics", suffix="zip")
         result = ResultKey(invocation, "//ui:visual", "config-a", 1, shard, attempt)
-        summary = SourceSummary("FLAKY", 1, 2, 2, 3) if invocation == "first" else SourceSummary("PASSED", 1, 2, 1, 2)
+        summary = BESTestSummary(
+            overallStatus="FLAKY" if invocation == "first" else "PASSED",
+            runCount=1,
+            shardCount=2,
+            attemptCount=2 if invocation == "first" else 1,
+            totalRunCount=3 if invocation == "first" else 2,
+        )
         for path in sorted((root / "test-outputs").rglob("*")):
             if not path.is_file() or ".locks" in path.parts:
                 continue

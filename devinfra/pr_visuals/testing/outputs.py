@@ -13,7 +13,7 @@ from devinfra.pr_visuals.artifacts import (
     BESTestSummary,
     BuildBuddyArtifact,
 )
-from devinfra.pr_visuals.collection import OutputKey, OutputObservation, ResultKey, SourceSummary
+from devinfra.pr_visuals.collection import OutputKey, OutputObservation, ResultKey
 from devinfra.testing.output_records import SCHEMA, OutputRecord
 
 
@@ -31,7 +31,7 @@ class Blob:
 
 
 def result_artifact(
-    name: str, uri: str, *, result: ResultKey, summary: SourceSummary, status: str | None = "PASSED"
+    name: str, uri: str, *, result: ResultKey, summary: BESTestSummary, status: str | None = "PASSED"
 ) -> BuildBuddyArtifact:
     return BuildBuddyArtifact(
         id=BESArtifactId(
@@ -45,13 +45,7 @@ def result_artifact(
         ),
         file=BESFile(name=name, uri=uri),
         status=status,
-        testSummary=BESTestSummary(
-            overallStatus=summary.overall_status,
-            runCount=summary.run_count,
-            shardCount=summary.shard_count,
-            attemptCount=summary.attempt_count,
-            totalRunCount=summary.total_run_count,
-        ),
+        testSummary=summary,
     )
 
 

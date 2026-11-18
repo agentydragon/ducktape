@@ -52,6 +52,8 @@ class BESArtifactId(BESModel):
 
 
 class BESTestSummary(BESModel):
+    model_config = ConfigDict(frozen=True)
+
     overall_status: str | None = None
     total_run_count: int | None = None
     run_count: int | None = None
