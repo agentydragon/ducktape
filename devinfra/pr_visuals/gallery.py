@@ -52,13 +52,8 @@ def review_test_page_data(
     impact_key = test_impact_key(test)
     page["sort_changed_count"] = -impact_key[1]
     page["sort_largest_change"] = -impact_key[0]
-    if test.preview is not None:
-        page["preview"] = asset_page_data(
-            test.preview,
-            asset_base=asset_base,
-            page_url=page_url,
-            shared_asset_base=shared_asset_base,
-            invocation_labels=invocation_labels,
-            configuration_labels=configuration_labels,
+    if test.merge_base_sha:
+        page["preview"] = next(
+            (asset for asset in page["assets"] if asset.get("classification") in {"unstable", "modified", "new"}), None
         )
     return page

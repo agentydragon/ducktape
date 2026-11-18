@@ -143,12 +143,7 @@ def provenance_labels_for_test(test: ReviewTest) -> tuple[dict[str, str], dict[s
     """Create collision-safe labels across every provenance source belonging to a target."""
     sources: Sequence[ProvenanceSource] = [
         *(issue.source for issue in [*test.issues, *test.notices] if issue.source is not None),
-        *(
-            result
-            for asset in [*test.assets, *([test.preview] if test.preview is not None else [])]
-            for variant in asset.variants
-            for result in variant.results
-        ),
+        *(result for asset in test.assets for variant in asset.variants for result in variant.results),
     ]
     invocation_labels = unique_prefixes({source.invocation for source in sources})
     configuration_labels = unique_prefixes(
