@@ -18,6 +18,7 @@ mod member_read_certificates;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
+mod scalar_sequence;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;

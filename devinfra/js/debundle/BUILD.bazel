@@ -822,6 +822,7 @@ rust_library(
         "facts/value_flow/program_tests.rs",
         "facts/value_flow/read_only_callbacks.rs",
         "facts/value_flow/return_summary.rs",
+        "facts/value_flow/scalar_sequence.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
         "graph/analysis_tests.rs",

@@ -15,6 +15,7 @@ use binding_targets::{
 };
 
 use super::guarded_member_reads::{GuardedSnapshotUse, guarded_snapshot_uses};
+use super::scalar_sequence::{ScalarSequenceUses, scalar_sequence_uses};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct MemberReadCertificates {
@@ -55,7 +56,7 @@ struct FunctionCensus {
 #[derive(Default)]
 struct FunctionFacts {
     parent: Option<usize>,
-    certifiable_loops: bool,
+    certifiable_locals: bool,
     is_async: bool,
     is_generator: bool,
     parameters: HashSet<Id>,
@@ -69,6 +70,8 @@ struct FunctionFacts {
     member_reads: std::collections::HashMap<Id, Vec<Span>>,
     guarded_uses: Vec<GuardedSnapshotUse>,
     guarded_type_writes: Vec<GuardedTypeWrite>,
+    inside_sequence: bool,
+    scalar_sequences: Vec<ScalarSequenceUses>,
 }
 
 struct GuardedTypeWrite {
@@ -107,7 +110,7 @@ impl FunctionCensus {
 
     fn with_function(
         &mut self,
-        certifiable_loops: bool,
+        certifiable_locals: bool,
         is_async: bool,
         is_generator: bool,
         parameters: impl IntoIterator<Item = Id>,
@@ -117,7 +120,7 @@ impl FunctionCensus {
         let parent = self.current();
         self.functions.push(FunctionFacts {
             parent,
-            certifiable_loops,
+            certifiable_locals,
             is_async,
             is_generator,
             parameters: parameters.into_iter().collect(),
@@ -201,15 +204,16 @@ impl FunctionCensus {
             {
                 continue;
             }
+            let unique_uncaptured_local = |id: &Id| {
+                function.declarations.contains_key(id)
+                    && !function.captured_bindings.contains(id)
+                    && !ambiguous.contains(id)
+                    && owners
+                        .get(id)
+                        .is_some_and(|owners| owners.len() == 1 && owners.contains(&function_index))
+            };
             for use_ in &function.guarded_type_writes {
-                if use_.required_bindings.iter().all(|id| {
-                    function.declarations.contains_key(id)
-                        && !function.captured_bindings.contains(id)
-                        && !ambiguous.contains(id)
-                        && owners.get(id).is_some_and(|owners| {
-                            owners.len() == 1 && owners.contains(&function_index)
-                        })
-                }) {
+                if use_.required_bindings.iter().all(unique_uncaptured_local) {
                     non_function_values.insert((
                         use_.value_span.lo.0,
                         use_.value_span.hi.0,
@@ -217,7 +221,25 @@ impl FunctionCensus {
                     ));
                 }
             }
-            if function.certifiable_loops {
+            if function.certifiable_locals
+                && !function.references.iter().any(|id| id.0 == *"arguments")
+            {
+                for sequence in &function.scalar_sequences {
+                    if sequence
+                        .required_bindings
+                        .iter()
+                        .all(unique_uncaptured_local)
+                    {
+                        non_function_values.extend(
+                            sequence
+                                .uses
+                                .iter()
+                                .map(|use_| (use_.span.lo.0, use_.span.hi.0, use_.to_id())),
+                        );
+                    }
+                }
+            }
+            if function.certifiable_locals {
                 for use_ in &function.guarded_uses {
                     if [&use_.receiver, &use_.key, &use_.snapshot]
                         .into_iter()
@@ -236,7 +258,7 @@ impl FunctionCensus {
             }
             for loop_ in &function.loops {
                 let declarations = function.declarations.get(&loop_.binding);
-                if !function.certifiable_loops
+                if !function.certifiable_locals
                     || function.parameters.contains(&loop_.binding)
                     || function.captured_bindings.contains(&loop_.binding)
                     || ambiguous.contains(&loop_.binding)
@@ -478,6 +500,22 @@ impl FunctionCensus {
 }
 
 impl Visit for FunctionCensus {
+    fn visit_seq_expr(&mut self, node: &SeqExpr) {
+        let Some(index) = self.current() else {
+            node.visit_children_with(self);
+            return;
+        };
+        let already_inside = self.functions[index].inside_sequence;
+        if !already_inside && let Some(uses) = scalar_sequence_uses(node) {
+            self.functions[index].scalar_sequences.push(uses);
+        }
+        // Scan each expression only in its outermost sequence; nested
+        // functions have their own census entry and sequence state.
+        self.functions[index].inside_sequence = true;
+        node.visit_children_with(self);
+        self.functions[index].inside_sequence = already_inside;
+    }
+
     fn visit_ident(&mut self, node: &Ident) {
         if let Some(function) = self.current_mut() {
             function.references.insert(node.to_id());
@@ -577,7 +615,7 @@ impl Visit for FunctionCensus {
 
     fn visit_for_stmt(&mut self, node: &ForStmt) {
         if let (Some(function), Some(loop_)) = (self.current(), counted_loop(node))
-            && self.functions[function].certifiable_loops
+            && self.functions[function].certifiable_locals
         {
             self.functions[function].loops.push(loop_);
         }
@@ -683,6 +721,90 @@ mod tests {
             }
             node.visit_children_with(self);
         }
+    }
+
+    #[test]
+    fn scalar_overwrite_certificates_end_at_the_sequence_and_interfering_writes() {
+        for (source, expected) in [
+            (
+                "function f(value, target) { (value = '' + value, target.after = value); target.outside = value; }",
+                vec![("after", true), ("outside", false)],
+            ),
+            (
+                "function f(value, fallback, target) { (fallback = fallback != null ? '' + coerce(fallback) : '', value = value != null ? '' + coerce(value) : fallback, target.after = value); }",
+                vec![("after", true)],
+            ),
+            (
+                "function f(value, target, replacement) { (value = '', target.before = value, value = replacement, target.after = value); }",
+                vec![("before", true), ("after", false)],
+            ),
+            (
+                "function f(value, target, replacement) { (value = '', (target.before = value, value = replacement), target.after = value); }",
+                vec![("before", false), ("after", false)],
+            ),
+            (
+                "function f(value, target, replacement, flag) { (value = '', flag && (value = replacement), target.after = value); }",
+                vec![("after", false)],
+            ),
+            (
+                "function f(value, target, flag) { (flag && (value = ''), target.after = value); }",
+                vec![("after", false)],
+            ),
+            (
+                "function f(value, target, flag, replacement) { (value = flag ? '' : replacement, target.after = value); }",
+                vec![("after", false)],
+            ),
+            (
+                "function f(value, target) { (value = '' || unknown(), target.after = value); }",
+                vec![("after", false)],
+            ),
+            (
+                "function f(value, target) { (value = unknown(), target.after = value); }",
+                vec![("after", false)],
+            ),
+            (
+                "function f(value, target) { (value = /pattern/, target.after = value); }",
+                vec![("after", false)],
+            ),
+        ] {
+            assert_scalar_write_certificates(source, &expected);
+        }
+    }
+
+    #[test]
+    fn scalar_overwrite_certificates_require_isolated_local_bindings() {
+        for source in [
+            "function f(target) { (globalValue = '', target.after = globalValue); }",
+            "function f(value, target) { const mutate = () => value = () => 0; (value = '', mutate(), target.after = value); }",
+            "function f(value, fallback, target) { const mutate = () => fallback = () => 0; (fallback = '', mutate(), value = fallback, target.after = value); }",
+            "function f(value, target) { (value = '', class extends (value = unknown()) {}, target.after = value); }",
+            "function f(value, target) { (value = '', eval(''), target.after = value); }",
+            "function f(value, target) { function nested() { eval(''); } (value = '', nested(), target.after = value); }",
+            "function f(value, target) { (value = '', mutate(arguments), target.after = value); }",
+            "async function f(value, target) { (value = '', target.after = value); }",
+            "function* f(value, target) { (value = '', target.after = value); }",
+            "class C { static { let value, target; (value = '', target.after = value); } }",
+        ] {
+            assert_scalar_write_certificates(source, &[("after", false)]);
+        }
+    }
+
+    fn assert_scalar_write_certificates(source: &str, expected: &[(&str, bool)]) {
+        let module = raw_js_test_support::parse(source);
+        let certificates = MemberReadCertificates::collect(&top_level_item_views(&module.body));
+        let mut writes = MemberWriteValues::default();
+        module.visit_with(&mut writes);
+        let actual: Vec<_> = writes
+            .0
+            .iter()
+            .map(|(property, value)| {
+                (
+                    property.as_str(),
+                    certificates.excludes_function_class(value.span, &value.to_id()),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{source}");
     }
 
     #[test]
