@@ -240,7 +240,7 @@ fn lookup_connected(
         FlowKey::NumericProperties(receiver) => (receiver, None, true),
         _ => return None,
     };
-    let mut find = |candidates: &[usize]| {
+    let find = |candidates: &[usize]| {
         candidates.iter().find_map(|group_index| {
             let group = &connected.property_groups[*group_index];
             (group.receivers.contains(receiver) && (!numeric_only || group.numeric)).then_some(
