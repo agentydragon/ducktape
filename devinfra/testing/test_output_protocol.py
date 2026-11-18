@@ -7,6 +7,7 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
+from typing import IO
 
 import pytest
 import pytest_bazel
@@ -144,45 +145,25 @@ def test_publish_output_accepts_utf8_text(tmp_path: Path) -> None:
     assert payload.read_bytes() == b'{"message":"\xe7\x8c\xab"}'
 
 
-def test_open_output_publishes_text_and_binary_after_successful_close(tmp_path: Path) -> None:
-    outputs = BoundTestOutputs(tmp_path, "example")
-    with outputs.open(role="diagnostics", suffix="json") as output:
-        output.write('{"message":"猫"}')
-        assert output.seekable()
-        assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
-    text_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'diagnostics')}.json"
-    assert text_path.read_text() == '{"message":"猫"}'
+def test_publish_file_discards_interrupted_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "trace.zip"
+    source.write_bytes(b"complete trace")
+    outputs = BoundTestOutputs(tmp_path / "out", "example")
+    root = outputs.output_dir / "test-outputs"
 
-    with outputs.open(role="screenshot", suffix="png", mode="wb") as output:
-        output.write(b"image bytes")
-    image_path = tmp_path / "test-outputs" / FILES_DIR / f"{output_key('example', None, 'screenshot')}.png"
-    assert image_path.read_bytes() == b"image bytes"
+    def interrupted_copy(input_file: IO[bytes], output_file: IO[bytes]) -> None:
+        output_file.write(input_file.read(1))
+        assert not list((root / RECORDS_DIR).iterdir())
+        raise OSError("copy interrupted")
 
+    with monkeypatch.context() as patch:
+        patch.setattr("devinfra.testing.output_writer.shutil.copyfileobj", interrupted_copy)
+        with pytest.raises(OSError, match="copy interrupted"):
+            outputs.publish_file(source=source, role="trace")
 
-def test_open_output_exception_discards_data_and_duplicate_claim_preserves_original(tmp_path: Path) -> None:
-    outputs = BoundTestOutputs(tmp_path, "example")
-
-    def fail_during_write() -> None:
-        with outputs.open(role="diagnostics", suffix="json") as output:
-            output.write("incomplete")
-            raise RuntimeError("capture failed")
-
-    with pytest.raises(RuntimeError, match="capture failed"):
-        fail_during_write()
-    assert list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json")) == []
-    assert list((tmp_path / "test-outputs" / FILES_DIR).iterdir()) == []
-
-    with outputs.open(role="diagnostics", suffix="json") as output:
-        output.write("complete")
-    with (
-        pytest.raises(FileExistsError, match="already claimed"),
-        outputs.open(role="diagnostics", suffix="json") as output,
-    ):
-        output.write("replacement")
-    key = output_key("example", None, "diagnostics")
-    assert (tmp_path / "test-outputs" / FILES_DIR / f"{key}.json").read_text() == "complete"
-    assert len(list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
-    assert len(list((tmp_path / "test-outputs" / FILES_DIR).iterdir())) == 1
+    assert not list((root / RECORDS_DIR).iterdir())
+    assert not list((root / FILES_DIR).iterdir())
+    assert outputs.publish_file(source=source, role="trace").read_bytes() == b"complete trace"
 
 
 def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
@@ -198,15 +179,15 @@ def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
     assert len(list((tmp_path / "outputs" / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
-def test_duplicate_claim_across_writers_fails_even_when_payload_is_equal(tmp_path: Path) -> None:
+def test_publish_file_rejects_identity_claimed_by_publish_with_another_suffix(tmp_path: Path) -> None:
     outputs = BoundTestOutputs(tmp_path, "example")
-    first = outputs.publish(checkpoint=None, role="diagnostics", data=b"same", suffix="json")
-    with (
-        pytest.raises(FileExistsError),
-        outputs.open(checkpoint=None, role="diagnostics", suffix="txt", mode="wb") as output,
-    ):
-        output.write(b"same")
+    source = tmp_path / "diagnostics.txt"
+    source.write_bytes(b"same")
+    first = outputs.publish(role="diagnostics", data=b"same", suffix="json")
+    with pytest.raises(FileExistsError):
+        outputs.publish_file(role="diagnostics", source=source)
     assert first.read_bytes() == b"same"
+    assert list(first.parent.iterdir()) == [first]
     assert len(list((tmp_path / "test-outputs" / RECORDS_DIR).glob("*.json"))) == 1
 
 
