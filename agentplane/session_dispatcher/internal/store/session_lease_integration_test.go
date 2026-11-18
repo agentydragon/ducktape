@@ -138,15 +138,17 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 		}
 	}
 	got, err := store.GetDispatch(ctx, row.CommandID)
-	if err != nil || got.State != QueueState || !got.DeliveryAttempted {
-		t.Fatalf("takeover lost attempt evidence: %v %v", got, err)
+	if err != nil || got.State != QueueState || got.Reason != "dispatcher_restarted" || !got.DeliveryAttempted {
+		t.Fatalf("takeover did not requeue the dispatch with its attempt evidence: %v %v", got, err)
 	}
 }
 
-func TestRecoveryDoesNotTouchAnotherSessionOnTheSameSandbox(t *testing.T) {
+func TestSessionLeaseHandoffRecoversOnlyOwnedSession(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
-	for _, id := range []string{"test-recover-session", "test-live-session"} {
+	const recoveringID, siblingID = "test-recover-session", "test-live-session"
+	var stale SessionOwner
+	for _, id := range []string{recoveringID, siblingID} {
 		if _, err := createSession(store, ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -154,18 +156,22 @@ func TestRecoveryDoesNotTouchAnotherSessionOnTheSameSandbox(t *testing.T) {
 		if row, err := store.SettleSession(ctx, id, owner, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
 			t.Fatalf("claim Session: %v %v", row, err)
 		}
-		if id == "test-recover-session" {
-			expireSessionLease(t, store, owner)
+		if id == recoveringID {
+			stale = owner
 		}
 	}
-	successor := claimSessionOwner(t, store, "test-recover-session")
+	expireSessionLease(t, store, stale)
+	successor := claimSessionOwner(t, store, recoveringID)
+	if row, err := store.SettleSession(ctx, recoveringID, stale, []string{SessionInProgressState}, SessionAcceptedState, "stale"); err != nil || row != nil {
+		t.Fatalf("stale holder settled after lease handoff: %v %v", row, err)
+	}
 	if recovered, err := store.RecoverSession(ctx, successor); err != nil || !recovered {
 		t.Fatalf("recover: %t %v", recovered, err)
 	}
-	if row, err := store.GetSession(ctx, "test-live-session"); err != nil || row.State != SessionInProgressState {
+	if row, err := store.GetSession(ctx, siblingID); err != nil || row.State != SessionInProgressState {
 		t.Fatalf("recovery changed sibling: %v %v", row, err)
 	}
-	if row, err := store.GetSession(ctx, successor.SessionID); err != nil || row.State != SessionWaitingState {
+	if row, err := store.GetSession(ctx, recoveringID); err != nil || row.State != SessionWaitingState || row.Reason != "dispatcher_restarted" {
 		t.Fatalf("recovery did not requeue Session: %v %v", row, err)
 	}
 }

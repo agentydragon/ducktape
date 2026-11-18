@@ -93,8 +93,8 @@ func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.
 	}
 }
 
-func TestSessionLeaseFencesStaleHolderAndRecovers(t *testing.T) {
-	ctx := context.Background()
+func TestSessionOpeningRetryPreservesBinding(t *testing.T) {
+	ctx := t.Context()
 	store := testStore(t, 3)
 	spec := &sessionpb.SessionSpec{}
 	opened, err := createSession(store, ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
@@ -110,31 +110,6 @@ func TestSessionLeaseFencesStaleHolderAndRecovers(t *testing.T) {
 	otherSpec.GetPlacement().GetEnvironmentHosted().GetEnvironment().Uid = otherUID
 	if _, err := createSession(store, ctx, "session-b", "sandbox-b", otherUID, otherSpec, nil, nil); !errors.Is(err, ErrSessionConflict) {
 		t.Fatalf("opening UID conflict: %v", err)
-	}
-	stale, err := store.AcquireSessionLease(ctx, "session-b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.SettleSession(ctx, "session-b", *stale, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
-		t.Fatalf("first holder could not settle: %+v %v", row, err)
-	}
-	expireSessionLease(t, store, *stale)
-	successor, err := store.AcquireSessionLease(ctx, "session-b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.SettleSession(ctx, "session-b", *stale, []string{SessionInProgressState}, SessionAcceptedState, "stale"); err != nil || row != nil {
-		t.Fatalf("stale holder settled after lease handoff: %+v %v", row, err)
-	}
-	if ok, err := store.RecoverSession(ctx, *successor); err != nil || !ok {
-		t.Fatalf("recovery: %v %v", ok, err)
-	}
-	t.Cleanup(func() {
-		_ = store.ReleaseSessionLease(context.Background(), *stale)
-		_ = store.ReleaseSessionLease(context.Background(), *successor)
-	})
-	if row, err := store.GetSession(ctx, "session-b"); err != nil || row.State != SessionWaitingState || row.Reason != "dispatcher_restarted" {
-		t.Fatalf("recovered opening: %+v %v", row, err)
 	}
 }
 
@@ -426,32 +401,6 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 		if state != want || reason != wantReason {
 			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason, want, wantReason)
 		}
-	}
-}
-
-// A command interrupted after its claim remains durable. An expired Session lease lets a
-// successor recover the in-flight command without losing the attempt marker.
-func TestSuccessorSessionLeaseRequeuesDeliveringCommand(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-	const uid = "00000000-0000-4000-8000-000000000083"
-	if _, err := enqueueWithSession(t, store, ctx, "interrupted-session", "interrupted-sandbox", uid, input("interrupted-command", "hello"), nil); err != nil {
-		t.Fatal(err)
-	}
-	owner := claimSessionOwner(t, store, "interrupted-session")
-	if row, err := store.Settle(ctx, "interrupted-command", owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
-		t.Fatalf("claim: %+v %v", row, err)
-	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, "interrupted-command", owner); err != nil || !marked {
-		t.Fatalf("mark attempt: %t %v", marked, err)
-	}
-	expireSessionLease(t, store, owner)
-	successor := claimSessionOwner(t, store, "interrupted-session")
-	if ok, err := store.RecoverSession(ctx, successor); err != nil || !ok {
-		t.Fatalf("recover Session: %t %v", ok, err)
-	}
-	if row, err := store.GetDispatch(ctx, "interrupted-command"); err != nil || row.State != QueueState || row.Reason != "dispatcher_restarted" || !row.DeliveryAttempted {
-		t.Fatalf("successor did not durably requeue the interrupted command: %+v %v", row, err)
 	}
 }
 
