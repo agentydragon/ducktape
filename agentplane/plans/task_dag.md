@@ -2158,7 +2158,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: choose a shared service settings framework]
 ```
@@ -2177,18 +2176,6 @@ agent-sandbox `Sandbox` CRD remains separately owned. Action execution boxes kee
 and reference migration that preserves identities and stored data. Do not use a global text
 replacement or implicitly rename upstream APIs/resources. No implementation or wire/CRD/storage
 cutover is approved here; this proposal is independent of current authorization and reliability work.
-
-### `ENVIRONMENT_RUNTIME_SERVICE_SPLIT` — separate environment and Harness/Session APIs
-
-**Unscheduled.** Split the renamed public Environment Runtime API by
-responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
-actions belong to the Environment API; Harness/Session admission and operations belong to the
-Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
-the implementation design. Keep the Runtime-to-Host in-process lifecycle contract distinct. This split
-does not decide whether the services use separate binaries or Deployments; that grouping remains
-separate from API ownership. Update Gateway routing, authorization, tests, component specs and system
-overviews with the split. Base the boundary on
-[`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
