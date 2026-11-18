@@ -3,7 +3,6 @@ package runtimecontrol
 import (
 	"context"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +15,7 @@ import (
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,14 +34,9 @@ func (g quiesceGateway) Quiesce(ctx context.Context, request *sessionpb.QuiesceR
 
 func newQuiescerTest(t *testing.T, handle func(context.Context, *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error), serverOptions ...grpc.ServerOption) (GatewayQuiescer, *sandboxapi.Sandbox) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(serverOptions...)
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, quiesceGateway{handle: handle})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	tokenFile := filepath.Join(t.TempDir(), "controller-token")
 	if err := os.WriteFile(tokenFile, []byte("test-controller-token"), 0o600); err != nil {
 		t.Fatal(err)
@@ -50,7 +45,7 @@ func newQuiescerTest(t *testing.T, handle func(context.Context, *sessionpb.Quies
 		ObjectMeta: metav1.ObjectMeta{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"},
 		Status:     sandboxapi.SandboxStatus{Incarnation: &sandboxapi.Incarnation{UID: "test-pod-uid"}},
 	}
-	return GatewayQuiescer{Target: listener.Addr().String(), TokenFile: tokenFile}, sandbox
+	return GatewayQuiescer{Target: address, TokenFile: tokenFile}, sandbox
 }
 
 func TestGatewayQuiescerRetriesUnavailableForPinnedIncarnation(t *testing.T) {
