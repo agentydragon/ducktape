@@ -13,7 +13,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from devinfra.testing import output_writer
 from devinfra.testing.output_records import FILES_DIR, RECORDS_DIR, OutputRecord, output_key
 from devinfra.testing.output_writer import BoundTestOutputs
 
@@ -167,28 +166,30 @@ def test_publish_file_discards_interrupted_copy(tmp_path: Path, monkeypatch: pyt
     assert outputs.publish_file(source=source, role="trace").read_bytes() == b"complete trace"
 
 
-@pytest.mark.parametrize("record_visible", [False, True], ids=["before-commit", "after-commit"])
-def test_record_publication_error_preserves_only_committed_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record_visible: bool
-) -> None:
+def test_losing_record_claim_removes_only_its_own_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example")
     root = tmp_path / "test-outputs"
     key = output_key("example", None, "trace")
-    payload = root / FILES_DIR / f"{key}.json"
+    loser = root / FILES_DIR / f"{key}.txt"
+    winner = root / FILES_DIR / f"{key}.zip"
     record_path = root / RECORDS_DIR / f"{key}.json"
-    publish_record = output_writer._publish_record
+    link = os.link
 
-    def interrupted_publish(record: OutputRecord, path: Path) -> None:
-        assert payload.read_bytes() == b"complete trace"
-        if record_visible:
-            publish_record(record, path)
-        raise OSError("record publication interrupted")
+    def publish_competing_record(source: Path | str, destination: Path) -> None:
+        if destination == record_path:
+            assert loser.read_bytes() == b"losing trace"
+            with monkeypatch.context() as original:
+                original.setattr(os, "link", link)
+                outputs.publish(role="trace", data=b"winning trace", suffix="zip")
+        link(source, destination)
 
-    monkeypatch.setattr(output_writer, "_publish_record", interrupted_publish)
-    with pytest.raises(OSError, match="record publication interrupted"):
-        BoundTestOutputs(tmp_path, "example").publish(role="trace", data=b"complete trace", suffix="json")
+    monkeypatch.setattr(os, "link", publish_competing_record)
+    with pytest.raises(FileExistsError):
+        outputs.publish(role="trace", data=b"losing trace", suffix="txt")
 
-    assert record_path.exists() is record_visible
-    assert payload.exists() is record_visible
+    assert list(winner.parent.iterdir()) == [winner]
+    assert winner.read_bytes() == b"winning trace"
+    assert json.loads(record_path.read_text())["path"] == f"{FILES_DIR}/{key}.zip"
 
 
 def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:

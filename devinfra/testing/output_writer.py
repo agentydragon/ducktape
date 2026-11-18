@@ -1,8 +1,7 @@
-"""Concurrent-safe writer for framework-neutral test output records."""
+"""Publish framework-neutral test output records and their payloads."""
 
 from __future__ import annotations
 
-import fcntl
 import os
 import shutil
 import stat
@@ -13,11 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-from atomicwrites import atomic_write
-
 from devinfra.testing.output_records import (
     FILES_DIR,
-    LOCKS_DIR,
     RECORDS_DIR,
     SCHEMA,
     TEST_OUTPUTS_DIR,
@@ -34,41 +30,22 @@ def _ensure_directory(path: Path) -> None:
         raise ValueError(f"test output directory must not be a symlink or file: {path}")
 
 
-def _fsync_directory(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
-def _publish_record(record: OutputRecord, record_path: Path) -> None:
-    with atomic_write(record_path, encoding="utf-8", overwrite=False) as output:
-        # A null checkpoint is required by the schema. Only label and title have defaults.
-        output.write(record.model_dump_json(by_alias=True, exclude_defaults=True))
-
-
 def _publish_temporary_payload(temporary_payload: Path, *, root: Path, key: str, record: OutputRecord) -> None:
     payload_path = root / record.path
     record_path = root / RECORDS_DIR / f"{key}.json"
-    lock_path = root / LOCKS_DIR / f"{key}.lock"
-    # One record identity can name different payload suffixes. Serialize the two-file commit.
-    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "rb") as lock:
-        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
-            raise ValueError(f"test output claim lock must be a regular file: {lock_path}")
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if record_path.exists(follow_symlinks=False):
-            raise FileExistsError(f"test output identity already claimed: {record_path}")
+    # Stage outside records/ so aborted writes are invisible to the collector.
+    with tempfile.NamedTemporaryFile(mode="wb", dir=root, delete_on_close=False) as temporary_record:
+        # A null checkpoint is required by the schema. Only label and title have defaults.
+        temporary_record.write(record.model_dump_json(by_alias=True, exclude_defaults=True).encode("utf-8"))
+        temporary_record.close()
 
-        # Link without overwriting, then publish the record for the complete payload.
+        # Both links reject existing paths. The record link decides the winner
+        # when two writers choose different payload suffixes for one identity.
         os.link(temporary_payload, payload_path)
         try:
-            _fsync_directory(payload_path.parent)
-            _publish_record(record, record_path)
-        except BaseException:
-            if not record_path.exists(follow_symlinks=False):
-                payload_path.unlink(missing_ok=True)
-                _fsync_directory(payload_path.parent)
+            os.link(temporary_record.name, record_path)
+        except OSError:
+            payload_path.unlink(missing_ok=True)
             raise
 
 
@@ -134,8 +111,7 @@ class BoundTestOutputs:
         root = self.output_dir / TEST_OUTPUTS_DIR
         records_dir = root / RECORDS_DIR
         files_dir = root / FILES_DIR
-        locks_dir = root / LOCKS_DIR
-        for directory in (root, records_dir, files_dir, locks_dir):
+        for directory in (root, records_dir, files_dir):
             _ensure_directory(directory)
 
         record = OutputRecord(
@@ -151,7 +127,5 @@ class BoundTestOutputs:
             mode="wb", prefix=f".{key}.", suffix=".tmp", dir=files_dir, delete_on_close=False
         ) as temporary:
             yield temporary.file, root / record.path
-            temporary.flush()
-            os.fsync(temporary.fileno())
             temporary.close()
             _publish_temporary_payload(Path(temporary.name), root=root, key=key, record=record)
