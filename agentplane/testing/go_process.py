@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,3 +89,27 @@ async def go_process(
             stopped = await asyncio.to_thread(stderr.read_text)
             raise AssertionError(f"process did not terminate within its grace budget:\n{stopped}") from None
         assert process.returncode == 0, await asyncio.to_thread(stderr.read_text)
+
+
+type WhileStopped = Callable[[], Awaitable[None]]
+type RestartGoProcess = Callable[[WhileStopped | None], Awaitable[GoProcess]]
+
+
+@asynccontextmanager
+async def restartable_go_process(
+    process_context: Callable[[int], AbstractAsyncContextManager[GoProcess]],
+) -> AsyncIterator[tuple[GoProcess, RestartGoProcess]]:
+    """Start a process and provide a restart that runs a callback during the outage."""
+    generation = 0
+    async with AsyncExitStack() as stack:
+        started = await stack.enter_async_context(process_context(generation))
+
+        async def restart(while_stopped: WhileStopped | None) -> GoProcess:
+            nonlocal generation
+            await stack.aclose()
+            if while_stopped is not None:
+                await while_stopped()
+            generation += 1
+            return await stack.enter_async_context(process_context(generation))
+
+        yield started, restart

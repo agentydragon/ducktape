@@ -6,8 +6,8 @@ import asyncio
 import os
 import subprocess
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -21,7 +21,7 @@ from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.settings import Settings
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
@@ -67,7 +67,7 @@ class GatewayProcess:
     dispatcher_audience: str
     gateway_audience: str
     service_certificates: dict[str, tuple[Path, Path]]
-    _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
+    _restart: RestartGoProcess
     _close_listener: Callable[[], None]
 
     @property
@@ -123,7 +123,7 @@ class GatewayProcess:
                 self.process.kill()
             await self.process.wait()
 
-    async def restart(self, *, while_stopped: Callable[[], Awaitable[None]] | None = None) -> None:
+    async def restart(self, *, while_stopped: WhileStopped | None = None) -> None:
         """Replace the process while retaining its listener, database and deployment settings."""
         started = await self._restart(while_stopped)
         self.process = started.process
@@ -210,7 +210,7 @@ async def run_gateway(
                 }
                 credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 
-                def process_context(generation: int):
+                def process_context(generation: int) -> AbstractAsyncContextManager[GoProcess]:
                     generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
                     return go_process(
                         binary,
@@ -222,18 +222,7 @@ async def run_gateway(
                         health_credentials=credentials,
                     )
 
-                generation = 0
-                async with AsyncExitStack() as process_stack:
-                    started = await process_stack.enter_async_context(process_context(generation))
-
-                    async def restart_process(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
-                        nonlocal generation
-                        await process_stack.aclose()
-                        if while_stopped is not None:
-                            await while_stopped()
-                        generation += 1
-                        return await process_stack.enter_async_context(process_context(generation))
-
+                async with restartable_go_process(process_context) as (started, restart_process):
                     gateway = GatewayProcess(
                         process=started.process,
                         target=f"localhost:{rpc_listener.port}",
