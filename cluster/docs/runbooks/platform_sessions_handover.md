@@ -7,5 +7,5 @@ separate gateway and provider workloads, internal credentials, provider certific
 provider PVCs. Both use `deletionPolicy: Orphan`; provider PVCs also have pruning
 disabled. Preserve the PVCs and bearer Secret identities during any ownership change.
 
-For the move from the legacy monolith to the separate providers, see
-[Platform Sessions remote deployment](platform_sessions_remote.md).
+For the legacy service and its retained PVC, see
+[Platform Sessions remote deployment](platform_sessions_remote.md#legacy-service).
