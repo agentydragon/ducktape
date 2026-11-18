@@ -116,6 +116,10 @@ function thread({ metadata = {}, summary = {}, ...init }: ThreadViewInit): Threa
   });
 }
 
+function sandboxThread(threadId: string, name: string, sandboxName: string): ThreadView {
+  return thread({ metadata: { threadId, name }, summary: { sandbox: { name: sandboxName } } });
+}
+
 function LocationProbe(): JSX.Element {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
@@ -471,28 +475,8 @@ it("keeps Dispatcher activity live while retained History rows reconnect", async
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
   await render(
     [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "List the repository files",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
-      thread({
-        metadata: {
-          threadId: "t-2",
-          name: "Clean up the stale branch",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
+      sandboxThread("t-1", "List the repository files", "demo-a1b2"),
+      sandboxThread("t-2", "Clean up the stale branch", "demo-a1b2"),
       thread({
         metadata: {
           threadId: "t-3",
@@ -527,22 +511,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
-  await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "Why did the migration hang",
-        },
-        summary: {
-          sandbox: {
-            name: "old-debug-3f9c",
-          },
-        },
-      }),
-    ],
-    {}
-  );
+  await render([sandboxThread("t-1", "Why did the migration hang", "old-debug-3f9c")], {});
 
   const label = [...container.querySelectorAll(".agentplane-thread-list-group-name")].find(
     (node) => node.textContent === "old-debug-3f9c"
@@ -641,19 +610,7 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 
 it("links a Sandbox name to its details without changing Thread navigation", async () => {
   await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "First thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
-    ],
+    [sandboxThread("t-1", "First thread", "demo-a1b2")],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-1" }
   );
@@ -671,19 +628,7 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
 it("highlights only the current Sandbox group on its details route", async () => {
   const name = "demo a1b2";
   await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "First thread",
-        },
-        summary: {
-          sandbox: {
-            name: name,
-          },
-        },
-      }),
-    ],
+    [sandboxThread("t-1", "First thread", name)],
     { [name]: sandbox(name), other: sandbox("other") },
     { initialPath: "/sandboxes/demo%20a1b2?tab=status" }
   );
@@ -703,30 +648,7 @@ it("highlights only the current Sandbox group on its details route", async () =>
 
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "First thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
-      thread({
-        metadata: {
-          threadId: "t-2",
-          name: "Second thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
-    ],
+    [sandboxThread("t-1", "First thread", "demo-a1b2"), sandboxThread("t-2", "Second thread", "demo-a1b2")],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-2" }
   );
@@ -741,17 +663,7 @@ it("opens the stable Thread route and highlights that Thread", async () => {
 it("hides archived threads until the switch is toggled, and archives a thread from its row action", async () => {
   await render(
     [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "Active thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
+      sandboxThread("t-1", "Active thread", "demo-a1b2"),
       thread({
         metadata: {
           threadId: "t-2",
@@ -789,17 +701,7 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
 
 it("grows the window a page at a time and narrows it to a search", async () => {
   const threads = Array.from({ length: 51 }, (_, index) =>
-    thread({
-      metadata: {
-        threadId: `t-${index}`,
-        name: `Listed thread ${index}`,
-      },
-      summary: {
-        sandbox: {
-          name: "demo",
-        },
-      },
-    })
+    sandboxThread(`t-${index}`, `Listed thread ${index}`, "demo")
   );
   await render(threads, { demo: sandbox("demo") });
   expect(container.textContent).not.toContain("Listed thread 50");
@@ -825,17 +727,7 @@ it("grows the window a page at a time and narrows it to a search", async () => {
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
   await render(
     [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "Active thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo-a1b2",
-          },
-        },
-      }),
+      sandboxThread("t-1", "Active thread", "demo-a1b2"),
       thread({
         metadata: {
           threadId: "t-2",
@@ -944,24 +836,7 @@ it.each([
 });
 
 it("keeps the last snapshot when archiving fails and reports the error", async () => {
-  await render(
-    [
-      thread({
-        metadata: {
-          threadId: "t-1",
-          name: "Keep this thread",
-        },
-        summary: {
-          sandbox: {
-            name: "demo",
-          },
-        },
-      }),
-    ],
-    {
-      demo: sandbox("demo"),
-    }
-  );
+  await render([sandboxThread("t-1", "Keep this thread", "demo")], { demo: sandbox("demo") });
   fetchMock.mockResolvedValueOnce(Response.json({ detail: "Archive unavailable" }, { status: 503 }));
   const archiveButton = container.querySelector('button[aria-label="Archive Keep this thread"]');
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
@@ -1098,19 +973,7 @@ it("closes the phone-width overlay, but leaves the desktop column open, on openi
   for (const phone of [true, false]) {
     stubPhoneWidth(phone);
     const { onClose: closeOnOpenThread } = await render(
-      [
-        thread({
-          metadata: {
-            threadId: "t-1",
-            name: "First thread",
-          },
-          summary: {
-            sandbox: {
-              name: "demo-a1b2",
-            },
-          },
-        }),
-      ],
+      [sandboxThread("t-1", "First thread", "demo-a1b2")],
       { "demo-a1b2": sandbox("demo-a1b2") },
       { open: true }
     );
@@ -1162,50 +1025,10 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
 it("counts each listed thread's unprocessed notifications and flags failed delivery without acknowledging any", async () => {
   const sandboxes = { box: sandbox("box") };
   const threads = [
-    thread({
-      metadata: {
-        threadId: "00000000-0000-4000-8000-000000000001",
-        name: "Three unprocessed thread",
-      },
-      summary: {
-        sandbox: {
-          name: "box",
-        },
-      },
-    }),
-    thread({
-      metadata: {
-        threadId: "00000000-0000-4000-8000-000000000002",
-        name: "One unprocessed thread",
-      },
-      summary: {
-        sandbox: {
-          name: "box",
-        },
-      },
-    }),
-    thread({
-      metadata: {
-        threadId: "00000000-0000-4000-8000-000000000003",
-        name: "Delivery-failed thread",
-      },
-      summary: {
-        sandbox: {
-          name: "box",
-        },
-      },
-    }),
-    thread({
-      metadata: {
-        threadId: "00000000-0000-4000-8000-000000000004",
-        name: "Empty-inbox thread",
-      },
-      summary: {
-        sandbox: {
-          name: "box",
-        },
-      },
-    }),
+    sandboxThread("00000000-0000-4000-8000-000000000001", "Three unprocessed thread", "box"),
+    sandboxThread("00000000-0000-4000-8000-000000000002", "One unprocessed thread", "box"),
+    sandboxThread("00000000-0000-4000-8000-000000000003", "Delivery-failed thread", "box"),
+    sandboxThread("00000000-0000-4000-8000-000000000004", "Empty-inbox thread", "box"),
   ];
   const { noticeUrls } = await render(threads, sandboxes, {
     notices: {
