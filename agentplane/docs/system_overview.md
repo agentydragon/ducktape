@@ -533,7 +533,7 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    sandboxctl -->|every-replica proxy, HarnessHost / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
+    sandboxctl -->|lifecycle + diagnostics / HarnessHost / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     sandboxctl -->|list/watch grants; patch EnvironmentReady| policy_api
     sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime

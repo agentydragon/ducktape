@@ -77,7 +77,7 @@ async def test_runtime_transport_outage_retains_history_and_accepts_next_input(
     # Remove the real Runtime listener. Retained History is independent of it.
     await process.stop()
     with pytest.raises(ServiceError) as unavailable:
-        await remote.runner(sandbox.destination).status()
+        await remote.list_sessions(sandbox.destination)
     assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE
     # Shutdown may append later harness events; the captured prefix must remain exact.
     retained = await history_service.reader.read_session_events(
@@ -120,10 +120,12 @@ async def runtime_ready(remote: SandboxControlClient, sandbox: SandboxCluster, s
         stop=stop_after_delay(20), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
         with attempt:
-            status = await remote.runner(sandbox.destination).status()
-            session = next(row for row in status.sessions if row.session_id == session_id)
-            assert session.execution_state != session_pb2.SESSION_EXECUTION_STATE_FAILED, session
-            assert session.execution_state == session_pb2.SESSION_EXECUTION_STATE_READY
+            sessions = await remote.list_sessions(sandbox.destination)
+            session = next(row for row in sessions if row.session_id == session_id)
+            assert session.WhichOneof("host") == "environment_hosted", session
+            host = session.environment_hosted
+            assert host.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED, session
+            assert host.setup in {session_pb2.SETUP_STATE_NOT_REQUIRED, session_pb2.SETUP_STATE_SUCCEEDED}, session
 
 
 async def test_runtime_admission_is_idempotent_after_restart_without_dispatcher_replay(
@@ -142,30 +144,30 @@ async def test_runtime_admission_is_idempotent_after_restart_without_dispatcher_
     request = harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text="Reply ORIGINAL")
     with pytest.raises(ServiceError) as unauthorized:
         await gateway_service.environment_runtime_client().harness_host_unary(
-            sandbox.destination, lambda stub: stub.SubmitInput, request
+            sandbox.destination, lambda host: host.SubmitInput, request
         )
     assert unauthorized.value.code == grpc.StatusCode.PERMISSION_DENIED
-    # Both calls reach the Runtime RPC. No Dispatcher SubmitInput row can answer them.
-    first = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
-    duplicate = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+    # Both calls reach HarnessHost. No Dispatcher SubmitInput row can answer them.
+    first = await remote.harness_host_unary(sandbox.destination, lambda host: host.SubmitInput, request)
+    duplicate = await remote.harness_host_unary(sandbox.destination, lambda host: host.SubmitInput, request)
     assert duplicate.admission == first.admission
     await model.reply(await model.request(), Text("ORIGINAL"))
     await recorded(history_service, session_id, first.admission.cursor - 1)
     await process.stop()
     await start_runtime()
-    replay = await remote.harness_host_unary(sandbox.destination, lambda stub: stub.SubmitInput, request)
+    replay = await remote.harness_host_unary(sandbox.destination, lambda host: host.SubmitInput, request)
     assert replay.admission == first.admission
     with pytest.raises(ServiceError) as payload_collision:
         await remote.harness_host_unary(
             sandbox.destination,
-            lambda stub: stub.SubmitInput,
+            lambda host: host.SubmitInput,
             harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text="DIFFERENT"),
         )
     assert payload_collision.value.code == grpc.StatusCode.ALREADY_EXISTS
     with pytest.raises(ServiceError) as operation_collision:
         await remote.harness_host_unary(
             sandbox.destination,
-            lambda stub: stub.ChangeModel,
+            lambda host: host.ChangeModel,
             harness_host_pb2.ChangeModelRequest(session_id=session_id, command_id=command_id, model="DIFFERENT"),
         )
     assert operation_collision.value.code == grpc.StatusCode.ALREADY_EXISTS
@@ -305,10 +307,12 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
                 reraise=True,
             ):
                 with attempt:
-                    status = await remote.runner(sandbox.destination).status()
-                    session = next(row for row in status.sessions if row.session_id == session_id)
+                    sessions = await remote.list_sessions(sandbox.destination)
+                    session = next(row for row in sessions if row.session_id == session_id)
                     assert not session.active_turn_id
-                    assert not session.busy
+                    assert session.pending_commands == 0
+                    assert session.environment_hosted.setup != session_pb2.SETUP_STATE_RUNNING
+                    assert session.environment_hosted.harness.state != harness_host_pb2.HarnessAttachment.STATE_STARTING
         await recorded(history_service, session_id, second_receipt.cursor - 1)
         resumed: list[event_log_pb2.EventEntry] = []
         async with (

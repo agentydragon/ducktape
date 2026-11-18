@@ -21,10 +21,10 @@ type recordingRuntime struct {
 	received chan metadata.MD
 }
 
-func (r *recordingRuntime) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+func (r *recordingRuntime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	r.received <- incoming
-	return &sessionpb.ListSessionsResponse{}, nil
+	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
 // serve starts the recording Environment Runtime server on loopback and returns its Config and token file.
@@ -58,9 +58,9 @@ func writeToken(t *testing.T, path, token string) {
 	}
 }
 
-func listSessions(ctx context.Context, config Config) error {
+func getStatus(ctx context.Context, config Config) error {
 	return WithClient(ctx, config, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.ListSessions(ctx, &sessionpb.ListSessionsRequest{})
+		_, err := client.GetStatus(ctx, &sessionpb.GetStatusRequest{})
 		return err
 	})
 }
@@ -78,7 +78,7 @@ func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
 	config, runtime := serve(t, "test-token-one\n")
 	config.ExpectedIncarnationUID = "test-incarnation-uid"
 	for _, want := range []string{"Bearer test-token-one", "Bearer test-token-rotated"} {
-		if err := listSessions(t.Context(), config); err != nil {
+		if err := getStatus(t.Context(), config); err != nil {
 			t.Fatal(err)
 		}
 		received := <-runtime.received
@@ -107,7 +107,7 @@ func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
 		config, runtime := serve(t, "test-token")
 		config.ReplaceOutgoingMetadata = replace
 		ctx := metadata.AppendToOutgoingContext(t.Context(), "test-caller-key", "test-caller-value")
-		if err := listSessions(ctx, config); err != nil {
+		if err := getStatus(ctx, config); err != nil {
 			t.Fatal(err)
 		}
 		received := <-runtime.received

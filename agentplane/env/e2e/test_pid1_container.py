@@ -29,7 +29,7 @@ from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.pid1_diagnostics import WaitEvidence
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.net.peertls.config import MTLS
 from agentplane.proto import session_pb2
@@ -283,10 +283,10 @@ async def test_production_pid1_embedded_host_reaps_setup(
         pid1_evidence.waiting("Runtime WatchState boot ID", "Runtime control listener", container_id=wrapped.id)
         await gateway.control.connect(control, sandbox.uid)
         pid1_evidence.waiting("Gateway ready connection", "ControlListener.connect")
-        stub = await gateway.control.runner()
-        pid1_evidence.waiting("CreateSession response", "Runtime session admission")
+        stub = await gateway.control.host()
+        pid1_evidence.waiting("CreateSession response", "HarnessHost session admission")
         await stub.CreateSession(
-            environment_runtime_pb2.CreateSessionRequest(
+            harness_host_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
                 execution_identity=gateway.execution_identity,
                 spec=session_pb2.SessionSpec(

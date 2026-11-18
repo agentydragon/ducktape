@@ -49,5 +49,15 @@ func (g *Server) RuntimeStatus(ctx context.Context, target *identitypb.Environme
 	if current != connection {
 		return nil, status.Error(codes.Aborted, "Runtime observation changed")
 	}
-	return snapshot, nil
+	return runtimeDiagnostics(snapshot), nil
+}
+
+// Select the diagnostic fields explicitly: an older Runtime can still return the removed
+// per-Session field as unknown protobuf data, which must not cross the proxy boundary.
+func runtimeDiagnostics(snapshot *sessionpb.EnvironmentRuntimeStatus) *sessionpb.EnvironmentRuntimeStatus {
+	return &sessionpb.EnvironmentRuntimeStatus{
+		Processes:                snapshot.GetProcesses(),
+		EnvironmentRuntimeBootId: snapshot.GetEnvironmentRuntimeBootId(),
+		Lifecycle:                snapshot.GetLifecycle(),
+	}
 }

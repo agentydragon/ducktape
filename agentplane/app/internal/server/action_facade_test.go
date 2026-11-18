@@ -146,7 +146,7 @@ func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t 
 		Target: target, IncarnationUid: "pod-uid", ObservedAt: timestamppb.New(observedAt),
 		Status: &sessionpb.EnvironmentRuntimeStatus{
 			EnvironmentRuntimeBootId: "boot-id",
-			Sessions:                 []*sessionpb.SessionStatus{{SessionId: "session-1", Busy: true}},
+			Processes:                []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-1"}}},
 		},
 	}}
 	ca := peertlstesting.NewCA(t)

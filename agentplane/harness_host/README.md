@@ -38,4 +38,7 @@ detached or multiple attachments (`SESSION_ENVIRONMENT_SETUP_DESIGN`).
   History keeps `last_turn_status`.
 - **Sandbox busy** (autosuspend blockers, including activation and bootstrap) stays on
   `EnvironmentRuntime.WatchState` for the Sandbox Controller; HarnessHost reports no Sandbox-level
-  fact. Process ID, native session ID and failure cursor are diagnostics on `GetStatus`.
+  fact. Process IDs, PIDs and process-to-Session assignments are diagnostics on
+  `EnvironmentRuntime.GetStatus`.
+  Per-Session native IDs and activity are not part of that diagnostic snapshot; HarnessHost owns live
+  Session status and History owns retained turn outcomes.

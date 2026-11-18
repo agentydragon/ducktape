@@ -12,6 +12,7 @@ import pytest_bazel
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionSealedError, refusal
 from agentplane.env.e2e.testing.process import RunningRunner
+from agentplane.harness_host import harness_host_pb2
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
@@ -57,7 +58,8 @@ async def test_replay_from_zero_returns_the_whole_log(
 
     second = await driver.attach("replay-1")
     # Native frames after the turn's result may still have arrived.
-    assert second.attached.last_cursor >= first.seen[-1].cursor
+    summary = await driver.history.get_session_summary(second.attached.session_id)
+    assert summary.committed_cursor >= first.seen[-1].cursor
     replayed = [await second.next_entry() for _ in first.seen]
     assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
 
@@ -127,8 +129,8 @@ async def test_shutdown_leaves_the_conversation_dormant_until_the_next_input(
     assert replay.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED
     await replay.drain_until_end()
     assert replay.seen == first.seen
-    (summary,) = await driver.list_sessions()
-    assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
+    (host_session,) = await driver.list_sessions()
+    assert host_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
 
     second = await driver.attach("shutdown-1", spec=spec, after_cursor=first.cursor)
     assert second.attached.harness_state == session_pb2.HARNESS_STATE_STOPPED

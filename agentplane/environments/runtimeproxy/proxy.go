@@ -82,28 +82,16 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	return connection, nil
 }
 
-func (p *environmentRuntimeProxy) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	connection, err := p.connection(ctx, false, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runtime.ListSessions(ctx, request)
-}
-
 func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	connection, err := p.connection(ctx, false, false)
 	if err != nil {
 		return nil, err
 	}
-	return connection.runtime.GetStatus(ctx, request)
-}
-
-func (p *environmentRuntimeProxy) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
-	connection, err := p.connection(ctx, true, false)
+	snapshot, err := connection.runtime.GetStatus(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	return connection.runtime.CreateSession(ctx, request)
+	return runtimeDiagnostics(snapshot), nil
 }
 
 func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
@@ -130,38 +118,6 @@ func (p *environmentRuntimeProxy) ResumeAdmission(ctx context.Context, request *
 		return nil, err
 	}
 	return connection.runtime.ResumeAdmission(ctx, request)
-}
-
-func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	connection, err := p.connection(ctx, true, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runtime.SubmitInput(ctx, request)
-}
-
-func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	connection, err := p.connection(ctx, true, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runtime.ChangeModel(ctx, request)
-}
-
-func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	connection, err := p.connection(ctx, true, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runtime.ChangeReasoningEffort(ctx, request)
-}
-
-func (p *environmentRuntimeProxy) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	connection, err := p.connection(ctx, true, false)
-	if err != nil {
-		return nil, err
-	}
-	return connection.runtime.InterruptTurn(ctx, request)
 }
 
 var _ environmentruntimepb.EnvironmentRuntimeServer = (*environmentRuntimeProxy)(nil)

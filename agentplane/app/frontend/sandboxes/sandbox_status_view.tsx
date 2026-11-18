@@ -3,7 +3,6 @@ import { create, toJson } from "@bufbuild/protobuf";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { ThreadView } from "../sessions/client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   EnvironmentDescriptorSchema,
@@ -20,7 +19,6 @@ import {
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
   ProcessState,
-  SessionExecutionState,
   type EnvironmentRuntimeLifecycleStatus,
   type EnvironmentRuntimeStatus,
 } from "../../../proto/session_pb";
@@ -316,22 +314,6 @@ function processStateLabel(state: ProcessState): string {
   return "Unknown";
 }
 
-function executionStateLabel(state: SessionExecutionState): string {
-  switch (state) {
-    case SessionExecutionState.DORMANT:
-      return "Dormant";
-    case SessionExecutionState.PREPARING:
-      return "Preparing";
-    case SessionExecutionState.READY:
-      return "Ready";
-    case SessionExecutionState.FAILED:
-      return "Failed";
-    case SessionExecutionState.UNSPECIFIED:
-      return "Unspecified";
-  }
-  return "Unknown";
-}
-
 function lifecycleModeLabel(mode: EnvironmentRuntimeLifecycleStatus["desiredMode"]): string {
   switch (mode) {
     case EnvironmentRuntimeLifecycleMode.RUNNING:
@@ -495,11 +477,9 @@ type EnvironmentRuntimeDiagnosticsState =
 
 function EnvironmentRuntimeDiagnostics({
   sandbox,
-  threads,
   active,
 }: {
   sandbox: EnvironmentDescriptor;
-  threads: ThreadView[];
   active: boolean;
 }): JSX.Element {
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -540,15 +520,13 @@ function EnvironmentRuntimeDiagnostics({
     };
   }, [active, refreshVersion, target, sandbox.observedState?.operatingMode, sandbox.observedState?.phase]);
   const state = outcome?.target === target ? outcome.state : null;
-  const threadsById = new Map(threads.map((thread) => [thread.metadata.threadId, thread]));
-
   return (
     <Stack gap="xs" data-testid="sandbox-environment-runtime-diagnostics">
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
         <div>
           <Title order={5}>Runtime diagnostics</Title>
           <Text size="xs" c="dimmed">
-            Read-only snapshot of Runtime lifecycle, process, and Session state.
+            Read-only snapshot of Runtime lifecycle and harness process diagnostics.
           </Text>
         </div>
         <Button
@@ -615,48 +593,6 @@ function EnvironmentRuntimeDiagnostics({
               ))}
             </Stack>
           )}
-          {state.value.sessions.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No Sessions reported.
-            </Text>
-          ) : (
-            <Stack gap="xs">
-              <Title order={6}>Sessions</Title>
-              {state.value.sessions.map((session) => {
-                const title = threadsById.get(session.sessionId)?.metadata.name?.trim();
-                return (
-                  <Paper key={session.sessionId} withBorder p="sm" radius="md">
-                    <Stack gap={4}>
-                      <Group justify="space-between" wrap="wrap" gap="xs">
-                        <Text fw={600} style={{ overflowWrap: "anywhere" }}>
-                          {title || session.sessionId}
-                        </Text>
-                        <Badge>{executionStateLabel(session.executionState)}</Badge>
-                      </Group>
-                      {title && (
-                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                          Session ID · {session.sessionId}
-                        </Text>
-                      )}
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Process ID · {session.processId ?? "—"}
-                      </Text>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Native Session ID · {session.nativeSessionId ?? "—"}
-                      </Text>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        Active turn · {session.activeTurnId ?? "—"}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Failure cursor · {session.failureCursor?.toString() ?? "—"}
-                        {session.busy ? " · Work in progress" : ""}
-                      </Text>
-                    </Stack>
-                  </Paper>
-                );
-              })}
-            </Stack>
-          )}
         </Stack>
       )}
     </Stack>
@@ -666,12 +602,10 @@ function EnvironmentRuntimeDiagnostics({
 /** The Sandbox's state and settings, what Kubernetes reports of it, and what its runner reports. */
 export function StatusView({
   sandbox,
-  threads,
   active,
   onError,
 }: {
   sandbox: EnvironmentDescriptor;
-  threads: ThreadView[];
   active: boolean;
   onError: (message: string | null) => void;
 }): JSX.Element {
@@ -689,7 +623,7 @@ export function StatusView({
           <KubernetesStatus sandbox={sandbox} />
         </>
       )}
-      <EnvironmentRuntimeDiagnostics sandbox={sandbox} threads={threads} active={active} />
+      <EnvironmentRuntimeDiagnostics sandbox={sandbox} active={active} />
     </Stack>
   );
 }

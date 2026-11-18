@@ -16,7 +16,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import ServiceError
 from agentplane.harness_host import harness_host_pb2
@@ -50,8 +49,12 @@ def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> Sand
     return sandbox_control
 
 
-async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.SessionSummary:
-    return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
+async def inspect(runner: SandboxRunner, session_id: str) -> harness_host_pb2.Session:
+    return one(session for session in await runner.list_sessions() if session.session_id == session_id)
+
+
+async def history_snapshot(runner: RunningRunner, session_id: str) -> session_pb2.Attached:
+    return await runner.history_snapshot(session_id)
 
 
 async def test_workload_listener_requires_svid_and_refuses_bearer(
@@ -104,10 +107,13 @@ async def test_gateway_dispatches_sessions_and_environment_service_owns_runtime_
     async with grpc.aio.secure_channel(
         gateway_service.target, gateway_service.service_credentials("spiffe://agentplane/app")
     ) as runtime_channel:
+        retired_inventory: grpc.aio.UnaryUnaryMultiCallable[bytes, bytes] = runtime_channel.unary_unary(
+            "/agentplane.env.runtime.control.EnvironmentRuntime/ListSessions",
+            request_serializer=lambda request: request,
+            response_deserializer=lambda response: response,
+        )
         with pytest.raises(grpc.aio.AioRpcError) as runtime_absent:
-            await environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel).ListSessions(
-                session_pb2.ListSessionsRequest(), timeout=5
-            )
+            await retired_inventory(b"", timeout=5)
     assert runtime_absent.value.code() == grpc.StatusCode.UNIMPLEMENTED
 
     async with grpc.aio.secure_channel(
@@ -137,7 +143,7 @@ async def create_session(
     session_id: UUID,
     spec: session_pb2.SessionSpec,
     setup_script: str | None = None,
-) -> session_pb2.SessionSummary:
+) -> harness_host_pb2.Session:
     await dispatcher.unary(
         dispatcher.stub.CreateSession,
         session_dispatcher_pb2.CreateSessionRequest(
@@ -288,26 +294,29 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         with attempt:
             assert setup_started_marker.exists()
     opened = await inspect(destination, session)
-    assert opened.setup_state == session_pb2.SETUP_STATE_RUNNING
+    assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_RUNNING
     status = await destination.status()
     assert not status.processes
-    (preparing,) = [row for row in status.sessions if row.session_id == session]
-    assert preparing.execution_state == session_pb2.SESSION_EXECUTION_STATE_PREPARING
+    assert opened.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
     setup_release_marker.touch()
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
         with attempt:
             opened = await inspect(destination, session)
-            assert opened.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
-    assert opened.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
-    assert session in opened.spec.instructions
+            assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
+    assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
+    # Setup completion and the first History announcement are independent wakeups.
+    await wait_for_history_session(runner.history, session)
+    attached = await history_snapshot(runner, session)
+    assert session in attached.spec.instructions
     assert (
         await create_session(
             session_dispatcher, destination, session_id=requested, spec=launch_spec, setup_script=setup_script
         )
-    ).spec == opened.spec
-    assert (await destination.list_sessions())[0].spec == opened.spec
+    ).session_id == session
+    assert (await history_snapshot(runner, session)).spec == attached.spec
+    assert (await inspect(destination, session)).environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
     # Dispatcher refuses a retry whose spec differs from the recorded opening.
     different_spec = session_pb2.SessionSpec()
     different_spec.CopyFrom(launch_spec)
@@ -321,27 +330,28 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert setup_marker.read_text() == "S"
     status = await destination.status()
     assert not status.processes
-    (dormant,) = [row for row in status.sessions if row.session_id == session]
-    assert dormant.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    dormant = await inspect(destination, session)
+    assert dormant.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
     entries = await complete_turn(session_dispatcher, runner, sandbox.destination, model, session, "grpc-notice")
     (started,) = events.of_kind(entries, "harness_started")
     assert not started.event.harness_started.resumed
     active = await destination.status()
-    (active_session,) = [row for row in active.sessions if row.session_id == session]
-    native_session_id = active_session.native_session_id
-    assert native_session_id
     assert len(active.processes) == 1
+    assert session in active.processes[0].assigned_session_ids
+    active_session = await inspect(destination, session)
+    assert active_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
     await runner.restart()
     await gateway_service.environment_service.wait_for_runner(remote, sandbox.destination)
-    await wait_for_entries(
+    stopped_entries = await wait_for_entries(
         runner, session, entries[-1].cursor, lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail)
     )
-    assert (await inspect(destination, session)).harness_state == session_pb2.HARNESS_STATE_STOPPED
+    stopped_host_session = await inspect(destination, session)
+    assert stopped_host_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
     stopped = await destination.status()
     assert not stopped.processes
-    (stopped_session,) = [row for row in stopped.sessions if row.session_id == session]
-    assert stopped_session.native_session_id == native_session_id
-    assert stopped_session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    stopped_snapshot = await history_snapshot(runner, session)
+    assert stopped_snapshot.spec == attached.spec
+    assert stopped_snapshot.last_cursor >= stopped_entries[-1].cursor
     resumed_entries = await complete_turn(
         session_dispatcher, runner, sandbox.destination, model, session, "grpc-resumed"
     )
@@ -350,10 +360,13 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert len(resumed_starts) == 1
     assert resumed_starts[0].event.harness_started.resumed
     resumed = await destination.status()
-    (resumed_session,) = [row for row in resumed.sessions if row.session_id == session]
-    assert resumed_session.native_session_id == native_session_id
     assert len(resumed.processes) == 1
-    assert (await destination.list_sessions())[0].spec == opened.spec
+    assert session in resumed.processes[0].assigned_session_ids
+    resumed_host_session = await inspect(destination, session)
+    assert resumed_host_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+    resumed_snapshot = await history_snapshot(runner, session)
+    assert resumed_snapshot.spec == attached.spec
+    assert resumed_snapshot.last_cursor >= resumed_entries[-1].cursor
     invalid_spec = session_pb2.SessionSpec()
     invalid_spec.CopyFrom(launch_spec)
     invalid_spec.model = ""
@@ -396,8 +409,8 @@ async def test_failed_setup_reports_command_failure(
     ):
         with attempt:
             opened = await inspect(destination, created.session_id)
-            assert opened.setup_state != session_pb2.SETUP_STATE_RUNNING
-    assert opened.setup_state == session_pb2.SETUP_STATE_FAILED
+            assert opened.environment_hosted.setup != session_pb2.SETUP_STATE_RUNNING
+    assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_FAILED
     receipt = await submit_input(
         session_dispatcher,
         sandbox.destination,
@@ -453,8 +466,8 @@ async def test_failed_bootstrap_reports_failure_when_input_arrives(
     opened = await create_session(session_dispatcher, destination, session_id=uuid4(), spec=spec)
     status = await destination.status()
     assert not status.processes
-    (session,) = [row for row in status.sessions if row.session_id == opened.session_id]
-    assert session.execution_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT
+    host_session = await inspect(destination, opened.session_id)
+    assert host_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
 
     admission = await submit_input(
         session_dispatcher,

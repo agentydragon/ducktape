@@ -224,23 +224,23 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		call func(context.Context) error
 	}{
 		{"open", func(ctx context.Context) error {
-			_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{})
+			_, err := hostClient.CreateSession(ctx, &harnesshostpb.CreateSessionRequest{})
 			return err
 		}},
 		{"input", func(ctx context.Context) error {
-			_, err := client.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{})
+			_, err := hostClient.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{})
 			return err
 		}},
 		{"model", func(ctx context.Context) error {
-			_, err := client.ChangeModel(ctx, &environmentruntimepb.ChangeModelRequest{})
+			_, err := hostClient.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{})
 			return err
 		}},
 		{"effort", func(ctx context.Context) error {
-			_, err := client.ChangeReasoningEffort(ctx, &environmentruntimepb.ChangeReasoningEffortRequest{})
+			_, err := hostClient.ChangeReasoningEffort(ctx, &harnesshostpb.ChangeReasoningEffortRequest{})
 			return err
 		}},
 		{"interrupt", func(ctx context.Context) error {
-			_, err := client.InterruptTurn(ctx, &environmentruntimepb.InterruptTurnRequest{})
+			_, err := hostClient.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{})
 			return err
 		}},
 	}
@@ -261,7 +261,7 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if _, err := client.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.SubmitInput(f.callerContext(peertls.SessionsURI), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := hostClient.SubmitInput(f.callerContext(peertls.SessionsURI), &harnesshostpb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput in held suspend = %v, want Unavailable", err)
 	}
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {

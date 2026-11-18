@@ -59,13 +59,15 @@ before and after the Runtime call; same-name replacement is `NOT_FOUND`, and a c
 incarnation is `ABORTED`.
 
 The response includes that target, the workload Pod UID, completion observation time and the live
-`EnvironmentRuntimeStatus` snapshot, including its boot ID. The replica uses its existing fenced
+`EnvironmentRuntimeStatus` process/lifecycle snapshot, including its boot ID and excluding per-Session
+rows even when an older Runtime still supplies them. The replica uses its existing fenced
 Runtime connection and requires the snapshot's boot ID to match the authenticated watch. Watch
 loss, an offline/unready/suspended Runtime or an absent transport returns `UNAVAILABLE`, never an
 empty snapshot implying idle. Replaced observations are refused. The read never wakes, creates or
 mutates an environment or Session and does not require controller leadership. Callers provide a
 unary deadline; the Runtime read inherits it. This is diagnostic evidence, not the canonical current
-Session-status or archival-safety contract. The App uses this RPC for browser diagnostics and its existing conservative live archive check.
+Session-status or archival-safety contract. The App uses this RPC for process and lifecycle
+diagnostics. Session activity and archival safety come from the Dispatcher.
 
 ## Optional Runtime proxy and Executor receiver
 

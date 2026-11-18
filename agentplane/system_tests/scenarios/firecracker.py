@@ -1,4 +1,4 @@
-"""The deployed Firecracker backend preserves a live guest and native session through suspension."""
+"""The deployed Firecracker backend preserves a live guest process through suspension."""
 
 from __future__ import annotations
 
@@ -225,8 +225,8 @@ async def preserves_live_guest(
     running_credential = await _renew_credentials(cluster, secret_name)
     await _wait_for_served_certificate(cluster, pod.name, running_credential)
     initial = await client.runtime_diagnostics(view.target)
-    (session,) = [row for row in initial.sessions if row.session_id == str(agent.thread_id)]
-    assert session.HasField("process_id")
+    (process,) = [row for row in initial.processes if str(agent.thread_id) in row.assigned_session_ids]
+    assert process.process_id
     assert initial.environment_runtime_boot_id
     # Exercise the conditional idle admission barrier as well as the VM primitive.
     # The live background child remains eligible for RAM-preserving autosuspend.
@@ -268,9 +268,8 @@ async def preserves_live_guest(
         with attempt:
             restored = await client.runtime_diagnostics(view.target)
     assert restored.environment_runtime_boot_id == initial.environment_runtime_boot_id
-    (continuation,) = [row for row in restored.sessions if row.session_id == session.session_id]
-    assert continuation.process_id == session.process_id
-    assert continuation.native_session_id == session.native_session_id
+    (continued_process,) = [row for row in restored.processes if str(agent.thread_id) in row.assigned_session_ids]
+    assert continued_process.process_id == process.process_id
     after = await probe(2)
     for key in ("boot_id", "pid", "start_ticks", "marker"):
         assert after[key] == before[key], (before, after)
@@ -282,8 +281,7 @@ async def preserves_live_guest(
                 "pod_uid": pod.uid,
                 "runtime_boot_id": initial.environment_runtime_boot_id,
                 "suspended_launcher": status,
-                "native_session_id": session.native_session_id,
-                "process_id": session.process_id,
+                "process_id": process.process_id,
                 "before": before,
                 "after": after,
             },

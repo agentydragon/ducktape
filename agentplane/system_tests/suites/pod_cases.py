@@ -8,6 +8,7 @@ import pytest
 from agentplane.app.testing.client import Client
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
+from agentplane.system_tests.driver.native_platform import sandbox_harness_host
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.scenarios import (
     agent_messaging,
@@ -124,18 +125,19 @@ async def fresh_workspace_storage_survives_replacement(worker: Worker) -> None:
 
 
 async def codex_standing_instructions_after_suspend_and_compact(worker: Worker) -> None:
-    async with worker.fresh_sandboxes() as case:
+    async with worker.fresh_sandboxes() as case, sandbox_harness_host(worker.cluster) as control:
         await suspend_resume.codex_standing_instructions_after_suspend_and_compact(
-            worker.cluster, case.client, worker.dispatcher, case.sandboxes, worker.scripted
+            worker.cluster, case.client, worker.dispatcher, control, case.sandboxes, worker.scripted
         )
 
 
 async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(worker: Worker) -> None:
-    async with worker.fresh_sandboxes() as case:
+    async with worker.fresh_sandboxes() as case, sandbox_harness_host(worker.cluster) as control:
         await suspend_resume.two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
             worker.cluster,
             case.client,
             worker.dispatcher,
+            control,
             case.sandboxes,
             worker.scripted,
             Executor(template=POD_TEMPLATE, cwd="/state/work"),

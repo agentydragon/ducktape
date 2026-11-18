@@ -7,7 +7,6 @@ import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, suppress
 from pathlib import Path
-from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,6 +19,7 @@ from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import bind_incarnation
 from agentplane.env.e2e.testing.model_config import model_config
+from agentplane.env.e2e.testing.process import history_snapshot
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
 from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.harness_host import harness_host_pb2
@@ -184,9 +184,8 @@ async def _wait_for_session_status(
     incarnation_uid: str,
     boot_id: str,
     *,
-    expected_state: int | None = None,
-    native_session_id: str | None = None,
-) -> session_pb2.SessionStatus:
+    expected_harness_state: int | None = None,
+) -> harness_host_pb2.Session:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(30), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
@@ -198,16 +197,16 @@ async def _wait_for_session_status(
                 expected_incarnation_uid=incarnation_uid,
             )
             assert status.environment_runtime_boot_id == boot_id, status
-            session = next((row for row in status.sessions if row.session_id == session_id), None)
-            assert session is not None, f"Session {session_id} not visible in successor status: {status}"
-            if expected_state is not None:
-                assert session.execution_state == expected_state, session
-            if native_session_id is not None:
-                assert session.native_session_id == native_session_id, session
-            if expected_state == session_pb2.SESSION_EXECUTION_STATE_DORMANT:
-                assert not session.HasField("process_id"), session
-            return cast(session_pb2.SessionStatus, session)
-    raise AssertionError("Runtime did not publish the requested Session status")
+            sessions = await runtime_client.list_sessions(sandbox.destination, expected_incarnation_uid=incarnation_uid)
+            session = next((row for row in sessions if row.session_id == session_id), None)
+            assert session is not None, f"Session {session_id} not visible in HarnessHost inventory: {sessions}"
+            assert session.WhichOneof("host") == "environment_hosted", session
+            if expected_harness_state is not None:
+                assert session.environment_hosted.harness.state == expected_harness_state, session
+            if expected_harness_state == harness_host_pb2.HarnessAttachment.STATE_DETACHED:
+                assert not any(session_id in process.assigned_session_ids for process in status.processes), status
+            return session
+    raise AssertionError("HarnessHost did not publish the requested Session status")
 
 
 async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
@@ -249,7 +248,12 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
     retained_session = await _wait_for_session_status(
         runtime_client, sandbox, session_id, sandbox.pod_uid, original_boot_id
     )
-    assert retained_session.native_session_id
+    assert retained_session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+    initial_snapshot = await history_snapshot(history_service.reader, session_id)
+    assert initial_snapshot.spec.cwd == spec.cwd
+    assert initial_snapshot.spec.model == spec.model
+    assert initial_snapshot.spec.placement == spec.placement
+    assert spec.instructions in initial_snapshot.spec.instructions
     await model.hold(active_request)
     active_entries = await _recorded_turn(
         history_service, session_id, active_admission.cursor - 1, events.is_kind("harness_user_message_confirmed")
@@ -272,7 +276,7 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
         delayed_call = asyncio.create_task(
             gateway_service.environment_runtime_client("spiffe://agentplane/sessions").harness_host_unary(
                 sandbox.destination,
-                lambda stub: stub.InterruptTurn,
+                lambda host: host.InterruptTurn,
                 harness_host_pb2.InterruptTurnRequest(
                     session_id=session_id, command_id=delayed_id, turn_id=active_turn_id
                 ),
@@ -307,8 +311,8 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
             entry.event.harness_exited.stopped_by_runner for entry in events.of_kind(sealed_entries, "harness_exited")
         )
 
-        # The held call already passed Gateway routing and Runtime authentication. Only now does it
-        # enter the production handler; the test-only interceptor records that handler's own status.
+        # The held call already passed Environments routing and the Session service-SVID check. Only
+        # now does it enter the production HarnessHost handler; the interceptor records its status.
         await asyncio.to_thread((gate / "release").write_text, "release")
         with pytest.raises(RefusedError):
             await asyncio.wait_for(delayed_call, timeout=10)
@@ -347,8 +351,7 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
             session_id,
             successor_uid,
             successor_boot_id,
-            expected_state=session_pb2.SESSION_EXECUTION_STATE_DORMANT,
-            native_session_id=retained_session.native_session_id,
+            expected_harness_state=harness_host_pb2.HarnessAttachment.STATE_DETACHED,
         )
 
         successor_id = str(uuid4())
@@ -385,6 +388,9 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
             entry.event.command_admitted.command.command_id
             for entry in events.of_kind(resumed_entries, "command_admitted")
         }
+        successor_snapshot = await history_snapshot(history_service.reader, session_id)
+        assert successor_snapshot.spec == initial_snapshot.spec
+        assert successor_snapshot.incarnation_uid == successor_uid
         assert model.request_count == 3
     finally:
         if gate.exists() and not await asyncio.to_thread((gate / "release").exists):

@@ -30,10 +30,8 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
-	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -204,7 +202,6 @@ func restart(t *testing.T, tune func(*config)) running {
 	}
 	actionAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
 	runnerAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
-		environmentruntimepb.RegisterEnvironmentRuntimeServer(s, &notificationtesting.ListingRunner{Sessions: []string{testSession}})
 	})
 	historyAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})

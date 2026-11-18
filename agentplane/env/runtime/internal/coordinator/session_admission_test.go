@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -27,9 +28,9 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -52,7 +53,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	workspace := t.TempDir()
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
-	opened, err := r.CreateSession(sessionCallContext(r, context.Background()), request)
+	opened, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	if err != nil || len(statusResponse.Processes) != 0 {
 		t.Fatalf("open started a native process: status=%v err=%v", statusResponse, err)
 	}
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("identical open was not idempotent: %v", err)
 	}
 	if got := lookups.Load(); got != 1 {
@@ -74,7 +75,7 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 	conflict := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	conflict.Spec.Model = "different-model"
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting reservation error = %v, want AlreadyExists", err)
 	}
 	if got := lookups.Load(); got != 1 {
@@ -89,30 +90,30 @@ func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
 	ctx := sessionCallContext(r, t.Context())
 	request := openLifecycleSession("identity", filepath.Join(workspace, "project"))
 	request.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity", Uid: "identity-uid"}
-	opened, err := r.CreateSession(ctx, request)
+	opened, err := (&harnessHost{runtime: r}).CreateSession(ctx, request)
 	if err != nil || !proto.Equal(opened.GetAttached().GetExecutionIdentity(), request.ExecutionIdentity) {
 		t.Fatalf("opened Session executes as %v (%v), want %v", opened.GetAttached().GetExecutionIdentity(), err, request.ExecutionIdentity)
 	}
 	// A retry from a Dispatcher that predates the field keeps the retained Identity.
-	older := proto.Clone(request).(*environmentruntimepb.CreateSessionRequest)
+	older := proto.Clone(request).(*harnesshostpb.CreateSessionRequest)
 	older.ExecutionIdentity = nil
-	retried, err := r.CreateSession(ctx, older)
+	retried, err := (&harnessHost{runtime: r}).CreateSession(ctx, older)
 	if err != nil || !proto.Equal(retried.GetAttached().GetExecutionIdentity(), request.ExecutionIdentity) {
 		t.Fatalf("retry without the Identity: %v (%v), want %v", retried.GetAttached().GetExecutionIdentity(), err, request.ExecutionIdentity)
 	}
-	replaced := proto.Clone(request).(*environmentruntimepb.CreateSessionRequest)
+	replaced := proto.Clone(request).(*harnesshostpb.CreateSessionRequest)
 	replaced.ExecutionIdentity.Uid = "replacement-identity-uid"
-	if _, err := r.CreateSession(ctx, replaced); status.Code(err) != codes.AlreadyExists {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, replaced); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("retry under another Identity = %v, want AlreadyExists", err)
 	}
 	missing := openLifecycleSession("missing-identity", filepath.Join(workspace, "project"))
 	missing.ExecutionIdentity = nil
-	if _, err := r.CreateSession(ctx, missing); status.Code(err) != codes.InvalidArgument {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, missing); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("new Session without an Identity = %v, want InvalidArgument", err)
 	}
 	incomplete := openLifecycleSession("incomplete-identity", filepath.Join(workspace, "project"))
 	incomplete.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity"}
-	if _, err := r.CreateSession(ctx, incomplete); status.Code(err) != codes.InvalidArgument {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, incomplete); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("Identity without a UID = %v, want InvalidArgument", err)
 	}
 }
@@ -129,7 +130,7 @@ func TestLegacySessionCannotBeAssignedAnIdentityOnRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := openLifecycleSession("legacy", filepath.Join(workspace, "project"))
-	if _, err := r.CreateSession(sessionCallContext(r, t.Context()), request); status.Code(err) != codes.AlreadyExists {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, t.Context()), request); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("legacy Session assigned an Identity on retry = %v, want AlreadyExists", err)
 	}
 	retainedRecord, err := r.store.Read("legacy")
@@ -144,7 +145,7 @@ func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("configuration", filepath.Join(workspace, "project"))
 	ctx := sessionCallContext(r, t.Context())
-	if _, err := r.CreateSession(ctx, request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, request); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get(request.SessionId)
@@ -155,11 +156,11 @@ func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
 	if err := s.ModelChanged(ctx, command.CommandId, "confirmed-model", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.CreateSession(ctx, request); status.Code(err) != codes.AlreadyExists {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, request); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("initial configuration accepted after confirmed change: %v", err)
 	}
 	request.Spec.Model = "confirmed-model"
-	reopened, err := r.CreateSession(ctx, request)
+	reopened, err := (&harnessHost{runtime: r}).CreateSession(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +184,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 	script := fmt.Sprintf("printf setup >> %s", shellQuote(marker))
 	request := openLifecycleSession("session-retry", filepath.Join(workspace, "project"))
 	request.SetupScript = &script
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
 		t.Fatalf("first OpenSession error = %v, want injected Unavailable", err)
 	}
 	if resources.fail.Load() {
@@ -202,7 +203,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 	wrongScript := "exit 1"
 	conflict := openLifecycleSession(request.SessionId, filepath.Join(workspace, "project"))
 	conflict.SetupScript = &wrongScript
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), conflict); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflicting setup source error = %v, want AlreadyExists", err)
 	}
 
@@ -214,7 +215,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 	}
 
 	request.SetupScript = nil
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("omitted-script OpenSession retry: %v", err)
 	}
 	s := r.sessions.Get(request.SessionId)
@@ -311,7 +312,7 @@ func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	r := newSessionTestRuntimeWithState(t, config, resources)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
 	request.ExecutionIdentity = nil // Retry the retained ownerless record without assigning it a new owner.
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
 	input, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, sessionID)
@@ -351,16 +352,16 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid session ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
+	if _, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, context.Background()), &harnesshostpb.SubmitInputRequest{SessionId: "session-1", Text: "hello"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty command ID error = %v, want InvalidArgument", err)
 	}
-	if _, err := r.InterruptTurn(sessionCallContext(r, context.Background()), &environmentruntimepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := (&harnessHost{runtime: r}).InterruptTurn(sessionCallContext(r, context.Background()), &harnesshostpb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
 	session := r.sessions.Get("session-1")
@@ -376,10 +377,10 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, context.Background()), &harnesshostpb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	session := r.sessions.Get("session-1")
@@ -404,12 +405,14 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 		case <-changed:
 		}
 	}
-	statusResponse, err := r.GetStatus(sessionCallContext(r, ctx), &sessionpb.GetStatusRequest{})
+	transport := &harnessHostTransport{}
+	listContext := grpc.NewContextWithServerTransportStream(sessionCallContext(r, ctx), transport)
+	hostSessions, err := (&harnessHost{runtime: r}).ListSessions(listContext, &harnesshostpb.ListSessionsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(statusResponse.Sessions) != 1 || statusResponse.Sessions[0].FailureCursor == nil {
-		t.Fatalf("failed launch status did not publish a failure cursor: %v", statusResponse.Sessions)
+	if len(hostSessions.GetSessions()) != 1 || hostSessions.GetSessions()[0].GetEnvironmentHosted().GetHarness().FailureCursor == nil {
+		t.Fatalf("failed launch status did not publish a failure cursor: %v", hostSessions.GetSessions())
 	}
 	entries, err := session.EventJournal().Since(ctx, 0, 16)
 	if err != nil {
@@ -467,7 +470,7 @@ func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
 			r := newSessionTestRuntimeWithState(t, config, resources)
 			resources.armed.Store(true)
 			request := openLifecycleSession("publication-failure", filepath.Join(workspace, "project"))
-			if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
+			if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
 				t.Fatalf("OpenSession error = %v, want Unavailable", err)
 			}
 			select {
@@ -553,10 +556,10 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 	r := newLifecycleRuntimeWithState(t, config, store)
 	startDirectExecutionTestClient(t, r, "test-incarnation")
 
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+	if _, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, context.Background()), &harnesshostpb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -666,7 +669,7 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
 	openStarted = true
 	go func() {
-		_, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
+		_, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
 		openDone <- err
 	}()
 	select {
@@ -721,7 +724,7 @@ func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 	openDone := make(chan error, 1)
 	openFinished := false
 	go func() {
-		_, err := r.CreateSession(ctx, openLifecycleSession("revoked-session", filepath.Join(workspace, "project")))
+		_, err := (&harnessHost{runtime: r}).CreateSession(ctx, openLifecycleSession("revoked-session", filepath.Join(workspace, "project")))
 		openDone <- err
 	}()
 	defer func() {

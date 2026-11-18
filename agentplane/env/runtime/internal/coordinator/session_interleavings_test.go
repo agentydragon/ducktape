@@ -11,6 +11,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -70,7 +71,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	finishAdmission := holdJournalBatch(t, ctx, s)
 	admitted := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(sessionCallContext(r, ctx), &environmentruntimepb.SubmitInputRequest{
+		_, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, ctx), &harnesshostpb.SubmitInputRequest{
 			SessionId: s.ID(), CommandId: "held-input", Text: "input",
 		})
 		admitted <- err
@@ -217,7 +218,7 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
-		if interrupt, ok := request.(*environmentruntimepb.InterruptTurnRequest); ok && interrupt.GetCommandId() == "delayed-interrupt" {
+		if interrupt, ok := request.(*harnesshostpb.InterruptTurnRequest); ok && interrupt.GetCommandId() == "delayed-interrupt" {
 			close(entered)
 			select {
 			case <-release:
@@ -228,6 +229,7 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 		return next(ctx, request)
 	}))
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, r.control)
+	harnesshostpb.RegisterHarnessHostServer(server, &harnessHost{runtime: r})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -237,15 +239,15 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	incoming, _ := metadata.FromIncomingContext(sessionCallContext(r, ctx))
 	callCtx := metadata.NewOutgoingContext(ctx, incoming.Copy())
-	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
-	prior := &environmentruntimepb.ChangeModelRequest{SessionId: s.ID(), CommandId: "before-deletion", Model: "test-model"}
-	receipt, err := client.ChangeModel(callCtx, prior)
+	hostClient := harnesshostpb.NewHarnessHostClient(conn)
+	prior := &harnesshostpb.ChangeModelRequest{SessionId: s.ID(), CommandId: "before-deletion", Model: "test-model"}
+	receipt, err := hostClient.ChangeModel(callCtx, prior)
 	if err != nil {
 		t.Fatalf("pre-boundary admission: %v", err)
 	}
 	delayed := make(chan error, 1)
 	go func() {
-		_, err := client.InterruptTurn(callCtx, &environmentruntimepb.InterruptTurnRequest{SessionId: s.ID(), CommandId: "delayed-interrupt", TurnId: "old-turn"})
+		_, err := hostClient.InterruptTurn(callCtx, &harnesshostpb.InterruptTurnRequest{SessionId: s.ID(), CommandId: "delayed-interrupt", TurnId: "old-turn"})
 		delayed <- err
 	}()
 	select {
@@ -277,7 +279,7 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 	if command, err := s.EventJournal().GetCommand(ctx, "delayed-interrupt"); err != nil || command != nil {
 		t.Fatalf("late interrupt entered journal: %+v, %v", command, err)
 	}
-	retried, err := client.ChangeModel(callCtx, prior)
+	retried, err := hostClient.ChangeModel(callCtx, prior)
 	if err != nil || retried.GetAdmission().GetCursor() != receipt.GetAdmission().GetCursor() {
 		t.Fatalf("pre-boundary receipt retry = %+v, %v", retried, err)
 	}

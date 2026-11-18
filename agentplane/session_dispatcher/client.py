@@ -7,8 +7,8 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
-from agentplane.grpc.calls import call_unary, dial
-from agentplane.harness_host import harness_host_pb2_grpc
+from agentplane.grpc.calls import ServiceError, call_unary, dial
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.session_dispatcher.api import (
@@ -45,6 +45,20 @@ class SandboxControlClient:
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
+
+    def _metadata(
+        self, destination: SandboxDestination, expected_incarnation_uid: str | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        metadata = (
+            (SANDBOX_HEADER, destination.target.name),
+            (SANDBOX_NAMESPACE_HEADER, destination.target.namespace),
+            (SANDBOX_UID_HEADER, destination.target.uid),
+            (SANDBOX_OWNER_NAMESPACE_HEADER, destination.owner.namespace),
+            (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
+        )
+        if expected_incarnation_uid is not None:
+            return (*metadata, (INCARNATION_UID_HEADER, expected_incarnation_uid))
+        return metadata
 
     async def runner_unary[T](
         self,
@@ -89,9 +103,6 @@ class SandboxControlClient:
         timeout_s: float | None,
         expected_incarnation_uid: str | None,
     ) -> T:
-        incarnation_metadata = (
-            ((INCARNATION_UID_HEADER, expected_incarnation_uid),) if expected_incarnation_uid is not None else ()
-        )
         async with dial(
             self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
             channel_credentials=self.channel_credentials,
@@ -102,38 +113,66 @@ class SandboxControlClient:
                 request,
                 token_file=self.token_file,
                 timeout_s=timeout_s or self.request_timeout_s,
-                extra_metadata=(
-                    (SANDBOX_HEADER, destination.target.name),
-                    (SANDBOX_NAMESPACE_HEADER, destination.target.namespace),
-                    (SANDBOX_UID_HEADER, destination.target.uid),
-                    (SANDBOX_OWNER_NAMESPACE_HEADER, destination.owner.namespace),
-                    (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
-                    *incarnation_metadata,
-                ),
+                extra_metadata=self._metadata(destination, expected_incarnation_uid),
             )
 
     async def list_sessions(
         self, destination: SandboxDestination, *, expected_incarnation_uid: str | None = None
-    ) -> list[session_pb2.SessionSummary]:
-        """Read live runner inventory through the Gateway proxy, fenced to the expected Sandbox identity."""
-        response = await self.runner_unary(
-            destination,
-            lambda stub: stub.ListSessions,
-            session_pb2.ListSessionsRequest(),
-            expected_incarnation_uid=expected_incarnation_uid,
-        )
+    ) -> list[harness_host_pb2.Session]:
+        """Read live Session-host inventory through Environments, fenced to this Sandbox identity."""
+        async with dial(
+            self.control_target.format(sandbox=destination.target.name, namespace=destination.target.namespace),
+            channel_credentials=self.channel_credentials,
+            server_name=self.server_name,
+        ) as channel:
+            host: harness_host_pb2_grpc.HarnessHostStub = harness_host_pb2_grpc.HarnessHostStub(channel)
+            request = harness_host_pb2.ListSessionsRequest()
+
+            async def checked_call(
+                _request: Message,
+                *,
+                metadata: grpc.aio.Metadata,
+                timeout: float,  # noqa: ASYNC109 - gRPC callback option supplied by call_unary.
+            ) -> harness_host_pb2.ListSessionsResponse:
+                call = host.ListSessions(request, metadata=metadata, timeout=timeout)
+                headers = await call.initial_metadata()
+                version = [value for key, value in headers if key == "x-agentplane-harness-host-session-version"]
+                if version != ["1"]:
+                    if await call.code() != grpc.StatusCode.OK:
+                        return await call
+                    raise ServiceError(
+                        grpc.StatusCode.FAILED_PRECONDITION,
+                        "HarnessHost ListSessions returned an unsupported session version",
+                    )
+                return await call
+
+            response = await call_unary(
+                checked_call,
+                request,
+                token_file=self.token_file,
+                timeout_s=self.request_timeout_s,
+                extra_metadata=self._metadata(destination, expected_incarnation_uid),
+            )
         return list(response.sessions)
 
 
 class SandboxRunner:
     """One Sandbox's runner, reached through the shared Runner Gateway Service."""
 
-    def __init__(self, control: SandboxControlClient, destination: SandboxDestination) -> None:
+    def __init__(
+        self,
+        control: SandboxControlClient,
+        destination: SandboxDestination,
+        *,
+        host_control: SandboxControlClient | None = None,
+    ) -> None:
         self.control = control
         self.destination = destination
+        self.host_control = host_control
 
-    async def list_sessions(self, *, expected_incarnation_uid: str | None = None) -> list[session_pb2.SessionSummary]:
-        return await self.control.list_sessions(self.destination, expected_incarnation_uid=expected_incarnation_uid)
+    async def list_sessions(self, *, expected_incarnation_uid: str | None = None) -> list[harness_host_pb2.Session]:
+        control = self.control if self.host_control is None else self.host_control
+        return await control.list_sessions(self.destination, expected_incarnation_uid=expected_incarnation_uid)
 
     async def status(self) -> session_pb2.EnvironmentRuntimeStatus:
         return await self.control.runner_unary(

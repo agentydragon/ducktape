@@ -25,9 +25,10 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript_id
+from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.go_service import GoHistoryService
@@ -66,7 +67,7 @@ async def failed_bridge_state(
     state: dict[str, Any] = {}
     for session in await sandbox_runner.list_sessions():
         session_id = session.session_id
-        observed: dict[str, Any] = {"runner_cursor": session.last_cursor}
+        observed: dict[str, Any] = {"runner_cursor": runner.journal_cursor(session_id)}
         state[session_id] = observed
         try:
             async with asyncio.timeout(5):
@@ -112,9 +113,9 @@ async def _create(http: httpx.AsyncClient, spec: session_pb2.SessionSpec, sessio
     return thread_id
 
 
-async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> session_pb2.SessionStatus:
-    status = await runner.status()
-    return next(session for session in status.sessions if session.session_id == str(thread_id))
+async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> harness_host_pb2.Session:
+    sessions = await runner.list_sessions()
+    return next(session for session in sessions if session.session_id == str(thread_id))
 
 
 async def _kill_harness(runner: RunningRunner, sandbox_runner: SandboxRunner, thread_id: str | UUID) -> None:
@@ -783,8 +784,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     thread_id = UUID(await _create(http, spec, uuid4(), sandbox.uid))
     await accepted_session(session_dispatcher, thread_id)
     await history.service.settled(thread_id, lambda _summary: True)
-    (runner_session,) = [row for row in await sandbox_runner.list_sessions() if row.session_id == str(thread_id)]
-    opened_cursor = runner_session.last_cursor
+    opened_cursor = runner.journal_cursor(str(thread_id))
     assert opened_cursor == 0
     async with history.fence_ingress(thread_id):
         seed_response = await http.post(
@@ -806,15 +806,13 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                (summary,) = await sandbox_runner.list_sessions()
-                assert summary.last_cursor > seed.admission.cursor
-                assert not summary.active_turn_id
+                (session,) = await sandbox_runner.list_sessions()
+                assert runner.journal_cursor(str(thread_id)) > seed.admission.cursor
+                assert not session.active_turn_id
 
         if spec.placement.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
-            session_status = await _runner_session(sandbox_runner, thread_id)
-            assert session_status.HasField("native_session_id")
-            await wait_for_claude_transcript_id(
-                str(thread_id), session_status.native_session_id, runner.state_dir, "SEED_REPLY"
+            await wait_for_claude_transcript(
+                spec, str(thread_id), runner.journal_entries(str(thread_id)), runner.state_dir, "SEED_REPLY"
             )
         await _kill_harness(runner, sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
@@ -823,7 +821,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         ):
             with attempt:
                 (summary,) = await sandbox_runner.list_sessions()
-                assert summary.harness_state == session_pb2.HARNESS_STATE_STOPPED
+                assert summary.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
         receipt_response = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
@@ -844,11 +842,11 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                (summary,) = await sandbox_runner.list_sessions()
-                assert summary.last_cursor > receipt.admission.cursor
-                assert not summary.active_turn_id
-                control_cursor = summary.last_cursor
-        # Runner progress is visible through the control stream while the ingress transaction
+                (session,) = await sandbox_runner.list_sessions()
+                assert runner.journal_cursor(str(thread_id)) > receipt.admission.cursor
+                assert not session.active_turn_id
+                control_cursor = runner.journal_cursor(str(thread_id))
+        # Runner progress is visible in the local journal while the ingress transaction
         # waits on the History row; the app archive remains behind until the lock is released.
         # This cursor is a controlled prefix, not a quiescence barrier: Claude can emit its native
         # command_lifecycle completed frame after the result has already completed the turn.
@@ -858,8 +856,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
         stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            (summary,) = await sandbox_runner.list_sessions()
-            assert summary.last_cursor >= control_cursor
+            assert runner.journal_cursor(str(thread_id)) >= control_cursor
             assert await event_logs.read_watermark(thread_id) >= control_cursor
             assert await event_logs.last_cursor(thread_id) >= control_cursor
             archived = await event_logs.events(thread_id, limit=1000)

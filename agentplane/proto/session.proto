@@ -8,7 +8,6 @@ syntax = "proto3";
 package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
-import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 
 enum InitializationStream {
@@ -204,7 +203,8 @@ message GetStatusRequest {}
 
 message EnvironmentRuntimeStatus {
   repeated HarnessProcessStatus processes = 1;
-  repeated SessionStatus sessions = 2;
+  reserved 2;
+  reserved "sessions";
   string environment_runtime_boot_id = 3;
   EnvironmentRuntimeLifecycleStatus lifecycle = 4;
 }
@@ -289,24 +289,4 @@ message HarnessProcessStatus {
   Harness harness = 3;
   ProcessState state = 4;
   repeated string assigned_session_ids = 5;
-}
-
-enum SessionExecutionState {
-  SESSION_EXECUTION_STATE_UNSPECIFIED = 0;
-  SESSION_EXECUTION_STATE_DORMANT = 1;
-  SESSION_EXECUTION_STATE_PREPARING = 2;
-  SESSION_EXECUTION_STATE_READY = 3;
-  SESSION_EXECUTION_STATE_FAILED = 4;
-}
-
-message SessionStatus {
-  string session_id = 1;
-  optional string process_id = 2;
-  optional string native_session_id = 3;
-  SessionExecutionState execution_state = 4;
-  optional string active_turn_id = 5;
-  optional uint64 failure_cursor = 6;
-  // Aggregate busy state for older readers; blockers identify each current Session-owned reason.
-  bool busy = 7;
-  repeated AutosuspendBlocker busy_blockers = 8;
 }

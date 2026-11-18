@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"testing"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
@@ -59,7 +58,7 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
-	if _, err := r.CreateSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
@@ -245,7 +244,7 @@ func lifecycleTestSession(t *testing.T) (*Runtime, *session.Session) {
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	return r, r.sessions.Get("session-1")
@@ -284,7 +283,7 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runti
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	script := fmt.Sprintf("printf ready; IFS= read -r gate < %s", shellQuote(gate))
 	request.SetupScript = &script
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
@@ -724,7 +723,7 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 	statusReadErr := errors.New("injected aggregate-status read failure")
 	store.failNextStatusRead(r.lifecycleContext, statusReadErr)
 	before := s.EventJournal().LastCursor()
-	response, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{
+	response, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, context.Background()), &harnesshostpb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "admission-with-status-read-failure", Text: "input",
 	})
 	if err != nil || response == nil || response.Admission == nil || response.Admission.Cursor <= before {
@@ -756,7 +755,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	config.expectCloseError = true
 	r := newSessionTestRuntimeWithState(t, config, store)
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get(request.SessionId)
@@ -769,7 +768,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	}
 
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(sessionCallContext(r, context.Background()), &environmentruntimepb.SubmitInputRequest{
+	if _, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, context.Background()), &harnesshostpb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "after-failed-close-publication", Text: "late input",
 	}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("command after failed Close publication = %v, want Unavailable", err)
@@ -793,7 +792,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 	config.expectCloseError = true
 	store := &harnessHostAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
 	r := newSessionTestRuntimeWithState(t, config, store)
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
@@ -817,7 +816,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		_ = owner.Close()
 	})
 	cursor := s.EventJournal().LastCursor()
-	_, admissionErr := r.SubmitInput(sessionCallContext(r, r.lifecycleContext), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"})
+	_, admissionErr := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, r.lifecycleContext), &harnesshostpb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"})
 	if status.Code(admissionErr) != codes.Unavailable {
 		t.Fatalf("command with missing accounting = %v, want Unavailable", admissionErr)
 	}
@@ -840,7 +839,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		t.Fatalf("rejected command changed journal cursor: %d -> %d", cursor, after)
 	}
 	request := openLifecycleSession("new-session", filepath.Join(r.config.WorkspaceRoot, "project"))
-	if _, err := r.CreateSession(sessionCallContext(r, r.lifecycleContext), request); status.Code(err) != codes.Unavailable {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, r.lifecycleContext), request); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Session reservation with missing accounting = %v, want Unavailable", err)
 	}
 	if exists, err := r.store.Exists(request.SessionId); err != nil || exists {
@@ -854,7 +853,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
-	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
@@ -863,7 +862,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	releaseBatch := holdJournalBatch(t, ctx, s)
 	inputDone := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(sessionCallContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
+		_, err := (&harnessHost{runtime: r}).SubmitInput(sessionCallContext(r, ctx), &harnesshostpb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
 		inputDone <- err
 	}()
 	if err := watchSessionResource(ctx, r.lifecycleState, lifecycle.EnvironmentResourceID, func(input environmentAdmissionCountSpec) (bool, error) {

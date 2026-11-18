@@ -203,7 +203,6 @@ proto_library(
     srcs = ["session.proto"],
     visibility = ["//visibility:public"],
     deps = [
-        ":environment_lifecycle_proto",
         ":identity_proto",
         "@protobuf//:timestamp_proto",
     ],

@@ -15,9 +15,9 @@ from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
-from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.env.e2e.testing.process import RunningRunner, history_snapshot
 from agentplane.grpc.calls import ServiceError
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService, wait_for_history_session
@@ -85,34 +85,30 @@ class SessionFollow:
 
     async def submit_input(self, command_id: str, text: str) -> None:
         """Submit text and return once the runner admitted it."""
-        runner = await self._gateway.control.runner()
-        await runner.SubmitInput(
-            environment_runtime_pb2.SubmitInputRequest(
-                session_id=self.attached.session_id, command_id=command_id, text=text
-            )
+        host = await self._gateway.control.host()
+        await host.SubmitInput(
+            harness_host_pb2.SubmitInputRequest(session_id=self.attached.session_id, command_id=command_id, text=text)
         )
         self._ended = False
 
     async def interrupt_turn(self, command_id: str, turn_id: str) -> None:
-        runner = await self._gateway.control.runner()
-        await runner.InterruptTurn(
-            environment_runtime_pb2.InterruptTurnRequest(
+        host = await self._gateway.control.host()
+        await host.InterruptTurn(
+            harness_host_pb2.InterruptTurnRequest(
                 session_id=self.attached.session_id, command_id=command_id, turn_id=turn_id
             )
         )
 
     async def change_model(self, command_id: str, model: str) -> None:
-        runner = await self._gateway.control.runner()
-        await runner.ChangeModel(
-            environment_runtime_pb2.ChangeModelRequest(
-                session_id=self.attached.session_id, command_id=command_id, model=model
-            )
+        host = await self._gateway.control.host()
+        await host.ChangeModel(
+            harness_host_pb2.ChangeModelRequest(session_id=self.attached.session_id, command_id=command_id, model=model)
         )
 
     async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
-        runner = await self._gateway.control.runner()
-        await runner.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(
+        host = await self._gateway.control.host()
+        await host.ChangeReasoningEffort(
+            harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=self.attached.session_id, command_id=command_id, effort=effort
             )
         )
@@ -146,17 +142,19 @@ class SessionFollow:
             # Process exit can precede activation's command settlement. Read through the
             # runner's current published cursor once that work finishes, even if ingress lags.
             if self._ended and self._cursor >= self.attached.last_cursor:
-                runner = await self._gateway.control.runner()
-                status = await runner.GetStatus(session_pb2.GetStatusRequest())
-                session = next(row for row in status.sessions if row.session_id == session_id)
-                if session.busy:
-                    # Activation can finish after publishing its final Event, so completion
-                    # need not produce another ingress wakeup.
+                sessions = await self._gateway.control.list_sessions()
+                session = next((row for row in sessions if row.session_id == session_id), None)
+                if session is not None and (session.active_turn_id or session.pending_commands):
+                    # The host status replaces Runtime's per-Session busy diagnostic.
                     await asyncio.sleep(0.01)
                     continue
-                summaries = await runner.ListSessions(session_pb2.ListSessionsRequest())
-                summary = next(row for row in summaries.sessions if row.session_id == session_id)
-                if summary.harness_state == session_pb2.HARNESS_STATE_STOPPED and self._cursor >= summary.last_cursor:
+                snapshot = await history_snapshot(self._history, session_id)
+                if (
+                    session is not None
+                    and session.WhichOneof("host") == "environment_hosted"
+                    and session.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
+                    and self._cursor >= snapshot.last_cursor
+                ):
                     raise StreamClosedError
             await self._wait_for_history_change()
         entry = self._pending.pop(0)
@@ -242,28 +240,28 @@ class RunnerDriver:
         """Follow after `after_cursor`, durably reserving or confirming the session when given a spec."""
         session_id = runner_test_session_id(session_id)
         if spec is None:
-            summary = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
-            if summary is None:
+            session = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
+            if session is None:
                 raise grpc.aio.AioRpcError(
                     grpc.StatusCode.NOT_FOUND, grpc.aio.Metadata(), grpc.aio.Metadata(), f"no session {session_id}"
                 )
-            attached = session_pb2.Attached(
-                session_id=summary.session_id,
-                spec=summary.spec,
-                last_cursor=summary.last_cursor,
-                harness_state=summary.harness_state,
-                active_turn_id=summary.active_turn_id,
-                setup_state=summary.setup_state,
-                launch_outcome=summary.launch_outcome,
+            attached = await history_snapshot(self.history, session_id)
+            hosted = session.environment_hosted
+            attached.setup_state = hosted.setup
+            attached.harness_state = (
+                session_pb2.HARNESS_STATE_RUNNING
+                if hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
+                else session_pb2.HARNESS_STATE_STOPPED
             )
+            attached.active_turn_id = session.active_turn_id
             return self._follow(attached, after_cursor)
-        runner = await self.gateway.control.runner()
-        create = environment_runtime_pb2.CreateSessionRequest(
+        host = await self.gateway.control.host()
+        create = harness_host_pb2.CreateSessionRequest(
             session_id=session_id, spec=spec, execution_identity=self.gateway.execution_identity
         )
         if setup_script is not None:
             create.setup_script = setup_script
-        attached = (await runner.CreateSession(create)).attached
+        attached = (await host.CreateSession(create)).attached
         return self._follow(attached, after_cursor)
 
     def _follow(self, attached: session_pb2.Attached, after_cursor: int) -> SessionFollow:
@@ -271,9 +269,8 @@ class RunnerDriver:
         self._followers.append(follow)
         return follow
 
-    async def list_sessions(self) -> list[session_pb2.SessionSummary]:
-        runner = await self.gateway.control.runner()
-        return list((await runner.ListSessions(session_pb2.ListSessionsRequest())).sessions)
+    async def list_sessions(self) -> list[harness_host_pb2.Session]:
+        return await self.gateway.control.list_sessions()
 
     async def quiesce(self) -> session_pb2.QuiesceResponse:
         """Request quiesce, then verify History committed every acknowledged Session seal."""
@@ -284,15 +281,15 @@ class RunnerDriver:
                 quiesce_stage=environment_runtime_state_pb2.EnvironmentRuntimeFacts.QUIESCE_STAGE_QUIESCED
             )
         )
-        sessions = await runner.ListSessions(session_pb2.ListSessionsRequest())
-        for session in sessions.sessions:
+        sessions = await self.gateway.control.list_sessions()
+        for session in sessions:
             page = await self.history.read_session_events(session.session_id, after_cursor=0, limit=1)
             if not page.HasField("feed_state") or not page.feed_state.HasField("sealed"):
                 raise RuntimeError(f"Runner acknowledged quiesce without a History seal for {session.session_id}")
-            if page.feed_state.sealed.cursor != session.last_cursor:
+            if page.feed_state.sealed.cursor != page.last_cursor:
                 raise RuntimeError(
                     f"History sealed {session.session_id} at {page.feed_state.sealed.cursor}, "
-                    f"but runner reports cursor {session.last_cursor}"
+                    f"but its committed watermark is {page.last_cursor}"
                 )
         return response
 

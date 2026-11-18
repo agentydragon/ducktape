@@ -45,13 +45,13 @@ Runtime incarnation and boot fencing. Callers may additionally provide one non-e
 resolves and validates the current Sandbox and Pod first, then returns `Aborted` without forwarding
 if that incarnation differs. A duplicate or empty value is `InvalidArgument`.
 
-- `environment_service.runtime_proxy.session_callers` grants Runtime `CreateSession`, `SubmitInput`, `ChangeModel`,
-  `ChangeReasoningEffort` and `InterruptTurn` on both Runtime APIs, plus HarnessHost `ListSessions` and `WatchSessions`,
+- `environment_service.runtime_proxy.session_callers` grants HarnessHost `CreateSession`, `SubmitInput`, `ChangeModel`,
+  `ChangeReasoningEffort`, `InterruptTurn`, `ListSessions` and `WatchSessions`,
   to exact Sessions service actors. Dispatcher workers present their Sessions certificate across replicas; they replace
   outgoing metadata and never forward a caller's credentials. There is no startup TokenReview or own-Pod authentication
   read.
-- `environment_service.runtime_proxy.readers` grants the existing EnvironmentRuntime `ListSessions` and `GetStatus`
-  diagnostics, without command or wake authority. `HarnessHost.ListSessions` admits the union of `readers` and
+- `environment_service.runtime_proxy.readers` grants EnvironmentRuntime `GetStatus`
+  process/lifecycle diagnostics, without command or wake authority. `HarnessHost.ListSessions` admits the union of `readers` and
   `session_callers`, pairing the existing inventory readers with Sessions' watch grant.
   `WatchState` remains private to proxy-to-Runtime observation.
 - `environment_service.runtime_proxy.controller_callers` grants `Quiesce`, `PrepareSuspend` and `ResumeAdmission`.
@@ -106,3 +106,14 @@ collide with the new `Session` status. It forwards the verified marker with List
 missing, duplicate or unsupported versions return `FailedPrecondition`. Downstream status readers
 must likewise validate the initial header before receiving frames, so an older proxy cannot make
 an old Runtime appear compatible. Unavailable status must remain unknown to those readers.
+
+## Contracted Runtime API
+
+EnvironmentRuntime forwards only `GetStatus`, `Quiesce`, `PrepareSuspend` and `ResumeAdmission`;
+`WatchState` remains the private observation transport. Session creation, commands and inventory
+use HarnessHost exclusively. An old Runtime can keep serving until its Sandbox restarts: its
+HarnessHost, lifecycle and diagnostic methods remain compatible. Calls to the removed
+EnvironmentRuntime Session paths stop at Environments with `UNIMPLEMENTED` and never reach that
+Runtime. An old Runtime's `GetStatus` can still contain field 2 (Session rows); Environments selects
+only process, boot and lifecycle diagnostic fields before returning it, including through
+EnvironmentService.GetRuntimeDiagnostics. Unknown legacy Session data is not forwarded.
