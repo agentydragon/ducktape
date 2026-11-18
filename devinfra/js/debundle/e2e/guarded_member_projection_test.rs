@@ -6,11 +6,67 @@ use debundle_e2e_support::saved_analysis::{
 use debundle_e2e_support::*;
 use serde_json::Value;
 
+const CONDITION_SNAPSHOT_ROUTE: &str = r#"
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (const key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key) &&
+        ((value = record[key]), value != null)) {
+      switch (key) {
+        case "payload": chosen = value; break;
+        default: break;
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
+const SEPARATE_NULL_CHECK_ROUTE: &str = r#"
+function choosePayload(record) {
+  let chosen = null;
+  for (let key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      var value = record[key];
+      if (value != null) {
+        switch (key) {
+          case "payload": chosen = value; break;
+          default: break;
+        }
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
+const MUTATED_KEY_ROUTE: &str = r#"
+function choosePayload(record) {
+  let value;
+  let chosen = null;
+  for (let key in record) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      value = record[key];
+      key = "payload";
+      if (value != null) {
+        switch (key) {
+          case "payload": chosen = value; break;
+          default: break;
+        }
+      }
+    }
+  }
+  return chosen;
+}
+"#;
+
 #[test]
 fn keyed_payload_switch_does_not_treat_retained_callbacks_as_the_payload() {
     fn run_case(
         selection: &str,
         mutate: bool,
+        route: &str,
         expected: &'static str,
     ) -> (StagedInvocation, StagedInvocation, &'static str) {
         let write = if mutate {
@@ -28,26 +84,14 @@ function callback() {
   return later;
 }
 const record = { payload: service, compare: callback };
-function choosePayload(record) {
-  let value;
-  let chosen = null;
-  for (const key in record) {
-    if (Object.prototype.hasOwnProperty.call(record, key) &&
-        ((value = record[key]), value != null)) {
-      switch (key) {
-        case "payload": chosen = value; break;
-        default: break;
-      }
-    }
-  }
-  return chosen;
-}
+__ROUTE__
 const wrapped = factory(callback);
 later = 42;
 console.log(wrapped.invoke(), service.state);
 "#
         .replace("__WRITE__", write)
-        .replace("__SELECTION__", selection);
+        .replace("__SELECTION__", selection)
+        .replace("__ROUTE__", route);
         let (stage, _) = staged(
             FixtureOpts::new(
                 &source,
@@ -91,6 +135,7 @@ console.log(wrapped.invoke(), service.state);
             "computed switch",
             "choosePayload(record)",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 ready\n",
         ),
@@ -98,6 +143,7 @@ console.log(wrapped.invoke(), service.state);
             "literal payload",
             "record.payload",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 ready\n",
         ),
@@ -105,6 +151,7 @@ console.log(wrapped.invoke(), service.state);
             "computed without write",
             "choosePayload(record)",
             false,
+            CONDITION_SNAPSHOT_ROUTE,
             true,
             "42 new\n",
         ),
@@ -112,19 +159,51 @@ console.log(wrapped.invoke(), service.state);
             "callback payload",
             "choosePayload({payload: callback})",
             true,
+            CONDITION_SNAPSHOT_ROUTE,
+            false,
+            "42 new\n",
+        ),
+        (
+            "separate null check",
+            "choosePayload(record)",
+            true,
+            SEPARATE_NULL_CHECK_ROUTE,
+            true,
+            "42 ready\n",
+        ),
+        (
+            "separate null check callback payload",
+            "choosePayload({payload: callback})",
+            true,
+            SEPARATE_NULL_CHECK_ROUTE,
+            false,
+            "42 new\n",
+        ),
+        (
+            "separate null check after key mutation",
+            "choosePayload(record)",
+            true,
+            MUTATED_KEY_ROUTE,
             false,
             "42 new\n",
         ),
     ];
-    for (label, selection, mutate, accepted, expected) in cases {
-        let (fresh, saved, expected) = run_case(selection, mutate, expected);
+    let mut runs = Vec::new();
+    for (label, selection, mutate, route, accepted, expected) in cases {
+        let (fresh, saved, expected) = run_case(selection, mutate, route, expected);
+        runs.push((label, accepted, expected, fresh, saved));
+    }
+
+    let mut failures = Vec::new();
+    for (label, accepted, expected, fresh, saved) in runs {
         for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
-            assert_eq!(
-                invocation.result.status.success(),
-                accepted,
-                "{label} {kind} acceptance mismatch:\n{}",
-                invocation.result.stderr
-            );
+            if invocation.result.status.success() != accepted {
+                failures.push(format!(
+                    "{label} {kind} acceptance mismatch:\n{}",
+                    invocation.result.stderr
+                ));
+                continue;
+            }
             let emitted = invocation.output_root().join("app/static/app/entry.js");
             if accepted {
                 assert_node_output(&emitted, expected, "");
@@ -134,24 +213,30 @@ console.log(wrapped.invoke(), service.state);
                         .output_root()
                         .join("reports/tree/static/app/atomic_group_conflicts.json"),
                 );
-                assert!(
-                    conflicts.as_array().is_some_and(|groups| {
-                        groups.iter().any(|group| {
-                            group["claims"].as_array().is_some_and(|claims| {
-                                claims.iter().any(|claim| {
-                                    claim["binding_names"].as_array().is_some_and(|names| {
-                                        names.iter().any(|name| name == "later")
-                                    })
-                                })
+                if !conflicts.as_array().is_some_and(|groups| {
+                    groups.iter().any(|group| {
+                        group["claims"].as_array().is_some_and(|claims| {
+                            claims.iter().any(|claim| {
+                                claim["binding_names"]
+                                    .as_array()
+                                    .is_some_and(|names| names.iter().any(|name| name == "later"))
                             })
                         })
-                    }),
-                    "{label} {kind} refusal had no conflict witness involving `later`: {conflicts:#?}"
-                );
+                    })
+                }) {
+                    failures.push(format!(
+                        "{label} {kind} refusal had no conflict witness involving `later`: {conflicts:#?}"
+                    ));
+                }
             }
         }
         assert_same_invocation_trees(&fresh, &saved);
     }
+    assert!(
+        failures.is_empty(),
+        "case failures:\n{}",
+        failures.join("\n")
+    );
 }
 const PROVIDER: &str = "export function factory(callback) { return { invoke: callback }; }\n";
 

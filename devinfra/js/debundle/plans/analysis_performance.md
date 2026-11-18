@@ -30,34 +30,17 @@ is outside this performance target. The clock includes the fresh shared analysis
 and passing-subset application, even though analysis also serves other specs.
 Keep proprietary captures and source witnesses in the private repository.
 
-The guarded-snapshot certificate refinement has landed in
-[PR #17547](https://github.com/agentydragon/ducktape/pull/17547), with neutral
-CLI and unsafe-cut controls. Preserve its certificate conditions and effect
-gates; do not repeat that implementation as an open PF0 slice. A targeted
-certificate has established admission for one exact use, but surviving paths
-and unchanged passing-subset acceptance remain open.
+Preserve the [guarded-snapshot certificate conditions and effect gates](../docs/inference.md#guarded-snapshot-read-certificates),
+including their neutral CLI and unsafe-cut controls. Admission of an exact use
+or a synthetic cut does not establish unchanged passing-subset acceptance.
 
 Remaining work, in order:
 
-1. Establish the old/current decision delta before proposing another
-   recognizer. First verify that existing baseline and current receipts use the
-   same frozen source, spec, packages, configuration and complete validator
-   stages. Reuse comparable receipts instead of rerunning an expensive baseline
-   solely to reconstruct known results. For the selected failing cut/call,
-   compare its atomic group, matching protected origins, mutation receivers
-   and first rejecting predicate. Identify
-   the first decision difference and inventory all origins/predicates that
-   contribute to that cut/call, grouped by cause. This comparison localizes a
-   difference; attribute causality only through a controlled experiment that
-   holds inputs fixed and isolates one engine change. A full normal-gate replay
-   may expose further independent blockers.
-
-   Same-engine local or program queries, source inspection, saved-artifact
-   application, and narrower selection checks are diagnostic only. They can
-   localize a decision but cannot establish normal-gate acceptance, whole
-   program behavior or a performance improvement.
-
-2. Follow targeted value-bearing provenance for each inventoried cause. Track
+1. Use the recorded old/current selected-call inventory and same-engine
+   local/program comparison in the private investigation. Reuse their frozen
+   input identities and receipts; do not rerun an expensive baseline solely to
+   reconstruct those decisions. Follow targeted value-bearing provenance for
+   each inventoried cause before proposing another recognizer. Track
    the values and predicates that reach the actual rejection, grouping paths
    that share a causal transition. Distinguish the contribution that changes
    the gate decision from inherited or unrelated origins; an origin-set size
@@ -65,7 +48,18 @@ Remaining work, in order:
    certificate premises, while keeping source provenance separate from later
    interpreter fallback or global reach.
 
-3. Run a causal experiment for one grouped cause at a time. State the predicted
+   Bound capture, retained traversal state and output independently. Emit a
+   connected value-source witness; dependency reads used only to select a
+   receiver or callee are not value provenance. Record omitted alternatives,
+   unsupported transitions and exhausted budgets explicitly. A missing witness
+   never establishes absence. Validate the observer on small positive and
+   control-only paths, with emitted behavior and gate-decision parity.
+
+   Same-engine queries, source inspection, saved-artifact application and
+   narrower selection checks are diagnostic only. They cannot establish
+   normal-gate acceptance, whole-program behavior or a performance improvement.
+
+2. Run a causal experiment for one grouped cause at a time. State the predicted
    decision or provenance change, hold source/spec and the rest of the engine
    fixed, and compare the result with the baseline and relevant negative
    controls. If the predicted change does not occur, stop and update the cause
@@ -75,14 +69,14 @@ Remaining work, in order:
    zero-swap cap, labeling them diagnostic-only; they do not satisfy the
    300-second completion requirement.
 
-4. Add or extend a neutral real-CLI regression for the actual source-chain
+3. Add or extend a neutral real-CLI regression for the actual source-chain
    shape. Reproduce the current normal-gate refusal, then assert the intended
    accepted-and-emitted behavior for the valid case and retain unsafe-cut
    controls for mutation, getters, captures, writes and unsupported shapes.
    Check fresh/saved parity and emitted runtime behavior. Analysis queries,
    synthetic-only fixtures and report output cannot serve as the sole oracle.
 
-5. Re-run the unchanged passing ownership subset through the normal gate. It
+4. Re-run the unchanged passing ownership subset through the normal gate. It
    must pass ownership, realizability, selector realization, translation and
    emitted-runtime checks without weakening those checks or changing the
    selected assignment. Keep exact-use admission, the full-gate result, and
@@ -97,7 +91,7 @@ Remaining work, in order:
    more than 10%. This is independent of private-subset acceptance. Diagnostic
    builds and instrumented profiles do not qualify.
 
-6. Only after the unchanged subset passes, measure the final production path
+5. Only after the unchanged subset passes, measure the final production path
    with a fresh, unprofiled optimized run. Include fresh projection, whole-
    program analysis and passing-subset application; finish within 300 seconds
    and 16 GiB. Compare gate and emitted-program behavior as well as time.
