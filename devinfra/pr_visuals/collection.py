@@ -18,7 +18,14 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
-from devinfra.pr_visuals.artifacts import Download, ListedArtifact, Runner, download_blobs, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import (
+    BESTestSummary,
+    Download,
+    ListedArtifact,
+    Runner,
+    download_blobs,
+    list_ci_artifacts,
+)
 from devinfra.testing.output_records import RECORDS_DIR, TEST_OUTPUTS_DIR, OutputRecord, is_canonical_output_path
 
 logger = logging.getLogger(__name__)
@@ -105,19 +112,10 @@ class SourceFile:
 
 
 @dataclass(frozen=True)
-class SourceSummary:
-    overall_status: str | None
-    run_count: int | None
-    shard_count: int | None
-    attempt_count: int | None
-    total_run_count: int | None
-
-
-@dataclass(frozen=True)
 class SourceResult:
     key: ResultKey
     status: str | None
-    summary: SourceSummary | None
+    summary: BESTestSummary | None
     files: tuple[SourceFile, ...]
     issues: tuple[str, ...] = ()
 
@@ -221,15 +219,15 @@ def collect_outputs(
     sources: list[SourceResult] = []
     for key, items in by_result.items():
         statuses = {item.artifact.status for item in items}
-        summaries = {repr(item.artifact.test_summary) for item in items}
+        summary = items[0].artifact.test_summary
         source_issues: list[str] = []
         if len(statuses) != 1:
             source_issues.append(f"conflicting statuses {sorted(str(s) for s in statuses)}")
-        if len(summaries) != 1:
+        if any(item.artifact.test_summary != summary for item in items):
             source_issues.append("missing or inconsistent test summary")
+            summary = None
         if download_issue is not None and any(item.artifact.file.name.startswith(_RECORDS) for item in items):
             source_issues.append(download_issue)
-        summary = items[0].artifact.test_summary
         files = []
         for item in items:
             digest, size = _cas_digest(item.artifact.file.uri) or (None, None)
@@ -238,19 +236,7 @@ def collect_outputs(
             )
         sources.append(
             SourceResult(
-                key,
-                next(iter(statuses)) if len(statuses) == 1 else None,
-                SourceSummary(
-                    summary.overall_status,
-                    summary.run_count,
-                    summary.shard_count,
-                    summary.attempt_count,
-                    summary.total_run_count,
-                )
-                if summary is not None and len(summaries) == 1
-                else None,
-                tuple(files),
-                tuple(source_issues),
+                key, next(iter(statuses)) if len(statuses) == 1 else None, summary, tuple(files), tuple(source_issues)
             )
         )
     return collect_materialized_outputs(sources, repository, targets=expected)

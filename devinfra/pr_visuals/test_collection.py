@@ -10,12 +10,11 @@ from typing import TypedDict, Unpack
 import pytest
 import pytest_bazel
 
-from devinfra.pr_visuals.artifacts import BuildBuddyArtifact, Runner
+from devinfra.pr_visuals.artifacts import BESTestSummary, BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import (
     ResultKey,
     SourceFile,
     SourceResult,
-    SourceSummary,
     collect_materialized_outputs,
     collect_outputs,
 )
@@ -43,12 +42,12 @@ def _artifact(
         name,
         uri,
         result=ResultKey("invocation", target, configuration, run, shard, attempt),
-        summary=SourceSummary(
-            overall_status,
-            run_count,
-            shard_count,
-            attempt_count,
-            total_run_count if total_run_count is not None else run_count * shard_count,
+        summary=BESTestSummary(
+            overallStatus=overall_status,
+            runCount=run_count,
+            shardCount=shard_count,
+            attemptCount=attempt_count,
+            totalRunCount=total_run_count if total_run_count is not None else run_count * shard_count,
         ),
         status=status,
     )
@@ -237,6 +236,20 @@ def test_summary_count_exposes_missing_result_attempt() -> None:
     assert any("listed 1 result attempts but summary reports 2" in issue.message for issue in collected.issues)
 
 
+def test_conflicting_artifact_summaries_prevent_result_selection() -> None:
+    artifacts, blobs = _pair("one", "a")
+    summary = artifacts[1].test_summary
+    assert summary is not None
+    artifacts[1].test_summary = summary.model_copy(update={"total_run_count": 2})
+
+    collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs, []))
+
+    assert len(collected.observations) == 1
+    assert not collected.selected
+    assert not collected.complete
+    assert any(issue.message == "missing or inconsistent test summary" for issue in collected.issues)
+
+
 def test_unknown_terminal_status_keeps_outputs_but_does_not_select() -> None:
     artifacts, blobs = _pair("same", "a", status=None)
     collected = collect_outputs(["invocation"], "agentydragon/ducktape", run=_run(artifacts, blobs, []))
@@ -351,7 +364,7 @@ def _materialized_source() -> SourceResult:
     return SourceResult(
         ResultKey("local-invocation", "//ui:visual", "config-a", 1, 1, 1),
         "PASSED",
-        SourceSummary("PASSED", 1, 1, 1, 1),
+        BESTestSummary(overallStatus="PASSED", runCount=1, shardCount=1, attemptCount=1, totalRunCount=1),
         (
             SourceFile(
                 "test.outputs/test-outputs/files/capture.png",
