@@ -21,6 +21,9 @@ Retain current baselines and active review dependencies regardless of age.
    `reviews-test-outputs/<full-sha>/` prefix. Group objects by full commit SHA. A
    bundle is old only when its newest object predates the cutoff. Do not
    recursively list the filer filesystem.
+   During the 2026-11-02 cleanup, a recursive listing coincided with
+   `seaweedfs-filer-0` exiting 137 (`OOMKilled`). Earlier logs showed a canceled
+   `listDirectory` at `/` with limit `100000`. The evidence establishes timing only.
 3. Protect every commit reached by `baselines/reviews-test-outputs/<slug>.json`, open PR heads and
    current merge bases, and recorded `base_sha`/`merge_base_sha` dependencies.
    Follow dependencies of retained metadata until no new protected commits appear.
@@ -55,7 +58,7 @@ Reference the Secret without printing or copying its values. Keep the inventory,
 request and response records, and deletion journal outside the Job's ephemeral
 filesystem.
 
-The tested alternative is a local bounded client through a Kubernetes port-forward.
+The 2026-11-02 cleanup completed with a bounded local client through a Kubernetes port-forward.
 Keep this command running in a separate terminal and point the client at
 `http://127.0.0.1:18733`:
 
@@ -119,9 +122,6 @@ Volumes below the garbage threshold can remain for normal maintenance.
 After compaction, repeat baseline image reads and check workload readiness. Record
 S3 payload totals and collection-size reduction separately; ongoing publication
 means a net size change is not exact accounting of this operation alone.
-
-The 2026-11-02 filer OOM evidence and its limits are recorded in
-[the cleanup incident note](../debug/2026-11-02-filer-oom-during-cleanup.md).
 
 ## Measured cleanup, 2026-10-19
 
