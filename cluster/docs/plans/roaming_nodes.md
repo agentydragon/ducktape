@@ -22,11 +22,7 @@ consumer reads that as a failure. A DaemonSet keeps counting the node as desired
 deleted there stays Terminating and holds the rollout budget. Helm and Flux wait on those
 counts, and stock alerts fire. Each consumer has been patched separately:
 
-- `maxUnavailable` above the laptop count on each DaemonSet (`monitoring/loki.py`,
-  `monitoring/alloy.py`, `node_feature_discovery.py`), pinned by
-  `test_roaming_daemonset_capacity` against `nebula-mesh.json`.
-- `disableWait` on kube-prometheus-stack, promtail and NFD, and a sequential manual Cilium
-  rollout (`cilium.tf`).
+- A sequential manual Cilium rollout (`cilium.tf`).
 - Forked kube-prometheus-stack rules excluding the roaming taint (`monitoring/rules.py`),
   re-diffed every chart bump. Alerts without a `node` label (`KubePodCrashLooping`,
   `KubeDaemonSetRolloutStuck`, `KubeDeployment*`, `KubeJobFailed`, node-exporter
@@ -57,8 +53,7 @@ Rejected alternatives:
 ## Remaining work
 
 Verified live on 2026-11-14 with `rugged`: tainted while offline, untainted 2 s after its
-kubelet returned, every DaemonSet pod back within seconds. The DaemonSet `maxUnavailable`
-floors and Helm `disableWait` are gone.
+kubelet returned, every DaemonSet pod back within seconds.
 
 - **Cilium:** verify on the next laptop resume that its agent and envoy, which no longer
   tolerate the taint, come back and the laptop's pods get networking.
