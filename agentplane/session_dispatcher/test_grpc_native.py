@@ -19,7 +19,7 @@ from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.calls import ServiceError
 from agentplane.harness_host import harness_host_pb2
-from agentplane.history_service.testing.go_service import wait_for_history_session
+from agentplane.history_service.testing.go_service import wait_for_history_session, wait_for_history_snapshot
 from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -308,7 +308,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert opened.environment_hosted.setup == session_pb2.SETUP_STATE_SUCCEEDED
     # Setup completion and the first History announcement are independent wakeups.
     await wait_for_history_session(runner.history, session)
-    attached = await history_snapshot(runner, session)
+    attached = await wait_for_history_snapshot(runner.history, session, timeout_s=10)
     assert session in attached.spec.instructions
     assert (
         await create_session(
