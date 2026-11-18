@@ -1,12 +1,10 @@
 # Authored conversation CLI experiment
 
 Specification for a bounded experiment. Prototype source is under
-[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The first bounded Qwen
-paired pass and failed-case repeats are recorded in the
-[findings](../debug/2026_11_12_authored_conversation_cli.md). A follow-up
-[prompting and Luna comparison](../debug/2026_11_12_authored_conversation_prompting.md) fixed the
-observed missing publications using a clearer interface explanation on both models, and tests an
-always-required protocol with an explicit yield tool. Preliminary progress remains inconsistent. The
+[`agentplane/x/authored_conversation/`](../x/authored_conversation/README.md). The
+[publication and yield probes](../debug/authored_conversation/README.md#publication-and-yield) record Qwen's repeated missing
+publications under the concise prompt and the later explanatory prompt and explicit-yield
+results for Qwen and Luna. Preliminary progress remains inconsistent. The
 [task DAG](task_dag.md#agent_authored_conversations_experiment--try-an-authored-conversation-in-a-cli)
 owns its scheduling. The experiment informs the broader conversation decision without choosing
 Agentplane's eventual history architecture.
@@ -143,7 +141,7 @@ not additional gates for W1-W4:
   uses and understands reactions. Compare notifying it of a reaction with discovering one on a
   later read before choosing wakeup behavior or fixed emoji meanings.
 - **Editing past messages:** the CLI now supports revisioned edits by both participants. The first
-  [live revision probe](../debug/2026_11_12_authored_conversation_editing.md) showed Qwen and Luna
+  [live revision probe](../debug/authored_conversation/README.md#editing-a-prior-answer) showed Qwen and Luna
   revising an existing answer after the human edited an earlier instruction; Luna also appended
   an unnecessary acknowledgement. Next try edits during live work and rereading after a context
   reset. Check whether the agent proceeds from the corrected conversation without treating stale
