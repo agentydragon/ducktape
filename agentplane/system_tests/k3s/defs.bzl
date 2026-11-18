@@ -92,7 +92,7 @@ HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
 }
 CENTRAL_IMAGES = {
-    "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
+    "//agentplane/sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
 }
 MCP_FIXTURE_IMAGES = {
     "@dex_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-dex:unset",

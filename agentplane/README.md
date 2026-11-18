@@ -40,7 +40,7 @@ and its [Pipe CRD](https://github.com/tg123/sshpiper/blob/v1.6.1/plugin/kubernet
 The cluster is configured to retain that CRD through a [non-pruning Flux Kustomization](../cluster/cdk8s/sshpiper_crds/flux_kustomizations.py);
 this does not imply an SSH proxy is currently deployed.
 
-The opt-in [central code-mode sampler](central_sampler/README.md) keeps sampling, JavaScript
+The opt-in [Sampler](sampler/README.md) keeps sampling, JavaScript
 and continuation in a separate service and database; the Sandbox supplies only its executor.
 Wrapped Codex and Claude continue to sample and execute inside their Sandbox. Staging enables the
 optional cdk8s sampler with shared Responses routes and a separate direct-API selection. Existing

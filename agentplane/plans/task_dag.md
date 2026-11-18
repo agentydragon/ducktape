@@ -114,9 +114,9 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 **Two-week timebox; operator dispatch, 2026-10-30 PDT; remaining scope reconciled 2026-11-02 UTC.**
 Reliability contracts live in the
-[runtime specification](../central_sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../central_sampler/docs/blocked_session_recovery.md). The
-[acceptance record](../central_sampler/docs/rollout_acceptance.md)
+[runtime specification](../sampler/SPEC.md#runtime-and-effects) and
+[recovery guide](../sampler/docs/blocked_session_recovery.md). The
+[acceptance record](../sampler/docs/rollout_acceptance.md)
 retains the deployed exporter evidence and its limits.
 The shared explicit/automatic resume authority and uncertain-outcome contract live in the
 [lifecycle manager specification](../environments/lifecycle/SPEC.md) and concise
@@ -151,7 +151,7 @@ Natural-agent delegation usability is an operator follow-up; no model exercise i
 Focused regression tests and Bazel runs remain authorized; broad disruption exercises remain waived.
 Revisit reliability work when normal use exposes a concrete regression. Provider attempt recovery
 and remaining native cleanup blocks follow the
-[sampler contract](../central_sampler/SPEC.md#runtime-and-effects); the executor's survival across
+[sampler contract](../sampler/SPEC.md#runtime-and-effects); the executor's survival across
 control-plane rolls is
 [`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
 
@@ -744,7 +744,7 @@ brief remains separate, without requiring presets. Keep current duplication unti
 reviewed; do not assume native and central runtime needs are interchangeable. This entry selects no
 guidance service, new network dependency, Dispatcher ownership, or runtime-unification mechanism.
 The [current guidance contract](../session_instructions/README.md) and
-[managed rollout](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
+[managed rollout](../sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
 remain valid during this later design; it does not block current reliability or delegation work.
 Related deferred work: [consolidate agents' access to documentation and system configuration](task_freezer.md#agent_platform_information_design--consolidate-documentation-and-system-configuration-access).
 
@@ -989,7 +989,7 @@ Codex already runs one app-server and store per Runner, and Claude one process p
 the recommendation covers what remains open around them.
 
 Central Codex hosting through Sandbox exec servers is the opt-in
-[central sampler](../central_sampler/README.md), which coexists with local modes. It does not gate
+[central sampler](../sampler/README.md), which coexists with local modes. It does not gate
 the current placement decision or separate tool memory containment.
 
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
@@ -1200,7 +1200,7 @@ paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-base
 The newer [Session/environment model and discussion](session_environment_model.md) records selected
 direction and remaining decisions; current opening and recovery behavior is in the
 [Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md), [Runtime SPEC](../env/runtime/SPEC.md) and
-[central sampler SPEC](../central_sampler/SPEC.md). The earlier descriptions below are context where superseded by that direction.
+[central sampler SPEC](../sampler/SPEC.md). The earlier descriptions below are context where superseded by that direction.
 The [current component boundaries](session_runtime_model.md#role-boundaries-and-routing) inform this
 broader object/API decision without making it a prerequisite for selected execution or delegation work.
 Session/Environment dispatch roles are
@@ -1369,14 +1369,14 @@ cell output likely needs `STRUCTURED_TOOL_OUTPUT`.
 `ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k` returned HTTP 400 through LiteLLM:
 `input[0]: unknown input item type: "additional_tools"`. Each route now declares its Responses
 dialect and exec encoding; standard mode sends top-level function tools and rejects compaction
-([SPEC](../central_sampler/SPEC.md)). Remaining:
+([SPEC](../sampler/SPEC.md)). Remaining:
 
 - A bounded check against the reported route establishing its actual accepted wire contract; the
   standard/JSON path is covered only by deterministic fixtures.
 - Compaction for standard-mode routes: `CENTRAL_SAMPLER_PROMPT_COMPACTION`.
 
 Do not silently strip required tool behavior, retry arbitrary HTTP 400s with progressively different
-payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../central_sampler/docs/anthropic_acceptance.md);
+payloads, or replay already dispatched effects. Independent of the [deployed Anthropic adapter](../sampler/docs/anthropic_acceptance.md);
 no implementation or rollout is scheduled by this entry.
 
 ### `CENTRAL_SAMPLER_PROMPT_COMPACTION` — compaction by our own prompt
@@ -1398,7 +1398,7 @@ compact how.
 ### `CENTRAL_SAMPLER_BACKGROUND_COMPACTION` — summarize while sampling continues
 
 **Unscheduled; operator requested tracking, 2026-10-30 PDT.** Ordinary Anthropic compaction is
-[implemented and deployed](../central_sampler/docs/anthropic_acceptance.md). [Design and acceptance](../central_sampler/plans/anthropic.md#background-compaction).
+[implemented and deployed](../sampler/docs/anthropic_acceptance.md). [Design and acceptance](../sampler/plans/anthropic.md#background-compaction).
 Use Anthropic on-demand compaction concurrently with ordinary turns. Persist the exact summarized
 prefix and atomically replace only it, retaining the appended suffix. Separate the background
 operation from the foreground pending-effect fence; reject stale results after context/ownership
@@ -1410,8 +1410,8 @@ or priority is assigned, and this follow-up does not gate ordinary Anthropic com
 
 **Deferred; operator requested DAG tracking, 2026-10-30 PDT.** Revisit when a concrete Actions/MCP
 workflow needs tools or schemas to change mid-Session. The
-[fixed-tool Anthropic adapter](../central_sampler/docs/anthropic_acceptance.md) is implemented and deployed.
-[Component design](../central_sampler/plans/anthropic.md#dynamic-tool-definitions) distinguishes
+[fixed-tool Anthropic adapter](../sampler/docs/anthropic_acceptance.md) is implemented and deployed.
+[Component design](../sampler/plans/anthropic.md#dynamic-tool-definitions) distinguishes
 provider-visible inline tools from nested code-mode tools and the existing Actions-as-tools work.
 Exit when selected: tool additions/removals reach model input and runtime consistently, retain the
 cached prefix where supported, survive restart, and preserve execution authorization plus
@@ -1423,7 +1423,7 @@ thinking/compaction validity. No worker or priority is assigned.
 Sessions](#sandbox-free-central-sessions):** "which might or might not mean replacing codex's v8
 isolate; not sure". Each sampler replica runs every code-mode cell in a fresh V8 isolate inside one
 shared, pinned upstream Codex JavaScript host process
-([SPEC](../central_sampler/SPEC.md#runtime-and-effects)). That host runs in the sampler Pod, not in a
+([SPEC](../sampler/SPEC.md#runtime-and-effects)). That host runs in the sampler Pod, not in a
 Sandbox, and attaching it opens no executor stream, so a Session with no Environment can keep it;
 `CENTRAL_SESSION_ACTING_DESIGN` records that the tools-as-Actions design does not depend on which
 host runs the cells. Agent-authored JavaScript from every Identity's Sessions already shares that one
@@ -2090,7 +2090,7 @@ resuming with memory retained.
 ### `AGENT_RESUME_NOTICE` — tell agents when their Environment was suspended and resumed
 
 **Unscheduled; operator, 2026-10-13 PDT: it would be good.** Central sampler execution already
-[reports verified incarnation changes](../central_sampler/SPEC.md#runtime-and-effects) when opening
+[reports verified incarnation changes](../sampler/SPEC.md#runtime-and-effects) when opening
 a replacement exec-server session. Broader lifecycle notices should state the observed suspend mode,
 duration, incarnation and what is known about processes, terminals, memory and workspace. Today's
 cold-stop path can lose processes and terminals; a future memory-preserving VM suspend may retain
@@ -3405,7 +3405,7 @@ Dispatcher's live Session binding.
 
 **Call origin (operator, 2026-11-10).** Agentplane calls never leave a V8 isolate: a cell's nested
 tool call reaches the sampler as a code-mode `delegate/request` tagged with its logical Session
-([SPEC](../central_sampler/SPEC.md#runtime-and-effects)), and the sampler's Go handler makes the
+([SPEC](../sampler/SPEC.md#runtime-and-effects)), and the sampler's Go handler makes the
 backend call. It names the `Identity` Dispatcher bound to that Session; neither JavaScript nor tool
 arguments can name or override it.
 
@@ -3767,9 +3767,8 @@ The gate is a decision not yet made or a track not started; nothing here is disp
 #### `PROTO_PACKAGE_ALIGNMENT` — align protobuf packages with their directories
 
 **Future; operator, 2026-11-12: revisit after the source moves.** Inventory Agentplane-owned
-`.proto` package declarations against their filesystem locations, including the History read API
-and the sampler's retained `agentplane.x.central_sampler` namespace. Decide a consistent naming
-scheme and document deliberate exceptions; moving a file does not by itself require a wire rename.
+`.proto` package declarations against their filesystem locations, including the History read API.
+Decide a consistent naming scheme and document deliberate exceptions; moving a file does not by itself require a wire rename.
 A package rename changes fully qualified message and service names, including gRPC method paths and
 `Any` type URLs, even if field numbers stay the same. Before each proposed migration, inventory
 clients, persisted or queued payloads, descriptors, reflection, authorization rules and mixed-version
@@ -3783,7 +3782,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   placement: `CentralSamplerV1Placement` in `proto/session.proto`,
   `session_dispatcher/internal/placement/placement.go`'s `CentralSampler`,
   the `central_sampler_v1` cases in `app/testing/client.py` and
-  `session_dispatcher/dispatcher/testing_client.py`, `central_sampler/testing.py` and
+  `session_dispatcher/dispatcher/testing_client.py`, `sampler/testing.py` and
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
 - **`SESSION_IDENTITY_AUTHZ`:** `notification_service/internal/rpc/messages.go` still authorizes

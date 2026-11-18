@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# gazelle:resolve py agentplane.central_sampler.api.sampler_admin_pb2_grpc //agentplane/central_sampler/api:sampler_admin_pb2_grpc
+# gazelle:resolve py agentplane.sampler.api.sampler_admin_pb2_grpc //agentplane/sampler/api:sampler_admin_pb2_grpc
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2_grpc //agentplane/environments/v1:environment_service_pb2_grpc
 # gazelle:exclude test_session.py
@@ -327,10 +327,10 @@ py_library(
         ":tls",
         ":tracing",
         "//agentplane:sandbox_resource",
-        "//agentplane/central_sampler/api:sampler_admin_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:identity_pb2",
+        "//agentplane/sampler/api:sampler_admin_pb2_grpc",
         "//agentplane/session_dispatcher:client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "//devinfra/testing:undeclared_outputs",

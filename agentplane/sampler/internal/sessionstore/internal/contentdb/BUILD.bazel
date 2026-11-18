@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "contentdb",
+    srcs = ["store.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore/internal/contentdb",
+    deps = [
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/providerrequest",
+        "//agentplane/sampler/protocol",
+        "@com_github_lib_pq//:pq",
+    ],
+)
+
+go_test(
+    name = "contentdb_test",
+    size = "medium",
+    srcs = [
+        "integration_test.go",
+        "integration_testmain_test.go",
+    ],
+    embed = [":contentdb"],
+    race = "on",
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/providerrequest",
+        "//agentplane/sampler/migrations",
+        "//agentplane/sampler/protocol",
+        "//agentplane/sampler/providers/responses",
+        "//agentplane/testing/postgres",
+        "@com_github_lib_pq//:pq",
+    ],
+)

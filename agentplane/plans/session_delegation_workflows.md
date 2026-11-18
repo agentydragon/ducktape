@@ -43,7 +43,7 @@ blocked-task state. Select a typed `report`/`blocked` tool separately if that pr
 
 The shared [Session instructions composer](../session_instructions/README.md) adds platform guidance,
 the Session ID and the caller's additive `additional_instructions`
-([Runtime](../env/runtime/docs/session_protocol.md), [central sampler](../central_sampler/SPEC.md)).
+([Runtime](../env/runtime/docs/session_protocol.md), [central sampler](../sampler/SPEC.md)).
 Not yet decided or built:
 
 - **Environment context:** the selected target's description and instructions as a backend-added

@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "tooloutput",
+    srcs = [
+        "output.go",
+        "protocol.go",
+        "truncation.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/tooloutput",
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/sampler/internal/outputbuffer",
+        "//agentplane/sampler/protocol",
+    ],
+)
+
+go_test(
+    name = "tooloutput_test",
+    size = "small",
+    srcs = [
+        "output_test.go",
+        "protocol_test.go",
+    ],
+    embed = [":tooloutput"],
+    race = "on",
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/sampler/protocol",
+    ],
+)

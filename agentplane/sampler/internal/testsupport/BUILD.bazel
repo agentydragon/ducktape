@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testsupport",
+    srcs = [
+        "anthropic.go",
+        "sampler.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport",
+    visibility = ["//agentplane/sampler:__subpackages__"],
+    deps = [
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/sampler/api:sampler_go_proto",
+        "//agentplane/sampler/internal/sessionconfig",
+        "//agentplane/sampler/internal/settings",
+        "//agentplane/sampler/protocol",
+        "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/responses",
+    ],
+)

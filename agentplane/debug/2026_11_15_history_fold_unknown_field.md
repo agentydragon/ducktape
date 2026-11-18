@@ -38,7 +38,7 @@ attachment field `9`. The current feed snapshots and saved JSON projection are d
 ## Writer and schema change
 
 Before commit `a87c044744896456e40638689c0069f36da7a8f7` (PR #15903, merged
-2026-11-13 at `03:30:10Z`), `central_sampler/store_sessions.go`'s `Describe` copied the creation
+2026-11-13 at `03:30:10Z`), `sampler/store_sessions.go`'s `Describe` copied the creation
 request's `ExecutionPrincipal` into `Attached`. The sampler's History announcement supplied that
 attachment; History's `internal/projection/lifecycle.go` serialized it with `protojson.Marshal`
 into the summary. The producer was the sampler; the JSON projection writer was History.

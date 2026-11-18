@@ -18,11 +18,11 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.central_sampler import settings
 from agentplane.env.config import GuestResources
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
+from agentplane.sampler import settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.secret_ref import SecretKey

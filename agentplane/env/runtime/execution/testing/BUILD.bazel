@@ -10,8 +10,8 @@ py_library(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex process mounted by the fixture
     ],
     visibility = [
-        "//agentplane/central_sampler:__pkg__",
         "//agentplane/env/e2e:__pkg__",
+        "//agentplane/sampler:__pkg__",
         "//agentplane/session_dispatcher:__pkg__",
     ],
     deps = [

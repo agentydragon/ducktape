@@ -15,10 +15,10 @@ import grpc
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.central_sampler.api import sampler_admin_pb2_grpc
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
+from agentplane.sampler.api import sampler_admin_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2_grpc

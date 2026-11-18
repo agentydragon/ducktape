@@ -196,7 +196,7 @@ Everything that holds a connection is closed by a context manager, never by a ha
 
 Other explicit plaintext dial paths reviewed for this change:
 
-- `agentplane/central_sampler/internal/executor/executor.go`: the direct-executor branch is allowed only with
+- `agentplane/sampler/internal/executor/executor.go`: the direct-executor branch is allowed only with
   `direct_executor_insecure_localtest` and a loopback IP target. It is local transport, not a remote service hop.
 - `agentplane/net/peertls/security.go`: Runner control supports an explicit `insecure` mode. Staging selects `mtls`;
   a deployment that selected `insecure` across a network boundary would have a real gap.

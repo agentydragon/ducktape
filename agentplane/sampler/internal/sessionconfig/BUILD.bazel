@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+proto_library(
+    name = "configuration_proto",
+    srcs = ["configuration.proto"],
+    deps = [
+        "//agentplane/proto:identity_proto",
+        "//agentplane/proto:session_proto",
+    ],
+)
+
+go_proto_library(
+    name = "sessionconfig",
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig",
+    proto = ":configuration_proto",
+    deps = [
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+    ],
+)

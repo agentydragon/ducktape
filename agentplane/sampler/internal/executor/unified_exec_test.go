@@ -1,0 +1,149 @@
+package executor
+
+import (
+	"bytes"
+	"encoding/json"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executor/transport"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/tooloutput"
+)
+
+var testBash = &transport.Shell{Name: "bash", Path: "/bin/bash"}
+
+func TestPlanExecCommandClampsYield(t *testing.T) {
+	for _, tc := range []struct {
+		args string
+		want int
+	}{
+		{`{"cmd":"true"}`, 10_000},
+		{`{"cmd":"true","yield_time_ms":0}`, 250},
+		{`{"cmd":"true","yield_time_ms":99999}`, 30_000},
+		{`{"cmd":"true","yield_time_ms":1234}`, 1234},
+	} {
+		plan, err := planExecCommand(json.RawMessage(tc.args), "/work", testBash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.yieldMS != tc.want {
+			t.Errorf("%s yield=%d, want %d", tc.args, plan.yieldMS, tc.want)
+		}
+	}
+}
+
+func TestExecCommandExpectedIncarnationArgument(t *testing.T) {
+	for _, input := range []string{
+		`{"cmd":"true","expected_incarnation_uid":""}`,
+		`{"cmd":"true","expected_incarnation_uid":" padded"}`,
+		`{"cmd":"true","expected_incarnation_uid":"padded "}`,
+		`{"cmd":"true","expected_incarnation_uid":"` + strings.Repeat("x", 257) + `"}`,
+	} {
+		if _, err := parseExecCommand(json.RawMessage(input)); err == nil {
+			t.Errorf("accepted invalid expected incarnation argument %s", input)
+		}
+	}
+	args, err := parseExecCommand(json.RawMessage(`{"cmd":"true","expected_incarnation_uid":"incarnation-uid"}`))
+	if err != nil || args.ExpectedIncarnationUID == nil || *args.ExpectedIncarnationUID != "incarnation-uid" {
+		t.Fatalf("parsed expected incarnation UID=%v error=%v", args.ExpectedIncarnationUID, err)
+	}
+	property, ok := toolcontract.ExecCommandDefinition().InputSchema.Properties["expected_incarnation_uid"]
+	if !ok || property.Type != "string" || property.Description == "" {
+		t.Fatalf("expected incarnation tool schema property=%+v, found=%v", property, ok)
+	}
+}
+
+func TestPlanExecCommandResolvesShellAndWorkdir(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     string
+		shell    *transport.Shell
+		wantArgv []string
+		wantCwd  string
+	}{
+		{"reported shell runs as login shell by default", `{"cmd":"echo hi"}`, testBash, []string{"/bin/bash", "-lc", "echo hi"}, "/work"},
+		{"login false", `{"cmd":"echo hi","login":false}`, testBash, []string{"/bin/bash", "-c", "echo hi"}, "/work"},
+		{"matching requested shell launches the reported path", `{"cmd":"echo hi","shell":"/usr/local/bin/bash"}`, testBash, []string{"/bin/bash", "-lc", "echo hi"}, "/work"},
+		{"relative workdir joins the session cwd", `{"cmd":"pwd","workdir":"sub/dir"}`, testBash, []string{"/bin/bash", "-lc", "pwd"}, "/work/sub/dir"},
+		{"absolute workdir", `{"cmd":"pwd","workdir":"/srv"}`, testBash, []string{"/bin/bash", "-lc", "pwd"}, "/srv"},
+		{"executor without a reported shell", `{"cmd":"echo hi"}`, nil, []string{"/bin/sh", "-lc", "echo hi"}, "/work"},
+		{"unknown fields ignored and null means omitted", `{"cmd":"echo hi","tty":null,"future_field":1}`, testBash, []string{"/bin/bash", "-lc", "echo hi"}, "/work"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := planExecCommand(json.RawMessage(tc.args), "/work", tc.shell)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(plan.argv, tc.wantArgv) || plan.cwd != tc.wantCwd {
+				t.Fatalf("argv=%q cwd=%q, want %q %q", plan.argv, plan.cwd, tc.wantArgv, tc.wantCwd)
+			}
+		})
+	}
+}
+
+func TestPlanWriteStdinYieldBounds(t *testing.T) {
+	for _, tc := range []struct {
+		args string
+		want int
+	}{
+		{`{"session_id":1000,"chars":"x"}`, 250},
+		{`{"session_id":1000,"chars":"x","yield_time_ms":99999}`, 30_000},
+		{`{"session_id":1000}`, 5_000},
+		{`{"session_id":1000,"yield_time_ms":60000}`, 60_000},
+		{`{"session_id":1000,"yield_time_ms":999999}`, 300_000},
+	} {
+		plan, err := planWriteStdin(json.RawMessage(tc.args))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.yieldMS != tc.want {
+			t.Errorf("%s yield=%d, want %d", tc.args, plan.yieldMS, tc.want)
+		}
+	}
+}
+
+func TestUnifiedExecResultShape(t *testing.T) {
+	output := outputbuffer.New(outputbuffer.MaxBytes)
+	output.Append([]byte("hello\n"))
+	sessionID, budget := 4242, 1
+	running := processObservation{output: output, wallTime: 0.5}.unifiedExecResult(&sessionID, nil, "abc123")
+	if running.SessionID == nil || *running.SessionID != 4242 || running.ExitCode != nil || running.Output != "hello\n" ||
+		running.OriginalTokenCount == nil || *running.OriginalTokenCount != 2 {
+		t.Fatalf("running result=%+v", running)
+	}
+	code := 0
+	exited := processObservation{output: output, exitCode: &code, exited: true}.unifiedExecResult(&sessionID, &budget, "abc123")
+	if exited.SessionID != nil || exited.ExitCode == nil || *exited.ExitCode != 0 {
+		t.Fatalf("exited result=%+v", exited)
+	}
+	if !strings.HasPrefix(exited.Output, "Warning: truncated output (original token count: 2)\nTotal output lines: 1\n\n") ||
+		!strings.Contains(exited.Output, "tokens truncated") {
+		t.Fatalf("budgeted output=%q", exited.Output)
+	}
+	encoded, err := json.Marshal(exited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := fields["session_id"]; present {
+		t.Fatalf("exited result offers a session: %s", encoded)
+	}
+}
+
+func TestTruncateExecOutputKeepsOmissionNotice(t *testing.T) {
+	output := outputbuffer.New(16)
+	output.Append(bytes.Repeat([]byte("x"), 40))
+	text := tooloutput.TruncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 2)
+	if !strings.HasPrefix(text, "Warning: truncated output (original token count: 10)\n... 24 bytes omitted ...\n\n") {
+		t.Fatalf("truncated=%q", text)
+	}
+	if fits := tooloutput.TruncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 1000); fits != string(output.WithOmissionMarker()) {
+		t.Fatalf("output within budget changed: %q", fits)
+	}
+}

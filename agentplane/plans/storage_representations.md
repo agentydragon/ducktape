@@ -59,9 +59,9 @@ already removed. Response logging and cross-representation body sharing remain o
 
 ### Remove redundant response capture
 
-Trace [transport capture](../central_sampler/protocol/evidence.go),
-[provider evidence](../central_sampler/internal/sessionstore/provider_evidence.go), provider stream readers and the
-[final intent audit](../central_sampler/internal/sessionstore/intents.go). Decide which representation each
+Trace [transport capture](../sampler/protocol/evidence.go),
+[provider evidence](../sampler/internal/sessionstore/provider_evidence.go), provider stream readers and the
+[final intent audit](../sampler/internal/sessionstore/intents.go). Decide which representation each
 consumer actually needs. Prefer one retained stream with references from the completed operation
 over another full `events` array. Keep final response content only where it supplies information
 that cannot be referenced or derived from retained items.

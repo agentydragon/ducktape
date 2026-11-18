@@ -15,13 +15,13 @@ import pytest
 from google.protobuf.json_format import ParseDict
 
 from agentplane.action_service.api.contracts import action_service_pb2
-from agentplane.central_sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
+from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.action_requests import action_request, assert_echoed_result, decide_pending_action

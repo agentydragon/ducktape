@@ -1,6 +1,6 @@
 # Staging PostgreSQL exhaustion and retained evidence
 
-Follow-up: [sampler cutover and live storage measurements, 2026-11-12](../central_sampler/debug/2026_11_12_native_storage_cutover.md).
+Follow-up: [sampler cutover and live storage measurements, 2026-11-12](../sampler/debug/2026_11_12_native_storage_cutover.md).
 
 ## Incident, 2026-11-11
 
@@ -75,14 +75,14 @@ every conversation has the same behavior.
 
 There is additional representation amplification:
 
-1. [ProviderRequest](../central_sampler/internal/sessionstore/types.go) contains both `body` and `wire_request`, derived
-   from the same outgoing bytes in [provider_dispatch.go](../central_sampler/internal/sessionstore/provider_request.go).
+1. [ProviderRequest](../sampler/internal/sessionstore/types.go) contains both `body` and `wire_request`, derived
+   from the same outgoing bytes in [provider_dispatch.go](../sampler/internal/sessionstore/provider_request.go).
    `body` is parsed JSON and `wire_request` retains the exact string. Physical savings from removing
    a field cannot be inferred by summing `pg_column_size` of extracted JSON fields because TOAST
    compresses the whole stored value.
-2. [Begin](../central_sampler/internal/sessionstore/store.go) stores the intent and records it as boundary evidence in
+2. [Begin](../sampler/internal/sessionstore/store.go) stores the intent and records it as boundary evidence in
    the sampler's event journal. The exporter copies immutable events to History Service. The
-   [sampler contract](../central_sampler/SPEC.md#evidence-and-continuation) intentionally retains
+   [sampler contract](../sampler/SPEC.md#evidence-and-continuation) intentionally retains
    transport evidence and uses the journal for continuation and recovery.
 
 ## Design questions

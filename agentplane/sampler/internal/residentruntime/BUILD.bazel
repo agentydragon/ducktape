@@ -1,0 +1,70 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "residentruntime",
+    srcs = [
+        "runtime.go",
+        "runtime_replica.go",
+        "runtime_slot.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime",
+    deps = [
+        "//agentplane/sampler/internal/executor",
+        "//agentplane/sampler/internal/residentruntime/session",
+        "//agentplane/sampler/internal/sessionstore",
+        "//agentplane/sampler/internal/settings",
+    ],
+)
+
+go_test(
+    name = "scheduler_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "provider_compaction_recovery_test.go",
+        "provider_recovery_runtime_test.go",
+        "provider_turn_progress_test.go",
+        "runtime_lifecycle_test.go",
+    ],
+    embed = [
+        ":residentruntime",
+    ],
+    race = "on",
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/env/jsonrpc",
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/sampler/api:sampler_go_proto",
+        "//agentplane/sampler/internal/codemode",
+        "//agentplane/sampler/internal/executor",
+        "//agentplane/sampler/internal/providerrequest",
+        "//agentplane/sampler/internal/residentruntime/session",
+        "//agentplane/sampler/internal/residentruntime/testing",
+        "//agentplane/sampler/internal/sessionstore",
+        "//agentplane/sampler/internal/settings",
+        "//agentplane/sampler/internal/testsupport",
+        "//agentplane/sampler/migrations",
+        "//agentplane/sampler/protocol",
+        "//agentplane/sampler/providers/responses",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+test_suite(
+    name = "integration_test",
+    tests = [
+        ":scheduler_test",
+        "//agentplane/sampler/internal/residentruntime/session:integration_test",
+    ],
+)
+
+test_suite(
+    name = "unit_test",
+    tests = ["//agentplane/sampler/internal/residentruntime/session:unit_test"],
+)

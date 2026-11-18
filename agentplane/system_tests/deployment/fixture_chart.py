@@ -65,13 +65,6 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
-from agentplane.central_sampler.settings import (
-    ActionsConfig,
-    AuthConfig,
-    ConnectionConfig,
-    ModelConfig,
-    ResponsesConfig,
-)
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
@@ -87,6 +80,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto import session_pb2
+from agentplane.sampler.settings import ActionsConfig, AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef

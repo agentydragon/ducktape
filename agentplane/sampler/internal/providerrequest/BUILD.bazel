@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "providerrequest",
+    srcs = [
+        "content.go",
+        "preparation.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest",
+    deps = [
+        "//agentplane/sampler/api:sampler_go_proto",
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/sessionconfig",
+        "//agentplane/sampler/internal/settings",
+        "//agentplane/sampler/internal/toolcontract",
+        "//agentplane/sampler/protocol",
+        "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/responses",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "providerrequest_test",
+    srcs = [
+        "content_test.go",
+        "preparation_test.go",
+    ],
+    embed = [":providerrequest"],
+    deps = [
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/settings",
+        "//agentplane/sampler/protocol",
+        "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/responses",
+    ],
+)

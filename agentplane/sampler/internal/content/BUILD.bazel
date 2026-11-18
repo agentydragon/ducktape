@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/sampler:__subpackages__"])
+
+go_library(
+    name = "content",
+    srcs = ["content.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/content",
+)
+
+go_test(
+    name = "content_test",
+    size = "small",
+    srcs = ["content_test.go"],
+    embed = [":content"],
+    race = "on",
+)

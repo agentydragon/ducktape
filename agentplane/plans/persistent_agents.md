@@ -121,7 +121,7 @@ coalesces the overdue range. Do not turn an outage into an unbounded replay stor
 
 All sources still feed the same inbox and notice batching. A tick arriving during a turn uses ordinary
 `SubmitInput`: it may be queued or steer the running turn under the host's existing behavior
-([native contract](../env/runtime/SPEC.md), [central steering](../central_sampler/internal/residentruntime/session/turn.go)).
+([native contract](../env/runtime/SPEC.md), [central steering](../sampler/internal/residentruntime/session/turn.go)).
 Do not interrupt or create a parallel Session for each tick. This is not a guarantee to wait until the
 current job finishes. If a job needs nonoverlap, the agent must reconcile durable job state keyed by
 scheduled instant; inbox acknowledgement and harness confirmation do not establish job completion.

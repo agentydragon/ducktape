@@ -314,7 +314,7 @@ flowchart LR
     guest[Managed VM agent process and CLI]
     relay[VM launcher relay]
     egress[Egress proxy]
-    central[Experimental central sampler]
+    central[Sampler]
     sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
@@ -477,7 +477,7 @@ or prevent its control RPCs. Existing Dispatcher routing still requires the boun
 History retains source evidence and derives the lossy Thread display. Its entries are not a
 provider continuation format: the sampler owns that state in its database. Wrapped native
 harnesses keep their current local sampling, execution and persistence paths. See the
-[standalone API and recovery contract](../central_sampler/SPEC.md).
+[standalone API and recovery contract](../sampler/SPEC.md).
 
 ### Sampler service admission
 
@@ -488,7 +488,7 @@ references before the caller switch. The Gateway uses the same Sessions SPIFFE I
 
 ```mermaid
 flowchart LR
-    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: HarnessHost method grant| sampler[Central Sampler: SVID only]
+    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: HarnessHost method grant| sampler[Sampler: SVID only]
     bearer[Kubernetes bearer] -.->|denied before handler| sampler
     sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
 ```
@@ -504,7 +504,7 @@ admit Kubernetes bearers. A failed certificate cannot fall back to a token.
 flowchart LR
     workload[Workload Identity SVID] -->|mTLS: live credential verification| llm[LLM ingress]
     readers[Configured service SVID readers] -->|mTLS: ModelConfig read methods| llm
-    sampler[Central Sampler service SVID] -->|mTLS plus typed Identity and Session delegation| llm
+    sampler[Sampler service SVID] -->|mTLS plus typed Identity and Session delegation| llm
     llm -->|effective Identity egress grants| provider[Model provider]
 ```
 
