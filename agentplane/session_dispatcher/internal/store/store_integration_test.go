@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -382,7 +384,17 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
 		t.Fatal(err)
 	}
+	interrupt := &commandpb.Command{
+		CommandId: "deleted-admitted-interrupt",
+		Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "active-turn"}},
+	}
+	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, interrupt, nil); err != nil {
+		t.Fatal(err)
+	}
 	deliveryOwner := claimSessionOwner(t, store, "session-deleted")
+	if row, err := store.Settle(ctx, interrupt.GetCommandId(), deliveryOwner, []string{QueueState}, AdmittedState, "", &eventlogpb.EventEntry{Cursor: 17}); err != nil || row == nil {
+		t.Fatalf("admit interrupt: %+v %v", row, err)
+	}
 	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
 	}
@@ -414,17 +426,19 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 	if _, err := store.GetDispatch(ctx, "deleted-queued"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted row visible: %v", err)
 	}
-	for commandID, want := range map[string]string{"deleted-queued": FailedState, "deleted-delivering": UnknownState, "test-deleted-cancelled": CancelledState} {
-		var state, reason string
+	for commandID, want := range map[string]struct{ state, reason string }{
+		"deleted-queued":         {FailedState, "sandbox_deleted"},
+		"deleted-delivering":     {UnknownState, "sandbox_deleted"},
+		"test-deleted-cancelled": {CancelledState, "test-prior-cancellation"},
+		interrupt.GetCommandId(): {AdmittedState, ""},
+	} {
+		var state string
+		var reason sql.NullString
 		if err := store.DB.QueryRowContext(ctx, `SELECT state,reason FROM dispatch_tombstone WHERE command_id=$1`, commandID).Scan(&state, &reason); err != nil {
 			t.Fatal(err)
 		}
-		wantReason := "sandbox_deleted"
-		if want == CancelledState {
-			wantReason = "test-prior-cancellation"
-		}
-		if state != want || reason != wantReason {
-			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason, want, wantReason)
+		if state != want.state || reason.String != want.reason {
+			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason.String, want.state, want.reason)
 		}
 	}
 }
