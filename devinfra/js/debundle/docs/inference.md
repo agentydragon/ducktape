@@ -1737,7 +1737,6 @@ effects and obligations, with no process-local execution cache or new saved
 graph. Later requests recheck current cells, including after initialization
 or mutation; no recency policy controls validity.
 
-
 ## Sealed inputs and completed transfers
 
 `IterativeInference` owns growing judgments and worklist indexes. Consuming a
