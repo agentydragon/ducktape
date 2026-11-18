@@ -28,9 +28,6 @@ locals {
   primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi["ovh-ns1001419"].ip
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
-  # Total expected node count (for health checks)
-  expected_node_count = length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.home_nodes)
-
   # All controlplane endpoints (for talosconfig).
   all_controlplane_ips = concat(
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"],
