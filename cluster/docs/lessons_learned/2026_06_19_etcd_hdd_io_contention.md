@@ -175,8 +175,11 @@ latency on the same system disk:
   node, 66 MB of logical reads caused 23.8 TB of physical reads; the system disk reached
   94% utilization and its I/O starved etcd WAL fsync. The fix is to keep the memory limit
   above the tail working set; the current Promtail values request 256Mi and limit memory
-  to 1Gi in `cluster/cdk8s/monitoring/loki.py`. See the
-  [initial NotReady capture](../../debug/2026-05-31-kimsufi-worker-1-notready/).
+  to 1Gi in `cluster/cdk8s/monitoring/loki.py`. First captured on 2026-05-31 as a `NotReady`
+  wedge of `talos-kimsufi-worker-1` (`10.42.0.14`, now `ovh-ns103711`): the host still
+  answered on its public address, but every Talos API call to it, `reboot` included, failed
+  with `read unix @->/system/run/machined/machine.sock: use of closed network connection`;
+  an OVH hard reboot recovered it.
 - **Image-automation clone bursts (2026-06-10).** The then-running v1.0.4 controller
   cloned the roughly 540 MB repository every five minutes, producing bursts near 9 MB/s
   on the host disk. The incident was closed after PR #1991 upgraded Flux to v2.8.8,
