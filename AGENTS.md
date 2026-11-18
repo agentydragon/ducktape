@@ -41,6 +41,10 @@ Linux only.
 - **Stored data:** schema changes are new migrations, never edits to landed ones. Never destroy unregenerable user-authored data (repos, notebooks, mailboxes). Roll-safety: <STYLE.md> § General.
 - **Declarative config:** before enabling a managed feature, find existing owners/overlapping providers and keep one. Host scope is explicit (shared module for class-wide, host opt-in for exceptions); ask if unclear.
 
+## Debug investigations
+
+Group a debug track in `debug/<topic>/` once it grows beyond one or two files. Use `README.md` as the entry point. Keep the investigation tracker, helper scripts, captured logs and related evidence together in that directory.
+
 ## Profiling
 
 Real profilers only (`perf`, Callgrind, heaptrack, Massif, Bazel profile targets); never commit ad hoc timing code.
