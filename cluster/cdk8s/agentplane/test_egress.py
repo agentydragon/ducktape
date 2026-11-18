@@ -344,10 +344,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     sessions_authority = f"{sessions.fqdn}:{sessions.port.number}"
     legacy_origin = session_dispatcher.service(namespace)
     legacy_destination = runner_gateway.service(namespace)
-    dispatcher_routes = {
-        f"{legacy_origin.fqdn}:{legacy_origin.port.number}": f"{legacy_destination.fqdn}:{legacy_destination.port.number}",
-        sessions_authority: sessions_authority,
-    }
+    legacy_authority = f"{legacy_origin.fqdn}:{legacy_origin.port.number}"
     history = history_service.service(namespace)
     history_origin = f"{history.fqdn}:{history.port.number}"
     history_route = platform_routes.history_grpc(namespace)
@@ -362,21 +359,24 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     )
     assert "projected_token_audiences" not in proxy_settings
     assert {
-        *dispatcher_routes.values(),
+        sessions_authority,
+        f"{legacy_destination.fqdn}:{legacy_destination.port.number}",
         f"{history.fqdn}:{history.pod_port}",
         f"{environments.fqdn}:{environments.pod_port}",
         f"{legacy_environments.fqdn}:{legacy_environments.pod_port}",
     } <= set(proxy_settings["tls_passthrough_targets"])
 
-    configured: list[tuple[str, Any]] = []
+    configured: list[dict[str, Any]] = []
     for item in catalog_manifests:
         if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
             continue
         routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
-        configured.extend((origin, routes[origin]) for origin in dispatcher_routes if origin in routes)
-    assert {origin for origin, _ in configured} == dispatcher_routes.keys()
-    for origin, route in configured:
-        assert route["upstream"] == dispatcher_routes[origin]
+        assert legacy_authority not in routes
+        if sessions_authority in routes:
+            configured.append(routes[sessions_authority])
+    assert configured
+    for route in configured:
+        assert route["upstream"] == sessions_authority
         assert route["server_uri"] == SESSION_DISPATCHER_URI
 
     history_configured: list[dict[str, Any]] = []

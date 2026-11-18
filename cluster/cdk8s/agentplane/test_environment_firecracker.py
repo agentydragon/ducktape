@@ -140,11 +140,7 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     sessions = f"sessions.{suffix}:8080"
     assert harness["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions}"
     assert relay_settings["workload_routes"][sessions] == {"upstream": sessions, "server_uri": SESSION_DISPATCHER_URI}
-    # A resumed guest may still address the dispatcher through its old authority.
-    assert relay_settings["workload_routes"][f"session-dispatcher.{suffix}:8080"] == {
-        "upstream": f"runner-gateway.{suffix}:8080",
-        "server_uri": SESSION_DISPATCHER_URI,
-    }
+    assert f"session-dispatcher.{suffix}:8080" not in relay_settings["workload_routes"]
     assert relay_settings["platform_routes"]["routes"]["environments"] == {
         "service_prefixes": ["/agentplane.environments.v1.EnvironmentService/"],
         "upstream": f"environments.{suffix}:8082",

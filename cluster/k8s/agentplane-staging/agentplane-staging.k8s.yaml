@@ -4974,9 +4974,6 @@ data:
       llm-ingress.agentplane-staging.svc.cluster.local:8080:
         upstream: llm-ingress.agentplane-staging.svc.cluster.local:8080
         server_uri: spiffe://agentplane/llm-ingress
-      session-dispatcher.agentplane-staging.svc.cluster.local:8080:
-        upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
-        server_uri: spiffe://agentplane/session-dispatcher
       sessions.agentplane-staging.svc.cluster.local:8080:
         upstream: sessions.agentplane-staging.svc.cluster.local:8080
         server_uri: spiffe://agentplane/session-dispatcher
@@ -5397,9 +5394,6 @@ data:
       llm-ingress.agentplane-staging.svc.cluster.local:8080:
         upstream: llm-ingress.agentplane-staging.svc.cluster.local:8080
         server_uri: spiffe://agentplane/llm-ingress
-      session-dispatcher.agentplane-staging.svc.cluster.local:8080:
-        upstream: runner-gateway.agentplane-staging.svc.cluster.local:8080
-        server_uri: spiffe://agentplane/session-dispatcher
       sessions.agentplane-staging.svc.cluster.local:8080:
         upstream: sessions.agentplane-staging.svc.cluster.local:8080
         server_uri: spiffe://agentplane/session-dispatcher

@@ -1768,7 +1768,6 @@ py_library(
         ":llm_ingress",
         ":notifications",
         ":runner_gateway",
-        ":session_dispatcher",
         "//agentplane/egress:sidecar_config",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:service_ref",
