@@ -14,14 +14,15 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s
 
 from agentplane.app.testing.client import Client
-from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.proto import session_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
+from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -298,50 +299,19 @@ async def _probe(
         source += f'test "$(cat {home_marker})" = {shlex.quote(marker)}\nsha256sum {home_marker}\n'
     source += "printf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
-    await client.create_session_and_wait(
-        name,
-        session,
-        dispatcher=dispatcher,
+    stdout, _ = await run_setup(
+        client,
+        dispatcher,
+        sandbox_name=name,
         sandbox_uid=sandbox_uid,
-        overrides={
-            "placement": {
-                "environmentHosted": {"environment": {"name": name, "uid": sandbox_uid}, "harness": "HARNESS_CODEX"}
-            },
-            "model": "chatgpt-sub/oai-responses/gpt-6-luna",
-            "cwd": cwd,
-            "reasoningEffort": "low",
-            "instructions": "",
-        },
+        session_id=session,
+        harness=session_pb2.HARNESS_CODEX,
+        model="chatgpt-sub/oai-responses/gpt-6-luna",
+        cwd=cwd,
         setup_script=source,
     )
-    # Runner admission precedes History's Thread projection, which owns the event stream.
-    await client.wait_for_thread_projection(session, timeout_s=BOUND_SECONDS)
-    reader = SessionEventReader(client, session, after_cursor=0)
-    async with asyncio.timeout(BOUND_SECONDS):
-        while True:
-            await reader.read_page()
-            terminal = next(
-                (
-                    entry
-                    for entry in reader.entries
-                    if entry.event.HasField("setup_finished") or entry.event.HasField("setup_interrupted")
-                ),
-                None,
-            )
-            if terminal is not None:
-                stdout, stderr = bytearray(), bytearray()
-                for entry in reader.entries:
-                    if entry.cursor > terminal.cursor:
-                        break
-                    if entry.event.HasField("setup_output"):
-                        stdout.extend(entry.event.setup_output.stdout)
-                        stderr.extend(entry.event.setup_output.stderr)
-                assert not terminal.event.HasField("setup_interrupted"), "storage probe setup was interrupted"
-                assert terminal.event.setup_finished.exit_code == 0, stderr.decode()
-                assert "STORAGE_PROBE_OK" in stdout.decode()
-                return {"session": str(session), "stdout": stdout.decode(), "setup_exit_code": 0}
-            await reader.wait_for_next_page()
-    raise AssertionError("storage probe ended without its setup result")
+    assert "STORAGE_PROBE_OK" in stdout
+    return {"session": str(session), "stdout": stdout, "setup_exit_code": 0}
 
 
 async def fresh_workspace_storage_survives_replacement(
