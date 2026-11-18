@@ -2,8 +2,9 @@
 
 The Kubernetes resources and operator live in the `clickhouse` namespace. One
 shard with two replicated ClickHouse servers and a three-member Keeper quorum,
-all on the OVH HDD data tier. The cluster is intentionally independent of
-Langfuse's chart-owned ClickHouse so applications can migrate one at a time.
+all on the OVH HDD data tier. Each replica's PVC is node-local, so a node failure is tolerated
+while the other replica and the Keeper quorum stay available; permanent loss of a node's disk
+still needs a restore or manual rebuild.
 
 The first tenant is `aiquota`:
 
@@ -15,7 +16,9 @@ The first tenant is `aiquota`:
   bytes and integrity metadata available for inspection;
 - a ClickHouse materialized view projects the raw row's quota-window array into
   the typed table, so each collector snapshot is one atomic insert rather than
-  two independently retried writes.
+  two independently retried writes. Restoring the raw rows (a Native-format dump
+  of `aiquota.raw_http_observations`) repopulates the typed tables through the
+  same views.
 
 `replicasUseFQDN: "yes"` makes the operator generate per-replica host entries
 that resolve to each Pod's actual address. The cluster intentionally does not
