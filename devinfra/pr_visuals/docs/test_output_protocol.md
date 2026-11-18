@@ -54,8 +54,6 @@ own case IDs.
 The `publish_file` method retains an existing file's suffix and uses the same
 duplicate-claim checks.
 
-For already-materialized undeclared outputs, `local_output_result` reads a
-completed output tree with caller-supplied result provenance and summary;
-`collect_materialized_outputs` applies the same identity, shard, retry, and
-coverage validation used for BuildBuddy results. Its source types also allow
-other adapters to supply record bytes and payload references directly.
+Source adapters can pass result provenance, summaries, record bytes, and payload
+references directly to `collect_materialized_outputs`. It applies the same
+identity, shard, retry, and coverage validation used for BuildBuddy results.
