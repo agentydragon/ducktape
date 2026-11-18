@@ -18,9 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/watch"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const watchWriteTimeout = 5 * time.Second
@@ -38,7 +36,8 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	if identity.identity == nil && !broad {
 		return status.Error(codes.NotFound, "environment not found")
 	}
-	get := &environmentpb.GetEnvironmentRequest{Target: request.GetTarget()}
+	target := request.GetTarget()
+	get := &environmentpb.GetEnvironmentRequest{Target: target}
 	// Authorize the target before allocating watches or reading any collection.
 	if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
 		if authErr := auth.RevalidateStream(ctx); authErr != nil {
@@ -46,14 +45,14 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 		}
 		return err
 	}
-	sandboxes, err := s.watchObjects(ctx, &api.SandboxList{}, request.GetTarget())
+	sandboxes, err := s.watchCollection(ctx, &api.SandboxList{}, target.GetNamespace(), target.GetName())
 	if err != nil {
 		return err
 	}
 	defer sandboxes.Stop()
 	var accountEvents <-chan watch.Event
 	if broad {
-		accounts, err := s.watchObjects(ctx, &corev1.ServiceAccountList{}, request.GetTarget())
+		accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, target.GetNamespace(), target.GetName())
 		if err != nil {
 			return err
 		}
@@ -63,7 +62,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	// A Sandbox may name a VM Pod independently of its own name. Watching this namespace-scoped
 	// collection and filtering by the reported Pod name avoids missing a new incarnation between
 	// opening a Pod watch and receiving the Sandbox status event that names it.
-	pods, err := s.watchCollection(ctx, &corev1.PodList{}, request.GetTarget().GetNamespace(), "")
+	pods, err := s.watchCollection(ctx, &corev1.PodList{}, target.GetNamespace(), "")
 	if err != nil {
 		return err
 	}
@@ -86,7 +85,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 			return err
 		}
 		if !environmentDescriptorsEqual(previous, current) {
-			if err := sendEnvironment(ctx, stream, current); err != nil {
+			if err := sendEnvironmentWatch(ctx, stream.Send, &environmentpb.WatchEnvironmentResponse{Environment: current}); err != nil {
 				return err
 			}
 			previous = current
@@ -133,36 +132,15 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	}
 }
 
-func sendEnvironment(
-	ctx context.Context,
-	stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentResponse],
-	environment *environmentpb.EnvironmentDescriptor,
-) error {
+func sendEnvironmentWatch[Frame any](ctx context.Context, send func(*Frame) error, frame *Frame) error {
 	if err := auth.RevalidateStream(ctx); err != nil {
 		return err
 	}
-	err := streaming.SendWithin(ctx, watchWriteTimeout, stream.Send, &environmentpb.WatchEnvironmentResponse{Environment: environment})
+	err := streaming.SendWithin(ctx, watchWriteTimeout, send, frame)
 	if errors.Is(err, streaming.ErrSendTimeout) {
 		return status.Error(codes.DeadlineExceeded, "environment watch write deadline expired")
 	}
 	return err
-}
-
-func (s *Service) watchObjects(ctx context.Context, objects client.ObjectList, target *identitypb.EnvironmentTarget) (watch.Interface, error) {
-	options := &client.ListOptions{
-		Namespace: target.GetNamespace(), FieldSelector: fields.OneTermEqualSelector("metadata.name", target.GetName()),
-	}
-	if err := s.objects.List(ctx, objects, options); err != nil {
-		return nil, watchFailure(ctx, err)
-	}
-	// List's version closes the gap between reading a collection and opening its watch.
-	// A compacted version ends this RPC; the client reconnects for a fresh snapshot.
-	options.Raw = &metav1.ListOptions{ResourceVersion: objects.GetResourceVersion()}
-	result, err := s.objects.Watch(ctx, objects, options)
-	if err != nil {
-		return nil, watchFailure(ctx, err)
-	}
-	return result, nil
 }
 
 func watchFailure(ctx context.Context, err error) error {
