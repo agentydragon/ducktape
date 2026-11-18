@@ -11,6 +11,7 @@
 use super::value_flow::Values;
 use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
@@ -74,6 +75,9 @@ pub(crate) fn annotate_heap_contents(
             };
             Some(construction.span.lo.0)
         });
+        // Keep transient hash sets scoped to this source unit. Repeated body
+        // keys in the item still union here before one ordered merge below.
+        let mut item_callables = FxHashMap::default();
         let mut collector = ArrayContentCollector {
             value_flow,
             statement_owner: fact.ordinal,
@@ -85,8 +89,8 @@ pub(crate) fn annotate_heap_contents(
             shadowed: proofs.shadowed,
             array_reachability: &reachability,
             array_origins: &origins.0,
-            eager: HeapContentCells::default(),
-            callables: &mut callables,
+            eager: HeapContentBuilder::default(),
+            callables: &mut item_callables,
             deferred_allocations: BTreeSet::new(),
             collect_one_shot_arrays: single_initializer.is_some(),
             one_shot_allocations: BTreeSet::new(),
@@ -119,20 +123,40 @@ pub(crate) fn annotate_heap_contents(
                     .set_iterable
                     .heap_constructor_dependencies(construction.span, fact.ordinal)
                     .is_some()
-                && collector.eager.allocations.contains(&cell)
+                && collector
+                    .eager
+                    .allocations
+                    .contains(&HeapContentKey::Set(construction.span.lo.0))
             {
                 collector.one_shot_allocations.insert(cell);
             }
         }
-        fact.heap_one_shot_allocations = collector.one_shot_allocations;
-        fact.heap_contents = collector.eager;
-        fact.deferred_heap_allocations = collector.deferred_allocations;
-        fact.heap_native_integrity_uses =
-            collector.heap_native_integrity_uses.into_iter().collect();
-        native_read_uses.push((
-            collector.native_read_inferences.into_values().collect(),
-            collector.native_read_inputs.into_values().collect(),
-        ));
+        fact.heap_contents = std::mem::take(&mut collector.eager).finish();
+        fact.heap_one_shot_allocations = std::mem::take(&mut collector.one_shot_allocations);
+        fact.deferred_heap_allocations = std::mem::take(&mut collector.deferred_allocations);
+        fact.heap_native_integrity_uses = std::mem::take(&mut collector.heap_native_integrity_uses)
+            .into_iter()
+            .collect();
+        let native_read_use = (
+            std::mem::take(&mut collector.native_read_inferences)
+                .into_values()
+                .collect(),
+            std::mem::take(&mut collector.native_read_inputs)
+                .into_values()
+                .collect(),
+        );
+        drop(collector);
+        for (key, cells) in std::mem::take(&mut item_callables) {
+            match callables.entry(key) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    cells.extend_into(entry.get_mut());
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(cells.finish());
+                }
+            }
+        }
+        native_read_uses.push(native_read_use);
         // Prepare an argument-evaluation projection only for the small direct
         // fresh-record call shape. Its own collector cannot change generic
         // callable summaries, deferred allocations, or native observations.
@@ -156,7 +180,7 @@ pub(crate) fn annotate_heap_contents(
                 _ => None,
             }
         }) {
-            let mut unused_callables = BTreeMap::new();
+            let mut unused_callables = FxHashMap::default();
             let mut projection = ArrayContentCollector {
                 value_flow,
                 statement_owner: fact.ordinal,
@@ -168,7 +192,7 @@ pub(crate) fn annotate_heap_contents(
                 shadowed: proofs.shadowed,
                 array_reachability: &reachability,
                 array_origins: &origins.0,
-                eager: HeapContentCells::default(),
+                eager: HeapContentBuilder::default(),
                 callables: &mut unused_callables,
                 deferred_allocations: BTreeSet::new(),
                 collect_one_shot_arrays: false,
@@ -184,7 +208,7 @@ pub(crate) fn annotate_heap_contents(
                 direct_root_new_site: None,
             };
             item.as_module_item().visit_with(&mut projection);
-            checked_factory_arguments.insert(span, projection.eager);
+            checked_factory_arguments.insert(span, std::mem::take(&mut projection.eager).finish());
         }
     }
     ChunkHeapContents {
@@ -220,6 +244,71 @@ impl Visit for ArrayOriginCollector {
     }
 }
 
+// These are the only heap-cell kinds emitted by this collector. Keep the
+// durable EffectCell sets ordered without hashing its broader public enum.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+enum HeapContentKey {
+    Array(u32),
+    Set(u32),
+}
+
+impl HeapContentKey {
+    fn effect_cell(self) -> EffectCell {
+        match self {
+            Self::Array(origin) => EffectCell::ArrayContents(origin),
+            Self::Set(origin) => EffectCell::SetContents(origin),
+        }
+    }
+}
+
+// Mutable accumulation is transient; finish restores the stable ordered form
+// consumed by statement facts, saved analysis, and synchronous call summaries.
+#[derive(Default)]
+struct HeapContentBuilder {
+    allocations: FxHashSet<HeapContentKey>,
+    reads: FxHashSet<HeapContentKey>,
+    writes: FxHashSet<HeapContentKey>,
+    opaque: bool,
+}
+
+impl HeapContentBuilder {
+    fn extend_into(self, cells: &mut HeapContentCells) {
+        cells.allocations.extend(
+            self.allocations
+                .into_iter()
+                .map(HeapContentKey::effect_cell),
+        );
+        cells
+            .reads
+            .extend(self.reads.into_iter().map(HeapContentKey::effect_cell));
+        cells
+            .writes
+            .extend(self.writes.into_iter().map(HeapContentKey::effect_cell));
+        cells.opaque |= self.opaque;
+    }
+
+    fn finish(self) -> HeapContentCells {
+        HeapContentCells {
+            allocations: self
+                .allocations
+                .into_iter()
+                .map(HeapContentKey::effect_cell)
+                .collect(),
+            reads: self
+                .reads
+                .into_iter()
+                .map(HeapContentKey::effect_cell)
+                .collect(),
+            writes: self
+                .writes
+                .into_iter()
+                .map(HeapContentKey::effect_cell)
+                .collect(),
+            opaque: self.opaque,
+        }
+    }
+}
+
 struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
     statement_owner: source_identity::SourceUnitOrdinal,
@@ -234,8 +323,8 @@ struct ArrayContentCollector<'a> {
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     /// The statement's own at-init cells.
-    eager: HeapContentCells,
-    callables: &'a mut BTreeMap<u32, HeapContentCells>,
+    eager: HeapContentBuilder,
+    callables: &'a mut FxHashMap<u32, HeapContentBuilder>,
     /// Allocation sites in any deferred position: their allocation may run
     /// any number of times, at or after this statement.
     deferred_allocations: BTreeSet<EffectCell>,
@@ -264,7 +353,7 @@ impl ArrayContentCollector<'_> {
     /// The cells the cursor's position records into: the statement's at-init
     /// cells, the innermost callable's first-order pre-await body, or none
     /// for code that runs only after a suspension or in an accessor body.
-    fn cells(&mut self) -> Option<&mut HeapContentCells> {
+    fn cells(&mut self) -> Option<&mut HeapContentBuilder> {
         if self.lazy_depth == 0 {
             return Some(&mut self.eager);
         }
@@ -289,12 +378,12 @@ impl ArrayContentCollector<'_> {
         if read {
             cells
                 .reads
-                .extend(ids.iter().map(|id| EffectCell::ArrayContents(*id)));
+                .extend(ids.iter().map(|id| HeapContentKey::Array(*id)));
         }
         if write {
             cells
                 .writes
-                .extend(ids.iter().map(|id| EffectCell::ArrayContents(*id)));
+                .extend(ids.iter().map(|id| HeapContentKey::Array(*id)));
         }
         cells.opaque |= opaque;
     }
@@ -305,12 +394,12 @@ impl ArrayContentCollector<'_> {
         }
     }
 
-    fn record_allocation(&mut self, cell: EffectCell) {
+    fn record_allocation(&mut self, key: HeapContentKey) {
         if self.lazy_depth > 0 {
-            self.deferred_allocations.insert(cell.clone());
+            self.deferred_allocations.insert(key.effect_cell());
         }
         if let Some(cells) = self.cells() {
-            cells.allocations.insert(cell);
+            cells.allocations.insert(key);
         }
     }
 
@@ -364,12 +453,12 @@ impl ArrayContentCollector<'_> {
         if read {
             cells
                 .reads
-                .extend(sets.iter().map(|site| EffectCell::SetContents(*site)));
+                .extend(sets.iter().map(|site| HeapContentKey::Set(*site)));
         }
         if write {
             cells
                 .writes
-                .extend(sets.iter().map(|site| EffectCell::SetContents(*site)));
+                .extend(sets.iter().map(|site| HeapContentKey::Set(*site)));
         }
         cells.opaque |= opaque;
     }
@@ -396,21 +485,21 @@ impl ArrayContentCollector<'_> {
     }
 
     fn record_escaped_values(&mut self, values: &Values) {
-        let mut arrays = BTreeSet::new();
+        let mut arrays = rustc_hash::FxHashSet::default();
         self.array_reachability
             .for_values(values, |origin| match origin {
                 Value::Alloc(Kind::Object, object) if self.array_origins.contains(&object) => {
-                    arrays.insert(EffectCell::ArrayContents(object));
+                    arrays.insert(HeapContentKey::Array(object));
                 }
                 Value::Alloc(Kind::Set, site) => {
-                    arrays.insert(EffectCell::SetContents(site));
+                    arrays.insert(HeapContentKey::Set(site));
                 }
                 _ => {}
             });
         if !arrays.is_empty()
             && let Some(cells) = self.cells()
         {
-            cells.reads.extend(arrays.iter().cloned());
+            cells.reads.extend(arrays.iter().copied());
             cells.writes.extend(arrays);
             cells.opaque = true;
         }
@@ -520,7 +609,7 @@ impl Visit for ArrayContentCollector<'_> {
         // Materialization initializes this fresh identity's contents. Keep an
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
-        self.record_allocation(EffectCell::ArrayContents(node.span.lo.0));
+        self.record_allocation(HeapContentKey::Array(node.span.lo.0));
         if self.collect_one_shot_arrays && self.lazy_depth == 0 {
             self.one_shot_allocations
                 .insert(EffectCell::ArrayContents(node.span.lo.0));
@@ -697,7 +786,7 @@ impl Visit for ArrayContentCollector<'_> {
                 .native_set_allocations()
                 .contains_key(&node.span.lo.0);
         if certified_set {
-            self.record_allocation(EffectCell::SetContents(node.span.lo.0));
+            self.record_allocation(HeapContentKey::Set(node.span.lo.0));
         }
         if certified_set {
             // The same static proof that seeded this allocation covers its

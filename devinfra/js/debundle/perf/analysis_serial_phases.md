@@ -1808,3 +1808,46 @@ Validation passes `:gate` with Clippy, `:gate_test`,
 The parsed-source oracle compares the stored bits with the previous evidence
 lookup formula; full CLI rows check the same observed-conflict contract.
 Fresh large-consumer passing-subset completion remains a separate requirement.
+
+### Transient heap-content collection: public Excalidraw check
+
+Heap-content annotation accumulates compact array/Set identities in temporary
+hash sets, then freezes each source item's eager and callable effects into the
+existing ordered representation. The temporary callable map is scoped to one
+source item; repeated callable identities union into the durable summaries.
+Native proof uses, opacity, allocation classification and async/accessor
+boundaries remain unchanged.
+
+The [optimized build](https://app.buildbuddy.io/invocation/a679f877-01c7-4064-8f7b-4360a3f2ad53)
+is commit `d385d0123e2cc2133e28c6640744b80c44ce1888`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Analyzer SHA-256:
+`44c36884c9d60ad843adfde22040c4ed75dc260372e8f1c3f9731c0fa2b074d7`.
+The later test-only correction does not alter these binaries. The baseline is
+the activation-local property-join build above; intervening Debundle changes
+at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order with identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. GNU time measures fresh projection, analysis
+and application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.36 → 13.70 s                   | 20.44 → 20.82 s                  | 1.0140                   | 0.9785–1.0254      | 809,132 → 713,352                     |
+| On      | 14.01 → 13.26 s                   | 20.95 → 20.05 s                  | 0.9767                   | 0.9247–0.9786      | 809,820 → 810,296                     |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+These small runs do not establish a general speedup or memory reduction.
+Raw commands, GNU time outputs, OTLP JSONL and manifests are in
+`excalidraw-heap-content-sets-paired/` under the task scratch root; binary
+identities are in `heap-content-sets-tools/identity.json` and
+`source-join-tools/identity.json`.
+
+[Focused validation](https://app.buildbuddy.io/invocation/2a465e3f-af90-421c-9a26-50639a74cbf7)
+at `5dfa2d9f6dadef823dcd13f0299ef90644b20a0c` passes `:analysis` with Clippy,
+`:analysis_test`, `collections_test`, `initialization_test` and
+`soundness_plain_data_escape_test`. Parsed-source controls cover eager/callable
+array effects, escapes and async/class boundaries. Native Set behavior uses
+the real CLI collection controls with their required source proofs.
+Fresh large-consumer passing-subset completion remains a separate requirement.

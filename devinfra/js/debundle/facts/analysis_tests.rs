@@ -3,13 +3,149 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::analysis_test_support::{
     analyze_facts, analyze_facts_with_hints, hints_with_decorate_helper, test_id,
 };
-use crate::facts::analyze_chunk;
+use crate::facts::{EffectCell, analyze_chunk};
 use crate::{
     AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy, StatementFacts,
     StatementKind,
 };
 use raw_js_test_support::{parse, parse_with_source_map};
-use swc_ecma_ast::Module;
+use swc_ecma_ast::{ArrayLit, Module};
+use swc_ecma_visit::{Visit, VisitWith};
+
+#[derive(Default)]
+struct HeapArraySites {
+    arrays: Vec<u32>,
+}
+
+impl Visit for HeapArraySites {
+    fn visit_array_lit(&mut self, node: &ArrayLit) {
+        self.arrays.push(node.span.lo.0);
+        node.visit_children_with(self);
+    }
+}
+
+fn heap_array_sites(module: &Module) -> HeapArraySites {
+    let mut sites = HeapArraySites::default();
+    module.visit_with(&mut sites);
+    sites
+}
+
+#[test]
+fn parsed_heap_content_collection_preserves_eager_callable_escape_and_allocations() {
+    let module = parse(
+        "const eagerArray = [];\
+         function touch() {\
+           const localArray = [];\
+           eagerArray.length; eagerArray[0]; eagerArray.push(1);\
+           localArray.length; localArray[0]; opaqueCall(localArray);\
+         }\
+         touch();",
+    );
+    let sites = heap_array_sites(&module);
+    let facts = analyze_facts(&module);
+    assert_eq!(facts.len(), 3);
+    assert_eq!(sites.arrays.len(), 2);
+
+    let eager_array = EffectCell::ArrayContents(sites.arrays[0]);
+    let local_array = EffectCell::ArrayContents(sites.arrays[1]);
+
+    assert_eq!(
+        facts[0].heap_contents.allocations,
+        BTreeSet::from([eager_array.clone()])
+    );
+    assert_eq!(
+        facts[0].heap_one_shot_allocations,
+        BTreeSet::from([eager_array.clone()])
+    );
+    assert_eq!(
+        facts[1].deferred_heap_allocations,
+        BTreeSet::from([local_array.clone()])
+    );
+
+    let invoked = &facts[2]
+        .synchronous_calls
+        .as_ref()
+        .expect("the parsed direct call has synchronous effects")
+        .heap_contents;
+    assert_eq!(invoked.allocations, BTreeSet::from([local_array.clone()]));
+    assert_eq!(
+        invoked.reads,
+        BTreeSet::from([eager_array.clone(), local_array.clone(),])
+    );
+    assert_eq!(invoked.writes, BTreeSet::from([eager_array, local_array]));
+    assert!(invoked.opaque, "unknown-call escape stays conservative");
+}
+
+#[test]
+fn parsed_async_and_class_heap_content_boundaries_are_preserved() {
+    let async_module = parse(
+        "const beforeAwait = [];\
+         const afterAwait = [];\
+         async function later() {\
+           beforeAwait.length;\
+           await 0;\
+           afterAwait.length;\
+         }\
+         later();",
+    );
+    let async_sites = heap_array_sites(&async_module);
+    let async_facts = analyze_facts(&async_module);
+    assert_eq!(async_sites.arrays.len(), 2);
+    let before = EffectCell::ArrayContents(async_sites.arrays[0]);
+    let after = EffectCell::ArrayContents(async_sites.arrays[1]);
+    let async_prefix = &async_facts[3]
+        .synchronous_calls
+        .as_ref()
+        .expect("the parsed async call has a synchronous prefix")
+        .heap_contents;
+    assert_eq!(async_prefix.reads, BTreeSet::from([before]));
+    assert!(!async_prefix.reads.contains(&after));
+
+    let accessor_module = parse(
+        "const getterArray = [];\
+         const methodArray = [];\
+         const object = {\
+           get value() { getterArray.length; },\
+           write() { methodArray.push(1); },\
+         };\
+         object.write();\
+         const classGetterArray = [];\
+         class Holder {\
+           field = [];\
+           get value() { classGetterArray.length; }\
+         }\
+         new Holder();",
+    );
+    let accessor_sites = heap_array_sites(&accessor_module);
+    let accessor_facts = analyze_facts(&accessor_module);
+    assert_eq!(accessor_sites.arrays.len(), 4);
+    let getter_array = EffectCell::ArrayContents(accessor_sites.arrays[0]);
+    let method_array = EffectCell::ArrayContents(accessor_sites.arrays[1]);
+    let class_getter_array = EffectCell::ArrayContents(accessor_sites.arrays[2]);
+    let class_field_array = EffectCell::ArrayContents(accessor_sites.arrays[3]);
+
+    assert!(accessor_facts[2].heap_contents.reads.is_empty());
+    let method_effects = &accessor_facts[3]
+        .synchronous_calls
+        .as_ref()
+        .expect("the parsed object method call has synchronous effects")
+        .heap_contents;
+    assert!(method_effects.reads.contains(&method_array));
+    assert!(method_effects.writes.contains(&method_array));
+    assert!(!method_effects.reads.contains(&getter_array));
+
+    assert!(
+        accessor_facts[5]
+            .deferred_heap_allocations
+            .contains(&class_field_array)
+    );
+    let construction_effects = &accessor_facts[6]
+        .synchronous_calls
+        .as_ref()
+        .expect("the parsed class construction has synchronous effects")
+        .heap_contents;
+    assert!(!construction_effects.reads.contains(&class_getter_array));
+}
 
 /// A direct call `f()` at the chunk top level records `f` in the
 /// statement's `calls.eager` set. Drives at-init call promotion
