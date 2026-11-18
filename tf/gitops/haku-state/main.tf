@@ -239,6 +239,23 @@ resource "terraform_data" "registry_push_secret_refresh" {
 # already has egress to github.com (the agentydragon mirror pulls from there too). Single-hop, and
 # decoupled from agentydragon's Forgejo mirror. `mirror`/`clone_addr` are ForceNew: changing the
 # source recreates the repo.
+#
+# Creating it is one synchronous migrate call that blocks until the clone finishes (3.5 s for a KB
+# repo, 78 s for hundreds of MB; measured 2026-07-11). If a timeout fires first (the one that did
+# was never pinned), Forgejo keeps cloning but svalabs/forgejo, unchanged through 1.7.0, has
+# returned before saving state and never adopts the repo, so every later apply fails with
+# `Repository with name ... already exists`. Recover with a one-shot
+# `import { to = forgejo_repository.ducktape_mirror, id = "haku/ducktape" }`; a permanent one cannot
+# guard a repo that does not exist yet. Creating the mirror outside Terraform and only reading it
+# here would avoid the failure.
+#
+# `mirror_interval` is omitted on purpose: for ten minutes the provider's validator requires
+# `0h10m0s`, but it stores back the server's `10m0s` (`Provider produced inconsistent result`), so
+# no literal survives apply. It is Optional+Computed and floats to the server default; set the
+# cadence in Forgejo if that is too slow for haku-ci freshness.
+#
+# TODO: report both provider bugs to svalabs/terraform-provider-forgejo (an issue search found
+# neither on 2026-11-18).
 resource "forgejo_repository" "ducktape_mirror" {
   owner       = forgejo_user.haku.login
   name        = "ducktape"
