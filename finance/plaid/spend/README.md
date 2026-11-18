@@ -10,7 +10,7 @@ no write access in the app namespace. The canonical policy is `config/plaid-spen
 finance-agent repository.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. Its tabs use hash URLs
-(`/#/spending`, `/#/transactions`, `/#/sustainability`, and `/#/configuration`); the server only needs the root page route. The server keeps
+(`/#/spending`, `/#/transactions`, `/#/sustainability`, `/#/net-worth`, and `/#/configuration`); the server only needs the root page route. The server keeps
 OIDC tokens out of the browser and authenticates page, stylesheet, script, view, configuration, and event requests with
 a signed session cookie. The GNOME panel and `plaid-spend` CLI use the separate public `plaid-spend-desktop` client and
 Bearer-token API. Both desktop clients read the same global card view and notification-backed event stream.
@@ -58,6 +58,10 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
   transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
   effects under `statement`. Both effect objects are present even when their fields are unavailable or do not apply.
+- `GET /api/v1/net-worth` returns daily assets, debt and net worth using the mirror's existing balance snapshots
+  for currently linked USD depository, investment, credit and loan accounts. The first point needs a complete set
+  of balances. Later days without a complete set of observations within one hour have null totals.
+  Capture timestamps record when the mirror observed provider balances.
 - `GET /api/v1/configuration` returns the loaded policy for the read-only Configuration tab without Plaid account IDs.
 - Allowance views mark relevant unresolved full reversal pairs as `Provisional:` in their existing note field;
   transaction rows identify both matched legs. The active/unavailable lifecycle and wire shape stay compatible

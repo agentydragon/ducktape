@@ -5,6 +5,7 @@ import "@mantine/core/styles.css";
 import "./styles.css";
 
 import { ConfigurationPage } from "./configuration";
+import { NetWorthPage } from "./net_worth";
 import { SpendingPage } from "./spending";
 import { SustainabilityPage } from "./sustainability";
 import { TransactionsPage } from "./transactions";
@@ -16,6 +17,7 @@ const spendTabs: { value: SpendTab; label: string }[] = [
   { value: "transactions", label: "Transactions" },
   { value: "configuration", label: "Configuration" },
   { value: "sustainability", label: "Sustainability" },
+  { value: "net-worth", label: "Net Worth" },
 ];
 
 function tabForHash(hash: string): SpendTab {
@@ -23,6 +25,7 @@ function tabForHash(hash: string): SpendTab {
   if (path === "#/transactions") return "transactions";
   if (path === "#/configuration") return "configuration";
   if (path === "#/sustainability") return "sustainability";
+  if (path === "#/net-worth") return "net-worth";
   return "spending";
 }
 
@@ -56,12 +59,12 @@ function App() {
         <Paper component="header" radius={0} withBorder>
           <Container size="lg" py="xs">
             <Grid align="center" gap="xs">
-              <Grid.Col span={{ base: 6, lg: 3 }} order={1}>
+              <Grid.Col span={{ base: 6, lg: 2 }} order={1}>
                 <Anchor href="#/spending" size="lg" fw={700} c="var(--mantine-color-text)" underline="never">
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, lg: 3 }} order={{ base: 2, lg: 3 }}>
+              <Grid.Col span={{ base: 6, lg: 2 }} order={{ base: 2, lg: 3 }}>
                 <Group justify="flex-end" gap="xs">
                   <Box>
                     <Menu position="bottom-end" opened={navigationMenuOpened} onChange={setNavigationMenuOpened}>
@@ -95,7 +98,7 @@ function App() {
                   </Box>
                 </Group>
               </Grid.Col>
-              <Grid.Col span={6} order={2} visibleFrom="lg">
+              <Grid.Col span={8} order={2} visibleFrom="lg">
                 <Center>
                   <Tabs.List aria-label="Spend pages">
                     {spendTabs.map((tab) => (
@@ -145,6 +148,9 @@ function App() {
           </Tabs.Panel>
           <Tabs.Panel value="sustainability">
             <SustainabilityPage />
+          </Tabs.Panel>
+          <Tabs.Panel value="net-worth">
+            <NetWorthPage />
           </Tabs.Panel>
         </Container>
       </Tabs>

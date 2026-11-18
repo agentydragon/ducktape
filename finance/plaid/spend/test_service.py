@@ -794,6 +794,54 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
 
 
 @pytest.mark.asyncio
+async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    # UTC midnight falls on the prior Pacific report date.
+    start = datetime(2026, 1, 2, 0, 10, tzinfo=UTC)
+    await add_link(connection, "wealth-item", synced=start)
+    for account, kind in (("bank", "depository"), ("broker", "investment"), ("card", "credit"), ("old", "loan")):
+        await add_account(connection, account, "wealth-item", type=kind)
+    await connection.execute("UPDATE public.accounts SET detached_at = NOW() WHERE account_id = 'old'")
+
+    await connection.executemany(
+        """INSERT INTO public.balance_snapshots (account_id, item_id, captured_at, current, iso_currency_code)
+           VALUES ($1, 'wealth-item', $2, $3, $4)""",
+        [
+            # The earliest observation lacks the card and brokerage.
+            ("bank", start - timedelta(days=1), 50, "USD"),
+            ("bank", start, 100, "USD"),
+            ("broker", start + timedelta(minutes=15), 900, "USD"),
+            ("card", start + timedelta(hours=1), 80, "USD"),
+            ("bank", start + timedelta(hours=4), 999, "USD"),
+            ("old", start, 998, "USD"),
+            # A foreign-currency observation can't substitute for the card.
+            ("bank", start + timedelta(days=1), 110, "USD"),
+            ("broker", start + timedelta(days=1), 950, "USD"),
+            ("card", start + timedelta(days=1), 90, "CAD"),
+            # The card has a credit balance.
+            ("bank", start + timedelta(days=2), 120, "USD"),
+            ("broker", start + timedelta(days=2), 920, "USD"),
+            ("card", start + timedelta(days=2), -10, "USD"),
+        ],
+    )
+    configuration = SpendConfiguration(time_zone=ZoneInfo("America/Los_Angeles"), cards=[])
+    reader = SpendService(postgres_url, configuration, dashboard_url="https://spend.test")
+    async with reader.lifespan():
+        history = await reader.read_net_worth()
+
+    assert [day.date for day in history.days] == [date(2026, 1, day) for day in (1, 2, 3)]
+    first, gap, last = (day.totals for day in history.days)
+    assert first is not None
+    assert (first.assets_minor_units, first.debt_minor_units, first.net_minor_units) == (100_000, 8_000, 92_000)
+    assert first.observed_from == start
+    assert first.observed_through == start + timedelta(hours=1)
+    assert gap is None
+    assert last is not None
+    assert (last.assets_minor_units, last.debt_minor_units, last.net_minor_units) == (104_000, -1_000, 105_000)
+
+
+@pytest.mark.asyncio
 async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
     connection: asyncpg.Connection, postgres_url: str
 ) -> None:

@@ -11,6 +11,7 @@ py_library(
         ":allowance",
         ":configuration",
         ":models",
+        ":net_worth",
         ":oidc_principal",
         ":pace_history_models",
         ":portfolio",
@@ -71,6 +72,7 @@ py_library(
         ":allowance",
         ":configuration",
         ":models",
+        ":net_worth",
         ":pace_history",
         ":pace_history_models",
         ":policy_queries",
@@ -93,6 +95,17 @@ py_library(
     srcs = ["statement_queries.py"],
     deps = [
         "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "net_worth",
+    srcs = ["net_worth.py"],
+    deps = [
+        ":plaid_valuation",
+        "//finance/plaid/db:models",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -179,6 +192,7 @@ py_test(
         ":app",
         ":conftest",
         ":models",
+        ":net_worth",
         ":oidc_principal",
         ":pace_history_models",
         ":service",

@@ -209,6 +209,54 @@ async def test_header_menu_at_right_with_sign_out(page: Page, dashboard_url: str
 
 
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_net_worth_navigation_and_history(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    async def serve_balances(route: Route) -> None:
+        assets_and_debts = [(172000, 15000), (175000, 18000), (173000, 15000), None, (189000, 12500), (192000, 12000)]
+        await route.fulfill(
+            json={
+                "days": [
+                    {
+                        "date": f"2026-10-{day:02}",
+                        "totals": (
+                            None
+                            if balances is None
+                            else {
+                                "assets_minor_units": balances[0] * 100,
+                                "debt_minor_units": balances[1] * 100,
+                                "net_minor_units": (balances[0] - balances[1]) * 100,
+                                "observed_from": f"2026-10-{day:02}T01:10:00Z",
+                                "observed_through": f"2026-10-{day:02}T01:25:00Z",
+                            }
+                        ),
+                    }
+                    for day, balances in enumerate(assets_and_debts, start=8)
+                ]
+            }
+        )
+
+    await page.set_viewport_size({"width": width, "height": height})
+    await page.route("**/api/v1/net-worth", serve_balances)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Net Worth")
+    await expect(page).to_have_url(f"{dashboard_url}/#/net-worth")
+    if width == 1280:
+        spending = await page.get_by_role("tab", name="Spending", exact=True).bounding_box()
+        net_worth = await page.get_by_role("tab", name="Net Worth", exact=True).bounding_box()
+        assert spending is not None
+        assert net_worth is not None
+        assert net_worth["y"] == spending["y"]
+    await expect(page.get_by_text("Plaid-linked USD accounts only", exact=False)).to_be_visible()
+    await expect(page.get_by_text("$180,000", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Gaps mark days", exact=False)).to_be_visible()
+    chart = page.get_by_role("img", name="Net worth, assets, and debt over time in US dollars")
+    await expect(chart).to_be_visible()
+    await view.capture(f"linked-net-worth-{width}")
+    view.errors.assert_none(context="Linked net worth")
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:
