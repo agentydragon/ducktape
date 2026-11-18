@@ -17,6 +17,14 @@ Rules: don't edit an accepted run's numbers in place — add a new run directory
 and repoint the row. Keep configurations that failed or underperformed in the
 table; a known dead end is a result.
 
+## November cluster Ollama refresh
+
+The 256K alias decoded at 29.59 tok/s on the first short request and 40.47
+tok/s on a warm repeat (`local~`). The 128K alias measured 35.66 and 48.01
+tok/s on the same prompt. All four requests generated 1,024 tokens. See the
+[November run](runs/2026-11-18_ollama_refresh/README.md) for load times,
+external candidate comparisons, and live SSD headroom.
+
 ## September agentic task completion
 
 | Model and configuration                                          | Task / agent                                           | Outcome                              | Agent time | Compactions | Trust |
