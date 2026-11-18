@@ -97,7 +97,6 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert config_mount["readOnly"] is True
     settings = yaml.safe_load(config_map["data"][config_path.name])
     Settings.model_validate(settings)
-    assert settings["runner_gateway_target"] == f"{name}.{{namespace}}.svc:8082"
     assert "runner_gateway_token_file" not in settings
     certificate = _resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]
@@ -353,13 +352,15 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     assert proxy.runner_security.tls.cert_file == f"{mount['mountPath']}/tls.crt"
 
 
-def test_controller_overlap_preserves_config_except_credential_mount_paths(
+def test_controller_overlap_preserves_config_except_credentials_and_control_target(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     old = _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
     new = _resource(staging_manifests, "ConfigMap", "environments-settings")["data"]["config.yaml"]
-    expected = old.replace("/run/agentplane/sandbox-controller", "/run/agentplane/environments")
-    assert Settings.model_validate(yaml.safe_load(new)) == Settings.model_validate(yaml.safe_load(expected))
+    expected = yaml.safe_load(old.replace("/run/agentplane/sandbox-controller", "/run/agentplane/environments"))
+    assert expected["runner_gateway_target"] == "sandbox-controller.{namespace}.svc:8082"
+    expected["runner_gateway_target"] = "environments.{namespace}.svc:8082"
+    assert Settings.model_validate(yaml.safe_load(new)) == Settings.model_validate(expected)
     pod = _resource(staging_manifests, "Deployment", "environments")["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == "environments"
     assert (
