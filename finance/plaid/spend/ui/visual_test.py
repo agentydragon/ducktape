@@ -250,7 +250,7 @@ async def test_net_worth_navigation_and_history(
     await expect(page.get_by_text("Plaid-linked USD accounts only", exact=False)).to_be_visible()
     await expect(page.get_by_text("$180,000", exact=True)).to_be_visible()
     await expect(page.get_by_text("Gaps mark days", exact=False)).to_be_visible()
-    chart = page.get_by_role("img", name="Net worth, assets, and debt over time in US dollars")
+    chart = page.get_by_role("img", name="Net worth over time in US dollars")
     await expect(chart).to_be_visible()
     await view.capture(f"linked-net-worth-{width}")
     view.errors.assert_none(context="Linked net worth")
