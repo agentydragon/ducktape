@@ -14,7 +14,6 @@ py_test(
         "//:conftest",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -32,6 +31,5 @@ py_test(
         "//:conftest",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

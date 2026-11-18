@@ -74,7 +74,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -89,7 +88,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -104,6 +102,5 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )

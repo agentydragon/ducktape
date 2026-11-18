@@ -15,6 +15,5 @@ py_test(
     deps = [
         ":custom_tags",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

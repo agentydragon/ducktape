@@ -30,7 +30,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//httpx2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -71,7 +70,6 @@ py_test(
         "//finance/plaid/spend:models",
         "//finance/plaid/spend:pace_history_models",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//syrupy",
     ],
 )
@@ -86,7 +84,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

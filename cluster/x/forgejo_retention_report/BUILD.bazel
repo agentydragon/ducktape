@@ -13,6 +13,5 @@ py_test(
     deps = [
         ":forgejo_retention_report",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
