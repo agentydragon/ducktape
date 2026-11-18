@@ -6,6 +6,8 @@ Keep every important fact, condition, caveat, and pointer. Use the shortest word
 
 “When retiring an obsolete workaround, leave at most a one-line warning where the code remains fragile.” → “Retiring obsolete workaround, code still fragile? 1 warning line max beside code.” [README conventions](../../README.md#conventions)
 
+Point straight to artifacts when their paths carry the meaning. Group shared segments, as in `results/run-{1..5}/{guest-exec,guest-serial,qemu-monitor,virtiofsd}.log`. [Brace expansion](../../STYLE.md#documentation)
+
 Preserve important user flows, security properties, access to stored data, and the ability to deploy, diagnose, and recover the system. Follow [the consumer scope in AGENTS.md](../../AGENTS.md#changes). An internal protocol can change if the result is easier to understand and maintain. Check the actual consumers, including configuration, jobs, and deployed components. Review feature retirement and reductions in supported behavior explicitly.
 
 ## Keep knowledge findable
