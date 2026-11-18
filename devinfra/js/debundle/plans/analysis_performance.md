@@ -76,7 +76,7 @@ coordinate rekeying and fresh/saved CLI behavior before attributing consumer imp
    parity in the regression contract. Do not infer type from names or an
    enclosing array guard.
 
-Finish whole-pipeline validation of the completed-value read index, shared
+   Finish whole-pipeline validation of the completed-value read index, shared
    candidate queries and activation-local property joins described in
    <../docs/inference.md>. Keep earlier measurements and failed approaches in
    <../perf/analysis_serial_phases.md>; phase progress does not close this task.
