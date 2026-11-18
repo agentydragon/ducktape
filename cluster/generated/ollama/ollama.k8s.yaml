@@ -826,6 +826,7 @@ data:
       ngram_ram: false
       chunk_size: 2048
       output_chunking: true
+      warmup: true
 
     draft_model:
       draft_mode: mtp
@@ -903,6 +904,7 @@ spec:
               name: http
               protocol: TCP
           readinessProbe:
+            failureThreshold: 6
             httpGet:
               path: /v1/models
               port: http
