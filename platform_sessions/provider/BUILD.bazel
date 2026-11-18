@@ -245,10 +245,12 @@ py_test(
     srcs = ["cdp_browser_test.py"],
     deps = [
         ":cdp_browser",
+        ":interactive_browser",
         "//:conftest",
         "//util/testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//websockets",
     ],
 )

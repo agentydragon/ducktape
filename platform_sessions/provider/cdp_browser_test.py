@@ -10,8 +10,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from playwright.sync_api import BrowserContext, Error, Page, Playwright, sync_playwright
+from websockets.sync.server import ServerConnection, serve
 
 from platform_sessions.provider.cdp_browser import CdpBrowser
+from platform_sessions.provider.interactive_browser import InteractiveBrowserRuntime
 from util.testing.browser.launcher import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 
 
@@ -145,6 +147,49 @@ def test_existing_service_worker_storage_is_refused_before_process_start(
     (tmp_path / "Default" / "Service Worker" / "Database").mkdir(parents=True)
     with pytest.raises(ValueError, match="service-worker storage"), guarded_browser(playwright_sync, tmp_path):
         pytest.fail("profile with worker storage was launched")
+
+
+def test_viewer_websocket_connects_only_during_admission(
+    playwright_sync: Playwright, context: BrowserContext, tmp_path: Path
+) -> None:
+    connections: list[str] = []
+
+    def echo(connection: ServerConnection) -> None:
+        connections.append("connected")
+        assert connection.recv(timeout=5) == "ping"
+        connection.send("pong")
+
+    browser = InteractiveBrowserRuntime(
+        profile_dir=tmp_path, owner_token="fake-owner-secret-for-browser-tests-1234567890"
+    )
+    guarded_browser(playwright_sync, tmp_path, browser._allow_viewer_page).guard_context(context)
+    page = context.new_page()
+    page.route_web_socket("**/*", browser._viewer_websocket)
+    browser._viewer_page = page
+    browser._viewer_connected = True
+    browser._viewer_network_allowed = True
+    with serve(echo, "127.0.0.1", 0) as server:
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            port = server.socket.getsockname()[1]
+            page.evaluate(
+                "url => { const socket = new WebSocket(url); socket.onopen = () => socket.send('ping');"
+                "socket.onmessage = event => {globalThis.reply = event.data;}; }",
+                f"ws://127.0.0.1:{port}/viewer",
+            )
+            page.wait_for_function("globalThis.reply === 'pong'", timeout=5000)
+            browser._viewer_network_allowed = False
+            page.evaluate(
+                "url => { const socket = new WebSocket(url);"
+                "socket.onopen = () => {globalThis.deniedSocketOpened = true; socket.close();}; }",
+                f"ws://127.0.0.1:{port}/after-disconnect",
+            )
+            page.wait_for_function("globalThis.deniedSocketOpened", timeout=5000)
+            assert connections == ["connected"]
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
 
 
 if __name__ == "__main__":

@@ -38,8 +38,10 @@ and WebSocket fallback guards before creating a visible page. Provider request r
 page selected by `run_viewer_sync` can use unscoped HTTP(S) and WebSockets during authenticated
 viewer admission. Disconnect revokes that allowance before the provider quiesces the page.
 This mode requires `service_workers="block"`, refuses profiles containing service-worker
-storage before process launch, and blocks new registrations before page scripts run. Use a
-fresh profile and sign in again when an existing profile is refused. Optional HAR recording
+storage before process launch, and blocks new registrations before page scripts run. Chromium
+can create worker storage even with registration blocked: a caller using a dedicated managed
+profile must explicitly clear that regenerable storage before restart, or use a fresh profile
+and sign in again. The shared runtime never deletes profile data. Optional HAR recording
 uses the attached context and is finalized during orderly shutdown.
 This is a canary experiment, not process-level network isolation. Its guards cover page
 HTTP(S) and WebSockets; Chromium background services and other protocols are outside that
