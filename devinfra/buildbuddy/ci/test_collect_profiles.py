@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -118,14 +119,24 @@ def test_bes_events_are_read_through_bbapi(monkeypatch: pytest.MonkeyPatch) -> N
     events = [{"started": {"command": "test"}}, {"buildMetrics": {"wallTimeInMs": "123"}}]
     calls: list[list[str]] = []
 
-    def fake_run(argv: list[str], **_kwargs: object) -> collect_profiles.CommandResult:
+    def fake_run(argv: list[str], *, check: bool, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert check
         calls.append(argv)
-        return collect_profiles.CommandResult(argv=argv, stdout=json.dumps(events), stderr="")
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(events), stderr="")
 
-    monkeypatch.setattr(collect_profiles, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert collect_profiles.fetch_bes_events("invocation-123", bbapi=Path("tools/bbapi")) == events
     assert calls == [["tools/bbapi", "invocation", "events", "invocation-123"]]
+
+
+def test_bes_command_failure_keeps_stdout_and_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(3, argv, output="partial response", stderr="unavailable")
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.raises(RuntimeError, match="returncode=3\nstdout=partial response\nstderr=unavailable"):
+        collect_profiles.fetch_bes_events("invocation-123")
 
 
 if __name__ == "__main__":
