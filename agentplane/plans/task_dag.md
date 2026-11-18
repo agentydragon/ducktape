@@ -3649,7 +3649,6 @@ service SVID admission; Kubernetes API credentials and historical account attrib
 ```mermaid
 flowchart LR
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
-    RUNNER_GATEWAY_RENAME[Rollout pending: retire legacy Sessions and Environments names]
     PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
@@ -3705,11 +3704,6 @@ external Connections call, so renaming them is a wire change. Boxes and Sandboxe
 into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)),
 which would settle the name instead; check that before dispatch.
-
-#### `RUNNER_GATEWAY_RENAME` — retire legacy Sessions and Environments names
-
-**S8 rollout pending.** The [staging checklist](deployed_service_names.md) records the
-pre-removal evidence, post-Flux checks and rollback. Remove this node once staging passes.
 
 ### Blocked
 
