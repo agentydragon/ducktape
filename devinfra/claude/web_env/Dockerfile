@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   1. Proprietary binaries must be captured first (run from within live container):
-#        bazel run //claude_web_env/tools:build_and_diff -- --capture-binaries
+#        bazel run //devinfra/claude/web_env/tools:build_and_diff_bin -- --capture-binaries
 #      This writes reference/environment-manager.gz and reference/process_api.gz.
 #   2. local_debs/ must be populated by running fetch_debs.py (downloads from
 #      Ubuntu snapshot archives + PPAs). build_and_diff.py calls this automatically.
