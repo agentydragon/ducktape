@@ -26,6 +26,8 @@ For each assertion, ask what could break while someone was making an otherwise r
 
 ## Send changes for review
 
+Apply the GitHub label `parsimony` to every PR opened under this goal, including each PR in a stack.
+
 Pick a bounded area for each pass and prioritize changes that make it easier to find information, change code, or trust behavior. Keep going across passes until you can no longer find changes the repository owner is likely to want or accept.
 
 Open PRs directly for clear low-risk wins, including documentation-only changes and pure refactors. Use a PR stack when it helps avoid conflicts or expresses a dependency. [PR workflow](../../AGENTS.md#splitting-work-into-prs)
