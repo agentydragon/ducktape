@@ -60,12 +60,14 @@ fn program_and_caller(source: &str) -> (ProgramValueFlows, swc_ecma_ast::Module)
         &bindings,
         [
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -443,12 +445,14 @@ fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
         &bindings,
         [
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
@@ -668,18 +672,21 @@ fn shared_scc_program() -> (ProgramValueFlows, swc_ecma_ast::Module) {
         &bindings,
         [
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "caller",
                 body: &caller_views,
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "provider",
                 body: &provider_views,
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             },
             ProgramFlowModule {
+                fresh_factory_imports: &BTreeSet::new(),
                 module: "empty",
                 body: &empty_views,
                 native_operation_inputs: &[],
@@ -900,5 +907,132 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
     assert_eq!(
         empty_view.projected_reachability.len(),
         empty_view.projection_work.retained_summary_remaps
+    );
+}
+
+#[test]
+fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provider_flow() {
+    let caller = raw_js_test_support::parse(
+        "import { factory } from './provider.js'; const retained = factory(() => 7); const alias = retained.invoke;",
+    );
+    let provider = raw_js_test_support::parse(
+        "export function factory(callback) { if (typeof callback !== 'function') return callback; return { invoke: callback }; }",
+    );
+    let caller_views = crate::facts::top_level_item_views(&caller.body);
+    let provider_views = crate::facts::top_level_item_views(&provider.body);
+    let imports = BTreeMap::from([(
+        "factory".into(),
+        ResolvedImport {
+            module: "provider".into(),
+            export: "factory".into(),
+            source_specifier: "./provider.js".into(),
+        },
+    )]);
+    let exports = BTreeMap::from([("factory".into(), "factory".into())]);
+    let no_exports = BTreeMap::new();
+    let no_imports = BTreeMap::new();
+    let inferred = BTreeMap::new();
+    let bindings = ProgramBindings::new(
+        [
+            ModuleBindings {
+                module: "caller",
+                imports: &imports,
+                exports: &no_exports,
+            },
+            ModuleBindings {
+                module: "provider",
+                imports: &no_imports,
+                exports: &exports,
+            },
+        ],
+        [],
+    );
+    // Supplementary transfer invariant: eligibility itself is checked by the
+    // real CLI fixtures, including provider backedges and unsafe alias writes.
+    let eligible = BTreeSet::from(["factory".into()]);
+    let flows = program_value_flows(
+        &bindings,
+        [
+            ProgramFlowModule {
+                module: "caller",
+                body: &caller_views,
+                fresh_factory_imports: &eligible,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+            ProgramFlowModule {
+                module: "provider",
+                body: &provider_views,
+                fresh_factory_imports: &BTreeSet::new(),
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            },
+        ],
+        &crate::diagnostics::Diagnostics::default(),
+    );
+    let caller_flow = &flows.flows["caller"];
+    let provider_flow = &flows.flows["provider"];
+    let Expr::Call(call) = variable_initializer(&caller, "retained") else {
+        panic!("factory call");
+    };
+    let Expr::Arrow(callback) = call.args[0].expr.as_ref() else {
+        panic!("inline callback");
+    };
+    let callback = Value::Alloc(Kind::Function, callback.span.lo.0);
+    for values in [
+        caller_flow.values_of_binding(&id("retained")),
+        caller_flow.values_of_expr(variable_initializer(&caller, "retained")),
+    ] {
+        assert!(
+            !values.iter().any(|value| value == callback),
+            "direct result must not alias the input"
+        );
+        assert!(
+            values.iter().any(|value| value == Value::Top),
+            "foreign and opaque alternatives remain unknown"
+        );
+    }
+    assert!(
+        caller_flow
+            .values_of_binding(&id("alias"))
+            .iter()
+            .any(|value| value == callback),
+        "a member can still expose the original callback"
+    );
+    let caller_view = caller_flow.program.as_ref().unwrap();
+    let provider_view = provider_flow.program.as_ref().unwrap();
+    let Value::Alloc(_, callback_site) = callback else {
+        unreachable!()
+    };
+    let global_callback = Value::Alloc(Kind::Function, caller_view.sites[&callback_site]);
+    let Value::Alloc(_, factory_site) = provider_flow
+        .values_of_binding(&id("factory"))
+        .iter()
+        .next()
+        .unwrap()
+    else {
+        panic!("factory identity");
+    };
+    let global_factory = provider_view.sites[&factory_site];
+    assert!(
+        provider_view
+            .shared
+            .values
+            .get(&FlowKey::Return(global_factory))
+            .unwrap()
+            .iter()
+            .any(|value| value == global_callback),
+        "ordinary global Return facts remain unfiltered"
+    );
+    let formal = provider_view.bindings[&id("callback")];
+    assert!(
+        provider_view
+            .shared
+            .values
+            .get(&FlowKey::Binding(formal))
+            .unwrap()
+            .iter()
+            .any(|value| value == global_callback),
+        "ordinary argument-to-formal flow remains unfiltered"
     );
 }

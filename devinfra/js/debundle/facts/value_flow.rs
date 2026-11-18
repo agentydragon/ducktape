@@ -841,6 +841,7 @@ impl ChunkValueFlow {
                 arguments: std::mem::take(&mut symbols.call_arguments),
                 summaries: Arc::new(summaries),
                 default_property,
+                importer_allocations: Arc::default(),
             },
             &mut |key| flow.values_for_key(&symbols, key),
             &mut |_| {},
@@ -1498,6 +1499,7 @@ struct ReturnInputs {
     arguments: Vec<FlowValueExpr>,
     summaries: Arc<BTreeMap<u32, ReturnSummary>>,
     default_property: Option<PropertySlot>,
+    importer_allocations: Arc<Vec<RoaringBitmap>>,
 }
 
 fn append_value_expr(
@@ -1538,63 +1540,38 @@ fn append_value_expr(
                 );
                 append_property_values(&objects.finish(), *property, values, read_values, unknown);
             }
-            FlowValueExpr::Call { callee, argument } => {
-                let mut targets = values.child();
-                append_value_expr(
-                    callee,
-                    &mut targets,
-                    declared,
-                    returns,
-                    read_values,
-                    unknown,
-                );
-                let mut actual = None;
-                for origin in targets.finish() {
-                    if let Value::Alloc(Kind::Function, function) = origin {
-                        if let Some(argument) = argument
-                            && let Some(summary) = returns.summaries.get(&function)
-                        {
-                            let argument = actual.get_or_insert_with(|| {
-                                let mut result = values.child();
-                                append_value_expr(
-                                    &returns.arguments[*argument],
-                                    &mut result,
-                                    declared,
-                                    returns,
-                                    read_values,
-                                    unknown,
-                                );
-                                result.finish()
-                            });
-                            match summary {
-                                ReturnSummary::Argument => values.extend(argument),
-                                ReturnSummary::ArgumentOrDefault => {
-                                    values.extend(argument);
-                                    append_property_values(
-                                        argument,
-                                        returns.default_property,
-                                        values,
-                                        read_values,
-                                        unknown,
-                                    );
-                                }
-                                ReturnSummary::ArgumentProperty(property) => {
-                                    append_property_values(
-                                        argument,
-                                        Some(*property),
-                                        values,
-                                        read_values,
-                                        unknown,
-                                    )
-                                }
-                            }
-                        } else if let Some(found) = read_values(FlowKey::Return(function)) {
-                            values.extend(&found);
-                        }
-                    } else {
-                        unknown(SourceUnknownCause::NonFunctionCallee);
-                        values.push(Value::Top);
-                    }
+            FlowValueExpr::Call {
+                callee,
+                argument,
+                factory_importer,
+            } => {
+                if let Some(module) = factory_importer {
+                    let mut result = values.child();
+                    append_call_result(
+                        callee,
+                        *argument,
+                        &mut result,
+                        declared,
+                        returns,
+                        read_values,
+                        unknown,
+                    );
+                    let mut result = result.finish();
+                    // Only direct result identities are refined. Top is separate
+                    // from this bitmap and all ordinary invocation/retained facts
+                    // survive; no purity or successful-return proof follows.
+                    *Arc::make_mut(&mut result.bitmap) -= &returns.importer_allocations[*module];
+                    values.extend(&result);
+                } else {
+                    append_call_result(
+                        callee,
+                        *argument,
+                        values,
+                        declared,
+                        returns,
+                        read_values,
+                        unknown,
+                    );
                 }
             }
             FlowValueExpr::Union(_, _) => unreachable!("unions are handled by the work stack"),
@@ -1603,6 +1580,76 @@ fn append_value_expr(
                 unknown(*cause);
                 values.push(Value::Top);
             }
+        }
+    }
+}
+
+/// The ordinary call-result transfer, shared by constrained and unconstrained
+/// calls. Constraints wrap this transfer; they do not change its reads or calls.
+fn append_call_result(
+    callee: &FlowValueExpr,
+    argument: Option<usize>,
+    values: &mut ValuesBuilder,
+    declared: &[bool],
+    returns: &ReturnInputs,
+    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    unknown: &mut impl FnMut(SourceUnknownCause),
+) {
+    let mut targets = values.child();
+    append_value_expr(
+        callee,
+        &mut targets,
+        declared,
+        returns,
+        read_values,
+        unknown,
+    );
+    let mut actual = None;
+    for origin in targets.finish() {
+        if let Value::Alloc(Kind::Function, function) = origin {
+            if let Some(argument) = argument
+                && let Some(summary) = returns.summaries.get(&function)
+            {
+                let argument = actual.get_or_insert_with(|| {
+                    let mut result = values.child();
+                    append_value_expr(
+                        &returns.arguments[argument],
+                        &mut result,
+                        declared,
+                        returns,
+                        read_values,
+                        unknown,
+                    );
+                    result.finish()
+                });
+                match summary {
+                    ReturnSummary::Argument => values.extend(argument),
+                    ReturnSummary::ArgumentOrDefault => {
+                        values.extend(argument);
+                        append_property_values(
+                            argument,
+                            returns.default_property,
+                            values,
+                            read_values,
+                            unknown,
+                        );
+                    }
+                    ReturnSummary::ArgumentProperty(property) => {
+                        append_property_values(
+                            argument,
+                            Some(*property),
+                            values,
+                            read_values,
+                            unknown,
+                        )
+                    }
+                }
+            } else if let Some(found) = read_values(FlowKey::Return(function)) {
+                values.extend(&found);
+            }
+        } else {
+            unknown(SourceUnknownCause::NonFunctionCallee);
+            values.push(Value::Top);
         }
     }
 }
@@ -1678,6 +1725,8 @@ struct FlowSymbols {
     property_slots: HashMap<String, PropertySlot>,
     call_arguments: Vec<FlowValueExpr>,
     call_argument_slots: HashMap<(u32, u32), usize>,
+    /// Only prevalidated declared imports; the integer is the importer module.
+    fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
 }
 
 impl FlowSymbols {
@@ -1742,6 +1791,9 @@ enum FlowValueExpr {
     Call {
         callee: Box<FlowValueExpr>,
         argument: Option<usize>,
+        /// A declared fresh result cannot originate at this importer's AST sites.
+        /// This refines direct identity only, never retained callback reach.
+        factory_importer: Option<usize>,
     },
     Union(Box<FlowValueExpr>, Box<FlowValueExpr>),
     Empty,
@@ -1840,6 +1892,16 @@ impl FlowValueExpr {
                 Callee::Expr(callee) => Self::Call {
                     callee: Box::new(Self::from_ast(callee, symbols)),
                     argument: symbols.call_argument(call),
+                    factory_importer: match callee.unwrap_parens() {
+                        Expr::Ident(id)
+                            if matches!(call.args.as_slice(), [argument]
+                            if argument.spread.is_none()
+                            && matches!(argument.expr.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))) =>
+                        {
+                            symbols.fresh_factory_imports.get(&id.to_id()).copied()
+                        }
+                        _ => None,
+                    },
                 },
                 _ => Self::Unknown(SourceUnknownCause::UnsupportedExpression),
             },
@@ -2037,6 +2099,15 @@ impl FlowProgram {
         inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
         inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
     ) -> Self {
+        Self::structural_with_factory_imports(body, inputs, inferred, Arc::default())
+    }
+
+    fn structural_with_factory_imports(
+        body: &[TopLevelItemView<'_>],
+        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+        fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
+    ) -> Self {
         let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
         candidates.extend(super::heap_contents::array_candidate_roots(body));
         let allocations = native_set_allocation_roots(inputs, inferred);
@@ -2045,21 +2116,35 @@ impl FlowProgram {
                 .keys()
                 .map(|site| Value::Alloc(Kind::Set, *site)),
         );
-        Self::collect_with_native_set_allocations(body, &candidates, &allocations)
+        Self::collect_with_native_set_allocations(
+            body,
+            &candidates,
+            &allocations,
+            fresh_factory_imports,
+        )
     }
 
     fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<Value>) -> Self {
-        Self::collect_with_native_set_allocations(body, candidate_objects, &BTreeMap::new())
+        Self::collect_with_native_set_allocations(
+            body,
+            candidate_objects,
+            &BTreeMap::new(),
+            Arc::default(),
+        )
     }
 
     fn collect_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
         candidate_objects: &BTreeSet<Value>,
         native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+        fresh_factory_imports: Arc<BTreeMap<Id, usize>>,
     ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
-            symbols: FlowSymbols::default(),
+            symbols: FlowSymbols {
+                fresh_factory_imports,
+                ..FlowSymbols::default()
+            },
             events: Vec::new(),
             cell_effects: BTreeMap::new(),
             origins: BTreeSet::from([Value::Top]),
@@ -2145,6 +2230,7 @@ impl FlowProgram {
                 arguments: std::mem::take(&mut symbols.call_arguments),
                 summaries: return_summaries.clone(),
                 default_property: symbols.property_slots.get("default").copied(),
+                importer_allocations: Arc::default(),
             },
             symbols.declared(&declared_ids),
             origin_table.clone(),

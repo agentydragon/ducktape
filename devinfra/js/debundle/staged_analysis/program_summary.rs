@@ -331,6 +331,7 @@ pub fn collect_program_summary(
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
+    let mut lexically_closed_modules = BTreeSet::new();
     let mut static_requests =
         BTreeMap::<String, (ChunkId, String, Vec<StaticModuleRequest>)>::new();
     for chunk_artifact in &artifact.chunks {
@@ -346,6 +347,15 @@ pub fn collect_program_summary(
         else {
             continue;
         };
+        if chunk_artifact
+            .analysis
+            .runtime_facts
+            .global_uses
+            .as_ref()
+            .is_some_and(|uses| !uses.dynamic_scope)
+        {
+            lexically_closed_modules.insert(chunk_name.to_string());
+        }
         let import_records = &chunk_artifact.analysis.imports;
         let export_alias_records = &chunk_artifact.analysis.export_aliases;
         let stable_export_values = &chunk_artifact.analysis.runtime_facts.stable_export_values;
@@ -654,6 +664,47 @@ pub fn collect_program_summary(
             (importer.clone(), locals)
         })
         .collect();
+    // A fresh result cannot be allocated at an importer AST site when all
+    // provider code is in this complete static closure, which excludes that
+    // importer. Dynamic scope cannot supply the missing identity proof.
+    let closed_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
+        .iter()
+        .map(|(module, facts)| {
+            let mut closures = BTreeMap::new();
+            let imports = facts
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    if !lexically_closed_modules.contains(module)
+                        || !chunk_export_purity
+                            .get(&target.module)
+                            .is_some_and(|policy| {
+                                policy.callback_factory_exports.contains(&target.export)
+                            })
+                    {
+                        return None;
+                    }
+                    let closed = *closures
+                        .entry((&target.module, &target.source_specifier))
+                        .or_insert_with(|| {
+                            resolved_closure_precedes_importer(
+                                module,
+                                &target.module,
+                                &target.source_specifier,
+                                &static_dependencies,
+                            )
+                            .is_some_and(|closure| {
+                                closure
+                                    .iter()
+                                    .all(|provider| lexically_closed_modules.contains(provider))
+                            })
+                        });
+                    closed.then(|| local.clone())
+                })
+                .collect();
+            (module.clone(), imports)
+        })
+        .collect();
     let requested_original_provider_exports = initializer_call_effect_inputs
         .values()
         .flatten()
@@ -669,6 +720,7 @@ pub fn collect_program_summary(
             &p.descriptor_copy_factory_exports
         }),
         CallableSummaryInputs {
+            closed_factory_imports: &closed_factory_imports,
             requested_original_provider_exports: &requested_original_provider_exports,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
