@@ -104,9 +104,104 @@ use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
+
+// Temporary selected-call observer. Its output never feeds execution facts.
+#[derive(serde::Serialize)]
+struct RetainedDecision {
+    owner: usize,
+    span: [u32; 2],
+    actual_admitted: bool,
+    namespace_admitted: bool,
+    complete: bool,
+    signatures: Vec<RetainedSignatureDecision>,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedSignatureDecision {
+    signature: usize,
+    arguments: Vec<RetainedArgumentDecision>,
+    protected_functions: BTreeSet<u32>,
+    escaped_functions: BTreeSet<u32>,
+    any_retained_escaped: bool,
+    writes_examined: usize,
+    matching_writes: usize,
+    mutation_intersections: Vec<RetainedMutationDecision>,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedArgumentDecision {
+    position: usize,
+    binding: Option<String>,
+    rebound: bool,
+    origin_count: Option<usize>,
+    unknown: Option<bool>,
+    binding_admitted: bool,
+    value_count: usize,
+    values_admitted: bool,
+    factory_carriers: usize,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct RetainedReceiverDecision {
+    binding: String,
+    origin_count: usize,
+    unknown: bool,
+    matched_functions: BTreeSet<u32>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RetainedWriteKind {
+    Intrinsic,
+    CallbackResult,
+}
+
+#[derive(serde::Serialize)]
+struct RetainedMutationDecision {
+    kind: RetainedWriteKind,
+    span: [u32; 2],
+    receiver: RetainedReceiverDecision,
+}
+
+fn selected_retained_decision(owner: SourceUnitOrdinal, site: CallSite) -> bool {
+    static SELECTOR: OnceLock<Option<(usize, u32, u32)>> = OnceLock::new();
+    let selector = SELECTOR.get_or_init(|| {
+        let raw = std::env::var("DEBUNDLE_DEBUG_RETAINED_CALLBACK_SITE").ok()?;
+        let mut parts = raw.split(':');
+        Some((
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        ))
+    });
+    let span = site.source_span();
+    *selector == Some((owner.0, span.lo.0, span.hi.0))
+}
+
+fn emit_retained_decision(record: &RetainedDecision) {
+    static RECORDS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+    let mut records = RECORDS
+        .get_or_init(|| Mutex::new(BTreeSet::new()))
+        .lock()
+        .expect("diagnostic mutex");
+    if records.len() > 64 {
+        return;
+    }
+    let serialized = serde_json::to_string(record).expect("diagnostic serialization");
+    if records.contains(&serialized) {
+        return;
+    }
+    if records.len() == 64 || serialized.len() > 1_048_576 {
+        eprintln!("retained-decision-incomplete record_limit=64 byte_limit=1048576");
+        records.insert(String::from("overflow"));
+        return;
+    }
+    eprintln!("retained-decision {serialized}");
+    records.insert(serialized);
+}
 
 pub(super) enum NativeIdentitySource {
     Inferred {
@@ -6708,12 +6803,192 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<Values> {
-        self.retained_callbacks(
-            &self.inputs.index.retained_callback_calls.get(&site)?.call,
-            expressions,
-            args,
-            RetainedResultKind::Factory,
-        )
+        let contract = &self.inputs.index.retained_callback_calls.get(&site)?.call;
+        let result =
+            self.retained_callbacks(contract, expressions, args, RetainedResultKind::Factory);
+        if let Some(&(owner, _)) = self.inputs.call_site_owners.get(&site)
+            && selected_retained_decision(owner, site)
+        {
+            self.observe_retained_decision(site, contract, expressions, args, result.is_some());
+        }
+        result
+    }
+
+    fn observe_retained_decision(
+        &self,
+        site: CallSite,
+        contract: &RetainedCallbackCall,
+        expressions: &[ValueExpr],
+        args: &[Values],
+        actual_admitted: bool,
+    ) {
+        let owner = self.inputs.call_site_owners[&site].0;
+        let namespace_admitted =
+            contract
+                .namespace_member
+                .as_ref()
+                .is_none_or(|(namespace, member)| {
+                    self.inputs
+                        .index
+                        .audited_factory_members
+                        .get(namespace)
+                        .is_some_and(|members| members.contains(member))
+                });
+        let requested_writes: BTreeSet<u32> = std::env::var("DEBUNDLE_DEBUG_RETAINED_WRITE_STARTS")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|part| part.parse().ok())
+            .collect();
+        let mut signatures = Vec::new();
+        for (signature, selected) in contract.signatures.iter().enumerate() {
+            let mut arguments = Vec::new();
+            let mut retained = Values::new();
+            for position in &selected.callback_arguments {
+                let values = &args[*position];
+                let mut argument = RetainedArgumentDecision {
+                    position: *position,
+                    binding: None,
+                    rebound: false,
+                    origin_count: None,
+                    unknown: None,
+                    binding_admitted: true,
+                    value_count: values.len(),
+                    values_admitted: !values.is_empty(),
+                    factory_carriers: 0,
+                };
+                if let ValueExpr::Binding(binding) = &expressions[*position] {
+                    let origins = self.inputs.flow.values_of_binding(binding);
+                    let origin_count = origins.iter().count();
+                    argument.binding = Some(format!("{binding:?}"));
+                    argument.rebound = self.inputs.facts.iter().any(|fact| {
+                        fact.rebinds.eager.contains(binding) || fact.rebinds.lazy.contains(binding)
+                    });
+                    argument.origin_count = Some(origin_count);
+                    argument.unknown = Some(origins.iter().any(|value| value == Value::Top));
+                    argument.binding_admitted = !argument.rebound && origin_count <= 1;
+                }
+                for value in values {
+                    argument.values_admitted &= match value {
+                        AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                        | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
+                            self.inputs.index.callables.contains_key(key)
+                                && !self.state.world.native.tainted_functions.contains(key)
+                        }
+                        AbstractValue::AuditedRetainedResult(kind, captured) => {
+                            argument.factory_carriers +=
+                                usize::from(*kind == RetainedResultKind::Factory);
+                            *kind == RetainedResultKind::Factory
+                                && self.audited_result_is_clean(captured)
+                        }
+                        _ => false,
+                    };
+                }
+                retained.extend(self.callback_values(values));
+                arguments.push(argument);
+            }
+            let function = |value: &AbstractValue| match value {
+                AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => Some(*key),
+                _ => None,
+            };
+            let protected_functions: BTreeSet<u32> = retained.iter().filter_map(function).collect();
+            let escaped: Vec<_> = retained
+                .iter()
+                .filter(|value| {
+                    self.state
+                        .world
+                        .publication
+                        .global_escaped_callbacks
+                        .contains(*value)
+                })
+                .collect();
+            let escaped_functions = escaped.iter().filter_map(|value| function(value)).collect();
+            let mut receivers = BTreeMap::<Id, RetainedReceiverDecision>::new();
+            let mut mutation_intersections = Vec::new();
+            let mut writes_examined = 0;
+            let mut matching_writes = 0;
+            let mut observe_write = |kind, span: Span, expression: &ValueExpr| {
+                writes_examined += 1;
+                let mut root = expression;
+                while let ValueExpr::Member(receiver, _, _, _) = root {
+                    root = receiver;
+                }
+                let ValueExpr::Binding(binding) = root else {
+                    return;
+                };
+                let receiver = receivers.entry(binding.clone()).or_insert_with(|| {
+                    let origins = self.inputs.flow.values_of_binding(binding);
+                    let mut matched_functions = BTreeSet::new();
+                    let mut origin_count = 0;
+                    let mut unknown = false;
+                    for value in origins.iter() {
+                        origin_count += 1;
+                        unknown |= value == Value::Top;
+                        if let Value::Alloc(Kind::Function, key) = value
+                            && protected_functions.contains(&key)
+                        {
+                            matched_functions.insert(key);
+                        }
+                    }
+                    RetainedReceiverDecision {
+                        binding: format!("{binding:?}"),
+                        origin_count,
+                        unknown,
+                        matched_functions,
+                    }
+                });
+                matching_writes += usize::from(!receiver.matched_functions.is_empty());
+                if !receiver.matched_functions.is_empty() || requested_writes.contains(&span.lo.0) {
+                    mutation_intersections.push(RetainedMutationDecision {
+                        kind,
+                        span: [span.lo.0, span.hi.0],
+                        receiver: receiver.clone(),
+                    });
+                }
+            };
+            for write in &self.inputs.index.intrinsic_writes {
+                observe_write(RetainedWriteKind::Intrinsic, write.span, &write.receiver);
+            }
+            for write in self
+                .inputs
+                .index
+                .top_callback_result_writes
+                .iter()
+                .flatten()
+                .chain(
+                    self.inputs
+                        .index
+                        .callables
+                        .values()
+                        .flat_map(|callable| &callable.callback_result_writes),
+                )
+            {
+                observe_write(
+                    RetainedWriteKind::CallbackResult,
+                    write.site.source_span(),
+                    &write.receiver,
+                );
+            }
+            signatures.push(RetainedSignatureDecision {
+                signature,
+                arguments,
+                protected_functions,
+                escaped_functions,
+                any_retained_escaped: !escaped.is_empty(),
+                writes_examined,
+                matching_writes,
+                mutation_intersections,
+            });
+        }
+        let span = site.source_span();
+        emit_retained_decision(&RetainedDecision {
+            owner: owner.0,
+            span: [span.lo.0, span.hi.0],
+            actual_admitted,
+            namespace_admitted,
+            complete: true,
+            signatures,
+        });
     }
 
     fn retained_constructor_callbacks(
