@@ -26,6 +26,8 @@ from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep @pypi//protobuf
+
 BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"
 
