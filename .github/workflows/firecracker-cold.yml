@@ -1,0 +1,29 @@
+name: Firecracker cold start
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firecracker-cold
+  cancel-in-progress: false
+
+jobs:
+  cold-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          installables: ".#bb .#bbr"
+      - name: Run both scenarios from a fresh K3s baseline
+        run: >-
+          bbr test //agentplane/system_tests/suites:test_firecracker_cold
+          --nocache_test_results --flaky_test_attempts=1 --test_output=errors

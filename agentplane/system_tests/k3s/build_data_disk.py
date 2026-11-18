@@ -1,4 +1,4 @@
-"""Package a sparse, empty ext4 filesystem for the Docker recycling experiment."""
+"""Package a sparse, empty ext4 filesystem for retained Docker K3s runners."""
 
 import os
 import subprocess

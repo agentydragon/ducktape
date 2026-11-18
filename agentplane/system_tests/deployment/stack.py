@@ -387,12 +387,6 @@ def running_stack(
         "AGENTPLANE_K3S_REQUIRE_KVM"
     ) != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
-    if (
-        fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
-        and persist_infrastructure
-        and os.environ.get("AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT") != "1"
-    ):
-        raise ValueError("Firecracker persistence requires the manual experiment opt-in")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
     if uses_guest_runtime != (runtime_factory is not None):

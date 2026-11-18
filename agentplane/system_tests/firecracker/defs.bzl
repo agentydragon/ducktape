@@ -1,9 +1,10 @@
-"""Manual matched Firecracker fixture-lifetime targets."""
+"""Firecracker acceptance with retained K3s or an explicitly discarded cold baseline."""
 
 load("//agentplane/system_tests/k3s:defs.bzl", "GENERIC_DEVICE_PLUGIN_IMAGE", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def firecracker_bench(name, recycle):
+def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
+    """Run both acceptance scenarios with a retained or explicitly discarded K3s baseline."""
     py_test(
         name = name,
         size = "enormous",
@@ -12,7 +13,7 @@ def firecracker_bench(name, recycle):
         args = ["-o", "junit_duration_report=call", "--durations=0"] + ([] if recycle else ["--discard-recycled-runner"]),
         data = [
             "//agentplane/crds",
-            "//agentplane/system_tests/x/vm_kvm:data_disk",
+            "//agentplane/system_tests/k3s:recycling_data_disk",
             K3S_BINARY,
             "//agentplane/system_tests/suites:firecracker_image_manifest",
             "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
@@ -30,9 +31,8 @@ def firecracker_bench(name, recycle):
             "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
             "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
             "K3S_PROFILE_GUEST_ROOT": "0",
-            "AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT": "1",
-            "PYTEST_PLUGINS": "agentplane.system_tests.x.vm_kvm.recycling_probe",
-            "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/x/vm_kvm:data_disk)",
+            "PYTEST_PLUGINS": "agentplane.system_tests.k3s.recycling_probe",
+            "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s:recycling_data_disk)",
         },
         exec_properties = {
             "dockerNetwork": "bridge",
@@ -40,15 +40,16 @@ def firecracker_bench(name, recycle):
             "test.EstimatedFreeDiskBytes": "20GB",
             "test.EstimatedMemory": "6GB",
         } | KVM_EXEC_PROPERTIES | {
+            "test.Pool": pool,
             "test.recycle-runner": "true" if recycle else "false",
-            "test.runner-recycling-key": "firecracker-ext4-bench-v1-" + k3s_recycling_key(vm = False),
+            "test.runner-recycling-key": "firecracker-ext4-v1-" + k3s_recycling_key(vm = False),
             "test.runner-recycling-max-wait": "5s",
             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
         },
-        tags = K3S_TAGS + ["manual", "bench"],
+        tags = K3S_TAGS + tags,
         deps = [
             "//:conftest",
-            "//agentplane/system_tests/x/vm_kvm:recycling_probe",
+            "//agentplane/system_tests/k3s:recycling_probe",
             "//agentplane/app/testing:client",
             "//agentplane/session_dispatcher/dispatcher:testing_client",
             "//agentplane/system_tests:app_fixtures",

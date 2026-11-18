@@ -3,7 +3,7 @@
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "image_manifest")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
 
@@ -245,6 +245,38 @@ py_library(
     srcs = ["pytest_plugin.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "build_data_disk_bin",
+    main_module = "agentplane.system_tests.k3s.build_data_disk",
+    deps = [":build_data_disk"],
+)
+
+genrule(
+    name = "recycling_data_disk",
+    srcs = ["@trixie_vm_guest//:flat"],
+    outs = ["k3s-recycled.ext4.tar.gz"],
+    cmd = "$(execpath :build_data_disk_bin) $(execpath @trixie_vm_guest//:flat) $@",
+    tools = [":build_data_disk_bin"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+py_library(
+    name = "build_data_disk",
+    srcs = ["build_data_disk.py"],
+)
+
+py_library(
+    name = "recycling_probe",
+    srcs = ["recycling_probe.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":baseline",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],

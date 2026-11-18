@@ -1,4 +1,4 @@
-"""Opt-in receipts and owned-runner disposal for the Docker recycling experiment."""
+"""Private data disk, action receipts and owned disposal for retained Docker test runners."""
 
 import contextlib
 import errno

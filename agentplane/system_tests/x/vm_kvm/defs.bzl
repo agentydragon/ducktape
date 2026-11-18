@@ -19,8 +19,8 @@ def vm_kvm_test(
             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
         }
         recycling_environment = {
-            "PYTEST_PLUGINS": "agentplane.system_tests.x.vm_kvm.recycling_probe",
-            "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath :data_disk)",
+            "PYTEST_PLUGINS": "agentplane.system_tests.k3s.recycling_probe",
+            "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s:recycling_data_disk)",
         }
 
     py_test(
@@ -41,7 +41,7 @@ def vm_kvm_test(
             "@cert_manager_v1_21_2_release//file",
             "@kubevirt_operator_bundle//file",
             "@kyverno_install//file",
-        ] + ([":data_disk"] if recycle else []),
+        ] + (["//agentplane/system_tests/k3s:recycling_data_disk"] if recycle else []),
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
@@ -85,5 +85,5 @@ def vm_kvm_test(
             "@pypi//pytest",
             "@pypi//pytest_asyncio",
             "@pypi//pytest_bazel",
-        ] + ([":recycling_probe"] if recycle else []) + extra_deps,
+        ] + (["//agentplane/system_tests/k3s:recycling_probe"] if recycle else []) + extra_deps,
     )

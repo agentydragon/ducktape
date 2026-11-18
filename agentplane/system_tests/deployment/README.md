@@ -38,10 +38,11 @@ normal/manual/profile VM suites and real-model tests; there are no separate pers
 The existing manual/live tags still determine which suites run in CI, and real-model tests require
 `OPENAI_API_KEY`.
 
-The required Firecracker suite starts fresh. Its [manual lifetime benchmark](../x/firecracker/README.md)
-can opt into Docker retention with `AGENTPLANE_FIRECRACKER_PERSISTENCE_EXPERIMENT=1` and the executor
-permission below. It keeps K3s and PKI on disk, while removing its per-action KVM device-plugin
-namespace before certifying the baseline clean.
+The required Firecracker suite retains K3s and PKI on a private ext4 disk in its Docker runner.
+It removes its per-action KVM device-plugin namespace before certifying the baseline clean.
+Its [cold-start acceptance target](../firecracker/README.md) runs both scenarios from scratch
+nightly and on demand, then discards the owned runner. The
+[manual lifetime benchmarks](../x/firecracker/README.md) use the same lifecycle support.
 
 Retention requires `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1`, injected by BuildBuddy's
 `test.env-overrides` exec property, rather than the test's ordinary environment. Without that
