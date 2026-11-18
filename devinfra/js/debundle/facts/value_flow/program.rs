@@ -543,7 +543,13 @@ impl ChunkProgramFlow {
                 default_property: self.shared.property_slots.get("default").copied(),
                 importer_allocations: self.shared.importer_allocations.clone(),
             },
-            &mut |key| self.shared.values.get(&key).cloned(),
+            &mut |key, into| {
+                let Some(found) = self.shared.values.get(&key) else {
+                    return false;
+                };
+                into.extend(found);
+                true
+            },
             &mut |_| {},
         );
         self.project(&result.finish(), flow)

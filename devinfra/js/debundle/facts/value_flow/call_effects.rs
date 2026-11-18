@@ -101,9 +101,13 @@ impl CallEffectRules {
                     &mut targets,
                     declared,
                     returns,
-                    &mut |key| match values.get(&key)?.value() {
-                        FlowFact::Values(values) => Some(values.clone()),
-                        _ => unreachable!("value-expression key"),
+                    &mut |key, into| match values.get(&key).map(|fact| fact.value()) {
+                        Some(FlowFact::Values(values)) => {
+                            into.extend(values);
+                            true
+                        }
+                        Some(_) => unreachable!("value-expression key"),
+                        None => false,
                     },
                     &mut |_| {},
                 );

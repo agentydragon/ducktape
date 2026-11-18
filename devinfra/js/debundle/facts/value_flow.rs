@@ -860,7 +860,13 @@ impl ChunkValueFlow {
                 default_property,
                 importer_allocations: Arc::default(),
             },
-            &mut |key| flow.values_for_key(&symbols, key),
+            &mut |key, into| {
+                let Some(found) = flow.values_for_key(&symbols, key) else {
+                    return false;
+                };
+                into.extend(&found);
+                true
+            },
             &mut |_| {},
         );
         (values.finish(), work.get())
@@ -886,21 +892,26 @@ impl ChunkValueFlow {
             },
             &self.return_summaries,
             default_property,
-            &mut |key| match key {
-                FlowKey::Binding(slot) => self
-                    .bindings
-                    .get(&self.binding_ids_by_slot[slot.0 as usize])
-                    .cloned(),
-                FlowKey::Return(function) => self.returns.get(&function).cloned(),
-                FlowKey::Property(object, property) => self
-                    .properties
-                    .get(&object)
-                    .and_then(|properties| {
-                        properties.get(&self.property_names_by_slot[property.0 as usize])
-                    })
-                    .cloned(),
-                FlowKey::Properties(object) => self.property_unions.get(&object).cloned(),
-                _ => unreachable!("return summaries read only value facts"),
+            &mut |key, into| {
+                let found = match key {
+                    FlowKey::Binding(slot) => self
+                        .bindings
+                        .get(&self.binding_ids_by_slot[slot.0 as usize]),
+                    FlowKey::Return(function) => self.returns.get(&function),
+                    FlowKey::Property(object, property) => {
+                        self.properties.get(&object).and_then(|properties| {
+                            properties.get(&self.property_names_by_slot[property.0 as usize])
+                        })
+                    }
+                    FlowKey::Properties(object) => self.property_unions.get(&object),
+                    _ => unreachable!("return summaries read only value facts"),
+                };
+                if let Some(found) = found {
+                    into.extend(found);
+                    true
+                } else {
+                    false
+                }
             },
             &mut |_| {},
         );
@@ -1555,12 +1566,14 @@ struct ReturnInputs {
     importer_allocations: Arc<Vec<RoaringBitmap>>,
 }
 
+/// The reader appends borrowed fact values into the builder and reports presence
+/// separately, including an empty fact, instead of returning a cloned `Values`.
 fn append_value_expr(
     expr: &FlowValueExpr,
     values: &mut ValuesBuilder,
     declared: &[bool],
     returns: &ReturnInputs,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     let mut pending = vec![expr];
@@ -1573,9 +1586,8 @@ fn append_value_expr(
         }
         match expr {
             FlowValueExpr::Binding(slot) => {
-                if let Some(found) = read_values(FlowKey::Binding(*slot)) {
-                    values.extend(&found);
-                } else if !declared[slot.0 as usize] {
+                let found = read_values(FlowKey::Binding(*slot), values);
+                if !found && !declared[slot.0 as usize] {
                     unknown(SourceUnknownCause::UndeclaredBinding);
                     values.push(Value::Top);
                 }
@@ -1657,7 +1669,7 @@ fn append_call_result(
     values: &mut ValuesBuilder,
     declared: &[bool],
     returns: &ReturnInputs,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     let mut targets = values.child();
@@ -1697,8 +1709,8 @@ fn append_call_result(
                     read_values,
                     unknown,
                 );
-            } else if let Some(found) = read_values(FlowKey::Return(function)) {
-                values.extend(&found);
+            } else {
+                read_values(FlowKey::Return(function), values);
             }
         } else {
             unknown(SourceUnknownCause::NonFunctionCallee);
@@ -1717,7 +1729,7 @@ fn append_summary_result(
     declared: &impl Fn(BindingSlot) -> bool,
     summaries: &BTreeMap<u32, ReturnSummary>,
     default_property: Option<PropertySlot>,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     if append_leaf_summary(
@@ -1734,13 +1746,18 @@ fn append_summary_result(
         unreachable!()
     };
     for helper in helpers {
-        let Some(targets) = read_values(FlowKey::Binding(helper)) else {
+        // Finish the borrowed binding-fact read before looking up each target's
+        // Return fact through the same context. This is the one owned target
+        // snapshot needed to separate those reads.
+        let mut target_values = values.child();
+        if !read_values(FlowKey::Binding(helper), &mut target_values) {
             if !declared(helper) {
                 unknown(SourceUnknownCause::UndeclaredBinding);
                 values.push(Value::Top);
             }
             continue;
-        };
+        }
+        let targets = target_values.finish();
         for target in targets {
             if let Value::Alloc(Kind::Function, function) = target {
                 match summaries.get(&function) {
@@ -1755,9 +1772,7 @@ fn append_summary_result(
                         );
                     }
                     _ => {
-                        if let Some(found) = read_values(FlowKey::Return(function)) {
-                            values.extend(&found);
-                        }
+                        read_values(FlowKey::Return(function), values);
                     }
                 }
             } else {
@@ -1773,7 +1788,7 @@ fn append_leaf_summary(
     actual: &Values,
     values: &mut ValuesBuilder,
     default_property: Option<PropertySlot>,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) -> bool {
     match summary {
@@ -1794,23 +1809,19 @@ fn append_property_values(
     objects: &Values,
     property: Option<PropertySlot>,
     values: &mut ValuesBuilder,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     for origin in objects {
         if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
             if let Some(property) = property {
                 // Unknown is durable even when a later write adds a value.
-                if let Some(found) = read_values(FlowKey::Property(object, property)) {
-                    values.extend(&found);
-                } else {
+                if !read_values(FlowKey::Property(object, property), values) {
                     unknown(SourceUnknownCause::MissingProperty);
                     values.push(Value::Top);
                 }
             } else {
-                if let Some(found) = read_values(FlowKey::Properties(object)) {
-                    values.extend(&found);
-                }
+                read_values(FlowKey::Properties(object), values);
                 unknown(SourceUnknownCause::DynamicProperty);
                 values.push(Value::Top);
             }
@@ -1824,14 +1835,12 @@ fn append_property_values(
 fn append_numeric_property_values(
     objects: &Values,
     values: &mut ValuesBuilder,
-    read_values: &mut impl FnMut(FlowKey) -> Option<Values>,
+    read_values: &mut impl FnMut(FlowKey, &mut ValuesBuilder) -> bool,
     unknown: &mut impl FnMut(SourceUnknownCause),
 ) {
     for origin in objects {
         if let Value::Alloc(Kind::Object | Kind::Set, object) = origin {
-            if let Some(found) = read_values(FlowKey::NumericProperties(object)) {
-                values.extend(&found);
-            }
+            read_values(FlowKey::NumericProperties(object), values);
             unknown(SourceUnknownCause::DynamicProperty);
             values.push(Value::Top);
         } else {
@@ -3543,7 +3552,7 @@ impl FlowRules {
             &mut values,
             &self.declared,
             &self.returns,
-            &mut |key| {
+            &mut |key, into| {
                 if let FlowKey::Property(object, property) = key {
                     if !self.property_producers.may_produce(object, property) {
                         #[cfg(test)]
@@ -3553,7 +3562,7 @@ impl FlowRules {
                         // Keep the existing Top result for missing properties,
                         // but avoid a watcher and cached dependency edge that no
                         // event in this completed source census can ever change.
-                        return None;
+                        return false;
                     }
                     #[cfg(test)]
                     {
@@ -3578,11 +3587,14 @@ impl FlowRules {
                     let _ = inserted;
                 }
                 match context.read(key) {
-                    Some(FlowFact::Values(values)) => Some(values.clone()),
+                    Some(FlowFact::Values(values)) => {
+                        into.extend(values);
+                        true
+                    }
                     Some(_) => {
                         unreachable!("value expressions cannot read parameter metadata")
                     }
-                    None => None,
+                    None => false,
                 }
             },
             &mut |cause| {
