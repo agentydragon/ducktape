@@ -203,7 +203,9 @@ def test_actions_environment_peer_matches_receiver_and_separates_dispatcher(
     )
     peer = settings.environment_service
     assert peer is not None
-    service = _resource(staging_manifests, "Service", sandbox_controller.NAME)
+    service = _resource(
+        staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
+    )
     port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     assert (
         peer.target

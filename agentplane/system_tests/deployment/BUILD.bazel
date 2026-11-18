@@ -167,6 +167,7 @@ py_test(
         "//agentplane/system_tests/vm:sandboxes",
         "//cluster/cdk8s/agentplane:central_sampler",
         "//cluster/cdk8s/agentplane:environment_firecracker",
+        "//cluster/cdk8s/agentplane:environment_service",
         "//cluster/cdk8s/agentplane:environment_vm",
         "//cluster/cdk8s/agentplane:history_service",
         "//cluster/cdk8s/agentplane:llm_ingress",

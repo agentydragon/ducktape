@@ -18,13 +18,16 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from cluster.cdk8s.agentplane import (
     actions,
     central_sampler,
+    environment_service,
     history_service,
     mcp_edge,
+    runner_gateway,
     session_dispatcher,
     staging,
     telemetry,
@@ -321,7 +324,11 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
             ),
         }
     )
-    env = replace(staging.ENV, actions=replace(staging.ENV.actions, session_delegation=props))
+    env = replace(
+        staging.ENV,
+        namespace="actions-delegation-fixture",
+        actions=replace(staging.ENV.actions, session_delegation=props),
+    )
     chart = Chart(scratch_app, "delegation-actions", disable_resource_name_hashes=True)
     actions.Actions(
         chart,
@@ -329,7 +336,8 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         env,
         database_url=EnvValue.from_value("postgres://unused"),
         history=history_service.service(env.namespace),
-        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher=runner_gateway.sessions_service(env.namespace),
+        environment_service_endpoint=environment_service.environments_service(env.namespace),
     )
     documents = Cdk8sTesting.synth(chart)
     config = one(
@@ -349,8 +357,11 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         "read_turns",
         "submit_input",
     }
-    dispatcher = session_dispatcher.service(env.namespace)
+    dispatcher = runner_gateway.sessions_service(env.namespace)
     history = history_service.service(env.namespace)
+    environments = environment_service.environments_service(env.namespace)
+    assert settings["environment_service"]["target"] == f"{environments.fqdn}:{environments.port.number}"
+    assert settings["environment_service"]["tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     deployment = one(
         doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == actions.NAME
     )
