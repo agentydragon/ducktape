@@ -37,6 +37,7 @@ Linux only.
 
 ## Changes
 
+- **Consumer scope.** Unless stated otherwise, `agentydragon/gaffer-private` is Ducktape's only downstream repository, and the repository owner is its only human user. Reasonably small changes are fine when they keep important user flows working, have no user-visible downside the owner would care about, and keep `gaffer-private` working. This includes simplifying an API detail when it makes the code or design clearer or more idiomatic.
 - **Refactoring:** search all references (imports, BUILD, CI, docs, Dockerfiles, manifests). Update every caller in the same commit; no transitional shims.
 - **Stored data:** schema changes are new migrations, never edits to landed ones. Never destroy unregenerable user-authored data (repos, notebooks, mailboxes). Roll-safety: <STYLE.md> § General.
 - **Declarative config:** before enabling a managed feature, find existing owners/overlapping providers and keep one. Host scope is explicit (shared module for class-wide, host opt-in for exceptions); ask if unclear.
