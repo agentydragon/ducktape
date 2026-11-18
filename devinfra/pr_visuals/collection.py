@@ -8,7 +8,6 @@ can compare digests without downloading bytes.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import re
 import subprocess
@@ -19,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
-from devinfra.pr_visuals.artifacts import ListedArtifact, Runner, list_ci_artifacts
+from devinfra.pr_visuals.artifacts import Download, ListedArtifact, Runner, download_blobs, list_ci_artifacts
 from devinfra.testing.output_records import RECORDS_DIR, TEST_OUTPUTS_DIR, OutputRecord, is_canonical_output_path
 
 logger = logging.getLogger(__name__)
@@ -176,36 +175,28 @@ def _result_key(listed: ListedArtifact) -> ResultKey:
 
 
 def _download_records(
-    downloads: list[tuple[ListedArtifact, Path]], *, destination: Path, bbapi: Path, run: Runner
-) -> str | None:
-    if not downloads:
-        return None
-    destination.mkdir(parents=True, exist_ok=True)
-    manifest = [
-        {"uri": listed.artifact.file.uri, "destination": str(path), "invocation_id": listed.invocation_id}
-        for listed, path in downloads
-    ]
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination, delete=False) as stream:
-        json.dump(manifest, stream)
-        manifest_path = Path(stream.name)
-    try:
-        result = run(
-            [bbapi, "--timeout", "30s", "blob", "download", "--manifest", str(manifest_path)],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            return f"bbapi record download failed: {result.stderr.strip()}"
-    finally:
-        manifest_path.unlink(missing_ok=True)
-    return None
+    records: list[ListedArtifact], *, bbapi: Path, run: Runner
+) -> tuple[dict[int, bytes], str | None]:
+    if not records:
+        return {}, None
+    with tempfile.TemporaryDirectory(prefix="test-output-records-") as directory:
+        downloads = [
+            Download(item.artifact.file.uri, item.invocation_id, Path(directory) / f"{index}.json")
+            for index, item in enumerate(records)
+        ]
+        error = download_blobs(downloads, bbapi=bbapi, run=run)
+        # Keep any materialized records for diagnostics even if the batch failed.
+        contents = {
+            id(item): download.destination.read_bytes()
+            for item, download in zip(records, downloads, strict=True)
+            if download.destination.is_file()
+        }
+    return contents, f"bbapi record download failed: {error}" if error is not None else None
 
 
 def collect_outputs(
     invocations: list[str],
     repository: str,
-    destination: Path,
     *,
     targets: Iterable[str] | None = None,
     bbapi: Path = Path("bbapi"),
@@ -214,41 +205,21 @@ def collect_outputs(
     """List test artifacts once per invocation, then collect their output records."""
     logger.info("Listing test artifacts from %d invocation(s)", len(invocations))
     listed = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
-    return collect_listed_outputs(listed, repository, destination, targets=targets, bbapi=bbapi, run=run)
-
-
-def collect_listed_outputs(
-    listed: list[ListedArtifact],
-    repository: str,
-    destination: Path,
-    *,
-    targets: Iterable[str] | None = None,
-    bbapi: Path = Path("bbapi"),
-    run: Runner = subprocess.run,
-) -> CollectedOutputs:
-    """Adapt a native BES listing into materialized, result-scoped records."""
-    record_labels = {
-        item.artifact.id.test_result.label for item in listed if item.artifact.file.name.startswith(_RECORDS)
-    }
-    included = set(targets) if targets is not None else record_labels
+    expected = set(targets) if targets is not None else None
+    included = (
+        expected
+        if expected is not None
+        else {item.artifact.id.test_result.label for item in listed if item.artifact.file.name.startswith(_RECORDS)}
+    )
     by_result: dict[ResultKey, list[ListedArtifact]] = defaultdict(list)
     for item in listed:
         key = _result_key(item)
         if key.target in included:
             by_result[key].append(item)
-    downloads: list[tuple[ListedArtifact, Path]] = []
-    destination.mkdir(parents=True, exist_ok=True)
-    staging_root = Path(tempfile.mkdtemp(prefix="records-", dir=destination))
-    for key, items in by_result.items():
-        for index, item in enumerate(items):
-            if _record_name(item.artifact.file.name):
-                staged = staging_root / hashlib.sha256(repr(key).encode()).hexdigest() / f"{index}.json"
-                staged.parent.mkdir(parents=True, exist_ok=True)
-                downloads.append((item, staged))
-    logger.info("Listed %d artifacts; downloading %d output records", len(listed), len(downloads))
-    download_error = _download_records(downloads, destination=destination, bbapi=bbapi, run=run)
-    logger.info("Selecting outputs from %d records", len(downloads))
-    contents = {id(item): path.read_bytes() for item, path in downloads if path.is_file()}
+    records = [item for items in by_result.values() for item in items if _record_name(item.artifact.file.name)]
+    logger.info("Listed %d artifacts; downloading %d output records", len(listed), len(records))
+    contents, download_error = _download_records(records, bbapi=bbapi, run=run)
+    logger.info("Selecting outputs from %d records", len(contents))
     sources: list[SourceResult] = []
     for key, items in by_result.items():
         statuses = {item.artifact.status for item in items}
@@ -284,7 +255,7 @@ def collect_listed_outputs(
                 tuple(source_issues),
             )
         )
-    return collect_materialized_outputs(sources, repository, targets=targets)
+    return collect_materialized_outputs(sources, repository, targets=expected)
 
 
 def collect_materialized_outputs(
