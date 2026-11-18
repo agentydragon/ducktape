@@ -253,8 +253,8 @@
       "sha256": "kQ7nsd4IYIZuxaleFo2BBLHQ/vstp/spkd82dXqtuiw="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-17e582f039bb/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "F+WC8Dm7lEVuEm9uiWchJ6MPDsJfbNFPSpHyB5NAQjI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-d63154fed463/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "1jFU/tRjJ/GGTszjDjB5z3a86KydeaLdc+xGSrvtpVI="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-42b07dbc5e45/ci_reliability.skill",
