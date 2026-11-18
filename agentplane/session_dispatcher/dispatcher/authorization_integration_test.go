@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -25,6 +24,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -146,17 +146,12 @@ func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorit
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(Methods(rule).ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	dial := func(uri string) dispatcherpb.SessionDispatcherClient {
 		t.Helper()
-		return authoritySVIDClient(t, listener.Addr().String(), uri, ca, ca.Issue(t, uri))
+		return authoritySVIDClient(t, serverAddr, uri, ca, ca.Issue(t, uri))
 	}
 	return authorityPeers{component: dial(peertls.AppURI), sameNamedIdentity: dial(sameNamed.URI), otherIdentity: dial(other.URI)}
 }
@@ -261,15 +256,10 @@ func serveAuthoritySVIDServer(
 		t.Fatal(err)
 	}
 	serverTLS.NextProtos = []string{"h2", "http/1.1"}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return authoritySVIDServer{queueStore: queueStore, address: listener.Addr().String(), ca: ca, counted: counted}
+	serverAddr := grpcserver.Serve(t, server)
+	return authoritySVIDServer{queueStore: queueStore, address: serverAddr, ca: ca, counted: counted}
 }
 
 func (s authoritySVIDServer) client(t *testing.T, uri string, leaf peertls.Config) dispatcherpb.SessionDispatcherClient {

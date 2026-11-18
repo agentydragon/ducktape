@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -198,19 +199,14 @@ func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing
 	probe := &svidAdmissionProbe{t: t, identity: workload.Subject}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, probe)
-	netListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(netListener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 
 	validClient := ca.Issue(t, workload.URI)
 	validClientTLS, err := validClient.ClientTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	validClientConn, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(validClientTLS)), grpc.WithNoProxy())
+	validClientConn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(credentials.NewTLS(validClientTLS)), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +219,7 @@ func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing
 	noCertificateTLS := validClientTLS.Clone()
 	noCertificateTLS.Certificates = nil
 	noCertificateTLS.GetClientCertificate = nil
-	bearerConn, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(noCertificateTLS)), grpc.WithNoProxy())
+	bearerConn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(credentials.NewTLS(noCertificateTLS)), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +242,7 @@ func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalidClientConn, err := grpc.NewClient(netListener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(invalidClientTLS)), grpc.WithNoProxy())
+	invalidClientConn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(credentials.NewTLS(invalidClientTLS)), grpc.WithNoProxy())
 	if err != nil {
 		t.Fatal(err)
 	}

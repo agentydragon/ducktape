@@ -1,7 +1,6 @@
 package dispatcher
 
 import (
-	"net"
 	"testing"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -83,24 +83,19 @@ func TestActivityClientGuardsWireVersionAndRoutes(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				listener, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
 				server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
 				sandbox := SandboxSnapshot{Name: "wire-guard", Namespace: "test", UID: "sandbox-uid"}
 				harnesshostpb.RegisterHarnessHostServer(server, &activityWireHost{version: test.version, sandbox: sandbox, t: t, central: central})
-				go server.Serve(listener)
-				t.Cleanup(server.Stop)
+				serverAddr := grpcserver.Serve(t, server)
 				caller := ca.Issue(t, peertls.SessionsURI)
-				client := &HarnessHostClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
+				client := &HarnessHostClient{Namespace: "test", Timeout: 5 * time.Second, TargetTemplate: serverAddr, GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI, CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI}}
 				applied := 0
 				sentinel := status.Error(codes.Canceled, "test received guarded frame")
 				apply := func(*harnesshostpb.WatchSessionsResponse) error { applied++; return sentinel }
 				ctx := metadata.AppendToOutgoingContext(t.Context(), sandboxapi.RuntimeProxySandboxMetadataKey, "wrong-sandbox")
 				if central {
 					client.GatewayTLS.ServerURI = serverURI
-					sampler := &CentralActivityClient{Target: &CentralTarget{Target: listener.Addr().String(), TLS: client.GatewayTLS}, Timeout: client.Timeout}
+					sampler := &CentralActivityClient{Target: &CentralTarget{Target: serverAddr, TLS: client.GatewayTLS}, Timeout: client.Timeout}
 					err = sampler.WatchActivity(ctx, apply)
 				} else {
 					err = client.WatchActivity(ctx, sandbox, apply)
