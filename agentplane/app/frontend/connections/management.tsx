@@ -18,7 +18,7 @@ import { followWatch } from "../transport/watch_stream";
 import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../ui/inline_name";
 import { GrantStatus, type Connection } from "../../../mcp_edge/api/connection/connection_service_pb";
-import { Code } from "../../../proto/code_pb";
+import { Code } from "../../../proto/google/rpc/code_pb";
 import type { Identity } from "../../../proto/identity_pb";
 
 type Grant = Connection["grants"][number];

@@ -10,7 +10,7 @@ import {
   GrantStatus,
   type Connection,
 } from "../../../mcp_edge/api/connection/connection_service_pb";
-import { Code } from "../../../proto/code_pb";
+import { Code } from "../../../proto/google/rpc/code_pb";
 import { IdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
