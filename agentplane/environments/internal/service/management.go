@@ -110,83 +110,55 @@ func (s *Service) CreateEnvironment(ctx context.Context, request *environmentpb.
 	return created, nil
 }
 
-func (s *Service) SuspendEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {
+func (s *Service) mutateEnvironment(
+	ctx context.Context, target *identitypb.EnvironmentTarget, apply func(*management.Access, string, string) error,
+) (*emptypb.Empty, error) {
 	access, err := s.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
-	name, uid, err := s.mutationTarget(request.GetTarget())
+	name, uid, err := s.mutationTarget(target)
 	if err != nil {
 		return nil, err
 	}
-	if err := access.Suspend(ctx, name, uid); err != nil {
+	if err := apply(access, name, uid); err != nil {
 		return nil, managementError(ctx, err)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+func (s *Service) SuspendEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {
+	return s.mutateEnvironment(ctx, request.GetTarget(), func(access *management.Access, name, uid string) error {
+		return access.Suspend(ctx, name, uid)
+	})
 }
 
 func (s *Service) DeleteEnvironment(ctx context.Context, request *environmentpb.EnvironmentMutationRequest) (*emptypb.Empty, error) {
-	access, err := s.manager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	name, uid, err := s.mutationTarget(request.GetTarget())
-	if err != nil {
-		return nil, err
-	}
-	if err := access.Delete(ctx, name, uid); err != nil {
-		return nil, managementError(ctx, err)
-	}
-	return &emptypb.Empty{}, nil
+	return s.mutateEnvironment(ctx, request.GetTarget(), func(access *management.Access, name, uid string) error {
+		return access.Delete(ctx, name, uid)
+	})
 }
 
 func (s *Service) SetEnvironmentWakeOnSend(ctx context.Context, request *environmentpb.SetEnvironmentWakeOnSendRequest) (*emptypb.Empty, error) {
-	access, err := s.manager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	name, uid, err := s.mutationTarget(request.GetTarget())
-	if err != nil {
-		return nil, err
-	}
-	if err := access.SetWakeOnSend(ctx, name, uid, request.GetWakeOnSend()); err != nil {
-		return nil, managementError(ctx, err)
-	}
-	return &emptypb.Empty{}, nil
+	return s.mutateEnvironment(ctx, request.GetTarget(), func(access *management.Access, name, uid string) error {
+		return access.SetWakeOnSend(ctx, name, uid, request.GetWakeOnSend())
+	})
 }
 
 func (s *Service) SetEnvironmentIdleSuspend(ctx context.Context, request *environmentpb.SetEnvironmentIdleSuspendRequest) (*emptypb.Empty, error) {
-	access, err := s.manager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	name, uid, err := s.mutationTarget(request.GetTarget())
-	if err != nil {
-		return nil, err
-	}
-	if err := access.SetIdleSuspendAfter(ctx, name, uid, request.GetIdleSuspendAfter()); err != nil {
-		return nil, managementError(ctx, err)
-	}
-	return &emptypb.Empty{}, nil
+	return s.mutateEnvironment(ctx, request.GetTarget(), func(access *management.Access, name, uid string) error {
+		return access.SetIdleSuspendAfter(ctx, name, uid, request.GetIdleSuspendAfter())
+	})
 }
 
 func (s *Service) SetEnvironmentIdentity(ctx context.Context, request *environmentpb.SetEnvironmentIdentityRequest) (*emptypb.Empty, error) {
-	access, err := s.manager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	name, uid, err := s.mutationTarget(request.GetTarget())
-	if err != nil {
-		return nil, err
-	}
-	identity, err := access.ResolveIdentity(ctx, request.GetIdentityName())
-	if err != nil {
-		return nil, managementError(ctx, err)
-	}
-	if err := access.SetIdentity(ctx, name, uid, identity); err != nil {
-		return nil, managementError(ctx, err)
-	}
-	return &emptypb.Empty{}, nil
+	return s.mutateEnvironment(ctx, request.GetTarget(), func(access *management.Access, name, uid string) error {
+		identity, err := access.ResolveIdentity(ctx, request.GetIdentityName())
+		if err != nil {
+			return err
+		}
+		return access.SetIdentity(ctx, name, uid, identity)
+	})
 }
 
 func managementError(ctx context.Context, err error) error {
