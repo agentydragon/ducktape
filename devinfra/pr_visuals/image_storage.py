@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import subprocess
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -37,9 +38,11 @@ def _is_missing_object(error: ClientError) -> bool:
 
 def download_all(downloads: list[Download], *, bbapi: Path, run: Runner) -> None:
     """Download every required image blob."""
-    error = download_blobs(downloads, bbapi=bbapi, run=run)
-    if error is not None:
-        raise RuntimeError(f"bbapi blob download failed: {error}")
+    try:
+        download_blobs(downloads, bbapi=bbapi, run=run)
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip() or str(error)
+        raise RuntimeError(f"bbapi blob download failed: {detail}") from error
     missing = [str(download.destination) for download in downloads if not download.destination.is_file()]
     if missing:
         raise RuntimeError(f"bbapi blob download did not create destinations: {', '.join(missing)}")

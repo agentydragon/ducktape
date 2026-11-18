@@ -79,10 +79,10 @@ class Download:
     destination: Path
 
 
-def download_blobs(downloads: list[Download], *, bbapi: Path, run: Runner) -> str | None:
-    """Download the advertised CAS blobs in one batch. Return stderr on failure."""
+def download_blobs(downloads: list[Download], *, bbapi: Path, run: Runner) -> None:
+    """Download the advertised CAS blobs in one batch, raising on command failure."""
     if not downloads:
-        return None
+        return
     for download in downloads:
         download.destination.parent.mkdir(parents=True, exist_ok=True)
     manifest = [
@@ -100,7 +100,7 @@ def download_blobs(downloads: list[Download], *, bbapi: Path, run: Runner) -> st
             text=True,
             capture_output=True,
         )
-    return result.stderr.strip() if result.returncode != 0 else None
+        result.check_returncode()
 
 
 def list_ci_artifacts(
