@@ -317,7 +317,7 @@ def _image_policy(chart: Chart, name: str) -> None:
     )
 
 
-def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: bool) -> None:
+def _provider_workload(chart: Chart, instance: str, *, provider_type: str, record_upstream_traffic: bool) -> None:
     name = _provider_name(instance)
     provider_credentials = k8s.Volume(
         name="provider-credentials",
@@ -331,9 +331,8 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
         config_map=k8s.ConfigMapVolumeSource(name=CANARY_CONFIG.name if instance == "myquest-canary" else CONFIG.name),
     )
     tmp = k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource())
-    provider_health = k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
-    )
+    provider_health_get = k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
+    provider_health = k8s.Probe(http_get=provider_health_get)
     recorder_env = (
         [
             k8s.EnvVar(name="HTTP_PROXY", value=f"http://127.0.0.1:{_RECORD_PORT}"),
@@ -489,6 +488,11 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
             ],
             readiness_probe=provider_health,
             liveness_probe=provider_health,
+            startup_probe=(
+                k8s.Probe(http_get=provider_health_get, period_seconds=5, failure_threshold=12)
+                if provider_type == "myquest"
+                else None
+            ),
             resources=(
                 _resources(memory_request="1Gi", memory_limit="2Gi")
                 if instance in {"myquest", "myquest-canary"}
@@ -550,11 +554,13 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             description="Trust bundle for platform-session upstream recording",
             target_namespaces=(NAMESPACE,),
         )
-    for instance in PROVIDERS:
+    for integration in config.INTEGRATIONS["integrations"]:
+        instance = str(integration["id"])
         _add_provider(chart, instance)
         _provider_workload(
             chart,
             instance,
+            provider_type=str(integration["type"]),
             record_upstream_traffic=(
                 config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
                 if instance == "myquest-canary"
