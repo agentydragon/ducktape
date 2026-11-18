@@ -1,24 +1,24 @@
 {
-  "source_devel_commit": "9735c7e9e84ed2d17d2574b582d50341bf1c3c47",
-  "window_start_utc": "2026-11-18T01:13:44Z",
-  "window_end_utc": "2026-11-18T02:41:11.760623+00:00",
+  "source_devel_commit": "dd10e9c5d4136810db10c48b936f46244e85b17f",
+  "window_start_utc": "2026-11-18T03:17:08.312343+00:00",
+  "window_end_utc": "2026-11-18T04:08:32.301942+00:00",
   "published_at_utc": null,
-  "attribution": "Native stage clocks, fixture spans and selected paired command wall; no population critical-path or Shapley attribution",
-  "snapshot_prepared_at_utc": "2026-11-18T02:45:27.512213+00:00",
-  "audited_at_utc": "2026-11-18T02:45:27.512226+00:00",
+  "attribution": "Native stage clocks, nested fixture spans and local selected-batch feedback; no population critical-path or Shapley attribution",
+  "snapshot_prepared_at_utc": "2026-11-18T04:08:55.513897+00:00",
+  "audited_at_utc": "2026-11-18T04:08:55.513897+00:00",
   "publication_status": "Validated snapshot; Git history records the publication commit",
-  "previous_report_commit": "6f10299f3a3b22cec7d91acbda32acb2264dea16",
-  "history_base_gh_pages_commit": "506a66527717a8e58634e98e35c828aa235bee06",
-  "population": "Current: five Firecracker and six VM scenario actions / 22 passing cases; two separate collection-only disposals; two Nix ordinary/debug CI attempts. Earlier cohorts remain separately timestamped.",
-  "feedback_clock": "Current manual pairs: earlier local bbr command submission to later command completion, including outer setup, Bazel work and queues. Historical required-check canary: first of three required workflow creation times to last required-check completion, including failures. Neither clock establishes auto-merge readiness.",
-  "report_sha256": "fd969f2c29cfdec8acafd4376816bc306d2a5df0731ec9d57481a19034c5bc76",
-  "evidence_sha256": "8e91f7d17570e3637905a63dbb41b59fdc0d9dedd0a75c466f845907fe9e62da",
+  "previous_report_commit": "974b6ceeb8cbdd6b5ab423751576ea61dad5c4c1",
+  "history_base_gh_pages_commit": "d9ca4c55e2fabb98ebae2b207e7a55e3ddf3516a",
+  "population": "Current:five four-action ordinary-scheduler manual batches; 20 NEW TestRunner actions / 40 passing cases, 4 verified warm chains and 20 strict VM guest shutdowns. Two collection-only disposals are separate. Earlier populations retain original windows.",
+  "feedback_clock": "Current:local bbr command submission to completion per four-action batch, including outer setup/Bazel/queues; not GitHub required-check feedback or auto-merge. Earlier required-check canary and paired clocks retain their own definitions.",
+  "report_sha256": "f4a93c7f20aa53529a538e508a2abe8a1e7e2dc03dad11f592dd9efd713c81fc",
+  "evidence_sha256": "aef649780059dc495ed2c5e1adb8acc981ac11b232634e8eec1d689d227246d2",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Current Nix CI and manual benchmark window; local curl reachability at 01:10 UTC and all earlier cohorts have separate original clocks.",
+  "window_note": "Current ordinary-scheduler qualification and separate disposal end. Earlier Nix/controlled Firecracker, canary, mixed-burst and PR cohorts retain their original windows.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "03b62aeaf7effd45666886c3d395fc1c6fb921f3d03b4824dd7fabf9700d3d19",
+  "evidence_index_sha256": "9c72208610c0c446103c1f4b0b8ab41d9b6fa5af8ddef1c367f2546322d67357",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -301,5 +301,14 @@
   },
   "followup_test_source": "8c2b75a3798f4d45b07604375a66c7a3c45811d4",
   "visual_invocation": "07bd78de-794a-4ce5-ab0a-42e204c51082",
-  "visual_screenshot_count": 88
+  "visual_screenshot_count": 88,
+  "natural_scheduling_window_utc": [
+    "2026-11-18T03:17:08.312343+00:00",
+    "2026-11-18T04:03:50.414784+00:00"
+  ],
+  "natural_scheduling_source": "dd10e9c5d4136810db10c48b936f46244e85b17f",
+  "prior_tooling_firecracker_window_utc": [
+    "2026-11-18T01:13:44Z",
+    "2026-11-18T02:41:11.760623+00:00"
+  ]
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · tooling and Firecracker reuse</title>
+    <title>CI latency and ordinary Firecracker reuse</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -1174,6 +1174,72 @@
         </section>`;
       }
 
+      function NaturalScheduling() {
+        const q = e.natural_firecracker_scheduling;
+        if (!q) return null;
+        return html`<section id="natural-scheduling">
+          <${Title} order=${2}>Ordinary scheduling with parallel VM tests<//>
+          <${Text} c="dimmed" size="sm">${q.window_label}<//>
+          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
+            >${q.summary}<//
+          >
+          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
+            ${q.cards.map(
+              (card) =>
+                html`<${Paper} withBorder p="md">
+                  <${Text} c="dimmed">${card.label}<//>
+                  <${Title} order=${3}>${card.value}<//>
+                  <${Text} size="sm">${card.note}<//>
+                <//>`,
+            )}
+          <//>
+          <${Box}
+            role="img"
+            data-chart="natural-batch-feedback"
+            aria-label="Selected local bbr command wall clock seconds for five batches; not required CI feedback"
+            my="lg"
+          >
+            <${BarChart}
+              h=${300}
+              data=${q.chart}
+              orientation="vertical"
+              dataKey="label"
+              yAxisProps=${{ width: 175 }}
+              series=${[{ name: "Batch feedback", color: "blue.6" }]}
+              valueFormatter=${(v) => `${num(v)}s`}
+            />
+          <//>
+          ${q.limits.map((x) => html`<${Text} size="sm" c="dimmed" my="sm">${x}<//>`)}
+          <${Title} order=${3} mt="lg">Five-batch comparison<//>
+          ${table(q.headers, q.rows, 1150)}
+          ${q.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
+          <${Text} my="sm">${q.cleanup_summary}<//>
+          <${Text} my="sm">${q.next_action}<//>
+          <${Group} gap="md" my="md"
+            >${q.links.map((x) => link(x.url, x.label))}<//
+          >
+          <${Accordion} variant="contained" multiple=${true} mt="md">
+            <${Accordion.Item} value="natural-actions">
+              <${Accordion.Control}>Detailed batch actions<//>
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${table(q.action_headers, q.action_rows, 1150)}
+                <//><//
+              >
+            <//>
+            <${Accordion.Item} value="natural-methods">
+              <${Accordion.Control}>Measurement protocol and limits<//>
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${q.methods.map((x) => html`<${Text} size="sm">${x}<//>`)}
+                  ${q.limits.map((x) => html`<${Text} size="sm">${x}<//>`)}
+                <//><//
+              >
+            <//>
+          <//>
+        </section>`;
+      }
+
       function LatestMeasurements() {
         const q = e.ci_latency_followup;
         if (!q) return null;
@@ -1330,21 +1396,20 @@
                 >CI latency · reviewed 18 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >CI tooling and Firecracker fixture reuse<//
+                >CI latency and ordinary Firecracker reuse<//
               >
               <${Text} size="lg"
-                >${e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
+                >${e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New: Nix
-                realization diagnostics and a manual Firecracker lifetime
-                comparison. The required-routing canary was reverted. Earlier
-                canary heads, loaded bursts, cleanup qualification, worker-image
-                comparisons and PR cohorts retain their original windows.
-                Selected-action measurements remain separate from required CI
-                feedback.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />The current
+                ordinary-scheduler qualification has its own source and
+                observation window. Earlier tooling, controlled reuse, canary
+                heads, loaded bursts, cleanup qualification, worker-image
+                comparisons and PR cohorts retain their original windows.<//
               >
             </header>
+            <${NaturalScheduling} />
             <${LatestMeasurements} />
             <${RequiredCiCanary} />
             <${PostfixQualification} />
