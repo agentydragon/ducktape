@@ -235,9 +235,30 @@ fn completed_value_index_matches_ordered_facts_and_keeps_property_rows_sorted() 
         }
         assert_eq!(indexed_rows, view.shared.values.iter_values().count());
         assert_eq!(indexed_rows, view.shared.ordered_value_oracle.len());
+        assert!(
+            view.shared
+                .values
+                .property_ranges
+                .iter()
+                .filter(|range| range.start < range.end)
+                .count()
+                >= 2,
+            "fixture must populate property rows at multiple sites"
+        );
         for site in 0..view.shared.sites.sources.len() as u32 {
-            let properties = view.shared.values.properties_at(site);
+            let properties: Vec<_> = view.shared.values.properties_at(site).collect();
             assert!(properties.windows(2).all(|pair| pair[0].0 < pair[1].0));
+            for (property, values) in properties {
+                let expected = view
+                    .shared
+                    .ordered_value_oracle
+                    .get(&FlowKey::Property(site, property))
+                    .unwrap_or_else(|| {
+                        panic!("missing enumerated row in {module}: {site}/{property:?}")
+                    });
+                assert_eq!(values, expected);
+                assert!(Arc::ptr_eq(&values.bitmap, &expected.bitmap));
+            }
         }
     }
 
@@ -255,7 +276,6 @@ fn completed_value_index_matches_ordered_facts_and_keeps_property_rows_sorted() 
         .shared
         .values
         .properties_at(site)
-        .iter()
         .map(|(property, _)| property.0)
         .collect();
     assert!(row_slots.windows(2).any(|pair| pair[1] > pair[0] + 1));
@@ -281,6 +301,21 @@ fn completed_value_index_matches_ordered_facts_and_keeps_property_rows_sorted() 
             .is_some_and(Values::is_empty)
     );
     assert!(store.get(&FlowKey::Property(0, PropertySlot(8))).is_none());
+}
+
+#[test]
+#[should_panic(expected = "duplicate completed property value")]
+fn completed_property_index_rejects_duplicate_key() {
+    let mut store = CompletedValueStore::with_domains(0, 1);
+    let origins = Arc::new(OriginTable::default());
+    store.insert(
+        FlowKey::Property(0, PropertySlot(3)),
+        Values::empty(origins.clone()),
+    );
+    store.insert(
+        FlowKey::Property(0, PropertySlot(3)),
+        Values::empty(origins),
+    );
 }
 
 #[test]

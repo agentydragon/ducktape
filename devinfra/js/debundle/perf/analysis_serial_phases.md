@@ -1728,3 +1728,43 @@ pass `:analysis_test` and the real `program_value_flow_test` CLI suite.
 [Library validation](https://app.buildbuddy.io/invocation/e0953d2a-85c8-42b6-8fac-0158d02da970)
 passes `:analysis`, including Clippy. Fresh large-consumer passing-subset
 completion remains a separate requirement.
+
+### Compact completed property keys: public Excalidraw check
+
+The immutable completed-value index keeps sorted property keys in one flat
+vector with per-site ranges and values in a parallel vector. Binary search
+compares compact keys without striding over the larger value payload. Values
+move into the index once and retain their existing bitmap identities. Empty
+sites stay empty; no old/new duplicate property store is retained.
+
+The [optimized build](https://app.buildbuddy.io/invocation/bcf472b9-285c-48b2-a4f0-7adcf8c8e370)
+is commit `9aa4766cd33550031abe878914c26a373b5c6882`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Analyzer SHA-256:
+`4862b70e2707755bc4fb95599e44efdfb089d4f502df9e6086391f83c95e83db`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order, using identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. GNU time measures fresh projection, analysis
+and application, excluding compilation and input staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.83 → 13.39 s                   | 21.02 → 20.19 s                  | 0.9662                   | 0.9516–0.9889      | 712,908 → 808,968                     |
+| On      | 13.34 → 13.26 s                   | 20.19 → 20.15 s                  | 0.9918                   | 0.9779–1.0158      | 714,020 → 810,060                     |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+RSS varies across these small runs; they do not establish a general runtime
+or memory reduction. Raw commands, GNU time outputs, OTLP JSONL and manifests
+are in `excalidraw-property-index-paired/` under the task scratch root; binary
+identities are in `property-index-tools/identity.json` and
+`source-join-tools/identity.json`.
+
+[Focused validation](https://app.buildbuddy.io/invocation/e65e2fcc-817e-4c23-8f86-b9c6ba9e1b44)
+passes `:analysis` with Clippy, `:analysis_test`, `program_value_flow_test` and
+`candidate_object_escape_test`. Parsed-source oracles compare every completed
+key and bitmap identity against the ordered solved facts across multiple
+populated sites, absent keys, empty values and Top. Fresh large-consumer
+passing-subset completion remains a separate requirement.

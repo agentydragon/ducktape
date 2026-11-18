@@ -170,12 +170,22 @@ struct ProgramFlowFacts {
 struct CompletedValueStore {
     bindings: Vec<Option<Values>>,
     sites: Vec<CompletedSiteValues>,
+    property_ranges: Vec<PropertyRange>,
+    property_keys: Vec<PropertySlot>,
+    property_values: Vec<Values>,
+    last_property_key: Option<(u32, PropertySlot)>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
+struct PropertyRange {
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 struct CompletedSiteValues {
-    properties: Vec<(PropertySlot, Values)>,
     all_properties: Option<Values>,
     returns: Option<Values>,
 }
@@ -189,6 +199,10 @@ impl CompletedValueStore {
             sites: (0..site_count)
                 .map(|_| CompletedSiteValues::default())
                 .collect(),
+            property_ranges: vec![PropertyRange::default(); site_count],
+            property_keys: Vec::new(),
+            property_values: Vec::new(),
+            last_property_key: None,
         }
     }
 
@@ -200,9 +214,31 @@ impl CompletedValueStore {
                 *slot = Some(values);
             }
             FlowKey::Property(site, property) => {
-                self.sites[site as usize]
-                    .properties
-                    .push((property, values));
+                // The solver returns facts in FlowKey order, so these sparse
+                // rows arrive sorted by (site, property). Append directly to
+                // the flat arrays instead of staging a second row store.
+                let key = (site, property);
+                if let Some(previous) = self.last_property_key {
+                    assert_ne!(previous, key, "duplicate completed property value");
+                    assert!(
+                        previous < key,
+                        "completed property values must be inserted in key order"
+                    );
+                }
+                let index = self.property_values.len();
+                let row = &mut self.property_ranges[site as usize];
+                if row.start == row.end {
+                    row.start = index;
+                    row.end = index;
+                }
+                assert_eq!(
+                    row.end, index,
+                    "completed property rows for a site must be contiguous"
+                );
+                self.property_keys.push(property);
+                self.property_values.push(values);
+                row.end = index + 1;
+                self.last_property_key = Some(key);
             }
             FlowKey::Properties(site) => {
                 let summary = &mut self.sites[site as usize].all_properties;
@@ -219,25 +255,33 @@ impl CompletedValueStore {
     }
 
     fn seal(&mut self) {
-        for site in &mut self.sites {
-            site.properties
-                .sort_unstable_by_key(|(property, _)| *property);
+        assert_eq!(self.property_keys.len(), self.property_values.len());
+        let mut next_property = 0;
+        for range in &self.property_ranges {
+            assert!(range.start <= range.end);
+            assert!(range.end <= self.property_keys.len());
+            if range.start == range.end {
+                continue;
+            }
+            assert_eq!(range.start, next_property);
+            let keys = &self.property_keys[range.start..range.end];
             assert!(
-                site.properties
-                    .windows(2)
-                    .all(|pair| pair[0].0 != pair[1].0)
+                keys.windows(2).all(|pair| pair[0] < pair[1]),
+                "completed property slots must be unique and sorted per site"
             );
+            next_property = range.end;
         }
+        assert_eq!(next_property, self.property_keys.len());
     }
 
     fn get(&self, key: &FlowKey) -> Option<&Values> {
         match key {
             FlowKey::Binding(binding) => self.bindings.get(binding.0 as usize)?.as_ref(),
             FlowKey::Property(site, property) => {
-                let rows = &self.sites.get(*site as usize)?.properties;
-                rows.binary_search_by_key(property, |(slot, _)| *slot)
-                    .ok()
-                    .map(|index| &rows[index].1)
+                let row = self.property_ranges.get(*site as usize)?;
+                let keys = self.property_keys.get(row.start..row.end)?;
+                let index = keys.binary_search(property).ok()?;
+                self.property_values.get(row.start + index)
             }
             FlowKey::Properties(site) => self.sites.get(*site as usize)?.all_properties.as_ref(),
             FlowKey::Return(site) => self.sites.get(*site as usize)?.returns.as_ref(),
@@ -245,10 +289,14 @@ impl CompletedValueStore {
         }
     }
 
-    fn properties_at(&self, site: u32) -> &[(PropertySlot, Values)] {
-        self.sites
+    fn properties_at(&self, site: u32) -> impl Iterator<Item = (PropertySlot, &Values)> + '_ {
+        let range = self
+            .property_ranges
             .get(site as usize)
-            .map_or(&[], |site| site.properties.as_slice())
+            .map_or(0..0, |site| site.start..site.end);
+        let keys = self.property_keys.get(range.clone()).unwrap_or(&[]);
+        let values = self.property_values.get(range).unwrap_or(&[]);
+        keys.iter().copied().zip(values)
     }
 
     #[cfg(test)]
@@ -256,13 +304,12 @@ impl CompletedValueStore {
         self.bindings
             .iter()
             .filter_map(Option::as_ref)
-            .chain(self.sites.iter().flat_map(|site| {
-                site.properties
+            .chain(self.property_values.iter())
+            .chain(
+                self.sites
                     .iter()
-                    .map(|(_, values)| values)
-                    .chain(site.all_properties.iter())
-                    .chain(site.returns.iter())
-            }))
+                    .flat_map(|site| site.all_properties.iter().chain(site.returns.iter())),
+            )
     }
 }
 
