@@ -463,7 +463,7 @@ class InteractiveBrowserRuntime:
                     self._context = context
                     self._prepare_initial_page(context)
                     started.set()
-                    while (work := self._jobs.get()) is not None:
+                    while (work := self._next_work(context)) is not None:
                         try:
                             work.result.set_result(work.callback(context))
                         except BaseException as error:
@@ -491,6 +491,20 @@ class InteractiveBrowserRuntime:
             raise TimeoutError("Chromium did not start")
         if failure:
             raise RuntimeError("Chromium did not start") from failure[0]
+
+    def _next_work(self, context: BrowserContext) -> _Work | None:
+        if self._launch_mode != "cdp":
+            return self._jobs.get()
+        while True:
+            try:
+                return self._jobs.get_nowait()
+            except queue.Empty:
+                # Synchronous Playwright dispatches HTTP/WS interception only inside
+                # API calls. Pump it while the owner operates Chromium through VNC;
+                # blocking on queue.get() would freeze every intercepted request.
+                pages = context.pages
+                page = pages[0] if pages else context.new_page()
+                page.wait_for_timeout(50)
 
     def _launch_context(self, playwright: Playwright) -> BrowserContext:
         options = dict(self._launch_options)
