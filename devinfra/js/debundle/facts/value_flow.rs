@@ -857,11 +857,14 @@ impl ChunkValueFlow {
 
     fn summary_values(&self, summary: ReturnSummary, actual: &Values) -> Values {
         let mut values = ValuesBuilder::new(self.origin_table.clone());
-        let default_property = self
-            .property_names_by_slot
-            .iter()
-            .position(|name| name == "default")
-            .map(|slot| PropertySlot(u32::try_from(slot).expect("property slot")));
+        let default_property = if summary == ReturnSummary::ArgumentOrDefault {
+            self.property_names_by_slot
+                .iter()
+                .position(|name| name == "default")
+                .map(|slot| PropertySlot(u32::try_from(slot).expect("property slot")))
+        } else {
+            None
+        };
         append_summary_result(
             summary,
             actual,
