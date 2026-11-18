@@ -33,7 +33,7 @@ func unavailable(err error) error {
 	return &unavailableError{name: name, err: err}
 }
 
-// unavailableNotFound gives missing Session and History records explicit names and a longer retry.
+// unavailableNotFound gives a missing dependency record an explicit name and a longer retry.
 func unavailableNotFound(err error, name string, retryAfter time.Duration) error {
 	if status.Code(err) == codes.NotFound {
 		return &unavailableError{name: name, err: err, retryAfter: retryAfter}

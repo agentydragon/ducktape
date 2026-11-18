@@ -221,9 +221,13 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 		id = uuid.New()
 		event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: id, Sender: named, SenderIdentity: senderIdentity})
 		accepted, cursor := now(), inbox.LastCursor+1
-		// A worker's release works out when the notice is due, so the inbox is only made due now.
+		// A worker's release works out when the notice is due, so the inbox is only made due now. Preserve an
+		// existing failure deadline: a new entry must not turn a known delivery failure into a tight retry loop.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE inbox SET last_cursor = $2, next_attempt = LEAST(COALESCE(next_attempt, $3), $3) WHERE id = $1`,
+			`UPDATE inbox SET last_cursor = $2, next_attempt = CASE
+				WHEN delivery_error IS NOT NULL AND next_attempt IS NOT NULL THEN next_attempt
+				ELSE LEAST(COALESCE(next_attempt, $3), $3)
+			END WHERE id = $1`,
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}

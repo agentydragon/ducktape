@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 
@@ -113,6 +114,33 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		if _, err := f.SentMessage(t.Context(), AccountSender{Account: lookup.sender, UID: "test-sender-uid"}, lookup.id); !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s: error = %v, want ErrNotFound", name, err)
 		}
+	}
+}
+
+func TestNewMessageDoesNotShortenAnExistingDeliveryFailureRetry(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	sender := newOwner()
+	f.send(t, f.message(sender, "first", "first entry"))
+	inbox := f.recipientInbox(t)
+	deadline := time.Now().Add(time.Hour).Truncate(time.Microsecond).UTC()
+	if _, err := f.db.ExecContext(t.Context(), `
+		UPDATE inbox SET delivery_error = 'DispatcherNotFoundError', next_attempt = $2 WHERE id = $1`,
+		inbox.ID, deadline); err != nil {
+		t.Fatal(err)
+	}
+
+	f.send(t, f.message(sender, "second", "second entry"))
+
+	var next time.Time
+	if err := f.db.QueryRowContext(t.Context(), `SELECT next_attempt FROM inbox WHERE id = $1`, inbox.ID).Scan(&next); err != nil {
+		t.Fatal(err)
+	}
+	if !next.Equal(deadline) {
+		t.Fatalf("next_attempt = %s, want preserved delivery retry %s", next, deadline)
+	}
+	if got := f.recipientInbox(t).LastCursor; got != 2 {
+		t.Fatalf("last cursor = %d, want 2", got)
 	}
 }
 
