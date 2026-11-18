@@ -29,9 +29,11 @@ this module run in the same worker process.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from uuid import uuid4
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import contextmanager
+from uuid import UUID
 
+import pytest
 import pytest_asyncio
 import pytest_bazel
 from sqlalchemy import create_engine
@@ -71,22 +73,24 @@ async def critic_dev_optimize_creds(synced_db: Database) -> AsyncGenerator[Agent
     yield await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DEV_OPTIMIZE_DIGEST)
 
 
-@pytest_asyncio.fixture
-async def critic_dev_optimize_session(
-    critic_dev_optimize_creds: AgentCredentials, synced_db: Database
-) -> AsyncGenerator[Session]:
-    """Create database session as critic-dev temp user.
-
-    Yields session with RLS policies active for critic-dev role.
-    """
-    user_config = synced_db.config.with_user(critic_dev_optimize_creds.username, critic_dev_optimize_creds.password)
-    engine = create_engine(user_config.url)
-
+@contextmanager
+def _role_session(synced_db: Database, creds: AgentCredentials) -> Iterator[Session]:
+    """Database session connected as the agent's own Postgres role, with its RLS policies active."""
+    engine = create_engine(synced_db.config.with_user(creds.username, creds.password).url)
     try:
         with Session(engine) as session:
             yield session
     finally:
         engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def critic_dev_optimize_session(
+    critic_dev_optimize_creds: AgentCredentials, synced_db: Database
+) -> AsyncGenerator[Session]:
+    """Database session as the critic-dev role."""
+    with _role_session(synced_db, critic_dev_optimize_creds) as session:
+        yield session
 
 
 async def test_critic_dev_optimize_can_see_all_snapshots_metadata(
@@ -162,203 +166,57 @@ async def test_critic_dev_optimize_can_see_train_split_false_positives(
     assert visible == expected, "critic-dev user should see train split false_positives via RLS"
 
 
-async def test_critic_dev_optimize_cannot_see_test_split_critic_runs(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
-    """Critic-dev optimize users cannot see TEST split critic runs (RLS policy blocks).
-
-    Uses test-fixtures/test1 (TEST split) from git fixtures.
-
-    Setup (as admin_user):
-    - Query existing test-split-test snapshot and example
-    - Create critic run for test snapshot
-
-    Verify (as critic-dev temp user):
-    - Cannot query critic_runs for test split specimens
-    """
-    # Setup: Use admin_user to write test data
+@pytest.fixture
+def critic_run_ids_by_split(synced_db: Database) -> dict[str, UUID]:
+    """One critic run with one LLM request per split, written as admin. Maps split name to agent_run_id."""
+    run_ids: dict[str, UUID] = {}
     with synced_db.session() as session:
-        # Query git fixture example (TEST split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test1").first()
-        assert example, "test-split-test fixture not found"
-
-        test_run = make_fake_critic_run(
-            session=session, example=example.to_example_spec(), status=AgentRunStatus.EXITED
-        )
-        session.add(test_run)
+        for split, slug in (
+            ("train", "test-fixtures/train1"),
+            ("valid", "test-fixtures/valid1"),
+            ("test", "test-fixtures/test1"),
+        ):
+            example = session.query(Example).filter_by(snapshot_slug=slug).first()
+            assert example, f"{slug} fixture not found"
+            run = make_fake_critic_run(session=session, example=example.to_example_spec(), status=AgentRunStatus.EXITED)
+            session.add(run)
+            session.flush()
+            session.add(
+                LLMRequest(
+                    agent_run_id=run.agent_run_id,
+                    model=DEFAULT_TEST_MODEL,
+                    request_body={"messages": [{"role": "user", "content": "test"}]},
+                )
+            )
+            run_ids[split] = run.agent_run_id
         session.commit()
-
-    # Verify: Connect as critic-dev temp user and verify RLS blocks test split
-    test_runs = (
-        critic_dev_optimize_session.query(AgentRun)
-        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/test1")
-        .all()
-    )
-
-    assert len(test_runs) == 0, "critic-dev user should not see test split critic_runs via RLS"
+    return run_ids
 
 
-async def test_critic_dev_optimize_can_see_train_split_critic_runs(
-    synced_db: Database, critic_dev_optimize_session: Session
+async def test_critic_dev_optimize_sees_only_train_split_runs_and_llm_requests(
+    critic_run_ids_by_split: dict[str, UUID], critic_dev_optimize_session: Session
 ):
-    """Critic-dev optimize users can see TRAIN split critic runs (RLS policy allows).
+    """Critic-dev optimize users see TRAIN critic runs and their LLM requests, not VALID or TEST ones.
 
-    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
+    Hiding VALID prevents overfitting: the optimizer gets validation results only as aggregate
+    metrics from SECURITY DEFINER functions, never the runs or the LLM calls behind them.
 
-    Setup (as admin_user):
-    - Query existing test-trivial snapshot and example
-    - Create critic run for train snapshot
-
-    Verify (as critic-dev temp user):
-    - Can query critic_runs for train split specimens
+    Rows exist for all three splits (written as admin), so a policy that hides everything fails
+    this equality just as one that leaks a split does.
     """
-    # Setup: Use admin_user to write test data
-    train_agent_run_id = uuid4()
+    seeded = list(critic_run_ids_by_split.values())
+    visible_runs = {
+        run.agent_run_id
+        for run in critic_dev_optimize_session.query(AgentRun).filter(AgentRun.agent_run_id.in_(seeded))
+    }
+    visible_requests = {
+        request.agent_run_id
+        for request in critic_dev_optimize_session.query(LLMRequest).filter(LLMRequest.agent_run_id.in_(seeded))
+    }
 
-    with synced_db.session() as session:
-        # Query git fixture example (TRAIN split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
-        assert example, "test-trivial fixture not found"
-
-        train_run = make_fake_critic_run(
-            session=session,
-            example=example.to_example_spec(),
-            agent_run_id=train_agent_run_id,
-            status=AgentRunStatus.EXITED,
-        )
-        session.add(train_run)
-        session.commit()
-
-    # Verify: Connect as critic-dev temp user and verify can see train split
-    train_runs = critic_dev_optimize_session.query(AgentRun).filter(AgentRun.agent_run_id == train_agent_run_id).all()
-
-    assert len(train_runs) == 1, "critic-dev user should see train split critic_runs via RLS"
-    assert train_runs[0].critic_config().example.snapshot_slug == "test-fixtures/train1"
-
-
-async def test_critic_dev_optimize_cannot_see_valid_split_critic_runs(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
-    """Critic-dev optimize users CANNOT see VALID split critic runs (RLS policy blocks).
-
-    This prevents overfitting - the optimizer cannot inspect validation run details,
-    only aggregate metrics via SECURITY DEFINER functions.
-
-    Uses test-fixtures/valid1 (VALID split) from git fixtures.
-    """
-    valid_agent_run_id = uuid4()
-
-    # Setup: Use admin_user to write test data
-    with synced_db.session() as session:
-        # Query git fixture example (VALID split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
-        assert example, "test-validation fixture not found"
-
-        valid_run = make_fake_critic_run(
-            session=session,
-            example=example.to_example_spec(),
-            agent_run_id=valid_agent_run_id,
-            status=AgentRunStatus.EXITED,
-        )
-        session.add(valid_run)
-        session.commit()
-
-    # Verify: Connect as critic-dev temp user and verify RLS blocks valid split
-    valid_runs = (
-        critic_dev_optimize_session.query(AgentRun)
-        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/valid1")
-        .all()
-    )
-
-    assert len(valid_runs) == 0, "critic-dev user should NOT see valid split critic_runs via RLS"
-
-
-async def test_critic_dev_optimize_cannot_see_valid_split_llm_requests(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
-    """Critic-dev optimize users CANNOT see VALID split LLM requests (RLS policy blocks).
-
-    This prevents learning from validation failures - the optimizer cannot inspect
-    what LLM calls the critic made during validation runs.
-
-    Uses test-fixtures/valid1 (VALID split) from git fixtures.
-    """
-    valid_agent_run_id = uuid4()
-
-    # Setup: Use admin_user to write test data
-    with synced_db.session() as session:
-        # Query git fixture example (VALID split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
-        assert example, "test-validation fixture not found"
-
-        valid_run = make_fake_critic_run(
-            session=session,
-            example=example.to_example_spec(),
-            agent_run_id=valid_agent_run_id,
-            status=AgentRunStatus.EXITED,
-        )
-        session.add(valid_run)
-        session.flush()
-
-        # Add an LLM request for this run
-        llm_request = LLMRequest(
-            agent_run_id=valid_agent_run_id,
-            model=DEFAULT_TEST_MODEL,
-            request_body={"messages": [{"role": "user", "content": "test"}]},
-        )
-        session.add(llm_request)
-        session.commit()
-
-    # Verify: Connect as critic-dev temp user and verify RLS blocks requests
-    valid_requests = (
-        critic_dev_optimize_session.query(LLMRequest).filter(LLMRequest.agent_run_id == valid_agent_run_id).all()
-    )
-
-    assert len(valid_requests) == 0, "critic-dev user should NOT see valid split llm_requests via RLS"
-
-
-async def test_critic_dev_optimize_can_see_train_split_llm_requests(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
-    """Critic-dev optimize users CAN see TRAIN split LLM requests (RLS policy allows).
-
-    The optimizer can inspect training run details to understand failures and improve prompts.
-
-    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
-    """
-    train_agent_run_id = uuid4()
-
-    # Setup: Use admin_user to write test data
-    with synced_db.session() as session:
-        # Query git fixture example (TRAIN split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
-        assert example, "test-trivial fixture not found"
-
-        train_run = make_fake_critic_run(
-            session=session,
-            example=example.to_example_spec(),
-            agent_run_id=train_agent_run_id,
-            status=AgentRunStatus.EXITED,
-        )
-        session.add(train_run)
-        session.flush()
-
-        # Add an LLM request for this run
-        llm_request = LLMRequest(
-            agent_run_id=train_agent_run_id,
-            model=DEFAULT_TEST_MODEL,
-            request_body={"messages": [{"role": "user", "content": "test"}]},
-        )
-        session.add(llm_request)
-        session.commit()
-
-    # Verify: Connect as critic-dev temp user and verify can see train split requests
-    train_requests = (
-        critic_dev_optimize_session.query(LLMRequest).filter(LLMRequest.agent_run_id == train_agent_run_id).all()
-    )
-
-    assert len(train_requests) == 1, "critic-dev user should see train split llm_requests via RLS"
-    assert train_requests[0].model == DEFAULT_TEST_MODEL
+    train = critic_run_ids_by_split["train"]
+    assert visible_runs == {train}, "critic-dev user should see only the train split critic run via RLS"
+    assert visible_requests == {train}, "critic-dev user should see only the train split llm request via RLS"
 
 
 # =============================================================================
@@ -378,14 +236,9 @@ async def grader_train_creds(synced_db: Database) -> AsyncGenerator[AgentCredent
 
 @pytest_asyncio.fixture
 async def grader_train_session(grader_train_creds: AgentCredentials, synced_db: Database) -> AsyncGenerator[Session]:
-    """Database session as grader role scoped to train1."""
-    user_config = synced_db.config.with_user(grader_train_creds.username, grader_train_creds.password)
-    engine = create_engine(user_config.url)
-    try:
-        with Session(engine) as session:
-            yield session
-    finally:
-        engine.dispose()
+    """Database session as the grader role scoped to train1."""
+    with _role_session(synced_db, grader_train_creds) as session:
+        yield session
 
 
 async def test_grader_can_read_occurrence_ranges_with_content(synced_db: Database, grader_train_session: Session):
