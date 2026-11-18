@@ -6,7 +6,6 @@
 // color scheme, so one style adapts to light and dark.
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
-import { yaml } from "@codemirror/lang-yaml";
 import {
   foldEffect,
   foldable,
@@ -20,9 +19,7 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { shellLanguage } from "./shell_lang";
-
-export type CodeLanguage = "json" | "yaml" | "shell";
+export type CodeLanguage = "json";
 
 const HAKU_HIGHLIGHT = HighlightStyle.define([
   { tag: tags.propertyName, color: "var(--haku-json-key)" },
@@ -57,8 +54,6 @@ const HAKU_THEME = EditorView.theme({
 
 const LANGUAGE_EXTENSIONS: Record<CodeLanguage, () => Extension> = {
   json: () => json(),
-  yaml: () => yaml(),
-  shell: () => shellLanguage,
 };
 
 // Lines of content that fit in the editor's clipped height — the compact block fills this rather

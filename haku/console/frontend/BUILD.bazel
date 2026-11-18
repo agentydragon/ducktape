@@ -398,25 +398,12 @@ ts_library(
 )
 
 ts_library(
-    name = "shell_lang",
-    srcs = ["shell_lang.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@codemirror/language",
-        "//:node_modules/@codemirror/legacy-modes",
-    ],
-)
-
-ts_library(
     name = "code_block",
     srcs = ["code_block.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":shell_lang",
         "//:node_modules/@codemirror/lang-json",
-        "//:node_modules/@codemirror/lang-yaml",
         "//:node_modules/@codemirror/language",
         "//:node_modules/@codemirror/state",
         "//:node_modules/@codemirror/view",
