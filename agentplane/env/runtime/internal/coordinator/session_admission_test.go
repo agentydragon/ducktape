@@ -765,15 +765,6 @@ func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 	}
 }
 
-func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
-	t.Helper()
-	select {
-	case err := <-closed:
-		t.Fatalf("Environment Runtime close returned before %s completed: %v", stage, err)
-	case <-time.After(100 * time.Millisecond):
-	}
-}
-
 func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 	r := newBareRuntime(t)
 	failure := fmt.Errorf("bootstrap output storage failed")
