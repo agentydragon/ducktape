@@ -12,14 +12,18 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use artifact::ChunkBundle;
+use artifact::{ArtifactIndexes, ChunkBundle, list_chunk_file_paths};
 use binding_targets::module_export_name;
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
-use swc_ecma_ast::{ExportSpecifier, ImportSpecifier, ModuleDecl};
+use swc_ecma_ast::{
+    ExportSpecifier, Id, ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem,
+};
 
 use crate::manifests::PartialSwapSymbolResolution;
+use crate::output_imports::{MaterializedOutputChunkIndex, resolve_partial_swap_import_target};
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
+use crate::plan::VendorResolutionPlan;
 
 /// Parse the vendor map key `<chunk_name>.js` into the chunk name.
 pub(crate) fn vendor_chunk_name(chunk_path: &str, stage: &str) -> Result<String> {
@@ -227,17 +231,151 @@ pub(crate) fn build_partial_swap_symbol_resolutions(
         .collect()
 }
 
-/// Inspect directives in source order; each phase supplies its named-symbol
-/// policy. Namespace/default failures are identical before and after rewriting.
-pub(super) fn check_consumer_directive(
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PartialSwapConsumerStage {
+    /// A source directive may still have a live rewrite.
+    Plan,
+    /// A surviving reference to a removed export is invalid.
+    Emitted,
+}
+
+/// Check either input directives or the final emitted artifact. Both scans
+/// resolve targets in their own artifact, including materialized imports.
+pub(super) fn check_partial_swap_consumers(
+    artifact: &ChunkBundle,
+    references: &ArtifactIndexes,
+    plan: &VendorResolutionPlan,
+    stage: PartialSwapConsumerStage,
+) -> Result<()> {
+    let swapped_by_chunk: BTreeMap<_, _> = plan
+        .partial_swaps
+        .iter()
+        .map(|(chunk, partial)| (*chunk, (&partial.symbols, false)))
+        .chain(
+            plan.bundled_partial_swaps
+                .iter()
+                .map(|(chunk, bundled)| (*chunk, (&bundled.symbols, true))),
+        )
+        .collect();
+    if swapped_by_chunk.is_empty() {
+        return Ok(());
+    }
+
+    let chunk_table = &artifact.chunk_table;
+    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
+    let full_swap_chunks = plan.full_swap_chunk_ids();
+    for chunk_artifact in &artifact.chunks {
+        let caller = chunk_artifact.chunk_id;
+        if full_swap_chunks.contains(&caller) {
+            continue;
+        }
+        let caller_name = chunk_table.name(caller);
+        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
+            let Some(ast) = chunk_artifact
+                .js
+                .get_file(&file_path)
+                .and_then(|file| file.ast())
+            else {
+                continue;
+            };
+            let consumer = format!("{caller_name}/{file_path}");
+            let mut member_read_locals = BTreeMap::new();
+            for item in &ast.module.body {
+                let ModuleItem::ModuleDecl(decl) = item else {
+                    continue;
+                };
+                let Some(source) = consumer_directive_source(decl) else {
+                    continue;
+                };
+                let Some(target) = resolve_partial_swap_import_target(
+                    &source,
+                    caller,
+                    &file_path,
+                    references,
+                    chunk_table,
+                    &materialized_index,
+                ) else {
+                    continue;
+                };
+                let Some(&(symbols, bundled)) = swapped_by_chunk.get(&target) else {
+                    continue;
+                };
+                check_consumer_directive(
+                    decl,
+                    &consumer,
+                    chunk_table.name(target),
+                    symbols,
+                    bundled,
+                    stage,
+                    &mut member_read_locals,
+                )?;
+            }
+            if !member_read_locals.is_empty() {
+                check_local_exports_have_live_rewrite(
+                    &ast.module.body,
+                    &member_read_locals,
+                    &consumer,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the body rewrite keeps a binding, or a live re-export, for a
+/// local `export { <local> }` of this swapped import: a property of the
+/// default-only facade, or a dotted member path, has neither.
+fn local_export_has_live_rewrite(symbol: &PartialSwapSymbol, bundled: bool) -> bool {
+    match symbol.kind {
+        PartialSwapKind::Namespace | PartialSwapKind::Default => true,
+        PartialSwapKind::Named => !bundled,
+        PartialSwapKind::Member => {
+            !bundled
+                && symbol
+                    .upstream_export
+                    .as_deref()
+                    .is_some_and(|name| !name.contains('.'))
+        }
+    }
+}
+
+fn check_local_exports_have_live_rewrite(
+    body: &[ModuleItem],
+    member_read_locals: &BTreeMap<Id, String>,
+    consumer: &str,
+) -> Result<()> {
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+            continue;
+        };
+        if export.src.is_some() {
+            continue;
+        }
+        for specifier in &export.specifiers {
+            if let ExportSpecifier::Named(named) = specifier
+                && let ModuleExportName::Ident(orig) = &named.orig
+                && let Some(imported) = member_read_locals.get(&orig.to_id())
+            {
+                bail!(
+                    "partial-swap consumer gate: {consumer} locally exports `{}`, its import of swapped name `{imported}`; the swap reads that symbol as a property of the replacement, which has no live export form",
+                    orig.sym,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_consumer_directive(
     decl: &ModuleDecl,
     consumer: &str,
     target_chunk_name: &str,
-    swapped_default: bool,
-    swapped_list: impl Fn() -> String,
-    check_named_import: impl Fn(&str) -> Result<()>,
-    check_named_export: impl Fn(&str) -> Result<()>,
+    symbols: &BTreeMap<String, PartialSwapSymbol>,
+    bundled: bool,
+    stage: PartialSwapConsumerStage,
+    member_read_locals: &mut BTreeMap<Id, String>,
 ) -> Result<()> {
+    let swapped_list = || symbols.keys().cloned().collect::<Vec<_>>().join(",");
     match decl {
         ModuleDecl::Import(import) => {
             for specifier in &import.specifiers {
@@ -248,7 +386,17 @@ pub(super) fn check_consumer_directive(
                             .as_ref()
                             .map(module_export_name)
                             .unwrap_or_else(|| named.local.sym.to_string());
-                        check_named_import(&imported)?;
+                        let Some(symbol) = symbols.get(&imported) else {
+                            continue;
+                        };
+                        if stage == PartialSwapConsumerStage::Emitted {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it"
+                            );
+                        }
+                        if !local_export_has_live_rewrite(symbol, bundled) {
+                            member_read_locals.insert(named.local.to_id(), imported);
+                        }
                     }
                     ImportSpecifier::Namespace(_) => {
                         bail!(
@@ -257,7 +405,7 @@ pub(super) fn check_consumer_directive(
                         );
                     }
                     ImportSpecifier::Default(_) => {
-                        if swapped_default {
+                        if symbols.contains_key("default") {
                             bail!(
                                 "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
                             );
@@ -271,7 +419,15 @@ pub(super) fn check_consumer_directive(
                 match specifier {
                     ExportSpecifier::Named(named_spec) => {
                         let orig = module_export_name(&named_spec.orig);
-                        check_named_export(&orig)?;
+                        if let Some(symbol) = symbols.get(&orig)
+                            && (stage == PartialSwapConsumerStage::Emitted
+                                || bundled
+                                || symbol.kind == PartialSwapKind::Member)
+                        {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it"
+                            );
+                        }
                     }
                     ExportSpecifier::Namespace(_) => {
                         bail!(
@@ -280,7 +436,7 @@ pub(super) fn check_consumer_directive(
                         );
                     }
                     ExportSpecifier::Default(_) => {
-                        if swapped_default {
+                        if symbols.contains_key("default") {
                             bail!(
                                 "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
                             );
@@ -301,7 +457,7 @@ pub(super) fn check_consumer_directive(
 }
 
 /// Source of an import or re-export; local exports are not consumers.
-pub(super) fn consumer_directive_source(decl: &ModuleDecl) -> Option<String> {
+fn consumer_directive_source(decl: &ModuleDecl) -> Option<String> {
     let source = match decl {
         ModuleDecl::Import(import) => &import.src,
         ModuleDecl::ExportNamed(named) => named.src.as_ref()?,

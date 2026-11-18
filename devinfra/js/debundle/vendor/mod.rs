@@ -21,7 +21,6 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::list_chunk_file_paths;
 use binding_targets::declaration_ids;
 pub use emission::{
     EmissionRewriteOutput, apply_emission_rewrites_in_place, write_planned_vendor_outputs,
@@ -329,7 +328,7 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
 ///   for swapped members;
 /// * `export *` silently drops the swapped names from the re-exporter.
 ///
-/// The plan-time gate (`plan.rs::validate_consumer_shapes`) rejects
+/// The plan-time check rejects
 /// these shapes in input space before any emission. This scan is not a
 /// redundant tripwire behind it: it re-checks the post-materialize
 /// artifact, covering directives that lowering moved into or
@@ -350,102 +349,11 @@ pub fn validate_partial_swap_consumers(
     files: &artifact::EmissionFiles,
     plan: &VendorResolutionPlan,
 ) -> Result<()> {
-    let artifact = files.files();
-    let references = files.indexes();
-    let chunk_table = &artifact.chunk_table;
-    let swapped_by_chunk: BTreeMap<ChunkId, BTreeSet<String>> = plan
-        .partial_swaps
-        .iter()
-        .map(|(chunk_id, partial)| (*chunk_id, partial.symbols.keys().cloned().collect()))
-        .chain(
-            plan.bundled_partial_swaps
-                .iter()
-                .map(|(chunk_id, bundled)| (*chunk_id, bundled.symbols.keys().cloned().collect())),
-        )
-        .collect();
-    if swapped_by_chunk.is_empty() {
-        return Ok(());
-    }
-    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
-    // Full-swap chunks are excluded from the emission set; their files
-    // are never emitted, so their directives are not consumers (same
-    // rule as the plan-time gate).
-    let full_swap_chunks = plan.full_swap_chunk_ids();
-    for chunk_artifact in &artifact.chunks {
-        let caller_chunk_id = chunk_artifact.chunk_id;
-        if full_swap_chunks.contains(&caller_chunk_id) {
-            continue;
-        }
-        let caller_chunk_name = chunk_table.name(caller_chunk_id);
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(ast) = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-            else {
-                continue;
-            };
-            for item in &ast.module.body {
-                let ModuleItem::ModuleDecl(decl) = item else {
-                    continue;
-                };
-                let Some(source) = crate::validate::consumer_directive_source(decl) else {
-                    continue;
-                };
-                let Some(target_chunk_id) = resolve_partial_swap_import_target(
-                    &source,
-                    caller_chunk_id,
-                    &file_path,
-                    references,
-                    chunk_table,
-                    &materialized_index,
-                ) else {
-                    continue;
-                };
-                let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
-                    continue;
-                };
-                let consumer = format!("{caller_chunk_name}/{file_path}");
-                check_partial_swap_consumer_decl(
-                    decl,
-                    swapped,
-                    &consumer,
-                    chunk_table.name(target_chunk_id),
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn check_partial_swap_consumer_decl(
-    decl: &ModuleDecl,
-    swapped: &BTreeSet<String>,
-    consumer: &str,
-    target_chunk_name: &str,
-) -> Result<()> {
-    validate::check_consumer_directive(
-        decl,
-        consumer,
-        target_chunk_name,
-        swapped.contains("default"),
-        || swapped.iter().cloned().collect::<Vec<_>>().join(","),
-        |imported| {
-            if swapped.contains(imported) {
-                bail!(
-                    "partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it"
-                );
-            }
-            Ok(())
-        },
-        |orig| {
-            if swapped.contains(orig) {
-                bail!(
-                    "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it"
-                );
-            }
-            Ok(())
-        },
+    validate::check_partial_swap_consumers(
+        files.files(),
+        files.indexes(),
+        plan,
+        validate::PartialSwapConsumerStage::Emitted,
     )
 }
 

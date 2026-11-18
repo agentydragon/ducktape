@@ -25,13 +25,9 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde_json::Value;
 use swc_common::GLOBALS;
-use swc_ecma_ast::{
-    ExportSpecifier, Id, ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem,
-};
 
 use artifact::paths::{join_module_path, manifest_relative_path};
-use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path, list_chunk_file_paths};
-use binding_targets::module_export_name;
+use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path};
 use js_ast::parse_js_module;
 use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
@@ -48,16 +44,16 @@ use crate::manifests::{
 };
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 use crate::validate::{
-    PartialSwapPackageCoords, ResolvePartialSwapPackageOptions, ResolvedVendorChunk,
-    build_partial_swap_symbol_resolutions, resolve_partial_swap_package,
-    validate_partial_swap_symbols, vendor_chunk_name, vendor_entry_ast,
+    PartialSwapConsumerStage, PartialSwapPackageCoords, ResolvePartialSwapPackageOptions,
+    ResolvedVendorChunk, build_partial_swap_symbol_resolutions, check_partial_swap_consumers,
+    resolve_partial_swap_package, validate_partial_swap_symbols, vendor_chunk_name,
+    vendor_entry_ast,
 };
 use crate::wrappers::{
     PlannedBundledAssets, generate_named_from_default_wrapper,
     generate_named_from_json_default_wrapper, generate_named_from_module_default_wrapper,
     plan_bundled_partial_swap_assets, set_diff, wrapper_output_path,
 };
-use crate::{MaterializedOutputChunkIndex, resolve_partial_swap_import_target};
 
 #[derive(Debug, Clone)]
 pub struct VendorPlanOptions<'a> {
@@ -419,7 +415,7 @@ pub fn build_vendor_resolution_plan(
             options,
         )?,
     };
-    validate_consumer_shapes(artifact, references, &plan)?;
+    check_partial_swap_consumers(artifact, references, &plan, PartialSwapConsumerStage::Plan)?;
     validate_full_swap_import_alignment(artifact, references, &plan)?;
     Ok(plan)
 }
@@ -457,209 +453,6 @@ fn validate_full_swap_import_alignment(
         }
     }
     Ok(())
-}
-
-/// Plan-time consumer gate: enumerate every
-/// consumer directive targeting a partially-swapped chunk and reject the
-/// shapes that have no live rewrite at either application site — before
-/// any output is written. The classification is the same one the
-/// rewriters perform, so a consumer the rewriter misses cannot pass the
-/// gate. This enumeration sees input space only; the post-strip
-/// `validate_partial_swap_consumers` scan stays on as load-bearing
-/// coverage for directives that lowering moves or synthesizes inside
-/// materialized module bodies (see its doc for the retirement
-/// condition).
-///
-/// Over-restriction is the accepted failure mode: a namespace consumer
-/// reading only unswapped members is still rejected.
-fn validate_consumer_shapes(
-    artifact: &ChunkBundle,
-    references: &ArtifactIndexes,
-    plan: &VendorResolutionPlan,
-) -> Result<()> {
-    struct SwappedChunk<'a> {
-        symbols: &'a BTreeMap<String, PartialSwapSymbol>,
-        bundled: bool,
-    }
-    let swapped_by_chunk: BTreeMap<ChunkId, SwappedChunk<'_>> = plan
-        .partial_swaps
-        .iter()
-        .map(|(chunk_id, partial)| {
-            (
-                *chunk_id,
-                SwappedChunk {
-                    symbols: &partial.symbols,
-                    bundled: false,
-                },
-            )
-        })
-        .chain(
-            plan.bundled_partial_swaps
-                .iter()
-                .map(|(chunk_id, bundled)| {
-                    (
-                        *chunk_id,
-                        SwappedChunk {
-                            symbols: &bundled.symbols,
-                            bundled: true,
-                        },
-                    )
-                }),
-        )
-        .collect();
-    if swapped_by_chunk.is_empty() {
-        return Ok(());
-    }
-    let chunk_table = &artifact.chunk_table;
-    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
-    // Full-swap chunks are excluded from the emission set; their files
-    // are never emitted, so their directives are not consumers.
-    let full_swap_chunks = plan.full_swap_chunk_ids();
-    for chunk_artifact in &artifact.chunks {
-        let caller_chunk_id = chunk_artifact.chunk_id;
-        if full_swap_chunks.contains(&caller_chunk_id) {
-            continue;
-        }
-        let caller_chunk_name = chunk_table.name(caller_chunk_id);
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(ast) = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-            else {
-                continue;
-            };
-            let consumer = format!("{caller_chunk_name}/{file_path}");
-            // Import locals whose references become property reads, which
-            // have no live local-export form.
-            let mut member_read_locals = BTreeMap::<Id, String>::new();
-            for item in &ast.module.body {
-                let ModuleItem::ModuleDecl(decl) = item else {
-                    continue;
-                };
-                let Some(source) = crate::validate::consumer_directive_source(decl) else {
-                    continue;
-                };
-                let Some(target_chunk_id) = resolve_partial_swap_import_target(
-                    &source,
-                    caller_chunk_id,
-                    &file_path,
-                    references,
-                    chunk_table,
-                    &materialized_index,
-                ) else {
-                    continue;
-                };
-                let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
-                    continue;
-                };
-                if let ModuleDecl::Import(import) = decl {
-                    for specifier in &import.specifiers {
-                        let ImportSpecifier::Named(named) = specifier else {
-                            continue;
-                        };
-                        let imported = named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string());
-                        if swapped.symbols.get(&imported).is_some_and(|symbol| {
-                            !local_export_has_live_rewrite(symbol, swapped.bundled)
-                        }) {
-                            member_read_locals.insert(named.local.to_id(), imported);
-                        }
-                    }
-                }
-                check_consumer_shape_has_live_rewrite(
-                    decl,
-                    swapped.symbols,
-                    swapped.bundled,
-                    &consumer,
-                    chunk_table.name(target_chunk_id),
-                )?;
-            }
-            if !member_read_locals.is_empty() {
-                check_local_exports_have_live_rewrite(
-                    &ast.module.body,
-                    &member_read_locals,
-                    &consumer,
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Whether the body rewrite keeps a binding, or a live re-export, for a
-/// local `export { <local> }` of this swapped import: a property of the
-/// default-only facade, or a dotted member path, has neither.
-fn local_export_has_live_rewrite(symbol: &PartialSwapSymbol, bundled: bool) -> bool {
-    match symbol.kind {
-        PartialSwapKind::Namespace | PartialSwapKind::Default => true,
-        PartialSwapKind::Named => !bundled,
-        PartialSwapKind::Member => {
-            !bundled
-                && symbol
-                    .upstream_export
-                    .as_deref()
-                    .is_some_and(|name| !name.contains('.'))
-        }
-    }
-}
-
-fn check_local_exports_have_live_rewrite(
-    body: &[ModuleItem],
-    member_read_locals: &BTreeMap<Id, String>,
-    consumer: &str,
-) -> Result<()> {
-    for item in body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
-            continue;
-        };
-        if export.src.is_some() {
-            continue;
-        }
-        for specifier in &export.specifiers {
-            if let ExportSpecifier::Named(named) = specifier
-                && let ModuleExportName::Ident(orig) = &named.orig
-                && let Some(imported) = member_read_locals.get(&orig.to_id())
-            {
-                bail!(
-                    "partial-swap consumer gate: {consumer} locally exports `{}`, its import of swapped name `{imported}`; the swap reads that symbol as a property of the replacement, which has no live export form",
-                    orig.sym,
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn check_consumer_shape_has_live_rewrite(
-    decl: &ModuleDecl,
-    symbols: &BTreeMap<String, PartialSwapSymbol>,
-    bundled: bool,
-    consumer: &str,
-    target_chunk_name: &str,
-) -> Result<()> {
-    crate::validate::check_consumer_directive(
-        decl,
-        consumer,
-        target_chunk_name,
-        symbols.contains_key("default"),
-        || symbols.keys().cloned().collect::<Vec<_>>().join(","),
-        |_| Ok(()),
-        |orig| {
-            let Some(symbol) = symbols.get(orig) else {
-                return Ok(());
-            };
-            if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
-                bail!(
-                    "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
-                );
-            }
-            Ok(())
-        },
-    )
 }
 
 fn plan_boundary_renames(
