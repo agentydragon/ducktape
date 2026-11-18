@@ -13,6 +13,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -79,13 +80,7 @@ def _deployment(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),

@@ -22,6 +22,7 @@ from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretC
 from airlock.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -218,15 +219,8 @@ def _deployment(chart: Chart) -> None:
                                     name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                 ),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="256Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                             liveness_probe=_probe("/healthz", 15, 20),
                             readiness_probe=_probe("/healthz", 5, 10),

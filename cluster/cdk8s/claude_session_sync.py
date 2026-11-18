@@ -18,6 +18,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -160,14 +161,8 @@ def _deployment(
                             env=env,
                             readiness_probe=_healthz(service, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=_healthz(service, initial_delay_seconds=30, period_seconds=20),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
-                                # A page of 500 events, three sessions at once; one event alone reaches 10 MB.
-                                limits={"memory": k8s.Quantity.from_string("1Gi")},
-                            ),
+                            # A page of 500 events, three sessions at once; one event alone reaches 10 MB.
+                            resources=container_resources(cpu="50m", memory="256Mi", memory_limit="1Gi"),
                             # The aspect py_binary launcher materializes its venv under the image runfiles
                             # directory at startup, so the root filesystem stays writable.
                             security_context=k8s.SecurityContext(read_only_root_filesystem=False),

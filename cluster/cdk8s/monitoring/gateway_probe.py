@@ -31,6 +31,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
@@ -131,13 +132,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
                             ),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                         )
                     ],
                     volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name))],

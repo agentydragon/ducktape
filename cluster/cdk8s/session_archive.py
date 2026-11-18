@@ -26,6 +26,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from ai_session_archive.web_settings import WebSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -90,10 +91,7 @@ def _migration_container() -> k8s.Container:
         args=["--migrate-database"],
         image_pull_policy="IfNotPresent",
         env=[DATABASE.app_secret.key("uri").env_var("DATABASE_URL")],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("128Mi")},
-            limits={"memory": k8s.Quantity.from_string("512Mi")},
-        ),
+        resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
     )
 
 
@@ -244,15 +242,8 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                         ),
                                         k8s.EnvVar(name="RESTIC_CACHE_DIR", value="/tmp/restic-cache"),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("250m"),
-                                            "memory": k8s.Quantity.from_string("512Mi"),
-                                        },
-                                        limits={
-                                            "cpu": k8s.Quantity.from_string("2"),
-                                            "memory": k8s.Quantity.from_string("2Gi"),
-                                        },
+                                    resources=container_resources(
+                                        cpu="250m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(

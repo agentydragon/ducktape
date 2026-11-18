@@ -16,6 +16,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -77,10 +78,7 @@ def _container_security_context() -> k8s.SecurityContext:
 
 
 def _resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
-        limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
-    )
+    return container_resources(cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi")
 
 
 def _oidc_credentials(chart: Chart) -> None:

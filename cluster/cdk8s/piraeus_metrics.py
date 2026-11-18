@@ -16,6 +16,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
@@ -118,15 +119,8 @@ def add_thin_pool_monitoring(
                                 run_as_group=0,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="host-dev", mount_path="/dev", read_only=True),
@@ -156,15 +150,8 @@ def add_thin_pool_monitoring(
                                 run_as_group=65534,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="64Mi"
                             ),
                             volume_mounts=[k8s.VolumeMount(name="textfiles", mount_path="/textfiles", read_only=True)],
                         ),

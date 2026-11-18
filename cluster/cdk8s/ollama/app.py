@@ -18,6 +18,7 @@ from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -146,10 +147,7 @@ def _link_ssd_models_container() -> k8s.Container:
         name="link-ssd-models",
         image="ollama/ollama:0.34.4",
         command=["/bin/sh", f"{_SCRIPTS_DIR}/{_LINK_SCRIPT}"],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-            limits={"memory": k8s.Quantity.from_string("64Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
         volume_mounts=[
             k8s.VolumeMount(name="models", mount_path=_MODELS_DIR),
             k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
@@ -163,10 +161,7 @@ def _auth_proxy_container() -> k8s.Container:
         name="auth-proxy",
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("256Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
         ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
@@ -347,13 +342,7 @@ def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
                             command=[f"{_SCRIPTS_DIR}/{_SETUP_SCRIPT}"],
                             env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
                             # curl calls against the local registration API.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             volume_mounts=[k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True)],
                         )
                     ],

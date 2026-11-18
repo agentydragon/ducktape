@@ -8,6 +8,7 @@ from cdk8s_plus_34 import k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -76,15 +77,8 @@ def chart(app: App) -> Chart:
                                     read_only=True,
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="128Mi"
                             ),
                             liveness_probe=_tcp_probe(initial_delay_seconds=5, period_seconds=10),
                             readiness_probe=_tcp_probe(initial_delay_seconds=2, period_seconds=5),

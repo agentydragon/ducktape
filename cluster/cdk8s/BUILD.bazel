@@ -526,6 +526,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -588,6 +589,28 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "container_resources",
+    srcs = ["container_resources.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_test(
+    name = "test_container_resources",
+    srcs = ["test_container_resources.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":container_resources",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -767,6 +790,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":container_resources",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
@@ -809,6 +833,7 @@ py_library(
     name = "roaming_node_controller",
     srcs = ["roaming_node_controller.py"],
     deps = [
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
@@ -825,6 +850,7 @@ py_library(
     srcs = ["loki_read_proxy.py"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
@@ -840,6 +866,7 @@ py_library(
     srcs = ["airlock.py"],
     deps = [
         ":config_format",
+        ":container_resources",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1016,6 +1043,7 @@ py_library(
     name = "tana_mcp",
     srcs = ["tana_mcp.py"],
     deps = [
+        ":container_resources",
         ":external_creds",
         ":flux",
         ":gateway",
@@ -1413,6 +1441,7 @@ py_library(
     data = ["proxmox-proxy.conf"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
+        ":container_resources",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -1511,6 +1540,7 @@ py_library(
     data = ["kube-api-proxy.conf"],
     deps = [
         ":artifact_generators",
+        ":container_resources",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1762,6 +1792,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1790,6 +1821,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
@@ -2056,6 +2088,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":node_scheduling",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",

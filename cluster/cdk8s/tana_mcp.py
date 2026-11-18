@@ -24,6 +24,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -103,13 +104,7 @@ def _tana_deployment(chart: Chart) -> None:
                             ports=[_TANA.k8s_container_port(), _NOVNC.port.k8s_container_port()],
                             env=[k8s.EnvVar(name="RESOLUTION", value="1280x800x24")],
                             volume_mounts=[k8s.VolumeMount(name="tana-config", mount_path="/home/tana/.config/tana")],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("1Gi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("4Gi")},
-                            ),
+                            resources=container_resources(cpu="200m", memory="1Gi", memory_limit="4Gi"),
                             # Kubelet httpGet probes target the pod IP, which stays unreachable
                             # even when Tana is healthy, so probe from inside the container instead.
                             # Generous startup probe: /health won't respond until Tana is logged in
@@ -131,13 +126,7 @@ def _tana_deployment(chart: Chart) -> None:
                             volume_mounts=[
                                 k8s.VolumeMount(name="nginx-config", mount_path="/etc/nginx/conf.d", read_only=True)
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                             liveness_probe=k8s.Probe(http_get=_proxy_health_check(), period_seconds=30),
                             readiness_probe=k8s.Probe(http_get=_proxy_health_check(), period_seconds=10),
                         ),
@@ -156,15 +145,9 @@ def _tana_deployment(chart: Chart) -> None:
                             # drifts off the matching account drives a re-sign instead of
                             # silently leaving the facade serving zero tools.
                             env=[_PAT.env_var("PAT")],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                # TODO(vpa-memory-audit): 128Mi -> 256Mi. VPA observed a 121Mi
-                                # request / 153Mi upper bound, i.e. already over the old limit.
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            # TODO(vpa-memory-audit): 128Mi -> 256Mi. VPA observed a 121Mi
+                            # request / 153Mi upper bound, i.e. already over the old limit.
+                            resources=container_resources(cpu="10m", memory="64Mi", memory_limit="256Mi"),
                         ),
                     ],
                     volumes=[
@@ -322,15 +305,9 @@ def _facade(chart: Chart) -> None:
                                     name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                },
-                                # TODO(vpa-memory-audit): 256Mi -> 512Mi. VPA observed a 259Mi
-                                # request / 272Mi upper bound, i.e. already over the old limit.
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
+                            # TODO(vpa-memory-audit): 256Mi -> 512Mi. VPA observed a 259Mi
+                            # request / 272Mi upper bound, i.e. already over the old limit.
+                            resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
                             startup_probe=k8s.Probe(
                                 http_get=healthz, initial_delay_seconds=5, period_seconds=5, failure_threshold=60
                             ),
