@@ -166,6 +166,32 @@ def test_publish_file_discards_interrupted_copy(tmp_path: Path, monkeypatch: pyt
     assert outputs.publish_file(source=source, role="trace").read_bytes() == b"complete trace"
 
 
+def test_losing_record_claim_removes_only_its_own_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    outputs = BoundTestOutputs(tmp_path, "example")
+    root = tmp_path / "test-outputs"
+    key = output_key("example", None, "trace")
+    loser = root / FILES_DIR / f"{key}.txt"
+    winner = root / FILES_DIR / f"{key}.zip"
+    record_path = root / RECORDS_DIR / f"{key}.json"
+    link = os.link
+
+    def publish_competing_record(source: Path | str, destination: Path) -> None:
+        if destination == record_path:
+            assert loser.read_bytes() == b"losing trace"
+            with monkeypatch.context() as original:
+                original.setattr(os, "link", link)
+                outputs.publish(role="trace", data=b"winning trace", suffix="zip")
+        link(source, destination)
+
+    monkeypatch.setattr(os, "link", publish_competing_record)
+    with pytest.raises(FileExistsError, match="identity already claimed"):
+        outputs.publish(role="trace", data=b"losing trace", suffix="txt")
+
+    assert list(winner.parent.iterdir()) == [winner]
+    assert winner.read_bytes() == b"winning trace"
+    assert json.loads(record_path.read_text())["path"] == f"{FILES_DIR}/{key}.zip"
+
+
 def test_publish_file_duplicate_claim_fails(tmp_path: Path) -> None:
     outputs = BoundTestOutputs(tmp_path / "outputs", "example")
     source = tmp_path / "capture.png"

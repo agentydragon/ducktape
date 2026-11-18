@@ -28,10 +28,7 @@ py_library(
     name = "output_writer",
     srcs = ["output_writer.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":output_records",
-        "@pypi//atomicwrites",
-    ],
+    deps = [":output_records"],
 )
 
 py_library(
