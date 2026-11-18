@@ -1,24 +1,24 @@
 {
-  "source_devel_commit": "984f833dc6c1ae973826e84e0c5e9fd6bace898f",
-  "window_start_utc": "2026-11-18T06:06:56.073924+00:00",
-  "window_end_utc": "2026-11-18T06:45:17.374332+00:00",
+  "source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",
+  "window_start_utc": "2026-11-18T10:10:38.530145Z",
+  "window_end_utc": "2026-11-18T11:06:42.495719+00:00",
   "published_at_utc": null,
   "attribution": "Native stage clocks, nested fixture spans and local selected-batch feedback; no population critical-path or Shapley attribution",
-  "snapshot_prepared_at_utc": "2026-11-18T07:08:59.452832+00:00",
-  "audited_at_utc": "2026-11-18T07:08:59.452881+00:00",
+  "snapshot_prepared_at_utc": "2026-11-18T11:09:14.807132+00:00",
+  "audited_at_utc": "2026-11-18T11:09:14.807132+00:00",
   "publication_status": "Validated snapshot; Git history records the publication commit",
-  "previous_report_commit": "b73d7c7b38588fbb9ce05567dc2a31a26cd91522",
-  "history_base_gh_pages_commit": "b73d7c7b38588fbb9ce05567dc2a31a26cd91522",
-  "population": "Three submitted graph arms; 224 exact JUnit joins / 724 observed passing verdicts. Interrupted repeat has two unobserved planned VM case verdicts and an extra failed provider attempt. Two later arms not run. Disposal is separate.",
-  "feedback_clock": "Local submission to command completion; interrupted repeat is censored by cancellation. No GitHub required-result or auto-merge clock.",
-  "report_sha256": "1a75341f33f9ca465036025e20aea5800ace515440333f3c5f0a3a65860aba6d",
-  "evidence_sha256": "2f7525bdeea93388e8abee31a3b25ef17ca97db60ef84bfc6975887c01af18ad",
+  "previous_report_commit": "df20865667f8763ed90432479fcad38335439849",
+  "history_base_gh_pages_commit": "df20865667f8763ed90432479fcad38335439849",
+  "population": "18 November rollout checkpoint: two merged changes, live HPA configuration, three fresh acceptance executions / six scenario verdicts and exact-head PR CI attempts. No post-rollout production cohort.",
+  "feedback_clock": "Acceptance action/setup clocks only. Historical cohort and graph clocks keep their original definitions. Production required-feedback effect is unmeasured.",
+  "report_sha256": "bc79dd8fee3c8a2b969561967cc05571b7a8405ed4e0e1c433cb300d7440626f",
+  "evidence_sha256": "4722fb10d702fe9bbaf2cd0f3ba4aad6bef78afd092d3522ad9daf285aeea2d4",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Current graph measurement window; explicit disposal and visual validation have separate timestamps.",
+  "window_note": "Deployment and acceptance checkpoint; original graph, cohort and other experiment windows are retained separately.",
   "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
   "qualification_window_utc": [
     "2026-11-16T12:37:15.283Z",
@@ -41,7 +41,7 @@
   "worker_image_comparison_test_source": "fa39f0dc83815a6c76a4203b9e19072150de8f10",
   "worker_image_comparison_image_source": "fea0c72d0bf37b466a2a73387e3b4dc2e7907e6c",
   "worker_image_comparison_image_digest": "sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
-  "evidence_index_sha256": "517d6304d27c0aa01342cf02155b654a6591ed2a057947fc18c02daf0bfab9c4",
+  "evidence_index_sha256": "deb7cf4472f5dc00d270defd7fe527adf7e7cfad019d70062f7ebda9a7ee2822",
   "docker_recycling_window_utc": [
     "2026-11-17T08:42:24Z",
     "2026-11-17T09:12:01Z"
@@ -68,7 +68,7 @@
   ],
   "postfix_qualification_test_source": "6593034a7b491fa1651f455bc0f8e843ca34200e",
   "postfix_qualification_source_pr": 17371,
-  "source_note": "Manual replay of PR #17529 with merged readiness repair #17553 applied identically to the frozen base, PR head and merge trees. Other files retain their original contents.",
+  "source_note": "Inspected current devel contains both rollout merges. Each retained experiment preserves its own source and observation window in evidence.json.",
   "postfix_qualification_source_merge": "daffbb842abfc625da909e4fc58dcba08390f195",
   "postfix_qualification_population": "candidate-1: 12 / 12; 12 passed / 47 passed; candidate-2: 12 / 12; 12 passed / 47 passed; managed-1: 12 / 12; 2 failed, 10 passed / 2 error, 3 failure, 44 passed",
   "postfix_qualification_passed": false,
@@ -317,5 +317,18 @@
   ],
   "backend_graph_comparison_source": "984f833dc6c1ae973826e84e0c5e9fd6bace898f",
   "backend_graph_comparison_status": "Stopped on managed executor kernel panic and provider reschedule; one warm Firecracker repeat verified.",
-  "source_label": "replay"
+  "source_label": "devel",
+  "backend_graph_window_utc": [
+    "2026-11-18T06:06:56.073924+00:00",
+    "2026-11-18T06:45:17.374332+00:00"
+  ],
+  "backend_graph_source_devel_commit": "984f833dc6c1ae973826e84e0c5e9fd6bace898f",
+  "ci_configuration_rollout": {
+    "firecracker_merge": "82cf178955eba5270ce1d473ccae28db24b2ce06",
+    "firecracker_merged_at_utc": "2026-11-18T10:38:27Z",
+    "pool_merge": "2503f5401bf664aa37eebe22893c04461507e08a",
+    "pool_merged_at_utc": "2026-11-18T10:16:39Z",
+    "hpa_observed_at_utc": "2026-11-18T11:06:42.495719+00:00",
+    "impact_measured": false
+  }
 }

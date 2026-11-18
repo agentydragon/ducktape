@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): The control and cold seed passed 242 cases each in 8m22s and 9m44s. The first repeat verified 38.6s warm Firecracker setup, but a managed executor kernel panic stopped the comparison. Two remaining arms were not run. Full-graph speedup remains unqualified. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).

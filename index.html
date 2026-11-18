@@ -167,7 +167,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" The control and cold seed passed 242 cases each in 8m22s and 9m44s. The first repeat verified 38.6s warm Firecracker setup, but a managed executor kernel panic stopped the comparison. Two remaining arms were not run. Full-graph speedup remains unqualified."}
+                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
