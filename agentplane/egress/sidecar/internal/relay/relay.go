@@ -341,7 +341,7 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 	if err := writeResponseHead(client, response); err != nil {
 		return
 	}
-	if err := pipeDuplex(client, buffered.Reader, upstream, upstreamReader); err != nil {
+	if err := pipeDuplex(client, buffered.Reader, upstream, upstreamReader, halfCloseWrite); err != nil {
 		slog.Warn("CONNECT relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
 	}
 }
@@ -387,20 +387,22 @@ func (s *sidecar) track(conn net.Conn, add bool) {
 	}
 }
 
-func pipeDuplex(client net.Conn, clientReader *bufio.Reader, upstream net.Conn, upstreamReader *bufio.Reader) error {
+func halfCloseWrite(conn net.Conn) {
+	if writer, ok := conn.(interface{ CloseWrite() error }); ok {
+		_ = writer.CloseWrite()
+	}
+}
+
+func pipeDuplex(client net.Conn, clientReader io.Reader, upstream net.Conn, upstreamReader io.Reader, closeClientWrite func(net.Conn)) error {
 	results := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(upstream, clientReader)
-		if closer, okay := upstream.(interface{ CloseWrite() error }); okay {
-			_ = closer.CloseWrite()
-		}
+		halfCloseWrite(upstream)
 		results <- err
 	}()
 	go func() {
 		_, err := io.Copy(client, upstreamReader)
-		if closer, okay := client.(interface{ CloseWrite() error }); okay {
-			_ = closer.CloseWrite()
-		}
+		closeClientWrite(client)
 		results <- err
 	}()
 	first := <-results
