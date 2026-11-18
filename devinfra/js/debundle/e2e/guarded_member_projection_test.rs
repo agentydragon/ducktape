@@ -11,6 +11,7 @@ fn keyed_payload_switch_does_not_treat_retained_callbacks_as_the_payload() {
     fn run_case(
         selection: &str,
         mutate: bool,
+        expected: &'static str,
     ) -> (StagedInvocation, StagedInvocation, &'static str) {
         let write = if mutate {
             "selected.state = \"ready\";"
@@ -78,7 +79,6 @@ console.log(wrapped.invoke(), service.state);
                 .build()])
             .with_unassigned_mode(unassigned_mode_inline()),
         );
-        let expected = if mutate { "42 ready\n" } else { "42 new\n" };
         assert_node_output(&stage.root().join("snapshot/static/app.js"), expected, "");
 
         let fresh = stage.run(&["--emit-on-rejection"]);
@@ -87,17 +87,37 @@ console.log(wrapped.invoke(), service.state);
     }
 
     let cases = [
-        ("computed switch", "choosePayload(record)", true, true),
-        ("literal payload", "record.payload", true, true),
+        (
+            "computed switch",
+            "choosePayload(record)",
+            true,
+            true,
+            "42 ready\n",
+        ),
+        (
+            "literal payload",
+            "record.payload",
+            true,
+            true,
+            "42 ready\n",
+        ),
         (
             "computed without write",
             "choosePayload(record)",
             false,
             true,
+            "42 new\n",
+        ),
+        (
+            "callback payload",
+            "choosePayload({payload: callback})",
+            true,
+            false,
+            "42 new\n",
         ),
     ];
-    for (label, selection, mutate, accepted) in cases {
-        let (fresh, saved, expected) = run_case(selection, mutate);
+    for (label, selection, mutate, accepted, expected) in cases {
+        let (fresh, saved, expected) = run_case(selection, mutate, expected);
         for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
             assert_eq!(
                 invocation.result.status.success(),
