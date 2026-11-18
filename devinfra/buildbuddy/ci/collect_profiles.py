@@ -23,9 +23,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.remote_log_markers import parse_probe_cas, strip_ansi
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
 COMMAND_RE = re.compile(r"CI_BAZEL_COMMAND role=(?P<role>[a-z0-9_-]+)")
 ANALYZING_RE = re.compile(
     r"Analyzing:\s*(?P<targets>\d+) targets "
@@ -36,7 +35,6 @@ PROCESS_RE = re.compile(r"(?P<count>\d+) process(?:es)?: (?P<text>.*)")
 PROBE_SUMMARY_RE = re.compile(r"CI_VM_PROBE_SUMMARY (?P<kv>.*)")
 PROBE_SERVER_RE = re.compile(r"CI_VM_PROBE_SERVER (?P<kv>.*)")
 PROBE_ARCHIVE_RE = re.compile(r"CI_VM_PROBE_ARCHIVE (?P<kv>.*)")
-PROBE_CAS_RE = re.compile(r"CI_VM_PROBE_CAS (?P<rest>.*)")
 
 
 @dataclasses.dataclass
@@ -62,10 +60,6 @@ def intish(value: Any) -> int | None:
         return int(value)
     except TypeError, ValueError:
         return None
-
-
-def strip_ansi(line: str) -> str:
-    return CARET_ANSI_RE.sub("", ANSI_RE.sub("", line))
 
 
 def as_json_dict(value: Any) -> dict[str, Any]:
@@ -114,18 +108,8 @@ def parse_log(text: str, known_invocations: list[dict[str, str]]) -> dict[str, A
         if match := PROBE_ARCHIVE_RE.search(line):
             probe_archives.append(parse_kv(match.group("kv")))
             continue
-        if match := PROBE_CAS_RE.search(line):
-            rest = match.group("rest")
-            if rest.startswith("digest="):
-                digest = rest.removeprefix("digest=")
-                if digest:
-                    probe_cas.append({"digest": digest})
-                else:
-                    probe_cas.append({"missing_digest": "empty"})
-            elif rest.startswith("missing_digest="):
-                probe_cas.append({"missing_digest": rest.removeprefix("missing_digest=")})
-            else:
-                probe_cas.append({"raw": rest})
+        if (probe := parse_probe_cas(line)) is not None:
+            probe_cas.append(probe)
             continue
         if match := COMMAND_RE.search(line):
             current = invocations_by_role.get(match.group("role"))

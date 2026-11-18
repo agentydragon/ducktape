@@ -10,9 +10,12 @@ def test_build_record() -> None:
         log_text="""
 Streaming remote runner logs to: https://app.buildbuddy.io/invocation/cab7b556-8bc9-46fc-8f9d-54b880ef4153
 \x1b[32mINFO: \x1b[mInvocation ID: 34f127a3-16a7-43f7-a590-937326e19fe4
-CI_VM_PROBE_CAS digest=/compressed-blobs/zstd/abc/123
+\x1b[32mCI_VM_PROBE_CAS digest=/compressed-blobs/zstd/abc/123\x1b[m
 \x1b[32mINFO: \x1b[mInvocation ID: dab41d17-9528-48f9-8e93-d94cfab847ba
 CI_VM_PROBE_CAS digest=
+^[[32mCI_VM_PROBE_CAS missing_digest=upload_failed^[[m
+CI_VM_PROBE_CAS unavailable={"status": "error"}
+CI_VM_PROBE_CAS_DOWNLOAD=bb download /compressed-blobs/zstd/abc/123
 """,
         log_path=Path("/tmp/bb-remote.log"),
         roles=["test", "build"],
@@ -54,6 +57,8 @@ CI_VM_PROBE_CAS digest=
     assert record["buildbuddy"]["probe_cas"] == [
         {"digest": "/compressed-blobs/zstd/abc/123"},
         {"missing_digest": "empty"},
+        {"missing_digest": "upload_failed"},
+        {"raw": 'unavailable={"status": "error"}'},
     ]
     assert record["warnings"] == []
 
