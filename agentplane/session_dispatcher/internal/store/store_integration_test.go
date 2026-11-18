@@ -195,30 +195,9 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 }
 
 func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) {
-	ctx := context.Background()
-	store := testStore(t, 3)
-
-	legacyFirst := wakeBudgetCaller("mixed-writer", "legacy-first", "")
-	currentFirst := proto.Clone(legacyFirst).(*identitypb.ServiceAccountIdentity)
-	currentFirst.Uid = "current-first-uid"
-	legacySandboxUID := uuid.NewString()
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("legacy first reservation: %v %v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentFirst), legacySandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
-	}
-	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
-
-	currentThenLegacy := wakeBudgetCaller("mixed-writer", "current-first", "current-first-uid")
-	currentSandboxUID := uuid.NewString()
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentThenLegacy), currentSandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("current first reservation: %v %v", wait, err)
-	}
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
-		t.Fatalf("legacy reader did not recognize current same-generation reservation: %v %v", wait, err)
-	}
-	assertWakeAttemptCount(t, store, currentThenLegacy, currentSandboxUID, 1)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store, databaseURL := testStoreWithURL(t, 3)
 
 	// Hold the old advisory key so this check proves new writers serialize with
 	// previous replicas before reading or inserting their budget row.
@@ -230,34 +209,31 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	if err != nil {
 		t.Fatal("begin old-writer lock fixture:", err)
 	}
+	defer lockTx.Rollback()
 	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
-		_ = lockTx.Rollback()
 		t.Fatal("take old-writer advisory lock:", err)
 	}
+	var oldWriterPID, newWriterPID int
+	if err := lockTx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&oldWriterPID); err != nil {
+		t.Fatal(err)
+	}
+	newWriterDB := postgres.Open(t, databaseURL)
+	newWriterDB.SetMaxOpenConns(1)
+	if err := newWriterDB.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&newWriterPID); err != nil {
+		t.Fatal(err)
+	}
+	newWriter := NewStore(newWriterDB, 3)
 	newWriterDone := make(chan error, 1)
-	newWriterStarted := make(chan struct{})
 	go func() {
-		close(newWriterStarted)
-		_, err := store.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
+		_, err := newWriter.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
 		newWriterDone <- err
 	}()
-	<-newWriterStarted
-	select {
-	case err := <-newWriterDone:
-		_ = lockTx.Rollback()
-		t.Fatalf("new writer passed an old-version lock before release: %v", err)
-	case <-time.After(200 * time.Millisecond):
-	}
+	postgres.WaitForBlocker(t, ctx, store.DB, newWriterPID, oldWriterPID)
 	if err := lockTx.Commit(); err != nil {
 		t.Fatal("release old-writer advisory lock:", err)
 	}
-	select {
-	case err := <-newWriterDone:
-		if err != nil {
-			t.Fatal("new writer after old lock release:", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("new writer stayed blocked after old lock release")
+	if err := <-newWriterDone; err != nil {
+		t.Fatal("new writer after old lock release:", err)
 	}
 
 	// An interleaved old/new burst consumes one shared ten-wake budget even

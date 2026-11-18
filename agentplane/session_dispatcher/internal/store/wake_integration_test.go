@@ -16,7 +16,7 @@ import (
 )
 
 func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := testStore(t, 3)
 	caller := serviceAccountIdentityFor(auth.Account{Namespace: "wake-budget-mixed-version", Name: "shared-cap"}, "current-uid")
 	const uid = "00000000-0000-4000-8000-000000000091"
@@ -32,15 +32,18 @@ func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 		if err != nil || wait != 0 {
 			t.Fatalf("mixed writer reservation %d: wait=%s error=%v", generation, wait, err)
 		}
+		// Retry across versions while there is room and again at the cap.
+		if generation == 2 || generation == WakeLimit {
+			if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, caller, uid, 2); err != nil || wait != 0 {
+				t.Fatalf("previous writer did not deduplicate current row with %d slots taken: %s %v", generation, wait, err)
+			}
+			if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, 1); err != nil || wait != 0 {
+				t.Fatalf("current writer did not deduplicate legacy row with %d slots taken: %s %v", generation, wait, err)
+			}
+		}
 	}
 	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, WakeLimit+1); err != nil || wait == 0 {
 		t.Fatalf("current writer did not count legacy rows: wait=%s error=%v", wait, err)
-	}
-	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, caller, uid, 2); err != nil || wait != 0 {
-		t.Fatalf("previous writer did not deduplicate current row: wait=%s error=%v", wait, err)
-	}
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, 1); err != nil || wait != 0 {
-		t.Fatalf("current writer did not deduplicate legacy row: wait=%s error=%v", wait, err)
 	}
 	var total, legacy, current int
 	if err := store.DB.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER (WHERE caller_uid=''),
