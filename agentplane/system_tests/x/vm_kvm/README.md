@@ -10,7 +10,7 @@ worker resize is needed for this measured run; CI routing and fleet concurrency 
 The shared suite now runs the two harness-turn scenarios; the OOM probe has its own manual target.
 
 The earlier wyrm2 trial stayed red and took over ten minutes
-([historical record](../../../../devinfra/buildbuddy/debug/2026_11_03_wyrm2_kvm_worker.md)).
+([historical record](../../../../devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_03_wyrm2_kvm_worker.md)).
 
 ```bash
 bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results

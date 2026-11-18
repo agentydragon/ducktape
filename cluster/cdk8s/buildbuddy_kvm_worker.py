@@ -135,7 +135,7 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
             ],
         ),
         # Reserve the observed sustained demand while allowing all four vCPUs to burst.
-        # Sizing evidence: devinfra/buildbuddy/debug/2026_11_16_kvm_pool_capacity.md.
+        # Sizing evidence: devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_16_kvm_pool_capacity.md.
         resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources(
             requests={
                 "cpu": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(

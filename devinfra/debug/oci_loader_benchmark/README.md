@@ -58,8 +58,8 @@ The two passing comparison invocations are
 [Python first](https://app.buildbuddy.io/invocation/881d30c3-41a1-4680-a825-e040eaab1951)
 and [rules_oci first](https://app.buildbuddy.io/invocation/4c230353-0560-4a20-991c-b1c2d5f8dbe0).
 Their raw BuildBuddy test logs are copied as
-[first_python.test.log](oci_loader_benchmark/first_python.test.log) and
-[first_rules.test.log](oci_loader_benchmark/first_rules.test.log). Both actions
+[first_python.test.log](first_python.test.log) and
+[first_rules.test.log](first_rules.test.log). Both actions
 reported Docker 28.1.0 with `overlay2` at `/var/lib/docker`, empty
 `DOCKER_HOST`, and `TEST_TMPDIR=/workspace/_tmp/7b00ef401257a97257fb5f26b09367e4`.
 The actual benchmark `TestRunner` action platform contained
@@ -106,14 +106,14 @@ An uncached exact-base `bbr test //util/testing:test_postgres --nocache_test_res
 [passed in 48.9s](https://app.buildbuddy.io/invocation/000ea7f1-1438-49ed-8e2f-6069c41d66ed).
 Its uploaded `container_setup.log` recorded Ryuk import 1.1s,
 PostgreSQL import 25.7s, and PostgreSQL readiness after container start 6.0s.
-The raw phase log is [postgres_container_setup.log](oci_loader_benchmark/postgres_container_setup.log).
+The raw phase log is [postgres_container_setup.log](postgres_container_setup.log).
 This is one full setup observation; it does not compare the end-to-end fixture
 against `oci_load`. The PostgreSQL image had no observed warm guard hit in that
 action. The session-scoped fixture normally calls the loader once for each
 image per pytest action, so the warm-hit microbenchmark should not be applied
 to every PostgreSQL test as a saving.
 
-The August [Docker timeout diagnostic](../buildbuddy/debug/2026_08_14_docker_test_timeouts.md)
+The August [Docker timeout diagnostic](../../buildbuddy/debug/2026_08_14_docker_test_timeouts.md)
 records a plausible concurrent-load herd and a `//haku/console:test_operator_identity`
 timeout of 308.8s against a 27.7s alone run. It does not establish that the affected
 RBE actions shared a daemon or that image loading caused that timeout. The manual
@@ -129,7 +129,7 @@ four-caller group against a different absent tag with layers already used:
 | Bare `oci_load`          |          4.725s | All four caller logs say `Loaded image`                                      |
 | Guarded `oci_load`       |          1.591s | One caller log says `Loaded image`; three are empty                          |
 
-The [raw test log](oci_loader_benchmark/four_callers.test.log) records wall and
+The [raw test log](four_callers.test.log) records wall and
 client process-tree CPU. Its twelve individual caller logs remain attached to
 the BuildBuddy invocation. This is one ordered run, so the 5.105s versus
 1.591s guarded-importer difference may reflect process startup, daemon state,
@@ -213,7 +213,7 @@ experiment cannot estimate a full-CI speedup or a loader-caused failure rate.
 The existing `container_setup.log` phase logs let us measure the same 115
 PostgreSQL fixture labels in both arms without adding production timers.
 The raw per-action CAS digests are in
-[ci_wide_fixture_logs.tsv](oci_loader_benchmark/ci_wide_fixture_logs.tsv).
+[ci_wide_fixture_logs.tsv](ci_wide_fixture_logs.tsv).
 A's logs were uploaded as test artifacts. B1's artifact listing was displaced
 by the automatic retry; its logs were recovered from each completed
 TestRunner's `test.outputs` Tree digest using `bb execution get` and

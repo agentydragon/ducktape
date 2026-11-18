@@ -139,7 +139,7 @@ Its retained runtime log contains no session-key or `pivot_root` failures.
 Setup completed in 313.12 seconds and all three scenarios created their VM
 resources, but their launcher Pods hit `ImagePullBackOff`: the fixture's cleanup
 had deleted the newly imported pinned guest-root image. The
-[image-cleanup investigation](../../../agentplane/system_tests/debug/cri_image_cleanup.md)
+[image-cleanup investigation](../../../../agentplane/system_tests/debug/cri_image_cleanup.md)
 records the deletion sequence. No guest boot or complete scenario pass was established.
 Execution took 640.49 seconds after 563.53 seconds of scheduler wait; these
 failed-run timings do not establish a CI speedup.

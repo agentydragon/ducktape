@@ -120,7 +120,7 @@ These profiles show image unpacking and filesystem writes, but do not identify
 why the observed host groups differed or whether the timed-out imports were
 making progress at their deadlines. Provider-side CPU and I/O visibility during
 a failing action would be needed to investigate that boundary. The earlier
-[loader comparison](../../debug/2026_10_27_oci_loader_comparison.md) did not
+[loader comparison](../../debug/oci_loader_benchmark/README.md) did not
 establish a faster replacement for the existing loader.
 
 ## Follow-up guest CPU and disk observations
