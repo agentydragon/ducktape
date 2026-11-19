@@ -2150,11 +2150,19 @@ Boxes and Sandboxes are to converge into one object type
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
-**Decision, then migration. Unscheduled.** Compare frameworks using the operator's
-[settings direction](../../docs/trimcode_decisions.md#shared-go-and-python-settings). The design
-should show how deployment renderers and runtime loaders share the schema and handle defaults and
-explicit Secret inputs. Decide whether the App's generated configuration API can reuse settings
-schemas for the fields it exposes to the browser. Start from the
+**Decision, then migration. Unscheduled (operator, 2026-11-19).** Protobuf is the leading candidate
+for generating Go and Python settings bindings. Compare it with the current typed YAML setup.
+
+- Compare protobuf-aware YAML, textproto and binary protobuf for the settings file. Check presence,
+  defaults, unknown fields, deployment diffs and startup diagnostics.
+- Go must reject invalid settings at startup. Go-only validation is acceptable initially. Python may
+  render well-formed settings that Go rejects on semantic grounds. Consider shared schema rules
+  such as Protovalidate if synthesis-time checking is worth the integration cost. Keep runtime
+  Secret inputs explicit.
+
+The [sidecar and LLM ingress spike](https://github.com/agentydragon/ducktape/pull/12232) tried
+generated bindings, Buf protoyaml and Protovalidate. Decide whether the App's generated configuration
+API can reuse settings schemas for fields it exposes to the browser. Start from the
 [current settings contract](../AGENTS.md#settings).
 
 The shared strict YAML loader is the interim improvement. Choose the schema and file format before

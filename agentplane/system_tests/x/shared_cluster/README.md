@@ -1,12 +1,14 @@
 # Shared test cluster (parked)
 
-**Parked.** The static Ubuntu KVM worker and per-action K3s fixture serve current CI. Keep this
-persistent K3s-in-a-container prototype under `x/` while the
-[end-to-end test architecture](../../../../docs/trimcode_decisions.md#persistent-agentplane-test-cluster)
-is open. Its node image is no longer in the CI image roster. Its chart is an inert reference under
-`agentplane/x/kube_in_kube/reference/`. See the
-[parking note](../../../x/kube_in_kube/README.md) and the archived
-[contract and rollout requirements](SPEC.md).
+**Parked.** The static Ubuntu KVM worker and per-action K3s fixture serve current CI. The prototype's
+node image is outside the CI roster and its chart is an inert reference under
+`agentplane/x/kube_in_kube/reference/`. See the [parking note](../../../x/kube_in_kube/README.md)
+and the archived [contract and rollout requirements](SPEC.md).
+
+**Operator direction, 2026-11-19.** Keep the persistent-cluster prototype under `x/` while the
+end-to-end test architecture is open. Explore moving suitable behavior tests off Kubernetes.
+For tests that need Kubernetes, explore sharing persistent infrastructure such as KubeVirt and
+cert-manager. The future suite may use both. Revisit retirement after the architecture decision.
 
 ## Trusted per-run setup
 
