@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import type { SyncStatus } from "./schema";
 import { getStatus } from "./api";
 import { App } from "./app";
@@ -35,29 +34,14 @@ const paired: SyncStatus = {
   credential: { organization_uuid: "org", scopes: [], access_token_expires_at: "2026-11-09T00:00:00Z" },
 };
 
-let root: ReturnType<typeof createRoot> | null = null;
-let container: HTMLDivElement | null = null;
 afterEach(async () => {
-  if (root) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   vi.useRealTimers();
   vi.resetAllMocks();
 });
 
-async function renderApp(pathname: string): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <App pathname={pathname} />
-      </MantineProvider>
-    )
-  );
-  return container;
+function renderApp(pathname: string): Promise<HTMLDivElement> {
+  return renderWithMantine(<App pathname={pathname} />);
 }
 
 it.each(["/sessions", "/sync"])("shows a pairing link at the top of %s when unpaired", async (path) => {

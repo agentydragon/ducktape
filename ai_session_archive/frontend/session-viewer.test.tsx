@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../util/frontend/testing/deferred";
+import { cleanupMounted, mountWithMantine } from "../../util/frontend/testing/react";
 import type { SessionBrowserApi } from "./api";
 import { ApiError, httpApi } from "./api";
 import { App } from "./app";
@@ -14,37 +13,26 @@ import { createSessionSummary, sessionFixtureApi } from "./fixtures/session-data
 import type { EventPage, EventRecord, SessionPage } from "./schema";
 import type { SessionSummary, SessionVersion } from "./openapi_schema";
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
-let root: ReturnType<typeof createRoot> | null = null;
-let container: HTMLDivElement | null = null;
-
 afterEach(async () => {
-  if (root !== null) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   localStorage.removeItem("ai-session-archive-sidebar-width");
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={[initialPath]}>
-          <App api={api} />
-        </MemoryRouter>
-      </MantineProvider>
-    );
-    await flush();
-  });
+async function mountAndSettle(node: ReactNode): Promise<HTMLDivElement> {
+  const { container } = await mountWithMantine(node);
+  await act(async () => flush());
   await waitForQueriesToSettle(container);
   return container;
+}
+
+function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
+  return mountAndSettle(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <App api={api} />
+    </MemoryRouter>
+  );
 }
 
 async function flush(): Promise<void> {
@@ -289,23 +277,12 @@ it("opens a direct session link outside the first page and restores the requeste
 });
 
 it("keeps session selection in history for back and forward navigation", async () => {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
   const router = createMemoryRouter([{ path: "*", element: <App api={sessionFixtureApi} /> }], {
     initialEntries: ["/sessions/codex-thread-1?kind=main&kind=subagent&kind=unknown"],
   });
+  const container = await mountAndSettle(<RouterProvider router={router} />);
   await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <RouterProvider router={router} />
-      </MantineProvider>
-    );
-    await flush();
-  });
-  await waitForQueriesToSettle(container);
-  await act(async () => {
-    findControl(container!, "Inspect a local transcript").click();
+    findControl(container, "Inspect a local transcript").click();
     await flush();
   });
   await waitForQueriesToSettle(container);
@@ -647,17 +624,12 @@ it("refreshes import progress on demand and polls automatically", async () => {
     },
   };
   vi.useFakeTimers();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  const { container } = await mountWithMantine(
+    <MemoryRouter initialEntries={["/?view=import-progress"]}>
+      <App api={api} />
+    </MemoryRouter>
+  );
   await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={["/?view=import-progress"]}>
-          <App api={api} />
-        </MemoryRouter>
-      </MantineProvider>
-    );
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -665,7 +637,7 @@ it("refreshes import progress on demand and polls automatically", async () => {
   expect(container.textContent).toContain("27 processed");
 
   await act(async () => {
-    findControl(container!, "Refresh").click();
+    findControl(container, "Refresh").click();
     await Promise.resolve();
   });
   expect(requests).toBe(2);

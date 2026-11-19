@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, mountWithMantine, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { getSession, listSessionEvents, listSessions, watchSessions } from "./api";
 import { SessionViewer } from "./viewer";
 import { narrationSession, narrationSessionEvents, noisySession, noisySessionEvents } from "./fixtures/noisy-session";
@@ -91,14 +90,10 @@ function eventRange(start: number, end: number, descending: boolean, hasMore = f
   return eventPage(sequences.map(assistantEvent), hasMore);
 }
 
-let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 afterEach(async () => {
-  if (root) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   window.localStorage.removeItem("claude-session-sidebar-visible");
   window.localStorage.removeItem("claude-session-sidebar-width");
   if (originalMatchMedia === undefined)
@@ -110,18 +105,8 @@ afterEach(async () => {
 });
 
 // Returns the container so the calling test keeps it narrowed to non-null.
-async function renderViewer(): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
-  return container;
+function renderViewer(): Promise<HTMLDivElement> {
+  return renderWithMantine(<SessionViewer />);
 }
 
 function mockWatchStream() {
@@ -534,14 +519,13 @@ it("aborts per-session live detail reads when the viewer unmounts", async () => 
     detailSignal = signal;
     return new Promise(() => {});
   });
-  container = await renderViewer();
+  const viewer = await mountWithMantine(<SessionViewer />);
   await vi.waitFor(() => expect(watchSessions).toHaveBeenCalledTimes(1));
   await act(async () =>
     stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
   );
   await vi.waitFor(() => expect(detailSignal).toBeDefined());
-  await act(async () => root?.unmount());
-  root = null;
+  await viewer.unmount();
   expect(detailSignal?.aborted).toBe(true);
   expect(stream.close).toHaveBeenCalledTimes(1);
 });
