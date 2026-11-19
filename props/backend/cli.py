@@ -41,7 +41,7 @@ class _GraderSpawningServer(uvicorn.Server):
 
     async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets=sockets)
-        supervisor = getattr(self._app.state, "grader_supervisor", None)
+        supervisor = self._app.state.grader_supervisor
         if supervisor is not None:
             logger.info("HTTP server ready, scheduling graders for existing snapshots")
             supervisor.schedule_startup_reconcile()
