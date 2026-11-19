@@ -1,18 +1,12 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
-genrule(
-    name = "generate_instance",
-    srcs = ["//devinfra/js/debundle/x/split_proof:generated_instance"],
-    outs = ["EsmSplit/Instance.lean"],
-    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:generated_instance) $@",
-)
-
 _PROOF_SOURCES = [
     "EsmSplit.lean",
-    ":generate_instance",
+    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 ] + glob(
     ["EsmSplit/*.lean"],
     exclude = [
@@ -63,4 +57,10 @@ sh_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     use_bash_launcher = True,
+)
+
+diff_test(
+    name = "instance_freshness_test",
+    file1 = "EsmSplit/Instance.lean",
+    file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
