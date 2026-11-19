@@ -576,9 +576,9 @@ export function ProductProjectionWorkspace({
   const selectedRolloutLoading =
     selectedRolloutSeed != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
 
-  // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
+  // Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
-  // variant's `overrides` only. ----------------------------------------------------------------
+  // variant's `overrides` only.
   const updateBaseInput = (patch: Partial<ProductInput>) =>
     setScenarioSet((previous) => ({
       ...previous,
