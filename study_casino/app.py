@@ -274,18 +274,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail="admin privilege required")
 
     def resolve_prize_owner(caller: str, target_user: str | None) -> str:
-        """Resolve which user's catalog a prize mutation touches.
-
-        Rules:
-        - target_user unset, caller is admin → caller (admin manages their own).
-        - target_user unset, caller is not admin → 403 (only admins manage catalogs).
-        - target_user set → must be admin, then target_user.
-        """
-        if target_user is None:
-            require_admin(caller)
-            return caller
+        """Resolve which user's catalog a prize mutation touches: only admins manage catalogs."""
         require_admin(caller)
-        return target_user
+        return caller if target_user is None else target_user
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
     app.state.current_user_dep = current_user_dep

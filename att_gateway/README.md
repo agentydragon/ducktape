@@ -16,6 +16,10 @@ live as syslog over UDP (`syslog.ha`). The exporter only reads; the image's seco
 differs (say after a factory reset) and reads it back, one pass per run, failing when the
 setting does not hold. Its settings: `SyslogSettings` in <settings.py>.
 
+Optical powers are parsed as tenths of a dBm, as the page documents them. Community reports (2026-09)
+say some firmware versions show an uncalibrated scale instead: trend the values and check the gateway
+firmware before treating them as calibrated dBm.
+
 Pages are fetched one at a time with `ATT_GATEWAY_PAGE_GAP_SECONDS` between them, because
 the gateway's web server stalls under a burst. `/metrics` serves the last parsed values,
 so scrapes never reach the gateway. It has to run on the gateway's LAN.
