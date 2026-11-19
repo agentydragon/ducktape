@@ -6,9 +6,15 @@ Reviewed existing journals and sysfs on rugged on 2026-10-27 at approximately
 
 ## Additional suspend evidence
 
-Since the [Oct 25 control sample](../20261025T182859_0700/findings.md), five
-more suspend operations completed normally. All five probe samples recorded
-`mhi_pm_suspend_ret=0 dev_wake=0 pending_pkts=0`.
+The Oct 25 18:28:59 resume gave the first clean control sample:
+`mhi-suspend-trace.service` recorded
+`mhi_pm_suspend_ret=0 dev_wake=0 pending_pkts=0`, the kernel logged
+`PM: suspend exit`, no MHI `-EBUSY` appeared, and ModemManager reprobed the WWAN
+ports and reconnected. It does not reproduce the earlier `-EBUSY`, so it does
+not identify their cause.
+
+Since then, five more suspend operations completed normally. All five probe
+samples recorded the same values.
 
 | Suspend entry (PDT) | Resume (PDT)    |
 | ------------------- | --------------- |
