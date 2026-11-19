@@ -3,7 +3,19 @@
 ## TabbyAPI
 
 TabbyAPI serves Qwen3.8 Flash-Next EXL3 2.68-bit with a 262,144-token context
-and one active request. It reserves both 5090s. The LiteLLM compatibility IDs
+and one active request. It reserves both 5090s.
+
+With the original 28/30 GiB loader budgets, a 137K-token prefill ran out of
+memory with about 200 MiB free on GPU 0 and 11.3 GiB free on GPU 1. The
+warm TabbyAPI process used 29.97 GiB and 20.03 GiB, respectively. Allowing
+GPU 0 another 1 GiB for desktop growth and dividing the remaining headroom
+evenly gives warm-use targets of 23.9 GiB and 26.1 GiB, or about 6 GiB to
+move from GPU 0. The 22/30 GiB loader budgets use that estimate to guide
+placement. After rollout, measure warm and peak VRAM on both cards while
+completing a cold prompt plus generation near the 256K limit through LiteLLM.
+Repeat with a fresh prefix after mixed requests.
+
+The LiteLLM compatibility IDs
 `ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
 deployment and share its server-side context. Gatus probes the private
 `/v1/models` endpoint. LiteLLM handles client authentication.
