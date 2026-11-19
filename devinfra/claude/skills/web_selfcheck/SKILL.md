@@ -392,37 +392,38 @@ git -C /home/user/ducktape config buildbuddy.remote-bazel-default-remote 2>/dev/
 
 ## Report Format
 
-```
+```markdown
 # Session Selfcheck — <timestamp>
 
-Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
+Profile: <CLI/Web> Summary: <healthy / degraded / broken>
 
 ## SPEC acceptance criteria
 
-| ID  | Check                          | Status   | Detail                |
-| --- | ------------------------------ | -------- | --------------------- |
-| C1  | BUILDBUDDY_API_KEY valid       | OK/FAIL       | HTTP <code>           |
-| C2  | GITHUB_TOKEN valid             | OK/FAIL       | login=...             |
-| C3  | bbr build trivial              | OK/FAIL       | ...                   |
-| C4  | bazelisk shim + session tag    | OK/FAIL       | ...                   |
-| C5  | bbr imports session metadata   | OK/FAIL       | session:<id> tag      |
-| C6  | throwaway commit end-to-end    | OK/FAIL       | ...                   |
-| C7  | daemon log clean               | OK/FAIL       | N errors              |
-| C8  | OTLP tracing                   | OK/FAIL       | HTTP <code>           |
-| C9  | bbr analysis cache warm        | OK/WARN/AMBIG | cold=Xs warm=Ys       |
-| CLI1–4 / W1–4                   | ...           | ...                   |
+| ID            | Check                        | Status        | Detail           |
+| ------------- | ---------------------------- | ------------- | ---------------- |
+| C1            | BUILDBUDDY_API_KEY valid     | OK/FAIL       | HTTP <code>      |
+| C2            | GITHUB_TOKEN valid           | OK/FAIL       | login=...        |
+| C3            | bbr build trivial            | OK/FAIL       | ...              |
+| C4            | bazelisk shim + session tag  | OK/FAIL       | ...              |
+| C5            | bbr imports session metadata | OK/FAIL       | session:<id> tag |
+| C6            | throwaway commit end-to-end  | OK/FAIL       | ...              |
+| C7            | daemon log clean             | OK/FAIL       | N errors         |
+| C8            | OTLP tracing                 | OK/FAIL       | HTTP <code>      |
+| C9            | bbr analysis cache warm      | OK/WARN/AMBIG | cold=Xs warm=Ys  |
+| CLI1–4 / W1–4 | ...                          | ...           |
 
 ## Out-of-SPEC diagnostics
 
-| ID | Check                          | Status        | Detail                 |
-| -- | ------------------------------ | ------------- | ---------------------- |
-| D1 | web_setup.sh freshness         | OK/STALE/MISS | setup=<sha> head=<sha> |
-| D2 | hook/statusline pin freshness  | OK/BEHIND     | pin IDs, CI status     |
-| D3 | origin URL reachable for bbr   | OK/WARN       | origin=...             |
+| ID  | Check                         | Status        | Detail                 |
+| --- | ----------------------------- | ------------- | ---------------------- |
+| D1  | web_setup.sh freshness        | OK/STALE/MISS | setup=<sha> head=<sha> |
+| D2  | hook/statusline pin freshness | OK/BEHIND     | pin IDs, CI status     |
+| D3  | origin URL reachable for bbr  | OK/WARN       | origin=...             |
 
 ## Issues & remediation
 
 ### <issue title>
+
 **Spec criterion violated**: <ID>
 **Impact**: <what's broken for the agent>
 **Root cause**: <why>

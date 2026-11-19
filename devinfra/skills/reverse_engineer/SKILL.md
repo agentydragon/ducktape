@@ -289,7 +289,7 @@ Go's register ABI (since 1.17) passes the first ~9 integer arguments in
 `AX, BX, CX, DI, SI, R8, R9, R10, R11`. Before a `CALL` instruction, read
 which registers are loaded:
 
-```
+```text
 MOVQ 0x30(CX), AX    ; AX = receiver.fieldAtOffset0x30
 LEAQ 0x10(SP), BX    ; BX = pointer to stack local at +0x10
 CALL some_func

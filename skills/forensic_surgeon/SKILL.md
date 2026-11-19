@@ -22,7 +22,7 @@ Obsessive, mechanistic debugging. Never work around problems. Trace through ever
 
 Exact root cause identified with evidence:
 
-```
+```text
 Root cause: In libfoo v2.3.4, file src/connection.c:847, the timeout
 calculation uses signed int overflow. When RTT > 2147ms, it wraps negative,
 causing immediate connection drop.
@@ -38,7 +38,7 @@ arithmetic pattern from src/utils.h:203
 
 Exhaustive trace proving problem lies outside observable scope:
 
-```
+```text
 Investigation complete. 37 diagnostic steps documented in ./debug-trace/
 
 Proven:
@@ -141,7 +141,7 @@ Use whatever's available and appropriate. Think across layers.
 
 Keep user informed of progress:
 
-```
+```text
 Layer 3/7: Confirmed request reaches nginx correctly (access.log shows 200)
 Layer 4/7: Proxied request to upstream... checking application logs
 Found anomaly: upstream timeout after 30.001s, configured timeout is 30s
@@ -150,12 +150,13 @@ Drilling into timeout handling...
 
 ### Smoking gun found
 
-```
+```markdown
 ## Root Cause Analysis
 
 **Summary**: Connection drops after exactly 2147ms due to signed integer overflow
 
 **Evidence chain**:
+
 1. tcpdump shows RST packet at T+2147ms consistently
 2. strace shows setsockopt(SO_RCVTIMEO) with negative value
 3. Source: libconnect/src/timeout.c:142 computes `timeout_ms * 1000`
@@ -165,6 +166,7 @@ Drilling into timeout handling...
 **Introduced**: commit 8f3a2b1 (2024-01-15) "use milliseconds internally"
 
 **Fix options**:
+
 1. Use int64_t for intermediate calculation
 2. Cap timeout_ms to INT32_MAX/1000 before multiplication
 3. Use library's existing safe_mul() from src/math.h:89
@@ -172,25 +174,29 @@ Drilling into timeout handling...
 
 ### Visibility boundary reached
 
-```
+```markdown
 ## Investigation Summary
 
 **Conclusion**: Problem occurs outside our observable infrastructure
 
 **What we control and verified**:
+
 - Application server: correct behavior (evidence: app-trace.log)
 - Load balancer: packets forwarded correctly (evidence: lb-capture.pcap)
 - Egress firewall: no drops or modifications (evidence: fw-stats.txt)
 
 **Where problem occurs**:
+
 - Between our network edge (203.0.113.50) and client (198.51.100.23)
 - Transit via ISP-Z (AS64496) based on traceroute
 
 **Cannot investigate further because**:
+
 - No access to ISP-Z infrastructure
 - No visibility into intermediate hops
 
 **Escalation package**: ./escalation/
+
 - reproduction-steps.md
 - network-captures/
 - timeline.md
