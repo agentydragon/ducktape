@@ -3,13 +3,13 @@
 Experimental, manually applied pod for testing a Codex-like agent environment as a
 normal Kubernetes pod with a writable persistent Nix store.
 
-This is deliberately under `agents/x/` and is not referenced by any Flux
+This is parked under `cluster/parked/` and is not referenced by any Flux
 `Kustomization`.
 
 ## Apply
 
 ```bash
-kubectl apply -k cluster/k8s/agents/x/codex-nix-pod
+kubectl apply -k cluster/parked/codex-nix-pod
 kubectl -n codex-nix-pod wait --for=condition=Ready pod/codex-nix-pod --timeout=10m
 ```
 
