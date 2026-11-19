@@ -14,9 +14,6 @@ require (
 	github.com/firebase/genkit/go v1.13.1
 )
 
-// Direct dependencies for finance/worthy
-require github.com/fsouza/go-dockerclient v1.13.3
-
 // Direct dependencies for Agentplane Kubernetes authentication.
 require (
 	k8s.io/apimachinery v0.37.0
@@ -43,9 +40,6 @@ require (
 	go.uber.org/zap v1.28.0
 )
 
-// Direct dependency for the central sampler's isolated JavaScript host
-require github.com/containerd/cgroups/v3 v3.1.3
-
 // Direct dependency for the central sampler's view_image decoding and resizing
 require golang.org/x/image v0.46.0
 
@@ -68,9 +62,6 @@ require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
-
-// Direct dependency for the egress Rules listener's TLS/plaintext gRPC multiplexing
-require github.com/soheilhy/cmux v0.1.5
 
 // Direct dependencies for agentplane/egress/go
 require (
