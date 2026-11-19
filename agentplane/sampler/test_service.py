@@ -1108,12 +1108,12 @@ async def test_chat_completions_tool_round_trip(
                 assert {"role": "user", "content": "Use the tool."} in initial["messages"]
                 assert initial["tools"][0]["function"]["name"] == "exec"
                 # The first stream contains a complete-looking call, then disconnects without [DONE].
-                call_event = SseEvent("chunk", json.dumps(call_chunk).encode())
+                call_event = SseEvent("chunk", b"data: " + json.dumps(call_chunk).encode() + b"\n\n")
                 await exchange.send(call_event)
 
             async with await endpoint.next() as exchange:
                 assert exchange.request.body == initial
-                await exchange.send(call_event, SseEvent("done", b"[DONE]"))
+                await exchange.send(call_event, SseEvent("done", b"data: [DONE]\n\n"))
 
             async with await endpoint.next() as exchange:
                 continued = exchange.request.body
@@ -1127,9 +1127,9 @@ async def test_chat_completions_tool_round_trip(
                 await exchange.send(
                     SseEvent(
                         "chunk",
-                        b'{"id":"chat-done","choices":[{"index":0,"delta":{"content":"Done."},"finish_reason":"stop"}]}',
+                        b'data: {"id":"chat-done","choices":[{"index":0,"delta":{"content":"Done."},"finish_reason":"stop"}]}\n\n',
                     ),
-                    SseEvent("done", b"[DONE]"),
+                    SseEvent("done", b"data: [DONE]\n\n"),
                 )
             assert (await turn_completed(stub, request.session_id, "chat")).status == event_pb2.TURN_STATUS_COMPLETED
 
