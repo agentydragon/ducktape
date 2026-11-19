@@ -1,0 +1,12 @@
+## lodash x1: 670 statements, 6 modules
+[read + parse JSON: 15 ms;[footprints (Lean analysis): 4 ms;[load spec: 2 ms;[mkPlan: 13 ms;pass UniqueDefs  (0 ms);pass ReadsClosed  (22 ms);pass Faithful  (26 ms);pass Linkable  (0 ms);pass Hygienic  (1 ms);pass Permutes  (17 ms);pass OrderOk  (28 ms);[all seven checks: 94 ms;[render + write: 1 ms;[total: 129 ms;
+## lodash x2: 1340 statements, 12 modules
+[read + parse JSON: 19 ms;[footprints (Lean analysis): 3 ms;[load spec: 3 ms;[mkPlan: 52 ms;pass UniqueDefs  (0 ms);pass ReadsClosed  (74 ms);pass Faithful  (139 ms);pass Linkable  (0 ms);pass Hygienic  (2 ms);pass Permutes  (75 ms);pass OrderOk  (116 ms);[all seven checks: 406 ms;[render + write: 3 ms;[total: 486 ms;
+## lodash x4: 2680 statements, 24 modules
+[read + parse JSON: 15 ms;[footprints (Lean analysis): 3 ms;[load spec: 3 ms;[mkPlan: 222 ms;pass UniqueDefs  (2 ms);pass ReadsClosed  (281 ms);pass Faithful  (760 ms);pass Linkable  (2 ms);pass Hygienic  (7 ms);pass Permutes  (373 ms);pass OrderOk  (423 ms);[all seven checks: 1849 ms;[render + write: 16 ms;[total: 2108 ms;
+## lodash x8: 5360 statements, 48 modules
+[read + parse JSON: 19 ms;[footprints (Lean analysis): 5 ms;[load spec: 8 ms;[mkPlan: 1368 ms;pass UniqueDefs  (4 ms);pass ReadsClosed  (1173 ms);pass Faithful  (4897 ms);pass Linkable  (3 ms);pass Hygienic  (29 ms);pass Permutes  (1532 ms);pass OrderOk  (1557 ms);[all seven checks: 9196 ms;[render + write: 44 ms;[total: 10640 ms;
+## lodash x16: 10720 statements, 96 modules
+[read + parse JSON: 16 ms;[footprints (Lean analysis): 4 ms;[load spec: 8 ms;[mkPlan: 7230 ms;pass UniqueDefs  (8 ms);pass ReadsClosed  (4376 ms);pass Faithful  (32891 ms);pass Linkable  (8 ms);pass Hygienic  (125 ms);pass Permutes  (6845 ms);pass OrderOk  (6111 ms);[all seven checks: 50365 ms;[render + write: 149 ms;[total: 57772 ms;
+## lodash x32: 21440 statements, 192 modules
+[read + parse JSON: 14 ms;[footprints (Lean analysis): 3 ms;[load spec: 15 ms;[mkPlan: 32916 ms;pass UniqueDefs  (17 ms);pass ReadsClosed  (17489 ms);pass Faithful  (239295 ms);pass Linkable  (13 ms);pass Hygienic  (484 ms);

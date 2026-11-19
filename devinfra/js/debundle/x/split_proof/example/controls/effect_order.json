@@ -1,0 +1,11 @@
+{
+  "why": "The last console.log reads the registry. Moved into registry.mjs it runs before the plugins register anything.",
+  "fails": "OrderOk",
+  "entry": "main.mjs",
+  "modules": {
+    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd", "label"],
+    "registry.mjs": ["registry", "register", "#11"],
+    "plugins.mjs": ["#7", "#9"],
+    "main.mjs": ["#10"]
+  }
+}

@@ -1,0 +1,2 @@
+$ python3 scaling/peak.py -- lowersplit lodash.json spec32.json out --replicate 32   # 21,440 statements, compiled
+10.3 s, peak 119 MB, exit 0

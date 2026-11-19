@@ -1,0 +1,11 @@
+{
+  "why": "label lives in main.mjs, but plugins.mjs needs it and main.mjs imports plugins.mjs. The cycle runs plugins.mjs first, so label is read before it is initialized.",
+  "fails": "OrderOk",
+  "entry": "main.mjs",
+  "modules": {
+    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd"],
+    "registry.mjs": ["registry", "register"],
+    "plugins.mjs": ["#7", "#9"],
+    "main.mjs": ["label", "#10", "#11"]
+  }
+}
