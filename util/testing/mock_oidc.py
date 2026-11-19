@@ -72,7 +72,6 @@ def build_mock_oidc_app(
     exchange_token_audience: str | None = None,
     expected_exchange_client_id: str | None = None,
     on_client_assertion: Callable[[str], None] | None = None,
-    client_assertion_validator: Callable[[str], bool] | None = None,
 ) -> Starlette:
     """Build a minimal OIDC provider supporting discovery, JWKS, authorize, and token.
 
@@ -83,8 +82,7 @@ def build_mock_oidc_app(
     advertising Authentik's shared ``/application/o/{authorize,token}/`` endpoints. The shared token
     endpoint additionally accepts Authentik's RFC 7521 ``client_credentials`` exchange: it verifies
     the signed ``client_assertion`` and mints a new JWT for the same subject. Tests may use
-    ``on_client_assertion`` to inspect the assertion that crossed that protocol boundary and
-    ``client_assertion_validator`` to make the exchange endpoint accept or reject a valid assertion.
+    ``on_client_assertion`` to inspect the assertion that crossed that protocol boundary.
     ``expected_exchange_client_id`` fails the exchange if the proxy-provider client is miswired.
     """
     issuer_base = issuer_url.rstrip("/")
@@ -199,8 +197,6 @@ def build_mock_oidc_app(
                 return JSONResponse({"error": "invalid_grant"}, status_code=400)
             if on_client_assertion is not None:
                 on_client_assertion(assertion)
-            if client_assertion_validator is not None and not client_assertion_validator(assertion):
-                return JSONResponse({"error": "invalid_grant"}, status_code=400)
             client_id = body.get("client_id") or _basic_auth_client_id(request) or "test"
             if expected_exchange_client_id is not None and client_id != expected_exchange_client_id:
                 return JSONResponse({"error": "invalid_client"}, status_code=400)
