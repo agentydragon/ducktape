@@ -53,10 +53,10 @@ const (
 	delegatedIdentityUID  = "delegated-identity-uid"
 )
 
-func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []string) *resume.Manager {
+func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeServiceCallers []string) *resume.Manager {
 	t.Helper()
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeServiceCallers: wakeCallers,
+		Namespace: discoveryNamespace, Objects: objects, WakeServiceCallers: wakeServiceCallers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,9 +92,9 @@ func serveFixture(t *testing.T, methods auth.Methods, register func(*grpc.Server
 		peertls.ActionsURI, peertls.RuntimeProxyURI, peertls.NotificationsURI, peertls.AppURI)
 }
 
-func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeCallers []string) environmentpb.EnvironmentServiceClient {
+func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -115,9 +115,9 @@ func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog r
 	return environmentpb.NewEnvironmentServiceClient(serveFixture(t, methods, func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) }))
 }
 
-func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeCallers []string) environmentpb.EnvironmentServiceClient {
+func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceReaders: sets.New(peertls.ActionsURI), ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
