@@ -12,10 +12,6 @@ from hamcrest.core.description import Description
 from skills.info_gathering.evals.agent_runtime.events import ToolCall, ToolCallOutput
 from skills.info_gathering.evals.agent_runtime.tool_provider import TextContent, ToolResult
 
-# ------------------------
-# Tool result matchers
-# ------------------------
-
 
 class HasErrorText(BaseMatcher):
     """Matcher for ToolResult that verifies it's an error with TextContent."""
@@ -63,11 +59,6 @@ def tool_call_with_error_text(text_matcher):
     return HasErrorText(text_matcher)
 
 
-# ------------------------
-# Higher-level payload matchers
-# ------------------------
-
-
 def assert_function_call_output_structured(
     records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
 ) -> None:
@@ -86,11 +77,6 @@ def assert_function_call_output_structured(
     result_matcher: Any = has_properties(structured_content=structured_content_matcher)
     entry_matcher: Any = has_properties(type="function_call_output", result=result_matcher)
     assert_that(records, has_item(entry_matcher))
-
-
-# ------------------------
-# Type instance matchers
-# ------------------------
 
 
 def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -> None:
