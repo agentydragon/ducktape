@@ -40,17 +40,6 @@ and [service naming design](task_dag.md#platform_service_names_design--stable-si
 This records a later design and consolidation TODO; it selects no new service or transport and does
 not block the current documentation or delegation work.
 
-## Legacy leftovers
-
-Deferred by the operator on 2026-10-10. Revisit when the operator asks.
-
-### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
-
-Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
-(`identity/auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
-longer verifies this audience. The service SVID decision (operator, 2026-11-14) retires these tokens; do not rename an audience
-being removed. Revisit only if a surviving external consumer needs this audience after the cutover.
-
 ## Sandboxes and Action boxes
 
 ### `SANDBOX_BOX_CONVERGENCE` — Sandboxes and Action boxes as one object type
