@@ -62,7 +62,7 @@ let
       # Block Cilium/container interfaces from being advertised as Nebula
       # endpoints. Without this, Nebula may advertise pod CIDR IPs (10.244.x.x)
       # to peers, causing a VXLAN-in-Nebula tunnel loop.
-      # See cluster/debug/2026-04-07-pve-cp0-etcd-partition/
+      # See cluster/docs/lessons_learned/2026_04_07_nebula_cilium_vxlan_loop.md
       local_allow_list = {
         interfaces = {
           "cilium.*" = false;

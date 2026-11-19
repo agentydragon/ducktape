@@ -8,11 +8,16 @@ Home-manager user configurations for multiple machines.
 nix/home/
 ├── programs/              # Generic home-manager-style modules (could be upstreamed)
 ├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)
-├── skills/                # Shared skills for Claude Code, Codex, Gemini CLI, OpenCode
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
-├── claude_code/            # Personal integration: Claude Code
+├── mcp-servers.nix        # Personal SSOT: remote MCP servers wired into every agent harness
+├── skills.nix             # Shared skill deployment helper
+├── claude_code/           # Personal integration: Claude Code
+├── codex/                 # Personal integration: Codex
+├── opencode/              # Personal integration: OpenCode
+├── crush/                 # Personal integration: Crush
 ├── gemini_cli.nix         # Personal integration: Gemini CLI
+├── config/, services/, shell/, terminals/   # Neovim config, user services, shell init, terminal setup
 ├── home.nix               # Main home-manager configuration
 └── hosts/*.nix            # Host-specific configurations
 ```
@@ -36,13 +41,13 @@ Files at the root level (`claude_code/`, `gemini_cli.nix`, etc.) are **personal 
 Example:
 
 ```nix
-# gemini_cli.nix - personal integration
+# gemini_cli.nix - personal integration (abridged)
 let
   allowed = import ./allowed-commands.nix;
 in {
   programs.gemini-cli = {
     enable = true;
-    policies.allowed-commands = allowed.prefixCommands ++ allowed.exactCommands;
+    policies.allowed-commands = map (toGeminiRule 300) allowed.noSudo;
   };
 }
 ```
