@@ -32,7 +32,7 @@ For a reviewed explicit assignment, use `modules check --batch changes.json`.
 Include anonymous units, required companions and the actual existing or new
 destinations. Omitted units retain their owners. Keep its returned `.plan` for
 review/application. Existing-claim reorganization uses the same
-[check and apply workflow](spec_editing.md#workflow-reorganizing-existing-modules).
+[check and apply workflow](spec_editing.md#workflow-applying-a-reviewed-source-unit-assignment).
 Changing destinations or combining independently accepted plans needs another
 complete check. Default checks preflight selector realization before returning
 a plan; explicit `--graph-only` checks report graph validity without a plan.
