@@ -31,6 +31,7 @@ const maxProviderTimeout = 10 * time.Minute
 
 // DefaultProviderTimeouts bounds status reads separately from provider work. Keep
 // these with the gateway image so a ConfigMap update cannot break an older binary.
+// SPEC.md's Gateway section quotes both values.
 func DefaultProviderTimeouts() ProviderTimeouts {
 	return ProviderTimeouts{Status: 5 * time.Second, Operation: 120 * time.Second}
 }
