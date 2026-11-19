@@ -455,15 +455,16 @@ describe("Action presentation slots", () => {
     expect(recorded.textContent).toContain('"futureField": true');
   });
 
-  it.each([
-    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["Read with API version apps/v1"]],
-  ] as const)(
-    "uses the opened-pane argument widget for %s when optional fields are omitted",
-    async (name, args, visible) => {
-      const container = await mount(renderPaneOpened(identity("kubernetes_admin", name), args));
-      for (const value of visible) expect(container.textContent).toContain(value);
-    }
-  );
+  it("uses the opened-pane argument widget for resources_get when optional fields are omitted", async () => {
+    const container = await mount(
+      renderPaneOpened(identity("kubernetes_admin", "resources_get"), {
+        apiVersion: "apps/v1",
+        kind: "Deployment",
+        name: "api",
+      })
+    );
+    expect(container.textContent).toContain("Read with API version apps/v1");
+  });
 });
 
 describe("details result rendering", () => {
