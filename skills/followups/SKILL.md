@@ -56,47 +56,23 @@ Answering rules:
 
 ## Check whether transcript recovery is needed
 
-Before generating followups, read the `session_logs` skill. First check the
-current context: if this agent already recovered the complete transcript in
-this context window and no later compaction has hidden it, reuse that recovery.
-Record the session ID/path, compaction count, malformed-record count, and
-whether the transcript was replayed or skipped after a clean zero-compaction
-scan. After a replay, also retain its final visible user-message number. Later
-followups-loop passes reuse that state. New turns are already visible in the
-live conversation; do not replay or re-analyze the transcript unless a later
-compaction occurred or the earlier recovery evidence is no longer in context.
+Before generating followups, read the `session_logs` skill and follow its
+`/followups` procedure; `analyze_session.py` prints the replay decision. First
+check the current context: if this agent already recovered the complete
+transcript in this context window and no later compaction has hidden it, reuse
+that recovery. Record the session ID/path, compaction count, malformed-record
+count, and whether the transcript was replayed or skipped after a clean
+zero-compaction scan. After a replay, also retain its final visible user-message
+number. Later followups-loop passes reuse that state. New turns are already
+visible in the live conversation; do not replay or re-analyze the transcript
+unless a later compaction occurred or the earlier recovery evidence is no longer
+in context.
 
-If no complete recovery is present in the current context, use the analyzer for
-this agent's own harness. Do not choose the other harness just because its
-directory also exists: Claude agents use `~/.claude`, and Codex agents use
-`~/.codex`.
+Use the analyzer for this agent's own harness. Do not choose the other harness
+just because its directory also exists: Claude agents use `~/.claude`, and Codex
+agents use `~/.codex`.
 
-Run the analyzer first:
-
-```bash
-# Claude Code 2.1.260
-CLAUDE_SESSION=$(python3 ~/.claude/skills/session_logs/find_current_session.py claude)
-python3 ~/.claude/skills/session_logs/analyze_session.py claude "$CLAUDE_SESSION"
-
-# Codex CLI 0.154.0
-CODEX_SESSION=$(python3 ~/.codex/skills/session_logs/find_current_session.py codex)
-python3 ~/.codex/skills/session_logs/analyze_session.py codex "$CODEX_SESSION"
-```
-
-If the analyzer reports zero compactions and zero malformed records, do not
-run `conversation.py` just to check for loose threads. No recorded compaction
-has dropped context, so the current conversation already has it. If compaction
-markers are present and the transcript has not already been recovered after
-the latest one in this context, run `conversation.py` with its default
-filtering and read the entire output once. If malformed records were skipped,
-do not take the zero-compaction fast path; the marker scan may be incomplete.
-When output is needed, the helper emits every user-authored message together
-with the two preceding agent messages and continues across compaction markers.
-Read the first user-authored message and everything after each boundary; never
-use only a post-compaction segment. If the output is large, read it in
-sequential chunks and verify the final visible user-message number.
-
-Use this recovered transcript as an explicit input to loose-thread collection:
+Use the recovered transcript as an explicit input to loose-thread collection:
 reconstruct the original problem, all user pivots and requests, unanswered
 questions, promises, and discussed-but-unfinished work. This is required even
 when the current context appears coherent, because multiple compactions may
