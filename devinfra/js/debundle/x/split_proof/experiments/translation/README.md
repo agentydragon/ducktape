@@ -64,16 +64,16 @@ Each round builds a bundle of 8 to 21 units from a catalog of templates and spli
 - Splits: units placed at random in up to five modules (or with the effects kept in the entry, or in contiguous ranges); units moved inside a module, often next to one that mentions the same name; shuffled import order; renamed names and locals; import aliases; sometimes an alias that a local variable captures, or a top-level name renamed to a global (`JSON`).
 - The generator knows what each unit declares and mentions, so the imports and the certificate it hands over do not depend on the checker's scope analysis.
 
-Node runs the bundle and each tree. A tree that the checker accepts must print the same and end the same way. One that does not is a **wrong accept**, and the run fails. A tree that the checker rejects although Node agrees is counted too (the checker is then stricter than needed; the common case is an assignment in a function that is never called).
+Node runs the bundle and each tree. A tree that the checker accepts must print the same and end the same way. One that does not is a **wrong accept**, and the run fails. A tree that the checker rejects although Node agrees is counted too (the checker is then stricter than needed; so far every such tree has an assignment through an import that never happens to run).
 
 On the final checker, ten seeds of 150 bundles (8,958 trees): 1,737 accepted, all matching Node; 4,074 with obligations (266 match Node); 3,147 rejected (206 match Node); **0 wrong accepts**. About 900 trees take 20 seconds.
 
 `--leaks` adds four templates for what a move or a rename changes behind the checker's back: `import.meta.url`, direct `eval`, top-level `await` (the checker must refuse these) and `fn.name` (assumed: see Trusted). With it, there are still 0 wrong accepts apart from bundles that read `fn.name`, which are counted separately (21 trees in three seeds).
 
-What it found, with the first fuzz run:
+What it found:
 
-1. A pure read of a variable that something reassigns could move across the assignment (`inc(); const seen = count;` became `const seen = count; inc();`; Node printed 0 where the bundle printed 1). The model binds each name once, and the conflict rule had nothing about writes. A statement that reads such a name while it runs is now an effect. 1 tree in 900, found without a hint; the read of `count` in a module that evaluates before the write is the same hole.
-2. `import.meta`, a direct `eval` and a top-level `await` were accepted when the unit moved or was renamed. Now refused (the `new URL("/abs", import.meta.url)` shape is accepted and listed). The real bundle this was written for contains only that shape.
+1. In the first run: a pure read of a variable that something reassigns could move across the assignment (`inc(); const seen = count;` became `const seen = count; inc();`; Node printed 0 where the bundle printed 1). The model binds each name once, and the conflict rule had nothing about writes. A statement that reads such a name while it runs is now an effect. I had found this by reading the conflict rule; the fuzzer then found it on its own, across modules (a read in a module that evaluates before the write), in 1 tree of 900.
+2. With `--leaks`: `import.meta`, a direct `eval` and a top-level `await` were accepted when the unit moved or was renamed. Now refused (the `new URL("/abs", import.meta.url)` shape is accepted and listed). The real bundle this was written for contains only that shape.
 
 Both have a fixture that fails on the checker before the fix.
 
@@ -81,9 +81,25 @@ Both have a fixture that fails on the checker before the fix.
 
 [`fuzz_mutate.py`](fuzz_mutate.py) removes one rule at a time from a scratch copy of the checker, rebuilds `translate`, and runs the fuzzer on it (300 bundles per mutant).
 
-<!-- MUTATION_TABLE -->
+| Rule removed from the checker                                    | Wrong accepts the fuzzer finds                                                                                                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| conflict between two effects                                     | 118                                                                                                                                                                                         |
+| conflict between a read and the declaration it needs             | 97                                                                                                                                                                                          |
+| conflict between a declaration and an earlier read of it (`var`) | 3                                                                                                                                                                                           |
+| imports evaluated in reverse order                               | 6                                                                                                                                                                                           |
+| a read of a reassigned variable is an effect                     | 2                                                                                                                                                                                           |
+| a class is hoisted like a function                               | 9                                                                                                                                                                                           |
+| array spread is inert                                            | 4                                                                                                                                                                                           |
+| template string with expressions is inert                        | 5                                                                                                                                                                                           |
+| member read is inert                                             | 6                                                                                                                                                                                           |
+| destructuring declaration is inert                               | 7 (600 bundles; 300 missed it)                                                                                                                                                              |
+| class with a static block is inert                               | 1                                                                                                                                                                                           |
+| `AssignsHome`                                                    | 55                                                                                                                                                                                          |
+| `{ var x }` in a block declares nothing                          | 0: harmless here. The tree's links come from the tree, and a name the footprints do not know makes its readers effects. It mattered to the splitter, which computes imports from footprints |
+| assignment expression is inert                                   | 0: equivalent. An assignment reads its target, which the previous rule already makes an effect                                                                                              |
+| `Hygienic`                                                       | 0: redundant. It repeats the link check                                                                                                                                                     |
 
-The first run of the same harness left three mutants uncaught for a reason that was the generator's: a dependent template (a spread needs an iterator, a template string needs a `toString` object) needed two units to meet. Those templates now build their own helper, and the three mutants are caught. The one that stays uncaught for lack of a template was a static block that acts through a declared object, which `classStaticWrite` now covers.
+The first run of the harness (150 bundles, an older catalog) left six mutants uncaught. Three were explained by the checker (the last three rows). Three were the generator's fault: a spread needs an iterator and a template string needs a `toString` object, so a dependent template needed two units to meet, and now builds its own helper; a static block that acts through a declared object needed its own template (`classStaticWrite`), because a block that calls `console.log` is an effect anyway (it reads an undeclared global). Destructuring was caught at first and missed in the final run, so it got an object-pattern form and more weight.
 
 The catalog is the list of ways a move can go wrong that somebody wrote down. A way nobody generated stays invisible, so a new construct in a bundle means a new template.
 

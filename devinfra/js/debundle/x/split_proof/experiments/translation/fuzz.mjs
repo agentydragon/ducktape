@@ -357,13 +357,16 @@ const TEMPLATES = [
   ],
   [
     "destructure",
-    1,
+    2,
     false,
     (g) => {
-      const it = g.need((e) => e.iterable, makeIterable);
-      if (!it) return false;
+      // an array pattern runs the iterator, an object pattern runs the getter
+      const fromGetter = g.r.chance(0.5);
+      const source = fromGetter ? g.need((e) => e.getter, makeGetter) : g.need((e) => e.iterable, makeIterable);
+      if (!source) return false;
       const a = g.fresh("v");
-      g.add("destructure", `const [${top(a)}] = ${top(it.name)};`, {
+      const pattern = fromGetter ? `{ v: ${top(a)} }` : `[${top(a)}]`;
+      g.add("destructure", `const ${pattern} = ${top(source.name)};`, {
         defs: [a],
         regs: [{ name: a, kind: "const", num: true, json: true, data: true }],
       });
