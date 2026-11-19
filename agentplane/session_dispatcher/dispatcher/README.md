@@ -97,8 +97,7 @@ The manual queue, replica and wake probes are documented in the
   compatibility route. The Runner's distinct streaming `Executor.OpenSession` remains the transport
   that opens an execution connection. Old callers and old Sandbox binaries are not supported in an
   overlap window. The in-place migrations convert retained session and sampler request records and
-  preserve Session/History data; they do not requeue commands or replay effects. See the
-  [placement cutover details](SPEC.md#sessionspec-placement-cutover).
+  preserve Session/History data; they do not requeue commands or replay effects.
 - **Caller authority**: live workload Identity SVIDs retain exact Identity ownership checks; configured
   service SVIDs carry the separate component role. Typed service delegation preserves the effective
   Identity independently of its service actor. Kubernetes bearers grant no admission. Historical

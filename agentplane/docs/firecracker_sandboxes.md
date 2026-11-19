@@ -26,7 +26,8 @@ Three artifacts have separate release boundaries:
 - `agentplane-runner-disk`: existing independently built runner image, including the root-only
   Firecracker thaw agent. `/disk/runner.img` is the read-only EROFS device used by the guest.
 - `agentplane-firecracker-launcher`: `//agentplane/firecracker:image`, with the pinned Firecracker
-  VMM, disk tooling and Go supervisor. It never exposes the Firecracker API socket over TCP.
+  VMM, disk tooling and Go supervisor. It never exposes the Firecracker API socket over TCP. Its
+  contract: [`agentplane/firecracker/SPEC.md`](../firecracker/SPEC.md).
 
 The guest device order is fixed by
 [`firecracker_guest_contract.json`](../env/images/firecracker_guest_contract.json): root, runner,

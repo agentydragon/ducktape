@@ -73,7 +73,6 @@ cluster/k8s/kustomization.yaml
 
 # Helm chart templates - Go/Jinja templating, not valid YAML
 cluster/charts/**/templates/**
-cluster/k8s/*-chart/templates/**
 # Vendored Browsertrix chart contains both Helm and runtime Jinja templates.
 cluster/charts/browsertrix/**
 
@@ -83,7 +82,6 @@ props/specimens/*/*/code/**
 # Lock files - managed by package managers
 **/pnpm-lock.yaml
 **/package-lock.json
-**/uv.lock
 
 # SOPS-encrypted files - prettier reformats the long encrypted blob, and the
 # attic-jwt-rotation CronJob writes these directly from inside the cluster

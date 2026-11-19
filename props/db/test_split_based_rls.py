@@ -11,7 +11,7 @@ source info) which is not sensitive. All agents can see all snapshots. Actual da
 access control is enforced on examples, true_positives, false_positives, agent_runs,
 and llm_requests tables.
 
-This is distinct from run-based isolation (see clustering/test_rls_isolation.py),
+This is distinct from run-based isolation (see props/agents/critic/test_critic_sql_integration.py),
 which isolates concurrent runs within the same split.
 
 These tests use per-test isolated databases and require:

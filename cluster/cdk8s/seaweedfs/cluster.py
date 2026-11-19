@@ -104,7 +104,7 @@ TENANTS = {
     "atuin",  # atuin/server.py
     "authentik",  # authentik/db_backups.py
     "cdviz",  # cdviz/database.py
-    "claude-session-sync",  # claude_session_sync/app.py
+    "claude-session-sync",  # claude_session_sync.py
     "flux-system",  # seaweedfs/pr_visuals_bucket.py
     "forgejo",  # forgejo/app.py, forgejo/db.py
     "gatus",  # gatus/app.py
@@ -112,7 +112,7 @@ TENANTS = {
     "haku-console",  # haku/database.py
     "haku-mailbox",  # haku/mailbox.py
     "home-assistant",  # home_assistant/backup.py
-    "langfuse",  # langfuse/app.py
+    "langfuse",  # langfuse.py
     "litellm",  # litellm/database.py
     "loki",  # monitoring/loki.py
     "matrix",  # matrix/matrix.py

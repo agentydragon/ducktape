@@ -3,7 +3,7 @@
 ## Summary
 
 Bazel doesn't work locally on NixOS. Three independent issues must be fixed — and a
-fourth, [Issue 4](#issue-4-nix-ld-is-environment-based-and-bazel-rulesets-scrub-the-environment),
+fourth, [Issue 4](#issue-4-nix-ld-and-bash-both-need-filesystem-defaults-not-environment-variables),
 which is about environment-scrubbed actions and is fixed with filesystem defaults rather
 than more env plumbing.
 

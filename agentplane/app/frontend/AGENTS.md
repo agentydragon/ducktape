@@ -1,3 +1,5 @@
+Frontend contract: [`SPEC.md`](SPEC.md); update it when it changes.
+
 ## Verifying a visual change
 
 Visual tests (`--test_tag_filters=visual`) have no pixel baselines; passing only means every scene

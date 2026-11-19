@@ -27,7 +27,7 @@ non-Nix entrypoint such as `/bin/sleep`; this spike uses `nix shell
 nixpkgs#busybox -c busybox sleep 365d` only because the upstream image has no
 normal shell outside `/nix`.
 
-This is deliberately under `agents/x/` and is not referenced by any Flux
+This is parked under `cluster/parked/` and is not referenced by any Flux
 `Kustomization`.
 
 Startup shell lives in `scripts/` and is mounted through `configMapGenerator`.
@@ -102,20 +102,20 @@ For manual testing, apply the non-secret resources and create
 `codex-bootstrap-identity` from a locally decrypted key:
 
 ```bash
-kubectl apply -f cluster/k8s/agents/x/codex-nix-pvc-uid-pod/namespace.yaml
-kubectl apply -f cluster/k8s/agents/x/codex-nix-pvc-uid-pod/configmap.yaml
-kubectl apply -f cluster/k8s/agents/x/codex-nix-pvc-uid-pod/pvc.yaml
+kubectl apply -f cluster/parked/codex-nix-pvc-uid-pod/namespace.yaml
+kubectl apply -f cluster/parked/codex-nix-pvc-uid-pod/configmap.yaml
+kubectl apply -f cluster/parked/codex-nix-pvc-uid-pod/pvc.yaml
 
 kubectl -n codex-nix-pvc-uid-pod create configmap codex-pod-scripts \
-  --from-file=seed-nix.sh=cluster/k8s/agents/x/codex-nix-pvc-uid-pod/scripts/seed-nix.sh \
-  --from-file=start-sshd.sh=cluster/k8s/agents/x/codex-nix-pvc-uid-pod/scripts/start-sshd.sh \
+  --from-file=seed-nix.sh=cluster/parked/codex-nix-pvc-uid-pod/scripts/seed-nix.sh \
+  --from-file=start-sshd.sh=cluster/parked/codex-nix-pvc-uid-pod/scripts/start-sshd.sh \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
 # Create/apply codex-bootstrap-identity from the decrypted
 # agent-box-codex-user key. Do this with a temp file and remove it after apply.
 
-kubectl apply -f cluster/k8s/agents/x/codex-nix-pvc-uid-pod/pod.yaml
+kubectl apply -f cluster/parked/codex-nix-pvc-uid-pod/pod.yaml
 kubectl -n codex-nix-pvc-uid-pod wait --for=condition=Ready pod/codex-nix-pvc-uid-pod --timeout=10m
 ```
 
@@ -158,7 +158,7 @@ After that, turn the runtime into a small custom image:
 
 Promotion to real GitOps should wait until the Home Manager activation is proven:
 
-- move this out of `agents/x/`;
+- move this out of `cluster/parked/`;
 - add a Flux `Kustomization` with SOPS decryption;
 - decide whether to reuse `agent-box-codex-user` or mint a new
   `codex-pod` identity;

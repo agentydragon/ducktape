@@ -134,8 +134,7 @@ def _tana_deployment(chart: Chart) -> None:
                         # (probes /health on loopback), swap the SOPS-managed refresh token
                         # for an ID token, mint a Tana custom token via the fetchCustomToken
                         # Cloud Function, and deliver it to the desktop container's reseed
-                        # receiver as a tana://auth deep-link. See
-                        # cluster/docs/plans/tana_mcp_sane_signin.md.
+                        # receiver as a tana://auth deep-link.
                         k8s.Container(
                             name="firebase-resigner",
                             image="git.allegedly.works/ducktape-ci/tana-firebase-resigner:unset",
@@ -155,8 +154,7 @@ def _tana_deployment(chart: Chart) -> None:
                         # IndexedDB. Both are re-derivable on cold start: workspace from the
                         # upstream Tana RTDB, Firebase session re-minted by the
                         # firebase_resigner sidecar from the SOPS-managed refresh token. So
-                        # this can stay an emptyDir — see
-                        # cluster/docs/plans/tana_mcp_sane_signin.md.
+                        # this can stay an emptyDir.
                         k8s.Volume(name="tana-config", empty_dir=k8s.EmptyDirVolumeSource()),
                         # Rendered from nginx-auth-proxy.conf by the kustomization.yaml's configMapGenerator.
                         k8s.Volume(

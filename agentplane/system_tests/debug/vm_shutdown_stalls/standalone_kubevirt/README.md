@@ -9,7 +9,8 @@ The opt-in blocked-task SysRq experiment and its control results are in
 [`sysrq_capture.md`](sysrq_capture.md).
 The separate [synthetic slice probe](synthetic_slice.md) tests whether activating a
 short service in `agentplane.slice` exercises the boot-time cgroup controller path
-without starting Runtime.
+without starting Runtime. Its follow-ups are the [two-pair cgroup pilot](cgroup_two_pair_pilot.md)
+and the [five-pair controller stress](cgroup_five_pair_stress.md).
 
 The VMI is direct, so this is not a full-stack reproduction of the Sandbox controller or production sidecar topology. The default arm installs only the production-derived `keep-virtiofs-through-guest-shutdown` ClusterPolicy rule, scoped to the test namespace and direct VMI. The opt-in policy-off arm skips that rule only for this test. It does not modify cluster-wide KubeVirt settings. The test retains serial, launcher, virtiofs, containerd, lifecycle, QEMU, VMI, policy, and cluster evidence and deletes only its UID-owned namespace and policy.
 
