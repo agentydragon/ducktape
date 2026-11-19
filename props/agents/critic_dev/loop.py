@@ -39,11 +39,6 @@ TEXT_OUTPUT_REMINDER = (
 WORKSPACE = Path("/workspace")
 
 
-# =============================================================================
-# Tool argument models
-# =============================================================================
-
-
 class ReportFailureArgs(OpenAIStrictModeBaseModel):
     """Arguments for report_failure tool."""
 
@@ -71,11 +66,6 @@ class FetchSnapshotArgs(OpenAIStrictModeBaseModel):
     path: str = Field(default="/workspace", description="Directory to extract snapshot into")
 
 
-# =============================================================================
-# Loop state
-# =============================================================================
-
-
 class LoopStatus(StrEnum):
     """Agent loop execution status."""
 
@@ -89,11 +79,6 @@ class LoopState:
     """Mutable state for agent loop."""
 
     status: LoopStatus = LoopStatus.IN_PROGRESS
-
-
-# =============================================================================
-# Tool provider
-# =============================================================================
 
 
 def create_tools(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> list:

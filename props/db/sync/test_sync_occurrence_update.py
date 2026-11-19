@@ -32,11 +32,6 @@ pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 SLUG = SnapshotSlug("test-fixtures/train1")
 
 
-# ---------------------------------------------------------------------------
-# Helpers: build yaml bridge objects from current DB state
-# ---------------------------------------------------------------------------
-
-
 def _tp_issue_from_orm(tp: TruePositive) -> SyncTruePositive:
     """Build a SyncTruePositive from current DB state (for mutation tests)."""
     return SyncTruePositive(
@@ -55,11 +50,6 @@ def _fp_issue_from_orm(fp: FalsePositive) -> SyncFalsePositive:
         rationale=fp.rationale,
         occurrences=[_fp_occ_from_orm(o) for o in fp.occurrences],
     )
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: ORM → Pydantic reconstruction
-# ---------------------------------------------------------------------------
 
 
 def test_tp_occ_round_trip(synced_test_session: Session):
@@ -202,11 +192,6 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
     assert db_occ.created_at == created_at
 
 
-# ---------------------------------------------------------------------------
-# No-change re-sync preserves rows (created_at unchanged)
-# ---------------------------------------------------------------------------
-
-
 def test_unchanged_occurrence_preserved(synced_test_session: Session):
     """Re-syncing identical data preserves existing ORM rows (no delete+re-add)."""
     db_occ = (
@@ -226,11 +211,6 @@ def test_unchanged_occurrence_preserved(synced_test_session: Session):
     assert {r.id for r in db_occ.ranges} == original_range_ids
     assert {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall} == original_scope_hashes
     assert db_occ.created_at == original_created_at
-
-
-# ---------------------------------------------------------------------------
-# Field-level change detection
-# ---------------------------------------------------------------------------
 
 
 def test_note_change_detected(synced_test_session: Session):
@@ -333,11 +313,6 @@ def test_critic_scopes_change_replaces_occurrence(synced_test_session: Session):
     assert db_occ.created_at != original_created_at
 
 
-# ---------------------------------------------------------------------------
-# Occurrence add / remove
-# ---------------------------------------------------------------------------
-
-
 def test_occurrence_added(synced_test_session: Session):
     """Adding an occurrence to an existing issue is detected."""
     existing = synced_test_session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
@@ -380,11 +355,6 @@ def test_occurrence_removed(synced_test_session: Session):
         .all()
     }
     assert occ_ids == {yaml_issue.occurrences[0].occurrence_id}
-
-
-# ---------------------------------------------------------------------------
-# FP-specific: relevant_files change
-# ---------------------------------------------------------------------------
 
 
 def test_fp_relevant_files_change_detected(synced_test_session: Session):

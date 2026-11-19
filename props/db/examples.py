@@ -20,10 +20,6 @@ from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetEx
 from props.core.splits import Split
 from props.db.models import Base, Snapshot, SnapshotSlugColumn
 
-# =============================================================================
-# Example Model
-# =============================================================================
-
 
 class Example(Base):
     """Training/evaluation examples - VIEW backed by file_sets + whole-snapshot entries.
@@ -114,11 +110,6 @@ class Example(Base):
     def from_spec_or_none(cls, session: Session, spec: ExampleSpec) -> Example | None:
         """Look up Example by ExampleSpec. Returns None if not found."""
         return cls._query_by_spec(session, spec).one_or_none()
-
-
-# =============================================================================
-# Training Example Loading
-# =============================================================================
 
 
 def count_available_examples_by_scope_all(
