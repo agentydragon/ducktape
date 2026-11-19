@@ -16,7 +16,10 @@ _COMPLETE = "COMPLETE_INVOCATION_STATUS"
 
 
 def _json(*args: str) -> dict[str, Any]:
-    return json.loads(run("--json", *args, timeout=30))
+    response = json.loads(run("--json", *args, timeout=30))
+    if not isinstance(response, dict):
+        raise ValueError(f"Expected a JSON object from bbapi {args[0]}")
+    return response
 
 
 def _target(inv_id: str, label: str) -> dict[str, Any]:
