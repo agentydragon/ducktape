@@ -1,7 +1,7 @@
 """Tests for ServerSettings + AuthentikAuthConfig wiring.
 
 URL-derivation tests live with `AuthentikAuthConfig` itself in
-<../../mcp_infra/authentik_auth/test_config.py>; here we just pin that the
+<../mcp_infra/authentik_auth/test_config.py>; here we just pin that the
 nested Pydantic model loads/omits correctly on `ServerSettings`.
 """
 

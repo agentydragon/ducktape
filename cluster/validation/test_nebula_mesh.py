@@ -137,7 +137,7 @@ def test_host_names_have_no_dots(nebula_roster: nebula_mesh.Mesh) -> None:
     then registers the node under the (short) hostname only, so a dotted host
     name in this roster registers in Kubernetes under a truncated name and
     breaks every downstream consumer (local-path-provisioner nodePathMap,
-    nodeSelector pins, etc.). See plans/rename_ovh_nodes_role_neutral.md.
+    nodeSelector pins, etc.).
     """
     for name in nebula_roster.hosts:
         assert "." not in name, (
