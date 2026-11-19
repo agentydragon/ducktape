@@ -1,5 +1,5 @@
 # Known SSH public keys, sourced from ssh_keys/*.pub files.
-# Import as: let keys = import ./ssh_keys.nix; in ...
+# Import as: let keys = import ./ssh-keys.nix; in ...
 let
   readKey =
     file: builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile (../ssh_keys + "/${file}"));

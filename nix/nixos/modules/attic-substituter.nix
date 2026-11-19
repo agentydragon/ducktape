@@ -50,7 +50,7 @@ in
       # Trusted pubkeys for the main + gaffer caches. Single source of truth is
       # nix/attic-pubkeys.json; the nix-attic-push CI workflow reads the same
       # file. Provenance + rotation runbook (capture pubkeys on cluster rebuild):
-      # cluster/k8s/nix-cache/bootstrap/bootstrap.sh.
+      # cluster/docs/nix_cache.md.
       trusted-public-keys = builtins.fromJSON (builtins.readFile ../../attic-pubkeys.json);
       netrc-file = config.sops.templates."attic-netrc".path;
       connect-timeout = 5;
