@@ -5,19 +5,42 @@ npm_link_all_packages(name = "node_modules")
 
 _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
+_CHECKER_RUNFILES = [
+    "frontend.mjs",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    _TRANSLATE,
+]
+
 js_test(
     name = "fixtures_test",
     data = [
-        "frontend.mjs",
         "mutate.mjs",
         "pair.mjs",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        _TRANSLATE,
-    ] + glob(
+    ] + _CHECKER_RUNFILES + glob(
         ["fixtures/**"],
         allow_empty = False,
     ),
     entry_point = "test.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "fuzz_test",
+    size = "small",
+    args = [
+        "--count",
+        "16",
+        "--seed",
+        "1",
+        "--trees",
+        "4",
+        "--jobs",
+        "2",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+    tags = ["manual"],
 )
