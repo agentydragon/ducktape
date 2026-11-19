@@ -52,6 +52,8 @@ class SnapshotFileIdentity:
 def previous_version(db: DbSession, current: SnapshotFileRow) -> FileVersionRow | None:
     # A path absent from many consecutive diffs must not cost one database round trip per snapshot.
     # Stop at the first independent inventory, matching the diff ancestry's trust boundary.
+    # The recursion probes one parent per ancestor with LATERAL ... LIMIT 1: a plain join scanned every machine
+    # snapshot at each step (445 snapshots, 9,108 shared buffer hits on wyrm2 for one path).
     prior = db.execute(
         text(
             """
