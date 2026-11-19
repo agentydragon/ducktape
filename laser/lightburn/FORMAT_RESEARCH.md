@@ -6,8 +6,8 @@
 - [LightBurn forum — LBRN or LBRN2 XML file documentation](https://forum.lightburnsoftware.com/t/lbrn-or-lbrn2-xml-file-docuumentation/42317)
 - [nuCarve — LightBurn LBRN vs. LBRN2 file formats](https://nucarve.com/lightburn-file-format-lbrn-lbrn2/)
 - [nuCarve — Documenting the LightBurn file format: what's in a shape](https://nucarve.com/lightburn-file-format-whats-in-a-shape/)
-- [GitHub — MarcinZukowski/lightburn-tester](https://github.com/MarcinZukowski/lightburn-tester) — cloned to `refs/lightburn-tester/` for detailed study
-- [GitHub — jlucaso1/lbrn2-to-svg](https://github.com/jlucaso1/lbrn2-to-svg) — TypeScript lbrn2 parser, cloned to `refs/lbrn2-to-svg/`
+- [GitHub — MarcinZukowski/lightburn-tester](https://github.com/MarcinZukowski/lightburn-tester)
+- [GitHub — jlucaso1/lbrn2-to-svg](https://github.com/jlucaso1/lbrn2-to-svg) — TypeScript lbrn2 parser
 - [GitHub — makerspace-gt/lightburn-settings](https://github.com/makerspace-gt/lightburn-settings) — real-world `.lbrn` example files
 
 ## Format Overview
