@@ -185,7 +185,6 @@ manifest:
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
-    hass_client: hass_client
     hcloud: hcloud
     hpack: hpack
     httpcore: httpcore
@@ -286,26 +285,6 @@ manifest:
     opentelemetry.baggage: opentelemetry_api
     opentelemetry.context: opentelemetry_api
     opentelemetry.environment_variables: opentelemetry_api
-    opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
-    opentelemetry.exporter.otlp.proto.grpc: opentelemetry_exporter_otlp_proto_grpc
-    opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
-    opentelemetry.instrumentation.asgi: opentelemetry_instrumentation_asgi
-    opentelemetry.instrumentation.auto_instrumentation: opentelemetry_instrumentation
-    opentelemetry.instrumentation.bootstrap: opentelemetry_instrumentation
-    opentelemetry.instrumentation.bootstrap_gen: opentelemetry_instrumentation
-    opentelemetry.instrumentation.cidict: opentelemetry_instrumentation
-    opentelemetry.instrumentation.dependencies: opentelemetry_instrumentation
-    opentelemetry.instrumentation.distro: opentelemetry_instrumentation
-    opentelemetry.instrumentation.environment_variables: opentelemetry_instrumentation
-    opentelemetry.instrumentation.fastapi: opentelemetry_instrumentation_fastapi
-    opentelemetry.instrumentation.grpc: opentelemetry_instrumentation_grpc
-    opentelemetry.instrumentation.httpx: opentelemetry_instrumentation_httpx
-    opentelemetry.instrumentation.instrumentor: opentelemetry_instrumentation
-    opentelemetry.instrumentation.log_utils: opentelemetry_instrumentation
-    opentelemetry.instrumentation.propagators: opentelemetry_instrumentation
-    opentelemetry.instrumentation.sqlcommenter_utils: opentelemetry_instrumentation
-    opentelemetry.instrumentation.utils: opentelemetry_instrumentation
-    opentelemetry.instrumentation.version: opentelemetry_instrumentation
     opentelemetry.metrics: opentelemetry_api
     opentelemetry.propagate: opentelemetry_api
     opentelemetry.propagators.composite: opentelemetry_api
@@ -320,7 +299,6 @@ manifest:
     opentelemetry.sdk.version: opentelemetry_sdk
     opentelemetry.semconv: opentelemetry_semantic_conventions
     opentelemetry.trace: opentelemetry_api
-    opentelemetry.util.http: opentelemetry_util_http
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
@@ -454,4 +432,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 977e30dc96ff4e3651fca73791c4e81e95c648ebfc9b0ddea975f6476334c4aa
+integrity: 1e9a00c8f02988e1ed58eff1b64541c84084cd25ffa6c71aa125897adfe24513
