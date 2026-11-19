@@ -22,9 +22,6 @@ inputs:
     default: ""
 
 outputs:
-  tags:
-    description: Comma-separated list of pushed image tags
-    value: ${{ steps.meta.outputs.tags }}
   pin_tag:
     description: The branch-timestamp-sha7 tag (useful for Flux ImagePolicy)
     value: ${{ steps.meta.outputs.pin_tag }}

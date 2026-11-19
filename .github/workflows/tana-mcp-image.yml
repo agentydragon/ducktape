@@ -6,7 +6,6 @@ on:
     branches: [devel]
     paths: ["tana/mcp_server/**"]
   workflow_dispatch:
-  workflow_call:
 
 concurrency:
   group: tana-mcp-image-${{ github.ref }}
