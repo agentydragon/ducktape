@@ -395,15 +395,8 @@ func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, e
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			ids = append(ids, id)
-		}
-		return rows.Err()
+		ids, err = scanIDs(rows)
+		return err
 	})
 	return ids, err
 }
