@@ -1,4 +1,4 @@
-load("@rules_lean//lean:lean.bzl", "lean_axiom_test")
+load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary")
 
 lean_axiom_test(
     name = "axioms_test",
@@ -23,4 +23,25 @@ lean_axiom_test(
         "Example.effect_order_observes_differently",
         "Example.cycle_tdz_observes_differently",
     ],
+)
+
+lean_binary(
+    name = "translate",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Correct.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/Plan.lean",
+        "EsmSplit/Render.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+        "Experiments/CheckOutput.lean",
+        "Experiments/Lower.lean",
+        "Experiments/Translate.lean",
+        "Experiments/TranslateMain.lean",
+    ],
+    # lean_binary elaborates the entry on each call. Import the compiled checker.
+    entry = "Experiments/TranslateMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
