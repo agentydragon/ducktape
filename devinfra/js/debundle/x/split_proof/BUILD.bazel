@@ -48,5 +48,5 @@ js_run_binary(
     chdir = package_name(),
     stdout = "generated/Instance.lean",
     tool = ":extract",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
 )
