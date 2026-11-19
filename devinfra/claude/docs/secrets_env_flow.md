@@ -109,9 +109,6 @@ Flow:
 3. `cmd/cmd_task_run.go` creates `ClaudeCodeExecutor{Config: parsedCtx.StartupContext}`
 4. `claude_code_executor.go:Execute()` → appended to Claude Code subprocess env
 
-**Result**: Claude and everything it spawns (hook daemon, tool calls) sees these vars.
-`SOPS_AGE_KEY` set here is available to the hook daemon's decryption.
-
 ### 2. Internal Anthropic config → `claude --init-only` subprocess only
 
 Flow:
@@ -119,11 +116,6 @@ Flow:
 1. Sessions API response: `environment.environment_variables` (internal Anthropic config)
 2. `anthropic.go:Initialize()` → `claude.RunInit(..., e.config.EnvironmentVariables)`
 3. `RunInit()` runs `claude --init-only` with `syscall.Environ()` plus these vars appended
-
-**Result**: `claude --init-only` sees the full container environment plus
-`anthropicConfig.EnvironmentVariables`. The init script (`web_setup.sh`) does **not**
-receive these — it runs before `claude --init-only` via `process.ExecuteScript` and
-only inherits the container env. Neither subprocess receives the user's UI vars.
 
 ## startup_env_script: The Decryption Hook
 
