@@ -270,34 +270,25 @@ func TestEnvironmentUsesSessionEndpointAsCompatibilityFallback(t *testing.T) {
 	}
 }
 
-func TestEnvironmentCredentialWithoutEndpointIsUsageError(t *testing.T) {
-	sessions := &environmentFixture{authorization: make(chan []string, 1)}
-	env := environmentVars(environmentEndpoint(t, sessions))
-	env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = "environment-only-placeholder"
+func TestUnusableEnvironmentEndpointSettingsAreUsageErrorsNotSessionsFallbacks(t *testing.T) {
+	for name, tc := range map[string]struct{ key, value, wantStderr string }{
+		"a credential without an endpoint": {"AGENTPLANE_ENVIRONMENTS_CREDENTIAL", "environment-only-placeholder", "AGENTPLANE_ENVIRONMENTS_URL not set"},
+		"an invalid endpoint":              {"AGENTPLANE_ENVIRONMENTS_URL", "not a URL", "AGENTPLANE_ENVIRONMENTS_URL"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sessions := &environmentFixture{authorization: make(chan []string, 1)}
+			env := environmentVars(environmentEndpoint(t, sessions))
+			env[tc.key] = tc.value
 
-	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL not set") {
-		t.Fatalf("credential without endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
-	}
-	select {
-	case got := <-sessions.authorization:
-		t.Fatalf("used compatibility endpoint with authorization %v", got)
-	default:
-	}
-}
-
-func TestInvalidEnvironmentEndpointDoesNotFallBackToSessions(t *testing.T) {
-	sessions := &environmentFixture{authorization: make(chan []string, 1)}
-	env := environmentVars(environmentEndpoint(t, sessions))
-	env["AGENTPLANE_ENVIRONMENTS_URL"] = "not a URL"
-
-	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL") {
-		t.Fatalf("invalid EnvironmentService endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
-	}
-	select {
-	case got := <-sessions.authorization:
-		t.Fatalf("used compatibility endpoint with authorization %v", got)
-	default:
+			code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+			if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, tc.wantStderr) {
+				t.Fatalf("exit %d stdout %q stderr %q, want a usage error naming %q", code, stdout, stderr, tc.wantStderr)
+			}
+			select {
+			case got := <-sessions.authorization:
+				t.Fatalf("used compatibility endpoint with authorization %v", got)
+			default:
+			}
+		})
 	}
 }

@@ -241,33 +241,28 @@ func policySet(name string) *policyapi.PolicySet {
 	return &policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), Generation: 1}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"group": {"inspect", "write"}}}}}}}
 }
 
-func TestPolicyWritesAreRestrictedToTheConfiguredWriterService(t *testing.T) {
-	api, _ := fixture(
-		t,
-		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
-	)
-	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api["unlisted"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("non-writer grant: %v", err)
-	}
-	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api["unlisted"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("non-writer revoke: %v", err)
-	}
-}
-
-func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
-	api, _ := fixtureWithWriters(
-		t, nil,
-		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
-	)
-	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api["app"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("grant with empty writer allowlist: %v", err)
-	}
-	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api["app"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("revoke with empty writer allowlist: %v", err)
+func TestPolicyWritesAreDeniedToCallersOutsideTheWriterAllowlist(t *testing.T) {
+	for name, tc := range map[string]struct {
+		writers []string
+		caller  string
+	}{
+		"a caller the allowlist does not name": {[]string{peertls.AppURI}, "unlisted"},
+		"an empty allowlist":                   {nil, "app"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api, _ := fixtureWithWriters(
+				t, tc.writers,
+				testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
+			)
+			grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
+			if _, err := api[tc.caller].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("grant: %v", err)
+			}
+			revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
+			if _, err := api[tc.caller].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("revoke: %v", err)
+			}
+		})
 	}
 }
 
