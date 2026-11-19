@@ -154,6 +154,8 @@ common:ci --noannounce_rc
 #   builds). Once .bazelversion pins a release containing it, drop this override
 #   and return to the default retry count.
 build:ci --remote_retries=1
+# Preserve both attempts in BES when the managed VM suite recovers on retry.
+test:ci --flaky_test_attempts=^//agentplane/system_tests/suites:test_vm$@2
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
