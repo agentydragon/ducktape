@@ -2,17 +2,15 @@
 
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import cast
 from unittest.mock import Mock, patch
 
 import httpx
 import pytest
 import pytest_bazel
-from fastmcp.server.auth.auth import TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig, DirectJwtTrust
-from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES, build_authentik_auth, compose_authentik_auth
+from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES, build_authentik_auth
 
 
 def _config(
@@ -80,13 +78,6 @@ def test_build_authentik_auth_sets_default_scopes_through_proxy_api(auth_build_h
     )
 
 
-def test_build_authentik_auth_sets_custom_scopes_through_proxy_api(auth_build_harness: _AuthBuildHarness) -> None:
-    custom_scopes = ["openid", "propose", "read"]
-    build_authentik_auth(_config(), valid_scopes=custom_scopes)
-
-    auth_build_harness.downstream_proxy_cls.return_value.update_default_scopes.assert_called_once_with(custom_scopes)
-
-
 def test_build_authentik_auth_requires_authorization_consent(auth_build_harness: _AuthBuildHarness) -> None:
     build_authentik_auth(_config())
 
@@ -146,25 +137,16 @@ def test_build_authentik_auth_keeps_direct_jwt_trusts_separate(auth_build_harnes
     }
 
 
-def test_build_authentik_auth_appends_extra_verifiers(auth_build_harness: _AuthBuildHarness) -> None:
-    sentinel = cast("TokenVerifier", object())
-    build_authentik_auth(_config(), extra_verifiers=[sentinel])
-
-    auth_build_harness.jwt_verifier_cls.assert_not_called()
-    assert auth_build_harness.multi_auth_cls.call_args.kwargs["verifiers"] == [sentinel]
-
-
-def test_compose_authentik_auth_uses_caller_owned_proxy_without_reconfiguring_it(
+def test_build_authentik_auth_without_direct_trusts_accepts_no_machine_tokens(
     auth_build_harness: _AuthBuildHarness,
 ) -> None:
-    proxy = auth_build_harness.downstream_proxy_cls.return_value
-    sentinel = cast("TokenVerifier", object())
+    build_authentik_auth(_config())
 
-    compose_authentik_auth(proxy=proxy, extra_verifiers=[sentinel])
-
-    auth_build_harness.downstream_proxy_cls.assert_not_called()
-    proxy.update_default_scopes.assert_not_called()
-    assert auth_build_harness.multi_auth_cls.call_args.kwargs == {"server": proxy, "verifiers": [sentinel]}
+    auth_build_harness.jwt_verifier_cls.assert_not_called()
+    assert auth_build_harness.multi_auth_cls.call_args.kwargs == {
+        "server": auth_build_harness.downstream_proxy_cls.return_value,
+        "verifiers": [],
+    }
 
 
 if __name__ == "__main__":
