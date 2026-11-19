@@ -5,10 +5,6 @@
 
 use debundle_e2e_support::*;
 
-// --- Behavior preservation -------------------------------------------------
-
-// --- Emit shape -----------------------------------------------------------
-
 #[test]
 fn emitted_js_files_end_with_one_newline_and_no_blank_line() {
     let fixture = run_fixture(
@@ -31,5 +27,3 @@ export { a, b };
     );
     assert_entry_output(&fixture, "3\n");
 }
-
-// --- Rejections ------------------------------------------------------------

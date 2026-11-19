@@ -201,8 +201,6 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
         .collect()
 }
 
-// --- Lazy rebind atomic-group constraints --------------------------------
-
 /// LazyRebind atomic-group split: declarer and assigner of a
 /// mutable binding must materialize together. `assignment_assembly`
 /// records this as an `atomic_group_conflicts` entry on the
@@ -255,8 +253,6 @@ fn same_destination_lazy_write_is_allowed() {
         "same-destination rebinding writes should stay local to the emitted module: {report:?}",
     );
 }
-
-// --- Assignment-analysis helpers -----------------------------------------------
 
 fn assignment_analysis_from_facts(
     facts: &[StatementFacts],
@@ -371,8 +367,6 @@ fn assignment_analysis_with_unassigned_module(
     let entry_destination = EntryDestination::after_planned_modules(logical_modules.len());
     assignment_analysis_from_facts(&facts, bindings, logical_modules, entry_destination)
 }
-
-// --- dependency graph quotient ------------------------------------------------
 
 #[test]
 fn empty_dependency_graph_report_includes_entry_destination() {
@@ -513,8 +507,6 @@ fn atomic_graph_preserves_direction_between_atomic_groups() {
     assert!(edge.constrains_init_order);
 }
 
-// --- linker_order in AssignmentReport --------------------------------------
-
 #[test]
 fn validate_surfaces_linker_order_for_acyclic_spec() {
     // mod_0 reads B from mod_1 at-init → mod_1 must precede
@@ -560,8 +552,6 @@ fn validate_retains_the_supplied_traversal_for_cyclic_constraints() {
         "a rejected witness still has a concrete traversal; it is not a successful schedule-existence query",
     );
 }
-
-// --- Factor assembly -----------------------------------------------------
 
 fn assignment_summary(assignment_analysis: &AssignmentAnalysis) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = assignment_analysis
