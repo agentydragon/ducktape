@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -26,7 +25,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type SessionOpener interface {
@@ -143,7 +141,6 @@ func sessionRPCError(err error) error {
 	var missing *sessionclient.SessionNotFoundError
 	var service *sessionclient.ServiceError
 	var refused *sessionclient.RefusedError
-	var quiescing *sandboxes.SandboxQuiescingError
 	switch {
 	case errors.As(err, &timeout):
 		return status.Error(codes.DeadlineExceeded, err.Error())
@@ -153,19 +150,10 @@ func sessionRPCError(err error) error {
 		return sessionUpstreamRPCError(service.Code, service.Details, err)
 	case errors.As(err, &refused):
 		return status.Error(refused.Code, refused.Details)
-	case apierrors.IsNotFound(err):
-		return status.Error(codes.NotFound, err.Error())
-	case apierrors.IsConflict(err):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.As(err, &quiescing):
-		slog.Error("Session dependency failed", "error", err)
-		return status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "Request canceled")
-	case errors.Is(err, context.DeadlineExceeded), apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
+	case errors.Is(err, context.DeadlineExceeded):
 		return sessionUpstreamRPCError(codes.DeadlineExceeded, "", err)
-	case apierrors.IsTooManyRequests(err):
-		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	if upstream, ok := status.FromError(err); ok {
 		return sessionUpstreamRPCError(upstream.Code(), upstream.Message(), err)

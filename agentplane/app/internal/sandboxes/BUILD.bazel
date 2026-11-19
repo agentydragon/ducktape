@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "console.go",
         "environments.go",
-        "errors.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes",
     deps = [
