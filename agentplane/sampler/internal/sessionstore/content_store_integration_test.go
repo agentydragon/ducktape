@@ -298,7 +298,7 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 
 func fixtureResponsesPreparation(body responses.Request) requestPreparation {
 	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
-		previous, err := previousRequest(ctx, tx, conversation.ID)
+		previous, err := previousRequest(ctx, tx, conversation.ID, "")
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}

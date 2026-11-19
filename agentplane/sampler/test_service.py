@@ -28,7 +28,7 @@ from agentplane.native.codex.testing.responses_sse import (
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
-from agentplane.sampler.settings import ModelConfig, ResponsesConfig
+from agentplane.sampler.settings import ChatCompactionConfig, ModelConfig, ResponsesConfig
 from agentplane.sampler.testing import (
     METADATA,
     SESSION_ID,
@@ -1164,6 +1164,101 @@ async def test_chat_completions_tool_round_trip(
             assert metadata is not None
             assert metadata.url.endswith("/v1/chat/completions")
             assert json.loads(body) == continued
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+async def test_chat_completions_compaction(
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path, automatic: bool
+) -> None:
+    def completion(reply: str, *, tokens: int = 12) -> tuple[SseEvent, SseEvent, SseEvent]:
+        chunk = {"id": f"chat-{reply}", "choices": [{"index": 0, "delta": {"content": reply}, "finish_reason": "stop"}]}
+        usage = {"choices": [], "usage": {"total_tokens": tokens}}
+        return (
+            SseEvent("chunk", b"data: " + json.dumps(chunk).encode() + b"\n\n"),
+            SseEvent("usage", b"data: " + json.dumps(usage).encode() + b"\n\n"),
+            SseEvent("done", b"data: [DONE]\n\n"),
+        )
+
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        config.models["test-model"] = ModelConfig(
+            connection="provider",
+            provider_model="chat-test-model",
+            reasoning_efforts={""},
+            api="chat_completions",
+            exec_encoding="json",
+            chat_compaction=ChatCompactionConfig(
+                max_tokens=8192, keep_recent_turns=1, auto_compact_tokens=256 if automatic else None
+            ),
+        )
+        request = create_request(tmp_path)
+        request.spec.reasoning_effort = ""
+        old = "old source " * 300
+        recent = "Keep this request verbatim."
+        async with service(config) as stub:
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            await submit_input(stub, session_id=request.session_id, command_id="old", text=old, timeout_s=10)
+            async with await endpoint.next() as exchange:
+                first_request = exchange.request.body
+                assert first_request["stream_options"] == {"include_usage": True}
+                await exchange.send(*completion("old answer", tokens=500))
+            assert (await turn_completed(stub, request.session_id, "old")).status == event_pb2.TURN_STATUS_COMPLETED
+
+            await submit_input(stub, session_id=request.session_id, command_id="recent", text=recent, timeout_s=10)
+            if not automatic:
+                async with await endpoint.next() as exchange:
+                    await exchange.send(*completion("recent answer"))
+                assert (
+                    await turn_completed(stub, request.session_id, "recent")
+                ).status == event_pb2.TURN_STATUS_COMPLETED
+                await stub.admin.Compact(
+                    sampler_admin_pb2.CompactRequest(session_id=request.session_id, command_id="compact"),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+
+            async with await endpoint.next() as exchange:
+                frozen = exchange.request.body
+                assert frozen["max_tokens"] == 8192
+                assert "tools" not in frozen
+                assert any(m["role"] == "user" and m["content"] == old for m in frozen["messages"])
+                assert not any(m["content"] == recent for m in frozen["messages"])
+                if automatic:
+                    await exchange.send(*completion("truncated summary")[:-1])
+                else:
+                    await exchange.send(*completion("retained summary"))
+            if automatic:
+                async with await endpoint.next() as exchange:
+                    assert exchange.request.body == frozen
+                    await exchange.send(*completion("retained summary"))
+            else:
+                async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                    with attempt:
+                        receipt = await stub.admin.GetCommand(
+                            sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="compact"),
+                            metadata=METADATA,
+                            timeout=10,
+                        )
+                        assert receipt.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+                await submit_input(stub, session_id=request.session_id, command_id="after", text="Go on.", timeout_s=10)
+
+            async with await endpoint.next() as exchange:
+                continued = exchange.request.body
+                assert continued["tools"] == first_request["tools"]
+                assert continued["messages"][0] == first_request["messages"][0]
+                messages = continued["messages"]
+                assert {
+                    "role": "assistant",
+                    "content": "Summary of earlier conversation:\nretained summary",
+                } in messages
+                assert {"role": "user", "content": recent} in messages
+                assert not any("old source" in m["content"] or "truncated summary" in m["content"] for m in messages)
+                await exchange.send(*completion("done"))
+
+            command = "recent" if automatic else "after"
+            assert (await turn_completed(stub, request.session_id, command)).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 @pytest.mark.parametrize("dialect", ["lite", "standard"])

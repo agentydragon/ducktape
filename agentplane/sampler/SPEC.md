@@ -392,9 +392,17 @@ Chat Completions streams one choice over `/v1/chat/completions` using JSON `exec
 `stop` or `tool_calls` followed by `[DONE]` commits the assembled assistant message.
 Tool arguments must be complete JSON objects before any call can execute. The store retains
 reasoning content when supplied and pairs each tool result with its native call ID. Later
-notifications use system messages. The route uses the provider's default reasoning setting
-and requires sessions to fit within the provider's context window. Image tool results become
-text notices.
+notifications use system messages. The route uses the provider's default reasoning setting.
+Image tool results become text notices.
+
+A Chat Completions route with `chat_compaction` supports manual compaction and can set
+`auto_compact_tokens` to trigger at the last streamed usage total. The sampler keeps
+`keep_recent_turns` user turns verbatim and summarizes the older prefix through Chat Completions
+with no tools and an output budget of `max_tokens`. The cut is at a user message, so retained
+tool calls and their results stay together. A complete nonempty text summary replaces the active
+prefix only if it reduces the serialized context. The full transcript remains available in History.
+The sampler commits the summary request before dispatch and reuses its exact body on retry.
+Automatic compaction waits for a settled context with an older turn available.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
