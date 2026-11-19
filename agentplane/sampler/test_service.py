@@ -1080,36 +1080,45 @@ async def test_chat_completions_tool_round_trip(
             await submit_input(
                 stub, session_id=request.session_id, command_id="chat", text="Use the tool.", timeout_s=10
             )
+            call_chunk = {
+                "id": "chat-tool",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "reasoning_content": "Use the tool.",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "chat-call",
+                                    "type": "function",
+                                    "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+
             async with await endpoint.next() as exchange:
-                assert exchange.request.body["model"] == "chat-test-model"
-                assert exchange.request.body["messages"][-1] == {"role": "user", "content": "Use the tool."}
-                assert exchange.request.body["tools"][0]["function"]["name"] == "exec"
-                call_chunk = {
-                    "id": "chat-tool",
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {
-                                "role": "assistant",
-                                "reasoning_content": "Use the tool.",
-                                "tool_calls": [
-                                    {
-                                        "index": 0,
-                                        "id": "chat-call",
-                                        "type": "function",
-                                        "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
-                                    }
-                                ],
-                            },
-                            "finish_reason": "tool_calls",
-                        }
-                    ],
-                }
-                await exchange.send(SseEvent("chunk", json.dumps(call_chunk).encode()), SseEvent("done", b"[DONE]"))
+                initial = exchange.request.body
+                assert initial["model"] == "chat-test-model"
+                assert {"role": "user", "content": "Use the tool."} in initial["messages"]
+                assert initial["tools"][0]["function"]["name"] == "exec"
+                # The first stream contains a complete-looking call, then disconnects without [DONE].
+                call_event = SseEvent("chunk", json.dumps(call_chunk).encode())
+                await exchange.send(call_event)
+
+            async with await endpoint.next() as exchange:
+                assert exchange.request.body == initial
+                await exchange.send(call_event, SseEvent("done", b"[DONE]"))
 
             async with await endpoint.next() as exchange:
                 continued = exchange.request.body
-                assistant, tool = continued["messages"][-2:]
+                assistant = next(m for m in continued["messages"] if m["role"] == "assistant")
+                tool = next(m for m in continued["messages"] if m["role"] == "tool")
                 assert assistant["reasoning_content"] == "Use the tool."
                 assert assistant["tool_calls"][0]["id"] == "chat-call"
                 assert tool["role"] == "tool"
@@ -1133,7 +1142,14 @@ async def test_chat_completions_tool_round_trip(
                 and entry.event.execution_progress.kind == event_pb2.ExecutionProgress.KIND_SAMPLING
                 and entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_DISPATCH
             ]
-            assert len(dispatches) == 2
+            assert len(dispatches) == 3
+            completed_tools = [
+                entry.event.item_completed
+                for entry in entries
+                if entry.event.HasField("item_completed") and entry.event.item_completed.HasField("tool")
+            ]
+            assert [tool.item_id for tool in completed_tools] == ["chat-call"]
+            assert completed_tools[0].tool.succeeded
             metadata = None
             body = bytearray()
             async for part in stub.admin.ReadProviderRequest(
