@@ -58,10 +58,10 @@ cluster. Comparison from the same minutes, not a loss measurement:
 
 ## Next
 
-Keep the prober running and see whether the 22% state returns at 2.5G (the `HomeGatewayUplinkLoss`
-alert fires on it). If it does, and a further 1G window stays clean, set `ether1` to advertise
-1G in `tf/gitops/home-switch`: 1G is below the line's ~1.25 Gbps. If 1G also goes bad, the gateway
-is the likelier cause.
+`ether1` now advertises only 1G (below the line's ~1.25 Gbps) for the sustained comparison (issue
+#9604); <../../tf/gitops/home-switch/README.md> says how to restore 2.5G for the replacement-cable
+comparison. Keep the prober running (the `HomeGatewayUplinkLoss` alert fires on it). If 1G also goes
+bad, the gateway is the likelier cause.
 
 ## Recipes
 

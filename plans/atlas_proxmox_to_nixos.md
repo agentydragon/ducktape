@@ -9,7 +9,7 @@ not NixOS.
 
 ## Current state
 
-Atlas runs Proxmox VE 9.1.7 (Debian trixie) with kernel 6.17.13-2-pve.
+Atlas runs Proxmox VE 9.1.7 (Debian trixie) with kernel 7.0.14-17-pve (checked 2026-11-17).
 Two running VMs: wyrm2 (NixOS workstation + GPU worker, 2x RTX 5090 VFIO passthrough)
 and talos-pve-cp-0 (Talos k8s control plane). Several stopped VMs (wyrm, win11 template,
 windows11-test, linux-desktop-01, ubuntu cloud-init template). ZFS pools: rpool (3.6T)

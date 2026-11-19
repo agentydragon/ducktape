@@ -4,7 +4,7 @@
 **Original note**: 2026-02-25 (kernel `6.17.9-1-pve`) · **Updated**: 2026-07-18
 
 The card is the board's onboard Wi-Fi 7 / BT combo. It is **idle on atlas** — the
-active uplink is the 10G Aquantia NIC (`enp12s0`) bridged into `vmbr0`
+active uplink is the 10G Aquantia NIC (`enp11s0`) bridged into `vmbr0`
 (see [Atlas network diagnostics](../../docs/atlas_network.md)). Nothing on atlas depends on this card.
 
 ## Hardware
@@ -34,14 +34,16 @@ v2.8+) is ahead of mainline and still iterating.
 
 ## Can atlas use it?
 
-atlas runs Proxmox VE 9.1.7 on kernel `6.17.13-2-pve` (see `plans/atlas_proxmox_to_nixos.md`).
+atlas runs Proxmox VE 9.1.7 on kernel `7.0.14-17-pve` (checked 2026-11-17; see
+`debug/kernel_6_18_amd_kvm_stall.md`). This note was written against `6.17.13-2-pve`.
 Reaching MT7927 support from here:
 
-- **Stock pve kernel — no.** WiFi needs mainline `v7.2` (still `-rc`); BT needs `v7.1`.
-  Proxmox tracks Debian/Ubuntu LTS (6.x) and won't ship 7.x for a long time. Dead path.
-- **DKMS on the current `6.17-pve` kernel — works today.** `jetm/mediatek-mt7927-dkms`
-  supports 6.17–6.18 (v2.8 fixed the `airoha_npu` compat). Needs `pve-headers-$(uname -r)`
-  plus the ASUS firmware ZIP. Inherits an out-of-tree driver with the rough edges above.
+- **Stock pve kernel — no.** WiFi needs mainline `v7.2` (still `-rc` when this note was updated);
+  BT needs `v7.1`. Proxmox ships 7.x now, but atlas's 7.0 is below both. Re-check before relying on it.
+- **DKMS — worked on the `6.17-pve` kernel this note was written against.** `jetm/mediatek-mt7927-dkms`
+  supported 6.17–6.18 (v2.8 fixed the `airoha_npu` compat); not re-checked on 7.0. Needs
+  `pve-headers-$(uname -r)` plus the ASUS firmware ZIP. Inherits an out-of-tree driver with the rough
+  edges above.
 - **NixOS conversion — disproportionate.** Plan exists but atlas is firmly Proxmox; NixOS
   _stable_ won't be on `v7.2` yet either. Not worth it for an unused card.
 - **Swap the M.2 E-key module for Intel AX210/AX211 or MediaTek MT7925 (~$20) — best if

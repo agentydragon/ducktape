@@ -46,6 +46,7 @@ are whole integers.
 - `credit_state`: streak + daily bonus (Pacific days, append-only)
 - `sessions`: completed study sessions; in-progress ones exist only client-side
 - `prizes`, `prize_log` (append-only redemptions)
+- `changelog_acks`: per-user cursor into the in-app changelog (`changelog.py`)
 - `ledger_events`: append-only audit of every server action, keyed by `client_action_id`
 - `game_events`: casino settlements
 - `rng_action_audits`, `rng_call_audits`: seed context and per-call parameters/results for replay
