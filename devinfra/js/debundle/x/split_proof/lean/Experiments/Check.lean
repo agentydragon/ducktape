@@ -47,6 +47,7 @@ def main (args : List String) : IO UInt32 := do
     , ("UniqueDefs", decide (UniqueDefs B)), ("ReadsClosed", decide (ReadsClosed B))
     , ("Linkable  imports/exports link", decide (Linkable B P))
     , ("Hygienic  every name keeps its declaration", decide (Hygienic B P))
+    , ("AssignsHome  code that assigns a name sits with its declaration", decide (AssignsHome B P))
     , ("Permutes  every statement runs once", decide (Permutes B P))
     , ("OrderOk   conflicting statements keep their order", decide (OrderOk B P)) ]
   IO.println s!"  module order     {" → ".intercalate P.evalOrder}"

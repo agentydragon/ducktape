@@ -91,7 +91,7 @@ for (const file of files) {
       withFallback++;
       f.fallback.forEach((t) => fallbackTypes.set(t, (fallbackTypes.get(t) ?? 0) + 1));
     }
-    if (f.assigned.length) assigns++;
+    if (f.assigns.length) assigns++;
     if (f.effect) effShapes.set(shape(s.ast), (effShapes.get(shape(s.ast)) ?? 0) + 1);
   });
   const eff = fps.filter((f) => f.effect).length;

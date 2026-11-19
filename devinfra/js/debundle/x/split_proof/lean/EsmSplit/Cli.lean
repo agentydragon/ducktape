@@ -28,6 +28,7 @@ def report (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
              ← timedCheck "Faithful" fun _ => decide (Faithful B S P),
              ← timedCheck "Linkable" fun _ => decide (Linkable B P),
              ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
+             ← timedCheck "AssignsHome" fun _ => decide (AssignsHome B P),
              ← timedCheck "Permutes" fun _ => decide (Permutes B P),
              ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)]
   return rs.all id

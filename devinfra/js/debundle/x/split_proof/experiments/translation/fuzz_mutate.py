@@ -32,14 +32,14 @@ MUTANTS = {
     ),
     "drop read-after-declare": (
         BUNDLE,
-        "|| (!b.hoisted && b.defs.any",
-        "|| (false && b.defs.any",
+        "|| (!b.hoisted && b.binds.any",
+        "|| (false && b.binds.any",
         "a read runs before its declaration",
     ),
     "drop declare-after-read": (
         BUNDLE,
-        "|| (!a.hoisted && a.defs.any",
-        "|| (false && a.defs.any",
+        "|| (!a.hoisted && a.binds.any",
+        "|| (false && a.binds.any",
         "`var` read before its declaration",
     ),
     "imports run in reverse order": (
@@ -48,11 +48,17 @@ MUTANTS = {
         "srcs.reverse.foldl (fun st s => P.visit fuel s st) (m :: entered, done)",
         "module order",
     ),
-    "no reassigned-name rule": (
-        LOWER,
-        " || t.rawEager.any reassigned.contains",
-        "",
+    "conflicts ignore writes": (
+        BUNDLE,
+        "def Stmt.binds (s : Stmt) : List Name := s.defs ++ s.writes",
+        "def Stmt.binds (s : Stmt) : List Name := s.defs",
         "a read of a variable moves across its write",
+    ),
+    "a call writes nothing": (
+        LOWER,
+        "let writes := if effect then (own ++",
+        "let writes := if false then (own ++",
+        "a call that assigns through a function moves past a reader",
     ),
     "blocks do not declare var": (
         LOWER,
@@ -99,8 +105,8 @@ MUTANTS = {
     ),
     "no AssignsHome": (
         TRANSLATE,
-        "let home := assignsHome B assigned P",
-        "let home : Except String Unit := .ok ()",
+        "fun _ => decide (AssignsHome B P)",
+        "fun _ => true",
         "an assignment through an import",
     ),
     "no Hygienic": (TRANSLATE, "fun _ => decide (Hygienic B P)", "fun _ => true", "redundant with the link check"),

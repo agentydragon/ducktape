@@ -3,8 +3,8 @@
 - **`OrderOk` in near-linear time.** Check conflicting pairs, not all pairs: effect statements form a chain, each read points at its declaration, shared declarations conflict.
   Needs a position map and a proof that the edge check implies the `Pairwise` condition of `Semantics.exec_reorder`. 28 of 42 s at 42,880 statements ([experiments/README.md](experiments/README.md) § 5).
 - **`Faithful`: index selectors by name.** It still compares every selector with every statement. 5 s at 42,880 statements.
-- **Move the three front-end rules into `Valid`.** `Reassign`, `ExportOutsideEntry` and `ExportNames` live in `lean/Experiments/LowerSplit.lean`, so the kernel certificate does not cover them.
-  A field per statement (`assigns`, `entryOnly`), one conjunct each, one equivalence proof each. `ExportNames` first needs a model of export names ([PLAN.md](PLAN.md) step 4).
+- **Move the two front-end rules into `Valid`.** `ExportOutsideEntry` and `ExportNames` live in `lean/Experiments/LowerSplit.lean`, so the kernel certificate does not cover them.
+  A field per statement (`entryOnly`), one conjunct, one equivalence proof. `ExportNames` first needs a model of export names ([PLAN.md](PLAN.md) step 4).
 - **Kernel certificates at scale.** `decide +kernel` needs about 60 MB per statement; 288 statements hit 12 GB. Carry the derived tables (read sets, plan) as literals and let the kernel check them
   (closed; least by derivation order), as CompCert's validators do. Compare with `native_decide`.
 - **A typed ESTree for Lean.** Generate it from `eslint-visitor-keys`. Then `Lower.lean` is structural recursion instead of `partial` over `Json`, the analysis can be proved sound, and the certificate covers parse output → footprints → plan.
@@ -12,6 +12,5 @@
 - **A better effect analysis.** Calls to pure local helpers (`__commonJS`, factories) count as effects, so 37% of statements are effects ([experiments/README.md](experiments/README.md) § 6). Five of debundle's cases need it too ([PLAN.md](PLAN.md) step 3).
 - **The frame assumption for real JavaScript.** Only the tiny `MiniJS` derives it.
 - **debundle's e2e cases.** 103 of 207 entries are not run yet and 10 disagree: [PLAN.md](PLAN.md), causes in [experiments/debundle_cases/README.md](experiments/debundle_cases/README.md).
-- **Move two translation-checker rules into `Sound`.** `AssignsHome` (`Translate.lean`) and the reassigned-variable rule (`Lower.finalize`: a statement that reads, while it runs, a name that something reassigns is an effect) are decided outside `Sound`, so no theorem ties them to `Correct`. The model binds each name once; a `writes` field per statement and one more conflict conjunct would state them, with the equivalence proofs for `Fast.lean`.
 - **Fuzzer, next templates:** generators, labels and `switch`, `export` aliases in the bundle, classes with accessors, a top-level name renamed to a global in more shapes. Run `fuzz_mutate.py` again after any change to the effect allow-list. A `fn.name` detector (a list of the units that read `.name`, `toString` or a stack) would turn the renaming assumption into a reviewable premise.
 - **Translation validation, next steps:** [experiments/translation/PLAN.md](experiments/translation/PLAN.md) (effect summaries, a readability pass, a new bundle version). Smaller items: scope resolution in Lean instead of `eslint-scope`; a proof that renaming preserves `Correct`; re-exports and `export default` outside the entry (rejected today); the surface other chunks see.

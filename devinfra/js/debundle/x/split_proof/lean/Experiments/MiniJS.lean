@@ -325,12 +325,12 @@ theorem step_adequate {P : List MStmt} (hc : ReadsClosed (toBundle P)) (fuel : N
     have hrec := reconstruct hc hG hj hP hh'
     by_cases hi : st.e.inert = true
     · have hw := eval_inert_world hi G fuel w
-      simp only [Bundle.step, hB, MStmt.fp, hh', hi, meaning, hP, cstep, Bool.false_eq_true,
-        ↓reduceIte, Bool.not_true, hrec, hw]
+      simp only [Bundle.step, hB, MStmt.fp, Stmt.binds, List.append_nil, hh', hi, meaning, hP, cstep,
+        Bool.false_eq_true, ↓reduceIte, Bool.not_true, hrec, hw]
       cases h : eval G fuel st.e [] <;> simp
     · have hi' : st.e.inert = false := by simpa using hi
-      simp only [Bundle.step, hB, MStmt.fp, hh', hi', meaning, hP, cstep, Bool.false_eq_true,
-        ↓reduceIte, Bool.not_false, hrec]
+      simp only [Bundle.step, hB, MStmt.fp, Stmt.binds, List.append_nil, hh', hi', meaning, hP, cstep,
+        Bool.false_eq_true, ↓reduceIte, Bool.not_false, hrec]
       cases h : eval G fuel st.e w <;> simp
 
 

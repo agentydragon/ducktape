@@ -124,14 +124,17 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 | `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                  |
 | `Linkable`                  | each import names a real export of another module; no name is bound twice; each export is declared |
 | `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle  |
+| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)            |
 | `Permutes`                  | the split runs every statement exactly once                                                        |
 | `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                   |
 | `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                  |
 
+A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
+including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
 Two statements **conflict** ([`Bundle.lean`](lean/EsmSplit/Bundle.lean)) if both have effects,
-or one reads a binding the other declares (either direction), or both declare the same name.
+or one reads a name the other binds (either direction), or both bind the same name.
 A hoisted `function` declaration never conflicts: it exists before any code runs.
-Everything else may be reshuffled freely.
+Everything else may be reshuffled freely. `assigns` is a different list: where the code that assigns a name physically sits, which decides where it must live (`AssignsHome`).
 
 The order the split runs in is computed by `Plan.visit`: a model of ES module evaluation.
 It goes depth first over `import`s in source order, runs each module once, and skips a module that is already being entered.
@@ -158,21 +161,22 @@ The main development does not use `native_decide`, so the compiler is not truste
 ## What is not proved
 
 1. **Footprints.** [`extract/extract.mjs`](extract/extract.mjs) parses the bundle with `acorn` and computes, per statement, what it declares, what it reads eagerly, what it reads only inside function bodies, whether it is hoisted, whether it may have effects.
-   Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals, and reads of a variable that some statement reassigns (the model binds each name once; without this rule a pure read could move across the assignment, which the fuzzer of item 7 found).
+   Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals.
+   The names a statement may assign (`writes`) are the ones its own code assigns and, for a statement with effects, the ones assigned in every function body it may reach. `Lower.finalize` computes that closure; it is unverified like the rest of this item.
+   Before `writes` existed, a read of a reassigned variable could move across the assignment; the fuzzer of item 7 found it, and the model now orders them as cells.
    A statement with effects also counts everything it mentions as eager, since a call may invoke a callback or an immediately invoked function. The first version missed this and accepted a split that throws on load; see [`experiments/README.md`](experiments/README.md).
    A `var` inside a top-level block declares a module-scope name. The Lean front end missed this at first and accepted four splits from debundle's corpus that fail to load ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
    It rejects syntax it does not model (classes, destructuring, reassigning a top-level binding, `eval`, `import.meta`, async). Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
-   "May read" is the closure of reads through function bodies (`Bundle.reads`).
+   "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
 5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports.
-6. **Three rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts a statement assigning a top-level binding in another module than the binding
-   (ES imports are read-only), one that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
+6. **Two rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
    and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
-   The second rule was missing until the split experiment (`experiments/README.md` § 7) and the third until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
-   The translation checker (item 7) applies the first rule too (`AssignsHome`), outside `Sound`. It was missing there until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
-   Moving the first two into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The third needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
+   The first was missing until the split experiment (`experiments/README.md` § 7) and the second until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
+   A third rule, that code assigning a name stays with its declaration, used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
+   Moving the first into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The second needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
 
 7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
    Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.
@@ -229,7 +233,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   In the kernel it is slow and needs memory: `decide +kernel` takes 23 s for 96 statements, 45 s for 144; at 288 it hit my 12 GB limit (numeric names would make it 1.7× faster, not 10×).
   `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
-- **Reassignment.** Reassigned `let`/`var` top-level bindings are out. ES imports are read-only, so every writer would have to stay with its declaration.
+- **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
 ## Going further

@@ -572,6 +572,31 @@ const TEMPLATES = [
     },
   ],
   [
+    "cellCluster",
+    3,
+    false,
+    (g) => {
+      // a counter, a function that bumps it, a call of that function and a pure read of the counter: the shape in which a
+      // write made through a call can move past a reader
+      const c = g.fresh("c");
+      const f = g.fresh("f");
+      const v = g.fresh("v");
+      g.add("cellCounter", `let ${top(c)} = 0;`, {
+        defs: [c],
+        regs: [{ name: c, kind: "let", num: true, mutable: true, json: true, data: true }],
+      });
+      g.add("cellBump", `function ${top(f)}() { ${top(c)}++; }`, {
+        defs: [f],
+        regs: [{ name: f, kind: "fn", callable: true }],
+      });
+      g.add("cellCall", `${top(f)}();`);
+      g.add("cellRead", `const ${top(v)} = ${top(c)};`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", num: true, json: true, data: true }],
+      });
+    },
+  ],
+  [
     "absoluteUrl",
     1,
     false,

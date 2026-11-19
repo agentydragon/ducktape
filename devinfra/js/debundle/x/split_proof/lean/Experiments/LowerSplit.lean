@@ -17,7 +17,7 @@ Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 open Lean EsmSplit
 
 def toStmt (src : String) (f : Lower.Footprint) : Stmt :=
-  { src, defs := f.defs, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
+  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
 
 def q (s : String) : String := (Json.str s).compress
 def qs (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
@@ -25,6 +25,8 @@ def qs (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
 def stmtLean (s : Stmt) : String :=
   let fields := [s!"src := {q s.src}"]
     ++ (if s.defs.isEmpty then [] else [s!"defs := {qs s.defs}"])
+    ++ (if s.writes.isEmpty then [] else [s!"writes := {qs s.writes}"])
+    ++ (if s.assigns.isEmpty then [] else [s!"assigns := {qs s.assigns}"])
     ++ (if s.eager.isEmpty then [] else [s!"eager := {qs s.eager}"])
     ++ (if s.lazy.isEmpty then [] else [s!"lazy := {qs s.lazy}"])
     ++ (if s.hoisted then ["hoisted := true"] else [])
@@ -121,16 +123,9 @@ def main (args : List String) : IO UInt32 := do
   let S ← loadSpec specPath
   let t3 ← lap "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} effects; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
-  -- Three rules Lean does not check. They talk about the original statements, so `--replicate` skips them.
+  -- Two rules Lean does not check. They talk about the original statements, so `--replicate` skips them.
   let mut bad := false
   if replicate?.isNone then
-    -- ES imports are read-only: a statement may only assign to names its own module declares.
-    for (f, i) in fps.toList.zipIdx do
-      for n in f.assigned do
-        match B.ownerOf n with
-        | some k => if S.moduleOf B k != S.moduleOf B i then
-            IO.println s!"  FAIL  statement {i} assigns `{n}`, declared by statement {k} in another module"; bad := true
-        | none => pure ()
     -- An `export` is the entry module's interface: it must stay in the entry module.
     for (st, i) in stmts.toList.zipIdx do
       let t := Lower.typ (Lower.fld st "ast")

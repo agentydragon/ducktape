@@ -265,7 +265,7 @@ One JSON line per split is in [`splits/results/`](splits/results); [`results/sum
 - **Halving is mostly fine, which I did not expect.** With the entry in the second half, the entry imports the first half. If the first half refers back to the second
   (a function calling a helper declared later), it imports it too, and the cycle is cut at the entry. The order of the bodies stays the bundle's order.
   99.4% of the single cuts are accepted.
-- **A cut can still be invalid.** All 13 rejected single cuts fail `Reassign`: a statement assigns a top-level binding that now lives on the other side
+- **A cut can still be invalid.** All 13 rejected single cuts fail `AssignsHome`: a statement assigns a top-level binding that now lives on the other side
   (lodash cut at 422: statement 422 assigns `getTag`, declared by statement 421; acorn cut at 41: `warnedAboutEcmaVersion`). ES imports are read-only, so the assignment would throw.
   Three of the 13 run fine in my smoke test, because the assignment sits in a path the test does not take.
 - **Three or more modules break the order.** A forward reference from block 0 to block 1 makes block 1 run first, because an import runs before the importer.

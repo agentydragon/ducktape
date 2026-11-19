@@ -79,11 +79,7 @@ async function worker() {
         "--force",
       ]);
       const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(([, what]) =>
-        /^statement \d+ assigns/.test(what)
-          ? "Reassign"
-          : /^statement \d+ is an/.test(what)
-            ? "ExportOutsideEntry"
-            : what.split(/\s+/)[0]
+        /^statement \d+ is an/.test(what) ? "ExportOutsideEntry" : what.split(/\s+/)[0]
       );
       const verdict = checked.code === 0 ? "accept" : "reject";
       let node = "error";

@@ -12,7 +12,8 @@ abstract state and ask what survives reordering.
     (`B.reads j`, in that order);
   - a statement with effects also reads and changes the world.
 * The state is the value of every name plus the world.
-* Running `j` binds its `defs` to its value. A hoisted declaration is already bound; it does nothing.
+* Running `j` binds the names it declares and the names it assigns (`Stmt.binds`) to its value.
+  A hoisted declaration is already bound; it does nothing.
 
 `exec_reorder`: any order that keeps every conflicting pair in its original order
 leaves the same final state. This is the whole content of "moving top-level statements between
@@ -40,10 +41,10 @@ def Bundle.step (B : Bundle) (M : Meaning V W) (j : Nat) (s : St V W) : St V W :
     let args := (B.reads j).map s.env
     if (B.stmt j).effect then
       let r := M.run j args s.world
-      { env := fun u => if (B.stmt j).defs.contains u then r.1 else s.env u, world := r.2 }
+      { env := fun u => if (B.stmt j).binds.contains u then r.1 else s.env u, world := r.2 }
     else
       let v := M.pure j args
-      { env := fun u => if (B.stmt j).defs.contains u then v else s.env u, world := s.world }
+      { env := fun u => if (B.stmt j).binds.contains u then v else s.env u, world := s.world }
 
 /-- Run statements in the given order. -/
 def Bundle.exec (B : Bundle) (M : Meaning V W) (s : St V W) (ord : List Nat) : St V W :=
@@ -64,24 +65,24 @@ theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
   simp only [Bool.not_eq_true] at ha hb
   simp [Bundle.conflict, ha, hb, List.any_eq_false] at h
   obtain ⟨⟨⟨hE, hR1⟩, hR2⟩, hW⟩ := h
-  have ej : ∀ (f : Name → V) (x : V), (B.reads j).map (fun u => if (B.stmt i).defs.contains u = true
+  have ej : ∀ (f : Name → V) (x : V), (B.reads j).map (fun u => if (B.stmt i).binds.contains u = true
         then x else f u) = (B.reads j).map f := fun f x =>
     List.map_congr_left fun u hu => by
-      have : u ∉ (B.stmt i).defs := fun hd => hR2 u hd ((B.mem_reads j u).1 hu)
+      have : u ∉ (B.stmt i).binds := fun hd => hR2 u hd ((B.mem_reads j u).1 hu)
       simp [this]
-  have ei : ∀ (f : Name → V) (x : V), (B.reads i).map (fun u => if (B.stmt j).defs.contains u = true
+  have ei : ∀ (f : Name → V) (x : V), (B.reads i).map (fun u => if (B.stmt j).binds.contains u = true
         then x else f u) = (B.reads i).map f := fun f x =>
     List.map_congr_left fun u hu => by
-      have : u ∉ (B.stmt j).defs := fun hd => hR1 u hd ((B.mem_reads i u).1 hu)
+      have : u ∉ (B.stmt j).binds := fun hd => hR1 u hd ((B.mem_reads i u).1 hu)
       simp [this]
   have env_comm : ∀ (x y : V) (f : Name → V),
-      (fun u => if (B.stmt j).defs.contains u = true then y else
-        if (B.stmt i).defs.contains u = true then x else f u)
-      = (fun u => if (B.stmt i).defs.contains u = true then x else
-        if (B.stmt j).defs.contains u = true then y else f u) := by
+      (fun u => if (B.stmt j).binds.contains u = true then y else
+        if (B.stmt i).binds.contains u = true then x else f u)
+      = (fun u => if (B.stmt i).binds.contains u = true then x else
+        if (B.stmt j).binds.contains u = true then y else f u) := by
     intro x y f
     funext u
-    by_cases hu : u ∈ (B.stmt i).defs
+    by_cases hu : u ∈ (B.stmt i).binds
     · simp [hu, hW u hu]
     · simp [hu]
   have hnot : ¬((B.stmt i).effect = true ∧ (B.stmt j).effect = true) :=

@@ -369,11 +369,7 @@ function runCase(dir, specName, expected) {
     if (checked.code !== 0 && checked.code !== 1)
       return { ...record, outcome: "error:lowersplit", detail: checked.stderr.trim().split("\n").pop() };
     const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(([, what]) =>
-      /^statement \d+ assigns/.test(what)
-        ? "Reassign"
-        : /^statement \d+ is an/.test(what)
-          ? "ExportOutsideEntry"
-          : what.split(/\s+/)[0]
+      /^statement \d+ is an/.test(what) ? "ExportOutsideEntry" : what.split(/\s+/)[0]
     );
     const mine = { verdict: checked.code === 0 ? "accept" : "reject", failed };
     const placed = Object.entries(plan.modules).filter(([file]) => file !== plan.entry);

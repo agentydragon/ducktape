@@ -139,6 +139,13 @@ def Hygienic (B : Bundle) (P : Plan) : Prop :=
   ∀ m ∈ P.mods, ∀ i ∈ m.stmts, ∀ u ∈ (B.stmt i).eager ++ (B.stmt i).lazy,
     P.resolve B m u = P.declaredIn B u
 
+/-- Code that assigns a name sits in the module that declares it. ES imports are read-only:
+assigning one throws a `TypeError`. (What a call to such code changes is `writes`, and is ordered by `conflict`.) -/
+def AssignsHome (B : Bundle) (P : Plan) : Prop :=
+  ∀ m ∈ P.mods, ∀ i ∈ m.stmts, ∀ u ∈ (B.stmt i).assigns, m.declares B u = true
+
+instance (B : Bundle) (P : Plan) : Decidable (AssignsHome B P) := by unfold AssignsHome; infer_instance
+
 /-- The split program runs each bundle statement exactly once. -/
 def Permutes (B : Bundle) (P : Plan) : Prop :=
   P.execOrder.Nodup ∧ (∀ x ∈ P.execOrder, x < B.length) ∧ (∀ x ∈ List.range B.length, x ∈ P.execOrder)
@@ -148,7 +155,7 @@ def OrderOk (B : Bundle) (P : Plan) : Prop :=
   P.execOrder.Pairwise fun a b => a < b ∨ B.conflict a b = false
 
 def Valid (B : Bundle) (S : Spec) (P : Plan) : Prop :=
-  UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ Hygienic B P
+  UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ Hygienic B P ∧ AssignsHome B P
     ∧ Permutes B P ∧ OrderOk B P
 
 end EsmSplit

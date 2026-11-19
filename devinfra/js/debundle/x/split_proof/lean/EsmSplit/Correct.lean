@@ -17,7 +17,7 @@ def Correct (B : Bundle) (P : Plan) : Prop :=
 
 /-- **Main theorem.** The decidable checks in `Valid` are enough for `Correct`. -/
 theorem split_correct {B : Bundle} {S : Spec} {P : Plan} (h : Valid B S P) : Correct B P := by
-  obtain ⟨_, _, _, _, hyg, ⟨hnd, hlt, hall⟩, hord⟩ := h
+  obtain ⟨_, _, _, _, hyg, _, ⟨hnd, hlt, hall⟩, hord⟩ := h
   have hmem : ∀ x, x ∈ P.execOrder ↔ x < B.length :=
     fun x => ⟨hlt x, fun hx => hall x (List.mem_range.2 hx)⟩
   exact ⟨⟨hnd, hmem⟩, hyg, fun _ _ M s0 => B.exec_reorder M s0 B.length P.execOrder hnd hmem hord⟩

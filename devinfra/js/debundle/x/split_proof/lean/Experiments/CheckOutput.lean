@@ -15,7 +15,17 @@ open Lean
 
 namespace EsmSplit
 
-deriving instance FromJson for Stmt
+/-- Facts from before `writes` and `assigns` existed do not mention them: they default to none. -/
+instance : FromJson Stmt where
+  fromJson? j := do
+    let names (k : String) : Except String (List Name) :=
+      match j.getObjVal? k with
+      | .ok v => fromJson? v
+      | .error _ => pure []
+    pure { src := ← j.getObjValAs? String "src", defs := ← j.getObjValAs? (List Name) "defs",
+           eager := ← j.getObjValAs? (List Name) "eager", lazy := ← j.getObjValAs? (List Name) "lazy",
+           writes := ← names "writes", assigns := ← names "assigns",
+           hoisted := ← j.getObjValAs? Bool "hoisted", effect := ← j.getObjValAs? Bool "effect" }
 
 /-- One output file, as read from disk. -/
 structure OutModule where
@@ -57,14 +67,14 @@ def Matches (B : Bundle) (entry : ModName) (outs : List OutModule) (P : Plan) : 
 
 /-- `Valid` without the spec: everything the semantic theorem and the linking need. -/
 def Sound (B : Bundle) (P : Plan) : Prop :=
-  UniqueDefs B ∧ ReadsClosed B ∧ Linkable B P ∧ Hygienic B P ∧ Permutes B P ∧ OrderOk B P
+  UniqueDefs B ∧ ReadsClosed B ∧ Linkable B P ∧ Hygienic B P ∧ AssignsHome B P ∧ Permutes B P ∧ OrderOk B P
 
 instance (B : Bundle) (entry : ModName) (outs : List OutModule) (P : Plan) :
     Decidable (Matches B entry outs P) := by unfold Matches; infer_instance
 instance (B : Bundle) (P : Plan) : Decidable (Sound B P) := by unfold Sound; infer_instance
 
 theorem sound_correct {B : Bundle} {P : Plan} (h : Sound B P) : Correct B P := by
-  obtain ⟨_, _, _, hyg, ⟨hnd, hlt, hall⟩, hord⟩ := h
+  obtain ⟨_, _, _, hyg, _, ⟨hnd, hlt, hall⟩, hord⟩ := h
   have hmem : ∀ x, x ∈ P.execOrder ↔ x < B.length :=
     fun x => ⟨hlt x, fun hx => hall x (List.mem_range.2 hx)⟩
   exact ⟨⟨hnd, hmem⟩, hyg, fun _ _ M s0 => B.exec_reorder M s0 B.length P.execOrder hnd hmem hord⟩

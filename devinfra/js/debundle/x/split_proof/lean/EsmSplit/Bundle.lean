@@ -6,7 +6,7 @@ import Std.Data.TreeSet
 
 A scope-hoisted bundle is one flat module scope: a list of top-level statements.
 All the splitter and the proof need from each statement is its *footprint*
-(what it declares, what it reads, whether it has effects), plus its source text,
+(what it declares, what it reads, which names it may assign, whether it has effects), plus its source text,
 which is copied verbatim and never inspected.
 
 Footprints come from the JavaScript front end (`extract/extract.mjs`, or `Experiments/Lower.lean`).
@@ -36,12 +36,22 @@ structure Stmt where
   eager   : List Name := []
   /-- Names read only inside function bodies created here, i.e. when they are called later. -/
   lazy    : List Name := []
+  /-- Names, declared elsewhere, that running the statement may assign: reassigned variables and the
+      objects whose contents it changes. It lists every such name, including the ones a function it
+      calls assigns (unknown code lists them all). Reading such a name is mentioning it in `eager`. -/
+  writes  : List Name := []
+  /-- Names, declared elsewhere, that the code of this statement assigns: while it runs, or in the function
+      bodies it creates. Where this code sits matters for linking: an `import` is read-only. -/
+  assigns : List Name := []
   /-- A `function` declaration: its binding exists before any code runs. -/
   hoisted : Bool := false
   /-- May do anything observable when run (any call, member access, operator, read of an
       undeclared global, …). Effectful statements keep their relative order. -/
   effect  : Bool := false
   deriving Repr, Inhabited
+
+/-- What a statement binds: the names it declares and the names it assigns. -/
+def Stmt.binds (s : Stmt) : List Name := s.defs ++ s.writes
 
 abbrev Bundle := List Stmt
 
@@ -291,15 +301,15 @@ end reads
 /-! ## Conflicts -/
 
 /-- Statements `i` and `j` must keep their relative order if they conflict:
-both have effects, one reads a binding the other creates, or both create the same binding.
+both have effects, one reads a name the other binds (declares or assigns), or both bind the same name.
 A hoisted declaration is available from the start, so nobody waits for it. -/
 def Bundle.conflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i
   let b := B.stmt j
   (a.effect && b.effect)
-    || (!b.hoisted && b.defs.any (B.readsOf i).contains)
-    || (!a.hoisted && a.defs.any (B.readsOf j).contains)
-    || a.defs.any b.defs.contains
+    || (!b.hoisted && b.binds.any (B.readsOf i).contains)
+    || (!a.hoisted && a.binds.any (B.readsOf j).contains)
+    || a.binds.any b.binds.contains
 
 /-- Statements and read sets of all statements, as arrays, for the checks that look them up many times. -/
 def Bundle.readsTab (B : Bundle) : Array NameSet :=
@@ -313,9 +323,9 @@ def Bundle.conflictT (arr : Array Stmt) (tab : Array NameSet) (i j : Nat) : Bool
   let a := arr.getD i default
   let b := arr.getD j default
   (a.effect && b.effect)
-    || (!b.hoisted && b.defs.any (tab.getD i ∅).contains)
-    || (!a.hoisted && a.defs.any (tab.getD j ∅).contains)
-    || a.defs.any b.defs.contains
+    || (!b.hoisted && b.binds.any (tab.getD i ∅).contains)
+    || (!a.hoisted && a.binds.any (tab.getD j ∅).contains)
+    || a.binds.any b.binds.contains
 
 theorem Bundle.readsTab_getD (B : Bundle) (i : Nat) : B.readsTab.getD i ∅ = B.readsOf i := by
   by_cases hi : i < B.length

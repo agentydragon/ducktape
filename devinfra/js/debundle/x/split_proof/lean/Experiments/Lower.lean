@@ -26,8 +26,10 @@ namespace Lower
 structure Acc where
   eager    : Array String := #[]
   lazy     : Array String := #[]
-  /-- non-local names this statement assigns to (not declares) -/
-  assigned : Array String := #[]
+  /-- non-local names this statement assigns to (not declares) while it runs -/
+  assignedEager : Array String := #[]
+  /-- non-local names assigned inside the function bodies it creates, i.e. when they are called -/
+  assignedLazy  : Array String := #[]
   /-- node types handled by the generic fallback -/
   fallback : Array String := #[]
 
@@ -187,7 +189,8 @@ partial def target (bound : List String) (inFn : Bool) (t : Json) : M Unit := do
   match typ t with
   | "Identifier" =>
     let n := str (fld t "name")
-    unless bound.contains n do modify fun s => { s with assigned := s.assigned.push n }
+    unless bound.contains n do
+      modify fun s => if inFn then { s with assignedLazy := s.assignedLazy.push n } else { s with assignedEager := s.assignedEager.push n }
     ref bound inFn n
   | "ObjectPattern" =>
     for q in items (fld t "properties") do
@@ -294,14 +297,15 @@ structure Top where
   defs     : List String
   rawEager : Array String
   rawLazy  : Array String
-  assigned : Array String
+  assignedEager : Array String
+  assignedLazy  : Array String
   fallback : Array String
   hoisted  : Bool
   inert    : Bool
 
 def analyzeTop (s : Json) : Top :=
   let acc := (visit [] false s).run {} |>.2
-  { defs := topDefs s, rawEager := acc.eager, rawLazy := acc.lazy, assigned := acc.assigned,
+  { defs := topDefs s, rawEager := acc.eager, rawLazy := acc.lazy, assignedEager := acc.assignedEager, assignedLazy := acc.assignedLazy,
     fallback := acc.fallback, hoisted := isHoisted s, inert := inertTop s }
 
 structure Footprint where
@@ -310,32 +314,51 @@ structure Footprint where
   lazy     : List String
   hoisted  : Bool
   effect   : Bool
-  assigned : List String
+  /-- names the statement may assign when it runs, including through the functions it may call -/
+  writes   : List String
+  /-- names that the code of the statement assigns, while it runs or in function bodies it creates -/
+  assigns  : List String
   fallback : List String
   rawEager : List String
   rawLazy  : List String
 
 def dedupe (a : Array String) : List String := a.toList.eraseDups
 
-/-- The footprint the checker needs. Three rules make a statement an effect: it is not in the allow-list of
-inert shapes; it reads an undeclared name; it reads, while it runs, a name that some statement reassigns.
-The last one is because the model binds each name once: a read of a variable that an assignment changes
-would otherwise be free to move across the assignment. A statement with effects counts everything it
-mentions as eager. -/
+/-- Names reachable from `start` through what the declarations of each name mention, and every
+name the function bodies created by those declarations assign. -/
+partial def reachWrites (mentions lazyW : Std.HashMap String (Array String)) :
+    List String → Std.HashSet String → Std.HashSet String → Std.HashSet String
+  | [], _, out => out
+  | u :: work, seen, out =>
+    if seen.contains u then reachWrites mentions lazyW work seen out
+    else
+      reachWrites mentions lazyW ((mentions.getD u #[]).toList ++ work) (seen.insert u)
+        ((lazyW.getD u #[]).foldl (·.insert ·) out)
+
+/-- The footprint the checker needs. Two rules make a statement an effect: it is not in the allow-list of
+inert shapes, or it reads an undeclared name. A statement with effects counts everything it mentions as eager
+(a call may run any function it can reach), and the names it may assign are those assigned by the statement
+itself and by every function body it can reach. -/
 def finalize (tops : Array Top) : Array Footprint :=
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
-  let reassigned : Std.HashSet String := tops.foldl (fun s t => t.assigned.foldl (·.insert ·) s) {}
+  let mentions : Std.HashMap String (Array String) := tops.foldl (fun m t =>
+    t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.rawEager ++ t.rawLazy)) m) {}
+  let lazyW : Std.HashMap String (Array String) := tops.foldl (fun m t =>
+    t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
   tops.map fun t =>
-    let effect := !t.inert || t.rawEager.any (!declared.contains ·) || t.rawEager.any reassigned.contains
+    let effect := !t.inert || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
-    { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect,
-      assigned := dedupe t.assigned, fallback := dedupe t.fallback,
+    let own := dedupe (t.assignedEager.filter declared.contains)
+    let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
+    { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, writes,
+      assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
+      fallback := dedupe t.fallback,
       rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy }
 
 def Footprint.toJson (f : Footprint) : Json :=
   Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),
     ("hoisted", Lean.toJson f.hoisted), ("effect", Lean.toJson f.effect),
-    ("assigned", Lean.toJson f.assigned), ("fallback", Lean.toJson f.fallback),
+    ("writes", Lean.toJson f.writes), ("assigns", Lean.toJson f.assigns), ("fallback", Lean.toJson f.fallback),
     ("rawEager", Lean.toJson f.rawEager), ("rawLazy", Lean.toJson f.rawLazy)]
 
 end Lower

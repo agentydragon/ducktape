@@ -51,14 +51,14 @@ theorem step_comm_scaffolded {V W : Type} (B : Bundle) (M : Meaning V W) {i j : 
   simp [Bundle.conflict, ha, hb, List.any_eq_false] at h
   obtain ⟨⟨⟨hE, hR1⟩, hR2⟩, hW⟩ := h
   have ej : ∀ (f : Name → V) (x : V), (B.reads j).map
-      (fun u => if (B.stmt i).defs.contains u = true then x else f u) = (B.reads j).map f :=
+      (fun u => if (B.stmt i).binds.contains u = true then x else f u) = (B.reads j).map f :=
     fun f x => List.map_congr_left fun u hu => by
-      have : u ∉ (B.stmt i).defs := fun hd => hR2 u hd ((B.mem_reads j u).1 hu)
+      have : u ∉ (B.stmt i).binds := fun hd => hR2 u hd ((B.mem_reads j u).1 hu)
       simp [this]
   have ei : ∀ (f : Name → V) (x : V), (B.reads i).map
-      (fun u => if (B.stmt j).defs.contains u = true then x else f u) = (B.reads i).map f :=
+      (fun u => if (B.stmt j).binds.contains u = true then x else f u) = (B.reads i).map f :=
     fun f x => List.map_congr_left fun u hu => by
-      have : u ∉ (B.stmt j).defs := fun hd => hR1 u hd ((B.mem_reads i u).1 hu)
+      have : u ∉ (B.stmt j).binds := fun hd => hR1 u hd ((B.mem_reads i u).1 hu)
       simp [this]
   by_cases hei : (B.stmt i).effect = true <;> by_cases hej : (B.stmt j).effect = true <;>
     simp only [Bundle.step, ha, hb, hei, hej, Bool.false_eq_true, ↓reduceIte, ej, ei] <;>
