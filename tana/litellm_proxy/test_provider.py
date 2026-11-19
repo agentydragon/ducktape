@@ -88,23 +88,20 @@ async def test_client_maps_basic_chat_request() -> None:
         expected_authorization="Bearer id-token-1",
     )
 
-    async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=transport) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            return await client.chat_completion(
-                "tana/claude-test",
-                [{"role": "user", "content": "hi"}],
-                {
-                    "temperature": 0.25,
-                    "top_p": 0.9,
-                    "max_tokens": 12,
-                    "stop": "END",
-                    "frequency_penalty": 0.1,
-                    "presence_penalty": 0.2,
-                },
-            )
-
-    result = await run()
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        result = await client.chat_completion(
+            "tana/claude-test",
+            [{"role": "user", "content": "hi"}],
+            {
+                "temperature": 0.25,
+                "top_p": 0.9,
+                "max_tokens": 12,
+                "stop": "END",
+                "frequency_penalty": 0.1,
+                "presence_penalty": 0.2,
+            },
+        )
 
     assert result.text == "hello from tana"
     assert result.usage == {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
@@ -136,41 +133,34 @@ async def test_client_maps_message_envelopes_without_prompt_collapsing() -> None
         response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
     )
 
-    async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=transport) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            return await client.chat_completion(
-                "claude-test",
-                [
-                    {"role": "system", "content": "You are concise.", "cache_control": {"type": "ephemeral"}},
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": "call the tool later",
-                                "cache_control": {"type": "ephemeral"},
-                            },
-                            {"type": "reasoning", "text": "prior scratchpad"},
-                        ],
-                    },
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "call-1",
-                                "type": "function",
-                                "function": {"name": "lookup_demo_fact", "arguments": '{"topic":"tana-litellm-tool"}'},
-                            }
-                        ],
-                    },
-                    {"role": "tool", "tool_call_id": "call-1", "name": "lookup_demo_fact", "content": '{"ok":true}'},
-                ],
-                {"provider_options": {"openai": {"promptCacheKey": "conversation-1"}}},
-            )
-
-    result = await run()
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        result = await client.chat_completion(
+            "claude-test",
+            [
+                {"role": "system", "content": "You are concise.", "cache_control": {"type": "ephemeral"}},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "call the tool later", "cache_control": {"type": "ephemeral"}},
+                        {"type": "reasoning", "text": "prior scratchpad"},
+                    ],
+                },
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "lookup_demo_fact", "arguments": '{"topic":"tana-litellm-tool"}'},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call-1", "name": "lookup_demo_fact", "content": '{"ok":true}'},
+            ],
+            {"provider_options": {"openai": {"promptCacheKey": "conversation-1"}}},
+        )
 
     assert result.text == "ok"
     body = seen_bodies[0]
@@ -245,32 +235,29 @@ async def test_client_maps_tool_request_to_llm_proxy_next() -> None:
         expected_authorization="Bearer id-token-1",
     )
 
-    async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=transport) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            return await client.chat_completion(
-                "claude-test",
-                [{"role": "user", "content": "call the tool"}],
-                {
-                    "tools": [
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": "lookup_demo_fact",
-                                "description": "Look up a demo fact.",
-                                "parameters": {
-                                    "type": "object",
-                                    "properties": {"topic": {"type": "string"}},
-                                    "required": ["topic"],
-                                },
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        result = await client.chat_completion(
+            "claude-test",
+            [{"role": "user", "content": "call the tool"}],
+            {
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_demo_fact",
+                            "description": "Look up a demo fact.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"topic": {"type": "string"}},
+                                "required": ["topic"],
                             },
-                        }
-                    ],
-                    "max_tokens": 32,
-                },
-            )
-
-    result = await run()
+                        },
+                    }
+                ],
+                "max_tokens": 32,
+            },
+        )
 
     assert result.text == ""
     assert result.tool_calls == [
@@ -308,37 +295,34 @@ async def test_client_maps_claude_code_style_tool_request_to_llm_proxy_next() ->
         response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
     )
 
-    async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=transport) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            return await client.chat_completion(
-                "claude-sonnet-4-20250514",
-                [
-                    {
-                        "role": "system",
-                        "content": [
-                            {"type": "text", "text": "You are Claude Code.", "cache_control": {"type": "ephemeral"}}
-                        ],
-                        "cache_control": {"type": "ephemeral"},
-                    },
-                    {"role": "user", "content": "Summarize this repository."},
-                ],
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        result = await client.chat_completion(
+            "claude-sonnet-4-20250514",
+            [
                 {
-                    "tools": [
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": "LSP__getDiagnostics",
-                                "description": "Get language-server diagnostics.",
-                                "parameters": {"type": "object", "properties": {}},
-                            },
-                        }
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": "You are Claude Code.", "cache_control": {"type": "ephemeral"}}
                     ],
-                    "max_tokens": 32000,
+                    "cache_control": {"type": "ephemeral"},
                 },
-            )
-
-    result = await run()
+                {"role": "user", "content": "Summarize this repository."},
+            ],
+            {
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "LSP__getDiagnostics",
+                            "description": "Get language-server diagnostics.",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+                "max_tokens": 32000,
+            },
+        )
 
     assert result.text == "ok"
     body = seen_bodies[0]
@@ -368,36 +352,33 @@ async def test_client_maps_anthropic_tool_transcript_to_tana_messages() -> None:
         response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
     )
 
-    async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=transport) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            return await client.chat_completion(
-                "claude-sonnet-4-20250514",
-                [
-                    {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "text", "text": "Let me inspect that."},
-                            {"type": "tool_use", "id": "toolu_1", "name": "LSP", "input": {}},
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": "toolu_1",
-                                "content": "InputValidationError",
-                                "is_error": True,
-                                "cache_control": {"type": "ephemeral"},
-                            }
-                        ],
-                    },
-                ],
-                {"tools": [{"type": "function", "function": {"name": "LSP"}}]},
-            )
-
-    result = await run()
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        result = await client.chat_completion(
+            "claude-sonnet-4-20250514",
+            [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Let me inspect that."},
+                        {"type": "tool_use", "id": "toolu_1", "name": "LSP", "input": {}},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_1",
+                            "content": "InputValidationError",
+                            "is_error": True,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                },
+            ],
+            {"tools": [{"type": "function", "function": {"name": "LSP"}}]},
+        )
 
     assert result.text == "ok"
     assert seen_bodies[0]["args"]["messages"] == [
@@ -770,19 +751,16 @@ async def test_client_refreshes_id_token_from_original_refresh_token_source(
 
         refresh_token_reader = read_external_refresh_token
 
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(
-                TanaProxyConfig(refresh_token=configured_refresh_token),
-                http_client=http,
-                refresh_token_reader=refresh_token_reader,
-                now=lambda: now[0],
-            )
-            await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
-            now[0] = 1061.0
-            await client.chat_completion("claude-test", [{"role": "user", "content": "second"}])
-
-    await run()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = TanaProxyClient(
+            TanaProxyConfig(refresh_token=configured_refresh_token),
+            http_client=http,
+            refresh_token_reader=refresh_token_reader,
+            now=lambda: now[0],
+        )
+        await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
+        now[0] = 1061.0
+        await client.chat_completion("claude-test", [{"role": "user", "content": "second"}])
 
     assert refresh_tokens_seen == expected_refresh_tokens
 
@@ -1004,26 +982,20 @@ _DEMO_FACT_TOOL = {
 
 
 async def test_tool_chat_completion_raises_rate_limit_error_on_429() -> None:
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        with pytest.raises(litellm.RateLimitError) as exc_info:
             await client.chat_completion(
                 "tana/claude-test", [{"role": "user", "content": "hi"}], {"tools": [_DEMO_FACT_TOOL]}
             )
-
-    with pytest.raises(litellm.RateLimitError) as exc_info:
-        await run()
     assert exc_info.value.status_code == 429
 
 
 async def test_chat_completion_raises_auth_error_on_401() -> None:
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(401))) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(401))) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        with pytest.raises(litellm.AuthenticationError) as exc_info:
             await client.chat_completion("tana/claude-test", [{"role": "user", "content": "hi"}], {})
-
-    with pytest.raises(litellm.AuthenticationError) as exc_info:
-        await run()
     assert exc_info.value.status_code == 401
 
 
@@ -1048,19 +1020,16 @@ async def test_astream_completion_raises_rate_limit_error_on_429() -> None:
 
 
 async def test_429_surfaces_through_litellm_acompletion_as_rate_limit_error(isolated_litellm_provider) -> None:
-    async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
-            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
-            register_litellm_provider(_handler_with_test_client(client))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_upstream_error_handler(429))) as http:
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+        register_litellm_provider(_handler_with_test_client(client))
+        with pytest.raises(litellm.RateLimitError) as exc_info:
             await litellm.acompletion(
                 model="tana/claude-test",
                 messages=[{"role": "user", "content": "hi"}],
                 api_key="refresh-1",
                 num_retries=0,
             )
-
-    with pytest.raises(litellm.RateLimitError) as exc_info:
-        await run()
     assert exc_info.value.status_code == 429
 
 
