@@ -108,3 +108,26 @@ seconds later and received its first token after 42.50 seconds. The long
 request took 24.44 seconds to its first token and 44.49 seconds overall.
 This is the observed head-of-line delay with one active request. Keep it in
 mind for interactive use alongside long-context batches.
+
+## Live 256K check after rebalancing the GPUs
+
+On November 18 at 18:42 Pacific, the cluster was serving EXL3 with
+`gpu_split: [22, 30]`, one active request, and the same 262,144-token
+sequence limit, 270,336-slot Q8 cache and 2,048-token prefill chunk size.
+[The GPU budget rollout](https://github.com/agentydragon/ducktape/pull/17885)
+addressed a 137K-token prefill OOM on the original split.
+
+Two distinct synthetic inventory-code prompts were sent through the existing
+LiteLLM Qwen 256K route using streamed Responses. Each asked for the marker
+from the first line followed by a long review. A forced tool-call round trip
+passed between the long requests. Both streams retrieved their marker, used
+no cached prompt tokens, and ended on the 1,024-token output cap.
+
+| Run | Input tokens | Output tokens | Total tokens | First visible text (s) | End to end (s) | Native decode (tok/s) |
+| --- | -----------: | ------------: | -----------: | ---------------------: | -------------: | --------------------: |
+| 1   |      261,038 |         1,024 |      262,062 |                  37.42 |          41.64 |                 128.0 |
+| 2   |      261,118 |         1,024 |      262,142 |                  36.12 |          40.44 |                 144.8 |
+
+`nvidia-smi` samples every 100 ms across both runs, including the desktop,
+showed a minimum of 6,491 MiB free on GPU 0 and 4,785 MiB on GPU 1.
+The TabbyAPI pod was ready with zero restarts after the checks.
