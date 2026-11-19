@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
@@ -11,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -105,15 +103,5 @@ func (s *Service) send(ctx context.Context, stream watchStream, response *histor
 }
 
 func sendWithin[Response any](ctx context.Context, stream interface{ Send(*Response) error }, timeout time.Duration, response *Response) error {
-	err := streaming.SendWithin(ctx, timeout, stream.Send, response)
-	switch {
-	case errors.Is(err, streaming.ErrSendTimeout):
-		return status.Error(codes.DeadlineExceeded, "history stream write deadline expired")
-	case errors.Is(err, context.Canceled):
-		return status.FromContextError(context.Canceled).Err()
-	case errors.Is(err, context.DeadlineExceeded):
-		return status.FromContextError(context.DeadlineExceeded).Err()
-	default:
-		return err
-	}
+	return streaming.SendWithinStatus(ctx, timeout, stream.Send, response, "history stream write deadline expired")
 }

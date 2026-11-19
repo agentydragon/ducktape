@@ -6,6 +6,9 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -55,5 +58,21 @@ func SendWithin[Frame any](ctx context.Context, timeout time.Duration, send func
 			return ErrSendTimeout
 		}
 		return <-sent
+	}
+}
+
+// SendWithinStatus is SendWithin with its failures as gRPC statuses: ErrSendTimeout becomes DEADLINE_EXCEEDED with
+// timeoutMessage, and a canceled or expired context its context status. Other errors are returned unchanged.
+func SendWithinStatus[Frame any](ctx context.Context, timeout time.Duration, send func(*Frame) error, frame *Frame, timeoutMessage string) error {
+	err := SendWithin(ctx, timeout, send, frame)
+	switch {
+	case errors.Is(err, ErrSendTimeout):
+		return status.Error(codes.DeadlineExceeded, timeoutMessage)
+	case errors.Is(err, context.Canceled):
+		return status.FromContextError(context.Canceled).Err()
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.FromContextError(context.DeadlineExceeded).Err()
+	default:
+		return err
 	}
 }
