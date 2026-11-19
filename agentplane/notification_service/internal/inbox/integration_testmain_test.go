@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -33,27 +31,6 @@ func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.Clone(t))
 	return db, t.Context()
-}
-
-func explainLines(ctx context.Context, tx transaction.Tx, query string, args ...any) (string, error) {
-	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
-	if err != nil {
-		return "", err
-	}
-	var plan strings.Builder
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			_ = rows.Close()
-			return "", err
-		}
-		plan.WriteString(line)
-		plan.WriteByte('\n')
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return "", err
-	}
-	return plan.String(), nil
 }
 
 func defaultQuotas() Quotas {
