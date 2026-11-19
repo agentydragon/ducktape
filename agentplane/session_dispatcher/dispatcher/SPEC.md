@@ -159,9 +159,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   a native Runtime. This check is not an atomic fence against deletion after the read; managed
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
-  rechecks the target UID and retained caller: a ServiceAccount's current UID, or for an Identity caller,
-  that the Sandbox acts as that live Identity incarnation under its current `resumePolicy`. `wake_callers`
-  and `wake_service_callers` are separate automatic-only broker grants. An Action-attributed row is assessed
+  rechecks the target UID and retained caller: for an Identity caller, that the Sandbox acts as that live
+  Identity incarnation under its current `resumePolicy`; a retained ServiceAccount caller is never authorized.
+  `wake_service_callers` is an automatic-only broker grant. An Action-attributed row is assessed
   as its verified service actor through the Dispatcher's exact service broker grant; its effective Identity
   remains in the row attribution for Session authority. These grants do not authorize explicit resume or
   override `SuspendedBy=Requested`. Admission-time eligibility never grants wake authority.
