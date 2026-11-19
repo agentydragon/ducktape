@@ -79,7 +79,7 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
     const ok = got.code === c.expect.code && got.text.includes(c.expect.contains);
     if (!ok) failures++;
     const line = (
-      got.text.split("\n").find((l) => /^(TRANSLATION|PLAN|OBLIGATIONS)/.test(l)) ?? got.text.split("\n")[0]
+      got.text.split("\n").find((l) => /^(TRANSLATION REJECT|PLAN|OBLIGATIONS)/.test(l)) ?? got.text.split("\n")[0]
     ).slice(0, 110);
     console.log(`${ok ? "pass" : "FAIL"}  ${name}: ${c.name}  [exit ${got.code}] ${line}`);
   }
