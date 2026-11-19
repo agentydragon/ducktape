@@ -32,6 +32,7 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.eval_infra.eval_sandbox import SKILL_PATH
 from skills.eval_infra.skill_staging import StagedSkill, stage_skill
+from skills.info_gathering.evals.harness import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -43,7 +44,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 

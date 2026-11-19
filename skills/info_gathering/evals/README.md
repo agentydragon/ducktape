@@ -15,7 +15,7 @@ Each eval tests a different aspect of the info-gathering skill. See each eval's
 
 - `model_from_args` — OpenAI Responses API model construction with retries
 - CLI utilities (`add_common_args`, `output_dir_from_args`, etc.)
-- Result models (`RunSummary`, `LogEntry`)
+- `RunSummary` result model and output helpers (`run_output_paths`, `save_summary`)
 
 `docker_scratch.py` provides an ephemeral Docker container as a `ToolProvider`
 for agent scratch computation.
