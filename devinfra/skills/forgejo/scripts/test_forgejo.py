@@ -6,8 +6,6 @@ import pytest_bazel
 from devinfra.skills.forgejo.scripts import forgejo
 from devinfra.skills.forgejo.scripts.forgejo import Task
 
-# ── timing ───────────────────────────────────────────────────────────────────
-
 
 def _row(**kw):
     base = {
@@ -64,8 +62,6 @@ def test_summarize_groups_by_job_and_reports_dropped_outliers() -> None:
     assert by_name["bazel"].p_max == 600.0
     assert by_name["validate"].n == 1
 
-
-# ── logs ─────────────────────────────────────────────────────────────────────
 
 RUN_HTML = """
 <html>
@@ -160,9 +156,6 @@ def test_parse_log_response_handles_forgejo_lines() -> None:
             message='Error response from daemon: Get "https://git.allegedly.works/v2/": denied: Access denied',
         )
     ]
-
-
-# ── rerun ────────────────────────────────────────────────────────────────────
 
 
 def test_run_view_lists_jobs_in_route_index_order() -> None:
