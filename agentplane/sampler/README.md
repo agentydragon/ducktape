@@ -1,7 +1,7 @@
 # Sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
+Responses, Chat Completions, and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and

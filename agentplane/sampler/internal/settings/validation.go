@@ -138,8 +138,8 @@ func (s Settings) Validate() error {
 		if !ok {
 			return invalidSettingWithCause("models.*.connection", "references an unknown connection", fmt.Errorf("model %s references unknown connection %s", model, config.Connection))
 		}
-		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
-			return invalidSettingWithCause("models.*.api", "responses API requires bearer or agentplane_ingress connection auth", fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model))
+		if (config.API == protocol.APIStyleResponses || config.API == protocol.APIStyleChatCompletions) && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
+			return invalidSettingWithCause("models.*.api", "OpenAI-compatible API requires bearer or agentplane_ingress connection auth", fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model))
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
 			return invalidSettingWithCause("models.*.api", "anthropic_messages API requires anthropic_api_key connection auth", fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model))

@@ -202,7 +202,13 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 
 func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	// Fixtures replay from before version 18. Undo any later schema changes as
+	// well so Goose sees a contiguous predecessor history.
+	migrationExec(t, db, `ALTER TABLE sampler_conversation DROP CONSTRAINT sampler_conversation_api_check,
+		ADD CONSTRAINT sampler_conversation_api_check CHECK (api IN ('responses', 'anthropic_messages'));
+		ALTER TABLE sampler_context DROP CONSTRAINT sampler_context_api_check,
+		ADD CONSTRAINT sampler_context_api_check CHECK (api IN ('responses', 'anthropic_messages'))`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP CONSTRAINT sampler_session_owner_kind`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN service_spiffe_id`)
-	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=18`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id>=18`)
 }

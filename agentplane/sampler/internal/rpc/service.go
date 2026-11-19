@@ -194,7 +194,7 @@ func (s *Sampler) commandUsing(
 		if effort := command.GetChangeReasoningEffort(); effort != nil && currentConfig.API == protocol.APIStyleAnthropicMessages && !currentConfig.AnthropicMessages.PerMessageEffort {
 			return protocol.ErrPrecondition
 		}
-		if command.GetCompact() != nil && (currentConfig.Responses.Dialect == responses.DialectStandard || (currentConfig.API == protocol.APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
+		if command.GetCompact() != nil && (currentConfig.API == protocol.APIStyleChatCompletions || currentConfig.Responses.Dialect == responses.DialectStandard || (currentConfig.API == protocol.APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
 			return protocol.ErrPrecondition
 		}
 		return nil

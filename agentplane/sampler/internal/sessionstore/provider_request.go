@@ -12,6 +12,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -37,7 +38,7 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 		instructions := *conversation.Instructions
 		snapshot.Instructions = &instructions
 	}
-	if metadata.API == protocol.APIStyleResponses && previous.ProfileID != "" {
+	if (metadata.API == protocol.APIStyleResponses || metadata.API == protocol.APIStyleChatCompletions) && previous.ProfileID != "" {
 		refs := previous.PrefixIDs
 		if len(refs) == 0 {
 			refs, err = store.LoadContext(previous.ContextID)
@@ -79,6 +80,8 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 			}
 		case protocol.APIStyleAnthropicMessages:
 			project = conversation.Context().(*anthropic.Context).ProjectRecords
+		case protocol.APIStyleChatCompletions:
+			project = conversation.Context().RecordsFrom
 		default:
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
@@ -127,6 +130,9 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 		headers = anthropic.Headers(*config.AnthropicMessages)
 	case protocol.APIStyleResponses:
 		headers = responses.Headers(config.Responses, kind == PendingIntentCompaction)
+	case protocol.APIStyleChatCompletions:
+		path = chatcompletions.Path
+		headers = chatcompletions.Headers()
 	}
 	request := IntentPayload{Kind: kind, ProviderRequest: &ProviderRequest{
 		API: config.API, Connection: config.Connection, ProviderModel: config.ProviderModel, Method: http.MethodPost,

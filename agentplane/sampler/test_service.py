@@ -1059,6 +1059,113 @@ async def test_unknown_json_function_call_returns_function_output(
         assert not failed_results[0].succeeded
 
 
+async def test_chat_completions_tool_round_trip(
+    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        config.models["test-model"] = ModelConfig(
+            connection="provider",
+            provider_model="chat-test-model",
+            reasoning_efforts={""},
+            api="chat_completions",
+            exec_encoding="json",
+        )
+        request = create_request(tmp_path)
+        request.spec.reasoning_effort = ""
+        async with service(config) as stub:
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            await submit_input(
+                stub, session_id=request.session_id, command_id="chat", text="Use the tool.", timeout_s=10
+            )
+            call_chunk = {
+                "id": "chat-tool",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "reasoning_content": "Use the tool.",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "chat-call",
+                                    "type": "function",
+                                    "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+
+            async with await endpoint.next() as exchange:
+                initial = exchange.request.body
+                assert initial["model"] == "chat-test-model"
+                assert {"role": "user", "content": "Use the tool."} in initial["messages"]
+                assert initial["tools"][0]["function"]["name"] == "exec"
+                # The first stream contains a complete-looking call, then disconnects without [DONE].
+                call_event = SseEvent("chunk", b"data: " + json.dumps(call_chunk).encode() + b"\n\n")
+                await exchange.send(call_event)
+
+            async with await endpoint.next() as exchange:
+                assert exchange.request.body == initial
+                await exchange.send(call_event, SseEvent("done", b"data: [DONE]\n\n"))
+
+            async with await endpoint.next() as exchange:
+                continued = exchange.request.body
+                assistant = next(m for m in continued["messages"] if m["role"] == "assistant")
+                tool = next(m for m in continued["messages"] if m["role"] == "tool")
+                assert assistant["reasoning_content"] == "Use the tool."
+                assert assistant["tool_calls"][0]["id"] == "chat-call"
+                assert tool["role"] == "tool"
+                assert tool["tool_call_id"] == "chat-call"
+                assert "42" in tool["content"]
+                await exchange.send(
+                    SseEvent(
+                        "chunk",
+                        b'data: {"id":"chat-done","choices":[{"index":0,"delta":{"content":"Done."},"finish_reason":"stop"}]}\n\n',
+                    ),
+                    SseEvent("done", b"data: [DONE]\n\n"),
+                )
+            assert (await turn_completed(stub, request.session_id, "chat")).status == event_pb2.TURN_STATUS_COMPLETED
+
+            async with postgres_async_engine(database_url) as engine:
+                entries = await Store(engine).events(request.session_id, 0, limit=10000)
+            dispatches = [
+                entry.event.execution_progress.operation_id
+                for entry in entries
+                if entry.event.HasField("execution_progress")
+                and entry.event.execution_progress.kind == event_pb2.ExecutionProgress.KIND_SAMPLING
+                and entry.event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_DISPATCH
+            ]
+            assert len(dispatches) == 3
+            completed_tools = [
+                entry.event.item_completed
+                for entry in entries
+                if entry.event.HasField("item_completed") and entry.event.item_completed.HasField("tool")
+            ]
+            assert [tool.item_id for tool in completed_tools] == ["chat-call"]
+            assert completed_tools[0].tool.succeeded
+            metadata = None
+            body = bytearray()
+            async for part in stub.admin.ReadProviderRequest(
+                sampler_admin_pb2.ReadProviderRequestRequest(session_id=request.session_id, request_id=dispatches[-1]),
+                metadata=METADATA,
+                timeout=10,
+            ):
+                if part.HasField("metadata"):
+                    metadata = part.metadata
+                else:
+                    body.extend(part.body_chunk)
+            assert metadata is not None
+            assert metadata.url.endswith("/v1/chat/completions")
+            assert json.loads(body) == continued
+
+
 @pytest.mark.parametrize("dialect", ["lite", "standard"])
 async def test_json_exec_runs_shell_resumes_and_recovers(
     database_url: str,

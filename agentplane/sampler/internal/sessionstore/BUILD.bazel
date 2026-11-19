@@ -60,6 +60,7 @@ go_library(
         "//agentplane/sampler/internal/tooloutput",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
         "//agentplane/session_instructions",
         "@com_github_google_uuid//:uuid",
