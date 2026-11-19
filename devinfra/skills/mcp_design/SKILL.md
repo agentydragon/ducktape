@@ -217,7 +217,7 @@ the implementation docstring — it's the agent's instruction manual.
 
 Template:
 
-```
+```text
 [What this tool does in one sentence.]
 
 [When to use it — and when NOT to (use X instead).]

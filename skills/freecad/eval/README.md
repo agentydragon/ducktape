@@ -24,7 +24,7 @@ Requires Docker (the FreeCAD container runs via the `exec` MCP server).
 
 ## Output
 
-```
+```text
 /tmp/eval-output/
 ├── transcript.jsonl    # Incremental JSONL log of all agent messages
 ├── metadata.json       # cost_usd, duration_s, turns, model, session_id

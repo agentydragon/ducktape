@@ -187,7 +187,7 @@ class CacheEntry(BaseModel):
 
 ### Correct Architecture: Thin Boundaries, Structured Interior
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  HTTP Request (bytes/JSON)                       │  ← Serialization boundary
 └──────────────────┬──────────────────────────────┘

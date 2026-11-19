@@ -1,6 +1,6 @@
 <%import os%>\
 % if setup.buildbuddy_api_key:
-API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
+API key in `~/.config/bazel/buildbuddy.bazelrc`. See the `buildbuddy_api` skill for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
 % if not setup.buildbuddy_api_key and not setup.github_token:
 

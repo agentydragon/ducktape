@@ -15,7 +15,7 @@ cookies**, and the convert step needs **no FreeCAD** (pure Python).
 
 ## Pipeline
 
-```
+```text
 product name ──search_ikea.py──▶ item number
 item number ──download_ikea_glb.sh──▶ product.glb   (Draco-compressed)
 product.glb ──glb_to_stl.sh──▶ product.stl

@@ -12,7 +12,7 @@ All FreeCAD scripts that call `Gui.showMainWindow()` under `freecadcmd` must end
 
 Captured empirically from FreeCAD 1.1.0 under xvfb:
 
-```
+```text
 #0  /lib/x86_64-linux-gnu/libc.so.6(+0x45330)         — TLS access, already freed
 #1  QThreadStorageData::get() const                    — reads OpenGL TLS slot
 #2  QOpenGLContext::currentContext()                   — asks "is this surface current?"

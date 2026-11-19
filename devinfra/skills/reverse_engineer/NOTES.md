@@ -10,7 +10,7 @@ directly, bypassing the normal `go build` module infrastructure. The resulting
 binary embeds only the Go toolchain version (`go1.26.2`) in its buildinfo — no
 `path` or `mod` fields. So `go version -m v1_plain` outputs just:
 
-```
+```text
 v1_plain: go1.26.2
 ```
 
