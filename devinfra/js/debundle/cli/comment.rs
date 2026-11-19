@@ -231,10 +231,6 @@ pub fn apply_binding_comment(
     })
 }
 
-// ---------------------------------------------------------------------
-// Module comment
-// ---------------------------------------------------------------------
-
 pub fn run_module_comment_cmd(
     output: &mut dyn std::io::Write,
     args: ModuleCommentArgs,

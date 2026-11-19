@@ -480,8 +480,6 @@ fn string_conversion_operands_must_be_primitive() {
     );
 }
 
-// --- Builtin table: shadowing fallback ----------------------------------
-
 #[test]
 fn shadowed_receiver_disables_builtin_rows() {
     // A chunk-top binding for `Math` makes `Math.PI` no longer reach the
@@ -665,8 +663,6 @@ fn shadowed_builtin_new_constructs_the_user_binding() {
     );
 }
 
-// --- Class definition eager-evaluation effects ---------------------------
-
 #[test]
 fn class_extends_expr_effects_propagate() {
     assert_eq!(classify("class extends io() {}"), [CLASS_DEFINITION]);
@@ -822,8 +818,6 @@ fn class_static_auto_accessor_initializer_is_observable() {
     assert_eq!(class_effects("class C { accessor x = io(); }"), NONE);
 }
 
-// --- Declared purity (spec annotation) ---------------------------------
-
 #[test]
 fn declared_pure_ident_call_has_no_effects() {
     // A spec member with `purity: "pure"` populates the declared-pure set. A
@@ -891,8 +885,6 @@ fn declared_pure_new_does_not_apply_to_plain_call() {
         [CALL]
     );
 }
-
-// --- Declared pure members (`pure_members`) ----------------------------
 
 #[test]
 fn declared_pure_member_call_has_no_effects() {
@@ -964,8 +956,6 @@ fn declared_pure_member_optional_chain_call_has_no_effects() {
         NONE
     );
 }
-
-// --- Fluent-trusted chains (`fluent_exports`) ---------------------------
 
 #[test]
 fn fluent_root_direct_call_has_no_effects() {
@@ -1108,8 +1098,6 @@ fn fluent_trust_does_not_propagate_through_let_rebindable_cells() {
         [CALL]
     );
 }
-
-// --- Object.{entries,keys,values,freeze,fromEntries} on plain data -----
 
 #[test]
 fn object_keys_and_values_on_plain_object_literal_have_no_effects() {

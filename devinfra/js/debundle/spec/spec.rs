@@ -40,7 +40,6 @@ pub struct TransformSpec {
     #[serde(default)]
     pub program_premises: ProgramPremises,
 
-    // --- declarative data sections ---
     #[serde(default)]
     pub vendor: BTreeMap<String, VendorMark>,
     #[serde(default)]
@@ -93,7 +92,6 @@ pub struct TransformSpec {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 
-    // --- per-stage configuration ---
     /// Output configuration for vendor swap emission outputs (wrappers,
     /// facade bundles, the combined manifest); this field only adds
     /// output paths and a `write` toggle. All inner fields have

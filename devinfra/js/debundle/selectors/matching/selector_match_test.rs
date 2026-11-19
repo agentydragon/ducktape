@@ -76,7 +76,6 @@ fn assert_cases(cases: impl IntoIterator<Item = Case>) {
 fn fact_matcher_verdicts_on_faithful_subset() {
     js_ast::with_swc_globals(|| {
         let cases = [
-            // --- exact-identifier mode ---
             Case {
                 selector: "const a = foo.bar(\"x\");",
                 subject: "const a = foo.bar(\"x\");",
@@ -121,7 +120,6 @@ fn fact_matcher_verdicts_on_faithful_subset() {
                 alpha: false,
                 expected: false,
             },
-            // --- alpha-identifier mode (value/binding idents renamable) ---
             Case {
                 selector: "function f(a) { return a; }",
                 subject: "function g(x) { return x; }",
@@ -161,7 +159,6 @@ fn fact_matcher_verdicts_on_faithful_subset() {
                 alpha: true,
                 expected: false,
             },
-            // --- run holes: ordered subsequence with gaps ---
             // ARGS absorbs the whole argument run (including an empty one).
             Case {
                 selector: "const a = foo.bar(ARGS);",
@@ -230,7 +227,6 @@ fn fact_matcher_verdicts_on_faithful_subset() {
                 alpha: true,
                 expected: true,
             },
-            // --- parse-position-polymorphic single-node holes ---
             // ANYTHING in parameter (pattern) position matches any param and
             // never binds: two ANYTHING params are independent (they would
             // collide if treated as one alpha binding).
