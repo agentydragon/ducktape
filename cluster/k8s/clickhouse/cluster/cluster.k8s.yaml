@@ -637,8 +637,6 @@ spec:
       ports:
         - port: 8123
           protocol: TCP
-        - port: 9000
-          protocol: TCP
     - from:
         - namespaceSelector:
             matchLabels:

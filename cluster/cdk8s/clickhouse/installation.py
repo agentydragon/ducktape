@@ -555,10 +555,7 @@ def networkpolicy_chart(app: App) -> Chart:
                 ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("cli-proxy-api", {"app.kubernetes.io/name": "aiquota"}),
-                    # CLEANUP(added 2026-10-20): Drop the native port once no aiquota-api Pod
-                    #   still has a `migrate` init container (the Deployment lists none and
-                    #   its old ReplicaSet is gone); the API server applies its schema over HTTP.
-                    ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),
+                    ports=_ports(client.HTTP.pod_port),
                 ),
                 # The agent app itself cannot reach ClickHouse. Agentplane egress is the only
                 # public-coder-side caller admitted for its native read-only account.
