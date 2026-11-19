@@ -340,7 +340,7 @@ Combined tail risk (some overlap): ~25-30%
 
 ### Step 1: Classify the question
 
-- What type? (A-I from taxonomy above)
+- What type? (see the Forecasting Cookbook above)
 - What output format is appropriate?
 - What related topics should I search?
 

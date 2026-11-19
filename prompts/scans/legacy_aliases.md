@@ -246,7 +246,7 @@ rg --type py -B1 '@property' | grep -A5 'deprecated\|backward\|legacy'
 
 - Check if property adds any logic (validation, transformation)
 - Verify it's truly just forwarding to another attribute
-- See `trivial-forwarder-methods.md` for comprehensive property evaluation
+- See `trivial_forwarder_methods.md` for comprehensive property evaluation
 
 #### 5. Backward Compatibility Comments (High Recall ~90%, Medium Precision ~50%)
 
@@ -726,6 +726,6 @@ rg --type md '\bOLD_NAME\b'
 ## References
 
 - **Trivial Forwarders**: See `trivial_forwarders.md` for comprehensive function-level forwarder detection and decision framework
-- **Trivial Forwarder Methods**: See `trivial-forwarder-methods.md` for method-level forwarders
+- **Trivial Forwarder Methods**: See `trivial_forwarder_methods.md` for method-level forwarders
 - **API Stability**: [Semantic Versioning](https://semver.org/) for managing breaking changes
 - **Deprecation Patterns**: [Python PEP 387](https://peps.python.org/pep-0387/) - Backwards Compatibility Policy

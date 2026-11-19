@@ -96,8 +96,8 @@ GET https://web-api.ikea.com/{market}/{lang}/rotera/static/models/{itemNumber}-m
 - `Content-Type: model/gltf-binary`; binary GLB (glTF 2.0, **Draco-compressed**)
 - `404` if no 3D model exists for that item (discontinued / never scanned)
 - `400` for invalid URL variants (e.g. dropping the `-mini` suffix)
-- HEAD-probe before downloading to distinguish 200 / 404 (the download script
-  does this).
+- Probe the status before downloading to distinguish 200 / 404 (the download
+  script does this with a GET whose body is discarded).
 
 The `-mini` suffix is the simplified model served to the browser 3D viewer —
 a complete, valid GLB with reduced geometry. There is no reliable non-`-mini`

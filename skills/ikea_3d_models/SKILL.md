@@ -65,10 +65,10 @@ scripts/search_ikea.py "besta tv unit" --variants
 a given product. This is usually fine: the output is a geometry-only mesh (no
 textures), and **all covers of one product share identical geometry** — so any
 scanned variant's item number gives the correct shape and dimensions. When the
-user's exact item 404s, HEAD-check its siblings (`--variants`) and use whichever
-one has a model; tell the user you used a different cover of the same product.
-Note search "snaps" an item-number query to a representative variant, so the
-number it echoes back may differ from the one queried — that's expected.
+user's exact item 404s, try its siblings (`search_ikea.py --variants`) and use
+whichever one has a model; tell the user you used a different cover of the same
+product. Note search "snaps" an item-number query to a representative variant,
+so the number it echoes back may differ from the one queried — that's expected.
 
 ### 2. Download the GLB
 
@@ -76,10 +76,10 @@ number it echoes back may differ from the one queried — that's expected.
 scripts/download_ikea_glb.sh 80299874 besta-tv.glb
 ```
 
-Downloads the public "rotera" model. It HEAD-checks first and fails clearly if
-no model exists (HTTP 404 = discontinued or never scanned — try a different
-color variant's item number from `search_ikea.py --variants`). ~270 KB–700 KB
-typical.
+Downloads the public "rotera" model. It probes the HTTP status first (a GET
+whose body is discarded) and fails clearly if no model exists (HTTP 404 =
+discontinued or never scanned — try a different color variant's item number from
+`search_ikea.py --variants`). ~270 KB–700 KB typical.
 
 ### 3. Convert to STL
 
