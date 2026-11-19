@@ -16,7 +16,7 @@ import pytest
 import pytest_bazel
 import yaml
 from numpyro import distributions as dist
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from finance.augur.fit.model import Scorable
 from finance.augur.model.equity import EquitySpec
@@ -38,12 +38,7 @@ from finance.augur.x.models.vecm import VecmProviderConfig
 # Artifacts that fail the checks below, with what they measured. A quarantined artifact stays only
 # as an explicit legacy/refit regression and is never to be used as a model. If its schema becomes
 # valid again, the old plausibility failure must continue until a new fit is deliberately reviewed.
-QUARANTINED = {
-    "trained_vecm_provider.yaml": (
-        "12-month median CPI x1.69 and SPY x0.71; in-sample CPI residual RMS 5.1 modelled sds"
-        " (one-step mean +1.6%/month vs +0.29% observed, sd 3.2% vs 0.69%)"
-    )
-}
+QUARANTINED: dict[str, str] = {}
 
 ARTIFACT_DIR = Path(__file__).parent
 ARTIFACTS = sorted(path.name for path in ARTIFACT_DIR.glob("*.yaml"))
@@ -157,17 +152,7 @@ def _check_artifact(artifact: VecmProviderConfig | StructuralMacroFittedDefaults
 
 @pytest.mark.parametrize("name", ARTIFACTS)
 def test_artifact_describes_a_plausible_economy(name: str) -> None:
-    try:
-        artifact = _load(name)
-    except ValidationError as error:
-        if name != "trained_vecm_provider.yaml":
-            raise
-        # This quarantined fit predates the required dated levels, common anchor as-of, and
-        # segment/gap provenance. It must be refit before it can be loaded as a VECM provider.
-        missing_fields = {item["loc"][-1] for item in error.errors() if item["type"] == "missing"}
-        assert {"train_months", "as_of_month", "training_segments", "calendar_gaps"} <= missing_fields
-        return
-
+    artifact = _load(name)
     if name in QUARANTINED:
         with pytest.raises(AssertionError, match=r"median 12-month multipliers|in-sample residual RMS"):
             _check_artifact(artifact)

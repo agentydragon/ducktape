@@ -177,7 +177,6 @@ py_library(
 py_test(
     name = "observation_config_test",
     srcs = ["observation_config_test.py"],
-    data = ["//finance/augur/x/models/calibrated:trained_vecm_provider"],
     deps = [
         ":conftest",
         ":vecm",
@@ -191,8 +190,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
