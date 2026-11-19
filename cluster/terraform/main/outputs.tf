@@ -1,3 +1,21 @@
+# KUBECONFIG & ACCESS
+
+output "kubeconfig" {
+  description = "Generated kubeconfig for cluster access (patched with real endpoint)"
+  value = replace(
+    talos_cluster_kubeconfig.cluster.kubeconfig_raw,
+    "https://localhost:7445",
+    local.kubeconfig_cluster_endpoint
+  )
+  sensitive = true
+}
+
+output "talos_config" {
+  description = "Talos client configuration"
+  value       = data.talos_client_configuration.cluster.talos_config
+  sensitive   = true
+}
+
 output "home_bare_metal_iso_url" {
   description = "Talos metal ISO shared by home bare-metal workers and OVH nodes"
   value       = data.talos_image_factory_urls.kimsufi.urls.iso
