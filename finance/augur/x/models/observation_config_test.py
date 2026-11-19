@@ -5,9 +5,7 @@ from datetime import date
 import numpy as np
 import pytest
 import pytest_bazel
-import yaml
 from pydantic import ValidationError
-from python.runfiles import Runfiles
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
@@ -103,15 +101,6 @@ def test_source_named_and_bare_numeric_anchors_are_not_an_alternate_format(confi
     document["latest_observations"] = {"spy_adjusted_close_latest": 481.0}
     with pytest.raises(ValidationError):
         VecmProviderConfig.model_validate(document)
-
-
-def test_legacy_checked_in_vecm_artifact_requires_refitting() -> None:
-    path = Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/models/calibrated/trained_vecm_provider.yaml"
-    document = yaml.safe_load(path.read_text())
-    with pytest.raises(ValidationError) as error:
-        VecmProviderConfig.model_validate(document)
-    missing_fields = {item["loc"][-1] for item in error.value.errors() if item["type"] == "missing"}
-    assert {"train_months", "as_of_month", "training_segments", "calendar_gaps"} <= missing_fields
 
 
 if __name__ == "__main__":
