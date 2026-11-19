@@ -14,7 +14,7 @@ model:
   cache_mode: Q8
   max_batch_size: 1
   tensor_parallel: false
-  gpu_split: [28, 30]
+  gpu_split: [22, 30]
   gpu_split_auto: false
   vision: false
   ngram_ram: false
