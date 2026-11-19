@@ -22,9 +22,9 @@ def session_memory_hook() -> dict:
 def trusted_proxy_gateway(*, allowed_origin: str, device_approve_scopes: list[str]) -> dict:
     """The gateway.auth trusted-proxy pattern shared by every agent behind the Authentik
     outpost. Browser requests arrive with Authentik identity headers. What makes this
-    safe at all: app/networkpolicy-ingress.yaml admits only the outpost's pods, so
-    nothing else can forge x-authentik-username -- and allowUsers below further
-    restricts it to agentydragon alone.
+    safe at all: the ingress NetworkPolicy in cluster/cdk8s/public_coder/app.py admits
+    only the outpost's pods, so nothing else can forge x-authentik-username -- and
+    allowUsers below further restricts it to agentydragon alone.
 
     device_approve_scopes is a ceiling, not a grant: it caps what an auto-approved
     device may request, defaulting to operator.{read,write,approvals,questions} when

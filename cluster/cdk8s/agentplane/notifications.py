@@ -52,7 +52,7 @@ NAME = "notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 # The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
-# `livenessService` in agentplane/notification_service/main.go.
+# `LivenessService` in agentplane/postgres/probes/probes.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
 
 
