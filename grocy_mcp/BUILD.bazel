@@ -3,8 +3,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# ── Build-time spec fixup ────────────────────────────────────────────────────
-
 py_library(
     name = "fix_openapi_spec",
     srcs = ["fix_openapi_spec.py"],
@@ -23,8 +21,6 @@ genrule(
     cmd = "$(execpath :fix_openapi_spec_bin) $(SRCS) $@",
     tools = [":fix_openapi_spec_bin"],
 )
-
-# ── Libraries ────────────────────────────────────────────────────────────────
 
 py_library(
     name = "grocy_types",
@@ -101,8 +97,6 @@ py_binary(
     main_module = "grocy_mcp.server",
     deps = [":server"],
 )
-
-# ── Tests ────────────────────────────────────────────────────────────────────
 
 py_library(
     name = "grocy_container",
@@ -280,8 +274,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# ── OCI image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(
     name = "server_bin",

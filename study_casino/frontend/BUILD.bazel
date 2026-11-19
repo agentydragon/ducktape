@@ -22,8 +22,6 @@ filegroup(
     visibility = ["//study_casino:__subpackages__"],
 )
 
-# ── Per-file source libraries ──────────────────────────────────────────────────
-
 js_library(
     name = "sync",
     srcs = ["sync.js"],
