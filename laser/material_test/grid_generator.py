@@ -38,8 +38,6 @@ class CutParam(StrEnum):
     """Named laser cut parameters that can be scanned or held constant."""
 
     POWER_PCT = "power_pct"  # sets both min_power and max_power simultaneously
-    POWER_MIN_PCT = "power_min_pct"
-    POWER_MAX_PCT = "power_max_pct"
     SPEED_MM_S = "speed_mm_s"
     KERF_MM = "kerf_mm"
     Z_OFFSET_MM = "z_offset_mm"
@@ -51,8 +49,6 @@ _PARAM: dict[CutParam, tuple[str, str, bool]] = {
     # (label, unit, abbreviate_in_subtitle) — when abbreviate_in_subtitle is
     # True, the subtitle omits the label and just prints "value unit".
     CutParam.POWER_PCT: ("PWR", "%", False),
-    CutParam.POWER_MIN_PCT: ("PWR min", "%", False),
-    CutParam.POWER_MAX_PCT: ("PWR max", "%", False),
     CutParam.SPEED_MM_S: ("Speed", "mm/s", True),
     CutParam.KERF_MM: ("Kerf", "mm", False),
     CutParam.Z_OFFSET_MM: ("Z", "mm", False),
@@ -236,12 +232,6 @@ class GridConfig(BaseModel):
             axes.append(("cols", self.cols.param))
         if self.rows is not None:
             axes.append(("rows", self.rows.param))
-        for name, param in axes:
-            if param in (CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT):
-                raise ValueError(
-                    f"{name}.param={param!r} is not allowed as an axis parameter; "
-                    f"use 'power_pct' instead to vary min and max power together"
-                )
         seen: dict[CutParam, str] = {}
         for name, param in axes:
             if param in seen:
@@ -254,10 +244,6 @@ def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
     """Apply a named parameter value to a CutSetting."""
     if param == CutParam.POWER_PCT:
         cut.min_power = value
-        cut.max_power = value
-    elif param == CutParam.POWER_MIN_PCT:
-        cut.min_power = value
-    elif param == CutParam.POWER_MAX_PCT:
         cut.max_power = value
     elif param == CutParam.SPEED_MM_S:
         cut.speed = value
@@ -273,10 +259,8 @@ def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
 
 def _get_param(cut: CutSetting, param: CutParam) -> float:
     """Read a named parameter value from a CutSetting."""
-    if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
+    if param == CutParam.POWER_PCT:
         return cut.max_power
-    if param == CutParam.POWER_MIN_PCT:
-        return cut.min_power
     if param == CutParam.SPEED_MM_S:
         return cut.speed
     if param == CutParam.KERF_MM:
@@ -297,10 +281,6 @@ def _constant_params(config: GridConfig) -> list[CutParam]:
         varied.add(config.cols.param)
     if config.rows is not None:
         varied.add(config.rows.param)
-    if CutParam.POWER_PCT in varied:
-        varied |= {CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT}
-    if CutParam.POWER_MIN_PCT in varied or CutParam.POWER_MAX_PCT in varied:
-        varied.add(CutParam.POWER_PCT)
 
     return [
         param
@@ -344,7 +324,7 @@ def _full_subtitle(config: GridConfig) -> str:
 
 
 def _auto_label(param: CutParam) -> str:
-    """Build an axis label from a CutParam (e.g. POWER_MAX_PCT → 'Power max [%]')."""
+    """Build an axis label from a CutParam (e.g. SPEED_MM_S → 'Speed [mm/s]')."""
     label, unit, _abbrev = _PARAM[param]
     return f"{label} [{unit}]" if unit else label
 
@@ -358,7 +338,7 @@ def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]],
     speed = config.cut.speed_mm_s
     passes = config.cut.num_passes
     for param, val in [(config.x.param, x_val), (config.y.param, y_val), *outer_params]:
-        if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
+        if param == CutParam.POWER_PCT:
             power = val
         elif param == CutParam.SPEED_MM_S:
             speed = val

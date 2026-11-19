@@ -6,9 +6,9 @@
 //   firebase:authUser:<API_KEY>:[DEFAULT]
 // out of Chromium's leveldb-backed IndexedDB, decodes the V8 structured-clone
 // payload, and prints `value.stsTokenManager.refreshToken` to stdout. Pipe
-// the output straight into `sops -e` (see ../README.md). The token is enough
-// for an in-cluster sidecar to keep minting fresh Firebase custom tokens and
-// re-seed the desktop container's session.
+// the output straight into `sops -e` (see cluster/k8s/agents/tana-mcp/README.md).
+// The token is enough for an in-cluster sidecar to keep minting fresh Firebase
+// custom tokens and re-seed the desktop container's session.
 
 use std::path::PathBuf;
 use std::rc::Rc;

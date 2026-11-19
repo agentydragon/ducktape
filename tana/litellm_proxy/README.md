@@ -150,5 +150,5 @@ For `stream=True`, the provider returns LiteLLM streaming chunks. Plain text
 streaming parses Tana `data: {"type":"text-delta",...}` and AI SDK-style
 `0:"..."` records. Tool streaming parses `llmProxyNext` tool-input events into
 OpenAI-style `delta.tool_calls`; Tana can emit an initial empty `{}` tool
-argument delta before the full JSON arguments, and the demo merges those deltas
-before printing.
+input before the full one, and the provider keeps the non-empty input and emits
+one chunk per tool call.

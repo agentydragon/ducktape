@@ -25,9 +25,9 @@ source-faithful to that evidence.
 - Re-probe the RE-listed models and either support or intentionally suppress
   those that fail. The 2026-06-10 probe is historical; current model behavior is
   unverified. Keep the full list in `model_registry.py` and expose only the
-  supported subset through `TANA_LLM_PROXY_RESPONDING_MODELS`. The direct
-  `probe_models_bin` refreshes Firebase credentials without persisting rotated
-  refresh tokens; establish a safe credential path before a live re-probe.
+  supported subset. The direct `probe_models_bin` refreshes Firebase credentials
+  without persisting rotated refresh tokens; establish a safe credential path
+  before a live re-probe.
 
 ## P1: Agent-client compatibility polish
 

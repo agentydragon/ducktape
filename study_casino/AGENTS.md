@@ -21,4 +21,4 @@ New endpoint:
    discriminated union in <actions.py>.
 3. A `game_events` row is returned as `ActionMutation(game_event=GameEventMutation(...))` with a
    `RouletteOutcome` / `SlotsOutcome` / `BlackjackOutcome` (<events.py>).
-4. Parse the response in `frontend/sync.js` (or `use_casino.js`) through its `z<ResponseModel>`.
+4. Parse the response in `frontend/sync.js` through its `z<ResponseModel>`.

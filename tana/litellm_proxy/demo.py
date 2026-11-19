@@ -131,11 +131,6 @@ def _merge_tool_call_delta(tool_calls: dict[str, dict[str, Any]], delta: dict[st
         existing["function"]["name"] = function["name"]
     arguments = function.get("arguments")
     if arguments:
-        existing_arguments = existing["function"]["arguments"]
-        if arguments == "{}" and not existing_arguments:
-            return
-        if existing_arguments == "{}" and arguments.startswith("{"):
-            existing["function"]["arguments"] = ""
         existing["function"]["arguments"] += arguments
 
 
