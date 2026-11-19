@@ -28,6 +28,9 @@
 - <webcam.md> — IPU7 camera, PipeWire portal, Chrome/Zoom status
 - <bluetooth.md> — Intel BE201 PCIe probe failure (ETIME)
 - <modem.md> — Foxconn 5G modem, FCC unlock, Google Fi
+- <foxflss_wwan.md> — Foxconn DW5934e WWAN investigation log: modem reset methods and
+  firmware wedges
+- <stylus_xournalpp.md> — passive stylus as touchscreen input in Xournal++
 - [NPU driver evidence](../../../../cluster/docs/inference/rugged_npu_driver.md) —
   Level Zero library discovery and real device execution; the llama.cpp service
   still needs separate acceptance.

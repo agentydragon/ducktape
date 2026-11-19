@@ -48,6 +48,9 @@ one deployment go here; reusable service scripts live with the workload
 - <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of
   GLM-5.2 through Colibri's disk-streamed MoE runtime, including the pinned
   flake, checkpoint gate, run scripts, measurements, and experiment verdict.
+- <ktransformers_dsv4_notes.md> — KTransformers + DeepSeek-V4-Flash findings. Not run
+  on `wyrm2`: memory-gated (needs ≥192–256 GB RAM, the workload that justifies a RAM
+  upgrade).
 - <qwen3_coder_vram_analysis.md> — full VRAM math, debug logs, profiler
   output. Source data for `vllm_history.md`.
 - <vllm_container_plan.md> — unimplemented Home Manager systemd-user service

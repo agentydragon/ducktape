@@ -99,8 +99,9 @@ and [the original outer-VM panic observations](https://github.com/agentydragon/d
   reduced guest scripts and logs. [Direct KubeVirt](standalone_kubevirt/README.md)
   has the CI guest, bounded policy A/B and the manual APIC negative control.
   The policy-off case deliberately induces a FUSE wait. See also
-  [delegated cgroup stress](delegated_cgroup_stress.md) and
-  [source-backed RCU comparisons](upstream_rcu_tcg_analogues.md).
+  [delegated cgroup stress](delegated_cgroup_stress.md),
+  [what the synthetic slice arm exercises in cgroup v2](synthetic_cgroup_update_path.md)
+  and [source-backed RCU comparisons](upstream_rcu_tcg_analogues.md).
 - **Full-stack controls.** [Five full-suite executions](five_run_full_suite_control.md),
   [one-guest diagnostic](guest_only_reproduction.md),
   [passive virtiofsd snapshots and checksums](passive_virtiofsd_timeline/README.md),
