@@ -523,9 +523,7 @@ async def main() -> int:
     fetch_snapshot_to_path(snapshot_slug, WORKSPACE, db)
 
     logger.info("Rendering system prompt")
-    system_prompt = render_system_prompt(
-        "props/agents/grader/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug}
-    )
+    system_prompt = render_system_prompt("props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": snapshot_slug})
 
     logger.info("Starting grader loop")
     try:

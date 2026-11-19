@@ -321,9 +321,9 @@ async def main() -> int:
     if prompt_override:
         logger.info("Using variant prompt from %s", prompt_override)
         prompt_text = await asyncio.to_thread(Path(prompt_override).read_text)
-        system_prompt = render_template_string(prompt_text, db, helpers)
+        system_prompt = render_template_string(prompt_text, helpers)
     else:
-        system_prompt = render_system_prompt("props/agents/critic/prompt.md.mako", db, helpers)
+        system_prompt = render_system_prompt("props/agents/critic/prompt.md.mako", helpers)
 
     logger.info("Starting agent loop")
     exit_code = await _run_agent_loop(system_prompt, db)

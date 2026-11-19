@@ -71,7 +71,7 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) -> dict[str, Any]:
+def _make_template_context(helpers: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create Mako template context with standard helpers.
 
     Available in all templates:
@@ -118,16 +118,16 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
     return ctx
 
 
-def render_system_prompt(template_path: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
+def render_system_prompt(template_path: str, helpers: dict[str, Any] | None = None) -> str:
     """Render system prompt from package resource, returning as string."""
     package, _, pkg_path = template_path.partition("/")
     resource = importlib.resources.files(package) / pkg_path
     content = resource.read_text()
-    return render_template_string(content, db, helpers)
+    return render_template_string(content, helpers)
 
 
-def render_template_string(content: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
+def render_template_string(content: str, helpers: dict[str, Any] | None = None) -> str:
     """Render a Mako template string with standard helpers."""
-    ctx = _make_template_context(db, helpers)
+    ctx = _make_template_context(helpers)
     result: str = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
     return result

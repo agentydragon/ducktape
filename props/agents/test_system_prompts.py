@@ -1,7 +1,6 @@
 """Materialize all agent system prompts as undeclared test outputs.
 
-Renders each agent type's system prompt with a real database and writes
-the result to TEST_UNDECLARED_OUTPUTS_DIR. This serves as:
+Renders each agent type's system prompt and writes the result to TEST_UNDECLARED_OUTPUTS_DIR. This serves as:
 
 1. A build-time smoke test — templates render without errors
 2. A review artifact — rendered prompts can be inspected in CI output
@@ -19,18 +18,13 @@ from props.agents.runtime import render_template_string
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
-from props.db.database import Database
-
-# gazelle:include_dep //util/testing:postgres_fixtures
-# gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
-def _render(db: Database, template_path: str, helpers: dict | None = None) -> str:
+def _render(template_path: str, helpers: dict | None = None) -> str:
     """Render a template from package resources using the standard pipeline."""
     package, _, pkg_path = template_path.partition("/")
     content = (importlib.resources.files(package) / pkg_path).read_text()
-    return render_template_string(content, db, helpers)
+    return render_template_string(content, helpers)
 
 
 def _write_output(name: str, content: str) -> None:
@@ -39,17 +33,16 @@ def _write_output(name: str, content: str) -> None:
     dest.write_text(content)
 
 
-def test_critic_prompt(db: Database):
+def test_critic_prompt():
     rendered = _render(
-        db, "props/agents/critic/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001", "scope_files": None}
+        "props/agents/critic/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001", "scope_files": None}
     )
     _write_output("critic_whole_snapshot.md", rendered)
     assert "test/snapshot-001" in rendered
 
 
-def test_critic_prompt_scoped(db: Database):
+def test_critic_prompt_scoped():
     rendered = _render(
-        db,
         "props/agents/critic/prompt.md.mako",
         helpers={"snapshot_slug": "test/snapshot-001", "scope_files": ["src/foo.py", "src/bar.py"]},
     )
@@ -57,15 +50,14 @@ def test_critic_prompt_scoped(db: Database):
     assert "src/foo.py" in rendered
 
 
-def test_grader_prompt(db: Database):
-    rendered = _render(db, "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001"})
+def test_grader_prompt():
+    rendered = _render("props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001"})
     _write_output("grader.md", rendered)
     assert "test/snapshot-001" in rendered
 
 
-def test_critic_dev_optimize_prompt(db: Database):
+def test_critic_dev_optimize_prompt():
     rendered = _render(
-        db,
         "props/agents/critic_dev/prompt.md.mako",
         helpers={
             "type_config": CriticDevOptimizeTypeConfig(
@@ -76,9 +68,8 @@ def test_critic_dev_optimize_prompt(db: Database):
     _write_output("critic_dev_optimize.md", rendered)
 
 
-def test_critic_dev_improve_prompt(db: Database):
+def test_critic_dev_improve_prompt():
     rendered = _render(
-        db,
         "props/agents/critic_dev/prompt.md.mako",
         helpers={
             "type_config": CriticDevImproveTypeConfig(
