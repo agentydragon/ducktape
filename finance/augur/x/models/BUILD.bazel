@@ -471,16 +471,6 @@ py_library(
 )
 
 py_library(
-    name = "ornstein_uhlenbeck",
-    srcs = ["ornstein_uhlenbeck.py"],
-    deps = [
-        ":structural_macro",
-        "//finance/evidence:loading",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "private_equity_fit",
     srcs = ["private_equity_fit.py"],
     deps = [
@@ -673,23 +663,6 @@ py_test(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "ornstein_uhlenbeck_test",
-    srcs = ["ornstein_uhlenbeck_test.py"],
-    deps = [
-        ":conftest",
-        ":ornstein_uhlenbeck",
-        ":structural_macro",
-        ":synthetic_rates",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

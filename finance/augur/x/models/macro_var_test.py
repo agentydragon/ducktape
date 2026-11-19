@@ -78,10 +78,9 @@ def _macro_var_path(
 def test_macro_var_recovers_the_parameters_it_was_generated_from() -> None:
     """The joint estimator works, on a synthetic path with known intercept/transition/
     shock_cholesky — the only way to test it, per the module docstring. A long sample (1000
-    years of synthetic months) puts OLS well past the finite-sample bias
-    `ornstein_uhlenbeck_test.test_reversion_is_biased_upward_at_a_realistic_sample_length`
-    documents for the single-rate estimator; `transition`'s true off-diagonal zeros are why
-    these use `abs`, not `rel`.
+    years of synthetic months) puts OLS well past the finite-sample bias of a near-unit-root rate
+    fit (`structural_macro.md`, "The rate means are barely identified"); `transition`'s true
+    off-diagonal zeros are why these use `abs`, not `rel`.
     """
 
     n_months = 12_000
