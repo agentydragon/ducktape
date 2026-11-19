@@ -138,6 +138,9 @@ class CodexMetadataProjector:
                     by_native.setdefault(row.native_session_id, []).append(row)
             latest: dict[UUID, tuple[datetime, str, str]] = {}
             latest_kinds: dict[UUID, tuple[datetime, str, str]] = {}
+            # Read the compact candidate table, never the observation history: wyrm2 holds millions of
+            # observations for about 6,000 distinct (session, path) pairs, and a buffered ORM result over
+            # them OOM-killed the 2 GiB importer.
             for candidate in db.scalars(
                 select(CodexTitleCandidateRow).where(CodexTitleCandidateRow.machine_id == self._machine_id)
             ):

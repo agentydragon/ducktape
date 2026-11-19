@@ -90,7 +90,8 @@ def freecad_env(conda_root: Path, freecad_home: Path, *, display: str | None = N
         "PYTHONHOME": str(conda_root),
         "PATH": str(conda_root / "bin") + os.pathsep + os.environ.get("PATH", ""),
         "QT_PLUGIN_PATH": str(conda_root / "lib" / "qt6" / "plugins"),
-        # FreeCAD isolation
+        # FreeCAD isolation. A custom FREECAD_USER_HOME also skips DlgVersionMigrator: on a fresh default
+        # home its modal dialog is invisible offscreen and blocks Gui.showMainWindow() forever.
         "HOME": str(freecad_home),
         "FREECAD_USER_HOME": str(freecad_home),
         # Do not inherit the RBE worker's system font inventory.  The worker
