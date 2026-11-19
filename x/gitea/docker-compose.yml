@@ -47,17 +47,4 @@ services:
         --name public_git_token --raw > /data/admin.token || true;
       echo "Gitea admin bootstrap complete."
 
-# Usage:
-#   docker compose -f ./src/adgn_llm/mcp/gitea/docker-compose.yml up -d
-#
-# Mirrors storage path inside host:
-#   ${HOME}/.combo_mcp/gitea/git/repositories
-#
-# Point the public_git MCP server to this store path:
-#   --git-store "${HOME}/.combo_mcp/gitea/git/repositories"
-#
-# Bootstrap:
-#   - Admin user: ${GITEA_ADMIN_USERNAME:-admin} / ${GITEA_ADMIN_PASSWORD:-changeme}
-#   - Token written to: ${HOME}/.combo_mcp/gitea/admin.token
-#
-# Then create pull mirrors via API or CLI, or use the UI if desired.
+# Start, store path, bootstrap admin and token: x/gitea/mcp_mirror/README.md
