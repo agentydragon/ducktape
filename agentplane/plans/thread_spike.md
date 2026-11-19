@@ -85,6 +85,12 @@ reader for the new inbox entry; (3) Notifications writes inbox entries; (4) App 
 and pane; (5) the setting on staging. Each is additive; reverting (4) or removing the setting hides the
 spike. Dropping it later deletes the package and, in its own PR, the tables.
 
+**Operator direction, 2026-11-19.** Test the authored Threads UI and the existing flow with the
+setting off. Keep the History fold, projections and sync serving while the operator tries the opt-in
+UI on real work. Start History teardown or simplification only after the operator accepts the new
+mode. Check remaining consumers, including raw diagnostic reads, command reconciliation and retained
+data, before removing their dependencies.
+
 ## Proposals from prior art
 
 Not decided; each would change the scope above if adopted. From the

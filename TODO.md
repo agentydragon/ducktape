@@ -9,10 +9,20 @@
 - [ ] Catch **over-declared** `ts_library`/`js_library` deps. Under-declaration already fails the
       build — `ts_library` compiles each target's srcs as its own program against its deps' `.d.ts`,
       so a missing dep is a TS2307 — but a dep nothing imports is invisible, and it widens the
-      action's inputs and its cache key. Nothing in the repo checks for it today; gazelle here is
-      Python-only. The candidate is `aspect-build/aspect-gazelle`'s `language/js`, which generates
-      JS/TS deps from the import graph and so would remove the class rather than lint it. Deliberately
-      not hand-rolled — a bespoke import scanner would be a third parser of the same TypeScript.
+      action's inputs and its cache key. No repo check covers it today. Evaluate dependency
+      generation as part of the [TypeScript build refactor](#typescript-build-refactor).
+
+## TypeScript build refactor
+
+**Operator direction, 2026-11-19.** Compare alternatives before choosing a build layout or generator.
+Target granularity, dependency declarations, generated inputs, lint and tests constrain each other.
+
+- [ ] Spike alternatives on the same representative slice. Compare the
+      [Aspect Gazelle JS extension](https://github.com/aspect-build/aspect-gazelle/tree/main/language/js),
+      simpler handwritten rules or macros, and coarser package or feature targets against the current
+      setup. Include generated inputs, assets and tests. Measure manual edits, net maintained code
+      including overrides, affected-target precision and test coverage. Review the results before
+      selecting a tooling or layout change.
 
 ## AWS
 
