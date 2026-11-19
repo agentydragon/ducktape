@@ -252,7 +252,6 @@ def _sync_occurrences[
 
 
 def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTruePositive) -> None:
-    """Sync a TP issue."""
     if existing.rationale != yaml_issue.rationale:
         existing.rationale = yaml_issue.rationale
 
@@ -263,7 +262,6 @@ def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTru
 
 
 def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: SyncFalsePositive) -> None:
-    """Sync an FP issue."""
     if existing.rationale != yaml_fp.rationale:
         existing.rationale = yaml_fp.rationale
 

@@ -61,8 +61,6 @@ class TestProxyUrl:
 
 
 class TestIsDigest:
-    """Tests for is_digest()."""
-
     @pytest.mark.parametrize(
         "ref",
         [
