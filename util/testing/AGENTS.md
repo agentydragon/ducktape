@@ -1,3 +1,5 @@
+@README.md
+
 - Construct `VisualPage` before navigation so it records page-load errors.
 - Captures check render and network health; tests own app readiness and interactions.
 - Capture diagnostics are `diagnostics` records, not visual-review assets or baselines.
