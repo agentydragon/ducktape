@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, mountWithMantine, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { getSession, listSessionEvents, listSessions, watchSessions } from "./api";
 import { SessionViewer } from "./viewer";
 import { narrationSession, narrationSessionEvents, noisySession, noisySessionEvents } from "./fixtures/noisy-session";
+import type { SessionEventPage } from "./schema";
 
 vi.mock("./api", () => ({
   ApiError: class extends Error {},
@@ -81,27 +81,19 @@ function assistantEvent(sequence: number) {
   };
 }
 
-function eventRange(start: number, end: number, descending: boolean) {
-  const firstSequence = descending ? end : start;
-  const lastSequence = descending ? start : end;
-  return {
-    data: Array.from({ length: end - start + 1 }, (_, index) =>
-      assistantEvent(descending ? end - index : start + index)
-    ),
-    has_more: false,
-    first_id: `event-${firstSequence}`,
-    last_id: `event-${lastSequence}`,
-  };
+function eventPage(data: SessionEventPage["data"], hasMore = false): SessionEventPage {
+  return { data, has_more: hasMore, first_id: data[0]?.event_id ?? null, last_id: data.at(-1)?.event_id ?? null };
 }
 
-let root: ReturnType<typeof createRoot> | null = null;
+function eventRange(start: number, end: number, descending: boolean, hasMore = false) {
+  const sequences = Array.from({ length: end - start + 1 }, (_, index) => (descending ? end - index : start + index));
+  return eventPage(sequences.map(assistantEvent), hasMore);
+}
+
 let container: HTMLDivElement | null = null;
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 afterEach(async () => {
-  if (root) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   window.localStorage.removeItem("claude-session-sidebar-visible");
   window.localStorage.removeItem("claude-session-sidebar-width");
   if (originalMatchMedia === undefined)
@@ -113,18 +105,8 @@ afterEach(async () => {
 });
 
 // Returns the container so the calling test keeps it narrowed to non-null.
-async function renderViewer(): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <SessionViewer />
-      </MantineProvider>
-    )
-  );
-  return container;
+function renderViewer(): Promise<HTMLDivElement> {
+  return renderWithMantine(<SessionViewer />);
 }
 
 function mockWatchStream() {
@@ -145,7 +127,7 @@ it("recovers an initial session-list network failure by retrying on its own", as
   vi.mocked(listSessions)
     .mockRejectedValueOnce(new TypeError("temporary network failure"))
     .mockResolvedValueOnce({ data: [session], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   container = await renderViewer();
   await act(async () => vi.advanceTimersByTimeAsync(500));
   expect(listSessions).toHaveBeenCalledTimes(2);
@@ -158,12 +140,7 @@ it("keeps the selected session when the session list is hidden and shown", async
     next_cursor: null,
     resume_token: null,
   });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: [],
-    has_more: false,
-    first_id: null,
-    last_id: null,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector("#session-sidebar")).not.toBeNull());
 
@@ -195,12 +172,7 @@ it("keeps the selected session when the session list is hidden and shown", async
 
 it("shows signed narration as prose while ordinary thinking remains collapsed", async () => {
   vi.mocked(listSessions).mockResolvedValue({ data: [narrationSession], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: narrationSessionEvents,
-    has_more: false,
-    first_id: narrationSessionEvents[0]?.event_id ?? null,
-    last_id: narrationSessionEvents.at(-1)?.event_id ?? null,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage(narrationSessionEvents));
   container = await renderViewer();
 
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="narration"]')).not.toBeNull());
@@ -223,12 +195,7 @@ it("shows signed narration as prose while ordinary thinking remains collapsed", 
 
 it("clamps pointer and keyboard resizing and restores the width after collapsing", async () => {
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: [],
-    has_more: false,
-    first_id: null,
-    last_id: null,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[role="separator"]')).not.toBeNull());
 
@@ -289,12 +256,7 @@ it("opens the mobile session drawer and keeps the chosen session after it closes
     next_cursor: null,
     resume_token: null,
   });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: [],
-    has_more: false,
-    first_id: null,
-    last_id: null,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   container = await renderViewer();
   await vi.waitFor(() =>
     expect(container?.querySelector('button[aria-controls="session-sidebar-mobile"]')).not.toBeNull()
@@ -340,12 +302,7 @@ it("renders message Markdown and preserves the exact source in the raw event str
     },
   };
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: [userEvent, assistantEventWithMarkdown],
-    has_more: false,
-    first_id: userEvent.event_id,
-    last_id: assistantEventWithMarkdown.event_id,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([userEvent, assistantEventWithMarkdown]));
   container = await renderViewer();
 
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2));
@@ -384,16 +341,16 @@ it("applies committed session and transcript changes without restarting the watc
       },
     },
   };
-  let finishRefresh: ((value: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
+  let finishRefresh: ((value: SessionEventPage) => void) | undefined;
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({ data: [toolCall, first], has_more: false, first_id: "event-2", last_id: "event-1" })
+    .mockResolvedValueOnce(eventPage([toolCall, first]))
     .mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finishRefresh = resolve;
         })
     )
-    .mockResolvedValueOnce({ data: [second], has_more: false, first_id: "event-3", last_id: "event-3" });
+    .mockResolvedValueOnce(eventPage([second]));
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1));
@@ -423,14 +380,7 @@ it("applies committed session and transcript changes without restarting the watc
   expect(control.getAttribute("aria-expanded")).toBe("true");
   await vi.waitFor(() => expect(container?.querySelector("h4")?.textContent).toBe("Renamed live session"));
   expect(container.querySelector('[aria-label="Session list"]')?.textContent).toContain("paused");
-  await act(async () =>
-    finishRefresh?.({
-      data: [second, refreshedToolCall, first],
-      has_more: false,
-      first_id: "event-3",
-      last_id: "event-1",
-    })
-  );
+  await act(async () => finishRefresh?.(eventPage([second, refreshedToolCall, first])));
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2);
   expect(viewport.scrollTop).toBe(100);
@@ -460,7 +410,7 @@ it("updates an older loaded session into and out of the active filter across a s
     }
     return Promise.resolve({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" });
   });
-  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   vi.mocked(getSession)
     .mockResolvedValueOnce({ session: olderActive })
     .mockResolvedValueOnce({ session: olderPaused })
@@ -529,29 +479,19 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
   const stream = mockWatchStream();
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
   vi.mocked(getSession).mockResolvedValue({ session });
-  let finishFirstCatchup: ((page: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
+  let finishFirstCatchup: ((page: SessionEventPage) => void) | undefined;
   let eventReads = 0;
   vi.mocked(listSessionEvents).mockImplementation((_sessionId, cursor, order) => {
     eventReads += 1;
-    if (eventReads === 1)
-      return Promise.resolve({ data: [first], has_more: false, first_id: first.event_id, last_id: first.event_id });
+    if (eventReads === 1) return Promise.resolve(eventPage([first]));
     if (eventReads === 2) {
       return new Promise((resolve) => {
         finishFirstCatchup = resolve;
       });
     }
-    if (cursor === first.event_id) {
-      return Promise.resolve({ data: [second], has_more: false, first_id: second.event_id, last_id: second.event_id });
-    }
-    if (order === "desc") {
-      return Promise.resolve({
-        data: [third, second, first],
-        has_more: false,
-        first_id: third.event_id,
-        last_id: first.event_id,
-      });
-    }
-    return Promise.resolve({ data: [third], has_more: false, first_id: third.event_id, last_id: third.event_id });
+    if (cursor === first.event_id) return Promise.resolve(eventPage([second]));
+    if (order === "desc") return Promise.resolve(eventPage([third, second, first]));
+    return Promise.resolve(eventPage([third]));
   });
 
   container = await renderViewer();
@@ -561,9 +501,7 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
   await act(async () => stream.dispatchEvent(changedFrame()));
   await vi.waitFor(() => expect(finishFirstCatchup).toBeDefined());
   await act(async () => stream.dispatchEvent(changedFrame()));
-  await act(async () =>
-    finishFirstCatchup?.({ data: [second, first], has_more: false, first_id: second.event_id, last_id: first.event_id })
-  );
+  await act(async () => finishFirstCatchup?.(eventPage([second, first])));
 
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 4"));
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(3);
@@ -575,20 +513,19 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
 it("aborts per-session live detail reads when the viewer unmounts", async () => {
   const stream = mockWatchStream();
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: "watch-1" });
-  vi.mocked(listSessionEvents).mockResolvedValue({ data: [], has_more: false, first_id: null, last_id: null });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([]));
   let detailSignal: AbortSignal | undefined;
   vi.mocked(getSession).mockImplementation((_sessionId, signal) => {
     detailSignal = signal;
     return new Promise(() => {});
   });
-  container = await renderViewer();
+  const viewer = await mountWithMantine(<SessionViewer />);
   await vi.waitFor(() => expect(watchSessions).toHaveBeenCalledTimes(1));
   await act(async () =>
     stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
   );
   await vi.waitFor(() => expect(detailSignal).toBeDefined());
-  await act(async () => root?.unmount());
-  root = null;
+  await viewer.unmount();
   expect(detailSignal?.aborted).toBe(true);
   expect(stream.close).toHaveBeenCalledTimes(1);
 });
@@ -617,18 +554,8 @@ it("loads newest events first, prepends older pages without duplication, and fol
   const olderToolCall = { ...toolCall, sequence_num: "2" };
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({
-      data: [latest, toolResult],
-      has_more: true,
-      first_id: latest.event_id,
-      last_id: toolResult.event_id,
-    })
-    .mockResolvedValueOnce({
-      data: [olderToolCall, first],
-      has_more: false,
-      first_id: olderToolCall.event_id,
-      last_id: first.event_id,
-    });
+    .mockResolvedValueOnce(eventPage([latest, toolResult], true))
+    .mockResolvedValueOnce(eventPage([olderToolCall, first]));
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("Latest message"));
@@ -677,12 +604,12 @@ it("catches up every page after a reconnect without dropping the selected older 
     .mockResolvedValueOnce({ data: [olderSession], next_cursor: null, resume_token: "watch-1" })
     .mockResolvedValueOnce({ data: [session], next_cursor: "older-sessions", resume_token: "watch-1" });
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({ ...eventRange(1, 1, true), has_more: false })
-    .mockResolvedValueOnce({ ...eventRange(901, 1000, true), has_more: true })
-    .mockResolvedValueOnce({ ...eventRange(1151, 1250, true), has_more: true })
-    .mockResolvedValueOnce({ ...eventRange(1001, 1100, false), has_more: true })
-    .mockResolvedValueOnce({ ...eventRange(1101, 1200, false), has_more: true })
-    .mockResolvedValueOnce({ ...eventRange(1201, 1250, false), has_more: false });
+    .mockResolvedValueOnce(eventRange(1, 1, true))
+    .mockResolvedValueOnce(eventRange(901, 1000, true, true))
+    .mockResolvedValueOnce(eventRange(1151, 1250, true, true))
+    .mockResolvedValueOnce(eventRange(1001, 1100, false, true))
+    .mockResolvedValueOnce(eventRange(1101, 1200, false, true))
+    .mockResolvedValueOnce(eventRange(1201, 1250, false));
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 1"));
@@ -746,13 +673,8 @@ it("keeps older-page pagination available when the newest loaded page contains o
   };
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({
-      data: [suppressed],
-      has_more: true,
-      first_id: suppressed.event_id,
-      last_id: suppressed.event_id,
-    })
-    .mockResolvedValueOnce({ data: [first], has_more: false, first_id: first.event_id, last_id: first.event_id });
+    .mockResolvedValueOnce(eventPage([suppressed], true))
+    .mockResolvedValueOnce(eventPage([first]));
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelectorAll("[data-event-strip]")).toHaveLength(1));
@@ -770,12 +692,7 @@ it("keeps older-page pagination available when the newest loaded page contains o
 
 it("keeps suppressed events inspectable without expanding JSON or hook noise by default", async () => {
   vi.mocked(listSessions).mockResolvedValue({ data: [noisySession], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: noisySessionEvents,
-    has_more: false,
-    first_id: noisySessionEvents[0]!.event_id,
-    last_id: noisySessionEvents.at(-1)!.event_id,
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage(noisySessionEvents));
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[data-message-role="assistant"]')).not.toBeNull());
   expect(container.querySelector("[data-event-json]")).toBeNull();
@@ -829,18 +746,8 @@ it("keeps an open tool disclosure when older history extends its activity group"
   };
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
   vi.mocked(listSessionEvents)
-    .mockResolvedValueOnce({
-      data: [toolCall],
-      has_more: true,
-      first_id: toolCall.event_id,
-      last_id: toolCall.event_id,
-    })
-    .mockResolvedValueOnce({
-      data: [olderTool],
-      has_more: false,
-      first_id: olderTool.event_id,
-      last_id: olderTool.event_id,
-    });
+    .mockResolvedValueOnce(eventPage([toolCall], true))
+    .mockResolvedValueOnce(eventPage([olderTool]));
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="tool-run"] button')).not.toBeNull());
   await act(async () => container?.querySelector<HTMLButtonElement>('[data-fold-kind="tool-run"] button')!.click());
@@ -867,12 +774,7 @@ it("toggles activity from header labels and status badges without collapsing on 
     },
   };
   vi.mocked(listSessions).mockResolvedValue({ data: [session], next_cursor: null, resume_token: null });
-  vi.mocked(listSessionEvents).mockResolvedValue({
-    data: [anotherTool, toolCall, first],
-    has_more: false,
-    first_id: "another-tool",
-    last_id: "event-1",
-  });
+  vi.mocked(listSessionEvents).mockResolvedValue(eventPage([anotherTool, toolCall, first]));
   container = await renderViewer();
   const group = await vi.waitFor(() => {
     const button = container!.querySelector<HTMLButtonElement>('[data-fold-kind="tool-group"] button');

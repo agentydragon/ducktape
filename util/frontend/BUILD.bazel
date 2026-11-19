@@ -222,6 +222,8 @@ ts_library(
     srcs = ["testing/react.tsx"],
     tsconfig = ":tsconfig",
     visibility = [
+        "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
         "//haku/console/frontend:__pkg__",
         "//props/frontend/src/components:__pkg__",
         "//props/frontend/src/pages:__pkg__",
