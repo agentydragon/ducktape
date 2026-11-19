@@ -449,9 +449,6 @@ def environment(
         firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
         vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,
         vm_console_autologin=True,
-        wake_caller_accounts=frozenset(
-            {*platform_callers, ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME)}
-        ),
     )
 
 
@@ -685,7 +682,6 @@ def add_backend_services(
         orchestration_callers=orchestration_caller,
         wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
         delegation_actor=environment_service_delegation_actor,
-        wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
         sessions_image="git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
         registry_secret_name=None,
