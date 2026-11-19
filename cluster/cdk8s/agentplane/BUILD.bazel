@@ -609,7 +609,6 @@ py_library(
         ":service_workload",
         ":workload_tls",
         "//agentplane:crd_group",
-        "//agentplane/action_service/policies:resources",
         "//agentplane/identity/auth:audience",
         "//agentplane/mcp_edge:settings",
         "//agentplane/net/peertls:config",
