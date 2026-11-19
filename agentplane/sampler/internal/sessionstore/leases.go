@@ -23,6 +23,20 @@ const sessionWork = `(ss.setup_state=$2
 		OR EXISTS(SELECT 1 FROM sampler_process proc WHERE proc.conversation_id=c.id AND proc.status NOT IN ('exited','exited_unread','abandoned'))
 		OR EXISTS(SELECT 1 FROM sampler_intent intent WHERE intent.conversation_id=c.id AND intent.result IS NULL))`
 
+// scanIDs reads a one-column result of Session IDs and closes rows.
+func scanIDs(rows *sql.Rows) ([]string, error) {
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // PendingSessionIDs pages in ID order, after the given ID, through Sessions whose export to target is behind.
 func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, limit int) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
@@ -37,16 +51,7 @@ func (s *Store) PendingSessionIDs(ctx context.Context, target, after string, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return scanIDs(rows)
 }
 
 // RecoverableSessions lists unowned Sessions with pending work. A blocked Session is included
@@ -74,16 +79,7 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return scanIDs(rows)
 }
 
 // OwnedWork returns pending work for the leases held by this runtime, including idle residents.
@@ -100,16 +96,7 @@ func (s *Store) OwnedWork(ctx context.Context, tokens []string) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return scanIDs(rows)
 }
 
 func (s *Store) Claim(ctx context.Context, conversationID string, duration time.Duration) (Owner, error) {
