@@ -156,12 +156,6 @@
   margin-left: auto;
 }
 
-.aiquota-error {
-  color: var(--aiquota-error);
-  font-size: 0.8rem;
-  margin: 0;
-}
-
 .aiquota-error-details,
 .aiquota-details {
   color: var(--aiquota-muted);
@@ -457,22 +451,7 @@
   white-space: pre-wrap;
 }
 
-/* Whole intervals wrap as units; a range broken across lines is unreadable. */
-.aiquota-strip-note.aiquota-strip-intervals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-
-.aiquota-strip-note.aiquota-strip-intervals span {
-  white-space: nowrap;
-}
-
-/* Credits in hand are headroom, so they are tinted only when there are actually some. */
-.aiquota-strip-resets {
-  background: var(--aiquota-surface-sunken);
-}
-
+/* Credits in hand are headroom, so their headline is set in the text color only when there are actually some. */
 .aiquota-strip-resets .aiquota-strip-line {
   color: var(--aiquota-text);
 }

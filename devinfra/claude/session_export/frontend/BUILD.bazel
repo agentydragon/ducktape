@@ -82,7 +82,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":status",
         "//:node_modules/@mantine/core",
@@ -129,7 +128,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":narration",
         ":schema",
     ],
@@ -148,7 +146,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":transcript",
     ],
@@ -160,7 +157,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -174,7 +170,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":event_inspector",
         ":schema",
         "//:node_modules/@mantine/core",
@@ -189,7 +184,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
     ],
 )
@@ -208,7 +202,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":session_info",
         "//:node_modules/@mantine/core",
@@ -223,7 +216,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":event_inspector",
         ":event_timeline",
         ":schema",
@@ -275,7 +267,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":session_directory",
         ":session_info",
         ":session_list",
@@ -344,7 +335,6 @@ session_export_vitest_test(
     srcs = ["transcript.test.ts"],
     isolated_typecheck = True,
     deps = [
-        ":api",
         ":schema",
         ":transcript",
         "//:node_modules/vitest",
@@ -378,7 +368,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
     ],
 )
@@ -416,7 +405,6 @@ session_export_vitest_test(
     srcs = ["event-timeline.test.tsx"],
     isolated_typecheck = True,
     deps = [
-        ":api",
         ":event_timeline",
         ":schema",
         "//:node_modules/@types/react",
@@ -442,7 +430,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":app",
         ":noisy_session_fixture",
         ":schema",

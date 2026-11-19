@@ -83,10 +83,8 @@ ts_library(
         ":auth",
         ":types",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
     ],
 )
 
@@ -100,10 +98,8 @@ ts_library(
         ":auth",
         ":types",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
     ],
 )
 
@@ -116,7 +112,6 @@ ts_library(
     deps = [
         ":App",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
@@ -132,8 +127,6 @@ spa_bundle(
     deps = [":main"],
 )
 
-# The scenario table: read by the harness (it mounts the scene `?page=` names) and by the sweep.
-
 ts_library(
     name = "visual_harness_lib",
     testonly = True,
@@ -145,7 +138,6 @@ ts_library(
         ":App",
         ":types",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@mantine/hooks",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",

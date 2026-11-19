@@ -1,7 +1,6 @@
 import "@mantine/core/styles.css";
 
-import { Alert, Anchor, Container, MantineProvider, Stack, Title } from "@mantine/core";
-import { type JSX } from "react";
+import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../App";
@@ -42,47 +41,22 @@ const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
   },
 ];
 
-function HarnessIndex({ pages, error }: { pages: string[]; error: string | null }): JSX.Element {
-  return (
-    <Container py="xl">
-      <Stack>
-        {error && (
-          <Alert color="red" title="Unknown page">
-            {error}
-          </Alert>
-        )}
-        <Title order={1}>Airlock Visual Test Harness</Title>
-        {pages.map((name) => (
-          <Anchor key={name} href={"/?page=" + name}>
-            {name}
-          </Anchor>
-        ))}
-      </Stack>
-    </Container>
-  );
-}
-
-const params = new URLSearchParams(window.location.search);
-const scenarioName = params.get("page");
 const appElement = document.getElementById("app");
 if (!appElement) throw new Error("No #app element");
 
-const showApp = scenarioName === "OAuthPage";
-if (showApp) {
-  window.fetch = async (input: RequestInfo | URL): Promise<Response> => {
-    const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-    const url = new URL(requestUrl, window.location.href);
-    const json = (data: unknown): Response =>
-      new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
+window.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+  const requestUrl = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+  const url = new URL(requestUrl, window.location.href);
+  const json = (data: unknown): Response =>
+    new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
 
-    if (url.pathname === "/api/oauth/providers") return json(OAUTH_PROVIDERS);
-    if (url.pathname === "/api/info") return json(DEPLOYMENT_INFO);
-    throw new Error("Unmocked fetch: " + url);
-  };
-}
+  if (url.pathname === "/api/oauth/providers") return json(OAUTH_PROVIDERS);
+  if (url.pathname === "/api/info") return json(DEPLOYMENT_INFO);
+  throw new Error("Unmocked fetch: " + url);
+};
 
 createRoot(appElement).render(
   <MantineProvider defaultColorScheme="auto">
-    {showApp ? <App /> : <HarnessIndex pages={["OAuthPage"]} error={scenarioName} />}
+    <App />
   </MantineProvider>
 );
