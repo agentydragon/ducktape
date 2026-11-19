@@ -1,3 +1,52 @@
 # Keep the experimental scripts out of their parent package's globs and Gazelle.
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
+
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+
+exports_files(
+    [
+        "example/input/bundle.mjs",
+        "example/spec.json",
+        "example/variants/cycle.json",
+        "example/controls/claimed_twice.json",
+        "example/controls/cycle_tdz.json",
+        "example/controls/effect_order.json",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+js_binary(
+    name = "extract",
+    data = ["//:node_modules/acorn"],
+    entry_point = "extract/extract.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+js_run_binary(
+    name = "generated_instance",
+    srcs = [
+        "example/controls/claimed_twice.json",
+        "example/controls/cycle_tdz.json",
+        "example/controls/effect_order.json",
+        "example/input/bundle.mjs",
+        "example/spec.json",
+        "example/variants/cycle.json",
+    ],
+    args = [
+        "example/input/bundle.mjs",
+        "example/spec.json",
+        "--variant",
+        "example/variants/cycle.json",
+        "--control",
+        "example/controls/claimed_twice.json",
+        "--control",
+        "example/controls/cycle_tdz.json",
+        "--control",
+        "example/controls/effect_order.json",
+    ],
+    chdir = package_name(),
+    stdout = "generated/Instance.lean",
+    tool = ":extract",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
