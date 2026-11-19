@@ -176,8 +176,6 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
   expect(decoded.variants).toHaveLength(0);
 });
 
-// -- Target allocation: seeding, and what reaches the wire ---------------------
-
 const SELLABLE = [
   { key: "security:spy", sleeve: { kind: "security", symbol: "spy" }, label: "S&P 500", valueQuanta: "900000" },
   { key: "security:btc", sleeve: { kind: "security", symbol: "btc" }, label: "Bitcoin", valueQuanta: "100000" },

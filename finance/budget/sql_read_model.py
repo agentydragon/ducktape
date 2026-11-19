@@ -66,9 +66,6 @@ def _enumerate_months(start: date, end: date) -> tuple[date, ...]:
     return tuple(months)
 
 
-# --- Rule -> SQLAlchemy expressions -------------------------------------------------
-
-
 def _rule_condition(rule: Rule) -> Condition:
     """The flat rule kinds are shorthands for single-leaf conditions; MatchRule carries its own."""
     if isinstance(rule, MerchantSubstringRule):

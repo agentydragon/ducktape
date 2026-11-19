@@ -226,8 +226,6 @@ export function AugurTabBar({ tab, onSelectTab }: { tab: AugurTab; onSelectTab: 
   );
 }
 
-// -- Deployment status chip (header rightSlot) ---------------------------------
-
 function shortCommit(commit: string | null | undefined) {
   if (!commit) return null;
   return commit.slice(0, 12);
