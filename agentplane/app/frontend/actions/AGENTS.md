@@ -1,3 +1,5 @@
+@README.md
+
 ## Action presentation conventions
 
 - Actions side pane: each visible text adds distinct information. Caller's intent in the title, the
