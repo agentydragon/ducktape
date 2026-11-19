@@ -58,9 +58,6 @@ def _resolve_inner_command(cmd: str) -> str:
     return cmd
 
 
-# ── Transcript scanning ────────────────────────────────────────────────────
-
-
 def extract_command_key(cmd: str) -> str | None:
     parts = cmd.split()
     if not parts:
@@ -149,9 +146,6 @@ def scan_transcripts(transcripts: list[Path], user_prefixes: list[str]) -> tuple
     return all_cmds, uncovered_cmds, mcp_tools
 
 
-# ── Specialized collectors ─────────────────────────────────────────────────
-
-
 def _collect_nix_develop(transcripts: list[Path]) -> Counter:
     """Break down nix develop commands by their inner command."""
     counts: Counter = Counter()
@@ -190,9 +184,6 @@ def _collect_kubectl_non_get(transcripts: list[Path]) -> Counter:
             key = f"kubectl {parts[1]} {parts[2]}" if len(parts) > 2 else f"kubectl {parts[1]}"
             counts[key] += 1
     return counts
-
-
-# ── Output ──────────────────────────────────────────────────────────────────
 
 
 def _print_section(title: str, counts: Counter, min_count: int, limit: int = 60):

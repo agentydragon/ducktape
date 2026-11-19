@@ -513,8 +513,7 @@ export function productProjectionSummaryRequest(
   };
 }
 
-// -- Scenario set (multi-scenario comparison) ---------------------------------
-//
+// Scenario set (multi-scenario comparison).
 // The product view can hold a *set* of scenarios that share one rollout seed window (and
 // thus one sampled exogenous bundle: identical seeds reproduce identical market paths, so
 // the comparison is apples-to-apples without any backend change). Each entry carries its own

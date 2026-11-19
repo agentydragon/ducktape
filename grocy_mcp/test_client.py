@@ -97,16 +97,10 @@ async def test_resolve_location_unknown(grocy_client: GrocyClient) -> None:
         await grocy_client.resolve_entity(EntityType.LOCATION, "Garage")
 
 
-# -- QU for product: global conversion -------------------------------------
-
-
 async def test_qu_for_product_global_conversion(grocy_client: GrocyClient) -> None:
     """Crate -> Kilogram has a global conversion (factor 24). Works for Rice."""
     result = await grocy_client.resolve_qu_for_product("Crate", product_id=1)
     assert result == ResolvedQU(id=7, name="Crate", stock_qu_id=3, stock_qu_name="Kilogram", conversion_factor=24.0)
-
-
-# -- QU for product: product-specific conversion ----------------------------
 
 
 async def test_qu_for_product_specific_conversion(grocy_client: GrocyClient) -> None:
@@ -115,18 +109,12 @@ async def test_qu_for_product_specific_conversion(grocy_client: GrocyClient) -> 
     assert result == ResolvedQU(id=5, name="Liter", stock_qu_id=3, stock_qu_name="Kilogram", conversion_factor=0.8)
 
 
-# -- QU for product: no conversion -----------------------------------------
-
-
 async def test_qu_for_product_no_conversion(grocy_client: GrocyClient) -> None:
     """Milk's stock QU is Liter (id=5). Piece has no conversion to Liter."""
     with pytest.raises(ValueError, match="Piece") as exc_info:
         await grocy_client.resolve_qu_for_product("Piece", product_id=2)
     assert "Liter" in str(exc_info.value)
     assert "Milk" in str(exc_info.value)
-
-
-# -- QU for product: product-specific overrides global ----------------------
 
 
 async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.Router) -> None:
@@ -160,9 +148,6 @@ async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.R
 )
 async def test_entity_name(grocy_client: GrocyClient, entity_type: EntityType, entity_id: int, expected: str) -> None:
     assert await grocy_client.entity_name(entity_type, entity_id) == expected
-
-
-# -- Freshness -------------------------------------------------------------
 
 
 async def test_entity_operations_fetch_fresh_per_call(httpx2_mock: respx.Router) -> None:

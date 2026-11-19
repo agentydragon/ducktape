@@ -88,9 +88,6 @@ async def scoped_container(client: aiodocker.Docker, config: ContainerExecServer
                 logger.exception(f"Container cleanup failed for {container_id}")
 
 
-# ---- Lifespan factory (per-session container) ----
-
-
 def make_container_lifespan(config: ContainerExecServerConfig, docker_client: aiodocker.Docker):
     """Create lifespan context manager for container session.
 
@@ -104,9 +101,6 @@ def make_container_lifespan(config: ContainerExecServerConfig, docker_client: ai
             yield ContainerSessionState(docker_client=docker_client, container_id=container_id, opts=config)
 
     return lifespan
-
-
-# ---- Helpers (small, focused) ----------------------------------------------
 
 
 async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: bytearray) -> None:

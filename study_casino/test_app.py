@@ -555,9 +555,6 @@ def test_ws_broadcasts_state_changed_after_action(tmp_path: Path, db_url: str) -
             assert msg == {"type": "state_changed"}
 
 
-# ── Admin-only prize management ──────────────────────────────────────────────
-
-
 def test_me_reports_admin_flag(client: TestClient, non_admin_client: TestClient) -> None:
     assert client.get("/me").json() == {"username": "default", "is_admin": True}
     assert non_admin_client.get("/me").json() == {"username": "default", "is_admin": False}
@@ -646,9 +643,6 @@ def test_admin_unknown_user_returns_404_without_seeding(admin_app: tuple[TestCli
 
     # The 404 path must not have seeded 'ghost'.
     assert "ghost" not in c.get("/admin/users").json()["users"]
-
-
-# ── Casino stats endpoint ────────────────────────────────────────────────────
 
 
 def test_casino_stats_counts_a_real_spin(client: TestClient) -> None:

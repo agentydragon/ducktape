@@ -9,8 +9,6 @@ from inventree.stock import StockItem
 from samplebooks_parts_data import BasePart, Resistor, parts
 from tqdm import tqdm
 
-# ---------- Setup / config ----------
-
 SERVER_ADDRESS = "https://inventree.agentydragon.com"
 MY_USERNAME = "root"
 MY_PASSWORD = "uYee4Nah"
@@ -36,14 +34,9 @@ LOC_0402 = 2
 LOC_0603 = 3
 LOC_0805 = 4
 
-# ---------- Data classes ----------
-
 ureg = pint.UnitRegistry()
 ohm = ureg.ohm
 pf = ureg.pF
-
-
-# ---------- Parameter helpers ----------
 
 
 def format_value(part: BasePart) -> str:
@@ -149,9 +142,6 @@ def get_quantity(part: BasePart) -> int:
         return 50
 
     raise ValueError(f"No capacitor rules for package {part.package}")
-
-
-# ---------- Building final data ----------
 
 
 def build_part_name(p: BasePart) -> str:

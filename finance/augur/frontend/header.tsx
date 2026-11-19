@@ -181,8 +181,6 @@ export function AugurHeader({
   );
 }
 
-// -- Tab navigation ------------------------------------------------------------
-//
 // Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
 // (omitted for the default), following the same replaceState pattern as the product `?scenarios=` state.
 const TABS = [
@@ -225,8 +223,6 @@ export function AugurTabBar({ tab, onSelectTab }: { tab: AugurTab; onSelectTab: 
     </nav>
   );
 }
-
-// -- Deployment status chip (header rightSlot) ---------------------------------
 
 function shortCommit(commit: string | null | undefined) {
   if (!commit) return null;

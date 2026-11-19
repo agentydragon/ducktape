@@ -16,8 +16,6 @@ from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvid
 from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import make_echo_server
 from skills.info_gathering.evals.agent_runtime.tool_provider import ToolProvider
 
-# ---- MCP fixtures ----
-
 
 @pytest.fixture
 def echo_server() -> FastMCP:

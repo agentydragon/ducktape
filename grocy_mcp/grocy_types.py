@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-# ── Entity types exposed by GrocyClient ─────────────────────────────────────
-
 
 class EntityType(StrEnum):
     """Entity types ``GrocyClient`` can look up by name or ID.
@@ -22,9 +20,6 @@ class EntityType(StrEnum):
     QUANTITY_UNIT = "quantity_units"
     PRODUCT_GROUP = "product_groups"
     SHOPPING_LIST = "shopping_lists"
-
-
-# ── Entity types for the batch CRUD tools ───────────────────────────────────
 
 
 class WriteableEntityType(StrEnum):
@@ -113,8 +108,6 @@ class ReadableEntityType(StrEnum):
 # Sanity check: every WriteableEntityType must be a valid ReadableEntityType.
 assert {t.value for t in WriteableEntityType} <= {t.value for t in ReadableEntityType}
 
-
-# ── Product writable fields ─────────────────────────────────────────────────
 
 # Writable columns on the products table (migration 0207 + 0210 + 0219).
 # Grocy's GET returns computed view fields (has_sub_products, qu_factor_*, etc.)

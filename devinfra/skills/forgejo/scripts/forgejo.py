@@ -52,8 +52,6 @@ from pydantic import BaseModel, Field
 
 DEFAULT_FORGEJO_URL = "https://git.allegedly.works"
 
-# ── credentials ──────────────────────────────────────────────────────────────
-
 
 def credentials(forgejo_url: str, user: str | None, password: str | None) -> tuple[str, str]:
     """Explicit flags/env win; otherwise the `~/.netrc` entry for the Forgejo host.
@@ -85,8 +83,6 @@ def _configure_credentials(parser: argparse.ArgumentParser) -> None:
         help="Forgejo password (else ~/.netrc); prefer FORGEJO_PASSWORD or FORGEJO_PASS over shell history",
     )
 
-
-# ── timing ───────────────────────────────────────────────────────────────────
 
 FINISHED = {"success", "failure"}
 
@@ -209,9 +205,6 @@ def _run_timing(args: argparse.Namespace) -> int:
     if dropped:
         print(f"\n{dropped} task(s) dropped as > {args.max_seconds:.0f}s outliers (queue wait / stuck rows)")
     return 0
-
-
-# ── web session (logs, rerun) ────────────────────────────────────────────────
 
 
 def _response_text(response: httpx.Response) -> str:
@@ -366,9 +359,6 @@ def select_job(jobs: list[RunJob], selector: str | None) -> int:
     raise SystemExit(f"the run has {len(jobs)} jobs; pass --job with an index or name:\n{listing}")
 
 
-# ── logs ─────────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class LogLine:
     timestamp: str | None
@@ -505,9 +495,6 @@ def _run_logs(args: argparse.Namespace) -> int:
         return 0
 
 
-# ── rerun ────────────────────────────────────────────────────────────────────
-
-
 def rerun_endpoint(forgejo_url: str, run_link: str, job_index: int | None) -> str:
     run_url = f"{forgejo_url.rstrip('/')}{run_link}"
     return f"{run_url}/rerun" if job_index is None else f"{run_url}/jobs/{job_index}/rerun"
@@ -539,9 +526,6 @@ def _run_rerun(args: argparse.Namespace) -> int:
         _response_text(client.post(endpoint))
         print(f"re-run requested: {args.forgejo_url.rstrip('/')}{run.link} ({', '.join(job.name for job in targets)})")
         return 0
-
-
-# ── dispatch ─────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> int:

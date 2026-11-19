@@ -216,8 +216,6 @@ async def test_run_scrape_source_freshness(
         assert _remote_blob(remote, "fred_cpi_us.csv") == expected_blob
 
 
-# ── market mirror pass ──────────────────────────────────────────────────
-
 MANIFOLD_ENTRY = MarketEntry(platform=Platform.MANIFOLD, market_id="m1", deep=True)
 KALSHI_ENTRY = MarketEntry(platform=Platform.KALSHI, market_id="KXT-1")
 _BETS_URL = f"{MANIFOLD_API}/bets?contractId=m1&limit=1000"
