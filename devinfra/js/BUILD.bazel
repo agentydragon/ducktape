@@ -45,7 +45,7 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
-# JSON Schema declaration generator used by `json_schema_typescript_library`.
+# JSON Schema declaration generator used by `json_schema_js_library`.
 js_binary(
     name = "json_schema_typescript_codegen",
     data = ["//:node_modules/json-schema-to-typescript"],
