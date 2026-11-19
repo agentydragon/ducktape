@@ -113,7 +113,12 @@ from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
-from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
+from cluster.cdk8s.agentplane.model_selections import (
+    QWEN_CHAT_CANARY_ID,
+    QWEN_CHAT_CANARY_ROUTE,
+    STAGING_APP_MODELS,
+    model_configs,
+)
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.cnpg import cluster
@@ -499,6 +504,15 @@ ENV = Environment(
                 )
             )
             for route in STAGING_APP_MODELS.central_sampler
+        }
+        | {
+            QWEN_CHAT_CANARY_ID: ModelConfig(
+                connection="llm-ingress",
+                provider_model=QWEN_CHAT_CANARY_ROUTE.id,
+                api="chat_completions",
+                exec_encoding="json",
+                reasoning_efforts={""},
+            )
         },
         connections={
             "llm-ingress": ConnectionConfig(

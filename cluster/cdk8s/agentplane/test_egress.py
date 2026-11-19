@@ -51,7 +51,7 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
-from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
+from cluster.cdk8s.agentplane.model_selections import QWEN_CHAT_CANARY_ID, QWEN_CHAT_CANARY_ROUTE, STAGING_APP_MODELS
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.secret_ref import SecretRef
@@ -459,11 +459,22 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
     config = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
-    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [route.id for route in STAGING_APP_MODELS.central_sampler]
+    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [
+        *(route.id for route in STAGING_APP_MODELS.central_sampler),
+        QWEN_CHAT_CANARY_ID,
+    ]
+    assert QWEN_CHAT_CANARY_ID not in catalog["harnesses"]["HARNESS_CLAUDE"]
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
-    assert set(sampler["models"]) == {route.id for route in STAGING_APP_MODELS.central_sampler}
+    assert set(sampler["models"]) == {QWEN_CHAT_CANARY_ID, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
+    assert sampler["models"][QWEN_CHAT_CANARY_ID] == {
+        "api": "chat_completions",
+        "provider_model": QWEN_CHAT_CANARY_ROUTE.id,
+        "connection": "llm-ingress",
+        "exec_encoding": "json",
+        "reasoning_efforts": [""],
+    }
     for route in STAGING_APP_MODELS.central_sampler:
         model = sampler["models"][route.id]
         if route.upstream.provider == Provider.ANTHROPIC_API:

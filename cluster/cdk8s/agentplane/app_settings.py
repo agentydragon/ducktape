@@ -49,7 +49,7 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, chat_completions_id
 from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
@@ -96,25 +96,30 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
 
 
 def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = False) -> ModelCatalog:
-    return ModelCatalog(
-        models=[
-            ModelOption(
-                model=route.id,
-                display_name=_picker_model_name(route),
-                reasoning_efforts=_reasoning_efforts(route, models),
+    options = [
+        ModelOption(
+            model=route.id, display_name=_picker_model_name(route), reasoning_efforts=_reasoning_efforts(route, models)
+        )
+        for route in models.all
+    ]
+    harnesses = {
+        Harness.CLAUDE: [route.id for route in models.claude],
+        Harness.CODEX: [route.id for route in models.codex],
+    }
+    if central_sampler_enabled:
+        sampler_ids = [route.id for route in models.central_sampler]
+        if (canary := models.central_sampler_chat_canary) is not None:
+            model_id = chat_completions_id(canary)
+            options.append(
+                ModelOption(
+                    model=model_id,
+                    display_name=f"{canary.display_name} — TabbyAPI Chat Completions (canary)",
+                    reasoning_efforts=[],
+                )
             )
-            for route in models.all
-        ],
-        harnesses={
-            Harness.CLAUDE: [route.id for route in models.claude],
-            Harness.CODEX: [route.id for route in models.codex],
-            **(
-                {Harness.CENTRAL_SAMPLER: [route.id for route in models.central_sampler]}
-                if central_sampler_enabled
-                else {}
-            ),
-        },
-    )
+            sampler_ids.append(model_id)
+        harnesses[Harness.CENTRAL_SAMPLER] = sampler_ids
+    return ModelCatalog(models=options, harnesses=harnesses)
 
 
 def runtime_catalog(
