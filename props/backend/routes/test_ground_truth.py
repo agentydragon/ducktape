@@ -57,9 +57,6 @@ async def critic_dev_optimize_gt_client(synced_db: Database):
         user_db.dispose()
 
 
-# --- Admin access ---
-
-
 def test_admin_can_list_snapshots(synced_db: Database) -> None:
     """Admin (full access, bypasses RLS) sees all snapshots."""
     resp = make_gt_client(synced_db).get("/api/gt/snapshots")

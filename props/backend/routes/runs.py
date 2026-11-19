@@ -61,9 +61,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# --- Enums ---
-
-
 class JobStatus(StrEnum):
     """Validation job status."""
 
@@ -86,9 +83,6 @@ class RunSortKey(StrEnum):
 class RunSortDirection(StrEnum):
     ASC = "asc"
     DESC = "desc"
-
-
-# --- Models ---
 
 
 class ActiveRunInfo(BaseModel):
@@ -290,9 +284,6 @@ class RunsListResponse(BaseModel):
     limit: int
 
 
-# --- LLM Requests Models ---
-
-
 class LLMRequestInfo(BaseModel):
     """LLM request information for API response.
 
@@ -343,9 +334,6 @@ class LLMRequestsResponse(BaseModel):
     requests: list[LLMRequestInfo]
 
 
-# --- Job Tracking ---
-
-
 @dataclass
 class ValidationJob:
     """Tracks a validation batch job."""
@@ -367,9 +355,6 @@ class ValidationJob:
 _jobs: dict[UUID, ValidationJob] = {}
 
 
-# --- Helpers ---
-
-
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
     registry = request.app.state.registry
@@ -383,18 +368,12 @@ def get_registry(request: Request) -> AgentRegistry:
 Registry = Annotated[AgentRegistry, Depends(get_registry)]
 
 
-# --- Helper functions ---
-
-
 def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
     """Convert GradingEdge ORM objects to API info objects."""
     return [
         GradingEdgeInfo(critique_issue_id=edge.critique_issue_id, target=edge.to_target(), rationale=edge.rationale)
         for edge in edges
     ]
-
-
-# --- Endpoints ---
 
 
 @router.get("/active")
@@ -673,9 +652,6 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
         job.status = JobStatus.FAILED
 
 
-# --- Optimize / Improve Endpoints ---
-
-
 class OptimizeRunRequest(BaseModel):
     target_metric: TargetMetric = Field(description="Validation metric mode: whole-repo or targeted")
     budget_usd: float = Field(ge=0, description="Dollar budget for optimization")
@@ -828,9 +804,6 @@ async def trigger_improve_run(body: ImproveRunRequest, admin_db: AdminDb, regist
     )
 
 
-# --- Critic Run Endpoints ---
-
-
 @router.post("/critic")
 async def start_critic(
     body: RunCriticRequest,
@@ -888,9 +861,6 @@ async def start_critic(
         raise HTTPException(status_code=422, detail=str(e))
 
     return StartCriticResponse(critic_run_id=critic_run_id)
-
-
-# --- Run Detail Endpoints ---
 
 
 @router.get("/{run_id}")
