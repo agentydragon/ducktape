@@ -19,8 +19,6 @@ exports_files([
     "lockfile.json",
 ])
 
-# === Gazelle (Python BUILD file generator) ===
-
 # Extract import metadata from wheels for Gazelle's Python import resolution
 modules_mapping(
     name = "modules_map",

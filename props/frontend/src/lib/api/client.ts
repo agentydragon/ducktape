@@ -187,7 +187,6 @@ export async function fetchExampleDetail(snapshotSlug: string, exampleKind: Exam
   return unwrapApiResult(result, "Failed to fetch example detail");
 }
 
-// --- Ground truth snapshots ---
 export async function fetchSnapshots() {
   const result = await api.GET("/api/gt/snapshots");
   return unwrapApiResult(result, "Failed to fetch snapshots");
@@ -258,19 +257,14 @@ export async function fetchRunLogs(runId: string, signal?: AbortSignal) {
   return unwrapApiResult(result, "Failed to fetch logs");
 }
 
-// --- Clusters ---
 export async function fetchSnapshotClusters(snapshotSlug: string, signal?: AbortSignal): Promise<ClustersListResponse> {
   return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`, { signal });
 }
-
-// --- Model metadata ---
 
 export async function fetchModelMetadata() {
   const result = await api.GET("/api/model_metadata");
   return unwrapApiResult(result, "Failed to fetch model metadata");
 }
-
-// --- Stats: occurrence stats, distributions, coverage ---
 
 export async function fetchOccurrenceStats(snapshotSlug?: string, signal?: AbortSignal) {
   const result = await api.GET("/api/stats/occurrences", {

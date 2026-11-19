@@ -828,7 +828,6 @@ export { actual };
     assert_entry_output(&named_stmt, "1\n");
 }
 
-// ---------------------------------------------------------------------------
 // `ANYTHING`-vs-keyword redundancy proofs (de-risk "language simplification")
 //
 // `ANYTHING` is a *run-absorbing* list hole in object-property,
@@ -842,7 +841,6 @@ export { actual };
 // declarator tests above pin both spellings.
 //
 // The matched pairs below pin the other claims against a representative subject.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn args_run_absorber_is_not_redundant_with_anything_single_arg() {

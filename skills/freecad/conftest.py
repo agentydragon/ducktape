@@ -60,11 +60,6 @@ def pytest_configure(config: pytest.Config) -> None:
     configure_tracing(config)
 
 
-# ---------------------------------------------------------------------------
-# Conda env helpers
-# ---------------------------------------------------------------------------
-
-
 def _find_conda_root() -> Path:
     """Locate the conda env root via Rlocation of an anchor file inside the env."""
     anchor = Runfiles.CreateOrRaise().root() / _CONDA_FREECADCMD_RLOCATION
@@ -149,11 +144,6 @@ def _freecad_run(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Utility functions
-# ---------------------------------------------------------------------------
-
-
 def assert_run_ok(result: subprocess.CompletedProcess, script_name: str, uo: Path, name: str) -> None:
     """Assert subprocess success, saving stdout/stderr to undeclared outputs for post-mortem."""
     if result.stdout:
@@ -170,11 +160,6 @@ def copy_outputs(src: Path, dst: Path) -> None:
     for f in src.iterdir():
         if f.is_file():
             shutil.copy2(f, dst / f.name)
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")

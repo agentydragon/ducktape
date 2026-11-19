@@ -1,7 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# === Base modules (no internal deps) ===
-
 py_library(
     name = "otlp_forwarder",
     srcs = ["otlp_forwarder.py"],
@@ -16,8 +14,6 @@ py_library(
         "@pypi//platformdirs",
     ],
 )
-
-# === Tests ===
 
 py_library(
     name = "conftest",
@@ -40,8 +36,6 @@ py_test(
     ],
 )
 
-# === Transcript permission scanner ===
-
 py_library(
     name = "readonly_commands",
     srcs = ["readonly_commands.py"],
@@ -61,5 +55,3 @@ py_binary(
     main_module = "devinfra.claude.scan_transcript_permissions",
     deps = [":scan_transcript_permissions"],
 )
-
-# === Linting ===

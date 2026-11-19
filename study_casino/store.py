@@ -178,8 +178,6 @@ class SqlStore:
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-    # ── Read-side ───────────────────────────────────────────────────────────
-
     def state_dump(self, username: str) -> StateDump:
         """Return the full canonical state for `username` — same shape as
         `state_snapshots.decoded_json`. The frontend's `GET /state`
@@ -247,8 +245,6 @@ class SqlStore:
         return CasinoStats(
             username=username, since_date=SERVER_RESOLVED_SINCE_DATE, event_count=len(events), games=games
         )
-
-    # ── Write-side ──────────────────────────────────────────────────────────
 
     def run_server_action(
         self,
@@ -366,8 +362,6 @@ class SqlStore:
             event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
         )
 
-    # ── Helpers used by import/reset mutators ───────────────────────────────
-
     def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
         populate from the import payload. Must be called from within a
@@ -424,8 +418,6 @@ class SqlStore:
         credit_state.last_qualifying_date = None
         credit_state.rest_days_used = 0
         credit_state.last_first_bonus_date = None
-
-    # ── Internal ────────────────────────────────────────────────────────────
 
     def _ensure_user(self, s: Session, username: str) -> None:
         """Idempotently seed a balance row and the default prize catalog for `username`.

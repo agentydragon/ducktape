@@ -1223,8 +1223,6 @@ mod tests {
         );
     }
 
-    // --- minting ---
-
     #[test]
     fn mint_returns_base_when_untaken_and_suffixes_past_collisions() {
         let mut ledger = RenameLedger::default();
@@ -1254,8 +1252,6 @@ mod tests {
         assert!(!ledger.claim(RenameScope::Chunk, "readable"));
         assert_eq!(ledger.mint(RenameScope::Chunk, "readable"), "readable$1");
     }
-
-    // --- explicit occupancy validation (hard errors) ---
 
     #[test]
     fn chunk_explicit_target_colliding_with_root_binding_is_a_hard_error() {
@@ -1427,8 +1423,6 @@ mod tests {
         assert!(sealed.module_renames_by_name(ModuleId(0)).is_empty());
     }
 
-    // --- heuristic drop policies ---
-
     #[test]
     fn module_heuristic_targeting_an_explicit_target_is_dropped() {
         let module = RenameScope::Module(ModuleId(0));
@@ -1465,8 +1459,6 @@ mod tests {
             BTreeMap::from([("a".to_string(), "plan_name".to_string())]),
         );
     }
-
-    // --- Function-scope occupancy (validated_bound replay) ---
 
     fn function_validation(
         scope: RenameScope,

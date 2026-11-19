@@ -616,7 +616,6 @@ def generate(config: GridConfig) -> LightBurnProject:
     x_ah = _x_label_height(config)
     subgrid_gap = config.geometry.subgrid_gap_mm
 
-    # ── Horizontal layout ─────────────────────────────────────────────────────
     x_cursor = _MARGIN_LEFT
 
     # Outer rows axis labels (rotated, left side)
@@ -644,7 +643,6 @@ def generate(config: GridConfig) -> LightBurnProject:
     all_cell_right = cell_grid_lefts[-1] + cell_grid_w
     centre_x = (all_cell_left + all_cell_right) / 2.0
 
-    # ── Vertical layout ───────────────────────────────────────────────────────
     subtitle_text = _full_subtitle(config)
 
     # Outer cols axis labels (above sub-grids)

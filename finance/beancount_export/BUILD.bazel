@@ -49,7 +49,6 @@ py_test(
     ],
 )
 
-# ── OCI image (budget exporter CronJob) ────────────────────────────────
 # git + ca-certificates (apt layer) so `export_ledger sync` can push the ledger.
 
 aspect_py_binary(

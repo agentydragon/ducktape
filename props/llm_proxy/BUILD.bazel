@@ -146,10 +146,6 @@ py_test(
     ],
 )
 
-# =============================================================================
-# OCI Image
-# =============================================================================
-
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
     name = "llm_proxy_bin",

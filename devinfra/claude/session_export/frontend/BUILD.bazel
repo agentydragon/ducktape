@@ -303,8 +303,6 @@ spa_bundle(
     ],
 )
 
-# ── Unit tests ─────────────────────────────────────────────────────────────────
-
 session_export_vitest_test(
     name = "app_test",
     srcs = ["app.test.tsx"],

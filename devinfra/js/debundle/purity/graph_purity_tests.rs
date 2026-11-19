@@ -40,8 +40,6 @@ fn direct_eval_disables_local_class_construction_proof() {
 
 use raw_js_test_support::parse;
 
-// --- ChunkCodeGraph: function-body purity inference --------------------
-
 /// The rules of the reasons a verdict projects its effects to, in evaluation
 /// order; empty for a pure verdict. Function verdicts are stored projected, so
 /// the rule list is the finest view of their effects the graph keeps.
@@ -285,8 +283,6 @@ fn fn_purity_debugger_makes_function_impure() {
         Some(vec![PurityRule::DebuggerStmt])
     );
 }
-
-// --- Recursive purity via PlainData chunk-local bindings ---------------
 
 /// Build a `ChunkCodeGraph` for `src` and ask whether `name` is
 /// tracked as a plain-data binding. `false` covers both "not
@@ -544,8 +540,6 @@ fn plain_data_var_unblocks_embedded_build_env_config_shape() {
     assert!(graph.is_plain_data("mr"));
     assert_eq!(graph.function_rules("isEmulatorEnv"), Some(vec![]));
 }
-
-// --- TS-enum IIFE PlainData admission ---------------------------------
 
 #[test]
 fn plain_data_ts_enum_iife_arrow_comma_body_is_tracked() {
@@ -1141,8 +1135,6 @@ fn plain_data_read_with_static_property_is_pure() {
     assert_eq!(fn_rules(src, "check"), Some(vec![]));
 }
 
-// --- Call-graph topology: deep chains, isolated nodes ------------------
-
 #[test]
 fn fn_purity_deep_pure_chain_propagates_in_one_pass() {
     // `a → b → c → d → e`: a long chain of chunk-local calls,
@@ -1265,8 +1257,6 @@ fn declared_pure_hint_applies_inside_chunk_function_bodies() {
     );
 }
 
-// --- Body-level shadowing of global tables / chunk graph / annotations --
-
 #[test]
 fn body_shadowed_chunk_function_call_is_not_pure() {
     // SOUNDNESS: inside `outer`, the param `helper` shadows the
@@ -1372,8 +1362,6 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
     );
 }
 
-// --- Parameter evaluation (defaults / destructuring) --------------------
-
 #[test]
 fn fn_purity_impure_param_default_makes_function_not_pure() {
     // Default-value expressions evaluate at call time, exactly
@@ -1418,8 +1406,6 @@ fn fn_purity_rest_param_stays_pure() {
     // no user-code path.
     assert_eq!(fn_rules("const f = (...xs) => xs;", "f"), Some(vec![]));
 }
-
-// --- Iteration statements / destructuring declarators in bodies ---------
 
 #[test]
 fn fn_purity_for_of_makes_function_not_pure() {
@@ -1474,8 +1460,6 @@ fn fn_purity_destructuring_declarator_makes_function_not_pure() {
         Some(vec![])
     );
 }
-
-// --- PlainData escape analysis ------------------------------------------
 
 #[test]
 fn plain_data_known_alias_is_checked_for_mutation() {

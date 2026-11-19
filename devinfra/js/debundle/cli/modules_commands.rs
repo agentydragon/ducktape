@@ -939,7 +939,6 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
     }
 }
 
-// --- Text renderers -------------------------------------------------
 //
 // Each query command needs a text rendering for tty output. v1 keeps
 // these compact: one line per item plus a brief summary header.

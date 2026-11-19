@@ -1515,7 +1515,6 @@ fn synthesize_simplest_selector_for_group(
     ))
 }
 
-// ===========================================================================
 // Anti-unification grouping.
 //
 // `synthesize_simplest_selector_for_group` already groups members that share an
@@ -1536,7 +1535,6 @@ fn synthesize_simplest_selector_for_group(
 // — are equal. The merged run-selector is re-proven through the matcher gate
 // (kind-agnostic multi-statement alignment); on failure the run is emitted as
 // individual selectors, never an unproven group.
-// ===========================================================================
 
 /// Collapse maximal runs of adjacent, same-shape single-target declaration
 /// groups into one run-based grouped source_match. Other groups (multi-declarator var

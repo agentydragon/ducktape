@@ -297,10 +297,6 @@ fn resolve_in_docs(modules_root: &Path, docs: &ModuleDocs, sym: &str) -> Result<
     }
 }
 
-// ---------------------------------------------------------------------
-// `bindings list`
-// ---------------------------------------------------------------------
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BindingsListReport {
     pub bindings: Vec<BindingEntry>,
@@ -357,10 +353,6 @@ pub fn run_bindings_list(
     });
     Ok(BindingsListReport { bindings: entries })
 }
-
-// ---------------------------------------------------------------------
-// `bindings rename`
-// ---------------------------------------------------------------------
 
 /// Outcome of a rename. Shares the [`MutationOutcome`] core with the
 /// other four mutating verbs; the touched file (when any) is
@@ -592,10 +584,6 @@ pub fn rename_bindings(
         renames,
     })
 }
-
-// ---------------------------------------------------------------------
-// `bindings assign`
-// ---------------------------------------------------------------------
 
 /// One requested move: optionally with a new readable name.
 #[derive(Debug, Clone, Deserialize)]
@@ -1188,10 +1176,6 @@ fn bail_source_match_unassign<T>(hit: &BindingMatch) -> Result<T> {
         hit.location.describe()
     )
 }
-
-// ---------------------------------------------------------------------
-// `bindings unassign`
-// ---------------------------------------------------------------------
 
 /// Outcome of an unassign batch. Mirrors [`AssignOutcome`]: the
 /// shared [`MutationOutcome`] core plus the verb-specific count.

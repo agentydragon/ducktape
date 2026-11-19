@@ -12,8 +12,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-# -- BindMount --
-
 
 class BindMount(BaseModel, frozen=True):
     """Docker volume bind mount specification."""
@@ -54,9 +52,6 @@ class AlwaysSetTo(BaseModel, frozen=True):
 
 
 CwdPolicy = Annotated[ModelChooses | DefaultValue | AlwaysSetTo, Field(discriminator="type")]
-
-
-# -- ContainerExecServerConfig --
 
 
 class ContainerExecServerConfig(BaseModel):

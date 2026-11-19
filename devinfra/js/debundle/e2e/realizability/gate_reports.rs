@@ -126,10 +126,6 @@ fn pair_list_get<'a>(array: &'a serde_json::Value, key: &str) -> Option<&'a serd
     })
 }
 
-// --- R cycles (both back-edges at-init) ----------------------------------
-
-// --- I cycles via lazy back-edges ----------------------------------------
-
 // A mixed cycle whose lazy edge is only read at call time is accepted
 // (`cases/initialization/dependent_first_cycle`); calling the lazy reader at
 // initialization closes it. The original source is valid; splitting it is not.
@@ -671,9 +667,5 @@ export { a1, a2, b1 };
 
 // Acyclic cross-module at-init read correctness (Lemma 3's named
 // pin) lives in `cases/initialization/computed_key_read`.
-
-// --- Side-effect ordering (`S`) ------------------------------------------
-
-// --- Per-declarator attribution across comma-list var-decls --------------
 
 // --- Top-level await is rejected (docs/design.md A2) --------------------------

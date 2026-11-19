@@ -39,9 +39,6 @@ def stats_client(synced_db: Database) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-# --- /definitions/{image_digest} ---
-
-
 def test_definition_detail_not_found(stats_client: TestClient) -> None:
     """Returns 404 for nonexistent digest."""
     resp = stats_client.get("/api/stats/definitions/sha256:" + "f" * 64)
@@ -72,9 +69,6 @@ def test_definition_detail_with_runs(
     assert body["examples"]
 
 
-# --- /occurrences ---
-
-
 def test_occurrences_empty(stats_client: TestClient) -> None:
     """Returns empty list when no runs exist."""
     resp = stats_client.get("/api/stats/occurrences")
@@ -99,9 +93,6 @@ def test_occurrences_with_runs(
         assert row["mean_credit"] == pytest.approx(0.76)
         assert row["min_credit"] == pytest.approx(0.72)
         assert row["max_credit"] == pytest.approx(0.8)
-
-
-# --- /coverage ---
 
 
 def test_coverage_empty(stats_client: TestClient) -> None:

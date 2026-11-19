@@ -313,9 +313,6 @@ async def test_reconcile_noop_after_shutdown():
     assert registry.spawned == []
 
 
-# --- Debounce (trailing-edge coalescing) ---
-
-
 async def test_schedule_reconcile_debounces_burst():
     """A burst of triggers coalesces into a single trailing-edge reconcile."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B], reconcile_debounce_s=0.05)
