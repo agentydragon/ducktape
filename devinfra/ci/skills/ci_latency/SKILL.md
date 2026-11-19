@@ -557,9 +557,10 @@ recipe on mixed clocks.
 
 ## Interpret correctly
 
-- Discover CodeQL by `dynamic/github-code-scanning/codeql` or workflow ID, **not**
-  display name: default-setup runs are often named `PR #...` / `Push on devel`, and
-  no CodeQL YAML appears in `.github/workflows`.
+- Discover default-setup CodeQL by `dynamic/github-code-scanning/codeql` or workflow
+  ID, **not** display name: its runs are often named `PR #...` / `Push on devel`.
+  The checked-in `.github/workflows/codeql.yml` ("CodeQL scheduled", nightly and
+  manual) has its own run path, which `scripts/contention.jq` does not count.
 - `run_started_at` is often equal to run creation even while jobs queue. Use
   **job** creation to assigned-runner start; separate workflow pending/concurrency,
   dependency/environment gates, and GitHub scheduling. Inspect the DAG before
