@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"google.golang.org/protobuf/proto"
 )
@@ -65,7 +66,7 @@ func providerAuthorization(connection samplersettings.ConnectionConfig, attribut
 
 type sampleResult struct {
 	Records []json.RawMessage
-	// Audit is the adapter's stored intent result: *responses.Audit or *anthropic.Audit.
+	// Audit is the adapter's native stored intent result.
 	Audit           any
 	ResponsesEvents []responses.Event
 	AnthropicEvents []json.RawMessage
@@ -90,6 +91,7 @@ type protocolAdapter interface {
 type (
 	responsesAdapter struct{ config samplersettings.ModelConfig }
 	anthropicAdapter struct{ config samplersettings.ModelConfig }
+	chatAdapter      struct{ config samplersettings.ModelConfig }
 )
 
 func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
@@ -98,6 +100,8 @@ func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
 		return responsesAdapter{config}, nil
 	case protocol.APIStyleAnthropicMessages:
 		return anthropicAdapter{config}, nil
+	case protocol.APIStyleChatCompletions:
+		return chatAdapter{config}, nil
 	default:
 		return nil, protocol.ErrInvalid
 	}
@@ -204,4 +208,31 @@ func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	}, Apply: func(result *sampleResult) (protocol.Context, error) {
 		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit), result.AnthropicEvents)
 	}}, nil
+}
+
+func (a chatAdapter) API() protocol.APIStyle { return protocol.APIStyleChatCompletions }
+
+func (a chatAdapter) Prepare(_ *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
+	return &providerrequest.Preparation{ModelConfig: a.config, Attribution: attribution}
+}
+
+func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
+	if compaction {
+		return nil, protocol.ErrPrecondition
+	}
+	authorization, headers, err := providerAuthorization(connection, attribution)
+	if err != nil {
+		return nil, err
+	}
+	response, err := chatcompletions.Sample(ctx, client, connection.BaseURL, authorization, wire, evidence, headers, hooks)
+	if err != nil {
+		return nil, err
+	}
+	return &sampleResult{Records: []json.RawMessage{response.Record}, Audit: response.Audit, ContextTokens: response.ContextTokens}, nil
+}
+
+func (a chatAdapter) AutoCompactTokens(*int) *int { return nil }
+
+func (a chatAdapter) PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error) {
+	return nil, protocol.ErrPrecondition
 }

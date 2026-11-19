@@ -200,7 +200,7 @@ func nullableContextID(id string) any {
 }
 
 func (s *Store) StoreContext(api protocol.APIStyle, contents []content.ContentID) (string, error) {
-	if api != protocol.APIStyleResponses && api != protocol.APIStyleAnthropicMessages {
+	if api != protocol.APIStyleResponses && api != protocol.APIStyleAnthropicMessages && api != protocol.APIStyleChatCompletions {
 		return "", protocol.ErrInvalid
 	}
 	if err := s.Save(); err != nil {

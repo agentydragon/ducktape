@@ -6,6 +6,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -15,6 +16,8 @@ func StoreRecord(s content.ContentWriter, api protocol.APIStyle, record json.Raw
 		return responses.StoreRecord(s, record)
 	case protocol.APIStyleAnthropicMessages:
 		return anthropic.StoreRecord(s, record)
+	case protocol.APIStyleChatCompletions:
+		return chatcompletions.StoreRecord(s, record)
 	default:
 		return "", protocol.ErrInvalid
 	}
@@ -44,6 +47,8 @@ func RestoreRecords(s content.ContentReader, api protocol.APIStyle, ids []conten
 			record, err = responses.RestoreRecord(s, id)
 		case protocol.APIStyleAnthropicMessages:
 			record, err = anthropic.RestoreRecord(s, id)
+		case protocol.APIStyleChatCompletions:
+			record, err = chatcompletions.RestoreRecord(s, id)
 		default:
 			return nil, protocol.ErrInvalid
 		}
@@ -65,6 +70,8 @@ func Render(store content.ContentReader, api protocol.APIStyle, profile content.
 		return responses.RestoreRequest(store, profile, records)
 	case protocol.APIStyleAnthropicMessages:
 		return anthropic.RestoreRequest(store, profile, records)
+	case protocol.APIStyleChatCompletions:
+		return chatcompletions.RestoreRequest(store, profile, records)
 	default:
 		return nil, protocol.ErrInvalid
 	}
