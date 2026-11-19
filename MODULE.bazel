@@ -17,6 +17,7 @@ archive_override(
 lean = use_extension("//devinfra/js/debundle/x/split_proof/lean:toolchain.bzl", "lean")
 lean.toolchain(version_file = "//devinfra/js/debundle/x/split_proof/lean:lean-toolchain")
 use_repo(lean, "lean_dist")
+
 register_toolchains("@lean_dist//:lean_toolchain_def")
 
 bazel_dep(name = "platforms", version = "1.1.0")
