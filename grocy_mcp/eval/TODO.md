@@ -68,12 +68,12 @@ Tools: `stock_get` → `stock_entries_list` (per-entry locations) → bulk
 
 ### Edit + `clear_fields` semantics
 
-> "Remove the best-before date from these three stock entries — they're
-> pantry staples that don't expire."
+> "Remove the price from these three stock entries — I entered it by mistake."
 
-Tools: `stock_entries_list` → `stock_entry_edit` with
-`clear_fields=["best_before_date"]`. Tests whether the agent distinguishes
-"set to null" from "set to today" and respects the enum of nullable fields.
+Tools: `stock_entries_list` → `stock_entry_edit` with `clear_fields=["price"]`.
+Tests whether the agent distinguishes "set to null" from "set to 0" and respects
+the enum of nullable fields (`price`, `purchased_date`, `note`; `best_before_date`
+is not clearable, see "Clearing expiry on a stock entry").
 
 ### Ambiguous name resolution
 

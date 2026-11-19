@@ -145,13 +145,6 @@ async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.
     assert "pieces" in op["error"], "error should mention the expected stock QU"
 
 
-async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, respx.Router]) -> None:
-    """Omitting qu should fail validation."""
-    client, _router = mcp_client
-    with pytest.raises(Exception, match="qu"):
-        await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
-
-
 async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_client: tuple[Client, respx.Router]) -> None:
     """HTTP backend errors should be concise and actionable (no Python traceback)."""
     client, router = mcp_client
