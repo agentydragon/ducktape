@@ -9,6 +9,15 @@ Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--
 It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
 `run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
 
+Bazel also checks the committed proof and the axioms of the theorems in `EsmSplit/Audit.lean`:
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test
+```
+
+This checks the committed `Instance.lean`; it does not regenerate it from the JavaScript example,
+render modules, or run Node. Those end-to-end checks still use `run.sh`. Bazel and Lake both read the Lean version from `lean/lean-toolchain`.
+
 ## The example
 
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:

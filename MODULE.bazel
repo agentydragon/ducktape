@@ -3,6 +3,22 @@ module(
     version = "0.1.0",
 )
 
+# Lean rules are not yet published to the Bazel Central Registry.
+bazel_dep(name = "rules_lean", version = "0.7.2")
+archive_override(
+    module_name = "rules_lean",
+    integrity = "sha256-WlWwUULPEqpQgwPCxWr/GRZ/qVu1IFUSaqqdeAMIPgc=",
+    patch_strip = 1,
+    patches = ["//patches:rules_lean_4_35.patch"],
+    strip_prefix = "rules_lean-97c226a720ebd23675b2825088c6b32a3fc61989",
+    urls = ["https://github.com/tomato-bazel/rules_lean/archive/97c226a720ebd23675b2825088c6b32a3fc61989.tar.gz"],
+)
+
+lean = use_extension("//devinfra/js/debundle/x/split_proof/lean:toolchain.bzl", "lean")
+lean.toolchain(version_file = "//devinfra/js/debundle/x/split_proof/lean:lean-toolchain")
+use_repo(lean, "lean_dist")
+register_toolchains("@lean_dist//:lean_toolchain_def")
+
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.5.0-rc4")

@@ -1,5 +1,3 @@
-# An experiment run by its own `run.sh`: Lean, Node and Python scripts, no Bazel targets.
-# This file makes the directory a package of its own, so no parent glob picks its files up,
-# and tells Gazelle to leave the Python scripts alone.
+# Keep the experimental scripts out of their parent package's globs and Gazelle.
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
