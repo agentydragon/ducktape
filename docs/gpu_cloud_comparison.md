@@ -14,8 +14,6 @@ Not covering consumer-tier (RTX 4090 etc.) or older (V100, T4) GPUs.
 For inference or single-GPU training: PCIe is fine and cheaper.
 For serious multi-GPU training: you want SXM 8× nodes.
 
----
-
 ## H100 — price per GPU (May 2026, 24/7 = 730 hrs/mo)
 
 | Provider               | $/GPU/hr | $/GPU/mo | Type      | Min unit     | Notes                                                |
@@ -55,70 +53,56 @@ For serious multi-GPU training: you want SXM 8× nodes.
 | CoreWeave       | ~$32,000+       |
 | AWS p5.48xlarge | ~$71,800        |
 
----
-
 ## Provider profiles
 
-### Vast.ai
-
-GPU marketplace — individual and datacenter sellers list hardware, you bid/rent.
-Cheapest option by far for spot/interruptible workloads. Reliability is variable:
-hardware quality depends on the host, uptime is not guaranteed. Good for batch
-jobs that can be checkpointed and resumed; bad for anything requiring continuous
-uptime or SLA. Has a TF provider and API. Not suitable as a permanent k8s node.
-
-### RunPod
-
-Two tiers: **Community Cloud** (someone's hardware, cheaper, less reliable) and
-**Secure Cloud** (dedicated datacenter hardware, more reliable). Good mid-tier
-option. API and TF provider available. Pods are more like short-lived instances
-than permanent nodes — joining one to a k8s cluster as a persistent worker is
-possible but non-trivial (node churn on interruption). Better for on-demand
-batch work than as a static cluster node.
-
-### Lambda Labs
-
-Most established mid-tier GPU cloud. Reliable on-demand availability, clean
-API, TF provider available. Pricing is mid-range. Good choice for
-production-grade GPU workloads without the hyperscaler premium. No k8s
-integration out of the box — you get a VM.
-
-### CoreWeave
-
-**K8s-native GPU cloud.** You get actual Kubernetes clusters with GPU node pools
-— NVIDIA device plugin, GPU operator, etc. are pre-configured. Directly relevant
-if you want to extend your existing cluster or run GPU workloads on k8s. More
-expensive than RunPod/Lambda (~$6/GPU/hr H100), but enterprise SLAs and
-contract pricing available. Sales-driven for larger commitments. Probably the
-best fit if you want GPU nodes in a k8s context without DIY plumbing.
-
-### AWS / GCP / Azure
-
-**Rejected: cost.** 2–5× more per GPU/hr than mid-tier providers for comparable
-hardware. AWS p5.48xlarge (8× H100 SXM) is $98/hr on-demand — $71k/mo. The
-only reason to use hyperscalers for GPU is if you're deeply integrated with
-their ecosystem (managed storage, networking, IAM, SageMaker, Vertex AI, etc.)
-or need enterprise SLAs without vendor risk. For raw compute they are a bad deal.
-
-### Hetzner (GPU)
-
-**Not H100/A100.** Hetzner's GPU dedicated servers use NVIDIA RTX (4000 Ada,
-6000 Ada, RTX PRO 6000 Blackwell). EU-only (FSN/NBG/HEL). Starting ~€184/mo.
-One GPU per server. Good value for RTX-class inference workloads, but not in
-the A100/H100 tier. Not relevant for serious training.
+- **Vast.ai**: GPU marketplace (individual and datacenter sellers). Cheapest option
+  by far for spot/interruptible work. Hardware quality depends on the host and uptime
+  is not guaranteed: good for batch jobs that checkpoint and resume, bad for anything
+  needing continuous uptime or an SLA. Not suitable as a permanent k8s node.
+- **RunPod**: **Community Cloud** (someone's hardware, cheaper, less reliable) and
+  **Secure Cloud** (dedicated datacenter hardware, more reliable). Good mid-tier option.
+  Pods are short-lived instances: joining one to a k8s cluster as a persistent worker is
+  possible but non-trivial (node churn on interruption). Better for on-demand batch
+  work than as a static cluster node.
+- **Lambda Labs**: most established mid-tier GPU cloud. Reliable on-demand availability,
+  clean API, mid-range pricing: production-grade GPU workloads without the hyperscaler
+  premium. You get a VM; no k8s integration out of the box.
+- **CoreWeave**: **K8s-native GPU cloud.** You get actual Kubernetes clusters with GPU
+  node pools (NVIDIA device plugin, GPU operator, etc. pre-configured). Directly
+  relevant for extending our cluster or running GPU workloads on k8s. More expensive
+  than RunPod/Lambda (~$6/GPU/hr H100), with enterprise SLAs and contract pricing;
+  sales-driven for larger commitments. Probably the best fit for GPU nodes in a k8s
+  context without DIY plumbing.
+- **AWS / GCP / Azure**: **rejected on cost.** 2–5× more per GPU/hr than mid-tier
+  providers for comparable hardware. AWS p5.48xlarge (8× H100 SXM) is $98/hr on-demand,
+  $71k/mo. Worth it only if deeply integrated with their ecosystem (managed storage,
+  networking, IAM, SageMaker, Vertex AI, etc.) or if you need enterprise SLAs without
+  vendor risk. For raw compute they are a bad deal.
+- **Hetzner (GPU)**: **not H100/A100.** Dedicated servers with NVIDIA RTX (4000 Ada,
+  6000 Ada, RTX PRO 6000 Blackwell), one GPU per server, EU-only (FSN/NBG/HEL), from
+  ~€184/mo. Good value for RTX-class inference; not relevant for serious training.
+- **Rejected**: Equinix Metal (EOL June 30, 2026); Latitude.sh (H100 offerings exist but
+  at $2,000+/mo for the smallest config; AI/ML focused but priced for enterprise);
+  Paperspace ($5.99/GPU/hr H100: expensive relative to Lambda/RunPod for no clear
+  benefit; acquired by DigitalOcean, future unclear).
 
 ### OVHcloud (Bare Metal + Public Cloud)
 
-**West US (HIL — Hillsboro, OR) availability is poor.** OVH has two US datacenters
-— HIL (west, where our cluster lives) and VIN (Vint Hill, VA, east). As of May 2026:
+**West US (HIL — Hillsboro, OR) availability is poor.** OVH has two US datacenters:
+HIL (west, where our cluster lives) and VIN (Vint Hill, VA, east; ~70ms RTT from HIL).
+As of May 2026:
 
-- **No GPU bare metal is orderable in HIL.** None. The only GPU SKU available in
-  any US DC right now is HGR-AI-1 in **VIN only** (V100s, $4,446/mo + $3,299 setup).
-- **HGR-AI-2 (L40S) and SCALE-GPU-\* (L4)** show "Soon available" globally — no
-  firm HIL date.
-- **Public Cloud GPU VMs** (L4, L40S, V100S, H100) are sold globally but OVH's
-  US Public Cloud pricing page doesn't break out which DC actually has stock;
-  historically H100/H200 launches lag EU/Canada by months.
+- **No GPU bare metal is orderable in HIL.** The only GPU SKU available in any US DC is
+  HGR-AI-1 in **VIN only** (V100s, $4,446/mo + $3,299 setup).
+- **HGR-AI-2 (L40S) and SCALE-GPU-\* (L4)** show "Soon available" globally — no firm
+  HIL date.
+- **Public Cloud GPU VMs** (L4, L40S, V100S, H100) are sold globally, but OVH's US
+  Public Cloud pricing page doesn't break out which DC has stock; historically
+  H100/H200 launches lag EU/Canada by months.
+- **No H100 SXM or PCIe in OVH's bare metal catalog.** The $2.99/GPU/hr figure in our
+  prior entry referred to OVH's Public Cloud H100 VMs, not bare metal. L40S (HGR-AI-2) is
+  the closest bare-metal substitute — strong FP8/INT8 inference performance, 48GB VRAM,
+  no NVLink. Not a real H100 alternative for >30B training.
 
 **Bare metal GPU lineup (May 2026):**
 
@@ -130,11 +114,6 @@ the A100/H100 tier. Not relevant for serious training.
 | SCALE-GPU-2 | L4                                                               | EPYC Genoa, larger config                                      | from $1,180 | —        | ❌ ("soon")   | ❌ ("soon")        | —                                |
 | SCALE-GPU-3 | L4                                                               | EPYC Genoa, larger config                                      | from $1,216 | —        | ❌ ("soon")   | ❌ ("soon")        | —                                |
 
-**No H100 SXM or PCIe in OVH's bare metal catalog as of May 2026.** The $2.99/GPU/hr
-figure in our prior entry referred to OVH's Public Cloud H100 VMs, not bare metal.
-L40S (HGR-AI-2) is the closest bare-metal substitute — strong FP8/INT8 inference
-performance, 48GB VRAM, no NVLink. Not a real H100 alternative for >30B training.
-
 **Public Cloud GPU (VM instances)** — confirmed US-available pricing:
 
 | Flavor   | GPU           | vCPU/RAM    | $/hr  | $/GPU/mo |
@@ -144,16 +123,8 @@ performance, 48GB VRAM, no NVLink. Not a real H100 alternative for >30B training
 | l40s-90  | 1× L40S 48GB  | 15c / 90GB  | $1.80 | ~$1,314  |
 | l40s-360 | 4× L40S       | 60c / 360GB | $7.20 | ~$1,314  |
 
-OVH's published H100 Public Cloud rate is €2.80/hr (~$3.00/hr) for 1× H100 80GB
-PCIe — comparable to RunPod Secure and cheaper than Lambda Labs. **US Public Cloud
-GPU region availability isn't broken out by datacenter on the public pricing page**;
-H100/H200 instances historically launch in EU/Canada first.
-
-**US datacenters recap:** HIL (Hillsboro, OR) and VIN (Vint Hill, VA). HIL is where
-our cluster lives (Talos VPS workers + Kimsufi worker). For a GPU node co-located
-with the rest of the cluster (Nebula latency, cross-AZ bandwidth), HIL is the
-constraint — and **OVH has zero orderable GPU SKUs in HIL today**. Verify on
-`pricelist.ovh` before assuming HGR-AI-2 / SCALE-GPU-\* are bookable in HIL.
+OVH's published H100 Public Cloud rate is €2.80/hr (~$3.00/hr) for 1× H100 80GB PCIe —
+comparable to RunPod Secure and cheaper than Lambda Labs.
 
 **Terraform:** `ovh/ovh` provider supports `ovh_dedicated_server`,
 `ovh_dedicated_server_update`, `ovh_dedicated_server_boots`, `ovh_me_ipxe_script` —
@@ -161,27 +132,26 @@ same surface we use for Kimsufi. Public Cloud GPU instances provision via
 `ovh_cloud_project_instance`. Ordering bare-metal HGR-AI via API has historically
 required a manual quote step; reorders are scriptable.
 
-**Verdict for our use case (west US / HIL):** Nothing available. The only US bare-metal
-OVH GPU is HGR-AI-1 in VIN (east coast, ~70ms RTT from HIL), at V100-generation
-hardware. HGR-AI-2 (L40S) hasn't shipped anywhere yet. Public Cloud H100 at ~$3/hr
-might land in HIL eventually but no current confirmation. Pass for now — keep
-wyrm2 / Lambda Labs / RunPod as the GPU paths until OVH ships an HGR-AI in HIL.
-
----
+**Verdict for our use case (west US / HIL): pass for now.** A GPU node co-located with
+the rest of the cluster (Talos VPS workers + Kimsufi worker; Nebula latency, cross-AZ
+bandwidth) has to be in HIL, and OVH has zero orderable GPU SKUs there. The only US
+bare-metal GPU is HGR-AI-1 in VIN (V100-generation hardware), HGR-AI-2 (L40S) hasn't
+shipped anywhere yet, and Public Cloud H100 at ~$3/hr might land in HIL eventually but
+has no current confirmation. Keep wyrm2 / Lambda Labs / RunPod as the GPU paths until
+OVH ships an HGR-AI in HIL, and verify on `pricelist.ovh` before assuming HGR-AI-2 /
+SCALE-GPU-\* are bookable there.
 
 ## TF / provisioning
 
 | Provider        | TF provider                           | Provisioning model                   |
 | --------------- | ------------------------------------- | ------------------------------------ |
-| **Lambda Labs** | `lambdal/lambdacloud` (official)      | VM per instance, SSH in              |
+| **Lambda Labs** | `lambdal/lambdacloud` (official)      | VM per instance via API, SSH in      |
 | **RunPod**      | `RunPod/runpod` (official)            | Pod API; less suited to Talos        |
-| **Vast.ai**     | `vast-ai/vastai` (community)          | Marketplace; unreliable for IaC      |
+| **Vast.ai**     | `vast-ai/vastai` (community)          | Marketplace API; unreliable for IaC  |
 | **CoreWeave**   | Native k8s API                        | You get a kubeconfig; GPU node pools |
 | **AWS**         | `hashicorp/aws` (official, mature)    | EC2 instances                        |
 | **GCP**         | `hashicorp/google` (official, mature) | GCE instances                        |
 | **Hetzner**     | `hetznercloud/hcloud` (official)      | Dedicated root server                |
-
----
 
 ## K8s integration notes
 
@@ -194,27 +164,12 @@ Joining a GPU node to the existing Talos cluster requires:
 4. The GPU provider must allow arbitrary OS installation — most VM providers do,
    bare-metal providers (Hetzner dedicated, OVH, CoreWeave) definitely do
 
-**CoreWeave** is the odd one out: their k8s clusters are managed by them, not
-Talos-based. You'd either run workloads there independently or federate with the
-existing cluster (more complex). Probably better treated as a separate GPU cluster
-than bolted onto the existing one.
-
-**Lambda Labs / RunPod VMs** can run Talos and join via Nebula in principle, but
-pod/instance churn (interruptions, billing stops) creates node lifecycle issues for
-k8s. Better to treat them as standalone compute rather than persistent cluster nodes.
-
-**Dedicated bare metal with GPU** (e.g. OVH with GPU option, Hetzner dedicated GPU,
-HOSTKEY) is the cleanest path for a persistent k8s GPU worker node — install Talos,
-join Nebula, join cluster, stays up indefinitely.
-
----
-
-## Rejected / not compelling
-
-- **AWS/GCP/Azure**: cost, see above
-- **Equinix Metal**: EOL June 30, 2026
-- **Latitude.sh**: H100 offerings exist but at $2,000+/mo for smallest config;
-  primarily AI/ML focused but priced for enterprise
-- **Hetzner GPU**: RTX only, EU only, single GPU per server — not H100/A100 tier
-- **Paperspace**: $5.99/GPU/hr H100 — expensive relative to Lambda/RunPod for
-  no clear benefit; acquired by DigitalOcean, future unclear
+- **CoreWeave** is the odd one out: their k8s clusters are managed by them, not
+  Talos-based. Run workloads there independently or federate with the existing cluster
+  (more complex); probably better treated as a separate GPU cluster.
+- **Lambda Labs / RunPod VMs** can run Talos and join via Nebula in principle, but
+  instance churn (interruptions, billing stops) creates node lifecycle issues for k8s.
+  Better to treat them as standalone compute rather than persistent cluster nodes.
+- **Dedicated bare metal with GPU** (e.g. OVH with GPU option, Hetzner dedicated GPU,
+  HOSTKEY) is the cleanest path for a persistent k8s GPU worker node — install Talos,
+  join Nebula, join cluster, stays up indefinitely.
