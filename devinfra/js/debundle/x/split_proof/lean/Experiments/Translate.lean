@@ -28,6 +28,8 @@ Checked:
    counted, not rejected.
 5. The plan the output describes, written in the bundle's own names, passes `Sound`: unique definitions, linkable,
    hygienic, every unit once, conflicting units keep their order. A failure of the last is an *obligation* list.
+6. ES imports are read-only: a unit assigns only names that its own module declares (`AssignsHome`). Like the same
+   rule in `lowersplit`, this is not part of `Sound`, so no theorem ties it to `Correct`.
 
 Not checked here, and printed as premises: that an outside import and the member chain it was swapped for are the
 same value, that a dynamic import's new path names the same chunk, and that `new Worker("/p")` and
@@ -348,11 +350,28 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
            workers := ctx.workers
            extraExports := extraExports }
 
-/-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`. -/
-def bundleOf (units : Array Json) : Bundle :=
+/-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`; and, per unit, the
+non-local names it assigns. -/
+def bundleOf (units : Array Json) : Bundle × Array (List String) :=
   let fps := Lower.finalize (units.map Lower.analyzeTop)
-  (units.zip fps).toList.map fun (_, f) =>
-    { src := "", defs := f.defs, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
+  (fps.toList.map fun f =>
+    { src := "", defs := f.defs, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect },
+   fps.map (·.assigned))
+
+/-- ES imports are read-only: assigning one is a `TypeError`. So a unit that assigns a name must sit in the module
+that declares it. -/
+def assignsHome (B : Bundle) (assigned : Array (List String)) (P : Plan) : Except String Unit := do
+  let mut host : Std.HashMap Nat String := {}
+  for m in P.mods do
+    for i in m.stmts do host := host.insert i m.name
+  let mut owner : Std.HashMap String Nat := {}
+  for (s, i) in B.zipIdx do
+    for d in s.defs do owner := owner.insert d i
+  for (names, i) in assigned.toList.zipIdx do
+    for n in names do
+      if let some k := owner[n]? then
+        unless host[k]? == host[i]? do
+          throw s!"unit {i} assigns `{n}`, which unit {k} declares; the output puts them in {host[i]?.getD "no module"} and {host[k]?.getD "no module"}"
 
 /-- Pairs of effectful statements the plan runs in the opposite order from the bundle. -/
 def effectInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id.run do
@@ -395,7 +414,7 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
       IO.println s!"  wrote the premise table to {t}"
     let t2 ← IO.monoMsNow
-    let B ← IO.lazyPure fun _ => bundleOf units
+    let (B, assigned) ← IO.lazyPure fun _ => bundleOf units
     IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units are effects"
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder
@@ -405,9 +424,12 @@ def main (args : List String) : IO UInt32 := do
                ← timedCheck "Linkable" fun _ => decide (Linkable B P),
                ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
                ← timedCheck "Permutes" fun _ => decide (Permutes B P)]
+    let home := assignsHome B assigned P
+    IO.println s!"  {if home.toBool then "pass" else "FAIL"}  AssignsHome"
+    if let .error e := home then IO.println s!"    {e}"
     let ordered ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
-    if rs.all id && ordered then IO.println "PLAN SOUND"; return 0
-    if !rs.all id then IO.println "PLAN NOT SOUND: a structural check failed"; return 1
+    if rs.all id && home.toBool && ordered then IO.println "PLAN SOUND"; return 0
+    if !(rs.all id && home.toBool) then IO.println "PLAN NOT SOUND: a structural check failed"; return 1
     let (n, sample) ← IO.lazyPure fun _ => effectInversions B P
     IO.println s!"OBLIGATIONS: {n} pairs of effectful units run in the opposite order from the bundle"
     for (a, b) in sample do IO.println s!"    unit {b} came first in the bundle; the output runs unit {a} before it"

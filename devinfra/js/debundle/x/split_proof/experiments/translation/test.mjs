@@ -1,5 +1,5 @@
 // Runs the translation checker on every fixture: the fixture itself must be accepted, and every variant (a small
-// edit of the output tree) must give the verdict listed in its `variants.json`.
+// edit of the output tree: a find-and-replace in a file, or a new file) must give the verdict in its `variants.json`.
 //
 //   node test.mjs [--keep]
 import { spawnSync } from "node:child_process";
@@ -61,6 +61,10 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
         cpSync(baseOut, copy, { recursive: true });
         for (const edit of variant.edits) {
           const file = path.join(copy, edit.file);
+          if (edit.create !== undefined) {
+            writeFileSync(file, edit.create);
+            continue;
+          }
           const text = readFileSync(file, "utf8");
           if (!text.includes(edit.find))
             throw new Error(`${name}/${variant.name}: ${edit.file} does not contain ${JSON.stringify(edit.find)}`);

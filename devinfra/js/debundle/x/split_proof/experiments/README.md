@@ -409,10 +409,10 @@ Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the pl
 
 The experiments so far start from a spec and a splitter. [`translation/`](translation/README.md) starts from the other end: a bundle and _any_ tree of modules, however it was made.
 A front end annotates every identifier with what it means (`eslint-scope`). A pairing tool matches output units to bundle units. Lean checks that each pair is equal up to renaming,
-that every reference resolves, through the imports and exports, to the right declaration, that the entry exports what the bundle exports, and that the plan the tree describes is `Sound`.
+that every reference resolves, through the imports and exports, to the right declaration, that the entry exports what the bundle exports, that a unit assigning a module-scope name sits with its declaration (ES imports are read-only), and that the plan the tree describes is `Sound`.
 Three rewrites besides renaming are accepted as listed premises (an outside import swapped for a member chain, a moved dynamic-import path, a worker URL made relative to the module). Anything else is a rejection.
 
-Run it with `./run.sh --translation`. The fixture's nine tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, …) and a mutation test are all rejected.
+Run it with `./run.sh --translation`. The fixtures' tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, an assignment moved away from its declaration, …) and a mutation test are all rejected.
 A tree with renamed locals is accepted. Two effects run in the other order give obligations instead of a verdict of "invalid".
 
 On a large production bundle that is not in this repository, the checker accepts the translation, with every unit equal up to renaming and every link resolved, and reports only effect-order obligations.

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "a read moves away from its declaration",
+    "edits": [
+      {
+        "file": "counter.js",
+        "find": "function read() {\n  return count;\n}\nexport { inc, read };",
+        "replace": "export { count, inc };"
+      },
+      {
+        "file": "view.js",
+        "create": "import { count } from \"./counter.js\";\nfunction read() {\n  return count;\n}\nexport { read };\n"
+      },
+      {
+        "file": "entry.js",
+        "find": "import { inc, read } from \"./counter.js\";",
+        "replace": "import { inc } from \"./counter.js\";\nimport { read } from \"./view.js\";"
+      }
+    ],
+    "cert": "match",
+    "expect": { "code": 0, "contains": "PLAN SOUND" }
+  },
+  {
+    "name": "an assignment moves away from its declaration",
+    "edits": [
+      { "file": "counter.js", "find": "let count = 0;\n", "replace": "import { count } from \"./state.js\";\n" },
+      { "file": "state.js", "create": "let count = 0;\nexport { count };\n" }
+    ],
+    "cert": "match",
+    "expect": { "code": 1, "contains": "FAIL  AssignsHome" }
+  }
+]

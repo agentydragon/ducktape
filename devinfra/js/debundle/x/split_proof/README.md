@@ -171,6 +171,7 @@ The main development does not use `native_decide`, so the compiler is not truste
    (ES imports are read-only), one that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
    and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
    The second rule was missing until the split experiment (`experiments/README.md` § 7) and the third until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
+   The translation checker (item 7) applies the first rule too (`AssignsHome`), outside `Sound`. It was missing there until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
    Moving the first two into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The third needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
 
 7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.

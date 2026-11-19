@@ -25,6 +25,8 @@ A _unit_ is one top-level statement of the bundle, or one declarator of a variab
 3. Links. The output name that a bundle declaration pairs with is declared by the module that holds the unit. Every reference to a module-scope name resolves, through the output's imports and exports, to the declaration of the bundle name it pairs with.
 4. The output entry exports every name the bundle exports, each meaning the same declaration. Extra exports are counted.
 5. The plan the output describes, written in the bundle's own names, passes `Sound` ([`CheckOutput.lean`](../../lean/Experiments/CheckOutput.lean)): unique definitions, reads closed, linkable, hygienic, every unit once, conflicting units keep their order. The last check is where obligations come from.
+6. `AssignsHome`: a unit that assigns a module-scope name sits in the module that declares it. ES imports are read-only, so an assignment through an import throws a `TypeError` when it runs.
+   This is the same rule `lowersplit` applies. It is not part of `Sound`, so no theorem ties it to `Correct`. The first version of this checker lacked it and accepted such a split.
 
 `Hygienic` is a second, independent look at the links: it recomputes what every name means from the imports alone.
 
@@ -50,6 +52,7 @@ Anything else that differs is a rejection. Modules outside the tree are assumed 
 
 ## Tests
 
-[`fixtures/basic`](fixtures/basic) is a small bundle with a split, renames, a vendor-style import, a dynamic import and a class. [`variants.json`](fixtures/basic/variants.json) lists edits of the output tree and the verdict each must get: a local rename is accepted; a changed literal, a reference to another declaration, a parameter that captures a module-scope name, a missing import, a declaration renamed but not its use, an import of a name the module does not export, one outside import standing for two things, a duplicated unit and a missing unit are rejected; two effects run in the other order give obligations. `node test.mjs` runs them all.
+[`fixtures/basic`](fixtures/basic) is a small bundle with a split, renames, a vendor-style import, a dynamic import and a class. [`variants.json`](fixtures/basic/variants.json) lists edits of the output tree and the verdict each must get: a local rename is accepted; a changed literal, a reference to another declaration, a parameter that captures a module-scope name, a missing import, a declaration renamed but not its use, an import of a name the module does not export, one outside import standing for two things, a duplicated unit and a missing unit are rejected; two effects run in the other order give obligations.
+[`fixtures/assign`](fixtures/assign) has a counter: a read that moves to another module is accepted, an assignment that moves away from its declaration is rejected. `node test.mjs` runs them all.
 
 [`mutate.mjs`](mutate.mjs) tampers with an accepted output (a literal, an operator, a reference, a local reference, a dropped statement, swapped arguments) and checks that `translate` rejects every mutant.
