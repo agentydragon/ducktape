@@ -86,9 +86,7 @@ kubelet probes do not require TLS. There is no plaintext application RPC listene
 `FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. HarnessHost
 owns Session creation, control and current status, including `ListSessions` and `WatchSessions`.
 
-This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
-deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
-add optional attachments or allow an environment-free central Session.
+This V1 placement requires an exact executor environment, fixed for the Session.
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
@@ -270,8 +268,6 @@ effect.
 Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
 then work notifications and listener reconnects wake further scans of committed rows. Periodic
 scans also read those rows, so missed or coalesced notifications do not strand work.
-`central_sampler_work` uses the existing database and adds no migration, durable notification row,
-deployment resource, or Session setting.
 
 Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
 exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
@@ -715,8 +711,7 @@ Dispatcher does not relay tools.
 The adapter permits at most eight open or opening `OpenSession` streams per Runner. This is a limit
 on live adapter connections, not Codex native sessions, sampler conversations, or the sampler's
 `max_live_sessions` setting. The sampler releases its connection when no live cells or processes
-require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
-session persistence or process policy. A stream loss leaves the native Codex session detached for up
+require it; Runner drain or observer fencing closes it as well. A stream loss leaves the native Codex session detached for up
 to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
 the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md) for connection budgets
 and ownership.
@@ -728,7 +723,7 @@ the JavaScript promise is rejected without replay. Cursor-based `process/read` m
 same execution session and retry once with the same ID and cursor. The adapter returns exact native
 frames to the sampler's existing boundary journal without exposing native JSON as an execution API.
 For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
-image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
+image bytes remain excluded from the journal. Every provider
 request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
 `system`, whatever the model. The stored effective Session prompt is added as standing guidance;
 it does not replace the provider/harness base. Standing instructions are supported; remote
