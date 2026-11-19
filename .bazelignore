@@ -31,8 +31,8 @@ bb-out
 # Trilium Notes extensions - deps not in main requirements
 trilium
 
-# Nested Bazel modules - build through their module labels.
-# (its own MODULE.bazel + Bazel/pnpm build); it is not part of ducktape's build.
+# Nested Bazel modules (each with its own MODULE.bazel): not part of ducktape's build; build through
+# their module labels.
 third_party/activitywatch
 third_party/cli_proxy_api
 third_party/iron_proxy
