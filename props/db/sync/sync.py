@@ -308,14 +308,7 @@ def _add_fp_occurrence(session: Session, snapshot_slug: SnapshotSlug, fp_id: str
 
 
 def compute_files_hash(file_paths: list[str]) -> str:
-    """Compute content-addressable hash for a file set.
-
-    Args:
-        file_paths: List of relative file paths
-
-    Returns:
-        MD5 hash of sorted, newline-joined file paths
-    """
+    """Compute the content-addressable hash of a file set: MD5 of the sorted, newline-joined paths."""
     sorted_paths = sorted(file_paths)
     content = "\n".join(sorted_paths)
     return hashlib.md5(content.encode("utf-8")).hexdigest()
@@ -326,14 +319,6 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: A
 
     Upserts the FileSet and FileSetMember rows if they don't exist.
     Returns None if file_paths is None (pass-through for optional fields).
-
-    Args:
-        session: Database session
-        snapshot_slug: Snapshot the file_set belongs to
-        file_paths: Set of file paths, or None
-
-    Returns:
-        The files_hash for this file set, or None if file_paths is None
     """
     if file_paths is None:
         return None
@@ -365,12 +350,6 @@ def _sync_critic_scopes_for_specimen(
 
     Note: File sets for match_file_restriction are already created by ensure_file_set during
     occurrence sync. This function only needs to handle critic_scopes_expected_to_recall.
-
-    Args:
-        session: Database session
-        slug: Snapshot slug
-        true_positives: List of parsed true positives with occurrences
-        false_positives: List of parsed false positives with occurrences
     """
     logger.debug(f"Syncing critic scopes for {slug}: {len(true_positives)} TPs, {len(false_positives)} FPs")
     # Collect desired critic scopes from occurrence data
@@ -428,10 +407,6 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
 
     Syncs the snapshot, snapshot files, and issues to the database within the
     provided session. Does not commit - caller is responsible for commit/rollback.
-
-    Args:
-        session: Database session (caller must commit/rollback)
-        bundle: Specimen bundle with parsed data and code tar
     """
     # Use pre-parsed data from bundle
     specimen_data = bundle.data

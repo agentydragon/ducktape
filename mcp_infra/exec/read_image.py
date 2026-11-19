@@ -17,12 +17,8 @@ SUPPORTED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_types.ImageContent:
     """Validate image bytes and encode to ImageContent.
 
-    Args:
-        data: Raw image bytes
-        path: Original path (used for mime type detection)
-
-    Raises:
-        ValueError: If mime type is not an image or size exceeds limit
+    `path` only drives mime type detection. Raises ValueError if the mime type is not an image or the size exceeds
+    the limit.
     """
     mime_type, _ = mimetypes.guess_type(path)
     if not mime_type or mime_type not in SUPPORTED_MIME_TYPES:

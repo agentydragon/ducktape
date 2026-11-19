@@ -163,11 +163,7 @@ class ActionModule(ActionBase):
         return result
 
     def _create_installer(self, args: dict[str, Any]) -> GitHubInstaller:
-        """Create installer instance based on method.
-
-        Raises:
-            ActionError: If installer creation fails
-        """
+        """Create installer instance based on method."""
         # Pass all arguments to the installer class, which will extract what it needs
         # The installer class constructor is responsible for validating required params
         if not (method := args.get("method")):

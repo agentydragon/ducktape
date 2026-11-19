@@ -91,14 +91,7 @@ async def ensure_agent_role(db_config: DatabaseConfig, agent_run_id: UUID) -> Ag
     """Ensure PostgreSQL role exists for agent, return credentials.
 
     Creates the role idempotently with deterministic password derived from
-    salt + agent_run_id. Grants agent_base role for RLS-scoped access.
-
-    Args:
-        db_config: Database connection config (must have CREATE ROLE permission)
-        agent_run_id: Agent run ID (encoded in username, used for password derivation)
-
-    Returns:
-        AgentCredentials with username and password for database connection
+    salt + agent_run_id. Grants agent_base role for RLS-scoped access. `db_config` needs CREATE ROLE permission.
     """
     username = f"agent_{agent_run_id}"
     password = derive_agent_password(agent_run_id)

@@ -115,15 +115,7 @@ class Example(Base):
 def count_available_examples_by_scope_all(
     session: Session, splits: list[Split]
 ) -> dict[tuple[Split, ExampleKind], int]:
-    """Count examples grouped by split and example kind.
-
-    Args:
-        session: SQLAlchemy session
-        splits: List of splits to count examples for
-
-    Returns:
-        Dict mapping (split, example_kind) to count, ordered by split then example_kind.
-    """
+    """Count examples grouped by (split, example kind), ordered by split then kind."""
     results = (
         session.query(Snapshot.split, Example.example_kind, func.count(Example.snapshot_slug))
         .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
@@ -132,39 +124,20 @@ def count_available_examples_by_scope_all(
         .order_by(Snapshot.split, Example.example_kind)
         .all()
     )
-    # Build ordered dict (Python 3.7+ preserves insertion order)
     return {(split, example_kind): count for split, example_kind, count in results}
 
 
 def get_examples_for_split(session: Session, split: Split) -> list[Example]:
-    """Get all training examples for a split.
+    """Get all training examples for a split; the main entrypoint for loading them.
 
-    This is the main entrypoint for loading training examples. Returns Example objects
-    ready for evaluation by querying the Examples table directly.
+    Examples are ordered by (snapshot_slug, example_kind, files_hash NULLS FIRST) so optimizer
+    inputs and analysis output remain reproducible across runs. They are detached from the session
+    (via expunge), so they can be used as value objects outside it.
 
-    CRITICAL: Dataset Order Determinism
-    ------------------------------------
-    Examples are ordered by (snapshot_slug, example_kind, files_hash NULLS FIRST) so
-    optimizer inputs and analysis output remain reproducible across runs.
-
-    Args:
-        session: SQLAlchemy session
-        split: Split to load (TRAIN, VALID, or TEST)
-
-    Returns:
-        List of Example objects, ordered deterministically:
-        - TRAIN: All examples (per-file + full-specimen for tighter feedback loops)
-        - VALID/TEST: Full-specimen examples only (ensured by db sync at example generation time)
-
-        Examples are detached from the session (via expunge) so they can be used
-        as value objects outside the session context.
-
-    Note:
-        Example filtering (per-file vs full-specimen) is handled at db sync time.
-        This function trusts that the Examples table contains the correct examples for each split.
+    Per-file versus full-specimen filtering happens at db sync time, and this function trusts the
+    Examples table: TRAIN holds all examples (per-file and full-specimen, for tighter feedback
+    loops), VALID and TEST only full-specimen examples.
     """
-    # Query examples directly with join to filter by split
-    # Order by (snapshot_slug, example_kind, files_hash NULLS FIRST) for deterministic ordering
     examples = (
         session.query(Example)
         .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
@@ -173,7 +146,6 @@ def get_examples_for_split(session: Session, split: Split) -> list[Example]:
         .all()
     )
 
-    # Detach from session so they can be used as value objects
     for example in examples:
         session.expunge(example)
 
