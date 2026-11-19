@@ -1,5 +1,10 @@
 # TODO
 
+## TypeScript build refactor
+
+- [ ] Compare options in bounded spikes before choosing a build layout or generator. See the
+      [code reduction decision](../docs/trimcode_decisions.md#typescript-build-refactor).
+
 ## Orphaned test files
 
 - [ ] Consider detecting orphaned (unwired) test files mechanically: a `test_*.py` or

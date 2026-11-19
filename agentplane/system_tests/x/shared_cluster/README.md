@@ -1,9 +1,10 @@
 # Shared test cluster (parked)
 
-**Parked in favor of the static Ubuntu KVM worker and per-action K3s fixture.** This
-directory retains the former persistent K3s-in-a-container spike for review and possible
-future revival; its node image is no longer in the CI image roster and its chart is an
-inert reference under `agentplane/x/kube_in_kube/reference/`. See the
+**Parked.** The static Ubuntu KVM worker and per-action K3s fixture serve current CI. Keep this
+persistent K3s-in-a-container prototype under `x/` while the
+[end-to-end test architecture](../../../../docs/trimcode_decisions.md#persistent-agentplane-test-cluster)
+is open. Its node image is no longer in the CI image roster. Its chart is an inert reference under
+`agentplane/x/kube_in_kube/reference/`. See the
 [parking note](../../../x/kube_in_kube/README.md) and the archived
 [contract and rollout requirements](SPEC.md).
 

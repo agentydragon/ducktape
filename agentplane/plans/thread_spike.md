@@ -85,6 +85,10 @@ reader for the new inbox entry; (3) Notifications writes inbox entries; (4) App 
 and pane; (5) the setting on staging. Each is additive; reverting (4) or removing the setting hides the
 spike. Dropping it later deletes the package and, in its own PR, the tables.
 
+Before any History fold or projection cleanup, test both modes and have the operator use the
+opt-in UI for real work. Proceed with that migration after operator acceptance. See the
+[code reduction decision](../../docs/trimcode_decisions.md#authored-threads-before-history-teardown).
+
 ## Proposals from prior art
 
 Not decided; each would change the scope above if adopted. From the

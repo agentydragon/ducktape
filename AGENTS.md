@@ -41,6 +41,7 @@ Default to [level 7](STYLE.md#level-7-for-human-facing-material) when discussing
 
 ## Changes
 
+- **Code reduction audits:** check [code reduction decisions](docs/trimcode_decisions.md) before ranking or dispatching findings. Report each finding with its open prerequisites.
 - **Consumer scope.** Unless stated otherwise, `agentydragon/gaffer-private` is Ducktape's only downstream repository, and the repository owner is its only human user. Reasonably small changes are fine when they keep important user flows working, have no user-visible downside the owner would care about, and keep `gaffer-private` working. This includes simplifying an API detail when it makes the code or design clearer or more idiomatic.
 - **Refactoring:** search all references (imports, BUILD, CI, docs, Dockerfiles, manifests). Update every caller in the same commit; no transitional shims.
 - **Stored data:** schema changes are new migrations, never edits to landed ones. Never destroy unregenerable user-authored data (repos, notebooks, mailboxes). Roll-safety: <STYLE.md> § General.
