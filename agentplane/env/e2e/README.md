@@ -49,7 +49,7 @@ model is shared with other packages' tests in [`agentplane/testing/`](../../test
 markers), and `claude_model.py` and `codex_model.py` speak the two dialects. Harness fixtures live
 in `testing/`, where `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`
 runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
-image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
+image ([`image.nix`](../images/image.nix)), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
 
 Durability unit tests live beside the code in [`env/runtime/`](../runtime) (`journal/`, `ingress/`,

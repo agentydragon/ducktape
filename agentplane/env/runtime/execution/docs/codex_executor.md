@@ -13,7 +13,7 @@ between Sessions or a safe place for another principal's credentials.
 
 The template starts `/run/agentplane/environment/bin/agentplane-execution-service companion` in a separate
 container on the same tools image. This process mode runs the companion as PID 1 without starting
-Environment Runtime, Runtime, COSI or telemetry. Kubernetes `resources` supplies its memory and
+Environment Runtime, COSI or telemetry. Kubernetes `resources` supplies its memory and
 CPU limits; kubelet restarts the container. Its PID namespace must be private
 (`shareProcessNamespace: false`). Both containers mount the same state, workspace, home, temporary
 directory, environment binary disk and proxy trust bundle. Projected workload tokens remain
