@@ -15,7 +15,7 @@ bb ssh my-dev-box
 ./bb-box.sh --cpus 4 --mem 8GB --disk 20GB my-dev-box
 
 # Custom image
-./bb-box.sh --image ghcr.io/agentydragon/rbe-worker:nix-devtools my-dev-box
+./bb-box.sh --image ghcr.io/agentydragon/rbe-container-image:latest my-dev-box
 
 # Ephemeral (no name)
 ./bb-box.sh
