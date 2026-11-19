@@ -9,6 +9,7 @@ import signal
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 from types import FrameType
 from typing import cast, get_args
@@ -26,7 +27,7 @@ from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, Sc
 DEFAULT_CONFIG_RUNFILE = "ducktape/finance/augur/api/testdata/config.yaml"
 DEFAULT_HORIZON_MONTHS = 100
 DEFAULT_ROLLOUT_COUNT = 50
-DEFAULT_MONTHLY_SPEND_USD = 7000.0
+DEFAULT_MONTHLY_SPEND_USD = Decimal(7000)
 DEFAULT_PROFILE_OUTPUT = Path("/tmp/augur_metric_fan.prof")
 DEFAULT_PERCENTILES = (1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0)
 
@@ -58,7 +59,7 @@ def main() -> int:
         scenario=ScenarioKey(
             model_id=config.default_model_id,
             horizon_months=args.horizon_months,
-            monthly_spend=args.monthly_spend,
+            monthly_spend=args.monthly_spend_usd,
             spend_index=args.spend_index,
         ),
         first_seed=0,
@@ -102,7 +103,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--horizon-months", type=int, default=DEFAULT_HORIZON_MONTHS)
     parser.add_argument("--rollout-count", type=int, default=DEFAULT_ROLLOUT_COUNT)
-    parser.add_argument("--monthly-spend-usd", type=float, default=DEFAULT_MONTHLY_SPEND_USD)
+    parser.add_argument("--monthly-spend-usd", type=Decimal, default=DEFAULT_MONTHLY_SPEND_USD)
     parser.add_argument("--spend-index", type=SpendIndex, choices=list(SpendIndex), default=SpendIndex.INFLATION)
     parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth")
     parser.add_argument("--percentiles", type=float, nargs="+", default=list(DEFAULT_PERCENTILES))
