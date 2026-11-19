@@ -17,8 +17,8 @@ The database URL comes from the explicit runtime Secret input
   delegation. Environments serves EnvironmentService, Runtime proxy, HarnessHost and Executor
   on its own listener.
 - Workload traffic reaches the shared TLS listener through central-proxy CONNECT and presents its
-  own SVID. Live credential and Identity UID resolution are unchanged, including standing
-  credentials with no Sandbox or Pod. No new Environment attachment requirement is introduced.
+  own SVID. Live credential and Identity UID resolution accepts standing credentials with no
+  Sandbox or Pod, so no Environment attachment is required.
 - Request fields never assert caller identity. A service principal carries no fabricated account
   UID or Pod, and certificate-plus-bearer authentication is refused. Retained ServiceAccount
   attribution and historical Session records remain readable without admitting new bearer calls.
@@ -38,8 +38,7 @@ require a separate service wake grant.
 Both allowlists default empty and are configured only after receiver image pins.
 
 Additive migration 19 retains service actor, optional effective Identity and Action correlation in
-separate service attribution columns. Existing account and Identity evidence is unchanged, and a
-retry never rewrites it. Service wake attempts use their own budget table keyed by SPIFFE ID, never
+separate service attribution columns. Service wake attempts use their own budget table keyed by SPIFFE ID, never
 an account-shaped synthetic key. Old binaries see new actor attribution as absent, so rollback to
 an old receiver must precede caller enablement or explicitly assess pending service-attributed work.
 
@@ -47,7 +46,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 
 - `dispatcher_service_delegation` names exact service actors and exact Dispatcher RPC methods.
   Middleware verifies the actor's SVID, typed Action provenance and the effective Identity's live
-  UID before handlers run. The legacy account-based `delegation` setting is ignored.
+  UID before handlers run.
 - Delegated calls use ordinary Identity Session ownership and `bind_session` checks. Actor grants
   never confer component privileges on the effective Identity. The Action actor's service broker
   grant applies only to automatic wake and does not lend component authority to that Identity.
@@ -59,7 +58,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - Wake eligibility ordinarily uses the effective Identity. A row carrying Action proof uses its
   verified service actor's independent exact service grant; the effective Identity remains in row
   attribution. No credential or Action lease token is persisted, and Dispatcher does no Actions or
-  App lookup. Existing lifecycle, ownership and attachment rules are unchanged.
+  App lookup.
 
 ## Session binding
 
@@ -77,7 +76,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - `CreateSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording a
   Session. Exact retries and authorized reads still find the record after its required Environment disappears.
   Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
-  after explicit deletion. No permanent Session UUID marker is planned, and retained History can reject conflicting reuse.
+  after explicit deletion, and retained History can reject conflicting reuse.
 - A configured Pod-bound Dispatcher backend retains its existing privileged `CreateSession` path. A normal
   ServiceAccount caller cannot choose a Session execution principal by supplying strings. An Identity caller may
   create only an `environment_hosted` Session and must have a current `bind_session` grant for the exact live
@@ -195,8 +194,7 @@ Sandbox Pods retain proxy-only egress. Their credential-holding relay reaches th
 listener through central CONNECT; the listener authenticates the Runner SVID before applying the
 Dispatcher method rules. EnvironmentService has its own listener. The configured CLI credential string
 remains inert for compatibility. Backend callers use the same listener with the configured
-Dispatcher certificate admission and exact grants. A concrete MCP/client and History provenance propagation remain
-outside this transport change.
+Dispatcher certificate admission and exact grants.
 
 ## Typed delivery observations
 
@@ -264,9 +262,7 @@ or reach Runtime. New queued commands are refused as above. Older `FAILED` openi
 rejection and receive the same hold without rewriting their stored outcome. Held commands remain
 cancellable. Automatic resolution of those held openings is not provided.
 
-These rules apply to native openings after all Dispatcher replicas run this protocol. Central
-sampler admission retains its existing behavior; new commands require a Dispatcher Session record.
-Deletion cleanup, retained History and UUID reuse policy are unchanged.
+These rules apply to native openings after all Dispatcher replicas run this protocol.
 
 ## Possible command forwarding and deletion outcomes
 
@@ -384,8 +380,7 @@ in flight can still arrive, so Runtime command-ID deduplication remains required
 A new holder requeues only its Session's in-flight materialization and commands. It preserves the
 committed `delivery_attempted` fact and command IDs. Pending-work scans include in-flight work
 with no runnable queued head. The head rule continues to serialize commands within a Session.
-Acquiring a lease requires only the Session ID, including when no Environment exists; this does
-not change current Session admission or Environment attachment contracts.
+Acquiring a lease requires only the Session ID, including when no Environment exists.
 
 Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
 Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
@@ -440,7 +435,6 @@ invalidations to old replicas. This scheduling change needs no schema migration;
 `ListSessions`' retained-owner read scope, including waiting and failed materialization without
 History or a live Environment. Configured component services read all Sessions; Identity callers
 read only their exact retained execution Identity. Typed delegation remains method-scoped.
-The existing service caller/delegation settings accept this RPC; no new caller setting is required.
 
 An empty `resume_token` streams current Session records in version order, then `CaughtUp`.
 Every frame includes an opaque, versioned resume token containing the last version and a digest
@@ -505,9 +499,9 @@ Lease renewal revalidates suspension against the uncached API; uncertainty ends 
 DELETED is permanent for the exact UID and survives observer loss.
 
 Central observation reuses the same stream processing, wire-version guard, lease renewal and epoch
-fencing. The existing `central_sampler` target supplies its connection and Sessions SVID; no new
-setting is needed. Its singleton `central_sampler=true` row in `sandbox_activity_watch` leases one
-sampler watch across all Dispatcher replicas, independently of every executor Sandbox. Hosted rows
+fencing. The existing `central_sampler` target supplies its connection and Sessions SVID. Its
+singleton `central_sampler=true` row in `sandbox_activity_watch` leases one sampler watch across all
+Dispatcher replicas, independently of every executor Sandbox. Hosted rows
 retain their unique Sandbox UID; exactly one key kind is present per row. A lost replica is replaced
 after lease expiry, with a new epoch and full snapshot. The sampler admits the Sessions SVID and
 filters snapshots to the service owner's Sessions. Only locally recorded central Sessions are
