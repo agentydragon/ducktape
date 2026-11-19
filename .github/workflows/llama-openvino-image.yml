@@ -5,10 +5,10 @@
 # git tree at LLAMA_CPP_REF below.
 #
 # GHCR, not the Forgejo registry: this image is consumed by a Nix-managed host
-# service, not a Flux-tracked cluster workload, so it follows the buildbuddy-remote-runner /
-# freecad-test shape in container-images.yml rather than the Forgejo+ImagePolicy
-# shape used by cluster-deployed images (see that workflow's header comment for
-# the split). Unlike those two, the resolved digest isn't auto-pinned into
+# service, not a Flux-tracked cluster workload, so it follows the freecad-test shape in
+# container-images.yml and the runner shape in buildbuddy-remote-runner-image.yml rather
+# than the Forgejo+ImagePolicy shape used by cluster-deployed images (see container-images.yml's
+# header comment for the split). Unlike those two, the resolved digest isn't auto-pinned into
 # devinfra/image_pins.json — that file is for Bazel/bb-consumed pins, and nothing
 # else in this repo shares this image. Take the digest from the job summary and
 # paste it into local_llm_npu.nix's image reference by hand, matching how

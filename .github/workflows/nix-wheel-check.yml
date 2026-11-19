@@ -9,9 +9,8 @@
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
 #
-# Source of truth for pin → Bazel target + asset filename: devinfra/ci/artifact_targets.json.
-# Keep it in sync with the artifact entries in release.yml's matrix (SYNC
-# comment there points here).
+# Source of truth for pin → Bazel target + asset filename: devinfra/ci/artifact_targets.json,
+# which release.yml also reads for its rows.
 name: Nix wheel check
 
 on:

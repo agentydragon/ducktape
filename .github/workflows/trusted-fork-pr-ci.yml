@@ -49,8 +49,8 @@ jobs:
       source_commit: ${{ needs.fork-context.outputs.source_commit }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
-      # actions/checkout v6 refuses fork code under pull_request_target unless
-      # explicitly opted in. The called job either recognizes the trusted author
+      # actions/checkout refuses fork code under pull_request_target unless
+      # explicitly opted in (allow-unsafe-pr-checkout). The called job either recognizes the trusted author
       # or blocks on fork-ci-review before runner assignment.
       allow_unsafe_pr_checkout: true
     secrets:
