@@ -121,13 +121,6 @@ def test_standing_callers_always_use_identity_policies_and_exact_account_grants(
             assert set(grant["spec"]["roleSets"]) == expected_role_sets
             assert {name: role_sets[name] for name in expected_role_set_rules} == expected_role_set_rules
 
-            service_account = one(
-                doc
-                for doc in _of(docs, "ServiceAccount")
-                if doc["metadata"]["name"] == name and doc["metadata"].get("namespace") == staging.ENV.namespace
-            )
-            assert "agentplane.allegedly.works/use-action-service" not in service_account["metadata"].get("labels", {})
-
     assert all(rules[0] == rules[1] for rules in effective_rules.values())
 
 

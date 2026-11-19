@@ -48,7 +48,6 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, workload := range []workloadauthtesting.Workload{owner, other} {
-		setCallerLabel(t, workload.Principal.Account, true)
 		binding := &policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-identity-binding-" + uuid.NewString()},
 			Spec: policyapi.PolicyBindingSpec{

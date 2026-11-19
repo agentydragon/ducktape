@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
@@ -48,7 +46,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -557,22 +554,6 @@ func TestTheServiceGatesTheOperatorServicesOverGRPC(t *testing.T) {
 	}
 	if _, err := service.operators.DecideActionRequest(asReader, decision); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a reader's Decision over gRPC: %v", err)
-	}
-}
-
-// setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
-func setCallerLabel(t *testing.T, account auth.Account, labeled bool) {
-	t.Helper()
-	if _, err := kube.ServiceAccount(t.Context(), account); err != nil {
-		t.Fatal(err)
-	}
-	value := "null"
-	if labeled {
-		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
-	}
-	if _, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(t.Context(), account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{}); err != nil {
-		t.Fatal(err)
 	}
 }
 

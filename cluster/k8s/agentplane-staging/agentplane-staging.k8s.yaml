@@ -8531,8 +8531,6 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  labels:
-    agentplane.allegedly.works/use-action-service: "true"
   name: mcp-edge
   namespace: agentplane-staging
 automountServiceAccountToken: true
