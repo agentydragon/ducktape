@@ -149,16 +149,16 @@
       "sha256": "tbCV5xHXlKL+MFhf0BBQnSxTxc/7G8YCRVF38IGHPlQ="
     },
     "skill-freecad": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-053bf8a4a067/freecad.skill",
-      "sha256": "BTv4pKBnfrYypm4k9p6Cbnk3S6d95v8fmiqGD77hkxA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-8e32f6b3eff1/freecad.skill",
+      "sha256": "jjL2s+/xVIZEC7zRRyWwZ8HbOmW35qbxd4b6ooLweSY="
     },
     "skill-google_photos_link": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-80fcb23ce80a/google_photos_link.skill",
-      "sha256": "gPyyPOgKGNJ1zjNVfcTeyKgxlI0dM2wqEU5DSlT5IpY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-0fd36d8f127e/google_photos_link.skill",
+      "sha256": "D9NtjxJ+eZiqKO2FvRKC4CMOlpVBACBumj3wuJg1+Cc="
     },
     "skill-ground_skill": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ground_skill-7f88a9abebf7/ground_skill.skill",
-      "sha256": "f4ipq+v3mLfXFctnjImx6TtsWb26kQlMbAHFwHkydBk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ground_skill-133579164951/ground_skill.skill",
+      "sha256": "EzV5FklRrC+F1Vtm3eCuriz7WE1l4s5Djnn0X/tX8oA="
     },
     "skill-ikea_3d_models": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ikea_3d_models-1f521987016a/ikea_3d_models.skill",
