@@ -56,32 +56,6 @@ class AuditedRandom:
         self._calls: list[RngCallAudit] = []
 
     @classmethod
-    def for_action(
-        cls,
-        *,
-        secret: bytes,
-        rng_version: str,
-        rng_key_id: str,
-        user_id: str,
-        client_action_id: str,
-        action_type: str,
-        request_body: dict[str, Any],
-    ) -> AuditedRandom:
-        return cls(
-            secret=secret,
-            rng_version=rng_version,
-            rng_key_id=rng_key_id,
-            seed_material={
-                "rng_version": rng_version,
-                "rng_key_id": rng_key_id,
-                "user_id": user_id,
-                "client_action_id": client_action_id,
-                "action_type": action_type,
-                "request_body": request_body,
-            },
-        )
-
-    @classmethod
     def from_seed_material_json(
         cls, *, secret: bytes, rng_version: str, rng_key_id: str, seed_material_json: str
     ) -> AuditedRandom:
@@ -206,12 +180,16 @@ class ActionRngFactory:
     def for_action(
         self, *, user_id: str, client_action_id: str, action_type: str, request_body: dict[str, Any]
     ) -> AuditedRandom:
-        return AuditedRandom.for_action(
+        return AuditedRandom(
             secret=self.secret,
             rng_version=self.rng_version,
             rng_key_id=self.rng_key_id,
-            user_id=user_id,
-            client_action_id=client_action_id,
-            action_type=action_type,
-            request_body=request_body,
+            seed_material={
+                "rng_version": self.rng_version,
+                "rng_key_id": self.rng_key_id,
+                "user_id": user_id,
+                "client_action_id": client_action_id,
+                "action_type": action_type,
+                "request_body": request_body,
+            },
         )
