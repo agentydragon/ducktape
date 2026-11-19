@@ -111,7 +111,7 @@ jobs:
       # - Avoids `bb remote build`'s post-run `downloadOutputs` path, which
       #   currently fails with "Exhausted all peers" — see
       #   devinfra/buildbuddy/debug/bb_remote_peers_exhausted.md.
-      # `&&` matches the previous step ordering: build runs only if test passed.
+      # devinfra/ci/bazel_ci.py builds only if the test phase did not fail.
       #
       # run_from_commit: have the runner check out the exact commit instead of mirroring the
       # PR as a patchset (base=devel + diff). The CI checkout is a clean commit (no
