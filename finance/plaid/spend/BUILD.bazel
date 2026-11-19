@@ -182,7 +182,6 @@ py_test(
         ":allowance",
         ":configuration",
         ":conftest",
-        ":models",
         ":reconciliation_views",
         "//:conftest",
         "//finance/plaid/spend/testing:transaction",

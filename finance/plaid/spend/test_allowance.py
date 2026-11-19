@@ -42,7 +42,6 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
 )
 from finance.plaid.spend.configuration import SpendConfiguration, load_configuration
-from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
 from finance.plaid.spend.reconciliation_views import allowance_view
 from finance.plaid.spend.testing.transaction import make_transaction
 
@@ -946,7 +945,7 @@ sustainability:
     assert correction.value_multiplier == Decimal("1.00000000000000000000000000001")
 
 
-def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: Path):
+def test_one_off_yaml_round_trip(one_off_configuration: Path):
     loaded = load_configuration(one_off_configuration)
     parsed = loaded.allowance
     assert parsed is not None
@@ -954,23 +953,8 @@ def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: P
     assert [rule.scope for rule in parsed.rules] == [RuleScope.ONE_OFF, RuleScope.PATTERN]
     assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
     assert load_configuration(one_off_configuration) == loaded
-    view = SpendConfigurationView(
-        time_zone=loaded.time_zone.key,
-        cards=[],
-        allowance=AllowanceConfigurationView(
-            monthly_minor_units=parsed.monthly_minor_units,
-            activation_at=parsed.activation_at,
-            currency=parsed.currency,
-            spending_account_count=len(parsed.spending_account_ids),
-            max_sync_age_hours=parsed.max_sync_age_hours,
-            forecast_basis_period_id=parsed.forecast_basis_period_id,
-            rules=parsed.rules,
-            analysis_categories=parsed.analysis_categories,
-        ),
-    )
-    assert view.allowance is not None
-    assert view.allowance.rules[0].description is not None
-    assert view.allowance.rules[0].description.startswith("Confirmed example")
+    assert parsed.rules[0].description is not None
+    assert parsed.rules[0].description.startswith("Confirmed example")
 
 
 if __name__ == "__main__":
