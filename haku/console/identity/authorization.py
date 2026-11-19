@@ -68,6 +68,7 @@ def _utcnow() -> datetime.datetime:
 def _database_is_unavailable(error: DBAPIError) -> bool:
     if isinstance(error, (OperationalError, InterfaceError)) or error.connection_invalidated:
         return True
+    # `orig` is typed only as `BaseException`; drivers that report SQLSTATE expose it as `sqlstate`.
     sqlstate = getattr(error.orig, "sqlstate", None)
     return isinstance(sqlstate, str) and sqlstate.startswith("08")
 

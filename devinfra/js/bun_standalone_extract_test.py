@@ -180,7 +180,7 @@ def test_virtual_source_path_and_stable_alias_are_both_written(tmp_path: Path) -
     binary = tmp_path / "binary"
     binary.write_bytes(synthetic_graph([("/$bunfs/root/foo.js", b"export function factory() {}")]))
     output = tmp_path / "extracted"
-    assert main([str(binary), str(output), "--alias", "factory.js=factory"]) == 0
+    main([str(binary), str(output), "--alias", "factory.js=factory"])
     assert (output / "$bunfs/root/foo.js").read_text() == "export function factory() {}"
     assert (output / "factory.js").read_text() == "export function factory() {}"
 
@@ -222,7 +222,7 @@ def test_embedded_loaders_name_each_module_loader(tmp_path: Path) -> None:
     )
     output = tmp_path / "extracted"
     manifest = output / "embedded-loaders.json"
-    assert main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)]) == 0
+    main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)])
     assert json.loads(manifest.read_text()) == {
         "$bunfs/root/a.js": "js",
         "$bunfs/root/b.md": "text",

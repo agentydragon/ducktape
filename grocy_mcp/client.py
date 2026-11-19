@@ -55,7 +55,7 @@ class GrocyClient(httpx2.AsyncClient):
     async def _fetch_entities(
         self, entity_type: EntityType
     ) -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]], list[str]]:
-        entity_path = f"/objects/{entity_type.value}"
+        entity_path = f"/objects/{entity_type}"
         entity_label = entity_type.name.lower().replace("_", " ")
         response = await self.get(entity_path)
         response.raise_for_status()

@@ -5,7 +5,6 @@ import datetime
 import pytest
 import pytest_bazel
 from prometheus_client import CollectorRegistry, generate_latest
-from prometheus_client.parser import text_string_to_metric_families
 from pydantic import BaseModel
 
 from platform_sessions.probe_metrics import ProbeMetrics, ProbeOutcome, ProbeSource
@@ -26,18 +25,6 @@ def scrape(registry: CollectorRegistry) -> str:
     return generate_latest(registry).decode("utf-8")
 
 
-def sample_value(output: str, name: str, labels: dict[str, str]) -> float | None:
-    return next(
-        (
-            sample.value
-            for family in text_string_to_metric_families(output)
-            for sample in family.samples
-            if sample.name == name and sample.labels == labels
-        ),
-        None,
-    )
-
-
 def test_metrics_are_instance_scoped_and_only_accept_fixed_labels():
     registry = CollectorRegistry()
     first, second = configured_instances()
@@ -46,45 +33,38 @@ def test_metrics_are_instance_scoped_and_only_accept_fixed_labels():
 
     reporter.completed(ProbeOutcome.SUCCESS, ProbeSource.PERIODIC)
     reporter.completed(ProbeOutcome.CHALLENGE, ProbeSource.VERIFY)
-    output = scrape(registry)
 
     assert (
-        sample_value(
-            output,
+        registry.get_sample_value(
             "platform_session_probe_total",
             {"provider": "example", "instance": "first", "outcome": "success", "source": "periodic"},
         )
         == 1
     )
     assert (
-        sample_value(
-            output,
+        registry.get_sample_value(
             "platform_session_probe_total",
             {"provider": "example", "instance": "first", "outcome": "challenge", "source": "verify"},
         )
         == 1
     )
     assert (
-        sample_value(
-            output,
+        registry.get_sample_value(
             "platform_session_probe_total",
             {"provider": "example", "instance": "second", "outcome": "success", "source": "periodic"},
         )
         is None
     )
     assert (
-        sample_value(
-            output,
+        registry.get_sample_value(
             "platform_session_latest_probe_outcome",
             {"provider": "example", "instance": "first", "outcome": "challenge"},
         )
         == 1
     )
     assert (
-        sample_value(
-            output,
-            "platform_session_latest_probe_outcome",
-            {"provider": "example", "instance": "second", "outcome": "success"},
+        registry.get_sample_value(
+            "platform_session_latest_probe_outcome", {"provider": "example", "instance": "second", "outcome": "success"}
         )
         == 0
     )
@@ -110,20 +90,23 @@ def test_latest_outcome_and_success_timestamp_ignore_stale_and_superseded_result
     reporter.completed(ProbeOutcome.SUCCESS, ProbeSource.PERIODIC, completed_at=timestamp(150))
     reporter.completed(ProbeOutcome.SUPERSEDED, ProbeSource.PERIODIC, completed_at=timestamp(300))
 
-    output = scrape(registry)
     identity = {"provider": "example", "instance": "first"}
-    assert sample_value(output, "platform_session_last_success_timestamp_seconds", identity) == 150
-    assert sample_value(output, "platform_session_latest_probe_outcome", identity | {"outcome": "outcome_unknown"}) == 1
-    assert sample_value(output, "platform_session_latest_probe_outcome", identity | {"outcome": "superseded"}) == 0
+    assert registry.get_sample_value("platform_session_last_success_timestamp_seconds", identity) == 150
     assert (
-        sample_value(output, "platform_session_probe_total", identity | {"outcome": "superseded", "source": "periodic"})
+        registry.get_sample_value("platform_session_latest_probe_outcome", identity | {"outcome": "outcome_unknown"})
+        == 1
+    )
+    assert registry.get_sample_value("platform_session_latest_probe_outcome", identity | {"outcome": "superseded"}) == 0
+    assert (
+        registry.get_sample_value(
+            "platform_session_probe_total", identity | {"outcome": "superseded", "source": "periodic"}
+        )
         == 1
     )
 
     reporter.completed(ProbeOutcome.SUCCESS, ProbeSource.VERIFY, completed_at=timestamp(400))
-    output = scrape(registry)
-    assert sample_value(output, "platform_session_last_success_timestamp_seconds", identity) == 400
-    assert sample_value(output, "platform_session_latest_probe_outcome", identity | {"outcome": "success"}) == 1
+    assert registry.get_sample_value("platform_session_last_success_timestamp_seconds", identity) == 400
+    assert registry.get_sample_value("platform_session_latest_probe_outcome", identity | {"outcome": "success"}) == 1
 
     with pytest.raises(ValueError, match="timezone-aware"):
         reporter.completed(ProbeOutcome.SUCCESS, ProbeSource.VERIFY, completed_at=datetime.datetime(2026, 1, 1))

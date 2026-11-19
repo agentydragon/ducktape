@@ -170,12 +170,12 @@ def test_rotation_probe_requires_k8s_secret():
         "token_field": "token",
     }
     with pytest.raises(ValidationError):
-        Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics"}})
+        Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.example.test/v1/metrics"}})
     r = Rotation.model_validate(
         base
         | {
             "k8s_secret": {"path": "cluster/k8s/x.sops.yaml", "name": "alloy-otlp-bearer", "namespace": "flux-system"},
-            "probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics", "method": "POST"},
+            "probe": {"url": "https://alloy-otlp.example.test/v1/metrics", "method": "POST"},
         }
     )
     assert r.probe is not None
@@ -227,7 +227,7 @@ def _probed_rotation(tmp_path: Path) -> Rotation:
             namespace="flux-system",
             token_key="token",
         ),
-        probe=Probe(url="https://alloy-otlp.allegedly.works/v1/metrics", method="POST"),
+        probe=Probe(url="https://alloy-otlp.example.test/v1/metrics", method="POST"),
     )
 
 
@@ -249,7 +249,7 @@ def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):
     seen: list[httpx.Request] = []
     assert rotate.rotate_one(_recording_client(401, seen), rotation, Config(rotations=[])) is True
     [request] = seen
-    assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.allegedly.works/v1/metrics")
+    assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.example.test/v1/metrics")
     assert request.headers["Authorization"] == "Bearer live-token"
 
 

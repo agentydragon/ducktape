@@ -122,7 +122,6 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 
@@ -158,7 +157,7 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.world import World
+from finance.augur.sim.world import Capture, World
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.study.trinity.synthetic import synthetic_history
 
@@ -398,10 +397,7 @@ def compose(case: Situation, rollout_id: int, *, lots: Sequence[OpeningLot], ann
 
 
 def drive(
-    worlds: Mapping[int, World],
-    *,
-    targets: dict[tuple[AccountId, AssetId], int],
-    capture: Literal["summary", "dense", "forensic"] = "summary",
+    worlds: Mapping[int, World], *, targets: dict[tuple[AccountId, AssetId], int], capture: Capture = "summary"
 ) -> list[Rollout]:
     """Python owns the monthly batch loop; the worlds own every financial effect."""
     with ActionSession(worlds, RETIREE, capture=capture) as session:
@@ -417,7 +413,7 @@ def execute(
     equity_share: float,
     withdrawal_rate: float,
     rollout_ids: Sequence[int],
-    capture: Literal["summary", "dense", "forensic"] = "summary",
+    capture: Capture = "summary",
 ) -> list[Rollout]:
     """One Trinity cell — `equity_share` of a $1M portfolio, drawn down at `withdrawal_rate` of
     that initial value — on the selected windows of `case`."""
@@ -456,7 +452,7 @@ class Replay:
         equity_share: float,
         withdrawal_rate: float,
         rollout_ids: Sequence[int] | None = None,
-        capture: Literal["summary", "dense", "forensic"] = "summary",
+        capture: Capture = "summary",
     ) -> list[Rollout]:
         """Run a cell or selected original window IDs on the same supplied population."""
         return execute(

@@ -37,7 +37,7 @@ from props.db.snapshots import LocationAnchor
 from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
 # Kept in sync with LLMApiShape so constraints accept each supported API shape.
-_LLM_API_SHAPES_SQL = ", ".join(f"'{shape.value}'" for shape in LLMApiShape)
+_LLM_API_SHAPES_SQL = ", ".join(f"'{shape}'" for shape in LLMApiShape)
 
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion

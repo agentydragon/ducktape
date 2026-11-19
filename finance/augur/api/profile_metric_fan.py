@@ -36,7 +36,7 @@ class ProfileTimeoutError(TimeoutError):
     pass
 
 
-def main() -> int:
+def main() -> None:
     args = _arg_parser().parse_args()
     config = load_augur_config(_config_path(args.config))
     resolved_portfolio = resolve_portfolio_sources(config)
@@ -93,7 +93,6 @@ def main() -> int:
     print(f"terminal_metric_percentile_rows: {len(response.terminal_metric_percentiles['percentile'])}")
     print(f"failed_count: {response.failed_count}")
     pstats.Stats(profiler).strip_dirs().sort_stats(pstats.SortKey.CUMULATIVE).print_stats(args.top)
-    return 0
 
 
 def _arg_parser() -> argparse.ArgumentParser:
@@ -140,4 +139,4 @@ def _timeout(_signum: int, _frame: FrameType | None) -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -25,7 +25,7 @@ DEMO_TOOL = {
 }
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description="Call Tana's llmProxy through LiteLLM.")
     parser.add_argument("--model", default="tana/claude-3-5-sonnet-latest")
     parser.add_argument("--prompt", default="Reply with exactly: tana-litellm-ok")
@@ -75,7 +75,7 @@ def main() -> int:
             print(json.dumps(list(streamed_tool_calls.values()), indent=2))
         else:
             print()
-        return 0
+        return
 
     response = litellm.completion(**completion_kwargs)
     choice = response.choices[0]
@@ -98,7 +98,6 @@ def main() -> int:
         print(json.dumps(calls, indent=2))
     else:
         print(choice.message.content)
-    return 0
 
 
 def _field(value: Any, name: str) -> Any:
@@ -135,4 +134,4 @@ def _merge_tool_call_delta(tool_calls: dict[str, dict[str, Any]], delta: dict[st
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
