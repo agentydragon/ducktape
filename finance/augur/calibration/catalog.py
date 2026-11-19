@@ -44,11 +44,6 @@ class Mappability(StrEnum):
     UNMAPPABLE = "unmappable"
 
 
-# ---------------------------------------------------------------------------
-# Platform reference: discriminated union (one required ID per variant)
-# ---------------------------------------------------------------------------
-
-
 class ManifoldRef(_CatalogModel):
     platform: Literal[Platform.MANIFOLD] = Platform.MANIFOLD
     manifold_id: str
@@ -86,11 +81,6 @@ def _extract_platform_ref(data: dict[str, Any]) -> dict[str, Any]:
         ref[id_key] = data.pop(id_key)
     data["platform_ref"] = ref
     return data
-
-
-# ---------------------------------------------------------------------------
-# Catalog metadata
-# ---------------------------------------------------------------------------
 
 
 class CatalogMetadata(BaseModel):
@@ -132,11 +122,6 @@ class CatalogMetadata(BaseModel):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Market base + mappability variants
-# ---------------------------------------------------------------------------
-
-
 class _MarketBase(_CatalogModel):
     """Market metadata shared by every mappability variant."""
 
@@ -166,14 +151,6 @@ class _MarketBase(_CatalogModel):
         if isinstance(ref, KalshiRef):
             return ref.kalshi_id
         raise AssertionError("unreachable")
-
-
-# ---------------------------------------------------------------------------
-# Market mapping: a discriminated union binding an `exact` market to the augur
-# quantity that scores it. Each variant carries exactly its own fields (a PE event
-# kind never has a `series`, a level kind never has a `threshold_usd`), so invalid
-# bindings are unrepresentable. `kind` is the discriminator.
-# ---------------------------------------------------------------------------
 
 
 # PE event mappings name the private-equity issuer they score (the catalog self-describes its
@@ -240,6 +217,7 @@ class LevelByDateMapping(_CatalogModel):
 # PE event mappings read a per-issuer trajectory; level mappings read a level-series matrix.
 PeEventMapping = IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping
 LevelMapping = LevelAtDateMapping | InflationYoyMapping | LevelByDateMapping
+# Binds an `exact` market to the augur quantity that scores it; each variant carries only its own fields.
 MarketMapping = Annotated[
     IpoByDateMapping
     | PreIpoFailureMapping
@@ -280,11 +258,6 @@ class UnmappableMarket(_MarketBase):
 # Surfaced markets (shown with their live price + reason, never scored) are the non-exact variants.
 SurfacedMarket = CorrelateMarket | UnmappableMarket
 MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(discriminator="mappability")]
-
-
-# ---------------------------------------------------------------------------
-# Categorical (multinomial) bucket families
-# ---------------------------------------------------------------------------
 
 
 class BucketMember(_CatalogModel):

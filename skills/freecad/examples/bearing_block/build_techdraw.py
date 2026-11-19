@@ -215,9 +215,7 @@ def _main() -> None:
         "front: base chamfer line",
     )
 
-    # ============================================================
     # Front view dimensions — overall envelope + chamfer/fillet
-    # ============================================================
 
     # BaseLength — bottom edge
     add_dim("BaseLength", "DistanceX", [(front, f"Edge{bottom_idx}")], x=0, y=18)
@@ -275,9 +273,7 @@ def _main() -> None:
         format_spec="%.0f x45\u00b0",
     )
 
-    # ============================================================
     # Right view dimensions — BaseWidth + BaseHeight
-    # ============================================================
 
     right_vis = right_v.getVisibleEdges()
     for i, e in enumerate(right_vis):
@@ -311,9 +307,7 @@ def _main() -> None:
         y=5,
     )
 
-    # ============================================================
     # Top view dimensions — bore, boss diameter, mounting holes
-    # ============================================================
 
     top_vis = top_v.getVisibleEdges()
     for i, e in enumerate(top_vis):

@@ -27,24 +27,6 @@ def query_recall_by_example(
 
     This is the canonical way to compute recall for cross-run aggregation.
     Single-run recall can be computed inline from occurrence_results.
-
-    Args:
-        session: SQLAlchemy session
-        split: Optional split filter (TRAIN, VALID, TEST)
-        critic_image_digest: Optional image digest filter (get recall for specific definition)
-
-    Returns:
-        List of RecallByExampleRow (example, critic_image_digest, recall)
-
-    Example:
-        # Get recall for all train examples with a specific definition
-        results = query_recall_by_example(
-            session,
-            split=Split.TRAIN,
-            critic_image_digest="sha256:abc123..."
-        )
-        for row in results:
-            print(f"{row.example}: {row.recall * 100:.1f}%")
     """
     # Query TpOccurrenceCredit VIEW (uses example_kind + files_hash composite key)
     query = session.query(

@@ -68,12 +68,7 @@ def test_custom_schema_generates_anyof_and_passes_strict_mode_validation():
     validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
 
 
-# ---------------------------------------------------------------------------
-# _inline_refs_with_siblings: unit tests for edge cases not easily reproduced
-# by real Pydantic models
-# ---------------------------------------------------------------------------
-
-
+# Unit tests for `_inline_refs_with_siblings` edge cases that real Pydantic models do not produce.
 def test_inline_ref_conflict_raises():
     """Sibling overwriting a non-allowed def key with a different value raises."""
     schema = {
@@ -96,10 +91,6 @@ def test_unresolvable_ref_is_unchanged(reference: str, description: str, extra_s
     _inline_refs_with_siblings(schema)
     assert schema["properties"]["x"] == expected
 
-
-# ---------------------------------------------------------------------------
-# Integration tests: real Pydantic models exercising ref inlining
-# ---------------------------------------------------------------------------
 
 _STR_IDENTITY_SERIALIZER = PlainSerializer(lambda x: x, return_type=str, when_used="json")
 

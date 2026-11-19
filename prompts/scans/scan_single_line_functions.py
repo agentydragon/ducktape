@@ -142,11 +142,7 @@ class SingleLineExtractor(ast.NodeVisitor):
 
 
 def scan_file(filepath: Path) -> list[dict[str, Any]]:
-    """Scan a single Python file for single-line functions.
-
-    Returns:
-        List of single-line function dicts
-    """
+    """Scan a single Python file for single-line functions."""
     try:
         content = filepath.read_text(encoding="utf-8")
         lines = content.splitlines(keepends=True)

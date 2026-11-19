@@ -48,11 +48,6 @@ from props.db.models import GradingPending
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Crane auth
-# =============================================================================
-
-
 def _setup_crane_auth(config: DatabaseConfig) -> None:
     """Write ~/.docker/config.json so crane can push/pull via Basic auth."""
     registry_url = os.environ.get("PROPS_REGISTRY_URL")
@@ -62,11 +57,6 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
     registry = urlparse(registry_url).netloc or registry_url
     write_docker_auth(registry, config.user, config.password, overwrite=True)
     logger.info("Crane auth configured for registry %s", registry)
-
-
-# =============================================================================
-# Improvement mode: termination checking
-# =============================================================================
 
 
 class TerminationSuccess(BaseModel):
@@ -315,11 +305,6 @@ def improve_termination_middleware(
     return middleware
 
 
-# =============================================================================
-# Agent loop
-# =============================================================================
-
-
 async def run_agent_loop(
     system_prompt: str,
     http_client: httpx.AsyncClient,
@@ -380,11 +365,6 @@ async def run_agent_loop(
                 return 0
             logger.warning("Agent finished without beating baseline")
             return 1
-
-
-# =============================================================================
-# Entry point
-# =============================================================================
 
 
 async def main() -> int:

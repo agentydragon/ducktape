@@ -7,7 +7,6 @@ from difftree.tree import TreeNode, build_tree
 
 
 def test_build_tree_single_file():
-    """Test building tree with a single file."""
     changes = [FileChange(path="test.py", additions=10, deletions=5)]
     root = build_tree(changes)
 

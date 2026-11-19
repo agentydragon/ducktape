@@ -36,10 +36,6 @@ mod test_util;
 
 use session::{Session, format_system_message};
 
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
-
 #[derive(Parser)]
 #[command(name = "claude-hook", version)]
 struct Cli {
@@ -73,10 +69,7 @@ enum Command {
     },
 }
 
-// ---------------------------------------------------------------------------
-// Session paths (mirrors devinfra/claude/session_paths.py)
-// ---------------------------------------------------------------------------
-
+// Mirrors devinfra/claude/session_paths.py.
 pub(crate) fn daemon_dir_path(session_id: &str) -> PathBuf {
     PathBuf::from("/tmp/claude-hd").join(session_id)
 }
@@ -99,10 +92,6 @@ pub(crate) fn home_session_dir(session_id: &str) -> PathBuf {
         .join("session-env")
         .join(session_id)
 }
-
-// ---------------------------------------------------------------------------
-// Daemon state
-// ---------------------------------------------------------------------------
 
 struct AppState {
     last_request: AtomicU64,
@@ -138,10 +127,6 @@ impl AppState {
             .clone()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
 
 /// True when running inside a Firecracker microVM (checks PID 1 cmdline).
 fn is_firecracker() -> bool {
@@ -447,10 +432,6 @@ async fn handle_mailbox(
     r#"{"status":"ok"}"#
 }
 
-// ---------------------------------------------------------------------------
-// Daemon entry point
-// ---------------------------------------------------------------------------
-
 async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
     let project_dir = std::env::var("CLAUDE_PROJECT_DIR")
         .map(PathBuf::from)
@@ -564,10 +545,6 @@ fn write_locked_pidfile(pidfile: &Path) -> std::fs::File {
     );
     tmp.persist(pidfile).expect("persist pidfile")
 }
-
-// ---------------------------------------------------------------------------
-// Client: double-fork + UDS request
-// ---------------------------------------------------------------------------
 
 /// Returned by `fork_daemon`: the read end of the readiness pipe. The
 /// caller awaits a `"READY"` write or EOF on the read end via `wait_for_sock`.
@@ -815,10 +792,6 @@ async fn dispatch_hook() {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() {

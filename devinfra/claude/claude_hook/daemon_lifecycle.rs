@@ -24,10 +24,6 @@ const STARTUP_FAILURE_FILE: &str = "startup_failure.json";
 const CIRCUIT_BREAKER_BASE_SECS: u64 = 2;
 const CIRCUIT_BREAKER_MAX_SECS: u64 = 120;
 
-// ---------------------------------------------------------------------------
-// Pidfile flock probe
-// ---------------------------------------------------------------------------
-
 /// Non-blocking flock probe on the pidfile. Returns `true` if a daemon holds
 /// the lock (i.e., a live daemon is running).
 pub fn is_pidfile_locked(pidfile: &Path) -> bool {
@@ -44,10 +40,6 @@ pub fn is_pidfile_locked(pidfile: &Path) -> bool {
         true
     }
 }
-
-// ---------------------------------------------------------------------------
-// Cross-process startup lock (daemon.lock)
-// ---------------------------------------------------------------------------
 
 /// RAII guard that holds an exclusive flock on `daemon.lock`. Released on drop.
 pub struct DaemonLockGuard {
@@ -77,10 +69,6 @@ pub fn acquire_daemon_lock(daemon_dir: &Path) -> DaemonLockGuard {
     );
     DaemonLockGuard { _fd: fd }
 }
-
-// ---------------------------------------------------------------------------
-// Kill stale daemon
-// ---------------------------------------------------------------------------
 
 fn read_pidfile(pidfile: &Path) -> Option<i32> {
     std::fs::read_to_string(pidfile).ok()?.trim().parse().ok()
@@ -112,10 +100,6 @@ pub fn kill_daemon_by_pidfile(pidfile: &Path) {
     }
     eprintln!("lifecycle: pid={pid} still alive after SIGTERM+SIGKILL");
 }
-
-// ---------------------------------------------------------------------------
-// Circuit breaker
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize)]
 struct StartupFailure {
@@ -199,10 +183,6 @@ pub fn clear_startup_failure(daemon_dir: &Path) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Health check
-// ---------------------------------------------------------------------------
-
 async fn health_check(sock_path: &Path) -> bool {
     let Ok(stream) = tokio::net::UnixStream::connect(sock_path).await else {
         return false;
@@ -226,10 +206,6 @@ async fn health_check(sock_path: &Path) -> bool {
     };
     resp.is_ok()
 }
-
-// ---------------------------------------------------------------------------
-// ensure_daemon orchestration
-// ---------------------------------------------------------------------------
 
 /// Full lifecycle: lock → health → circuit breaker → flock probe → kill
 /// stale → clean state → fork → wait (with crash detection) → circuit

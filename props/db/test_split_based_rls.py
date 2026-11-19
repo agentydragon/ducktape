@@ -219,10 +219,6 @@ async def test_critic_dev_optimize_sees_only_train_split_runs_and_llm_requests(
     assert visible_requests == {train}, "critic-dev user should see only the train split llm request via RLS"
 
 
-# =============================================================================
-# Grader RLS tests — ground truth table access
-# =============================================================================
-
 TRAIN1_SLUG = SnapshotSlug("test-fixtures/train1")
 VALID1_SLUG = SnapshotSlug("test-fixtures/valid1")
 

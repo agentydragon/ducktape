@@ -20,10 +20,6 @@ from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
 from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
-# ------------------------------
-# Usage types (wrapped from OpenAI SDK)
-# ------------------------------
-
 
 class InputTokensDetails(BaseModel):
     """Provider-reported input counts; None means unreported."""
@@ -59,11 +55,6 @@ class ResponseUsage(BaseModel):
     @classmethod
     def from_sdk(cls, sdk_usage: sdk_usage_types.ResponseUsage) -> Self:
         return cls.model_validate(sdk_usage.model_dump(exclude_unset=True))
-
-
-# ------------------------------
-# Typed, tolerant input items we compose into Responses API "input"
-# ------------------------------
 
 
 class InputTextPart(BaseModel):
@@ -236,11 +227,6 @@ class ResponsesRequest(BaseModel):
 
     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
     model_config = ConfigDict(extra="allow")
-
-
-# ------------------------------
-# Structured response types (our layer)
-# ------------------------------
 
 
 class OutputText(BaseModel):

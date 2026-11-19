@@ -43,8 +43,6 @@ class EmailTemplateExtraction(BaseModel):
 
 
 class TemplateExtractionCache:
-    """Cache for template extractions."""
-
     def __init__(self):
         self.cache_dir = get_cache_dir() / "template-extractions"
         self.cache_dir.mkdir(parents=True, exist_ok=True)

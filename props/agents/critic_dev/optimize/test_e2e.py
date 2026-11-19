@@ -57,11 +57,6 @@ pytest_plugins = (
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Multi-Model Orchestration Tests
-# =============================================================================
-
-
 async def test_optimizer_orchestrates_critic(
     synced_db: Database, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):

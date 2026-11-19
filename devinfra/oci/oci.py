@@ -65,11 +65,6 @@ async def push_bazel_image(
     return digest
 
 
-# ---------------------------------------------------------------------------
-# Docker auth
-# ---------------------------------------------------------------------------
-
-
 def docker_auth_config(registry: str, username: str, password: str) -> dict[str, object]:
     """Build a Docker auth config dict for a single registry."""
     auth = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -86,21 +81,11 @@ def write_docker_auth(registry: str, username: str, password: str, *, overwrite:
     config_path.write_text(json.dumps(docker_auth_config(registry, username, password)))
 
 
-# ---------------------------------------------------------------------------
-# OCI layout
-# ---------------------------------------------------------------------------
-
-
 def read_oci_layout_digest(image_dir: Path) -> str:
     """Read the image manifest digest from an OCI layout's index.json."""
     index = json.loads((image_dir / "index.json").read_text())
     digest: str = index["manifests"][0]["digest"]
     return digest
-
-
-# ---------------------------------------------------------------------------
-# Image loading via crane
-# ---------------------------------------------------------------------------
 
 
 def _lock_path(tag: str) -> Path:

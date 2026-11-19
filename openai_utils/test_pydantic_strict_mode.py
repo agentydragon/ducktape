@@ -33,10 +33,6 @@ from openai_utils.testing.strict_mode_models import (
     SimpleValidModel,
 )
 
-# ---------------------------------------------------------------------------
-# Test models specific to this file
-# ---------------------------------------------------------------------------
-
 
 class RefModelMissingAdditional(BaseModel):
     """Referenced model missing additionalProperties."""
@@ -90,11 +86,6 @@ class DefsWithAdditionalProperties(BaseModel):
 
     input: RefStrictModel
     model_config = ConfigDict(extra="forbid")
-
-
-# ---------------------------------------------------------------------------
-# Unit tests (mock — no API calls)
-# ---------------------------------------------------------------------------
 
 
 def test_invalid_path_format():
@@ -250,10 +241,6 @@ def test_supported_date_and_time_formats() -> None:
     }
     validate_openai_strict_mode_schema(schema)
 
-
-# ---------------------------------------------------------------------------
-# Cross-generator parameterized tests (mock + live)
-# ---------------------------------------------------------------------------
 
 # Schema generator options
 GENERATORS = [
