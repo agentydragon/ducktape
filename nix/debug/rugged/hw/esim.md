@@ -96,15 +96,7 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 ### Remaining work
 
-- **Cold boot verification**: FCC unlock + auto-connect has only been tested
-  after `nixos-rebuild switch`. Verify it works from a cold boot.
-- **Suspend/resume**: `mhi_pci_suspend` returns EBUSY (-16). FoxFlss v1.0.9+
-  has `--test-quick-suspend-resume` for MM, and the fii_linux repo includes
-  `mm-suspend-resume-options.conf`. Needs investigation.
-- **libqmi 1.38.0**: Once nixpkgs updates (or via overlay), the FCC unlock
-  could use `qmicli --fox-set-fcc-authentication` instead of the closed-source
-  binary. The FOX service (0xE3) works on this modem (confirmed:
-  `--fox-get-firmware-version` returns `FDE2.F0.0.0.1.2.TO.003.062`).
+Cold boot, suspend/resume and the libqmi 1.38 path are tracked in <modem.md>.
 
 ### Google Fi APN
 
