@@ -25,10 +25,7 @@ def echo_server() -> FastMCP:
 
 @pytest.fixture
 async def mcp_client_echo(echo_server):
-    """Plain MCP client with echo server (no policy gateway).
-
-    For tests that need a simple MCP server but not a policy gateway.
-    """
+    """Plain MCP client with echo server."""
     async with Client(echo_server) as client:
         yield client
 
