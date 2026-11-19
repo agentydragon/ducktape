@@ -1,0 +1,29 @@
+diff --git a/lean/private/known_lean_versions.bzl b/lean/private/known_lean_versions.bzl
+--- a/lean/private/known_lean_versions.bzl
++++ b/lean/private/known_lean_versions.bzl
+@@ -14,6 +14,10 @@
+ 
+ # Map: lean version tag (with leading 'v') -> { platform -> sha256 hex }.
+ KNOWN_LEAN_VERSIONS = {
++    "v4.35.0": {
++        "linux_x86_64": "c8531faaa4a93d5a4dae0c742cbc1bd42a2993594d02f93a9d629ebf299fb2c8",
++        "linux_aarch64": "ffdfdbe00c975e3f31880fcb636135f6bec806d569583dcb280f5a68b6873e05",
++    },
+     "v4.29.1": {
+         "darwin_aarch64": "c15284adf88ad830c71775b9828cb81f49f7f262cbe1456b25d935855bd70975",
+         "linux_x86_64": "357acb30fca2212986fdc8b83dbe88e8f5610efc060f6e3515079c56a92d276f",
+diff --git a/lean/lake.bzl b/lean/lake.bzl
+--- a/lean/lake.bzl
++++ b/lean/lake.bzl
+@@ -93,10 +93,7 @@
+     sha = KNOWN_LEAN_VERSIONS.get(version, {}).get(platform, "")
+     url = "{base}/{ver}/{asset}".format(base = LEAN_RELEASE_BASE, ver = version, asset = asset)
+     if not sha:
+-        # buildifier: disable=print
+-        print("rules_lean: WARNING — no pinned sha256 for Lean %s on %s; downloading unverified. " %
+-              (version, platform) +
+-              "Add an entry to known_lean_versions.bzl for hermetic builds.")
++        fail("rules_lean: no pinned sha256 for Lean %s on %s" % (version, platform))
+     rctx.download_and_extract(
+         url = url,
+         sha256 = sha,
