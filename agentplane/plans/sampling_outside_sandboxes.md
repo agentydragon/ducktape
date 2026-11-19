@@ -97,7 +97,7 @@ This tunnel is a proposal; the current connection does not supply it.
 ## Code mode
 
 Current GPT-6 catalog entries are `tool_mode: code_mode_only` with `use_responses_lite` (the tag's
-`models-manager/models.json`; GPT-6 Luna's bundled entry is what `runner/test_codex_code_mode.py` runs).
+`models-manager/models.json`; GPT-6 Luna's bundled entry is what `env/e2e/test_codex_code_mode.py` runs).
 The model sees only `exec` and `wait` and writes a JavaScript cell that calls `tools.exec_command`,
 `tools.apply_patch` and the other tools. The cell runs in a code-mode host: by default a separate
 `codex-code-mode-host` child of the app-server (`code_mode_host` is stable and on,
