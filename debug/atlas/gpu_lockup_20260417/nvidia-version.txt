@@ -1,2 +1,0 @@
-NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  580.142  Release Build  (nixbld@)
-GCC version:  gcc version 14.3.0 (GCC)
