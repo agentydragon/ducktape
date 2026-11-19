@@ -8,11 +8,11 @@ import pytest_bazel
 from props.backend.oidc import OIDCSettings, load_oidc_settings
 
 _FULL_ENV = {
-    "PROPS_OIDC_ISSUER": "https://auth.allegedly.works/application/o/props/",
+    "PROPS_OIDC_ISSUER": "https://auth.example.test/application/o/props/",
     "PROPS_OIDC_CLIENT_ID": "props",
     "PROPS_OIDC_CLIENT_SECRET": "shh",
     "PROPS_OIDC_SESSION_SECRET": "cookie-signing-key",
-    "PROPS_OIDC_PUBLIC_BASE_URL": "https://props.allegedly.works",
+    "PROPS_OIDC_PUBLIC_BASE_URL": "https://props.example.test",
     "PROPS_OIDC_ADMIN_EMAILS": "admin@test.invalid, other@example.com",
 }
 
@@ -31,9 +31,9 @@ def test_load_returns_none_when_issuer_unset(monkeypatch: pytest.MonkeyPatch) ->
 def test_redirect_uri_and_metadata_url(oidc_env: None) -> None:
     settings = load_oidc_settings()
     assert settings is not None
-    assert settings.redirect_uri == "https://props.allegedly.works/auth/callback"
+    assert settings.redirect_uri == "https://props.example.test/auth/callback"
     assert settings.server_metadata_url == (
-        "https://auth.allegedly.works/application/o/props/.well-known/openid-configuration"
+        "https://auth.example.test/application/o/props/.well-known/openid-configuration"
     )
 
 
@@ -44,7 +44,7 @@ def test_cookie_secure_follows_scheme() -> None:
         client_secret="x",
         session_secret="x",
         admin_emails="a@b",
-        public_base_url="https://props.allegedly.works",
+        public_base_url="https://props.example.test",
     )
     http = OIDCSettings(
         issuer="x",
