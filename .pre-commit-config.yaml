@@ -237,7 +237,6 @@ repos:
         entry: prettier --write --ignore-unknown --list-different
         language: system
         files: "\\.(js|mjs|cjs|jsx|ts|tsx|css|md|yaml|yml|json|html)$"
-        exclude: "\\.pnpm/"
 
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
       - id: no-subdir-pyproject-toml
