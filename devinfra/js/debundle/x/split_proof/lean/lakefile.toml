@@ -26,3 +26,7 @@ root = "Experiments.LowerSplit"
 [[lean_exe]]
 name = "evalorder"
 root = "Experiments.EvalOrder"
+
+[[lean_exe]]
+name = "translate"
+root = "Experiments.Translate"
