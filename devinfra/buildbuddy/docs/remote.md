@@ -584,7 +584,9 @@ Source: `cli/config/config.go`, `cli/storage/storage.go`, `cli/login/login.go`,
   schema includes per-action `platform_properties`, `container_image`, and
   `resource_requests`; it is a separate consumer from `bb remote`.
 - `.git/config [buildbuddy]` stores API key (`api-key`), selected remote name,
-  and default branch.
+  and default branch. `Warning: Failed to cache default branch … in .git/config`
+  (seen when `bbr` ran from a Claude Code session; cause not traced) is cosmetic:
+  `bb remote` re-detects the default branch on every run.
 
 For `bb remote`, an API key supplied in the command's
 `--remote_header=x-buildbuddy-api-key=…` takes precedence over

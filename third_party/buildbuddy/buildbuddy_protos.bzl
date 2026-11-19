@@ -21,6 +21,8 @@ def _buildbuddy_protos_impl(_ctx):
     http_archive(
         name = "buildbuddy_protos",
         url = "https://github.com/buildbuddy-io/buildbuddy/archive/{}.tar.gz".format(_COMMIT),
+        # GitHub can regenerate a commit archive with different compressed bytes, which fails this
+        # integrity check. A cached RBE build can look healthy: reproduce the fetch locally before re-pinning.
         integrity = "sha256-QCziTN+n9maFiVJD18q73gcJiwnti5gtaOBtCJIZX1o=",
         strip_prefix = _PREFIX,
         build_file = "//third_party/buildbuddy:BUILD.protos.bazel",
