@@ -127,7 +127,7 @@ class E2EStack:
 
     @property
     def image_digests(self) -> dict[str, str]:
-        """repo_name → digest (sha256:...), for backward compatibility."""
+        """repo_name → digest (sha256:...)."""
         return {name: img.digest for name, img in self.resolved_images.items()}
 
 
