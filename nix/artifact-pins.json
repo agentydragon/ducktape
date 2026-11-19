@@ -29,8 +29,8 @@
       "sha256": "c7i18uXCEW5cObzp2EW68JQMxVLyisZl+yeXRs6zGmU="
     },
     "gmail-archiver": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-a0a0fc26eef3/gmail_archiver-0.1.0-py3-none-any.whl",
-      "sha256": "oKD8Ju7zo4gXJBMxRTDGjnAcOE271SfFDcQpc0RHnxM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-4e49cd8102b4/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "TknNgQK0U8C5CB82iFeJtzriQKTfbZOrn1u6Ffx44mI="
     },
     "vm-interact": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-acc38ab506a1/vm_interact-0.1.0-py3-none-any.whl",
@@ -49,8 +49,8 @@
       "sha256": "FfT0S6sb5weGspmXkvCzVW/pGAaIWU+OFi6x6ArRHeU="
     },
     "claude-hook": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-9040a5ff1b7f/claude_hook",
-      "sha256": "kECl/xt/9WwrtByhgI28PiO10Urgqjz4Nt5dwvPL3bs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-cfaa010655c9/claude_hook",
+      "sha256": "z6oBBlXJeeChr+sMha5rj+qZOhpwUWQGuYBRmiHbKLE="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-10a3c60b5f54/aiquota.zip",
@@ -149,8 +149,8 @@
       "sha256": "eOxRart95rENlSf89OWBHBiuRZi+Z95d98uog6Brn3g="
     },
     "skill-freecad": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-8e32f6b3eff1/freecad.skill",
-      "sha256": "jjL2s+/xVIZEC7zRRyWwZ8HbOmW35qbxd4b6ooLweSY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-76caab668721/freecad.skill",
+      "sha256": "dsqrZochi5tsf+wcaWQAWU8fKeGRACiuIlGIMttJRQU="
     },
     "skill-google_photos_link": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-0fd36d8f127e/google_photos_link.skill",
@@ -269,8 +269,8 @@
       "sha256": "IQ3gvRyAebwTasBIG9GhamzmHnK5pzXPW/aHhnlmlxQ="
     },
     "agentplane-cli": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-b83d655639c3/agentplane-cli",
-      "sha256": "uD1lVjnDQRK/MlSnGYz6hI6ZgSUq78THPf35GJnSqVA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-cli-947c8c2924da/agentplane-cli",
+      "sha256": "lHyMKSTaKaPhVr4uEYE0dVvlAviJZ9lFF7WYo9ZWqc4="
     },
     "ducktape-network-monitor": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-network-monitor-ec79f5c96290/ducktape_network_monitor-0.1.0-py3-none-any.whl",
