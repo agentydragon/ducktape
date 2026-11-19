@@ -224,8 +224,8 @@ working tree.
 - **Fallback base is `origin/devel` via `@{upstream}`**: needs a **local**
   `devel` branch with tracking config. A CI checkout (`actions/checkout`)
   creates only `origin/devel`, so both `@{upstream}` and the
-  `git rev-parse devel` fallback fail — `bazel-ci.yml` creates a local `devel`
-  ref for PR builds. A stale `origin/devel` puts the diff base hundreds of
+  `git rev-parse devel` fallback fail — `bench-remote-bazel.yml` creates a local
+  `devel` ref, and `bazel-ci.yml` avoids the fallback with `run_from_commit`. A stale `origin/devel` puts the diff base hundreds of
   commits behind HEAD: a huge patchset — on `bb` < 5.0.445, possibly an
   unappliable one (next bullet) — instead of the small diff you expect.
   `devinfra/buildbuddy/bbr.py`'s `check_base_branch_freshness()` **refuses to run** when
@@ -462,7 +462,7 @@ Outputs fetched back by `--remote_download_outputs=toplevel` or
 our standard Linux x86_64 RBE builds. **There is NO
 `bb-out/bazel-bin/<pkg>/<name>` convenience symlink** — it exists only in
 local Bazel workspaces. Consumers of bb-remote-built artifacts (e.g.
-`push-images.yml`) must use the full path:
+`publish-oci-image.yml`) must use the full path:
 
 ```bash
 bbr build //:requirements --remote_download_regex='.*requirements\.out'
