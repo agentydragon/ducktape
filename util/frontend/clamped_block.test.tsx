@@ -87,34 +87,22 @@ describe("ClampedBlock", () => {
     expect(container.querySelector('[data-clamped="true"]')).not.toBeNull();
   });
 
-  it("says how many lines it hides, when told", async () => {
+  it.each([
+    { name: "says how many lines it hides, when told", props: { lines: 32 }, button: "Show all 32 lines" },
+    { name: "does not count a single line, which can only be one that wraps", props: { lines: 1 }, button: "Show all" },
+    {
+      name: "uses a semantic expansion label when the clipped content is not a counted text payload",
+      props: { label: "Payload", expandLabel: "Show more" },
+      button: "Show more",
+    },
+  ])("$name", async ({ props, button }) => {
     contentHeight(1000);
     const container = await renderWithMantine(
-      <ClampedBlock maxHeightRem={10} lines={32}>
+      <ClampedBlock maxHeightRem={10} {...props}>
         test-content
       </ClampedBlock>
     );
-    expect(control(container, "Show all 32 lines")).toBeDefined();
-  });
-
-  it("does not count a single line, which can only be one that wraps", async () => {
-    contentHeight(1000);
-    const container = await renderWithMantine(
-      <ClampedBlock maxHeightRem={10} lines={1}>
-        test-content
-      </ClampedBlock>
-    );
-    expect(control(container, "Show all")).toBeDefined();
-  });
-
-  it("uses a semantic expansion label when the clipped content is not a counted text payload", async () => {
-    contentHeight(1000);
-    const container = await renderWithMantine(
-      <ClampedBlock maxHeightRem={10} label="Payload" expandLabel="Show more">
-        test-content
-      </ClampedBlock>
-    );
-    expect(control(container, "Show more")).toBeDefined();
+    expect(control(container, button)).toBeDefined();
   });
 
   it("returns nested output to its clipped preview with Show less", async () => {
