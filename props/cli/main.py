@@ -43,7 +43,6 @@ def _init_logging_and_db(
     _logging_callback(log_output=log_output, log_level=log_level)
 
     # Suppress verbose OpenAI HTTP request/response logging (too noisy at DEBUG level)
-    logging.getLogger("openai.http").setLevel(logging.WARNING)
     logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 
     # Configure Rich traceback for CLI errors (increased detail for debugging)

@@ -20,9 +20,9 @@ py_library(
     srcs = ["responses.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//openai_utils:builders",
         "//openai_utils:model",
         "@pypi//pydantic",
+        "@pypi//pydantic_core",
     ],
 )
 
