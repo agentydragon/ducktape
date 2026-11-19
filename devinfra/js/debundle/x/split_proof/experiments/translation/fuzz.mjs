@@ -1,6 +1,6 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
-//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--out DIR] [--keep]
+//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--out DIR] [--keep] [--require-accepted]
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -817,16 +817,24 @@ function split(bundle, r, opts) {
   return { files, mapping, strategy, capture: capture || taken !== null, modules: paths.length, rename };
 }
 
-function run(command, args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
+function run(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), 15000);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("close", (status) => {
+    child.on("error", (error) => {
       clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (status, signal) => {
+      clearTimeout(timer);
+      if (signal) {
+        reject(new Error(`${command} ${args.join(" ")} terminated by ${signal}`));
+        return;
+      }
       resolve({ status, stdout, stderr });
     });
   });
@@ -840,6 +848,12 @@ const behavior = ({ status, stdout, stderr }) => ({
 });
 const sameBehavior = (a, b) => a.status === b.status && a.stdout === b.stdout && a.error === b.error;
 
+const checkerVerdicts = new Map([
+  [0, { name: "accept", output: /^PLAN SOUND$/m }],
+  [1, { name: "reject", output: /^(TRANSLATION REJECT|PLAN NOT SOUND):/m }],
+  [4, { name: "obligations", output: /^OBLIGATIONS:/m }],
+]);
+
 async function main() {
   const args = process.argv.slice(2);
   const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback);
@@ -848,8 +862,8 @@ async function main() {
   const trees = Number(option("trees", 6));
   const jobs = Number(option("jobs", Math.max(1, os.cpus().length)));
   const leaks = args.includes("--leaks");
-  const outDir = option("out", null);
-  const work = mkdtempSync(path.join(os.tmpdir(), "translation_fuzz_"));
+  const outDir = option("out", process.env.TEST_UNDECLARED_OUTPUTS_DIR);
+  const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "translation_fuzz_"));
   const tally = {};
   const wrongAccepts = [];
   const assumedAccepts = [];
@@ -865,7 +879,7 @@ async function main() {
     mkdirSync(dir, { recursive: true });
     const bundleFile = path.join(dir, "bundle.mjs");
     writeFileSync(bundleFile, renderBundle(bundle));
-    const reference = behavior(await run("node", [bundleFile]));
+    const reference = behavior(await run(process.execPath, [bundleFile]));
     if (reference.status !== 0) {
       invalidBundles++;
       if (invalidBundles <= 3) console.log(`generator bug: bundle ${round} fails in Node (${reference.error})`);
@@ -896,11 +910,16 @@ async function main() {
       writeFileSync(certJson, JSON.stringify({ pairs: plan.mapping }));
       const [checked, ran] = await Promise.all([
         run(translate, [bundleJson, outputJson, certJson]),
-        run("node", [path.join(treeDir, "entry.js")]),
+        run(process.execPath, [path.join(treeDir, "entry.js")]),
       ]);
       const tree = behavior(ran);
       const same = sameBehavior(reference, tree);
-      const verdict = { 0: "accept", 1: "reject", 4: "obligations" }[checked.status] ?? `exit ${checked.status}`;
+      const outcome = checkerVerdicts.get(checked.status);
+      if (!outcome?.output.test(checked.stdout))
+        throw new Error(
+          `bundle ${round} tree ${t}: unexpected translate exit ${checked.status}\n${checked.stdout}${checked.stderr}`
+        );
+      const verdict = outcome.name;
       const intent = plan.capture ? "capture" : "relocation";
       bump(`${verdict}/${same ? "same" : "differs"}`);
       const record = {
@@ -971,6 +990,8 @@ async function main() {
     .slice(0, 8))
     console.log(`  ${k}x ${reason}`);
   if (wrongAccepts.length > 0) throw new Error(`${wrongAccepts.length} wrong accepts`);
+  if (args.includes("--require-accepted") && cell("accept", "same") === 0)
+    throw new Error("no accepted tree matched its bundle");
 }
 
 main().catch((error) => {
