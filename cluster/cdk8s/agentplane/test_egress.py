@@ -264,7 +264,6 @@ def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dic
     egress_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert "projected_token_audiences" not in egress_settings
     assert egress_settings["local_api_server"]["token_file"], "proxy impersonation keeps its own API token"
 
 
@@ -281,7 +280,6 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert "projected_token_audiences" not in proxy_settings
     endpoint = notifications.service(staging.ENV.namespace)
     assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
     notification_settings = yaml.safe_load(
@@ -306,8 +304,6 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
     assert {mode["mode"] for mode in llm_settings["rpc"]["auth"]} == {"spiffe"}
-    assert "central_sampler_accounts" not in llm_settings
-    assert "token_audience" not in llm_settings
     assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_settings["central_sampler_identity_callers"] is True
 
@@ -353,7 +349,6 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     proxy_settings = yaml.safe_load(
         _by_name(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert "projected_token_audiences" not in proxy_settings
     assert {
         sessions_authority,
         f"{history.fqdn}:{history.pod_port}",

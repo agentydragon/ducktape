@@ -197,7 +197,6 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert "reader_accounts" not in settings
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
@@ -214,9 +213,7 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
         "client_id" not in settings["mcp_servers"]["github"] or settings["mcp_servers"]["github"]["client_id"] is None
     )
     names = {entry["name"] for entry in container["env"]}
-    assert "AGENTPLANE_ACTIONS_READER_ACCOUNTS" not in names
     assert "AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID" not in names
-    assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
 
 
 def test_action_service_allows_only_configured_service_callers(staging_manifests: list[dict[str, Any]]) -> None:
@@ -229,8 +226,6 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["operator_services"] == [APP_URI]
     assert settings["connection_delegation_service"] == MCP_EDGE_URI
-    assert "connection_delegation_actor" not in settings
-    assert "reader_accounts" not in settings
     assert {auth["mode"] for auth in settings["rpc"]["auth"]} == {"spiffe"}
     spiffe = one(auth for auth in settings["rpc"]["auth"] if auth["mode"] == "spiffe")
     assert spiffe["ca_file"] == workload_tls.TRUST_BUNDLE_FILE

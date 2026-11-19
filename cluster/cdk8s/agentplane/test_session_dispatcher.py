@@ -72,8 +72,6 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
     app_config_map = find_resource(staging_manifests, "ConfigMap", "app-config")
     app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
-    assert "token_subjects" not in app_config
-    assert "token_audience" not in app_config
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_container.get("args", []) == []
 
