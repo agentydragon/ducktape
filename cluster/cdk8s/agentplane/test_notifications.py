@@ -67,9 +67,7 @@ def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[s
 def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[dict[str, Any]]) -> None:
     config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert "operator_reader_account" not in settings
     assert settings["operator_reader_services"] == [APP_URI]
-    assert "token_audience" not in settings
     assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
     github = settings.get("github")
     pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]

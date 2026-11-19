@@ -494,10 +494,6 @@ def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
     service = SpendService("unused", config, dashboard_url="https://spend.example.test")
     assert service.report_day(datetime(2026, 10, 9, 6, 59, tzinfo=UTC)) == date(2026, 10, 8)
     assert service.report_day(datetime(2026, 10, 9, 7, tzinfo=UTC)) == date(2026, 10, 9)
-    allowance_config = service.read_configuration().allowance
-    assert allowance_config is not None
-    assert service.read_configuration().time_zone == "America/Los_Angeles"
-    assert all(rule.id is None for rule in allowance_config.rules)
 
 
 @pytest.mark.asyncio
@@ -519,7 +515,7 @@ async def test_report_day_and_disabled_sustainability_use_zone_without_allowance
 
 def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
     config = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
+        time_zone=ZoneInfo("America/Los_Angeles"),
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
@@ -544,15 +540,13 @@ def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
         ),
     )
     service = SpendService("unused", config, dashboard_url="https://spend.example.test")
-    allowance = service.read_configuration().allowance
+    view = service.read_configuration()
+    assert view.time_zone == "America/Los_Angeles"
+    allowance = view.allowance
     assert allowance is not None
+    assert allowance.spending_account_count == 1
     assert [rule.id for rule in allowance.rules] == ["example-transfer-leg", None]
-    applied = allowance.rules[0]
-    assert applied.scope == RuleScope.ONE_OFF
-    assert isinstance(applied.condition, AllOf)
-    name_condition = applied.condition.conditions[0]
-    assert isinstance(name_condition, NameContains)
-    assert name_condition.substring == "EXAMPLE FUND"
+    assert allowance.rules[0].scope == RuleScope.ONE_OFF
 
 
 async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:

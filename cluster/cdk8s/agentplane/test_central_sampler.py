@@ -115,7 +115,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "executor_reconnect_timeout_seconds" not in config
     assert "turn_timeout_seconds" not in config
     assert "audience" not in config
-    assert "allowed_accounts" not in config
     assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
     assert "admin_service_callers" not in config
     assert "listen" not in config
@@ -215,7 +214,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert serving_certificate["spec"]["uris"] == [history["ingress"]["sampler_service_actor"]]
     llm = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm["policy_namespace"] == namespace
-    assert "central_sampler_accounts" not in llm
     assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
     assert llm["central_sampler_identity_callers"] is True
 

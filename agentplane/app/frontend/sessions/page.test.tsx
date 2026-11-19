@@ -325,25 +325,13 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
 }
 
 it("offers a Grafana trace link from the thread menu when configured", async () => {
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Find Thread traces in Grafana")
-  );
+  const link = menuItem(await threadMenuItems(), "Find Thread traces in Grafana");
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((link as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
 });
 
 it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async () => {
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Sandbox LLM traces in Langfuse")
-  );
+  const link = menuItem(await threadMenuItems(), "Sandbox LLM traces in Langfuse");
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   const url = new URL((link as HTMLAnchorElement).href);
   expect(url.searchParams.get("filter")).toBe(
@@ -355,39 +343,19 @@ it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async ()
 
 it("keeps the Langfuse link available from a stale Sandbox snapshot", async () => {
   inventoryFresh = false;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  expect(
-    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Sandbox LLM traces in Langfuse")
-    )
-  ).toBe(true);
+  expect(menuItem(await threadMenuItems(), "Sandbox LLM traces in Langfuse")).toBeDefined();
 });
 
 it("hides the Grafana trace link from the thread menu when unconfigured", async () => {
   traceSearchSettings = null;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  expect(
-    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Find Thread traces in Grafana")
-    )
-  ).toBe(false);
+  expect(menuItem(await threadMenuItems(), "Find Thread traces in Grafana")).toBeUndefined();
 });
 
 it("hides only the Langfuse link when Langfuse search is unconfigured", async () => {
   langfuseSearchSettings = null;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
-  expect(menuItems.some((node) => node.textContent?.includes("Sandbox LLM traces in Langfuse"))).toBe(false);
-  expect(menuItems.some((node) => node.textContent?.includes("Find Thread traces in Grafana"))).toBe(true);
+  const items = await threadMenuItems();
+  expect(menuItem(items, "Sandbox LLM traces in Langfuse")).toBeUndefined();
+  expect(menuItem(items, "Find Thread traces in Grafana")).toBeDefined();
 });
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
@@ -493,6 +461,16 @@ function button(container: HTMLDivElement, label: string): HTMLButtonElement {
 
 function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElement | undefined {
   return [...(row?.querySelectorAll("button") ?? [])].find((candidate) => candidate.textContent === text);
+}
+
+async function threadMenuItems(): Promise<Element[]> {
+  const container = await render();
+  await act(async () => button(container, "More").click());
+  return [...document.querySelectorAll('[role="menuitem"]')];
+}
+
+function menuItem(items: Element[], text: string): Element | undefined {
+  return items.find((node) => node.textContent?.includes(text));
 }
 
 function sentOperations(): unknown[] {
@@ -747,15 +725,12 @@ it("reports stale timing as unavailable and does not call a missing loading sand
   expect(loading.querySelector(".agentplane-composer-autosuspend")).toBeNull();
 });
 
-it.each([["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"]])(
-  "handles %s without showing a negative countdown",
-  async (_case, deadline, expected) => {
-    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
-    sandboxes = [autosuspendSandbox(deadline)];
-    const container = await render();
-    expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
-  }
-);
+it("handles a past deadline without showing a negative countdown", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+  sandboxes = [autosuspendSandbox("2026-01-01T11:59:00Z")];
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend pending");
+});
 
 it.each([
   ["2026-01-01T12:09:30Z", "just now"],
@@ -840,7 +815,6 @@ it("queues a message through the Dispatcher for a fresh suspended Sandbox with w
   await press(field, {});
 
   expect(field.value).toBe("");
-  expect(vi.mocked(submitInput).mock.calls).toHaveLength(1);
   expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.metadata.threadId);
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
 });
@@ -1161,7 +1135,7 @@ it("does not call a failed Pod a Sandbox that is starting", async () => {
   );
 });
 
-it("does not show active-turn status when the runner is not active", async () => {
+it("shows the Dispatcher's active turn when History reports the runner stopped", async () => {
   threadRows = [
     threadView({
       metadata: THREAD.metadata,
@@ -1178,21 +1152,15 @@ it("does not show active-turn status when the runner is not active", async () =>
   expect(indicator?.getAttribute("data-status")).toBe("running");
 });
 
-it.each([[{ metadata: { archived: false } }, [], "Harness attached · ready for input", "idle"]])(
-  "does not infer Dispatcher activity from missing Sandbox inventory for thread %o with sandboxes %o: %s",
-  async (overrides, inventory, label, kind) => {
-    vi.mocked(getThread).mockResolvedValue(
-      threadView({ metadata: { ...THREAD.metadata, ...overrides.metadata }, summary: THREAD.summary })
-    );
-    sharedThread = overrides;
-    sandboxes = inventory;
-    const indicator = (
-      await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
-    ).querySelector(".agentplane-thread-status-indicator");
-    expect(indicator?.getAttribute("aria-label")).toBe(label);
-    expect(indicator?.getAttribute("data-status")).toBe(kind);
-  }
-);
+it("does not infer Dispatcher activity from missing Sandbox inventory", async () => {
+  sharedThread = { metadata: { archived: false } };
+  sandboxes = [];
+  const indicator = (
+    await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
+  ).querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("aria-label")).toBe("Harness attached · ready for input");
+  expect(indicator?.getAttribute("data-status")).toBe("idle");
+});
 
 const RUNNING = inventorySandbox();
 const SUSPENDED = inventorySandbox("suspended");

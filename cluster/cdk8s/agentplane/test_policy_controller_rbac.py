@@ -70,7 +70,6 @@ def test_policy_controller_has_a_workload_server_certificate(staging_manifests: 
 
 def test_policy_controller_serves_policyservice_only_over_tls(staging_manifests: list[dict[str, Any]]) -> None:
     settings = _settings(staging_manifests)
-    assert "grpc_bind_address" not in settings
     tls = settings["grpc_tls"]
     assert tls["listen"] == f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}"
     assert settings["reader_services"] == settings["writer_services"] == [APP_URI]

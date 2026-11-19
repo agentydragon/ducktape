@@ -404,6 +404,6 @@ agentplane_vitest_test(
         ":notifications",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
     ],
 )

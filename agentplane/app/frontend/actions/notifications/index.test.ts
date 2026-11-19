@@ -1,35 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { create, fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
-import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import type { JsonValue } from "@bufbuild/protobuf";
 
-import {
-  ActionIdentitySchema,
-  ActionRequestSchema,
-  ActionState,
-  type ActionRequest,
-} from "../../../../action_service/api/contracts/action_service_pb";
+import { actionRequest } from "../testing/proto_fixtures";
 import { formatActionNotification } from "./index";
-
-function actionRequest(fields: {
-  action: { group: string; name: string };
-  arguments: JsonObject;
-  title: string;
-  description?: string | null;
-}): ActionRequest {
-  return create(ActionRequestSchema, {
-    id: "00000000-0000-4000-8000-000000000001",
-    action: create(ActionIdentitySchema, fields.action),
-    arguments: fields.arguments,
-    title: fields.title,
-    caller: { namespace: "test-namespace", name: "test-account" },
-    description: fields.description ?? undefined,
-    state: ActionState.DECISION_PENDING,
-    version: 1n,
-    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-  });
-}
 
 // [Action name, arguments, notification's Action title, notification text when it is not the description]
 const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string, string?][] = [
