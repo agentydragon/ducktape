@@ -13,7 +13,7 @@ Output directory is read from OUTDIR env var (default: current directory).
 
 Usage:
   Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
-  DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad build_compound.py
+  DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad build.py
 """
 
 import os

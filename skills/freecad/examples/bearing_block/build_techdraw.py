@@ -11,7 +11,7 @@ output directory.
 
 Usage:
   INPUT=/work/bearing_block.FCStd OUTDIR=/output \
-    DISPLAY=:99 freecad build_bearing_block_techdraw.py
+    DISPLAY=:99 freecad build_techdraw.py
 """
 
 import os

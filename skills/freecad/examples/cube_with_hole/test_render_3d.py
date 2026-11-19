@@ -29,7 +29,7 @@ def render_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory,
 
     runfiles_root = runfiles.root()
     result = freecad_run(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
-    assert_run_ok(result, "build_cube_with_hole.py", uo, "build")
+    assert_run_ok(result, "build.py", uo, "build")
 
     fcstd = out_dir / "cube_with_hole.FCStd"
     assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"

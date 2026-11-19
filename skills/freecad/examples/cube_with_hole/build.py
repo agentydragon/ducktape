@@ -5,7 +5,7 @@ Runs inside freecadcmd (no GUI needed for modeling).
 Output directory is read from OUTDIR env var (default: current directory).
 
 Usage:
-  OUTDIR=/tmp/out freecadcmd build_cube_with_hole.py
+  OUTDIR=/tmp/out freecadcmd build.py
 """
 
 import os

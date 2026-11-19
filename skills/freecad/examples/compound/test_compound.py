@@ -1,4 +1,4 @@
-"""Golden-file test: build_compound.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
+"""Golden-file test: build.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
 
 from pathlib import Path
 
@@ -30,7 +30,7 @@ def compound_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactor
 
     runfiles_root = runfiles.root()
     result = freecad_gui(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
-    assert_run_ok(result, "build_compound.py", uo, "build_compound")
+    assert_run_ok(result, "build.py", uo, "build_compound")
 
     fcstd = out_dir / "compound.FCStd"
     assert fcstd.exists(), "compound.FCStd not produced — see build_compound.stderr in test outputs"

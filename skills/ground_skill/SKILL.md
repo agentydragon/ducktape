@@ -27,7 +27,7 @@ needs to learn. Boilerplate (starting a process, setting env vars, spinning up a
 creating temp dirs) belongs in the test scaffold, not the recipe.
 
 The skill doc explains the required scaffolding **once**, globally. Example: "All FreeCAD
-scripts assume a running FreeCAD instance under Xvfb with `QT_QPA_PLATFORM=offscreen`."
+scripts assume a running FreeCAD instance under Xvfb with `DISPLAY` set."
 Agents understand this applies to every recipe without re-reading it each time.
 
 Tests add the scaffolding programmatically: start the tool, inject the recipe, tear down.
@@ -128,11 +128,10 @@ if __name__ == "__main__":
     pytest_bazel.main()
 ```
 
-**Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form uses
-`strip_prefix.from_pkg()`, which drops subdirectory structure for cross-package
-sources — a recipe from `//skills/myskill/examples:my_recipe.py` would land at the
-skill root, not in `examples/`. Use `contents=` with `skill_mapping(prefix=...)`
-instead (the freecad pattern):
+**Packaging recipes from a subpackage**: `skill_package`'s simple `srcs=` form supports
+only same-package files, so a cross-package source such as
+`//skills/myskill/examples:my_recipe.py` fails the build. Use `contents=` with
+`skill_mapping(prefix=...)` instead (the freecad pattern):
 
 ```starlark
 # myskill/BUILD.bazel — when recipes live in examples/
