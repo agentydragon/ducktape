@@ -86,10 +86,6 @@ exports_files(
     visibility = ["//props/backend:__pkg__"],
 )
 
-# ============================================================
-# App entry point
-# ============================================================
-
 js_library(
     name = "app_css",
     srcs = ["src/app.css"],
@@ -142,10 +138,6 @@ ts_library(
         ":node_modules/react-dom",
     ],
 )
-
-# ============================================================
-# Development server
-# ============================================================
 
 # Run: bazel run //props/frontend:dev
 js_binary(
@@ -211,10 +203,6 @@ py_test(
     ],
 )
 
-# ============================================================
-# Production bundle
-# ============================================================
-
 # Tailwind plugin and aliases for the native esbuild() rule (see spa_bundle).
 js_library(
     name = "esbuild_config",
@@ -243,10 +231,6 @@ spa_bundle(
         ":node_modules/react-dom",
     ],
 )
-
-# ============================================================
-# Test harness (visual regression scaffold)
-# ============================================================
 
 ts_library(
     name = "harness_lib",
@@ -313,12 +297,9 @@ filegroup(
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-# ============================================================
-# Visual regression tests
-#
+# Visual regression tests.
 # Run all:  bazel test //props/frontend:visual
 # Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
-# ============================================================
 
 filegroup(
     name = "visual_test_assets",

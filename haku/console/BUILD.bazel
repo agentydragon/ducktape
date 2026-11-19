@@ -261,7 +261,6 @@ py_test(
     ],
 )
 
-# ── OCI image (the haku-console service) ──────────────────────────────────────
 aspect_py_binary(
     name = "server_bin",
     main = "app.py",

@@ -2,10 +2,6 @@ load("//devinfra/deps:check.bzl", "assert_no_deps")
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "yaml_loader",
     srcs = ["yaml_loader.py"],
@@ -57,10 +53,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Boundary enforcement
-# =============================================================================
-
 # yaml_loader is a pure parsing layer — it must not depend on
 # the DB/ORM layer (sqlalchemy, props/db:models).
 assert_no_deps(
@@ -71,10 +63,6 @@ assert_no_deps(
     ],
     targets = ["//props/db/sync:yaml_loader"],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 py_test(
     name = "test_example_generation",

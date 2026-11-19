@@ -72,10 +72,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Boundary enforcement tests
-# =============================================================================
-
 # Verify host-side code doesn't depend on agents/ (container-only code)
 assert_no_deps(
     name = "test_no_agents_deps",

@@ -1,10 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
-# =============================================================================
-# Leaf modules (no props.core deps)
-# TODO: Move to props/types/
-# =============================================================================
+# TODO: Move the leaf modules (no props.core deps) to props/types/
 
 py_library(
     name = "ids",
@@ -18,10 +15,6 @@ py_library(
     srcs = ["splits.py"],
     visibility = ["//props:__subpackages__"],
 )
-
-# =============================================================================
-# Second-tier modules (depend on leaf modules or db/)
-# =============================================================================
 
 py_library(
     name = "oci_utils",
@@ -56,10 +49,6 @@ py_library(
         "@pypi//pydantic",
     ],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 py_test(
     name = "test_oci_utils",

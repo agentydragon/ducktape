@@ -2,10 +2,6 @@ load("//devinfra/deps:check.bzl", "assert_no_deps")
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
-# =============================================================================
-# Leaf modules (no db/ deps)
-# =============================================================================
-
 py_library(
     name = "config",
     srcs = ["config.py"],
@@ -45,10 +41,6 @@ py_library(
         ":models",
     ],
 )
-
-# =============================================================================
-# Core models (depend on config, snapshots, external modules)
-# =============================================================================
 
 py_library(
     name = "models",
@@ -103,10 +95,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Higher-level modules (depend on models, session)
-# =============================================================================
-
 py_library(
     name = "query_builders",
     srcs = ["query_builders.py"],
@@ -134,10 +122,6 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 # db/ must not depend on agent code (container-only)
 assert_no_deps(

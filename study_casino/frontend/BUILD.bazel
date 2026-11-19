@@ -187,7 +187,6 @@ js_library(
     ],
 )
 
-# ── Production bundle (esbuild) ────────────────────────────────────────────────
 #
 # esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
 # the public/ tree (manifest, icon, fonts) are copied in alongside. Served
@@ -202,7 +201,6 @@ spa_bundle(
     deps = [":main"],
 )
 
-# ── Visual render-health tests ───────────────────────────────────────────────
 #
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
