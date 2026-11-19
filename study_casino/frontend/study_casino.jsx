@@ -488,14 +488,11 @@ export default function StudyCasino() {
         {view === "prizes" && (
           <PrizesView
             offline={offline}
-            isAdmin={isAdmin}
             credits={credits}
             tokens={tokens}
             prizes={prizes}
             prizeLog={prizeLog}
             redeem={redeemPrize}
-            addPrize={addPrize}
-            deletePrize={deletePrize}
             convertToTokens={convertToTokens}
           />
         )}

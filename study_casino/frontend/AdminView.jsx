@@ -333,6 +333,10 @@ export function AdminView({ addPrize, deletePrize, editPrize, ownUsername }) {
             Add
           </button>
         </div>
+        <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 10 }}>
+          Prize cost is in tokens. Since 1 credit = 1 minute of study and 1 credit converts to 1 token, a 120-token
+          prize costs 2 hours of study.
+        </div>
       </div>
     </div>
   );
