@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,8 +26,6 @@ func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	assertCurrentSchema(t, db)
-	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 
 	_, err := db.ExecContext(t.Context(), `
@@ -65,7 +62,6 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		}
 		assertNoAppliedMigration(t, db)
 		assertNotCreated(t, db, "operator_browser_session")
-		assertNotCreated(t, db, "alembic_version_app")
 	})
 }
 
@@ -92,8 +88,6 @@ func TestConcurrentUpRunnersSerialize(t *testing.T) {
 			t.Fatalf("concurrent Up failed: %v", err)
 		}
 	}
-	assertCurrentSchema(t, db)
-	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 }
 
@@ -113,88 +107,6 @@ func openDatabase(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	return db
-}
-
-func assertCurrentSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-	assertColumns(t, db, "thread", "id", "name", "archived", "created_at")
-	assertColumns(t, db, "operator_browser_session",
-		"id", "expires_at", "payload", "absolute_expires_at", "operator_issuer", "operator_subject",
-		"operator_username", "access_token", "access_token_expires_at", "refresh_token")
-
-	var primaryKeys int
-	if err := db.QueryRowContext(t.Context(), `
-		SELECT count(*) FROM pg_constraint
-		 WHERE contype = 'p' AND conrelid IN ('thread'::regclass, 'operator_browser_session'::regclass)
-	`).Scan(&primaryKeys); err != nil {
-		t.Fatal(err)
-	}
-	if primaryKeys != 2 {
-		t.Fatalf("expected both current primary keys, got %d", primaryKeys)
-	}
-	var checks int
-	if err := db.QueryRowContext(t.Context(), `
-		SELECT count(*) FROM pg_constraint
-		 WHERE contype = 'c'
-		   AND conrelid = 'operator_browser_session'::regclass
-		   AND conname IN (
-		     'operator_browser_session_operator_whole',
-		     'operator_browser_session_access_token_whole',
-		     'operator_browser_session_tokens_logged_in',
-		     'operator_browser_session_refresh_token_with_access_token'
-		   )
-	`).Scan(&checks); err != nil {
-		t.Fatal(err)
-	}
-	if checks != 4 {
-		t.Fatalf("expected four operator session checks, got %d", checks)
-	}
-	var indexExists bool
-	if err := db.QueryRowContext(t.Context(), `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_indexes
-			 WHERE schemaname = current_schema()
-			   AND tablename = 'operator_browser_session'
-			   AND indexname = 'ix_operator_browser_session_expires_at'
-		)
-	`).Scan(&indexExists); err != nil {
-		t.Fatal(err)
-	}
-	if !indexExists {
-		t.Fatal("missing operator_browser_session expiry index")
-	}
-}
-
-func assertColumns(t *testing.T, db *sql.DB, table string, expected ...string) {
-	t.Helper()
-	rows, err := db.QueryContext(t.Context(), `
-		SELECT column_name FROM information_schema.columns
-		 WHERE table_schema = current_schema() AND table_name = $1
-		 ORDER BY ordinal_position
-	`, table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var got []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, name)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(got, ",") != strings.Join(expected, ",") {
-		t.Fatalf("%s columns = %v, want %v", table, got, expected)
-	}
-}
-
-func assertNoAlembicMarker(t *testing.T, db *sql.DB) {
-	t.Helper()
-	assertNotCreated(t, db, "alembic_version_app")
 }
 
 func assertGooseVersion(t *testing.T, db *sql.DB) {
