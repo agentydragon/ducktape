@@ -169,7 +169,7 @@ const SCENES = {
     return <StudyCasino />;
   },
   // The #shot box shrink-wraps the toast (plus a little padding for its shadow), so the PNG is
-  // just the toast on its felt backdrop — not however much of the viewport the test asks for, so
+  // just the toast on its felt backdrop — not however much of the viewport the test asks for.
   session_award: () => (
     <Standalone>
       <div id="shot" style={{ display: "inline-block", padding: 16 }}>

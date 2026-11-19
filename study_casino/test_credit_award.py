@@ -90,7 +90,7 @@ def test_one_day_gap_without_rest_day_resets() -> None:
 
 
 def test_two_day_gap_resets_even_with_rest_day_banked() -> None:
-    # Rest days cover exactly one missed day (plan scenario 23).
+    # Rest days cover exactly one missed day.
     state = _state(streak_days=15, last="2026-07-01")
     qualify_streak_day(state, _day("2026-07-04"))
     assert state.streak_days == 1

@@ -7,7 +7,7 @@ rounded to whole millis on every write; the frontend divides by 1000 only
 for display.
 
 Day boundaries are Pacific time regardless of client timezone
-(see plans/credit_system_v2.md). Streak and daily-bonus state is
+(see README.md). Streak and daily-bonus state is
 **append-only**: once recorded for a day it is never revoked, even if the
 sessions that earned it are later edited or deleted.
 """
