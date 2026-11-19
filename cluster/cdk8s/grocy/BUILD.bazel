@@ -16,6 +16,7 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationdestination",

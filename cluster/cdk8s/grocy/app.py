@@ -42,6 +42,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -245,15 +246,8 @@ def household_chart(app: App, *, household: str) -> Chart:
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO)
     _server(chart, namespace)
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "config-claim",
-        metadata=k8s.ObjectMeta(name=_CONFIG_CLAIM, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+    volume_claim(
+        chart, "config-claim", name=_CONFIG_CLAIM, namespace=namespace, storage_class="piraeus-hdd-local", size="1Gi"
     )
     k8s.KubeJob(
         chart,
@@ -309,15 +303,8 @@ def household_chart(app: App, *, household: str) -> Chart:
 def _backup(chart: Chart, namespace: str) -> None:
     name = _BACKUP
     # A direct copy of a live SQLite database can capture inconsistent writes.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        f"{name}-claim",
-        metadata=k8s.ObjectMeta(name=name, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("2Gi")}),
-        ),
+    volume_claim(
+        chart, f"{name}-claim", name=name, namespace=namespace, storage_class="piraeus-ssd-2-autodiskful", size="2Gi"
     )
     ReplicationDestination(
         chart,

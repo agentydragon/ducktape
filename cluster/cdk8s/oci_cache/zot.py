@@ -22,6 +22,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
@@ -43,17 +44,14 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
 
 def _deployment(chart: Chart) -> None:
     # One writer: BoltDB and its corresponding blob files live on the same volume.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         "cache-pvc",
-        metadata=k8s.ObjectMeta(
-            name="zot-cache", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-2",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name="zot-cache",
+        namespace=_NAMESPACE,
+        storage_class="piraeus-hdd-2",
+        size="100Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
     k8s.KubeDeployment(
         chart,

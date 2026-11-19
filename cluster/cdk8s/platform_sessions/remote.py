@@ -45,6 +45,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
+from cluster.cdk8s.volume_claim import volume_claim
 
 NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
@@ -265,31 +266,25 @@ def _add_provider(chart: Chart, instance: str) -> None:
         ),
     )
 
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-piraeus",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-piraeus", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+        name=f"{name}-piraeus",
+        namespace=NAMESPACE,
+        storage_class="piraeus-ssd-2-autodiskful",
+        size="1Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
     # Keep the capture PVC even when recording is disabled; it contains user data.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-captures",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-captures", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
-        ),
+        name=f"{name}-captures",
+        namespace=NAMESPACE,
+        storage_class="piraeus-hdd-local",
+        size="20Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
 

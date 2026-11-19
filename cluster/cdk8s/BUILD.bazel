@@ -617,6 +617,16 @@ py_test(
 )
 
 py_library(
+    name = "volume_claim",
+    srcs = ["volume_claim.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "probes",
     srcs = ["probes.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
@@ -1803,6 +1813,7 @@ py_library(
         ":probes",
         ":secret_ref",
         ":service_ref",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

@@ -40,6 +40,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import RouteMatch
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/matrix"
 NAMESPACE = "matrix"
@@ -125,15 +126,8 @@ def _database(scope: Construct) -> None:
 
 
 def _media_claim(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "media",
-        metadata=k8s.ObjectMeta(name=_MEDIA_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("5Gi")}),
-        ),
+    volume_claim(
+        scope, "media", name=_MEDIA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="5Gi"
     )
 
 

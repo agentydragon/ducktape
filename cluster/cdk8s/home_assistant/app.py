@@ -48,6 +48,7 @@ from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
+from cluster.cdk8s.volume_claim import volume_claim
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -532,30 +533,18 @@ def _backup(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "config",
-        metadata=k8s.ObjectMeta(name=CONFIG_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name=_STORAGE_CLASS,
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("32Gi")}),
-        ),
-    )
+    volume_claim(chart, "config", name=CONFIG_CLAIM, namespace=_NAMESPACE, storage_class=_STORAGE_CLASS, size="32Gi")
     # Retain storage class plus prune protection preserve these historical copies.
     # Pinned restore helpers bind them on OptiPlex before application startup.
     for name, capacity in (("recovered-config-608a0bc6", "32Gi"), ("recovered-cache-7e9d03f8", "1Gi")):
-        k8s.KubePersistentVolumeClaim(
+        volume_claim(
             chart,
             name,
-            metadata=k8s.ObjectMeta(
-                name=name, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-            ),
-            spec=k8s.PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteOnce"],
-                storage_class_name=_STORAGE_CLASS,
-                resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string(capacity)}),
-            ),
+            name=name,
+            namespace=_NAMESPACE,
+            storage_class=_STORAGE_CLASS,
+            size=capacity,
+            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
         )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _metrics_token(chart)

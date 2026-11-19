@@ -43,6 +43,7 @@ from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
@@ -249,15 +250,8 @@ def _local_server(scope: Construct) -> None:
             },
         ),
     )
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "local-storage",
-        metadata=k8s.ObjectMeta(name=_NEXT_STORAGE, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-2",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+    volume_claim(
+        scope, "local-storage", name=_NEXT_STORAGE, namespace=NAMESPACE, storage_class="piraeus-hdd-2", size="100Gi"
     )
     k8s.KubeDeployment(
         scope,

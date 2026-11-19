@@ -19,6 +19,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 NAME = "platform-sessions"
 NAMESPACE = NAME
@@ -29,15 +30,8 @@ SERVICE = ServiceRef(
 
 
 def _claim(chart: Chart, name: str, namespace: str) -> None:
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        f"claim-{namespace}",
-        metadata=k8s.ObjectMeta(name=name, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+    volume_claim(
+        chart, f"claim-{namespace}", name=name, namespace=namespace, storage_class="piraeus-ssd-local", size="1Gi"
     )
 
 

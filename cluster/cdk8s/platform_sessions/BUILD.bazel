@@ -37,6 +37,7 @@ py_library(
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/external_secrets:minted_secret",
