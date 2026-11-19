@@ -20,6 +20,7 @@ import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 
 import { httpApi, type SessionBrowserApi } from "./api";
 import type { MachineImportProgress, SnapshotImportState } from "./openapi_schema";
+import { formatDateTime } from "./session-viewer-formatting";
 
 const IMPORT_PROGRESS_POLL_INTERVAL_MS = 10_000;
 
@@ -435,13 +436,6 @@ function snapshotStateColor(state: SnapshotImportState): "red" | "yellow" | "gre
     return "yellow";
   }
   return "green";
-}
-
-function formatDateTime(value: string | null): string {
-  if (value === null) return "Unknown time";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function errorMessage(reason: unknown, fallback: string): string {
