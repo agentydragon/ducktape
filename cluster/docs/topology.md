@@ -27,13 +27,10 @@
 
 ## Storage
 
-| StorageClass                | Provisioner       | Placement and use                             |
-| --------------------------- | ----------------- | --------------------------------------------- |
-| `seaweedfs-ovh-ssd`         | SeaweedFS CSI     | OVH SSD SeaweedFS; Forgejo git hot tier       |
-| `piraeus-ssd-local`         | Piraeus (LINSTOR) | One local SSD copy on a node with an SSD pool |
-| `piraeus-hdd-local`         | Piraeus (LINSTOR) | One local HDD copy on a node with an HDD pool |
-| `piraeus-ssd-2-autodiskful` | Piraeus (LINSTOR) | Two OVH SSD copies with autodiskful placement |
-| `piraeus-hdd-2`             | Piraeus (LINSTOR) | Two OVH HDD copies with autodiskful placement |
+| StorageClass        | Provisioner       | Placement and use                                                                 |
+| ------------------- | ----------------- | --------------------------------------------------------------------------------- |
+| `seaweedfs-ovh-ssd` | SeaweedFS CSI     | OVH SSD SeaweedFS; Forgejo git hot tier                                           |
+| `piraeus-*`         | Piraeus (LINSTOR) | Local and two-copy SSD/HDD classes: [storage classes](piraeus.md#storage-classes) |
 
 See <piraeus.md> and <../cdk8s/piraeus.py> for storage pools, placement and
 recovery constraints. Existing PVCs can retain older classes during migrations.
