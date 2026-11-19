@@ -44,9 +44,6 @@ def test_agent_tool_boundary_validates_nested_union() -> None:
     assert _make_strict_function_tool("sample", "sample", schema).strict is True
 
 
-# ---- Local fixtures (only used by this module) ----
-
-
 class SendMessageInput(OpenAIStrictModeBaseModel):
     mime: Literal["text/markdown", "text/plain"]
     content: str
@@ -71,9 +68,6 @@ class ValidationServer(FastMCP):
 def validation_server() -> ValidationServer:
     """ValidationServer with typed tool access."""
     return ValidationServer()
-
-
-# --- Tool error continuation tests ---
 
 
 async def test_tool_error_continues_turn(validation_server) -> None:
@@ -124,9 +118,6 @@ async def test_tool_error_continues_turn(validation_server) -> None:
     assert_function_call_output_structured([second_output], has_entries(ok=True))
 
     assert_that(result, contains_string("Successfully sent message"))
-
-
-# --- Malformed JSON tests ---
 
 
 async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: FunctionCallItem) -> tuple[str, list]:
@@ -188,9 +179,6 @@ async def test_malformed_json_multiple_tool_calls(mcp_tool_provider_echo) -> Non
 
     assert error_count == 1
     assert success_count == 1
-
-
-# --- Null byte sanitization tests ---
 
 
 def test_no_nulls_unchanged():
