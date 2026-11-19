@@ -64,3 +64,24 @@ diff_test(
     file1 = "EsmSplit/Instance.lean",
     file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
+
+lean_binary(
+    name = "translate",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Correct.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/Plan.lean",
+        "EsmSplit/Render.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+        "Experiments/CheckOutput.lean",
+        "Experiments/Lower.lean",
+        "Experiments/Translate.lean",
+        "Experiments/TranslateMain.lean",
+    ],
+    # lean_binary elaborates the entry on each call. Import the compiled checker.
+    entry = "Experiments/TranslateMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)

@@ -397,9 +397,6 @@ def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id
         if sample.size < 5 then sample := sample.push (a, b)
   return (count, sample)
 
-end Translate
-
-open Translate in
 def main (args : List String) : IO UInt32 := do
   let (table?, args) := match args with
     | [b, o, c, "--table", t] => (some t, [b, o, c])
@@ -443,3 +440,5 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"OBLIGATIONS: {n} pairs of conflicting units run in the opposite order from the bundle"
     for (a, b) in sample do IO.println s!"    unit {b} came first in the bundle; the output runs unit {a} before it"
     return 4
+
+end Translate

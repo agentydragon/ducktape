@@ -1,0 +1,23 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages(name = "node_modules")
+
+_TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
+
+js_test(
+    name = "fixtures_test",
+    data = [
+        "frontend.mjs",
+        "mutate.mjs",
+        "pair.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        _TRANSLATE,
+    ] + glob(
+        ["fixtures/**"],
+        allow_empty = False,
+    ),
+    entry_point = "test.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
