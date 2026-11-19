@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -432,7 +431,6 @@ func TestACallThatOutlastsTheRequestTimeoutIsAbandoned(t *testing.T) {
 }
 
 type liveIdentities struct {
-	mu   sync.RWMutex
 	uids map[string]string
 }
 
@@ -445,14 +443,6 @@ func newLiveIdentities(identities ...storage.Identity) *liveIdentities {
 }
 
 func (live *liveIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
-	live.mu.RLock()
-	defer live.mu.RUnlock()
 	uid, found := live.uids[name]
 	return uid, found, nil
-}
-
-func (live *liveIdentities) replace(name, uid string) {
-	live.mu.Lock()
-	defer live.mu.Unlock()
-	live.uids[name] = uid
 }

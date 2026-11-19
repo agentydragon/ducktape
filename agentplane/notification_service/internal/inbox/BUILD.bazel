@@ -83,7 +83,6 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/notification_service/internal/inbox/internal/entry",
         "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/storagecodec",
@@ -92,7 +91,6 @@ go_test(
         "//agentplane/notification_service/internal/wakeup",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
-        "//agentplane/postgres/lease",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

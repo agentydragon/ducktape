@@ -486,10 +486,6 @@ func requireCode(t *testing.T, err error, want codes.Code) {
 	}
 }
 
-func sandboxRef() *notificationspb.DestinationRef {
-	return &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName, Uid: sandboxUID}
-}
-
 func actionsSource(requestID uuid.UUID, afterSequence int32) *notificationspb.Source {
 	return &notificationspb.Source{Provider: &notificationspb.Source_Actions{
 		Actions: &notificationspb.ActionsSource{RequestId: requestID.String(), AfterSequence: afterSequence},
@@ -516,19 +512,6 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 		t.Fatal(err)
 	}
 	return response.GetSubscription()
-}
-
-// createSandbox creates the named Sandbox in testNamespace and returns the UID the API server gave it.
-func createSandbox(t *testing.T, kube client.Client, name string) string {
-	t.Helper()
-	sandbox := &sandboxapi.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: name},
-		Spec:       sandboxapi.SandboxSpec{Template: "test-template"},
-	}
-	if err := kube.Create(t.Context(), sandbox); err != nil {
-		t.Fatal(err)
-	}
-	return string(sandbox.UID)
 }
 
 // recreateSandbox deletes the test Sandbox and creates another under its name, whose UID becomes successorUID.
@@ -617,13 +600,4 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	if err := s.store.Release(t.Context(), *claim, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func accountUID(t *testing.T, name string) string {
-	t.Helper()
-	account, err := kube.ServiceAccount(t.Context(), auth.Account{Namespace: testNamespace, Name: name})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(account.UID)
 }

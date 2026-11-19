@@ -57,16 +57,6 @@ class AuthConfig(BaseModel):
             raise ValueError("credential must not be empty")
         return self
 
-    def read_credential(self) -> str:
-        if self.credential is not None:
-            return self.credential.get_secret_value()
-        if self.credential_file is None:
-            raise ValueError("configure exactly one of credential and credential_file")
-        credential = self.credential_file.read_text().strip()
-        if not credential:
-            raise ValueError("provider credential file is empty")
-        return credential
-
 
 class ConnectionConfig(BaseModel):
     tls: ClientTLS | None = None
@@ -370,15 +360,6 @@ class Settings(BaseModel):
                     f"model {model} {config.api} API requires {' or '.join(sorted(expected_auth))} connection auth"
                 )
         return self
-
-    def connection(self, model: str) -> ConnectionConfig:
-        config = self.models.get(model)
-        if config is None:
-            raise ValueError(f"unknown model {model}")
-        connection = self.connections.get(config.connection)
-        if connection is None:
-            raise ValueError(f"model {model} references unknown connection {config.connection}")
-        return connection
 
     @model_validator(mode="after")
     def exactly_one_execution_target(self) -> Self:

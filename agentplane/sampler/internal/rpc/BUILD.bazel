@@ -52,7 +52,6 @@ go_test(
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
-        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/sampler/internal/sessionstore",
         "//agentplane/sampler/internal/settings",
@@ -81,7 +80,6 @@ go_test(
     deps = [
         "//agentplane/harness_host",
         "//agentplane/harness_host:harness_host_go_proto",
-        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/postgres/wakeups",
