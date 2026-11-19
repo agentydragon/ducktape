@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pygit2
+import pytest
 import pytest_bazel
 
 from devinfra.precommit.conftest import commit, head_tree, staged_deltas
@@ -22,23 +23,15 @@ def test_no_violations_with_underscores(repo: pygit2.Repository, tmp_path: Path)
     assert _check(repo) == []
 
 
-def test_py_file_with_dash(repo: pygit2.Repository, tmp_path: Path) -> None:
-    (tmp_path / "foo-bar.py").write_text("# test")
-    repo.index.add("foo-bar.py")
+@pytest.mark.parametrize("name", ["foo-bar.py", "foo-bar.md"])
+def test_new_py_or_md_file_with_dash(repo: pygit2.Repository, tmp_path: Path, name: str) -> None:
+    (tmp_path / name).write_text("# test")
+    repo.index.add(name)
     repo.index.write()
     violations = _check(repo)
     assert len(violations) == 1
-    assert "foo-bar.py" in violations[0]
+    assert name in violations[0]
     assert "underscore" in violations[0]
-
-
-def test_md_file_with_dash(repo: pygit2.Repository, tmp_path: Path) -> None:
-    (tmp_path / "foo-bar.md").write_text("# test")
-    repo.index.add("foo-bar.md")
-    repo.index.write()
-    violations = _check(repo)
-    assert len(violations) == 1
-    assert "foo-bar.md" in violations[0]
 
 
 def test_existing_file_modification_not_flagged(repo: pygit2.Repository, tmp_path: Path) -> None:
