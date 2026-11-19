@@ -2,14 +2,27 @@ package gateway
 
 import (
 	"context"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
+
+// trustedCAFile writes a TLS test server's certificate to a PEM file for `ProviderHTTPConfig.CAFile`.
+func trustedCAFile(t *testing.T, server *httptest.Server) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func testOwnerConfig() OwnerConfig {
 	return OwnerConfig{Issuer: "https://issuer.invalid/", ClientID: "client", ClientSecret: strings.Repeat("c", 40), SessionSecret: strings.Repeat("s", 40), PublicBaseURL: "https://sessions.invalid", AllowedSubject: "owner"}

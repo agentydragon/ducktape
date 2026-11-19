@@ -2,10 +2,8 @@ package gateway
 
 import (
 	"context"
-	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -98,14 +96,7 @@ func TestInteractiveWebSocketRequiresOwnerOriginAndCapability(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	certificate := upstream.Certificate()
-	if certificate == nil {
-		t.Fatal("missing upstream certificate")
-	}
-	caFile := t.TempDir() + "/provider-ca.pem"
-	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
+	caFile := trustedCAFile(t, upstream)
 	fake := &interactiveProvider{available: true}
 	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "myquest", InstanceId: "personal"}, Client: fake}})
 	if err != nil {
