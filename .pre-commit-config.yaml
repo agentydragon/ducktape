@@ -86,8 +86,8 @@ repos:
         language: system
         types: [yaml]
         args: ["--allow-multiple-documents"]
-        # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
-        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/generated/|cluster/parked/|cluster/charts/"
+        # Skip Helm/Flux dirs (Go templating), chart values
+        exclude: "cluster/k8s/|cluster/generated/|cluster/parked/|cluster/charts/"
       - id: check-toml
         name: check toml
         entry: check-toml
