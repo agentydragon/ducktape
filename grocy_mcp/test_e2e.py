@@ -32,9 +32,6 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-# -- Fixtures -----------------------------------------------------------------
-
-
 @pytest.fixture
 async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
@@ -53,9 +50,6 @@ async def ref_data(mcp_client: Client) -> RefData:
     return await create_ref_data(mcp_client)
 
 
-# -- System info tool ---------------------------------------------------------
-
-
 async def test_system_info_tool(mcp_client: Client) -> None:
     """GET /system/info is exposed as an MCP tool."""
     data = unwrap_result(await mcp_client.call_tool("get_system_info", {}))
@@ -64,9 +58,6 @@ async def test_system_info_tool(mcp_client: Client) -> None:
     version = data["grocy_version"]["Version"]
     assert isinstance(version, str)
     assert version
-
-
-# -- Reference data CRUD -----------------------------------------------------
 
 
 async def test_reference_data_crud(mcp_client: Client) -> None:
@@ -120,9 +111,6 @@ async def test_reference_data_crud(mcp_client: Client) -> None:
     assert new_qu_name in [q["name"] for q in qus]
 
 
-# -- Product lifecycle -------------------------------------------------------
-
-
 async def test_product_lifecycle(mcp_client: Client, ref_data: RefData) -> None:
     """Create products, edit (rename), verify preserved fields, delete."""
     # Verify products exist
@@ -149,9 +137,6 @@ async def test_product_lifecycle(mcp_client: Client, ref_data: RefData) -> None:
     for name in (new_name, ref_data.products[1]):
         del_result = unwrap_result(await mcp_client.call_tool("product_delete", {"product": name}))
         assert del_result["kind"] == "ok", f"product_delete({name}) failed: {del_result}"
-
-
-# -- default_best_before_days: required on create, preserved on edit --------
 
 
 async def test_products_create_requires_default_best_before_days(mcp_client: Client) -> None:
@@ -298,9 +283,6 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["due_type"]) == 2
 
 
-# -- entity_update PATCH semantics -------------------------------------------
-
-
 async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url: str, ref_data: RefData) -> None:
     """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
 
@@ -359,9 +341,6 @@ async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url:
         assert after3["description"] in (None, "")  # Grocy normalizes null→"" on some columns
         assert after3["name"] == before["name"]
         assert float(after3["min_stock_amount"]) == float(before["min_stock_amount"])
-
-
-# -- Stock operations --------------------------------------------------------
 
 
 async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
@@ -548,9 +527,6 @@ async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, r
     assert cleared["changes"]["location_id"]["new"] == alternate_location_id
 
 
-# -- stock_set: qu-optional when zeroing ------------------------------------
-
-
 async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, ref_data: RefData) -> None:
     """`qu` is optional on `stock_set` when `new_amount=0`; required otherwise.
 
@@ -597,9 +573,6 @@ async def test_stock_set_qu_optional_when_zeroing(mcp_client: Client, ref_data: 
     assert set_ops[0]["new_amount"] == 3.0
 
 
-# -- stock_add: entry_id -----------------------------------------------------
-
-
 async def test_stock_add_returns_entry_id(mcp_client: Client, ref_data: RefData) -> None:
     """`stock_add` echoes the new stock entry's `entry_id`, usable without a follow-up list call."""
     product = ref_data.products[0]
@@ -619,9 +592,6 @@ async def test_stock_add_returns_entry_id(mcp_client: Client, ref_data: RefData)
     assert entries[0]["kind"] == "ok", entries
     assert entries[0]["entry"]["product_name"] == product
     assert float(entries[0]["entry"]["amount"]) == 1.0
-
-
-# -- stock_add: default_best_before_days -----------------------------------
 
 
 async def test_stock_add_applies_default_best_before_days(mcp_client: Client, ref_data: RefData) -> None:
@@ -726,9 +696,6 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     assert await _latest_bbd() == override.isoformat()
 
 
-# -- Shopping list operations ------------------------------------------------
-
-
 async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
     product = ref_data.products[0]
@@ -775,18 +742,12 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     unwrap_result(await mcp_client.call_tool("shopping_list_items_remove", {"item_ids": [sl_item_id]}))
 
 
-# -- Volatile stock queries --------------------------------------------------
-
-
 async def test_volatile_stock_queries(mcp_client: Client) -> None:
     """Smoke test: expiring, below-minimum, expired queries don't error."""
     unwrap_result(await mcp_client.call_tool("get_expiring_stock", {"days_ahead": 30}))
     unwrap_result(await mcp_client.call_tool("get_below_minimum_stock", {}))
     unwrap_result(await mcp_client.call_tool("get_expired_stock", {}))
     unwrap_result(await mcp_client.call_tool("get_db_changed_time", {}))
-
-
-# -- Generic entity CRUD ----------------------------------------------------
 
 
 async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> None:
@@ -821,9 +782,6 @@ async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> Non
     )
     assert entities[0]["kind"] == "ok"
     assert entities[0]["data"]["name"] == ref_data.products[0]
-
-
-# -- Write entity types ------------------------------------------------------
 
 
 async def test_create_entities_rejects_view_only_type(mcp_client: Client) -> None:

@@ -21,9 +21,6 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# ── REST helpers ────────────────────────────────────────────────────────
-
-
 async def _create(client: httpx.AsyncClient, entity: str, body: dict[str, Any]) -> int:
     r = await client.post(f"/objects/{entity}", json=body)
     r.raise_for_status()
@@ -109,9 +106,6 @@ async def _add_to_shopping_list(
         body["note"] = note
     r = await client.post("/objects/shopping_list", json=body)
     r.raise_for_status()
-
-
-# ── Shared scaffolding (locations, QUs, product groups) ─────────────────
 
 
 @dataclass
@@ -202,9 +196,6 @@ async def _seed_background_pantry(client: httpx.AsyncClient, base: _Base) -> Non
     for name, qu, loc, group, amount in items:
         pid = await _create_product(client, name=name, qu_id=qu, location_id=loc, group_id=group)
         await _add_stock(client, pid, amount)
-
-
-# ── Case seed ──────────────────────────────────────────────────────────
 
 
 async def seed_lived_in_pantry(client: httpx.AsyncClient) -> None:

@@ -188,9 +188,6 @@ def _is_retryable_mutation(exc: BaseException) -> bool:
     return isinstance(exc, (httpx2.ConnectError, httpx2.ConnectTimeout, httpx2.PoolTimeout))
 
 
-# ── Tool registration ────────────────────────────────────────────────────────
-
-
 def build_batch_tools_mcp(settings: ServerSettings, *, client_provider: HTTPClientProvider[GrocyClient]) -> FastMCP:
     """A bare FastMCP with only the custom batch tools — no OpenAPI-generated tools, no auth.
 
