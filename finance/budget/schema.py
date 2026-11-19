@@ -251,9 +251,6 @@ Condition = Annotated[
     Field(discriminator="kind"),
 ]
 
-for _composite in (AllOfCondition, AnyOfCondition, NotCondition):
-    _composite.model_rebuild()
-
 
 class MatchRule(_RuleBase):
     """Rich rule (Stage A): route to `bucket_id` when `condition` matches. Direction-gated
