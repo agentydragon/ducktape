@@ -39,10 +39,6 @@ def extract_comments_from_file(filepath: Path, lines: list[str]) -> list[dict[st
             continue
 
         comment_idx = line.index("#")
-        # Skip shebang
-        if comment_idx == 0 and line.startswith("#!"):
-            continue
-
         comment_text = line[comment_idx + 1 :].strip()
         context_before = "".join(lines[max(0, i - 4) : i - 1])
         context_after = "".join(lines[i : min(len(lines), i + 3)])
