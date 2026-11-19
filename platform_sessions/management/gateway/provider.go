@@ -44,13 +44,8 @@ func (t tokenFile) GetRequestMetadata(_ context.Context, _ ...string) (map[strin
 		return nil, errors.New("provider credential unavailable")
 	}
 	token := strings.TrimSpace(string(data))
-	if len(token) < 32 {
+	if !validCredential(token) {
 		return nil, errors.New("invalid provider credential")
-	}
-	for _, c := range token {
-		if c < 33 || c > 126 {
-			return nil, errors.New("invalid provider credential")
-		}
 	}
 	return map[string]string{"authorization": "Bearer " + token}, nil
 }
