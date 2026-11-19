@@ -16,7 +16,6 @@ Evaluation system for LLM code critics: critic agents report issues in frozen co
 - `agents/`: in-container code — `critic/`, `grader/`, `critic_dev/{improve,optimize}`
 - `specimens/`: frozen code snapshots with labeled issues
 - `standards/`: property definitions (issue taxonomies)
-- `prompts/`: Mako prompt templates
 - `testing/`: shared test fixtures
 
 ## Container E2E image reuse
