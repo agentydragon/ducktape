@@ -298,7 +298,7 @@ function MachineImportProgressPanel({
             Import progress by machine
           </Text>
           <Group gap="xs">
-            <Text size="xs" c="dimmed" className="session-import-progress-refresh-note">
+            <Text size="xs" c="dimmed">
               Progress refreshes every 10 seconds; refresh sessions separately
             </Text>
             <Button size="xs" variant="default" loading={loading} onClick={onRefresh}>

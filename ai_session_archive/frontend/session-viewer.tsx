@@ -89,13 +89,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     sidebarMaxWidth
   );
   const sidebarWidth = Math.min(storedSidebarPane.size, sidebarMaxWidth);
-  const sidebarPane: PaneSize = {
-    ...storedSidebarPane,
-    size: sidebarWidth,
-    max: sidebarMaxWidth,
-    resize: (size) => storedSidebarPane.resize(Math.min(size, sidebarMaxWidth)),
-    step: (delta) => storedSidebarPane.step(delta),
-  };
+  const sidebarPane: PaneSize = { ...storedSidebarPane, size: sidebarWidth };
   const machinesQuery = useQuery({
     queryKey: ["ai-session-archive", "machines"],
     queryFn: ({ signal }) => api.listMachines(signal),
@@ -408,7 +402,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                       </Badge>
                     )}
                   </Group>
-                  <Group className="session-browser-title-row" gap="xs" wrap="nowrap" align="center">
+                  <Group gap="xs" wrap="nowrap" align="center">
                     <Title order={2} size="h4" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                       {selectedSession.title || "Untitled session"}
                     </Title>
