@@ -49,7 +49,6 @@ go_test(
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/notification_service/internal/inbox",
-        "//agentplane/notification_service/internal/sessionidentity",
         "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/transaction",

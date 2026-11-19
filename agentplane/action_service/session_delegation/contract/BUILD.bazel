@@ -17,5 +17,4 @@ go_test(
     name = "contract_test",
     srcs = ["inputs_test.go"],
     embed = [":contract"],
-    deps = ["//agentplane/action_service/internal/admission/catalog"],
 )

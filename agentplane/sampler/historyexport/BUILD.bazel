@@ -32,6 +32,5 @@ go_test(
         "//agentplane/proto:session_go_proto",
         "//agentplane/sampler/api:sampler_go_proto",
         "@io_k8s_client_go//util/workqueue",
-        "@org_golang_google_grpc//:grpc",
     ],
 )
