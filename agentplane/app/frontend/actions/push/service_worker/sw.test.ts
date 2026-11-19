@@ -2,19 +2,15 @@ import { readFileSync } from "node:fs";
 import { TextDecoder, TextEncoder } from "node:util";
 import { URLSearchParams } from "node:url";
 import { runInNewContext } from "node:vm";
-import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
-import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import { fromJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import {
-  ActionIdentitySchema,
-  ActionRequestSchema,
-  ActionState,
   Verdict as ProtoVerdict,
   type ActionRequest,
 } from "../../../../../action_service/api/contracts/action_service_pb";
 import { DecideActionRequestRequestSchema } from "../../../../../action_service/api/contracts/operator_action_service_pb";
-import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../../testing/proto_fixtures";
+import { actionRequest, decideActionRequestProtoJson, listActionRequestsProtoJson } from "../../testing/proto_fixtures";
 
 type PushMessage =
   | {
@@ -51,27 +47,6 @@ type TestWorker = {
   closed: string[];
   setPending(actions: ActionRequest[] | null): void;
 };
-
-function actionRequest(fields: {
-  action: { group: string; name: string };
-  arguments: JsonObject;
-  title: string;
-  description?: string | null;
-}): ActionRequest {
-  return create(ActionRequestSchema, {
-    id: "00000000-0000-4000-8000-000000000001",
-    idempotencyKey: "notification-format-test",
-    action: create(ActionIdentitySchema, fields.action),
-    arguments: fields.arguments,
-    title: fields.title,
-    description: fields.description ?? undefined,
-    caller: { namespace: "test-namespace", name: "test-account" },
-    state: ActionState.DECISION_PENDING,
-    version: 1n,
-    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-  });
-}
 
 function loadWorker(): TestWorker {
   const listeners: TestWorker["listeners"] = new Map();
