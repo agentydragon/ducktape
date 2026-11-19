@@ -97,7 +97,6 @@ facts proto does not import the API proto; the EnvironmentService proto owns its
 The two owners share in-process policy and guarded-write code, not a manager instance or policy
 index. Environments makes no call to Sessions. Only `EnvironmentService` is registered as a public environment API. Its list/get operations
 remain read-only; explicit resume uses the policy and mutation contract above.
-The public service exposes no suspend operation. Any future public suspend API requires a separately
-reviewed authority and retry contract.
+The public service exposes no suspend operation.
 
 Service SVID role grants and delegation: [EnvironmentService SPEC](../internal/service/SPEC.md#resume-and-ownership).

@@ -24,7 +24,7 @@ The database URL comes only from `AGENTPLANE_ACTIONS_DATABASE_URL`; the VAPID ke
 `AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`. MCP OAuth client IDs may use `client_id_file` to
 read an existing projected Secret instead of a literal `client_id`. A server selects exactly one
 of those sources or shared CIMD. Startup reads these inputs and validates the effective configuration
-before serving. Projected bearer tokens and OAuth client-secret files retain their existing lifetimes.
+before serving.
 
 ## Metrics
 
@@ -87,7 +87,6 @@ client is constructed for receiver admission. `reader_accounts` and `connection_
 not accepted receiver settings. Listener `kubernetes_bearer` entries remain decodable but grant no
 admission.
 Operator RPCs retain their separately verified OIDC contract and explicit service-plus-OIDC exception.
-Linkage callbacks retain their single-use state authorization.
 
 The Gate admits only explicitly listed full gRPC method names; any other method is denied before
 its handler runs. ActionService methods use workload admission, while OperatorActionService,
@@ -412,9 +411,8 @@ caller grants. Submitted input follows the separate backend wake-on-send policy.
 MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
 Action catalog retains the reviewed group/action pair. Successful output is structured JSON from
 the owning protobuf or typed Session projection; source-specific partial and unavailable facts stay
-explicit. Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is
-auto-approved only where a PolicySet already bound to the caller applies. Resume also requires the
-backend's current target policy.
+explicit. An Action is auto-approved only where a PolicySet already bound to the caller applies.
+Resume also requires the backend's current target policy.
 
 ## Optional MCP backends
 

@@ -4,8 +4,7 @@ Environment Runtime owns one Sandbox environment lifetime: identity, bootstrap, 
 incarnation seal, proxy-facing control, Session management, retained records, journals, native
 harness controllers, History delivery and Execution. Components have direct dependencies and
 independent COSI observations inside Runtime's single engine. The `EnvironmentRuntime` API carries
-Sandbox lifecycle and process diagnostics; `HarnessHost` carries Session creation, commands and status. A future independent Session domain and storage
-model remain separate design work.
+Sandbox lifecycle and process diagnostics; `HarnessHost` carries Session creation, commands and status.
 
 ## Durable state and recovery
 

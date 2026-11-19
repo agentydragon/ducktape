@@ -180,8 +180,7 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 
 ## Pagination and errors
 
-`ListEnvironments.limit` is required and ranges from 1 through 100. The request and response retain
-the approved paged contract. Identity
+`ListEnvironments.limit` is required and ranges from 1 through 100. Identity
 callers page over visible Sandboxes with a lexical name cursor; it cannot grant access to another
 Sandbox. Broad readers can continue namespace pages; their grant permits seeing all names.
 
