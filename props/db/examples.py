@@ -150,6 +150,3 @@ def get_examples_for_split(session: Session, split: Split) -> list[Example]:
         session.expunge(example)
 
     return examples
-
-
-__all__ = ["Example", "count_available_examples_by_scope_all", "get_examples_for_split"]
