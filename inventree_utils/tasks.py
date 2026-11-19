@@ -1,5 +1,3 @@
-import shlex
-import subprocess
 from pathlib import Path
 
 from inventree.label import LabelTemplate
@@ -8,41 +6,6 @@ from inventree.stock import StockItem
 from invoke import task
 
 from inventree_utils.beautifier.config import api_from_config
-
-SERVER = "root@agentydragon.com"
-
-
-def _run(c, cmd):
-    """Run a shell command, printing it when desired."""
-    print(f"> {subprocess.list2cmdline(cmd)}")
-    c.run(shlex.join(cmd))
-
-
-def _ssh(c, cmd):
-    """Run a remote shell command."""
-    _run(c, ["ssh", SERVER, cmd])
-
-
-@task
-def logs(c, since="24h", hide_http_logs=True):
-    """Show server logs."""
-    remote_command = f"docker logs -f --since {since} inventree-server"
-    if hide_http_logs:
-        remote_command += " | grep -Ev 'KHTML|HTTP'"
-    _ssh(c, remote_command)
-
-
-@task
-def restart(c):
-    """Restart the server."""
-    _ssh(c, "docker restart inventree-server")
-
-
-@task
-def deploy_server_hook(c):
-    """Deploy the post-receive hook to the remote repository."""
-    _run(c, ["rsync", "server-post-receive", f"{SERVER}:/srv/git/inventree-utils.git/hooks/post-receive"])
-
 
 here = Path(__file__).parent
 
@@ -128,43 +91,3 @@ def deploy_template(c):
     print("Template updated")
 
     render_template(c, api=api, template_pk=template.pk)
-
-
-@task
-def deploy(c):
-    deploy_remote = "deploy"
-    branch = "main"
-    remote_branch = f"{deploy_remote}/{branch}"
-
-    def _diff(stat: bool):
-        opts = [
-            "git",
-            "diff",
-            "--find-renames",
-            "--color=always",
-            "--src-prefix=REMOTE/",
-            "--dst-prefix=LOCAL/",
-            remote_branch,
-            branch,
-        ]
-        if stat:
-            opts.append("--stat")
-        _run(c, opts)
-
-    # 1) Sync local knowledge of remote
-    _run(c, ["git", "fetch", deploy_remote])
-    _diff(stat=True)
-
-    while True:
-        match input("\n[d]iff / [p]ush / [q]uit: ").strip().lower():
-            case "d":
-                _diff(stat=False)
-            case "p":
-                _run(c, ["git", "push", deploy_remote, branch])
-                print("\n\nTo restart InvenTree server, run:\n\n    inv restart")
-                break
-            case "q":
-                print("Aborting.")
-                break
-            case _:
-                print("Invalid choice.")
