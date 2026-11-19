@@ -259,8 +259,6 @@ let
       // lib.optionalAttrs (mainProgram != null) { inherit mainProgram; };
     };
 
-  # Python packages not in nixpkgs (used as propagatedBuildInputs)
-  pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
     description = "Shared utility library (devinfra.bazel, util.otel, etc.)";
