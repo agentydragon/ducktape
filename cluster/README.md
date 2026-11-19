@@ -11,15 +11,15 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - Secrets: SOPS (age, decrypted by Flux); ESO's Kubernetes provider mirrors a few
   cross-namespace. No Vault (<docs/decisions.md> § "Secrets: SOPS SSOT").
 
-Prerequisites: SSH to Proxmox host `root@atlas`, OVH API credentials
-(`secrets/ovh-credentials.sops.yaml`), `gh auth login` (Flux), direnv in `cluster/` —
-its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`, `kubectl`,
-`get-passwords` (service credentials).
+Prerequisites (credentials and access): <docs/bootstrap.md#prerequisites>. direnv in
+`cluster/`: its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`,
+`kubectl`, `get-passwords` (service credentials).
 
 ## Infrastructure
 
 - Network `10.2.0.0/16` (VLAN 4 on Proxmox `vmbr4`): `10.2.0.2` atlas (reachable only
-  from the Proxmox VLAN), `10.2.1.x` control plane, `10.2.2.x` workers (Proxmox).
+  from the Proxmox VLAN). The only cluster node in the Proxmox region is `wyrm2`
+  ([nodes](docs/topology.md#nodes)).
 - Domain `*.allegedly.works`: AWS Route 53, DNS-01, dual LE issuers. Kubeconfig points at
   `api.allegedly.works`.
 - HTTPS: Internet → OVH bare metal:443 → Cilium Envoy → pods.

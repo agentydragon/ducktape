@@ -129,37 +129,16 @@ that nested Bazel actions execute remotely.
 
 ## Credential and locality boundary
 
-`bb remote` has two BuildBuddy hops, and they do not share the caller's
-Agentplane identity:
+`bb remote` makes two BuildBuddy hops that do not share the caller's Agentplane identity. The
+local `bb` CLI sends the outer `BuildBuddyService.Run` request, which a local egress proxy can
+authenticate by substituting a placeholder in a whole header or metadata value. BuildBuddy then
+starts Bazel on the hosted runner. That process reads `RunRequest.steps[].run` outside the local
+Sandbox and makes its own nested BES, cache and Remote Execution requests, without the caller
+Pod's workload token or egress path, so a placeholder copied into `steps[].run` stays inert.
 
-1. The local `bb` CLI makes the outer `BuildBuddyService.Run` request. A local
-   egress proxy can authenticate that request by substituting a configured
-   placeholder in its whole metadata value.
-2. BuildBuddy later starts a Bazel process on the hosted runner. That process
-   reads `RunRequest.steps[].run` and makes its own nested BES, cache, and
-   Remote Execution requests. The hosted process is outside the local Sandbox
-   and does not inherit the caller Pod's workload token or egress path.
-
-The current proxy contract substitutes whole HTTP headers and gRPC metadata;
-it intentionally does not rewrite arbitrary request bodies. Consequently, a
-placeholder copied into `steps[].run` remains a placeholder on the hosted
-runner. The outer request can authenticate successfully while the nested Bazel
-process fails authentication.
-
-This is especially important for live tests that need the staging Kubernetes
-API. A direct `bb run` keeps the completed binary on the caller, where the
-caller can hold the intended Kubernetes access. `bbr`/`bb remote` runs that
-binary on BuildBuddy infrastructure, where the current Sandbox-bound
-credential-substitution design cannot authenticate it to the staging cluster.
-
-Do not use hosted `bb remote` as a credentialless route to caller-local
-services, and do not put a real staging credential into the hosted command as a
-workaround. Hosted-runner authentication requires a separately designed
-boundary, such as a runner-side credential reference or a run-scoped gateway.
-A narrow BuildBuddy-specific `RunRequest` body rewrite is a possible weaker
-boundary, but it gives the real BuildBuddy credential to hosted agent-controlled
-code and is not equivalent to Sandbox workload authentication. The design
-tradeoff and required evidence are tracked in
+The execution policy that follows (when to use direct `bb run` instead of `bbr`) is in
+[`bazel_configuration.md`](../../docs/bazel_configuration.md#credential-boundary-for-hosted-bb-remote).
+The design tradeoffs of the hosted-runner alternatives are in
 [`agentplane/docs/buildbuddy_remote_auth.md`](../../../agentplane/docs/buildbuddy_remote_auth.md).
 
 ## Git state synchronization
