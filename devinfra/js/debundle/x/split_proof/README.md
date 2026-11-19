@@ -158,7 +158,7 @@ The main development does not use `native_decide`, so the compiler is not truste
 ## What is not proved
 
 1. **Footprints.** [`extract/extract.mjs`](extract/extract.mjs) parses the bundle with `acorn` and computes, per statement, what it declares, what it reads eagerly, what it reads only inside function bodies, whether it is hoisted, whether it may have effects.
-   Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals.
+   Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals, and reads of a variable that some statement reassigns (the model binds each name once; without this rule a pure read could move across the assignment, which the fuzzer of item 7 found).
    A statement with effects also counts everything it mentions as eager, since a call may invoke a callback or an immediately invoked function. The first version missed this and accepted a split that throws on load; see [`experiments/README.md`](experiments/README.md).
    A `var` inside a top-level block declares a module-scope name. The Lean front end missed this at first and accepted four splits from debundle's corpus that fail to load ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
    It rejects syntax it does not model (classes, destructuring, reassigning a top-level binding, `eval`, `import.meta`, async). Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines.
@@ -175,7 +175,9 @@ The main development does not use `native_decide`, so the compiler is not truste
    Moving the first two into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The third needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
 
 7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
-   Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved.
+   Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.
+   The checker refuses what a move or a rename visibly changes (`import.meta` except `new URL("/abs", import.meta.url)`, a direct `eval`, a top-level `await`).
+   Its soundness rests on a list of the ways a move can change behavior, so it is tested against Node by a [fuzzer](experiments/translation/README.md#fuzzer), which found two holes the fixtures had not: a pure read moving across a write, and `import.meta`.
 
 ## Controls
 

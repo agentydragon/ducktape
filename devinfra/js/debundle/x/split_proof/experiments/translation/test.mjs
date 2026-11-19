@@ -1,4 +1,5 @@
-// Runs the translation checker on every fixture: the fixture itself must be accepted, and every variant (a small
+// Runs the translation checker on every fixture: the fixture itself must be accepted (unless it has an `expect.json`,
+// which names the verdict for a bundle that uses something the checker refuses), and every variant (a small
 // edit of the output tree: a find-and-replace in a file, or a new file) must give the verdict in its `variants.json`.
 //
 //   node test.mjs [--keep]
@@ -49,7 +50,11 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
   writeFileSync(baseCert, readFileSync(path.join(work, "cert.json")));
   const baseOutput = path.join(work, "base_output.json");
   writeFileSync(baseOutput, readFileSync(path.join(work, "output.json")));
-  const cases = [{ name: "(unchanged)", expect: { code: 0, contains: "PLAN SOUND" }, run: () => base }];
+  const expectFile = path.join(fixture, "expect.json");
+  const baseExpect = existsSync(expectFile)
+    ? JSON.parse(readFileSync(expectFile, "utf8"))
+    : { code: 0, contains: "PLAN SOUND" };
+  const cases = [{ name: "(unchanged)", expect: baseExpect, run: () => base }];
   const variantsFile = path.join(fixture, "variants.json");
   for (const variant of existsSync(variantsFile) ? JSON.parse(readFileSync(variantsFile, "utf8")) : []) {
     cases.push({
@@ -82,6 +87,10 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
       got.text.split("\n").find((l) => /^(TRANSLATION REJECT|PLAN|OBLIGATIONS)/.test(l)) ?? got.text.split("\n")[0]
     ).slice(0, 110);
     console.log(`${ok ? "pass" : "FAIL"}  ${name}: ${c.name}  [exit ${got.code}] ${line}`);
+  }
+  if (baseExpect.code !== 0) {
+    if (!process.argv.includes("--keep")) rmSync(work, { recursive: true, force: true });
+    continue;
   }
   // every mutant of the accepted output must be rejected
   const mutants = run("node", [path.join(here, "mutate.mjs"), bundleJson, baseOutput, baseCert, "--count", "24"]);

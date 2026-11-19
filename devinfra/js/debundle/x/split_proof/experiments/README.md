@@ -415,5 +415,7 @@ Three rewrites besides renaming are accepted as listed premises (an outside impo
 Run it with `./run.sh --translation`. The fixtures' tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, an assignment moved away from its declaration, …) and a mutation test are all rejected.
 A tree with renamed locals is accepted. Two effects run in the other order give obligations instead of a verdict of "invalid".
 
+[`translation/fuzz.mjs`](translation/README.md#fuzzer) asks the converse: does the checker ever accept a tree that behaves differently from its bundle? It generates random bundles and random splits of them, runs both in Node and compares with the verdict. It found two holes that the fixtures missed (a pure read of a reassigned variable moving across the assignment, and a unit using `import.meta` moving to another module), and both are fixed with a fixture.
+
 On a large production bundle that is not in this repository, the checker accepts the translation, with every unit equal up to renaming and every link resolved, and reports only effect-order obligations.
 What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.md).

@@ -30,11 +30,16 @@ Checked:
    hygienic, every unit once, conflicting units keep their order. A failure of the last is an *obligation* list.
 6. ES imports are read-only: a unit assigns only names that its own module declares (`AssignsHome`). Like the same
    rule in `lowersplit`, this is not part of `Sound`, so no theorem ties it to `Correct`.
+7. Refused, because moving or renaming the unit changes what it does: `import.meta` (its value is the module's own;
+   only `new URL("/absolute", import.meta.url)` is accepted, and listed as a premise), a direct `eval` (it reads
+   module-scope names by their spelling) and a top-level `await` (module evaluation stops being a plain sequence).
 
 Not checked here, and printed as premises: that an outside import and the member chain it was swapped for are the
 same value, that a dynamic import's new path names the same chunk, and that `new Worker("/p")` and
 `new Worker(new URL("/p", import.meta.url))` start the same worker (an absolute path on the same origin).
-These three rewrites are the only ones the checker accepts besides renaming.
+`new URL("/absolute", import.meta.url)` is accepted as it stands and listed as a premise: it resolves against the origin
+only, and every module of the tree is assumed to be served from the bundle's origin.
+These four are the only things the checker accepts besides renaming.
 -/
 
 open Lean EsmSplit
@@ -65,6 +70,10 @@ structure Ctx where
   dyns   : Array (Nat × String × String) := #[]
   /-- paths of `new Worker("/p")` rewritten to `new Worker(new URL("/p", import.meta.url))` -/
   workers : Array String := #[]
+  /-- paths of `new URL("/p", import.meta.url)` that stand unchanged -/
+  metaUrls : Array String := #[]
+  /-- how many functions enclose the node being compared -/
+  depth : Nat := 0
 
 abbrev M := ExceptT String (StateM Ctx)
 
@@ -137,6 +146,21 @@ partial def unifyNode (a b : Json) : M Unit := do
     | none => throw s!"identifier `{str (fld a "name")}` against a member expression"
   else if ta != tb then throw s!"{ta} against {tb}"
   else if ta == "Identifier" then unifyId a b
+  else if ta == "MetaProperty" && str (fld (fld a "meta") "name") == "import" then
+    throw "`import.meta` is module-relative: a unit that uses it changes meaning when it moves"
+  else if ta == "CallExpression" && isGlobal (fld a "callee") "eval" then
+    throw "a direct `eval` reads module-scope names by their spelling"
+  else if (ta == "AwaitExpression" || (ta == "ForOfStatement" && fld a "await" == Json.bool true)) && (← get).depth == 0 then
+    throw "top-level `await` is not modeled: module evaluation is no longer a plain sequence"
+  else if ta == "FunctionDeclaration" || ta == "FunctionExpression" || ta == "ArrowFunctionExpression" then
+    modify fun c => { c with depth := c.depth + 1 }
+    unifyFields a b ""
+    modify fun c => { c with depth := c.depth - 1 }
+  else if ta == "NewExpression" && isGlobal (fld a "callee") "URL" && (arr (fld a "arguments")).size == 2
+      && isUrlOfMetaUrl a (str (fld (arr (fld a "arguments"))[0]! "lit"))
+      && (str (fld (arr (fld a "arguments"))[0]! "lit")).startsWith "s:/"
+      && isUrlOfMetaUrl b (str (fld (arr (fld a "arguments"))[0]! "lit")) then
+    modify fun c => { c with metaUrls := c.metaUrls.push (str (fld (arr (fld a "arguments"))[0]! "lit")) }
   else if ta == "NewExpression" && isGlobal (fld a "callee") "Worker" && isGlobal (fld b "callee") "Worker" then
     let aa := arr (fld a "arguments")
     let ba := arr (fld b "arguments")
@@ -215,6 +239,7 @@ structure Result where
   vendor  : Array (String × String × String × String × Array String)
   dynamic : Array (String × String)
   workers : Array String
+  metaUrls : Array String
   /-- exports of the output entry beyond the bundle's -/
   extraExports : Nat
 
@@ -348,6 +373,7 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
            vendor := vendor.fold (fun acc k v => acc.push (k.1, k.2, v.1, v.2.1, v.2.2)) #[]
            dynamic := dyn.fold (fun acc k v => acc.push (k, v)) #[]
            workers := ctx.workers
+           metaUrls := ctx.metaUrls
            extraExports := extraExports }
 
 /-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`; and, per unit, the
@@ -408,10 +434,10 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"  [time] pairing, equality, links: {(← IO.monoMsNow) - t1} ms"
     let units := arr (fld bundleJ "units")
     IO.println s!"TRANSLATION OK: {units.size} units, {res.plan.mods.length} modules, {res.names} module-scope names linked"
-    IO.println s!"  premises: {res.vendor.size} outside imports stand for member chains or other imports; {res.dynamic.size} dynamic-import paths moved; {res.workers.size} worker paths made relative to import.meta.url; {res.extraExports} extra exported aliases"
+    IO.println s!"  premises: {res.vendor.size} outside imports stand for member chains or other imports; {res.dynamic.size} dynamic-import paths moved; {res.workers.size} worker paths made relative to import.meta.url; {res.metaUrls.size} absolute URLs against import.meta.url left as they are; {res.extraExports} extra exported aliases"
     if let some t := table? then
       let rows := res.vendor.map fun (bf, bi, os, oi, ms) => Json.mkObj [("bundle", s!"{bf}#{bi}"), ("output", s!"{os}#{oi}{ms.foldl (· ++ "." ++ ·) ""}")]
-      IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
+      IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("urls", Json.arr (res.metaUrls.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
       IO.println s!"  wrote the premise table to {t}"
     let t2 ← IO.monoMsNow
     let (B, assigned) ← IO.lazyPure fun _ => bundleOf units

@@ -10,6 +10,7 @@
 #   ./run.sh --splits     also check 2,740 splits of six real bundles and run each in Node (needs --lowering first; about 3 minutes)
 #   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
 #   ./run.sh --translation  also check that tampered output trees are rejected and renamed, reshuffled ones accepted (experiments/translation fixtures)
+#   ./run.sh --translation-fuzz  also fuzz the translation checker: every tree it accepts must behave like its bundle in Node (about 20 seconds; FUZZ_COUNT=N sets the bundles, default 150)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -110,6 +111,13 @@ if [[ " $* " == *" --debundle-cases "* ]]; then
   (cd lean && lake build lowersplit)
   (cd experiments/debundle_cases && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node run_cases.mjs && node summarize.mjs results/cases.jsonl >results/summary.md)
+fi
+
+if [[ " $* " == *" --translation-fuzz "* ]]; then
+  step "Translation fuzzer: random bundles split at random; a tree the checker accepts must behave like its bundle in Node"
+  (cd lean && lake build translate)
+  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
+    && node fuzz.mjs --count "${FUZZ_COUNT:-150}" --seed 1)
 fi
 
 if [[ " $* " == *" --translation "* ]]; then
