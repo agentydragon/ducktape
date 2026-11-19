@@ -392,6 +392,7 @@ session_export_vitest_test(
     deps = [
         ":api",
         ":noisy_session_fixture",
+        ":schema",
         ":viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
