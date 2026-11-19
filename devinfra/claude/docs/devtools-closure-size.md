@@ -55,7 +55,7 @@ Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
 ## Dependency graph (what pulls what)
 
-```
+```text
 devtools (symlinkJoin)
 ├── claude-hooks (buildPythonApplication from wheel)
 │   ├── kubernetes → googleapis-common-protos → grpc (42 MiB)

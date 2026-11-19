@@ -2,7 +2,7 @@
 
 ## Symptom
 
-```
+```text
 awk: cmd. line:8: warning: escape sequence `\.' treated as plain `.'
 ```
 

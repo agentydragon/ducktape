@@ -98,13 +98,13 @@ position of the laser head and do not change how coordinates are interpreted in 
 
 All shapes have an `<XForm>` child element. The value is six space-separated floats:
 
-```
+```xml
 <XForm>a b c d e f</XForm>
 ```
 
 This represents a 2D affine transform:
 
-```
+```text
 x' = a*x + c*y + e
 y' = b*x + d*y + f
 ```

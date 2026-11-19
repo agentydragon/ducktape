@@ -9,7 +9,7 @@ via config; see "What was tried" below.
 Enabling `import/order` (from `eslint-plugin-import-x`, registered as `import`)
 makes the ESLint action crash — exit 2, not a lint violation:
 
-```
+```text
 TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string. Received null
 Rule: "import/order"
     at Object.dirname (node:path)

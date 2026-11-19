@@ -32,7 +32,7 @@ don't appear in the host's mountinfo.
 including `/sys/fs/bpf`. Cilium agent requires `/sys/fs/bpf` to be a shared
 mount for its BPF filesystem. Error:
 
-```
+```text
 path "/sys/fs/bpf" is mounted on "/sys/fs/bpf" but it is not a shared mount
 ```
 

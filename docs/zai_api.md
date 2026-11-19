@@ -13,7 +13,7 @@ instead.
 
 ### 1. OpenAI Chat Completions (general)
 
-```
+```http
 POST https://api.z.ai/api/paas/v4/chat/completions
 Authorization: Bearer $ZAI_API_KEY
 ```
@@ -23,7 +23,7 @@ Standard OpenAI `/v1/chat/completions` shape. Supports streaming (`"stream": tru
 
 ### 2. OpenAI Chat Completions (coding — GLM Coding Plan)
 
-```
+```http
 POST https://api.z.ai/api/coding/paas/v4/chat/completions
 Authorization: Bearer $ZAI_API_KEY
 ```
@@ -35,7 +35,7 @@ Lists models at `/api/coding/paas/v4/models`.
 
 ### 3. Anthropic Messages
 
-```
+```http
 POST https://api.z.ai/api/anthropic/v1/messages
 x-api-key: $ZAI_API_KEY
 anthropic-version: 2023-06-01
@@ -47,7 +47,7 @@ Lists models at `/api/anthropic/v1/models`.
 
 ### 4. Async Chat Completions
 
-```
+```http
 POST https://api.z.ai/api/paas/v4/async/chat/completions
 Authorization: Bearer $ZAI_API_KEY
 ```
@@ -58,7 +58,7 @@ synchronous timeout limits. Same request shape as synchronous Chat Completions.
 
 ### 5. Embeddings
 
-```
+```http
 POST https://api.z.ai/api/paas/v4/embeddings
 Authorization: Bearer $ZAI_API_KEY
 ```

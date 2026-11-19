@@ -76,7 +76,7 @@ existing server.
 
 **Current**: one directory per internal UUID
 
-```
+```text
 ~/.claude/session-env/
   1c9fe809-b4dd-4f3f-924c-900b1ebfeaad/  (dead after resume)
   3a1f5b5a-0438-416c-b26d-ddcb3e5a4dad/  (current)
@@ -85,7 +85,7 @@ existing server.
 **Proposed**: stable directory keyed on `CLAUDE_CODE_SESSION_ID`, with
 per-UUID subdirs for things that genuinely need per-transition state
 
-```
+```text
 ~/.claude/session-env/
   cse_01ANqoTWWCxF71H5Aq2DqwnT/         (stable, survives resume)
     bazelrc

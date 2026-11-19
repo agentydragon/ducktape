@@ -115,7 +115,7 @@ Options for keeping HA packages inside a monorepo (e.g., ducktape):
 
 **A. Clone + symlink (simplest)**
 
-```
+```text
 /root/ducktape          ← clone of this repo
 /config/packages/rai   → symlink → /root/ducktape/homeassistant/packages/rai
 ```

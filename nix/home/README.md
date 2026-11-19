@@ -4,7 +4,7 @@ Home-manager user configurations for multiple machines.
 
 ## Directory Structure
 
-```
+```text
 nix/home/
 ├── programs/              # Generic home-manager-style modules (could be upstreamed)
 ├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)

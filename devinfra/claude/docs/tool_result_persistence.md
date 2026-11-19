@@ -53,7 +53,7 @@ When a result exceeds the threshold (`maybePersistLargeToolResult`):
    `~/.claude/projects/<project>/<session>/tool-results/<tool_use_id>.{txt,json}`
 2. **Replace content** sent to the model with a preview message:
 
-```
+```text
 <persisted-output>
 Output too large (125.3 KB). Full output saved to: /path/to/tool-results/abc123.txt
 
@@ -98,7 +98,7 @@ Subagents clone the parent's state for cache-sharing.
 
 Empty tool results (null, `""`, whitespace, `content:[]`) are replaced with:
 
-```
+```text
 (toolName completed with no output)
 ```
 

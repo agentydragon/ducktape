@@ -40,7 +40,7 @@ package or service — including the eventual importer — can be added at all.
 deterministically (every attempt so far, both against `devel` and against test branches)
 at the same activation step:
 
-```
+```text
 Activating installPackages
 replacing old 'nix-on-droid-path'
 installing 'nix-on-droid-path'
