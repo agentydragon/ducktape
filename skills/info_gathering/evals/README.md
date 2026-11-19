@@ -5,9 +5,10 @@ Each eval tests a different aspect of the info-gathering skill. See each eval's
 
 ## Evals
 
-| Directory           | What it tests                                   |
-| ------------------- | ----------------------------------------------- |
-| `twenty_questions/` | Convergence on a fixed domain via binary search |
+| Directory            | What it tests                                           |
+| -------------------- | ------------------------------------------------------- |
+| `function_learning/` | Inferring the structure of a hidden bit-vector function |
+| `twenty_questions/`  | Convergence on a fixed domain via binary search         |
 
 ## Harness
 
