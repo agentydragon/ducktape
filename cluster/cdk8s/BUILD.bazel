@@ -491,6 +491,7 @@ py_library(
     deps = [
         ":service_ref",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",

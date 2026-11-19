@@ -3,13 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cilium_envoyconfig_crds.io.cilium import (
-    CiliumEnvoyConfig,
-    CiliumEnvoyConfigSpec,
-    CiliumEnvoyConfigSpecBackendServices,
-    CiliumEnvoyConfigSpecNodeSelector,
-)
-from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
@@ -18,6 +11,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -71,55 +65,6 @@ SSH = ServiceRef(
     port=Port(name="ssh", number=2223),
     pods=Pods(namespace=NAMESPACE, labels=(("app", "gitlab-shell"), ("release", NAME))),
 )
-
-
-def _ssh_listener(scope: Construct) -> None:
-    # Cilium's Gateway API has no TCPRoute support, so raw SSH gets its own Envoy
-    # listener on the HIL gateway nodes. The backend remains a ClusterIP Service.
-    service = SSH.name
-    cluster = f"{NAMESPACE}:{service}:{SSH.port.number}"
-    CiliumEnvoyConfig(
-        scope,
-        "ssh-listener",
-        metadata=ApiObjectMetadata(
-            name=service, namespace=NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
-        ),
-        spec=CiliumEnvoyConfigSpec(
-            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
-            backend_services=[
-                CiliumEnvoyConfigSpecBackendServices(name=service, namespace=NAMESPACE, number=[str(SSH.port.number)])
-            ],
-            resources=[
-                {
-                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
-                    "name": service,
-                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": 2223}},
-                    "filterChains": [
-                        {
-                            "filters": [
-                                {
-                                    "name": "envoy.filters.network.tcp_proxy",
-                                    "typedConfig": {
-                                        "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
-                                        "statPrefix": service,
-                                        "cluster": cluster,
-                                        "idleTimeout": "3600s",
-                                    },
-                                }
-                            ]
-                        }
-                    ],
-                },
-                {
-                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
-                    "name": cluster,
-                    "type": "EDS",
-                    "edsClusterConfig": {"serviceName": f"{NAMESPACE}/{service}:{SSH.port.number}"},
-                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
-                },
-            ],
-        ),
-    )
 
 
 def _values() -> dict[str, object]:
@@ -278,5 +223,5 @@ def chart(app: App) -> Chart:
         listener=None,
         timeout="900s",
     )
-    _ssh_listener(chart)
+    tcp_listener(chart, "ssh-listener", service=SSH)
     return chart
