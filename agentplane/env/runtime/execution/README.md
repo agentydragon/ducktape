@@ -91,7 +91,7 @@ Its Kubernetes requests and limits are independently configurable with `executor
 companion receives any optional BuildBuddy diagnostics key. It gets no model credentials or
 sidecar-projected tokens.
 
-`../codex/protocol` generates Go models at build time with Quicktype from schemas
+`../internal/harnesses/codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,
 responses, notifications and known item payloads use these models. Method and item
 dispatch keep a raw JSON boundary for unknown variants; recorded native frames are

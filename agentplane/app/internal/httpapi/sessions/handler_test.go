@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -16,8 +15,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
@@ -58,7 +55,6 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 }
 
 func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
-	resource := schema.GroupResource{Group: "agentplane.example", Resource: "sandboxes"}
 	for _, test := range []struct {
 		name       string
 		err        error
@@ -66,9 +62,6 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 		wantDetail string
 	}{
 		{"sandbox missing", status.Error(codes.NotFound, "demo"), codes.NotFound, "demo"},
-		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
-		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
-		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
 		{"canceled", context.Canceled, codes.Canceled, "canceled"},
 		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Upstream service unavailable"},
 		{"resource exhausted", status.Error(codes.ResourceExhausted, "quota"), codes.ResourceExhausted, "quota"},

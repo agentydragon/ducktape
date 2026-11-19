@@ -132,7 +132,7 @@ lets the sampling request finish, because a cut stream leaves its intent uncerta
 `notify()` outputs before its steering input.
 
 Dispatcher routes `SessionSpec.placement=central_sampler_v1` directly to a configured sampler. Its
-native RuntimeProxyClient continues to serve wrapped Codex/Claude selected by
+native `HarnessHostClient` continues to serve wrapped Codex/Claude selected by
 `environment_hosted.harness`. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
 The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at

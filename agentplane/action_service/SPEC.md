@@ -47,12 +47,10 @@ The service applies Goose migrations before opening listeners or starting worker
 the environment's rolling deployment profile, and a startup probe waits for migration and service
 initialization before normal health checks begin. Goose serializes concurrent starts with its
 PostgreSQL session lock. Schema changes must remain compatible with old and new replicas during a
-roll. Version 7 creates the typed schema for a fresh database or adopts a complete version 6
-schema without rewriting data. Version 8 adds nullable caller UID provenance without rewriting
-requests; NULL means the caller incarnation is unknown. During a rolling update, older writers may
-still insert NULL; new readers preserve it as unknown. Older and incomplete schemas are rejected;
-existing Goose history remains intact. A database created at version 8 requires a version-8-aware
-rollback image or a coordinated restore.
+roll. Version 10 creates the typed schema for a fresh database or adopts a completed version 9
+schema without rewriting data. Older and incomplete schemas are rejected; existing Goose history
+remains intact. A database created at version 10 requires a version-10-aware rollback image or a
+coordinated restore.
 
 Version 12 adds nullable delegated actor snapshots and typed Session or Connection/grant UUID
 columns. It does not backfill or refuse existing receipts. Absence denotes a direct call or an
@@ -317,10 +315,12 @@ and Connection state; the Action Service separately authenticates the workload i
 its core calls. Operator bearers, unexchanged credential placeholders, and caller-supplied
 identity/policy claims cannot acquire this authority. An Origin header does not grant authority or
 categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
-Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
-Neither registration nor metadata discovery is authority. Consent binds one eligible Identity and
-named Connection to the validated authorization interaction and approving operator; upstream
-issuer/subject must match the explicit operator mapping before token issuance.
+Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD). The edge's
+authorization server metadata advertises CIMD support and public-client token authentication
+(`none`); Claude requires both before it selects CIMD. Neither registration nor metadata discovery
+is authority. Consent binds one eligible Identity and named Connection to the validated
+authorization interaction and approving operator; upstream issuer/subject must match the explicit
+operator mapping before token issuance.
 One consent permits at most one token family. Ambiguous post-claim issuance requires fresh
 authorization.
 
@@ -328,7 +328,7 @@ Refresh and bearer admission resolve current canonical grant validity and the cu
 binding. External receipts and idempotency are scoped to the delegated Identity incarnation.
 Connections retain their grant history; accepted Actions retain their submitting caller
 independently of later Connection changes.
-In-cluster Actions RPCs use live ServiceAccount authentication for component calls and SVID
+In-cluster Actions RPCs use exact service SPIFFE ID authentication for component calls and SVID
 Identity authentication or delegated Identity authority for workload calls; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.

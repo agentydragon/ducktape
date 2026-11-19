@@ -3662,9 +3662,9 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
   `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`) and the lifecycle manager
-  (`environments/lifecycle/policy.go`), and the resolver's `RequirePod` is step 7 of SVID
-  resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
-  route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
+  (`environments/lifecycle/policy.go`). Once every workload is an Identity SVID with a
+  per-incarnation credential, each route decides whether a Pod proof still adds anything; the
+  checks that do not are deleted then.
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 

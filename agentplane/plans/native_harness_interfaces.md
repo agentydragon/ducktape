@@ -30,7 +30,7 @@ central sampler.
 ### Commands
 
 [`Command`](../proto/command.proto) has five operations. Dispatcher exposes four as RPCs and
-delivers each as a typed Runtime RPC ([`RuntimeProxyClient.Deliver`](../session_dispatcher/dispatcher/runtime_client.go))
+delivers each as a typed Runtime RPC ([`HarnessHostClient.Deliver`](../session_dispatcher/dispatcher/runtime_client.go))
 or sampler RPC ([`SessionDeliveryRouter.Deliver`](../session_dispatcher/dispatcher/central_delivery.go)). The
 Runtime's [adapters](../env/runtime/harness/adapter.go) translate them:
 

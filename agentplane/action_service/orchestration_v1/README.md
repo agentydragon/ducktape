@@ -121,7 +121,7 @@ An environment offers the group with `ActionsProps.orchestration_v1`
 (`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
 
 - has the group in its settings, with the app's presets, and the `session_dispatcher` and
-  `history_service` it calls with projected tokens of their audiences;
+  `history_service` it calls with its service SVID;
 - is a caller and waker of the Session Dispatcher and a reader of the History Service;
 - has an EnvironmentService launcher grant to create on behalf of an Action caller; may read
   Sandboxes and get and create PolicySets and PolicyBindings in its namespace;
