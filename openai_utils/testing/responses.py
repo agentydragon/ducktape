@@ -1,6 +1,7 @@
 """Shared model-response factories and mock runners for tests.
 
 Provides shared test response building:
+- ItemFactory: Builds adapter items (tool calls, assistant text, reasoning)
 - ResponsesFactory: Builds mock ResponsesResult objects
 - GeneratorMock + DecoratorMock: Class-based generator mocks
 - extract_call_output / tool_roundtrip: Typed tool output extraction
@@ -11,17 +12,20 @@ from __future__ import annotations
 import logging
 from abc import abstractmethod
 from collections.abc import Callable, Generator
+from typing import Any
 
-from pydantic import TypeAdapter
+import pydantic_core
+from pydantic import BaseModel, TypeAdapter
 
-from openai_utils.builders import ItemFactory
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
     FunctionCallOutputItem,
     InputTokensDetails,
     Model,
+    OutputText,
     OutputTokensDetails,
+    ReasoningItem,
     ResponseOutItem,
     ResponsesRequest,
     ResponsesResult,
@@ -45,6 +49,41 @@ def _make_response(*items: ResponseOutItem) -> ResponsesResult:
         ),
         output=list(items),
     )
+
+
+class ItemFactory:
+    """Helper for constructing adapter items with convenient ID handling.
+
+    Production reasoning items originate from the model; `make_item_reasoning` exists for mocks that synthesize them.
+    """
+
+    def __init__(self, call_id_prefix: str = "bootstrap") -> None:
+        self._call_id_seq = 0
+        self._reasoning_seq = 0
+        self._prefix = call_id_prefix
+
+    def next_call_id(self) -> str:
+        self._call_id_seq += 1
+        return f"{self._prefix}:{self._call_id_seq}"
+
+    def _next_reasoning_id(self) -> int:
+        self._reasoning_seq += 1
+        return self._reasoning_seq
+
+    def tool_call(
+        self, name: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
+    ) -> FunctionCallItem:
+        cid = call_id or self.next_call_id()
+        args_dict = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        return FunctionCallItem(
+            call_id=cid, name=name, arguments=pydantic_core.to_json(args_dict, fallback=str).decode("utf-8")
+        )
+
+    def assistant_text(self, text: str) -> AssistantMessageOut:
+        return AssistantMessageOut(content=[OutputText(text=text)])
+
+    def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
+        return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
 
 
 class ResponsesFactory(ItemFactory):

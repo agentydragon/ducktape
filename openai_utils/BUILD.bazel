@@ -60,17 +60,6 @@ py_library(
 )
 
 py_library(
-    name = "builders",
-    srcs = ["builders.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":model",
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
-    ],
-)
-
-py_library(
     name = "http_logging",
     srcs = ["http_logging.py"],
     visibility = ["//:__subpackages__"],
