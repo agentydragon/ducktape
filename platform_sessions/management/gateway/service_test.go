@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
@@ -15,27 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-func TestSnapshotVariants(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		value *providerpb.SessionSnapshot
-		valid bool
-	}{
-		{"missing status", &providerpb.SessionSnapshot{}, false},
-		{"known missing time", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED}}}, false},
-		{"known", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_Known{Known: &providerpb.KnownSession{State: providerpb.SessionState_SESSION_STATE_VERIFIED, StateChangedAt: timestamppb.Now()}}}, true},
-		{"storage error", &providerpb.SessionSnapshot{Status: &providerpb.SessionSnapshot_StorageError{StorageError: &providerpb.SessionStorageError{}}}, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got := snapshotValid(test.value); got != test.valid {
-				t.Fatalf("snapshotValid() = %t, want %t", got, test.valid)
-			}
-		})
-	}
-}
 
 type fakeProvider struct {
 	providerpb.SessionProviderControlClient
@@ -130,24 +109,8 @@ func TestManagementForwardsOnceAndRejectsAmbiguousResults(t *testing.T) {
 	}
 }
 
-func TestImportOutcomeOneofRequiresValidPayload(t *testing.T) {
-	value := &providerpb.ImportSessionResponse{}
-	if importValid(value) {
-		t.Fatal("missing outcome accepted")
-	}
-	value.Outcome = &providerpb.ImportSessionResponse_OutcomeUnknown{OutcomeUnknown: &providerpb.OperationOutcomeUnknown{CredentialRotationMayHaveOccurred: true}}
-	if !importValid(value) {
-		t.Fatal("unknown outcome with rotation details rejected")
-	}
-	invalidStatus := uint32(999)
-	value.Outcome = &providerpb.ImportSessionResponse_OutcomeUnknown{OutcomeUnknown: &providerpb.OperationOutcomeUnknown{
-		Reason:             providerpb.UnknownOutcomeReason_UNKNOWN_OUTCOME_REASON_UPSTREAM_HTTP_ERROR,
-		UpstreamHttpStatus: &invalidStatus,
-	}}
-	if importValid(value) {
-		t.Fatal("invalid unknown-outcome HTTP status accepted")
-	}
-
+// The shared protocol examples are JSON and cannot carry an unknown wire field.
+func TestFutureImportOutcomeIsInvalid(t *testing.T) {
 	// A future oneof field stays unknown and cannot be mistaken for a known successful result.
 	future := &providerpb.ImportSessionResponse{}
 	if err := proto.Unmarshal([]byte{0xa2, 0x06, 0x00}, future); err != nil {
@@ -155,12 +118,5 @@ func TestImportOutcomeOneofRequiresValidPayload(t *testing.T) {
 	}
 	if importValid(future) {
 		t.Fatal("future outcome accepted as a known result")
-	}
-}
-
-func TestDefaultProviderTimeouts(t *testing.T) {
-	timeouts := DefaultProviderTimeouts()
-	if timeouts.Status != 5*time.Second || timeouts.Operation != 120*time.Second {
-		t.Fatalf("provider deadlines: %+v", timeouts)
 	}
 }

@@ -2,11 +2,8 @@ package gateway
 
 import (
 	"context"
-	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,10 +23,7 @@ func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
 		_, _ = w.Write([]byte(`{"openapi":"3.1.0","servers":[{"url":"https://wrong.invalid"}],"paths":{}}`))
 	}))
 	defer providerHTTP.Close()
-	ca := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: providerHTTP.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
+	ca := trustedCAFile(t, providerHTTP)
 	fake := &fakeProvider{documentPath: "/internal/openapi/personal"}
 	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "personal"}, Client: fake}})
 	if err != nil {

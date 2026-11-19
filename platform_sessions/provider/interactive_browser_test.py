@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
+from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -54,6 +56,24 @@ def runtime(tmp_path: Path, **kwargs: Any) -> InteractiveBrowserRuntime:
     result._state = "running"
     result._thread = threading.current_thread()
     return result
+
+
+@contextlib.asynccontextmanager
+async def admitted_viewer(
+    browser: InteractiveBrowserRuntime,
+) -> AsyncIterator[tuple[FakeWebSocket, asyncio.Task[None]]]:
+    """Admit a viewer through `browser.websocket` against a local echo server; yield it and its serving task."""
+
+    async def echo(local) -> None:
+        async for message in local:
+            await local.send(message)
+
+    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
+        browser._websockify_port = server.sockets[0].getsockname()[1]
+        viewer = FakeWebSocket()
+        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
+        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+        yield viewer, active
 
 
 def test_blank_start_does_not_navigate(tmp_path: Path) -> None:
@@ -134,15 +154,7 @@ async def test_viewer_requires_gateway_bearer_and_marks_session_before_accept(tm
     assert denied.close_code == 4401
     assert events == []
 
-    async def echo(local) -> None:
-        async for message in local:
-            await local.send(message)
-
-    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
-        browser._websockify_port = server.sockets[0].getsockname()[1]
-        viewer = FakeWebSocket()
-        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
-        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+    async with admitted_viewer(browser) as (viewer, active):
         assert events == ["unverified"]
         assert viewer.subprotocol == "binary"
         assert browser.viewer_connected
@@ -196,15 +208,7 @@ async def test_viewer_task_cancellation_finishes_unverified_transition(tmp_path:
 
     browser = runtime(tmp_path, on_viewer_disconnect=on_disconnect)
 
-    async def echo(local) -> None:
-        async for message in local:
-            await local.send(message)
-
-    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
-        browser._websockify_port = server.sockets[0].getsockname()[1]
-        viewer = FakeWebSocket()
-        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
-        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+    async with admitted_viewer(browser) as (_, active):
         active.cancel()
         await asyncio.wait_for(transition_started.wait(), timeout=2)
         assert not active.done()
@@ -226,15 +230,7 @@ async def test_disconnect_callback_keeps_data_plane_fenced_until_quiescent(tmp_p
 
     browser = runtime(tmp_path, on_viewer_disconnect=on_disconnect)
 
-    async def echo(local) -> None:
-        async for message in local:
-            await local.send(message)
-
-    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
-        browser._websockify_port = server.sockets[0].getsockname()[1]
-        viewer = FakeWebSocket()
-        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
-        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+    async with admitted_viewer(browser) as (viewer, active):
         viewer.disconnected.set()
         await asyncio.wait_for(transition_started.wait(), timeout=2)
         assert browser.viewer_connected
@@ -260,15 +256,7 @@ async def test_failed_disconnect_callback_stops_browser_before_reopening_admissi
 
     monkeypatch.setattr(browser, "_stop_blocking", stop_blocking)
 
-    async def echo(local) -> None:
-        async for message in local:
-            await local.send(message)
-
-    async with serve(echo, "127.0.0.1", 0, subprotocols=[Subprotocol("binary")]) as server:
-        browser._websockify_port = server.sockets[0].getsockname()[1]
-        viewer = FakeWebSocket()
-        active = asyncio.create_task(browser.websocket(viewer))  # type: ignore[arg-type]
-        await asyncio.wait_for(viewer.accepted.wait(), timeout=2)
+    async with admitted_viewer(browser) as (viewer, active):
         viewer.disconnected.set()
         await asyncio.wait_for(active, timeout=2)
     assert stopped.is_set()

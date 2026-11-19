@@ -177,11 +177,6 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxyError(w, 403, "forbidden")
 		return
 	}
-	origin, err := url.Parse(provider.Origin)
-	if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || (origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
-		proxyError(w, 502, "upstream_unavailable")
-		return
-	}
 	target := strings.TrimSuffix(provider.Origin, "/") + "/internal/proxy/" + instance + escaped(path)
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
