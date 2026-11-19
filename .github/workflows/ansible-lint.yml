@@ -1,4 +1,4 @@
-# Ansible-lint reusable workflow
+# Ansible-lint
 #
 # Full ansible validation with dependencies
 name: Ansible-lint

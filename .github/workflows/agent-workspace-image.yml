@@ -2,8 +2,8 @@
 # dev basics) to the Forgejo OCI registry
 # (git.allegedly.works/ducktape-ci/agent-workspace) — not GHCR, so the pull
 # credential is provisioned in code (tf/gitops/forgejo-images) rather than a
-# manual "make public" GHCR click. Consumed by the workspace SandboxTemplate
-# in cluster/generated/agents/agent-sandbox/workspaces/.
+# manual "make public" GHCR click. No deployed template consumes it today; see
+# cluster/k8s/agents/agent-sandbox/README.md.
 name: Agent Workspace Image
 
 on:
