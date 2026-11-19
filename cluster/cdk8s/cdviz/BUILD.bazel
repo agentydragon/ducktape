@@ -79,6 +79,7 @@ py_library(
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",

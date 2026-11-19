@@ -11,6 +11,7 @@ from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
@@ -58,17 +59,13 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name="collector-config", namespace=config.NAMESPACE),
         data={name: (root / name).read_text() for name in files},
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         "spool",
-        metadata=k8s.ObjectMeta(name="collector-spool", namespace=config.NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh-ssd",
-            resources=k8s.VolumeResourceRequirements(
-                requests={"storage": k8s.Quantity.from_string(Size.gibibytes(1).as_string())}
-            ),
-        ),
+        name="collector-spool",
+        namespace=config.NAMESPACE,
+        storage_class="seaweedfs-ovh-ssd",
+        size=Size.gibibytes(1).as_string(),
     )
     deployment = k8s.KubeDeployment(
         chart,

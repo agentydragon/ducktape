@@ -27,6 +27,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
@@ -96,15 +97,8 @@ def _data_claim(chart: Chart) -> None:
     # The OAuth credential the sync refreshes in place. Refresh tokens rotate, so this Deployment is the
     # credential's one owner (Recreate strategy, one replica); losing the file means pairing again.
     # One small file: two DRBD copies, following the Pod onto its node.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("64Mi")}),
-        ),
+    volume_claim(
+        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="64Mi"
     )
 
 

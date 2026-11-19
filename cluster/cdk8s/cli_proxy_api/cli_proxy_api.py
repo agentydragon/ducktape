@@ -38,6 +38,7 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -68,15 +69,8 @@ def _data_claim(scope: Construct) -> None:
     # Holds the Claude and Codex OAuth auth files that CLIProxyAPI refreshes in place.
     # Single replica (Recreate strategy) because refresh tokens are rotated by this one writer.
     # A few MiB of files: two DRBD copies, following the Pod onto its node.
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("256Mi")}),
-        ),
+    volume_claim(
+        scope, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="256Mi"
     )
 
 

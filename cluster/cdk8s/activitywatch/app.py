@@ -31,6 +31,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
 _NAME = "activitywatch"
@@ -186,15 +187,8 @@ def _deployment(scope: Construct) -> None:
 
 
 def _data_claim(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "piraeus-data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("10Gi")}),
-        ),
+    volume_claim(
+        scope, "piraeus-data", name=_DATA_CLAIM, namespace=_NAMESPACE, storage_class="piraeus-hdd-local", size="10Gi"
     )
 
 

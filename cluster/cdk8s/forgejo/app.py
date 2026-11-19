@@ -38,6 +38,7 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 _NAME = "forgejo"
@@ -72,19 +73,15 @@ def _git_storage(scope: Construct) -> None:
     # *.lock files do not serialize ref updates between replicas on different nodes, and a
     # collision can leave the ref empty:
     # cluster/docs/lessons_learned/2026_09_23_forgejo_cross_mount_ref_lock_zeroed_main.md.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "git-storage",
-        metadata=k8s.ObjectMeta(
-            name=_GIT_CLAIM,
-            namespace=_NAMESPACE,
-            annotations={"description": "Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA"},
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteMany"],
-            storage_class_name="seaweedfs-ovh-ssd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_GIT_CLAIM,
+        namespace=_NAMESPACE,
+        storage_class="seaweedfs-ovh-ssd",
+        size="200Gi",
+        access_mode="ReadWriteMany",
+        annotations={"description": "Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA"},
     )
 
 
