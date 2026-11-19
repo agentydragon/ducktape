@@ -6,4 +6,5 @@ function read() {
   return count;
 }
 inc();
-console.log(read());
+const seen = count;
+console.log(seen, read());

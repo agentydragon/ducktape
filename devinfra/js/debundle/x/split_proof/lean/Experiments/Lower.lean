@@ -317,13 +317,16 @@ structure Footprint where
 
 def dedupe (a : Array String) : List String := a.toList.eraseDups
 
-/-- The footprint the checker needs, with the same two rules as `extract.mjs`:
-reading an undeclared name makes a statement an effect, and a statement with effects counts
-everything it mentions as eager. -/
+/-- The footprint the checker needs. Three rules make a statement an effect: it is not in the allow-list of
+inert shapes; it reads an undeclared name; it reads, while it runs, a name that some statement reassigns.
+The last one is because the model binds each name once: a read of a variable that an assignment changes
+would otherwise be free to move across the assignment. A statement with effects counts everything it
+mentions as eager. -/
 def finalize (tops : Array Top) : Array Footprint :=
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
+  let reassigned : Std.HashSet String := tops.foldl (fun s t => t.assigned.foldl (·.insert ·) s) {}
   tops.map fun t =>
-    let effect := !t.inert || t.rawEager.any (!declared.contains ·)
+    let effect := !t.inert || t.rawEager.any (!declared.contains ·) || t.rawEager.any reassigned.contains
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect,
       assigned := dedupe t.assigned, fallback := dedupe t.fallback,

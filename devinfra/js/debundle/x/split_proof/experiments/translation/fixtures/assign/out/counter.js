@@ -5,4 +5,4 @@ function inc() {
 function read() {
   return count;
 }
-export { inc, read };
+export { count, inc, read };

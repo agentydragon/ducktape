@@ -4,7 +4,7 @@
     "edits": [
       {
         "file": "counter.js",
-        "find": "function read() {\n  return count;\n}\nexport { inc, read };",
+        "find": "function read() {\n  return count;\n}\nexport { count, inc, read };",
         "replace": "export { count, inc };"
       },
       {
@@ -13,8 +13,8 @@
       },
       {
         "file": "entry.js",
-        "find": "import { inc, read } from \"./counter.js\";",
-        "replace": "import { inc } from \"./counter.js\";\nimport { read } from \"./view.js\";"
+        "find": "import { count, inc, read } from \"./counter.js\";",
+        "replace": "import { count, inc } from \"./counter.js\";\nimport { read } from \"./view.js\";"
       }
     ],
     "cert": "match",
@@ -24,9 +24,21 @@
     "name": "an assignment moves away from its declaration",
     "edits": [
       { "file": "counter.js", "find": "let count = 0;\n", "replace": "import { count } from \"./state.js\";\n" },
-      { "file": "state.js", "create": "let count = 0;\nexport { count };\n" }
+      { "file": "counter.js", "find": "export { count, inc, read };", "replace": "export { inc, read };" },
+      { "file": "state.js", "create": "let count = 0;\nexport { count };\n" },
+      {
+        "file": "entry.js",
+        "find": "import { count, inc, read } from \"./counter.js\";",
+        "replace": "import { inc, read } from \"./counter.js\";\nimport { count } from \"./state.js\";"
+      }
     ],
     "cert": "match",
     "expect": { "code": 1, "contains": "FAIL  AssignsHome" }
+  },
+  {
+    "name": "a read of a reassigned variable moves before its write",
+    "edits": [{ "file": "entry.js", "find": "inc();\nconst seen = count;", "replace": "const seen = count;\ninc();" }],
+    "cert": "match",
+    "expect": { "code": 4, "contains": "OBLIGATIONS" }
   }
 ]

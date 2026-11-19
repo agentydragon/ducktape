@@ -1,3 +1,4 @@
-import { inc, read } from "./counter.js";
+import { count, inc, read } from "./counter.js";
 inc();
-console.log(read());
+const seen = count;
+console.log(seen, read());
