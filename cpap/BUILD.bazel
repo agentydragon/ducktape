@@ -53,8 +53,6 @@ py_test(
     ],
 )
 
-# ── OCI Image ────────────────────────────────────────────────────────────────
-
 aspect_py_binary(
     name = "sync_image_bin",
     main = "sync.py",

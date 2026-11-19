@@ -1265,8 +1265,6 @@ fn is_default_member_effect(effect: &MemberEffect) -> bool {
     matches!(effect, MemberEffect::Default)
 }
 
-// --- Vendor ---------------------------------------------------------------
-
 /// One vendor annotation, keyed in the spec by chunk path
 /// (e.g. `"static/lib.js"`). The `level` discriminator selects between
 /// `swap` / `partial_swap` / `bundled_partial_swap`; `swap` carries the
@@ -1482,8 +1480,6 @@ fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
 }
 
 pub use spec_wire_proto::debundle::spec::WrapperShape;
-
-// --- Logical modules -----------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

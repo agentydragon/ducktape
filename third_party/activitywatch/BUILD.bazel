@@ -52,8 +52,6 @@ test_suite(
 # crate.annotation in MODULE.bazel so aw-server embeds all assets at compile
 # time.  No additional targets are needed here for the JS side.
 
-# --- OCI image ---------------------------------------------------------------
-
 pkg_files(
     name = "activitywatch_bin_files",
     srcs = [

@@ -37,9 +37,6 @@ from props.db.snapshots import LocationAnchor
 router = APIRouter()
 
 
-# --- Response Models ---
-
-
 class SnapshotSummary(BaseModel):
     """Summary info for a snapshot in list view."""
 
@@ -91,9 +88,6 @@ class SnapshotDetailResponse(BaseModel):
     false_positives: list[FpInfo]
 
 
-# --- Helper Functions ---
-
-
 def _ranges_to_locations(ranges: list[OccurrenceRangeORM]) -> list[LocationAnchor]:
     """Convert ORM occurrence ranges to flat LocationAnchor list."""
     return [
@@ -114,9 +108,6 @@ def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) 
         for scope in occ.critic_scopes_expected_to_recall
         if scope.file_set
     ]
-
-
-# --- Endpoints ---
 
 
 def get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapshot:
@@ -311,9 +302,6 @@ def get_snapshot_detail(
             true_positives=tp_infos,
             false_positives=fp_infos,
         )
-
-
-# --- File Browser Endpoints ---
 
 
 class FileTreeNode(BaseModel):
@@ -546,9 +534,6 @@ def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: C
         if response.files:
             return response.files[0]
         raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
-
-
-# --- Cluster Endpoints ---
 
 
 class ClusterMemberResponse(BaseModel):

@@ -1124,8 +1124,6 @@ fn plain_array_written_through_a_callback_argument_stays_a_fallback_root() {
     );
 }
 
-// --- has_side_effect refinement ------------------------------------------
-
 fn has_side_effect_for(src: &str) -> Vec<bool> {
     let module = parse(src);
     analyze_facts(&module)
@@ -1191,8 +1189,6 @@ fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
     );
 }
 
-// --- Comma-list splitter -------------------------------------------------
-
 fn statement_kinds(source: &str) -> Vec<StatementKind> {
     let module = parse(source);
     analyze_facts(&module).into_iter().map(|f| f.kind).collect()
@@ -1212,8 +1208,6 @@ fn non_var_decl_statements_are_not_split() {
         ]
     );
 }
-
-// --- Comma-list source locations -----------------------------------------
 
 #[test]
 fn split_comma_list_assigns_per_declarator_source_ranges() {
