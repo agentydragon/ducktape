@@ -81,10 +81,7 @@ class BucketDef(FrozenModel):
     def _validate_direction(self) -> BucketDef:
         expected = _EXPECTED_DIRECTION.get(self.kind)
         if expected is not None and self.direction != expected:
-            raise ValueError(
-                f"bucket {self.id!r} kind={self.kind.value} requires direction={expected.value}, "
-                f"got {self.direction.value}"
-            )
+            raise ValueError(f"bucket {self.id!r} kind={self.kind} requires direction={expected}, got {self.direction}")
         return self
 
 
@@ -375,8 +372,8 @@ class BudgetConfig(FrozenModel):
                 raise ValueError(f"{field_name}={bucket_id!r} not in buckets ({sorted(bucket_by_id)})")
             if target.direction != expected:
                 raise ValueError(
-                    f"{field_name}={bucket_id!r} must reference a direction={expected.value} bucket, "
-                    f"got direction={target.direction.value}"
+                    f"{field_name}={bucket_id!r} must reference a direction={expected} bucket, "
+                    f"got direction={target.direction}"
                 )
         for rule in self.rules:
             if rule.bucket_id not in bucket_by_id:
