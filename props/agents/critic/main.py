@@ -35,8 +35,6 @@ from props.db.database import Database
 from props.db.models import FileSet, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 
-# --- Tool argument models ---
-
 
 class InsertIssueArgs(OpenAIStrictModeBaseModel):
     issue_id: str = Field(..., description="Unique identifier for this issue (kebab-case slug)")
@@ -77,9 +75,6 @@ class ReportFailureArgs(OpenAIStrictModeBaseModel):
         "(e.g. 'exec returns a validation error for every command', 'cannot read the files in scope', "
         "'submit keeps rejecting valid issues').",
     )
-
-
-# --- Tool response models ---
 
 
 class OccurrenceInfo(BaseModel):
