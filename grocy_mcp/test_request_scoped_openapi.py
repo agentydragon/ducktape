@@ -77,6 +77,7 @@ async def test_preserves_schema_filters_injected_argument_and_closes_each_client
     exited: list[httpx2.AsyncClient] = []
 
     async def backend(request: httpx2.Request) -> httpx2.Response:
+        assert type(request) is httpx2.Request  # the tool builds its request through the native httpx2 client
         value = request.url.params["value"]
         requests.append((value, request.headers.get("authorization")))
         return httpx2.Response(200, json={"value": value})
@@ -136,33 +137,6 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
     provider.add_transform(RequestScopedOpenAPIClients(client_provider))
     with pytest.raises(ValueError, match="uses reserved parameter"):
         await provider.get_tool("echo")
-
-
-async def test_native_httpx2_client_receives_openapi_request(echo_provider: OpenAPIProvider) -> None:
-    observed: list[type[object]] = []
-
-    async def backend(request: httpx2.Request) -> httpx2.Response:
-        observed.append(type(request))
-        return httpx2.Response(200, json={"value": request.url.params["value"]})
-
-    @asynccontextmanager
-    async def httpx2_client() -> AsyncIterator[httpx2.AsyncClient]:
-        async with httpx2.AsyncClient(
-            base_url="https://backend.invalid", transport=httpx2.MockTransport(backend)
-        ) as client:
-            yield client
-
-    parent = await echo_provider.get_tool("echo")
-    assert isinstance(parent, OpenAPITool)
-    echo_provider.add_transform(RequestScopedOpenAPIClients(httpx2_client))
-    wrapped = await echo_provider.get_tool("echo")
-    assert wrapped is not None
-
-    result = await wrapped.run({"value": "httpx2"})
-
-    assert result.structured_content == {"value": "httpx2"}
-    assert observed == [httpx2.Request]
-    assert (await parent.run({"value": "parent"})).structured_content == {"value": "provider-level"}
 
 
 async def test_concurrent_calls_keep_request_clients_isolated(echo_provider: OpenAPIProvider) -> None:

@@ -1,6 +1,6 @@
 """Build-time fixups for Grocy's OpenAPI 3.1 spec.
 
-Grocy's published spec has two classes of issues that prevent FastMCP's
+Grocy's published spec has three classes of issues that prevent FastMCP's
 ``from_openapi`` from producing usable tools:
 
 1. **Empty enums**: ``ExposedEntityEditRequiresAdmin`` has ``"enum": []``,
@@ -18,11 +18,8 @@ Grocy's published spec has two classes of issues that prevent FastMCP's
    ``default_best_before_days_after_freezing``) never made it into
    ``components.schemas.Product.properties``. Without a patch these
    columns are invisible in the ``entity_update`` tool schema even though
-   Grocy accepts them. TODO: file an upstream PR against
-   https://github.com/grocy/grocy adding the missing Product properties
-   (and similar gaps in Location, QuantityUnit, ShoppingListItem; and
-   the entirely missing ShoppingList, ProductGroup, Recipe schemas).
-   Until that lands and we pin a Grocy release including it, patch here.
+   Grocy accepts them. Until a pinned Grocy release includes the upstream
+   fix (tracked in ``TODO.md``), patch here.
 
 Additionally, routes replaced by batch tools (``batch_tools.py``) are
 stripped from the spec entirely so FastMCP never generates competing

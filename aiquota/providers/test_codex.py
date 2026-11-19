@@ -87,6 +87,18 @@ def _fixture(name: str) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads((Path(__file__).parent / "fixtures" / name).read_text()))
 
 
+@pytest.fixture
+def token() -> str:
+    return _jwt(datetime.now(UTC) + timedelta(days=10))
+
+
+@pytest.fixture
+def auth_path(tmp_path: Path, token: str) -> Path:
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+    return path
+
+
 def test_usage_response_parses_null_additional_rate_limits() -> None:
     usage = _UsageResponse.model_validate(
         {
@@ -243,30 +255,22 @@ async def test_refresh_failure_without_new_auth_returns_fetch_error(tmp_path: Pa
     assert isinstance(output.result, FetchError)
 
 
-async def test_usage_timeout_error_is_not_blank(tmp_path: Path) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-
+async def test_usage_timeout_error_is_not_blank(auth_path: Path) -> None:
     def usage_timeout(request: httpx.Request) -> None:
         raise httpx.ReadTimeout("", request=request)
 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(side_effect=usage_timeout)
-        output = await _provider(path).fetch()
+        output = await _provider(auth_path).fetch()
 
     assert isinstance(output.result, FetchError)
     assert "ReadTimeout" in output.result.error
 
 
-async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-
+async def test_weekly_primary_window_preserves_provider_duration(auth_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_weekly_primary.json")))
-        output = await _provider(path).fetch()
+        output = await _provider(auth_path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert len(output.result.windows) == 2
@@ -279,10 +283,7 @@ async def test_weekly_primary_window_preserves_provider_duration(tmp_path: Path)
     assert output.result.reset_credit_expiry_lookup_failed is False
 
 
-async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
+async def test_usage_surfaces_authoritative_banked_reset_count(auth_path: Path) -> None:
     usage = {
         **_USAGE_BODY,
         # Codex may cap or omit detail rows. Never derive the count from them.
@@ -310,7 +311,7 @@ async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
         mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=details))
-        output = await _provider(path).fetch()
+        output = await _provider(auth_path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert output.result.available_reset_credits == 3
@@ -318,93 +319,57 @@ async def test_usage_surfaces_authoritative_banked_reset_count(tmp_path: Path) -
     assert output.result.reset_credit_expiry_lookup_failed is False
 
 
+_USAGE_WITH_ONE_BANKED_RESET = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
+_PRIVATE_RESPONSE_BODY = "private-reset-credit-id"
+_MALFORMED_EXPIRY_DETAILS = {
+    "credits": [
+        {
+            "id": "bad-expiry",
+            "reset_type": "codexRateLimits",
+            "status": "available",
+            "granted_at": "2026-09-01T09:00:00Z",
+            "expires_at": "not-a-date",
+        }
+    ]
+}
+
+
+@pytest.mark.parametrize(
+    ("details", "logged"),
+    [
+        pytest.param(httpx.Response(503, text=_PRIVATE_RESPONSE_BODY), "HTTPStatusError, HTTP 503", id="http-error"),
+        pytest.param(httpx.ConnectTimeout(""), "ConnectTimeout", id="timeout"),
+        pytest.param(
+            httpx.Response(200, json=_MALFORMED_EXPIRY_DETAILS),
+            "reset-credit detail fetch failed",
+            id="malformed-expiry",
+        ),
+    ],
+)
 async def test_credit_detail_failure_keeps_the_authoritative_banked_count(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    auth_path: Path, token: str, caplog: pytest.LogCaptureFixture, details: httpx.Response | Exception, logged: str
 ) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
-    response_body = "private-reset-credit-id"
-
     with respx.mock(assert_all_called=False) as mock:
-        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
-        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(503, text=response_body))
-        output = await _provider(path).fetch()
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=_USAGE_WITH_ONE_BANKED_RESET))
+        mock.get(RESET_CREDITS_URL).mock(side_effect=[details])
+        output = await _provider(auth_path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert len(output.result.windows) == 1
     assert output.result.available_reset_credits == 1
     assert output.result.available_reset_credit_expiries == []
     assert output.result.reset_credit_expiry_lookup_failed is True
-    assert any("HTTPStatusError" in record.message and "503" in record.message for record in caplog.records)
+    assert logged in caplog.text
     assert "retaining count only" in caplog.text
     assert token not in caplog.text
-    assert response_body not in caplog.text
+    assert _PRIVATE_RESPONSE_BODY not in caplog.text
 
 
-async def test_credit_detail_timeout_logs_exception_type_and_keeps_count(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
-
+async def test_empty_credit_details_are_not_a_lookup_failure(auth_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
-        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
-        mock.get(RESET_CREDITS_URL).mock(side_effect=httpx.ConnectTimeout(""))
-        output = await _provider(path).fetch()
-
-    assert isinstance(output.result, FetchSuccess)
-    assert len(output.result.windows) == 1
-    assert output.result.available_reset_credits == 1
-    assert output.result.available_reset_credit_expiries == []
-    assert any("ConnectTimeout" in record.message for record in caplog.records)
-    assert "retaining count only" in caplog.text
-    assert token not in caplog.text
-    assert output.result.reset_credit_expiry_lookup_failed is True
-
-
-async def test_credit_detail_parse_failure_keeps_the_authoritative_banked_count(tmp_path: Path) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 2}}
-    malformed_details = {
-        "credits": [
-            {
-                "id": "bad-expiry",
-                "reset_type": "codexRateLimits",
-                "status": "available",
-                "granted_at": "2026-09-01T09:00:00Z",
-                "expires_at": "not-a-date",
-            }
-        ]
-    }
-
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
-        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=malformed_details))
-        output = await _provider(path).fetch()
-
-    assert isinstance(output.result, FetchSuccess)
-    assert len(output.result.windows) == 1
-    assert output.result.available_reset_credits == 2
-    assert output.result.available_reset_credit_expiries == []
-    assert output.result.reset_credit_expiry_lookup_failed is True
-
-
-async def test_empty_credit_details_are_not_a_lookup_failure(tmp_path: Path) -> None:
-    token = _jwt(datetime.now(UTC) + timedelta(days=10))
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(token)))
-    usage = {**_USAGE_BODY, "rate_limit_reset_credits": {"available_count": 1}}
-
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=usage))
+        mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json=_USAGE_WITH_ONE_BANKED_RESET))
         mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json={"credits": []}))
-        output = await _provider(path).fetch()
+        output = await _provider(auth_path).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert output.result.available_reset_credits == 1
@@ -558,14 +523,11 @@ async def test_management_api_rejects_malformed_codex_auth_file_responses(auth_f
     assert api_call.call_count == 0
 
 
-async def test_history_reads_daily_token_buckets_and_reset_credits(tmp_path: Path) -> None:
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
-
+async def test_history_reads_daily_token_buckets_and_reset_credits(auth_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
         mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
         mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_reset_credits.json")))
-        observations = await _provider(path).fetch_history()
+        observations = await _provider(auth_path).fetch_history()
 
     activity, credits = observations
     assert isinstance(activity.payload, TokenActivityObservation)
@@ -580,33 +542,25 @@ async def test_history_reads_daily_token_buckets_and_reset_credits(tmp_path: Pat
     assert credits.payload.credits[1].expires_at is None
 
 
-async def test_history_skips_an_endpoint_the_account_cannot_see(tmp_path: Path) -> None:
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
-
+async def test_history_skips_an_endpoint_the_account_cannot_see(auth_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
         mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
         mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(404, text="not found"))
-        observations = await _provider(path).fetch_history()
+        observations = await _provider(auth_path).fetch_history()
 
     assert [observation.payload.kind for observation in observations] == [HistoryKind.TOKEN_ACTIVITY]
 
 
-async def test_history_propagates_an_upstream_failure(tmp_path: Path) -> None:
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
-
+async def test_history_propagates_an_upstream_failure(auth_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
         mock.get(PROFILE_URL).mock(return_value=httpx.Response(500, text="boom"))
         with pytest.raises(httpx.HTTPStatusError):
-            await _provider(path).fetch_history()
+            await _provider(auth_path).fetch_history()
 
 
-async def test_history_captures_each_endpoint_under_its_own_key(tmp_path: Path) -> None:
+async def test_history_captures_each_endpoint_under_its_own_key(auth_path: Path) -> None:
     """Two endpoints in one cycle must not overwrite each other's raw body."""
 
-    path = tmp_path / "auth.json"
-    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
     capture_keys: list[str] = []
 
     def factory(capture_key: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
@@ -616,7 +570,7 @@ async def test_history_captures_each_endpoint_under_its_own_key(tmp_path: Path) 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
         mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_reset_credits.json")))
-        await CodexProvider(CodexSettings(auth_path=path), cast(ProviderClientFactory, factory)).fetch_history()
+        await CodexProvider(CodexSettings(auth_path=auth_path), cast(ProviderClientFactory, factory)).fetch_history()
 
     assert capture_keys == ["codex_token_activity", "codex_reset_credits"]
 

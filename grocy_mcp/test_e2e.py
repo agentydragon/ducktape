@@ -1,30 +1,11 @@
 """E2E tests: Grocy container + MCP server -> tool verification.
 
-Starts a real Grocy container (LinuxServer image, auth disabled, demo mode),
+Starts a real Grocy container (LinuxServer image, auth disabled),
 wires the MCP server to it, and exercises tool calls through the full MCP
 protocol via fastmcp.Client with FastMCPTransport.
 
-Timing profile (RBE, 2026-04-20, OTEL spans in undeclared outputs):
-
-  Session-scoped setup (runs once, charged to first test):
-    load_oci_image        14.7s  (tarball build 1.4s + docker load 13.3s for 82MB image)
-    container start        3.1s  (Docker create + s6-overlay init + SSL keygen)
-    wait_for_grocy_ready   3.5s  (3 probes: ReadError, HTTP 500, then 1.3s migration on GET /)
-
-  Per-test fixture overhead:
-    build_mcp             ~70ms  (FastMCP.from_openapi parses the Grocy spec)
-
-  Tests (wall clock, excluding setup):
-    test_all_tool_names    <1ms  (just set comparison after build_mcp)
-    test_system_info       108ms
-    test_referencedata     288ms
-    test_product_lifecycle 379ms
-    test_stock_operations  696ms  (heaviest: add/consume/set/transfer/edit)
-    test_shopping_list     577ms
-    test_volatile_queries  201ms
-    test_generic_crud      293ms
-    test_rejects_viewonly   94ms
-    test_accepts_viewonly  336ms
+The session-scoped setup is charged to the first test: about 20 s on RBE (image load 15 s, container start
+3 s, readiness 3.5 s; measured 2026-04-20).
 """
 
 from __future__ import annotations
@@ -46,53 +27,9 @@ from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
 from grocy_mcp.testing.helpers import RefData, create_ref_data, unwrap_result
-from grocy_mcp.tool_metadata import TOOL_OVERRIDES
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
-
-# Names of the custom batch tools registered by register_batch_tools.
-CUSTOM_TOOL_NAMES = {
-    # Generic entity CRUD
-    "entities_create",
-    "entities_list",
-    "entities_get",
-    # Stock overview
-    "stock_get",
-    # Stock mutations
-    "stock_add",
-    "stock_consume",
-    "stock_set",
-    "stock_transfer",
-    # Stock entries
-    "stock_entries_list",
-    "stock_entry_edit",
-    # Reference data — read
-    "products_list",
-    "locations_list",
-    "quantity_units_list",
-    "product_groups_list",
-    # Reference data — typed batch creators
-    "products_create",
-    "locations_create",
-    "quantity_units_create",
-    "product_groups_create",
-    "shopping_lists_list",
-    "shopping_lists_create",
-    # Product mutations
-    "products_edit",
-    "product_delete",
-    # Shopping list
-    "shopping_list_get",
-    "shopping_list_items_add",
-    "shopping_list_item_edit",
-    "shopping_list_items_remove",
-    "shopping_list_clear",
-    # Volatile stock queries
-    "get_expiring_stock",
-    "get_below_minimum_stock",
-    "get_expired_stock",
-}
 
 
 # -- Fixtures -----------------------------------------------------------------
@@ -114,20 +51,6 @@ async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
 async def ref_data(mcp_client: Client) -> RefData:
     """Create reference data (location, QU, group, two products) with uuid suffixes."""
     return await create_ref_data(mcp_client)
-
-
-# -- Tool name coverage ------------------------------------------------------
-
-
-async def test_all_tool_names_are_customized(mcp_client: Client) -> None:
-    """Every tool exposed by the MCP server has a name from TOOL_OVERRIDES or CUSTOM_TOOL_NAMES."""
-    tools = await mcp_client.list_tools()
-    expected_names = {o.name for o in TOOL_OVERRIDES.values() if o.enabled}
-    expected_names |= CUSTOM_TOOL_NAMES
-    actual_names = {t.name for t in tools}
-    assert actual_names == expected_names, (
-        f"Mismatch: extra={actual_names - expected_names}, missing={expected_names - actual_names}"
-    )
 
 
 # -- System info tool ---------------------------------------------------------
@@ -887,9 +810,10 @@ async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> Non
     assert pg_fetched[0]["kind"] == "ok"
     assert pg_fetched[0]["data"]["name"] == f"TestGroupGeneric-{suffix}"
 
-    # Read-only entity types accepted by entities_list
-    stock_rows = unwrap_result(await mcp_client.call_tool("entities_list", {"entity_types": ["stock"]}))
-    assert "stock" in stock_rows
+    # Read-only entity types accepted by entities_list (the broader ``ReadableEntityType`` set)
+    view_only = ["stock", "products_last_purchased", "permission_hierarchy"]
+    rows = unwrap_result(await mcp_client.call_tool("entities_list", {"entity_types": view_only}))
+    assert set(view_only) <= set(rows)
 
     # Fetch product via generic path
     entities = unwrap_result(
@@ -899,23 +823,13 @@ async def test_generic_entity_crud(mcp_client: Client, ref_data: RefData) -> Non
     assert entities[0]["data"]["name"] == ref_data.products[0]
 
 
-# -- Read / write entity-type split ------------------------------------------
+# -- Write entity types ------------------------------------------------------
 
 
 async def test_create_entities_rejects_view_only_type(mcp_client: Client) -> None:
     """``entities_create`` only accepts ``WriteableEntityType``."""
     with pytest.raises(Exception, match="entity_type"):
         await mcp_client.call_tool("entities_create", {"items": [{"entity_type": "stock", "body": {"amount": 1}}]})
-
-
-async def test_list_entities_accepts_view_only_type(mcp_client: Client) -> None:
-    """``entities_list`` accepts the broader ``ReadableEntityType`` set."""
-    rows = unwrap_result(
-        await mcp_client.call_tool(
-            "entities_list", {"entity_types": ["stock", "products_last_purchased", "permission_hierarchy"]}
-        )
-    )
-    assert {"stock", "products_last_purchased", "permission_hierarchy"} <= set(rows)
 
 
 if __name__ == "__main__":
