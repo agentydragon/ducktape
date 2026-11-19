@@ -80,17 +80,6 @@ func assertColumnNullability(t *testing.T, db *sql.DB, table, column string, wan
 	}
 }
 
-func assertTableExists(t *testing.T, db *sql.DB, table string, want bool) {
-	t.Helper()
-	var exists bool
-	if err := db.QueryRowContext(t.Context(), `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
-		t.Fatal(err)
-	}
-	if exists != want {
-		t.Fatalf("table %s exists = %t, want %t", table, exists, want)
-	}
-}
-
 func assertCreationContractConstraints(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var retained, obsolete int

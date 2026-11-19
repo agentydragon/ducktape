@@ -666,10 +666,6 @@ def one_off(
     )
 
 
-# A rule that matches nothing, so the un-overridden path stays the default-flexible behaviour.
-NO_MATCH_RULE = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
-
-
 def test_one_off_addresses_a_transaction_by_match_not_by_plaid_id():
     correction = one_off("holiday-stay-is-travel", Kind.FIXED, amount="60.00", analysis_category="fixed_travel")
     purchase = row("2026-01-31", 60)
