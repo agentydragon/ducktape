@@ -2150,11 +2150,10 @@ Boxes and Sandboxes are to converge into one object type
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
-**Decision, then migration. Unscheduled (operator, 2026-11-17).** Choose one typed settings framework
-for Agentplane services. Evaluate defining the schema in protobuf and loading it from YAML or
-textproto, alongside the current typed YAML approach. The design should show how the deployment
-renderer and service loaders use the same schema and handle unknown fields, defaults, and explicit
-runtime Secret inputs. Decide whether the App’s generated configuration API can reuse settings
+**Decision, then migration. Unscheduled.** Compare frameworks using the operator's
+[settings direction](../../docs/trimcode_decisions.md#shared-go-and-python-settings). The design
+should show how deployment renderers and runtime loaders share the schema and handle defaults and
+explicit Secret inputs. Decide whether the App's generated configuration API can reuse settings
 schemas for the fields it exposes to the browser. Start from the
 [current settings contract](../AGENTS.md#settings).
 

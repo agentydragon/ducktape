@@ -41,3 +41,19 @@ Explore moving behavior tests off Kubernetes where they can still exercise the r
 For coverage that needs Kubernetes, explore sharing a test cluster with persistent infrastructure
 such as KubeVirt and cert-manager. The future suite may use both. Revisit prototype retirement after
 the test architecture decision.
+
+## Shared Go and Python settings
+
+**Protobuf is the leading schema candidate.** Generate bindings for Python deployment renderers
+and Go services from the same definitions. Evaluate this against the current typed YAML setup
+before choosing a framework or planning service migrations.
+
+- **Settings file format.** Compare protobuf-aware YAML, textproto, and binary protobuf. Check
+  field presence and defaults, unknown fields, deployment diffs, and startup diagnostics.
+- **Validation.** Go must reject invalid settings at startup. It is acceptable to start with
+  Go-only validation. Python can render a well-formed message that the runtime rejects on
+  semantic grounds. Consider shared schema rules, such as Protovalidate, if catching errors
+  during synthesis is worth the integration cost. Keep runtime Secret inputs explicit.
+
+[The sidecar and LLM ingress spike](https://github.com/agentydragon/ducktape/pull/12232) tried
+generated bindings, Buf protoyaml, and Protovalidate. Use it as evidence for that combination.
