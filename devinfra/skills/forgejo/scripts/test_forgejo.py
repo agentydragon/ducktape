@@ -86,8 +86,8 @@ def test_parse_run_page_extracts_web_ui_endpoint_state() -> None:
     assert state.run_index == "391"
     assert state.attempt == "1"
     assert (
-        state.log_endpoint("https://git.allegedly.works/", 1)
-        == "https://git.allegedly.works/haku/haku-state/actions/runs/391/jobs/1/attempt/1"
+        state.log_endpoint("https://forgejo.example.test/", 1)
+        == "https://forgejo.example.test/haku/haku-state/actions/runs/391/jobs/1/attempt/1"
     )
 
 
