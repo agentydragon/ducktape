@@ -21,7 +21,7 @@ there.
 
 **Fix**: Add to user `~/.bazelrc`:
 
-```
+```text
 startup --shell_executable=/run/current-system/sw/bin/bash
 ```
 
@@ -51,7 +51,7 @@ The `env` call is redundant — bash can do `export VAR=val; exec "$python_exe"`
 
 **Workaround**: Add to user `~/.bazelrc`:
 
-```
+```text
 build --action_env=PATH
 build --host_action_env=PATH
 ```
@@ -116,7 +116,7 @@ nixpkgs patches Bazel's Java source code at build time, replacing `/bin/bash` wi
 
 ## Combined workaround (`~/.bazelrc`)
 
-```
+```text
 startup --shell_executable=/run/current-system/sw/bin/bash
 build --action_env=PATH
 build --host_action_env=PATH

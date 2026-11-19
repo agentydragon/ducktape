@@ -23,7 +23,7 @@ consumer (Claude Code web UI environment variables, other frontends). With it, a
 
 ## Current Architecture
 
-```
+```text
 Container starts
 │
 ├── environment-manager runs web_setup.sh (init script, direct bash via ExecuteScript)

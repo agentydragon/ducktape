@@ -33,7 +33,7 @@ Key observations:
 
 The search query is not stored directly in the search node. Instead, it follows this indirection pattern:
 
-```
+```text
 Search Node
   └── _metaNodeId → Metadata Node
                       └── children[0] → Tuple Node
@@ -66,7 +66,7 @@ Tana uses special system nodes for search operators and types:
 
 The simplest search type - finding all nodes with a specific tag:
 
-```
+```text
 Metadata Node
   └── Tuple Node
       ├── "SYS_A15" (Search expression key)
@@ -79,7 +79,7 @@ Example: Searching for `#issue` tag
 
 For searches with boolean logic:
 
-```
+```text
 Metadata Node
   └── Tuple Node
       ├── "SYS_A15"
@@ -97,7 +97,7 @@ Example: `OR(event, meeting, "FROM CALENDAR")`
 
 Boolean expressions can be nested to arbitrary depth:
 
-```
+```text
 AND(
   tag1,
   OR(
@@ -187,7 +187,7 @@ The export format preserves:
 
 Search: "Search results for #issue"
 
-```
+```text
 Search Node (SGrUB4iyWYde)
   └── Metadata (UPQzRt-7yPuY)
       └── Tuple (iA36z7SvNO)
@@ -199,7 +199,7 @@ Search Node (SGrUB4iyWYde)
 
 Search: "Agenda"
 
-```
+```text
 Search Node (lRiDEA6lQM)
   └── Metadata (uDnQ7Y7qR1d0)
       └── Tuple (-OjqkA37F5)

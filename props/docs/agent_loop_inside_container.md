@@ -8,7 +8,7 @@ All agent loops run inside Docker containers. Each container is a self-contained
 
 ## Architecture
 
-```
+```text
 Host Scaffold                      Container
 ─────────────                      ─────────
 run_loop_agent()

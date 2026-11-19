@@ -50,7 +50,7 @@ does not include the title, subtitle, axis labels, legend, or in-cell text.
 
 ## Layout
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Title: "6.08mm ply, Lauan"                                          │
 │  Subtitle: "Z=−0.1, 15 mm/s, kerf 0.1 mm"                           │
@@ -85,7 +85,7 @@ a complete 2D grid at a specific combination of outer parameter values.
 - **4-parameter sweep**: add both `[cols]` and `[rows]` (grid of sub-grids)
 - All axis params (`x`, `y`, `cols`, `rows`) must be distinct
 
-```
+```text
               Title
               Subtitle
 

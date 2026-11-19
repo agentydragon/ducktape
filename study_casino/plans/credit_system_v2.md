@@ -19,7 +19,7 @@ each hour boundary:
 | 4th hour      | +20           |
 | 5th+ hour     | +20 each      |
 
-```
+```python
 MILESTONE_BONUSES = [5, 10, 15, 20, 20, 20, ...]
 ```
 

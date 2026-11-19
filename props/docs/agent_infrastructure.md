@@ -5,7 +5,7 @@ For the in-container agent loop, see <agent_loop_inside_container.md>.
 
 ## Directory Structure
 
-```
+```text
 props/
 ├── critic/                 # Critic agent (main.py entry point, DirectToolProvider)
 ├── grader/                 # Grader agent (loop.py, main.py)
@@ -87,7 +87,7 @@ Repository names map trivially from the `AgentType` enum: `str(AgentType.CRITIC)
 
 ### Resolution Flow
 
-```
+```text
 AgentRegistry:
   agent_type=CRITIC, ref="latest" (or custom digest for critic)
       → resolve_image_ref(CRITIC, "latest") → digest

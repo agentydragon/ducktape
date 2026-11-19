@@ -6,7 +6,7 @@ Persistent graders that continuously reconcile grading state with ground truth.
 
 Snapshot graders follow the **Kubernetes controller pattern** — a reconciliation loop that drives actual state toward desired state:
 
-```
+```text
 Desired State: grading_pending is empty (all critique/GT pairs have edges)
 Actual State:  grading_pending shows missing edges
 Action:        Grade missing pairs until no drift remains
@@ -33,7 +33,7 @@ No explicit versioning needed. The `grading_edges` table IS the checkpoint — g
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                   GraderSupervisor (host)                   │
 ├─────────────────────────────────────────────────────────────┤

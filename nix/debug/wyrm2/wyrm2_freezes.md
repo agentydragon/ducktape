@@ -111,7 +111,7 @@ Both GPUs were in P8 state during diagnostics (GPU 0: 41W/575W, GPU 1:
 
 Root ports cap at x8 due to CPU lane bifurcation:
 
-```
+```text
 CPU (Raphael/Granite Ridge)
   └── 00:01.0 (Dummy Host Bridge)
        ├── 00:01.1 ──[x8]── 01:00.0 GPU 0 (RTX 5090 ZOTAC)
@@ -130,7 +130,7 @@ Host `lspci` confirms root ports cap at x8, ASPM disabled, target speed 32 GT/s:
 
 Verified correct:
 
-```
+```text
 root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1
 ```
 
@@ -159,7 +159,7 @@ root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobi
 
 **Guest kernel cmdline issues (minor):**
 
-```
+```text
 nvidia-drm.modeset=0 ... nvidia-drm.modeset=1   ← contradictory (last wins → 1)
 nvidia.NVreg_OpenRmEnableUnsupportedGpus=1       ← duplicated
 ```
@@ -223,7 +223,7 @@ Multiple NixOS config sources adding conflicting params. **Not harmless** —
 
 ## VM Configuration (VM 110)
 
-```
+```text
 memory: 98304 (96 GiB)
 balloon: 0
 cores: 32
@@ -236,7 +236,7 @@ virtiofs1: code,cache=never         ← changed from cache=auto
 
 ## Host Memory Accounting (for reference)
 
-```
+```text
 Total RAM:           123 GiB
 wyrm2 memfd (Shmem):  96 GiB  (38 GiB RSS, 96 GiB VmLck)
 talos-pve-cp-0 RSS:    3 GiB

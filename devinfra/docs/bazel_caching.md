@@ -24,7 +24,7 @@ The `repository_cache` stores compressed downloads (~2GB). It is content-address
 
 ## Cache key strategy
 
-```
+```text
 bazel-repo-cache-<hash of MODULE.bazel + **/*.MODULE.bazel + MODULE.bazel.lock>
 ```
 
