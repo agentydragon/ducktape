@@ -63,8 +63,9 @@ from that tool policy.
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces
   `secrets/haku-k8s-jwt.yaml` (the `client_credentials`-as-`haku-k8s` flow with
   `expected_group: haku`). The web home's whole kubectl path depends on it.
-- **Haku LiteLLM key** — `tf/gitops/litellm-api-key` → a `haku-sandbox` secret
-  for attribution / budget / kill-switch, if routing model calls through LiteLLM.
+- **Haku LiteLLM key** — a key in `cluster/cdk8s/litellm/crossplane_keys.py` → a
+  `haku-sandbox` secret for attribution / budget / kill-switch, if routing model calls
+  through LiteLLM.
 - **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
   only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
 - **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned,
