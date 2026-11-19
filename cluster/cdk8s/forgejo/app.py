@@ -11,12 +11,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_envoyconfig_crds.io.cilium import (
-    CiliumEnvoyConfig,
-    CiliumEnvoyConfigSpec,
-    CiliumEnvoyConfigSpecBackendServices,
-    CiliumEnvoyConfigSpecNodeSelector,
-)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -33,6 +27,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo import cache, db
 from cluster.cdk8s.gateway import https_route
@@ -359,63 +354,6 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     )
 
 
-_TCP_PROXY_TYPE = "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy"
-
-
-def _ssh_listener(scope: Construct) -> None:
-    """Public Forgejo SSH via a manual CiliumEnvoyConfig.
-
-    Cilium 1.19's Gateway API controller supports HTTPRoute/GRPCRoute/TLSRoute but not TCPRoute,
-    and SSH has no SNI/Host header to route on. The Cilium Envoy DaemonSet already runs with
-    hostNetwork on HIL gateway nodes, so this binds git.allegedly.works:2222 directly on those
-    nodes and forwards raw TCP to Forgejo's in-cluster SSH service.
-    """
-    service = _SSH.name
-    cluster = f"{_NAMESPACE}:{service}:{_SSH.port.number}"
-    CiliumEnvoyConfig(
-        scope,
-        "ssh-listener",
-        metadata=ApiObjectMetadata(
-            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
-        ),
-        spec=CiliumEnvoyConfigSpec(
-            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
-            backend_services=[
-                CiliumEnvoyConfigSpecBackendServices(name=service, namespace=_NAMESPACE, number=[str(_SSH.port.number)])
-            ],
-            resources=[
-                {
-                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
-                    "name": service,
-                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": 2222}},
-                    "filterChains": [
-                        {
-                            "filters": [
-                                {
-                                    "name": "envoy.filters.network.tcp_proxy",
-                                    "typedConfig": {
-                                        "@type": _TCP_PROXY_TYPE,
-                                        "statPrefix": service,
-                                        "cluster": cluster,
-                                        "idleTimeout": "3600s",
-                                    },
-                                }
-                            ]
-                        }
-                    ],
-                },
-                {
-                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
-                    "name": cluster,
-                    "type": "EDS",
-                    "edsClusterConfig": {"serviceName": f"{_NAMESPACE}/{service}:{_SSH.port.number}"},
-                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
-                },
-            ],
-        ),
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _helm_release(chart, storage=_object_storage(chart))
@@ -453,7 +391,8 @@ def chart(app: App) -> Chart:
         ),
     )
     _metrics_token(chart)
-    _ssh_listener(chart)
+    # Public SSH on git.allegedly.works:2222, on the HIL gateway nodes.
+    tcp_listener(chart, "ssh-listener", service=_SSH)
     return chart
 
 
