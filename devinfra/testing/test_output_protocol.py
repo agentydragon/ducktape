@@ -34,16 +34,18 @@ def test_output_key_uses_the_versioned_identity_tuple() -> None:
     assert output_key("dialog/猫", None, "diagnostics") != expected
 
 
+def _record(**overrides: object) -> dict[str, object]:
+    return {
+        "schema": "ducktape.test-output.v1",
+        "case_id": "example",
+        "checkpoint": None,
+        "role": "diagnostics",
+        "path": "files/trace.json",
+    } | overrides
+
+
 def test_record_accepts_protocol_paths_without_writer_naming_conventions() -> None:
-    record = OutputRecord.model_validate(
-        {
-            "schema": "ducktape.test-output.v1",
-            "case_id": "dialog/mobile",
-            "checkpoint": None,
-            "role": "diagnostics",
-            "path": "files/non-python-producer/trace.tar.gz",
-        }
-    )
+    record = OutputRecord.model_validate(_record(path="files/non-python-producer/trace.tar.gz"))
     assert record.path == "files/non-python-producer/trace.tar.gz"
 
 
@@ -51,30 +53,14 @@ def test_record_accepts_protocol_paths_without_writer_naming_conventions() -> No
     ("field", "value"), [("case_id", ""), ("role", ""), ("checkpoint", ""), ("label", " \t"), ("title", " \t")]
 )
 def test_record_rejects_empty_identity_and_blank_display_text(field: str, value: str) -> None:
-    record = {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "example",
-        "checkpoint": None,
-        "role": "diagnostics",
-        "path": "files/trace.json",
-    }
-    record[field] = value
     with pytest.raises(ValidationError) as exc:
-        OutputRecord.model_validate(record)
+        OutputRecord.model_validate(_record(**{field: value}))
     assert exc.value.errors()[0]["loc"] == (field,)
 
 
 def test_record_requires_the_protocol_schema_version() -> None:
     with pytest.raises(ValidationError):
-        OutputRecord.model_validate(
-            {
-                "schema": "ducktape.test-output.v2",
-                "case_id": "example",
-                "checkpoint": None,
-                "role": "diagnostics",
-                "path": "files/trace.json",
-            }
-        )
+        OutputRecord.model_validate(_record(schema="ducktape.test-output.v2"))
 
 
 @pytest.mark.parametrize(
@@ -82,15 +68,7 @@ def test_record_requires_the_protocol_schema_version() -> None:
 )
 def test_record_rejects_unsafe_paths(path: str) -> None:
     with pytest.raises(ValidationError):
-        OutputRecord.model_validate(
-            {
-                "schema": "ducktape.test-output.v1",
-                "case_id": "example",
-                "checkpoint": None,
-                "role": "diagnostics",
-                "path": path,
-            }
-        )
+        OutputRecord.model_validate(_record(path=path))
 
 
 def test_publish_output_writes_payload_before_record_with_stable_paths(tmp_path: Path) -> None:
