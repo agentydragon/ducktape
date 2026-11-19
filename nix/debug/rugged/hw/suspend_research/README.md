@@ -207,25 +207,14 @@ journalctl -b -1 -k --grep='mhi|wwan|71:00.0|105b|e11d' --no-pager -o short-iso
   \_before* the kernel's MHI suspend path runs. Modem leaves AMSS
   cleanly, kernel's `mhi_pci_suspend` takes the early-exit path
   (`pci_generic.c:1598-1600`), broken M3→PBL chain is avoided by
-  construction. **Untested under actual suspend/resume — needs the
-  experiment matrix below.**
+  construction. Organic suspend/resume cycles since 2026-05-19 are clean
+  (see below); the formal experiment matrix below has not been run.
 - ✅ `foxflss-rf-cal-run` `sleep: command not found` bug fixed
   (absolute path to `sleep`). RF cal had been silently skipping on
   every boot.
 - ✅ `foxflss-watchdog` exponential backoff: `mmcli -w` respawn delay
   doubles (2s → 60s cap) when `mmcli -w` exits within 5s, resets after
   a healthy run. Eliminates journal spam when modem is absent.
-
-**Historical staged item, later disproven (see 2026-05-19 below)**:
-
-- ✅ `WwanAutoSense` BIOS attribute flipped `Disabled → Enabled` via
-  dell-wmi-sysman (no admin password needed). **Hypothesis**: this is
-  the BIOS variable that populates the DSDT's `WWEN` byte, which gates
-  exposure of the WWAN slot's ACPI `_RST` / `_PRR` / power-cycle
-  methods. If correct, post-reboot `reset_method` will list `acpi flr
-bus` (gain of `acpi`) and `recovery_work`'s `pci_try_reset_function`
-  will trigger the platform's actual slot power-cycle via FHRF+SHRF.
-  This hypothesis was wrong.
 
 **Capture tooling shipped**:
 
@@ -244,11 +233,6 @@ bus` (gain of `acpi`) and `recovery_work`'s `pci_try_reset_function`
 - `nix/debug/rugged/hw/suspend_research/flip_wwan_autosense.sh` — toggle
   the candidate BIOS gate from Linux. Idempotent; `TARGET=Disabled`
   to revert.
-
-**Historical summary, superseded by later findings**: at this point the
-system-suspend workaround was in place, and the BIOS WwanAutoSense theory
-was still pending. Later evidence disproved WwanAutoSense as the WWEN gate;
-runtime-PM autosuspend remained the unresolved failure path.
 
 ---
 
