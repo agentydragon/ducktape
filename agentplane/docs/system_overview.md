@@ -761,6 +761,8 @@ own method authorization. LLM ingress authenticates
 workload and service SVIDs on its primary TLS listener, with no bearer admission. With `service_callers` configured, the central sampler's TLS listener
 presents its service SVID and admits exact service peers. Its History exporter presents the
 sampler SVID with typed Session delegation for the effective Identity. Only LLM ingress holds the LiteLLM key.
+The Qwen Chat Completions canary posts to `/v1/chat/completions` over this hop. LiteLLM forwards it
+to TabbyAPI using the same Qwen model as the existing Responses route.
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
