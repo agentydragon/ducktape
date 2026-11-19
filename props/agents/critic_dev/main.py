@@ -409,7 +409,7 @@ async def main() -> int:
         base_url=backend_url, auth=(db.config.user, db.config.password), timeout=httpx.Timeout(60.0, connect=30.0)
     ) as http_client:
         system_prompt = render_system_prompt(
-            "props/agents/critic_dev/prompt.md.mako", db, helpers={"type_config": type_config}
+            "props/agents/critic_dev/prompt.md.mako", helpers={"type_config": type_config}
         )
 
         exit_code = await run_agent_loop(
