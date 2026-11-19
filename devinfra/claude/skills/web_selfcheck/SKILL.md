@@ -392,7 +392,7 @@ git -C /home/user/ducktape config buildbuddy.remote-bazel-default-remote 2>/dev/
 
 ## Report Format
 
-```
+```text
 # Session Selfcheck — <timestamp>
 
 Profile: <CLI/Web>    Summary: <healthy / degraded / broken>

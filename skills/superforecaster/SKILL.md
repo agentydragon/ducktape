@@ -97,7 +97,7 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 - Handle branching paths with probabilities
 - Example trajectory output:
 
-```
+```text
 [Filed I-485] ─┬─ 65% → [Direct Approval] → 8-14 months
                ├─ 25% → [RFE] ─┬─ 80% → [Approved] → +2-4 months
                │               └─ 20% → [Denied]
@@ -168,7 +168,7 @@ Map questions to searchable topics:
 
 **Search patterns**:
 
-```
+```text
 site:polymarket.com [topic]
 site:metaculus.com [topic]
 site:manifold.markets [topic]
@@ -207,7 +207,7 @@ site:manifold.markets [topic]
 
 **Suggestion format**:
 
-```
+```text
 This question might benefit from a prediction market. Consider creating on Manifold:
 
 **Title**: "Will OpenAI have a tender offer or IPO by end of 2025?"
@@ -244,7 +244,7 @@ Want me to help draft the full question description?
 
 **Base rate queries**:
 
-```
+```text
 "[category] success rate"
 "[type] approval rate [year]"
 "[event type] historical frequency"
@@ -255,7 +255,7 @@ Want me to help draft the full question description?
 
 ### Binary probability (yes/no questions)
 
-```
+```text
 **Probability**: X%
 **90% CI**: [low]% - [high]%
 **Verbal**: [Almost certainly not | Unlikely | Toss-up | Likely | Almost certain]
@@ -263,7 +263,7 @@ Want me to help draft the full question description?
 
 ### Quantity estimate
 
-```
+```text
 **Estimate**: [value] [units]
 **90% CI**: [low] - [high]
 **Fermi breakdown**: (if applicable)
@@ -274,7 +274,7 @@ Want me to help draft the full question description?
 
 ### Timeline estimate
 
-```
+```text
 **Median**: [time]
 **90% CI**: [earliest] - [latest]
 **Distribution shape**: [symmetric | right-skewed (delays likely) | ...]
@@ -282,7 +282,7 @@ Want me to help draft the full question description?
 
 ### Failure modes
 
-```
+```text
 | Rank | Failure Mode | P(occur) | Impact | Risk Score |
 |------|--------------|----------|--------|------------|
 | 1    | [mode]       | X%       | High   | [P×I]      |
@@ -294,7 +294,7 @@ For questions where multiple reference classes apply, layer priors from general 
 
 **Example: OpenAI stock valuation**
 
-```
+```text
 Level 1 (broadest): "It's a company"
   - Base: Companies have varied outcomes, mean reversion applies
 
@@ -323,7 +323,7 @@ Level 5: "My specific situation"
 
 **Tail risk decomposition example**:
 
-```
+```text
 P(OpenAI worth <50% of current) by 2026:
 
 - P(general market crash) × P(affects OpenAI | crash) = 15% × 80% = 12%
@@ -416,7 +416,7 @@ When outcome Z = f(X, Y) for uncertain X and Y:
 
 **Example: "What will my OpenAI equity be worth after taxes?"**
 
-```
+```text
 Inputs:
 - shares: 10,000 (known)
 - price_per_share: Lognormal(mean=$150, std=$80) — uncertainty from valuation
@@ -466,7 +466,7 @@ When a question involves interconnected uncertain variables, conditional depende
 
 **Example: Portfolio drawdown**
 
-```
+```text
 Inputs:
 - initial_balance: $800,000
 - allocation: 70% S&P 500, 30% bonds

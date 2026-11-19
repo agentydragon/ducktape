@@ -55,7 +55,7 @@ Different automated tools have different reliability profiles:
 
 ✅ **Correct Approach**:
 
-```
+```text
 1. Understand the issue pattern and its characteristics
 2. Run automated scans to gather candidates (grep/AST/ruff/vulture/etc.)
 3. Understand recall/precision of each tool for this pattern
@@ -68,7 +68,7 @@ Different automated tools have different reliability profiles:
 
 ❌ **Bad Approach**:
 
-```
+```text
 1. Run grep/AST scanner
 2. Auto-fix everything it finds without verification
 3. Declare "all clean!" (false confidence)
@@ -340,7 +340,7 @@ Use grep to find single-statement functions as candidates, then manually review 
 
 ### ❌ Low Recall Approach (Misses Issues)
 
-```
+```text
 Only check files modified in last commit
 Only look for exact pattern "cast(dict[str, Any], ...)"
 Stop after finding 5 issues
@@ -350,7 +350,7 @@ Stop after finding 5 issues
 
 ### ✅ High Recall Approach (Finds Everything)
 
-```
+```text
 Use grep/AST to find ALL cast() calls (100% recall for this pattern)
 Verify each candidate (handle precision issue)
 For low-recall patterns: supplement with manual reading
