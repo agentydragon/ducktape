@@ -7,7 +7,6 @@ py_library(
     deps = [
         "//openai_utils:client_factory",
         "//openai_utils:model",
-        "//skills/info_gathering/evals/agent_runtime:events",
         "@pypi//pydantic",
         "@rules_python//python/runfiles",
     ],

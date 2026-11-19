@@ -40,6 +40,7 @@ from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_S
 from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
 from skills.eval_infra.termination import terminate_when
+from skills.info_gathering.evals.harness import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -58,7 +59,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 from skills.skill_spec import SkillSpec

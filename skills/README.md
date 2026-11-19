@@ -42,7 +42,7 @@ build event stream. Consumers: `.github/workflows/release.yml`,
 ## Adding a skill
 
 1. `skills/<name>/SKILL.md` with frontmatter `name`, `description` (≤1024 chars,
-   enforced by `//skills:test_frontmatter`). No `allowed-tools` without approval
+   validated when `skill_package` builds it). No `allowed-tools` without approval
    (<AGENTS.md>).
 2. `skills/<name>/BUILD.bazel` with `skill_package(name, srcs)`.
 3. Add a `skills_registry.json` entry to ship it.

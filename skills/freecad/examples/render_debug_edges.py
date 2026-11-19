@@ -28,26 +28,13 @@ outdir = os.environ.get("OUTDIR", ".")
 view_filter = json.loads(os.environ.get("VIEWS", "null"))
 
 
-# Use osifont bundled with FreeCAD's TechDraw module. This font ships with every
-# FreeCAD installation (it's the default TechDraw dimension font), so it's a safe
-# default that doesn't depend on system font availability. Using it ensures debug
-# renders look identical across machines and Docker workers.
-_OSIFONT_PATH = os.path.join(  # noqa: PTH118
-    FreeCAD.getResourceDir(), "Mod", "TechDraw", "Resources", "fonts", "osifont-lgpl3fe.ttf"
-)
-
-qapp = init_gui()
+qapp = init_gui()  # registers FreeCAD's bundled TechDraw font (osifont) with Qt
 
 
 def _main() -> None:
-    _font_db = QtGui.QFontDatabase
-    if os.path.exists(_OSIFONT_PATH):  # noqa: PTH110 — FreeCAD env
-        _font_db.addApplicationFont(_OSIFONT_PATH)
-        font_family = "osifont"
-        log(f"Using osifont from {_OSIFONT_PATH}")
-    else:
-        font_family = "Sans"
-        log(f"WARNING: osifont not found at {_OSIFONT_PATH}, falling back to Sans")
+    # osifont ships with every FreeCAD (TechDraw's default dimension font), so debug renders look identical
+    # across machines and Docker workers.
+    font_family = "osifont"
 
     def _edge_dx(e):
         if len(e.Vertexes) >= 2:
