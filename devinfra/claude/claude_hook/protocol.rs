@@ -2,10 +2,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-// ---------------------------------------------------------------------------
-// Hook request / response envelope (daemon's /hook HTTP endpoint)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HookRequest {
     pub hook: AnyHookInput,
@@ -18,10 +14,6 @@ pub struct HookResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<HookOutput>,
 }
-
-// ---------------------------------------------------------------------------
-// Hook inputs — discriminated union on `hook_event_name` (PascalCase values)
-// ---------------------------------------------------------------------------
 
 /// Hook types where Claude Code delivers `systemMessage` only to the UI
 /// notification callback, not into the model conversation. Used as a fallback
@@ -240,10 +232,6 @@ impl AnyHookInput {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared base — present in every hook input
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HookInputBase {
     pub session_id: String,
@@ -251,10 +239,6 @@ pub struct HookInputBase {
     pub cwd: PathBuf,
     pub permission_mode: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Non-REPL hook input structs
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SessionStartInput {
@@ -314,10 +298,6 @@ pub struct ConfigChangeInput {
     pub source: String,
     pub file_path: Option<PathBuf>,
 }
-
-// ---------------------------------------------------------------------------
-// REPL hook input structs
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PreToolUseInput {
@@ -460,10 +440,6 @@ pub struct TaskCompletedInput {
     pub team_name: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Hook output (camelCase, skip None fields)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HookOutput {
@@ -519,10 +495,6 @@ pub struct PostToolUseSpecificOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_context: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
