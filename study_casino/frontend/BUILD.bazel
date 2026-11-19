@@ -192,20 +192,15 @@ js_library(
 # ── Production bundle (esbuild) ────────────────────────────────────────────────
 #
 # esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
-# the public/ tree (manifest, icon, fonts) are copied in alongside. The .js files
-# carry JSX, so the loader treats them as such. Served verbatim by the FastAPI
-# app's StaticFiles mount.
+# the public/ tree (manifest, icon, fonts) are copied in alongside. Served
+# verbatim by the FastAPI app's StaticFiles mount.
 
 spa_bundle(
     name = "bundle",
     entry_point = "main.jsx",
     jsx = "automatic",
-    loader = {".js": "jsx"},
     public = glob(["public/**/*"]),
-    visibility = [
-        "//study_casino:__pkg__",
-        "//study_casino/tests:__pkg__",
-    ],
+    visibility = ["//study_casino:__pkg__"],
     deps = [":main"],
 )
 

@@ -12,8 +12,8 @@ those symlinks out of the sandbox, so esbuild is the hermetic choice under Bazel
 
 Two configuration paths:
 
-  - **Plugin-free (React)**: pass `jsx`/`loader` and the macro builds the inline
-    esbuild `config` dict. No `esbuild.config.mjs` needed.
+  - **Plugin-free (React)**: pass `jsx` and the macro builds the inline esbuild
+    `config` dict. No `esbuild.config.mjs` needed.
   - **Plugins (Tailwind, svg, …)**: pass `config` = a `js_library`
     wrapping an `esbuild.config.mjs` that `export default {plugins: [...]}` with
     the plugin npm packages as that library's `deps`. The native rule threads
@@ -105,7 +105,6 @@ def spa_bundle(
         index_html = "index.html",
         config = None,
         jsx = None,
-        loader = None,
         splitting = False,
         public = None,
         public_dir = "public",
@@ -132,10 +131,9 @@ def spa_bundle(
             `None` when the app's index.html is served separately (e.g. a backend
             packages it next to, not inside, the bundle dir).
         config: Optional label of a `js_library` exporting esbuild options for
-            plugin-based bundling. Mutually exclusive with
-            `jsx`/`loader`, which the mjs sets instead.
+            plugin-based bundling. Mutually exclusive with `jsx`, which the mjs
+            sets instead.
         jsx: esbuild `jsx` mode, e.g. `"automatic"` for React. Inline-config path.
-        loader: esbuild `loader` dict, e.g. `{".js": "jsx"}`. Inline-config path.
         splitting: Enable esbuild code splitting (emits shared chunks).
         public: Files copied verbatim into `out_dir`, with `public_dir` stripped
             (e.g. `glob(["public/**/*"])` → `public/icon.svg` lands at `/icon.svg`).
@@ -154,10 +152,10 @@ def spa_bundle(
         visibility: Visibility of the produced directory target.
         **kwargs: Passed through to the underlying `esbuild` rule.
     """
-    if config != None and (jsx != None or loader != None):
-        fail("spa_bundle: pass jsx/loader OR config (a plugin esbuild.config.mjs), not both")
+    if config != None and jsx != None:
+        fail("spa_bundle: pass jsx OR config (a plugin esbuild.config.mjs), not both")
     if fingerprint and config != None:
-        fail("spa_bundle: fingerprint=True currently supports inline jsx/loader config only")
+        fail("spa_bundle: fingerprint=True currently supports inline jsx config only")
     if fingerprint and index_html == None:
         fail("spa_bundle: fingerprint=True requires an index_html template")
     if fingerprint and public:
@@ -168,8 +166,6 @@ def spa_bundle(
         esbuild_config = {}
         if jsx != None:
             esbuild_config["jsx"] = jsx
-        if loader != None:
-            esbuild_config["loader"] = loader
         if fingerprint:
             esbuild_config.update({
                 "assetNames": "assets/[name]-[hash]",

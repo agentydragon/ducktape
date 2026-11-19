@@ -20,7 +20,6 @@ await esbuild.build({
   sourcemap: false,
   target: ["es2022"],
   jsx: "automatic",
-  loader: { ".js": "jsx" },
   outExtension: { ".js": ".js" },
   entryNames: "harness",
   nodePaths: [resolve(process.cwd(), "node_modules")],
