@@ -510,7 +510,7 @@ class Actions(Construct):
         )
         if self.env.actions.orchestration_v1 is not None:
             # The EnvironmentService creates Sandboxes; Actions reads the exact created UID and
-            # writes launcher grants, which `_add_launcher_admission` limits to that shape.
+            # writes launcher grants, which `add_launcher_admission` limits to that shape.
             rules_by_namespace[namespace].append(
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])
             )
