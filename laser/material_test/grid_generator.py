@@ -33,8 +33,6 @@ from laser.lightburn.lbrn2_writer import (
 )
 from laser.ruida.rd_format import MAX_LAYERS as MAX_RD_LAYERS, RdJob, RdLayer, RdRect
 
-# ── Cut parameter enum ─────────────────────────────────────────────────────────
-
 
 class CutParam(StrEnum):
     """Named laser cut parameters that can be scanned or held constant."""
@@ -93,9 +91,6 @@ def _param_short_label(param: CutParam) -> str:
         sep = "" if unit == "%" else " "
         return f"{label}{sep}{unit}"
     return label
-
-
-# ── Pydantic config models ─────────────────────────────────────────────────────
 
 
 class AxisConfig(BaseModel):
@@ -255,9 +250,6 @@ class GridConfig(BaseModel):
         return self
 
 
-# ── Parameter helpers ──────────────────────────────────────────────────────────
-
-
 def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
     """Apply a named parameter value to a CutSetting."""
     if param == CutParam.POWER_PCT:
@@ -375,8 +367,6 @@ def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]],
     return power * passes / speed
 
 
-# ── Layout constants ───────────────────────────────────────────────────────────
-
 _SPACING = 3.0  # mm between text elements
 _MARGIN_LEFT = 5.0  # mm left of the Y-axis label
 _MARGIN_TOP = 5.0  # mm above the title
@@ -386,9 +376,6 @@ _TEXT_LAYER = 0  # layer index reserved for text labels
 def _estimate_text_width(text: str, height: float) -> float:
     """Rough rendered text width estimate (approx 0.55 x height per char)."""
     return len(text) * height * 0.55
-
-
-# ── Grid generation ────────────────────────────────────────────────────────────
 
 
 def _make_text(
@@ -1007,9 +994,6 @@ def generate_rd(config: GridConfig) -> RdJob:
         )
 
     return RdJob(layers=layers, rects=rects)
-
-
-# ── CLI ────────────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> None:

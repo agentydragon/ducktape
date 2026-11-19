@@ -29,15 +29,10 @@ from laser.material_test.grid_generator import (
 )
 from laser.ruida.rd_format import RdJob, unscramble_bytes
 
-# ── fmt_val ────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(("value", "expected"), [(15.0, "15"), (0.0, "0"), (-0.5, "-0.5")])
 def test_fmt_val(value: float, expected: str):
     assert fmt_val(value) == expected
-
-
-# ── GridConfig (Pydantic) ──────────────────────────────────────────────────────
 
 
 def _minimal_config(**kwargs) -> GridConfig:
@@ -99,9 +94,6 @@ def test_cut_config_power_shorthand_overrides_explicit_max():
     cc = CutConfig(power_pct=60, power_max_pct=80)
     assert cc.power_min_pct == 60
     assert cc.power_max_pct == 60
-
-
-# ── generate() ────────────────────────────────────────────────────────────────
 
 
 def _make_project(x_values: list[float] | None = None, y_values: list[float] | None = None) -> LightBurnProject:
@@ -234,9 +226,6 @@ def test_example_config_3d_parses(runfiles: Runfiles):
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)
     assert cfg.cols is not None
-
-
-# ── 3D/4D sweep tests ────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -465,16 +454,10 @@ def test_subgrid_gap_affects_layout():
     assert xs_large[1] > xs_small[1]
 
 
-# ── _param_short_label ──────────────────────────────────────────────────────────
-
-
 def test_param_short_label():
     assert _param_short_label(CutParam.SPEED_MM_S) == "mm/s"  # abbreviable + unit
     assert _param_short_label(CutParam.POWER_PCT) == "PWR%"  # not abbreviable + unit
     assert _param_short_label(CutParam.NUM_PASSES) == "Passes"  # no unit
-
-
-# ── Legend cell ─────────────────────────────────────────────────────────────────
 
 
 def test_generate_legend_cell():
