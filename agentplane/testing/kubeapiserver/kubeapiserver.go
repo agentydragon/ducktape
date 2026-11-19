@@ -160,34 +160,6 @@ func (s *Server) ServiceAccount(ctx context.Context, account auth.Account) (*cor
 	return created, nil
 }
 
-// RecreateServiceAccount deletes account's ServiceAccount and creates it again under the same name
-// with a new UID, so tokens of the old one stop authenticating. It returns once the API server
-// authenticates the new one's tokens: it checks a token's ServiceAccount against a cache that can
-// still hold the deleted one for a moment.
-func (s *Server) RecreateServiceAccount(ctx context.Context, account auth.Account) error {
-	err := s.Clientset.CoreV1().ServiceAccounts(account.Namespace).Delete(ctx, account.Name, metav1.DeleteOptions{})
-	if err != nil {
-		return fmt.Errorf("delete ServiceAccount %s/%s: %w", account.Namespace, account.Name, err)
-	}
-	probe, err := s.UnboundToken(ctx, account)
-	if err != nil {
-		return err
-	}
-	err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, time.Minute, true, func(ctx context.Context) (bool, error) {
-		review, err := s.TokenReviews().Create(ctx, &authenticationv1.TokenReview{
-			Spec: authenticationv1.TokenReviewSpec{Token: probe},
-		}, metav1.CreateOptions{})
-		if err != nil {
-			return false, err
-		}
-		return review.Status.Authenticated, nil
-	})
-	if err != nil {
-		return fmt.Errorf("wait for the API server to authenticate recreated ServiceAccount %s/%s: %w", account.Namespace, account.Name, err)
-	}
-	return nil
-}
-
 // Pod is a new Pod running as account, whose ServiceAccount and namespace are created when absent.
 // No kubelet runs it: it is what a token is bound to.
 func (s *Server) Pod(ctx context.Context, account auth.Account) (*corev1.Pod, error) {
