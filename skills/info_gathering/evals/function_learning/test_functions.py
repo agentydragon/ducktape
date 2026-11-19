@@ -1,33 +1,38 @@
 """Unit tests for secret function implementations."""
 
+import pytest
 import pytest_bazel
 
 from skills.info_gathering.evals.function_learning.functions import (
     AES_FIELD_AFFINE,
     BENT_INNER_PRODUCT,
+    FUNCTIONS,
     JUNTA_3,
     LINEAR_SIMPLE,
     PARITY_GROUPS,
     REED_MULLER_3,
+    SecretFunction,
 )
 
 
-def test_linear_evaluates_in_range() -> None:
-    for x in LINEAR_SIMPLE.all_inputs():
-        out = LINEAR_SIMPLE.evaluate(x)
-        assert 0 <= out <= LINEAR_SIMPLE.max_output
+@pytest.mark.parametrize("fn", FUNCTIONS.values(), ids=list(FUNCTIONS))
+def test_outputs_are_in_range(fn: SecretFunction) -> None:
+    for x in fn.all_inputs():
+        out = fn.evaluate(x)
+        assert 0 <= out <= fn.max_output, f"{fn.name}: output {out} out of range for input {x}"
 
 
-def test_linear_is_linear() -> None:
-    """f(x XOR y) = f(x) XOR f(y) XOR f(0) for a linear function over GF(2)."""
-    f0 = LINEAR_SIMPLE.evaluate(0)
-    inputs = LINEAR_SIMPLE.all_inputs()
+@pytest.mark.parametrize("fn", [LINEAR_SIMPLE, AES_FIELD_AFFINE], ids=["linear_simple", "aes_affine"])
+def test_function_is_affine(fn: SecretFunction) -> None:
+    """f(x XOR y) = f(x) XOR f(y) XOR f(0), for a linear function over GF(2) and for a GF(2^8) multiple by a constant."""
+    f0 = fn.evaluate(0)
+    inputs = fn.all_inputs()
     for x in inputs[:16]:
         for y in inputs[:16]:
-            fx = LINEAR_SIMPLE.evaluate(x)
-            fy = LINEAR_SIMPLE.evaluate(y)
-            fxy = LINEAR_SIMPLE.evaluate(x ^ y)
-            assert fxy == fx ^ fy ^ f0, f"Linearity failed: f({x} ^ {y}) != f({x}) ^ f({y}) ^ f(0)"
+            fx = fn.evaluate(x)
+            fy = fn.evaluate(y)
+            fxy = fn.evaluate(x ^ y)
+            assert fxy == fx ^ fy ^ f0, f"Affine property failed for x={x}, y={y}"
 
 
 def test_junta_depends_on_relevant_bits() -> None:
@@ -62,12 +67,6 @@ def test_parity_groups_correct() -> None:
     assert PARITY_GROUPS.evaluate(0b11111111) == 0b0000
 
 
-def test_rm3_evaluates_in_range() -> None:
-    for x in REED_MULLER_3.all_inputs():
-        out = REED_MULLER_3.evaluate(x)
-        assert 0 <= out <= REED_MULLER_3.max_output
-
-
 def test_rm3_has_cubic_terms() -> None:
     """The 3rd-order finite difference w.r.t. the cubic-term variables must be 1.
 
@@ -82,12 +81,6 @@ def test_rm3_has_cubic_terms() -> None:
 
     derivative = f0(0) ^ f0(e0) ^ f0(e1) ^ f0(e2) ^ f0(e0 ^ e1) ^ f0(e0 ^ e2) ^ f0(e1 ^ e2) ^ f0(e0 ^ e1 ^ e2)
     assert derivative == 1, "MSB output has no genuine degree-3 term"
-
-
-def test_bent_evaluates_in_range() -> None:
-    for x in BENT_INNER_PRODUCT.all_inputs():
-        out = BENT_INNER_PRODUCT.evaluate(x)
-        assert 0 <= out <= BENT_INNER_PRODUCT.max_output
 
 
 def test_bent_known_values() -> None:
@@ -113,12 +106,6 @@ def test_bent_linear_probing_yields_nothing() -> None:
         assert BENT_INNER_PRODUCT.evaluate(x) == 0, f"Expected 0 for probe x={x:#x}"
 
 
-def test_aes_affine_evaluates_in_range() -> None:
-    for x in AES_FIELD_AFFINE.all_inputs():
-        out = AES_FIELD_AFFINE.evaluate(x)
-        assert 0 <= out <= AES_FIELD_AFFINE.max_output
-
-
 def test_aes_affine_known_values() -> None:
     """Spot-check values derived from alpha=0x57, beta=0x83."""
     # f(0) = beta & 0xF = 0x83 & 0xF = 3.
@@ -129,26 +116,11 @@ def test_aes_affine_known_values() -> None:
     assert AES_FIELD_AFFINE.evaluate(2) == 13
 
 
-def test_aes_affine_is_affine() -> None:
-    """f(x XOR y) = f(x) XOR f(y) XOR f(0) because GF(2^8) mult by a constant is linear."""
-    f0 = AES_FIELD_AFFINE.evaluate(0)
-    inputs = AES_FIELD_AFFINE.all_inputs()
-    for x in inputs[:16]:
-        for y in inputs[:16]:
-            fx = AES_FIELD_AFFINE.evaluate(x)
-            fy = AES_FIELD_AFFINE.evaluate(y)
-            fxy = AES_FIELD_AFFINE.evaluate(x ^ y)
-            assert fxy == fx ^ fy ^ f0, f"Affine property failed for x={x}, y={y}"
-
-
 def test_all_functions_have_correct_dimensions() -> None:
     for fn in [LINEAR_SIMPLE, JUNTA_3, PARITY_GROUPS, BENT_INNER_PRODUCT, AES_FIELD_AFFINE]:
         assert fn.n == 8
         assert fn.m == 4
         assert len(fn.all_inputs()) == 256
-        for x in fn.all_inputs():
-            out = fn.evaluate(x)
-            assert 0 <= out <= fn.max_output, f"{fn.name}: output {out} out of range for input {x}"
     assert REED_MULLER_3.n == 7
     assert REED_MULLER_3.m == 4
     assert len(REED_MULLER_3.all_inputs()) == 128
