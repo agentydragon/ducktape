@@ -34,15 +34,14 @@ Parameters that can be varied on X or Y axes, or held constant:
 | Parameter       | Description                      | Unit |
 | --------------- | -------------------------------- | ---- |
 | `power_pct`     | Min and max power (set together) | %    |
-| `power_min_pct` | Minimum power only               | %    |
-| `power_max_pct` | Maximum power only               | %    |
 | `speed_mm_s`    | Cut speed                        | mm/s |
 | `kerf_mm`       | Kerf compensation offset         | mm   |
 | `z_offset_mm`   | Z offset at start of layer       | mm   |
 | `z_per_pass_mm` | Z step per pass (typically ≤ 0)  | mm   |
 | `num_passes`    | Number of passes                 | —    |
 
-These parameters apply to LightBurn `.lbrn2` output. Ruida `.rd` output has a
+`power_min_pct` and `power_max_pct` are constants of the `[cut]` table only; vary power on an
+axis with `power_pct`. These parameters apply to LightBurn `.lbrn2` output. Ruida `.rd` output has a
 narrower contract: only `power_pct` and `speed_mm_s` may be sweep axes;
 `kerf_mm` must be zero, and `z_offset_mm`, `z_per_pass_mm`, and `num_passes`
 must remain at their defaults (0, 0, and 1) for every cut layer, including an

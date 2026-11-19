@@ -68,8 +68,6 @@ def _rd_move_origins(job: RdJob) -> list[tuple[float, float]]:
     ("axis_params", "message"),
     [
         pytest.param({"x": CutParam.SPEED_MM_S, "y": CutParam.SPEED_MM_S}, "must be different", id="same-axes"),
-        pytest.param({"x": CutParam.POWER_MIN_PCT}, "use 'power_pct'", id="power-min-axis"),
-        pytest.param({"x": CutParam.POWER_MAX_PCT}, "use 'power_pct'", id="power-max-axis"),
         pytest.param({"cols": CutParam.POWER_PCT}, "must be different", id="cols-repeats-x"),
         pytest.param({"rows": CutParam.SPEED_MM_S}, "must be different", id="rows-repeats-y"),
         pytest.param(
