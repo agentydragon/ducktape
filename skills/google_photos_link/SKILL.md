@@ -21,7 +21,7 @@ encodes that walk so you don't rediscover it each time.
 
 ## Quickest path: run the script
 
-A tested helper does the whole walk. Prefer it over doing the steps by hand.
+A helper does the whole walk. Prefer it over doing the steps by hand.
 
 ```bash
 # Download viewable JPEGs (longest side 2048px) into ./photos/

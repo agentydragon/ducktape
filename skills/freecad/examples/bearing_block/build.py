@@ -10,7 +10,7 @@ Output directory is read from OUTDIR env var (default: current directory).
 Produces bearing_block.FCStd.
 
 Usage:
-  OUTDIR=/tmp/out freecadcmd build_bearing_block.py
+  OUTDIR=/tmp/out freecadcmd build.py
 """
 
 import os

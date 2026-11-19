@@ -23,7 +23,7 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
     """Ephemeral Docker container for agent scratch work, as MCPToolProvider.
 
     Container is created by ContainerExecServer's lifespan on Client entry and
-    destroyed on exit. Network mode defaults to "none" (isolated).
+    destroyed on exit. It uses host networking (see `scratch_exec_server`).
     """
     async with scratch_exec_server(image) as server, Client(server) as mcp_client:
         logger.info("Scratch container started (image=%s)", image)
