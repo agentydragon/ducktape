@@ -249,10 +249,10 @@ Automated scans should be **mentioned as hints only** when:
 
 ### Audit Current Prompts
 
-**Current state** (as of 2025): Most scan prompts treat all automation as optional/recommended. This should be updated:
+**Current state**: `rg -l MANDATORY prompts/scans` lists the prompts with a mandatory step. Five of the six scanners are mandatory in their prompts; `scan_comments.py` is still optional in `useless_comments_and_docs.md`. Criteria for the rest:
 
 - ✅ **Keep optional**: Patterns where scan doesn't prevent lazy analysis (naming, verbosity judgment)
-- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling, comments, dataclass candidates)
+- ⚠️ **Should be mandatory**: Scans that surface concrete candidates to force review (error handling and dataclass candidates are done; comments remain)
 - ⚠️ **Should be recommended**: Scans that save time but agent would search anyway (grep patterns for specific APIs)
 
 **Key criterion**: Does making this scan mandatory force the agent to consider specific candidates it might otherwise skip?
