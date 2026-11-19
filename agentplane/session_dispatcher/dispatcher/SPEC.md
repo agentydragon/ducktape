@@ -37,7 +37,7 @@ actor's independent wake grant while keeping the effective Identity in attributi
 require a separate service wake grant.
 Both allowlists default empty and are configured only after receiver image pins.
 
-Additive migration 18 retains service actor, optional effective Identity and Action correlation in
+Additive migration 19 retains service actor, optional effective Identity and Action correlation in
 separate service attribution columns. Existing account and Identity evidence is unchanged, and a
 retry never rewrites it. Service wake attempts use their own budget table keyed by SPIFFE ID, never
 an account-shaped synthetic key. Old binaries see new actor attribution as absent, so rollback to
@@ -368,9 +368,9 @@ established; callers must not infer its UID from a current same-name account.
 ([values](#method-scope)): `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the
 logical Session, not that a harness is ready, a turn completed or History projected a Thread.
 
-**Gotcha:** the current migration baselines assume Dispatcher migration 11, central sampler
-migration 10 and History migration 8 have run; a database restored from before them must run an
-image that still carries those migrations first.
+**Gotcha:** each migration baseline adopts only a database whose previous chain has completed:
+Dispatcher migration 13, central sampler migration 14 and History migration 17. A database restored
+from before them must run an image that still carries those migrations first.
 
 ## Session delivery lease
 
