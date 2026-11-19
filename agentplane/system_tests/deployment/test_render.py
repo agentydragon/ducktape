@@ -338,7 +338,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
         "key_file": str(sessions_tls_path / "tls.key"),
         "client_uri": GATEWAY_SESSIONS_URI,
     }
-    assert "operator_callers" not in sessions_config
     assert not any(key.startswith("environment_") for key in sessions_config)
     assert sessions_config["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert sessions_config["rpc"]["tls"] == {
@@ -921,7 +920,6 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert certificate["uris"] == ["spiffe://agentplane/app"]
     assert any(volume.get("secret", {}).get("secretName") == certificate["secretName"] for volume in pod["volumes"])
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
-    assert "operator_callers" not in gateway
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "environments-settings")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
     assert set(certificate["uris"]) <= set(controller["environment_service"]["service_readers"])

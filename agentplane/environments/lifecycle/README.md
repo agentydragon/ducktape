@@ -12,13 +12,13 @@ UID and current execution binding through an uncached Kubernetes client. Explici
 come from the consumer's typed policy reader and require healthy, synchronized watches.
 
 Ordinary ServiceAccount self-resume is retired. Explicit resume accepts an Identity with a current
-`environment` grant for `resume`, or a direct Pod-bound ServiceAccount in `operator_callers`.
+`environment` grant for `resume`, or an exact service SPIFFE ID in `service_operators`.
 Delegated requests are authorized as their effective Identity; the actor does not inherit authority.
 Identity grants never override a requested stop and fail closed when policy is unavailable.
 Identity automatic wake uses the existing `spec.resumePolicy.allowOwnServiceAccount` opt-in only
 when the Sandbox currently acts as that exact live Identity. Same-name ServiceAccounts no longer
-inherit the Identity path. `spec.wakeOnSend` gates automatic requests. `wake_callers` and
-`wake_service_callers` are separate automatic-only broker grants. Dispatcher maps rows with Action
+inherit the Identity path. `spec.wakeOnSend` gates automatic requests. `wake_service_callers` is an
+automatic-only broker grant. A ServiceAccount caller holds no wake or resume grant. Dispatcher maps rows with Action
 proof to their service actor's broker grant, while retaining the effective Identity on the row;
 Environments keeps an independent service-caller list for its own assessments.
 

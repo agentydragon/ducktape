@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -18,7 +17,6 @@ type Options struct {
 	Namespace          string
 	Objects            client.Client
 	WakeBudget         WakeBudget
-	WakeCallers        []auth.Account
 	WakeServiceCallers []string
 }
 
@@ -33,8 +31,7 @@ func NewManager(options Options) (*Manager, error) {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes client, and shared wake budget are required")
 	}
 	policy, err := lifecycle.NewPolicy(lifecycle.Options{
-		Namespace: options.Namespace, Objects: options.Objects,
-		WakeCallers: options.WakeCallers, WakeServiceCallers: options.WakeServiceCallers,
+		Namespace: options.Namespace, Objects: options.Objects, WakeServiceCallers: options.WakeServiceCallers,
 	})
 	if err != nil {
 		return nil, err
@@ -51,9 +48,6 @@ func (s *Manager) RequestWake(ctx context.Context, target *lifecycle.Target, cal
 
 func (s *Manager) budgetKey(caller lifecycle.WakeCaller) WakeBudgetKey {
 	switch caller := caller.(type) {
-	case lifecycle.AccountWakeCaller:
-		account := caller.Account.GetAccount()
-		return WakeBudgetKey{Namespace: account.GetNamespace(), Name: account.GetName(), UID: caller.Account.GetUid()}
 	case lifecycle.IdentityWakeCaller:
 		return WakeBudgetKey{Namespace: s.namespace, Name: caller.Identity.GetName(), UID: caller.Identity.GetUid()}
 	case lifecycle.ServiceWakeCaller:

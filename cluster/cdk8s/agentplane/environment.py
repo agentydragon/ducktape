@@ -24,7 +24,6 @@ from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, defaul
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sampler import settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.secret_ref import SecretKey
 from model_catalog.catalog import Route
 
@@ -233,8 +232,6 @@ class Environment:
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False
-    # Authenticated service callers permitted to wake only Sandboxes whose own `wakeOnSend` is true.
-    wake_caller_accounts: frozenset[ServiceAccountRef] = frozenset()
     notifications_github: GitHubAppProps | None = None
     # Binding scopes delegated (binding_delegation.py) after their catalog entries are removed, so
     # the bindings existing Sandboxes still hold can be cleaned up.

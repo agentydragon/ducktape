@@ -176,7 +176,6 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert "runner_security" not in settings
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
     assert not any(key.startswith("environment_") for key in settings)
-    assert "operator_callers" not in settings
     assert "runtime_catalog" not in settings
     service = one(root_docs)["spec"]
     assert service["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
@@ -282,7 +281,6 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
-    assert "operator_callers" not in settings
     assert "environment_launchers" not in settings
     assert "environment_service_launchers" not in settings
     assert ACTIONS_URI not in settings.get("wake_service_callers", [])

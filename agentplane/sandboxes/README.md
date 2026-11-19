@@ -5,8 +5,8 @@ Kubernetes holds all Sandbox state. [`environments/lifecycle`](../environments/l
 authorizes explicit resume (served by Environments) and automatic wake (executed by the Dispatcher),
 applying guarded `spec.running`/`wakeGeneration` updates; operator, Identity and broker authority are
 checked at request time. The Dispatcher DeliveryWorker requests automatic wake through its wake
-manager, preserving the effective caller and applying `wakeOnSend` and the configured `wake_callers`
-grant. The Sandbox Controller reconciles desired state and owns Sandbox status. The shared
+manager, preserving the effective caller and applying `wakeOnSend` and the configured
+`wake_service_callers` grant. The Sandbox Controller reconciles desired state and owns Sandbox status. The shared
 `sandboxreader` reads exact Sandbox identities and execution accounts, while Environments'
 EnvironmentService owns the canonical `EnvironmentDescriptor` projection and its get/list/watch API.
 The EnvironmentService's private management package owns template listing, idempotent creation and
@@ -15,10 +15,9 @@ requests share the guarded write loop, rereading current state on resourceVersio
 concurrent wake requests advance one `wakeGeneration`.
 
 `spec.resumePolicy.allowOwnServiceAccount` opts the exact live Identity the Sandbox acts as into
-automatic wake of idle suspension, never explicit resume. `spec.wakeOnSend` and the existing
-`wake_callers` setting continue to govern automatic delivery wake. A separate optional direct
-Pod-bound `operator_callers` grant lets an operator explicitly resume a requested stop; delegated
-callers cannot use that grant.
+automatic wake of idle suspension, never explicit resume. `spec.wakeOnSend` and the
+`wake_service_callers` setting govern automatic delivery wake. A separate `service_operators` grant
+lets an operator service explicitly resume a requested stop; delegated callers cannot use that grant.
 
 `status.operatingMode` is the controller's effective-mode report. It is absent until the controller
 first reconciles a new Sandbox, so descriptors expose an unspecified mode and phase instead of

@@ -169,7 +169,6 @@ class RunnerGateway(Construct):
         orchestration_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
         wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
-        wake_callers: frozenset[ServiceAccountRef],
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
@@ -179,8 +178,6 @@ class RunnerGateway(Construct):
         super().__init__(scope, id)
         if not dispatcher_callers:
             raise ValueError("Runner Gateway needs explicit Dispatcher caller grants")
-        if not wake_callers <= dispatcher_callers.keys():
-            raise ValueError("wake callers must also be Dispatcher callers")
 
         namespace = env.namespace
         self.env = env
@@ -408,7 +405,5 @@ def serving_chart(
         orchestration_callers=orchestration,
         delegation_actor=(sandbox_controller.action_delegation_actor(env)),
         wake_service_callers=wake_service_callers,
-        # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
-        wake_callers=env.wake_caller_accounts | orchestration.keys(),
     ).add_platform_resources()
     return chart
