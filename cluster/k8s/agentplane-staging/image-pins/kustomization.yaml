@@ -22,7 +22,7 @@ images:
     newTag: devel-20261119002812-7656132 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
-    newTag: devel-20261117115647-df351b0 # {"$imagepolicy": "flux-system:environment-tools:tag"}
+    newTag: devel-20261119052251-a696d8f # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261119051153-a696d8f # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
