@@ -18,7 +18,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         self._supertag_index: dict[NodeId, list[str]] = {}
         self._build_supertag_index()
 
-    # Mapping interface -----------------------------------------------------
     def __getitem__(self, node_id: NodeId) -> BaseNode:
         return self._nodes[node_id]
 
@@ -28,7 +27,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     def __len__(self) -> int:
         return len(self._nodes)
 
-    # Convenience helpers ---------------------------------------------------
     @overload
     def get(self, node_id: NodeId, /) -> BaseNode | None: ...
 
@@ -69,7 +67,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
                     return ""
         return ""
 
-    # Construction ----------------------------------------------------------
     @classmethod
     def from_documents(cls, documents: Iterable[dict[str, Any]]) -> TanaGraph:
         """Build a graph from raw JSON documents."""
@@ -83,7 +80,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         mapping = {NodeId(str(doc["id"])): _make_node(doc) for doc in documents}
         return cls(mapping)
 
-    # Internal --------------------------------------------------------------
     def _build_supertag_index(self) -> None:
         idx: defaultdict[NodeId, list[str]] = defaultdict(list)
 

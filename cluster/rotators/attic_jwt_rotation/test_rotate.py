@@ -674,9 +674,6 @@ def test_configure_ca_trust_loads_a_real_bundle():
     _configure_ca_trust(Path(certifi.where()))  # must not raise
 
 
-# --- bootstrap-caches subcommand ---
-
-
 def test_mint_admin_jwt_builds_kubectl_exec_atticadm_argv(monkeypatch):
     fake = _FakeRun(jwt="admin.jwt")
     monkeypatch.setattr(rotate.subprocess, "run", fake)

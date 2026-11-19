@@ -108,9 +108,6 @@ PermissionRequestDecision = Annotated[
 ]
 
 
-# --- Hook input/output ---
-
-
 class PermissionRequestInput(HookInputBase):
     hook_event_name: Literal["PermissionRequest"] = "PermissionRequest"
     tool_name: str
