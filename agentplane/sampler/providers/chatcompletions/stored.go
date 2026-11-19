@@ -14,9 +14,15 @@ const (
 )
 
 type requestProfile struct {
-	Model  string `json:"model"`
-	Tools  []tool `json:"tools"`
-	Stream bool   `json:"stream"`
+	Model         string         `json:"model"`
+	Tools         []tool         `json:"tools,omitempty"`
+	Stream        bool           `json:"stream"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type tool struct {
@@ -44,7 +50,7 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 		return "", "", err
 	}
 	profile, err := json.Marshal(requestProfile{
-		Model: model, Stream: true,
+		Model: model, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
 		Tools: []tool{{Type: "function", Function: toolDefinition{Name: "exec", Description: surface.Description, Parameters: surface.Parameters}}},
 	})
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -30,13 +31,14 @@ const (
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	Connection        string                `json:"connection"`
-	ProviderModel     string                `json:"provider_model"`
-	API               protocol.APIStyle     `json:"api"`
-	Responses         responses.Config      `json:"responses,omitzero"`
-	AnthropicMessages *anthropic.Config     `json:"anthropic_messages,omitempty"`
-	ExecEncoding      protocol.ExecEncoding `json:"exec_encoding"`
-	ReasoningEfforts  []string              `json:"reasoning_efforts"`
+	Connection        string                            `json:"connection"`
+	ProviderModel     string                            `json:"provider_model"`
+	API               protocol.APIStyle                 `json:"api"`
+	Responses         responses.Config                  `json:"responses,omitzero"`
+	AnthropicMessages *anthropic.Config                 `json:"anthropic_messages,omitempty"`
+	ChatCompaction    *chatcompletions.CompactionConfig `json:"chat_compaction,omitempty"`
+	ExecEncoding      protocol.ExecEncoding             `json:"exec_encoding"`
+	ReasoningEfforts  []string                          `json:"reasoning_efforts"`
 }
 
 func (c ModelConfig) Validate() error {
@@ -51,6 +53,14 @@ func (c ModelConfig) Validate() error {
 	}
 	if c.ExecEncoding != protocol.ExecEncodingFreeform && c.ExecEncoding != protocol.ExecEncodingJSON {
 		return invalidSetting("exec_encoding", "exec_encoding must be freeform or json")
+	}
+	if c.ChatCompaction != nil {
+		if c.API != protocol.APIStyleChatCompletions {
+			return invalidSetting("chat_compaction", "requires the chat_completions API")
+		}
+		if err := c.ChatCompaction.Validate(); err != nil {
+			return invalidSettingWithCause("chat_compaction", "settings are invalid", err)
+		}
 	}
 	switch c.API {
 	case protocol.APIStyleResponses:
@@ -107,7 +117,7 @@ func (c ModelConfig) Compatible(other ModelConfig) bool {
 	case protocol.APIStyleAnthropicMessages:
 		return c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
 	case protocol.APIStyleChatCompletions:
-		return true
+		return c.ChatCompaction.Compatible(other.ChatCompaction)
 	default:
 		return false
 	}

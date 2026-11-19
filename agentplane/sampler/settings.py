@@ -180,6 +180,14 @@ class AnthropicMessagesConfig(BaseModel):
         return self
 
 
+class ChatCompactionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_tokens: int = Field(gt=0)
+    keep_recent_turns: int = Field(gt=0)
+    auto_compact_tokens: int | None = Field(default=None, gt=0)
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -188,6 +196,7 @@ class ModelConfig(BaseModel):
     api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
+    chat_compaction: ChatCompactionConfig | None = None
     exec_encoding: Literal["freeform", "json"]
     reasoning_efforts: set[str] = Field(min_length=1)
 
@@ -201,6 +210,8 @@ class ModelConfig(BaseModel):
             raise ValueError("model connection must not be empty")
         if self.provider_model == "":
             raise ValueError("model provider_model must not be empty")
+        if self.chat_compaction is not None and self.api != "chat_completions":
+            raise ValueError("chat_compaction requires the chat_completions API")
         if self.api == "responses":
             if self.responses is None:
                 raise ValueError("responses settings are required for the responses API")

@@ -66,6 +66,7 @@ type Preparation struct {
 	Attribution                protocol.SessionAttribution
 	Compaction                 bool
 	AnthropicCompactionRequest *anthropic.Request
+	ChatCompactionPlan         *chatcompletions.CompactionPlan
 }
 
 func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe, error) {
@@ -93,7 +94,14 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 	switch snapshot.API {
 	case protocol.APIStyleChatCompletions:
 		if preparation.Compaction {
-			return Recipe{}, protocol.ErrPrecondition
+			if preparation.ChatCompactionPlan == nil || preparation.ModelConfig.ChatCompaction == nil {
+				return Recipe{}, protocol.ErrPrecondition
+			}
+			profile, ids, err := preparation.ChatCompactionPlan.StoreRequest(store, preparation.ModelConfig.ProviderModel, preparation.ModelConfig.ChatCompaction.MaxTokens)
+			if err != nil {
+				return Recipe{}, err
+			}
+			return Recipe{ProfileID: profile, History: Complete{IDs: ids}}, nil
 		}
 		profile, system := snapshot.PreviousProfileID, snapshot.PreviousFirstID
 		if profile == "" {
