@@ -64,26 +64,17 @@ it("keeps the open Thread in its group even when it is archived and archived Thr
   expect(groups.map((group) => group.threads)).toEqual([[open, kept]]);
 });
 
-it("does not attach retained history to a recreated Sandbox with the same name", () => {
-  const oldThread = thread("old", "sb-a", "old-sandbox-uid");
+it.each([
+  ["a recreated Sandbox with the same name", "old-sandbox-uid"],
+  ["a live Sandbox when the history has no UID", ""],
+])("does not attach retained history to %s", (_case, uid) => {
+  const retained = thread("retained", "sb-a", uid);
   const currentSandbox = sandbox("sb-a");
 
-  const groups = groupThreads([oldThread], { "sb-a": currentSandbox }, false, null);
+  const groups = groupThreads([retained], { "sb-a": currentSandbox }, false, null);
 
   expect(groups.map((group) => [group.sandboxName, group.sandbox, group.threads])).toEqual([
-    ["sb-a", null, [oldThread]],
-    ["sb-a", currentSandbox, []],
-  ]);
-});
-
-it("does not attach history without a nonempty UID to a live Sandbox", () => {
-  const legacyThread = thread("legacy", "sb-a", "");
-  const currentSandbox = sandbox("sb-a");
-
-  const groups = groupThreads([legacyThread], { "sb-a": currentSandbox }, false, null);
-
-  expect(groups.map((group) => [group.sandboxName, group.sandbox, group.threads])).toEqual([
-    ["sb-a", null, [legacyThread]],
+    ["sb-a", null, [retained]],
     ["sb-a", currentSandbox, []],
   ]);
 });
