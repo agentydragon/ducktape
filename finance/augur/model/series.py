@@ -1,12 +1,10 @@
 """Typed identifiers for exogenous level series and PE protocol codes.
 
-The augur sim<->model boundary used to encode the *kind* of a series in a
-magic prefix on its string id (`"home_value:..."`, `"security:..."`,
-`"private_equity_regime_code:..."`, etc.) and have every consumer dispatch on
-`series_id.startswith(...)`. That dispatch is now typed: every non-PE level
-series is identified by a `LevelSeriesKey` variant (a Pydantic discriminated
-union with a `StrEnum` `kind` discriminator), and the PE protocol bundle
-lives in its own typed `PrivateEquityBundle` indexed by `IssuerId`.
+The augur sim<->model boundary carries the *kind* of a series in its type: consumers
+dispatch on the typed key, never on a string id's magic prefix (`"home_value:..."`,
+`"security:..."`, etc.). Every non-PE level series is identified by a `LevelSeriesKey`
+variant (a Pydantic discriminated union with a `StrEnum` `kind` discriminator), and the PE
+protocol bundle lives in its own typed `PrivateEquityBundle` indexed by `IssuerId`.
 
 The wire string format is preserved for serialization and human-readable
 logs/IDs; producers and consumers obtain it via `LevelSeriesKey.wire_id` and

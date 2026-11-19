@@ -56,5 +56,4 @@ eslint_test = lint_test(aspect = eslint)
 # NOTE: mypy_aspect is configured in .bazelrc, not via lint_test.
 # The rules_mypy aspect produces different output groups than lint_test expects
 
-# NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint
-# Run via: bazel build --config=rust-check //finance/...
+# NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint; .bazelrc enables it by default.

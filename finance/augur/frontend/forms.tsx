@@ -17,7 +17,7 @@ import {
   sleeveKey,
   type LifecycleInputEvent,
 } from "./input_helpers";
-import { sellableSleeves, isPrivateSecurityPosition } from "./data_helpers";
+import { firstSaleMonth, isEventPostSale, sellableSleeves, isPrivateSecurityPosition } from "./data_helpers";
 import type { fetchAugurCatalog, fetchProductPortfolio } from "./client";
 
 type LifecycleEvent = LifecycleInputEvent;
@@ -34,26 +34,6 @@ type CurrencyFormat = NonNullable<Parameters<typeof fmtQuanta>[1]>;
 
 function isLifecycleEventKind(value: string): value is LifecycleEvent["kind"] {
   return LIFECYCLE_KINDS.some((option) => option.value === value);
-}
-
-function firstSaleMonth(events: readonly LifecycleEvent[]): number | null {
-  let earliest = null;
-  for (const event of events) {
-    if (event.kind === "property_sale" && (earliest == null || event.month < earliest)) {
-      earliest = event.month;
-    }
-  }
-  return earliest;
-}
-
-// True for any event the wire validator rejects as a post-sale residual: events strictly
-// after `saleMonth`, plus same-month non-sale events (a SetRentedFraction in the same month
-// as the sale is also illegal). `saleMonth == null` means no sale on the timeline → nothing
-// is post-sale.
-function isEventPostSale(event: LifecycleEvent, saleMonth: number | null): boolean {
-  if (saleMonth == null) return false;
-  if (event.month > saleMonth) return true;
-  return event.month === saleMonth && event.kind !== "property_sale";
 }
 
 export function DisclosureArrow({ collapsed, className = "" }: { collapsed: boolean; className?: string }) {

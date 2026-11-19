@@ -318,6 +318,7 @@ ts_library(
         ":skeleton",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:toast",
     ],
 )
@@ -346,6 +347,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/decimal.js",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:toast",
     ],
@@ -374,6 +376,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
         "//finance/augur/frontend/lib:toast",
@@ -399,6 +402,7 @@ ts_library(
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
     ],
 )
 
