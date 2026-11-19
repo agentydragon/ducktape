@@ -8,6 +8,7 @@
 /extract/package.json
 /experiments/lowering/package.json
 /experiments/debundle_cases/package.json
+/experiments/translation/package.json
 # Scratch directories used by the scripts.
 /.tmp*/
 __pycache__/

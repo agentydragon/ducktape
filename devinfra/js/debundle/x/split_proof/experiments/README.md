@@ -1,6 +1,6 @@
 # Experiments: what it costs to go further
 
-Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11). § 5 and § 8 have their own scripts.
+Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts.
 Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Check someone else's output: input + output → confirmation
@@ -404,3 +404,16 @@ Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the pl
 
 - **It found two soundness gaps in my front end,** both fixed or guarded: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`).
 - **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (5), repeated `var` (3), export names (1), and an import for evaluation order (1).
+
+## 12. Translation validation: is this tree the bundle, renamed and reshuffled?
+
+The experiments so far start from a spec and a splitter. [`translation/`](translation/README.md) starts from the other end: a bundle and _any_ tree of modules, however it was made.
+A front end annotates every identifier with what it means (`eslint-scope`). A pairing tool matches output units to bundle units. Lean checks that each pair is equal up to renaming,
+that every reference resolves, through the imports and exports, to the right declaration, that the entry exports what the bundle exports, and that the plan the tree describes is `Sound`.
+Three rewrites besides renaming are accepted as listed premises (an outside import swapped for a member chain, a moved dynamic-import path, a worker URL made relative to the module). Anything else is a rejection.
+
+Run it with `./run.sh --translation`. The fixture's nine tampered trees (a changed literal, a reference to the wrong declaration, a parameter that captures a module-scope name, a missing import, …) and a mutation test are all rejected.
+A tree with renamed locals is accepted. Two effects run in the other order give obligations instead of a verdict of "invalid".
+
+On a large production bundle that is not in this repository, the checker accepts the translation, with every unit equal up to renaming and every link resolved, and reports only effect-order obligations.
+What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.md).

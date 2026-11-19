@@ -12,3 +12,4 @@
 - **A better effect analysis.** Calls to pure local helpers (`__commonJS`, factories) count as effects, so 37% of statements are effects ([experiments/README.md](experiments/README.md) § 6). Five of debundle's cases need it too ([PLAN.md](PLAN.md) step 3).
 - **The frame assumption for real JavaScript.** Only the tiny `MiniJS` derives it.
 - **debundle's e2e cases.** 103 of 207 entries are not run yet and 10 disagree: [PLAN.md](PLAN.md), causes in [experiments/debundle_cases/README.md](experiments/debundle_cases/README.md).
+- **Translation validation, next steps:** [experiments/translation/PLAN.md](experiments/translation/PLAN.md) (effect summaries, a readability pass, a new bundle version). Smaller items: scope resolution in Lean instead of `eslint-scope`; a proof that renaming preserves `Correct`; re-exports and `export default` outside the entry (rejected today); the surface other chunks see.

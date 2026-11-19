@@ -1,0 +1,9 @@
+{
+  "name": "translation-experiment",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "acorn": "8.19.0",
+    "eslint-scope": "9.1.2"
+  }
+}

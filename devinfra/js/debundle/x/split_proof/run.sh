@@ -9,6 +9,7 @@
 #   ./run.sh --es-order   also compare the model's module evaluation order with Node on 500 random import graphs
 #   ./run.sh --splits     also check 2,740 splits of six real bundles and run each in Node (needs --lowering first; about 3 minutes)
 #   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
+#   ./run.sh --translation  also check that tampered output trees are rejected and renamed, reshuffled ones accepted (experiments/translation fixtures)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -109,4 +110,10 @@ if [[ " $* " == *" --debundle-cases "* ]]; then
   (cd lean && lake build lowersplit)
   (cd experiments/debundle_cases && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node run_cases.mjs && node summarize.mjs results/cases.jsonl >results/summary.md)
+fi
+
+if [[ " $* " == *" --translation "* ]]; then
+  step "Translation validation: an output tree is accepted only if it is the bundle, renamed and reshuffled"
+  (cd lean && lake build translate)
+  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent && node test.mjs)
 fi
