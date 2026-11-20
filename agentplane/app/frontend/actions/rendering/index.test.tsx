@@ -441,6 +441,20 @@ describe("Action presentation slots", () => {
     expect(view.textContent).toContain("Best before 2026-11-25");
   });
 
+  it("shows unexpected Grocy entity types and fields as recorded text", async () => {
+    const action = identity("grocy_sf", "entity_update");
+    const view = await mount(
+      renderDetailsArguments(action, {
+        entity: "constructor",
+        objectId: 7,
+        body: { constructor: "Material value" },
+      })
+    );
+    expect(view.textContent).toContain("constructor #7");
+    expect(view.textContent).toContain("constructor · Material value");
+    expect(view.querySelector("a")).toBeNull();
+  });
+
   it("resolves pending Grocy targets by saved request and keeps an unresolved ID link", async () => {
     const id = "70000000-0000-4000-8000-000000000007";
     const path = `/upstream/actions/v1/operator/action-requests/${id}/grocy-reference-summaries`;

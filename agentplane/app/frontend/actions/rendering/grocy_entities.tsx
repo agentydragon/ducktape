@@ -18,54 +18,60 @@ const create = z.strictObject({ items: z.array(z.strictObject({ entity_type: ent
 const get = z.strictObject({ entity_type: entity, object_ids: z.array(id) });
 const list = z.strictObject({ entity_types: z.array(entity) });
 
-const route: Readonly<Record<string, string>> = {
-  products: "product",
-  locations: "location",
-  shopping_locations: "shoppinglocation",
-  shopping_list: "shoppinglistitem",
-  shopping_lists: "shoppinglist",
-  quantity_units: "quantityunit",
-  quantity_unit_conversions: "quantityunitconversion",
-  product_groups: "productgroup",
-  product_barcodes: "productbarcodes",
-  userfields: "userfield",
-  userentities: "userentity",
-};
-const singular: Readonly<Record<string, string>> = {
-  products: "Product",
-  locations: "Location",
-  shopping_locations: "Shopping location",
-  shopping_list: "Shopping item",
-  shopping_lists: "Shopping list",
-  quantity_units: "Quantity unit",
-  quantity_unit_conversions: "Unit conversion",
-  product_groups: "Product group",
-  product_barcodes: "Product barcode",
-  recipes: "Recipe",
-  tasks: "Task",
-  chores: "Chore",
-  batteries: "Battery",
-  api_keys: "API key",
-};
-const fieldLabel: Readonly<Record<string, string>> = {
-  description: "Description",
-  name_plural: "Plural",
-  note: "Note",
-  amount: "Quantity",
-  min_stock_amount: "Minimum stock",
-  location_id: "Location",
-  product_id: "Product",
-  qu_id_stock: "Stock unit",
-  factor: "Conversion factor",
-  best_before_date: "Best before",
-  purchased_date: "Purchased",
-  due_date: "Due date",
-  barcode: "Barcode",
-  from_qu_id: "From unit",
-  to_qu_id: "To unit",
-  is_freezer: "Freezer",
-  done: "Done",
-};
+const route: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    products: "product",
+    locations: "location",
+    shopping_locations: "shoppinglocation",
+    shopping_list: "shoppinglistitem",
+    shopping_lists: "shoppinglist",
+    quantity_units: "quantityunit",
+    quantity_unit_conversions: "quantityunitconversion",
+    product_groups: "productgroup",
+    product_barcodes: "productbarcodes",
+    userfields: "userfield",
+    userentities: "userentity",
+  })
+);
+const singular: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    products: "Product",
+    locations: "Location",
+    shopping_locations: "Shopping location",
+    shopping_list: "Shopping item",
+    shopping_lists: "Shopping list",
+    quantity_units: "Quantity unit",
+    quantity_unit_conversions: "Unit conversion",
+    product_groups: "Product group",
+    product_barcodes: "Product barcode",
+    recipes: "Recipe",
+    tasks: "Task",
+    chores: "Chore",
+    batteries: "Battery",
+    api_keys: "API key",
+  })
+);
+const fieldLabel: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    description: "Description",
+    name_plural: "Plural",
+    note: "Note",
+    amount: "Quantity",
+    min_stock_amount: "Minimum stock",
+    location_id: "Location",
+    product_id: "Product",
+    qu_id_stock: "Stock unit",
+    factor: "Conversion factor",
+    best_before_date: "Best before",
+    purchased_date: "Purchased",
+    due_date: "Due date",
+    barcode: "Barcode",
+    from_qu_id: "From unit",
+    to_qu_id: "To unit",
+    is_freezer: "Freezer",
+    done: "Done",
+  })
+);
 const hiddenField = /(?:password|api_?key|token|secret|^key$)/i;
 
 function entityName(value: string): string {
@@ -95,9 +101,9 @@ function subject(entity: string, objectId?: number, name?: string): ReactNode {
   const title =
     name ??
     (objectId === undefined
-      ? (singular[entity] ?? entityName(entity))
-      : `${singular[entity] ?? entityName(entity)} #${objectId}`);
-  const path = route[entity];
+      ? (singular.get(entity) ?? entityName(entity))
+      : `${singular.get(entity) ?? entityName(entity)} #${objectId}`);
+  const path = route.get(entity);
   return path !== undefined && objectId !== undefined ? objectLink(path, objectId, title) : title;
 }
 
@@ -114,17 +120,17 @@ function WriteFields({ body }: { body: Record<string, unknown> }) {
     <Stack gap={2}>
       {Object.entries(body).map(([key, value]) =>
         hiddenField.test(key) ? (
-          <Line key={key}>{fieldLabel[key] ?? entityName(key)} · Value supplied</Line>
+          <Line key={key}>{fieldLabel.get(key) ?? entityName(key)} · Value supplied</Line>
         ) : value !== null && typeof value === "object" ? (
           <Stack gap={2} key={key}>
             <Line>
-              <strong>{fieldLabel[key] ?? entityName(key)}</strong>
+              <strong>{fieldLabel.get(key) ?? entityName(key)}</strong>
             </Line>
             <JsonBlock value={value} />
           </Stack>
         ) : (
           <Line key={key}>
-            {fieldLabel[key] ?? entityName(key)} · <FieldValue value={value} />
+            {fieldLabel.get(key) ?? entityName(key)} · <FieldValue value={value} />
           </Line>
         )
       )}
@@ -137,7 +143,7 @@ function EntityRow({ kind, data, objectId }: { kind: string; data: Record<string
   const parsed = apiId.safeParse(data.id);
   const id = objectId ?? (parsed.success ? parsed.data : undefined);
   const name = textName(data);
-  const fields = Object.keys(fieldLabel).filter(
+  const fields = [...fieldLabel.keys()].filter(
     (key) => data[key] !== undefined && data[key] !== null && data[key] !== name
   );
   return (
@@ -149,7 +155,7 @@ function EntityRow({ kind, data, objectId }: { kind: string; data: Record<string
         const value = data[key];
         return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? (
           <Line key={key}>
-            {fieldLabel[key]} · <FieldValue value={value} />
+            {fieldLabel.get(key)} · <FieldValue value={value} />
           </Line>
         ) : null;
       })}
@@ -226,7 +232,7 @@ function NewEntities({ args }: { args: z.infer<typeof create> }) {
       {args.items.map((item, index) => (
         <Stack gap={4} key={index}>
           <Line>
-            <strong>{singular[item.entity_type] ?? entityName(item.entity_type)}</strong>
+            <strong>{singular.get(item.entity_type) ?? entityName(item.entity_type)}</strong>
           </Line>
           <WriteFields body={item.body} />
         </Stack>

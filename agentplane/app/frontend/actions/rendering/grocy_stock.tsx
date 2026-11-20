@@ -240,7 +240,8 @@ const entryResult = defineResultPreview(entries, ({ result }) => (
           />
           {Object.entries(row.changes ?? {}).map(([name, values]) => (
             <Line key={name}>
-              {fieldLabels[name] ?? name.replaceAll("_", " ")} · {changedValue(values.old)} → {changedValue(values.new)}
+              {Object.hasOwn(fieldLabels, name) ? fieldLabels[name] : name.replaceAll("_", " ")} ·{" "}
+              {changedValue(values.old)} → {changedValue(values.new)}
             </Line>
           ))}
         </Stack>
