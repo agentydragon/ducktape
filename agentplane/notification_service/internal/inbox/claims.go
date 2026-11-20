@@ -32,8 +32,6 @@ type Claim struct {
 	// by a fenced call.
 	Inbox
 	held lease.Lease
-	// staleCheckAt is the next check of an unavailable destination, as it was when claimed.
-	staleCheckAt *time.Time
 }
 
 // Holder is the exact Identity persisted on the claimed inbox.
@@ -44,14 +42,13 @@ func (c Claim) Holder() Owner {
 // LockedInbox is the claimed inbox as a fenced call reads it, locked for update.
 type LockedInbox struct {
 	Inbox
-	staleCheckAt *time.Time
 }
 
 // Claim leases the due inbox that has waited longest, or returns nil when none is due. Replicas never claim the
 // same inbox: a row another transaction holds is skipped.
 func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 	return s.claimDueInbox(ctx, `
-			SELECT `+inboxColumns+`, stale_check_at FROM inbox
+			SELECT `+inboxColumns+` FROM inbox
 			WHERE NOT retired AND next_attempt <= now() AND claim_until <= now()
 			ORDER BY next_attempt LIMIT 1 FOR UPDATE SKIP LOCKED`)
 }
@@ -60,7 +57,7 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 // Delivery work has its own deadline in inbox.next_attempt and is not considered here.
 func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
 	return s.claimDueInbox(ctx, `
-			SELECT `+inboxColumns+`, stale_check_at FROM inbox i
+			SELECT `+inboxColumns+` FROM inbox i
 			WHERE NOT retired AND claim_until <= now() AND EXISTS (
 				SELECT 1 FROM subscription s
 				WHERE s.inbox_id = i.id AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt <= now()
@@ -75,8 +72,7 @@ func (s *Store) claimDueInbox(ctx context.Context, query string) (*Claim, error)
 	var claim *Claim
 	err := s.transaction(ctx, func(tx transaction.Tx) error {
 		var found Claim
-		var staleCheckAt sql.NullTime
-		inbox, err := scanInbox(tx.QueryRowContext(ctx, query), &staleCheckAt)
+		inbox, err := scanInbox(tx.QueryRowContext(ctx, query))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -89,9 +85,6 @@ func (s *Store) claimDueInbox(ctx context.Context, query string) (*Claim, error)
 			return err
 		}
 		found.Inbox = inbox
-		if staleCheckAt.Valid {
-			found.staleCheckAt = utc(staleCheckAt.Time)
-		}
 		// Other replicas must account for this lease's expiry.
 		if err := notify(ctx, tx); err != nil {
 			return err
@@ -109,20 +102,15 @@ func FenceClaimTx(ctx context.Context, tx transaction.Tx, claim Claim) (LockedIn
 	} else if err != nil {
 		return LockedInbox{}, err
 	}
-	var staleCheckAt sql.NullTime
 	inbox, err := scanInbox(tx.QueryRowContext(ctx, `
-		SELECT `+inboxColumns+`, stale_check_at FROM inbox WHERE id = $1 AND NOT retired`, claim.ID), &staleCheckAt)
+		SELECT `+inboxColumns+` FROM inbox WHERE id = $1 AND NOT retired`, claim.ID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return LockedInbox{}, ErrClaimLost
 	}
 	if err != nil {
 		return LockedInbox{}, err
 	}
-	held := LockedInbox{Inbox: inbox}
-	if staleCheckAt.Valid {
-		held.staleCheckAt = utc(staleCheckAt.Time)
-	}
-	return held, nil
+	return LockedInbox{Inbox: inbox}, nil
 }
 
 // fencedTransaction runs f in a transaction that holds the claimed inbox locked.
@@ -176,14 +164,6 @@ func (s *Store) ReleaseWithRetry(ctx context.Context, claim Claim, deliveryError
 		}
 		if deliveryError != nil && next != nil && next.Before(backoff) {
 			next = &backoff
-		}
-		if held.staleCheckAt != nil {
-			// Do not retry a pending notice or unread entries before the destination's next check.
-			recheck := *held.staleCheckAt
-			if deliveryError != nil && recheck.Before(backoff) {
-				recheck = backoff
-			}
-			next = &recheck
 		}
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
@@ -243,34 +223,6 @@ func (s *Store) NextSourceWorkAt(ctx context.Context) (*time.Time, error) {
 		return nil, nil
 	}
 	return utc(deadline.Time), nil
-}
-
-// ObserveStale records an unavailable exact Sandbox incarnation. The inbox and its subscriptions
-// remain live; source reads continue, while notice delivery waits for a matching destination.
-func (s *Store) ObserveStale(ctx context.Context, claim Claim, reason string, retry time.Duration) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
-		recheck := now().Add(retry)
-		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE inbox SET stale_check_at = $2, next_attempt = $3, delivery_error = $4 WHERE id = $1`,
-			held.ID, recheck, recheck, "destination unavailable: "+reason); err != nil {
-			return err
-		}
-		return notify(ctx, tx)
-	})
-}
-
-// ClearStale forgets the unavailable state once the destination is found to be the Sandbox it names.
-func (s *Store) ClearStale(ctx context.Context, claim Claim) error {
-	if claim.staleCheckAt == nil {
-		return nil
-	}
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
-		_, err := tx.ExecContext(ctx, `UPDATE inbox SET stale_check_at = NULL WHERE id = $1`, held.ID)
-		return err
-	})
 }
 
 // DueSubscription is a subscription whose source is due to be read.

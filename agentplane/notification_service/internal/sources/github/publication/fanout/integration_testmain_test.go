@@ -19,19 +19,6 @@ import (
 
 var fanoutIntegrationDatabase *postgres.Database
 
-type (
-	Claim        = inboxstore.Claim
-	Entry        = inboxstore.Entry
-	Inbox        = inboxstore.Inbox
-	InboxPage    = inboxstore.InboxPage
-	Subscription = inboxstore.Subscription
-)
-
-var (
-	ErrClaimLost            = inboxstore.ErrClaimLost
-	ErrIdempotencyKeyReused = inboxstore.ErrIdempotencyKeyReused
-)
-
 func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, migrations.Up, &fanoutIntegrationDatabase))
 }
@@ -40,16 +27,14 @@ func defaultQuotas() inboxstore.Quotas {
 	return inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
 }
 
-// fixture is a public Store over the integration database. Each test uses a unique owner; tests that need an
-// otherwise empty database use newIsolatedFixture.
+// fixture is a public Store over the integration database. Each test uses a unique Identity. newFixture gives
+// a test a database of its own; newSharedFixture gives several fixtures the same one.
 type fixture struct {
 	*inboxstore.Store
 	db          *sql.DB
 	databaseURL string
 	runner      *transaction.Runner
-	owner       model.ServiceAccount
 	identity    model.Identity
-	sandboxUID  string
 	sessionID   string
 }
 
@@ -58,11 +43,6 @@ func newFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
 	databaseURL := fanoutIntegrationDatabase.Clone(t)
 	db := postgres.Open(t, databaseURL)
 	return fixtureForDatabase(t, db, databaseURL, quotas)
-}
-
-func newIsolatedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
-	t.Helper()
-	return newFixture(t, quotas)
 }
 
 func newSharedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
@@ -75,14 +55,10 @@ func fixtureForDatabase(t *testing.T, db *sql.DB, databaseURL string, quotas inb
 	t.Helper()
 	runner := transaction.New(db)
 	return fixture{
-		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner, owner: newOwner(),
-		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
-		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner,
+		identity:  model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sessionID: uuid.NewString(),
 	}
-}
-
-func newOwner() model.ServiceAccount {
-	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 func (f fixture) exec(t *testing.T, query string, args ...any) {
@@ -113,10 +89,8 @@ func (f fixture) insertInbox(t *testing.T, sessionID string) uuid.UUID {
 	return id
 }
 
-const testSandboxUID = "test-uid"
-
 func (f fixture) incarnation() inboxstore.Owner {
-	return inboxstore.Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+	return inboxstore.Owner{Identity: f.identity}
 }
 
 func (f fixture) body(key string) sourceadapter.Subscribe {
@@ -172,15 +146,6 @@ func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) inboxstore.I
 		t.Fatal(err)
 	}
 	return page
-}
-
-func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) inboxstore.Inbox {
-	t.Helper()
-	inbox, err := f.Acknowledge(t.Context(), f.incarnation(), inboxID, through)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return inbox
 }
 
 func (f fixture) appendEvent(ctx context.Context, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload []byte) error {

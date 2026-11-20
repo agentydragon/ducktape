@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -158,7 +159,7 @@ func TestRecordingNeedsTheClaimOfTheInbox(t *testing.T) {
 			step := g.prepare(t, sub)
 			g.exec(t, lose, g.inbox)
 
-			if err := g.record(t, claim, step); !errors.Is(err, ErrClaimLost) {
+			if err := g.record(t, claim, step); !errors.Is(err, inboxstore.ErrClaimLost) {
 				t.Fatalf("recording = %v, want ErrClaimLost", err)
 			}
 			g.requireInboxUntouched(t)
@@ -374,7 +375,7 @@ func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	check("a page for a cancelled subscription", false, record(step))
 	check("a page without the claim", false, func() {
 		g.exec(t, `UPDATE inbox SET claim = gen_random_uuid() WHERE id = $1`, g.inbox)
-		if err := g.record(t, claim, step); !errors.Is(err, ErrClaimLost) {
+		if err := g.record(t, claim, step); !errors.Is(err, inboxstore.ErrClaimLost) {
 			t.Error(err)
 		}
 	})

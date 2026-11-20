@@ -37,15 +37,13 @@ func defaultQuotas() Quotas {
 	return Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
 }
 
-// fixture is a Store over the shared database, for an owner no other test uses, so tests do not see each
-// other's inboxes. The owner acts as the Sandbox incarnation sandboxUID, at first the one body's destination names.
+// fixture is a Store over the shared database, for an Identity no other test uses, so tests do not see each
+// other's inboxes.
 type fixture struct {
 	*Store
-	db         *sql.DB
-	owner      model.ServiceAccount
-	identity   model.Identity
-	sandboxUID string
-	sessionID  string
+	db        *sql.DB
+	identity  model.Identity
+	sessionID string
 }
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
@@ -63,14 +61,10 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
 	return fixture{
-		Store: New(db, transaction.New(db), quotas), db: db, owner: newOwner(),
-		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
-		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+		Store: New(db, transaction.New(db), quotas), db: db,
+		identity:  model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sessionID: uuid.NewString(),
 	}
-}
-
-func newOwner() model.ServiceAccount {
-	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
@@ -118,12 +112,9 @@ func testMergeabilityPayload(pullRequestNumber int64) githubstoragecodec.Mergeab
 	}
 }
 
-// testSandboxUID is the Sandbox incarnation body's destination names.
-const testSandboxUID = "test-uid"
-
-// incarnation is the fixture's owner as its Sandbox incarnation.
+// incarnation is the fixture's Identity as an inbox owner.
 func (f fixture) incarnation() Owner {
-	return Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+	return Owner{Identity: f.identity}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and

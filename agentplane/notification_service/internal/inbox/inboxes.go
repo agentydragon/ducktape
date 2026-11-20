@@ -88,14 +88,12 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	return inbox, nil
 }
 
-// owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
-func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
+// owned is the owner's inbox, locked for update. An inbox of another owner is not found.
+func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owner) (Inbox, error) {
 	predicate, args := ownerPredicate(owner, "", 2)
-	query := `SELECT ` + inboxColumns + ` FROM inbox WHERE id = $1 AND ` + predicate
-	if lock {
-		query += ` FOR UPDATE`
-	}
-	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, append([]any{inboxID}, args...)...))
+	inbox, err := scanInbox(tx.QueryRowContext(ctx,
+		`SELECT `+inboxColumns+` FROM inbox WHERE id = $1 AND `+predicate+` FOR UPDATE`,
+		append([]any{inboxID}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}
@@ -191,7 +189,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 // snapshot. Reading acknowledges nothing.
 func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
 	return s.read(ctx, after, limit, func(tx transaction.Tx) (Inbox, error) {
-		return owned(ctx, tx, inboxID, owner, true)
+		return owned(ctx, tx, inboxID, owner)
 	})
 }
 
@@ -324,7 +322,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 	}
 	var acknowledged Inbox
 	err := s.transaction(ctx, func(tx transaction.Tx) error {
-		inbox, err := owned(ctx, tx, inboxID, owner, true)
+		inbox, err := owned(ctx, tx, inboxID, owner)
 		if err != nil {
 			return err
 		}
@@ -346,7 +344,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 // Retiring a retired inbox changes nothing.
 func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) error {
 	return s.transaction(ctx, func(tx transaction.Tx) error {
-		inbox, err := owned(ctx, tx, inboxID, owner, true)
+		inbox, err := owned(ctx, tx, inboxID, owner)
 		if err != nil || inbox.Retired {
 			return err
 		}

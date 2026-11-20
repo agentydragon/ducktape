@@ -269,14 +269,9 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 			notice := f.prepareNotice(t, claim)
 			lose(t, f, claim)
 
-			// ClearStale does nothing for a claim that saw no unavailable destination.
-			pendingUnavailable := claim
-			pendingUnavailable.staleCheckAt = ptr(time.Now())
 			entry := &eventlogpb.EventEntry{Cursor: 1}
 			writes := map[string]func() error{
 				"Release":                 func() error { return f.Release(t.Context(), claim, nil, nil) },
-				"ObserveStale":            func() error { return f.ObserveStale(t.Context(), claim, "not_found", time.Second) },
-				"ClearStale":              func() error { return f.ClearStale(t.Context(), pendingUnavailable) },
 				"PendingEntryTimes":       func() error { _, err := f.PendingEntryTimes(t.Context(), claim); return err },
 				"CurrentNotice":           func() error { _, err := f.CurrentNotice(t.Context(), claim); return err },
 				"PrepareNotice":           func() error { _, err := f.PrepareNotice(t.Context(), claim); return err },
@@ -345,7 +340,6 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 		notice        string
 		deliveryError *string
 		noticeDue     *time.Duration
-		staleCheck    *time.Duration
 
 		wantAtOffset     *time.Duration
 		wantAfterRelease *time.Duration
@@ -359,18 +353,12 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 		{name: "a failed notice leaves nothing to follow", entries: 1, notice: "failed", wantNone: true},
 		{name: "a failure postpones work that is due", entries: 1, deliveryError: &failure, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(5 * time.Second)},
 		{name: "a failure does not bring later work forward", entries: 1, deliveryError: &failure, noticeDue: ptr(time.Hour), wantAtOffset: ptr(time.Hour)},
-		{name: "an unavailable destination is rechecked at its deadline", entries: 1, noticeDue: ptr(-time.Second), staleCheck: ptr(10 * time.Second), wantAtOffset: ptr(10 * time.Second)},
-		{name: "an unavailable destination past its deadline is due now", staleCheck: ptr(-10 * time.Second), wantAfterRelease: ptr(time.Duration(0))},
-		{name: "an unavailable destination past its deadline waits out a failure", staleCheck: ptr(-10 * time.Second), deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
 			start := time.Now()
 			subscription := f.subscribe(t, f.body("first"))
 			f.addEvents(t, subscription, 1, c.entries)
-			if c.staleCheck != nil {
-				f.exec(t, `UPDATE inbox SET stale_check_at = $2 WHERE id = $1`, subscription.InboxID, start.Add(*c.staleCheck))
-			}
 			claim := f.claim(t)
 			switch c.notice {
 			case "awaiting":
@@ -600,44 +588,6 @@ func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 	requireEqual(t, f.get(t, created.ID).Failure, (*model.SourceFailure)(nil))
 }
 
-func TestUnavailableDestinationKeepsInboxAndSubscriptionsAndSchedulesSourceWork(t *testing.T) {
-	f := newClaimFixture(t)
-	subscription := f.subscribe(t, f.body("first"))
-	f.exec(t, `UPDATE subscription SET next_attempt = now() + interval '1 hour' WHERE id = $1`, subscription.ID)
-	claim := f.claim(t)
-
-	before := time.Now()
-	if err := f.ObserveStale(t.Context(), claim, "not_found", 30*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	pending := f.read(t, subscription.InboxID, 0).Inbox
-	requireEqual(t, pending.DeliveryError, ptr("destination unavailable: not_found"))
-	requireEqual(t, pending.Retired, false)
-	requireBetween(t, "recheck", f.nextWorkAt(t), before.Add(30*time.Second), time.Now().Add(30*time.Second))
-	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
-	f.requireNoneDue(t)
-
-	// Source work is due independently of the destination retry. Releasing the source claim leaves the delivery
-	// recheck deadline intact.
-	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.ID)
-	beforeRelease := f.nextWorkAt(t)
-	claim = f.sourceClaim(t)
-	due := f.source(t, claim)
-	if due == nil || due.ID != subscription.ID {
-		t.Fatalf("source = %+v, want the subscription despite delivery backoff", due)
-	}
-	f.requireNoneDue(t)
-	if err := f.ReleaseSource(t.Context(), claim); err != nil {
-		t.Fatal(err)
-	}
-	if next := f.nextWorkAt(t); next == nil || beforeRelease == nil || !next.Equal(*beforeRelease) {
-		t.Errorf("NextWorkAt after ReleaseSource = %v, want unchanged delivery deadline %v", next, beforeRelease)
-	}
-	f.requireNoneDue(t)
-	requireEqual(t, f.read(t, subscription.InboxID, 0).Inbox.Retired, false)
-	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
-}
-
 func TestDeliveryFailureBackoffDoesNotDelaySourceWorkAndSourceReleasePreservesIt(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, f.body("first"))
@@ -666,31 +616,6 @@ func TestDeliveryFailureBackoffDoesNotDelaySourceWorkAndSourceReleasePreservesIt
 		t.Errorf("delivery deadline after ReleaseSource = %v, want unchanged %v", got, backoff)
 	}
 	requireEqual(t, f.read(t, subscription.InboxID, 0).Inbox.DeliveryError, &failure)
-}
-
-func TestAFoundDestinationClearsTheUnavailableState(t *testing.T) {
-	f := newClaimFixture(t)
-	subscription := f.subscribe(t, f.body("first"))
-	claim := f.claim(t)
-	if err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	f.exec(t, `UPDATE inbox SET stale_check_at = now() - interval '1 second', next_attempt = now() - interval '1 second' WHERE id = $1`,
-		subscription.InboxID)
-	claim = f.claim(t)
-	if claim.staleCheckAt == nil {
-		t.Fatal("the claim saw no unavailable state")
-	}
-
-	if err := f.ClearStale(t.Context(), claim); err != nil {
-		t.Fatal(err)
-	}
-	if got := f.count(t, `SELECT count(*) FROM inbox WHERE id = $1 AND stale_check_at IS NULL`, subscription.InboxID); got != 1 {
-		t.Fatal("the unavailable state was kept")
-	}
-	if err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestPendingEntryTimesBoundTheEntriesNoNoticeCoversAndNoAgentAcknowledged(t *testing.T) {

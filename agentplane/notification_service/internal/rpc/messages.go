@@ -14,7 +14,6 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -29,17 +28,8 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	if caller.sandbox.Namespace == "" || caller.sandbox.Name == "" || caller.sandbox.UID == "" {
 		return nil, errSandboxMissing
 	}
-	// Native gRPC retains unknown fields. Reject the retired Sandbox address so an old client's
-	// explicit name or UID fence cannot be silently discarded by the new Session-only request.
-	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
-		field, _, size := protowire.ConsumeField(unknown)
-		if size < 0 {
-			return nil, invalidRequest("invalid message request")
-		}
-		if field == 1 {
-			return nil, invalidRequest("destination_ref is no longer accepted; address the Session by ID")
-		}
-		unknown = unknown[size:]
+	if err := rejectRetiredAddress(request, "message", "destination_ref"); err != nil {
+		return nil, err
 	}
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, err
@@ -87,8 +77,8 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	sandbox := view.Identity
 	destination.UID = sandbox.Uid
 	// The recipient is the exact Identity the Session authority recorded, which the destination Sandbox must name.
-	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, destination); ok {
-		message.Recipient = inboxstore.Owner{Identity: identity, SandboxUID: sandbox.Uid}
+	if identity, ok := sessionidentity.Identity(session.GetSession(), message.SessionID, destination); ok {
+		message.Recipient = inboxstore.Owner{Identity: identity}
 	} else {
 		return nil, inboxstore.ErrNotFound
 	}

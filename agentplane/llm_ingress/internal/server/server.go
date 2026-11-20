@@ -150,7 +150,7 @@ func writeHealth(writer http.ResponseWriter) {
 func (h *ingressHandler) serveAuthenticated(writer http.ResponseWriter, request *http.Request, caller verifiedCaller) {
 	if request.URL.Path == codexCatalogPath && request.Method == http.MethodGet {
 		if h.codex == nil {
-			writeJSONError(writer, http.StatusNotFound, "Codex model catalog is not configured", "")
+			writeJSONError(writer, http.StatusNotFound, "Codex model catalog is not configured")
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
@@ -184,11 +184,11 @@ func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.
 	case err == nil:
 		return caller, true
 	case errors.Is(err, auth.ErrInvalidBearer) || status.Code(err) == codes.Unauthenticated:
-		writeJSONError(writer, http.StatusUnauthorized, "invalid workload credentials", "")
+		writeJSONError(writer, http.StatusUnauthorized, "invalid workload credentials")
 	case status.Code(err) == codes.PermissionDenied:
-		writeJSONError(writer, http.StatusForbidden, "delegated caller refused", "")
+		writeJSONError(writer, http.StatusForbidden, "delegated caller refused")
 	default:
-		writeJSONError(writer, http.StatusInternalServerError, "workload authentication unavailable", "")
+		writeJSONError(writer, http.StatusInternalServerError, "workload authentication unavailable")
 	}
 	return verifiedCaller{}, false
 }
@@ -231,24 +231,24 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		attrs := requestLogAttrs(requestID, incoming, caller)
 		attrs = append(attrs, "timeout", h.poolWaitTimeout.String())
 		h.logger.Warn("llm forwarding slot acquisition timed out", attrs...)
-		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
+		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable")
 		return
 	}
 
 	sessionID := incoming.Header.Get("x-agentplane-session-id")
 	switch {
 	case caller.sessionID != "" && sessionID != "":
-		writeJSONError(writer, http.StatusForbidden, "a delegated call names its Session in the envelope, not a header", "")
+		writeJSONError(writer, http.StatusForbidden, "a delegated call names its Session in the envelope, not a header")
 		return
 	case caller.sessionID != "":
 		sessionID = caller.sessionID
 	case sessionID != "":
-		writeJSONError(writer, http.StatusForbidden, "Session attribution requires typed delegation", "")
+		writeJSONError(writer, http.StatusForbidden, "Session attribution requires typed delegation")
 		return
 	}
 	verified, err := verifiedRequestHeaders(caller.claims, h.key, h.attribution, sessionID)
 	if err != nil {
-		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution", "")
+		writeJSONError(writer, http.StatusInternalServerError, "Could not attach verified attribution")
 		return
 	}
 
@@ -296,7 +296,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 				}
 				attrs = append(attrs, "error", err)
 				h.logger.Warn("llm backend forwarding failed", attrs...)
-				writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
+				writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable")
 			}
 		},
 	}
@@ -521,11 +521,8 @@ func hasIdentityHeaderPrefix(name string) bool {
 	})
 }
 
-func writeJSONError(writer http.ResponseWriter, status int, detail, authenticate string) {
+func writeJSONError(writer http.ResponseWriter, status int, detail string) {
 	writer.Header().Set("Content-Type", "application/json")
-	if authenticate != "" {
-		writer.Header().Set("WWW-Authenticate", authenticate)
-	}
 	writer.WriteHeader(status)
 	_, _ = fmt.Fprintf(writer, `{"detail":%q}`, detail)
 }

@@ -24,9 +24,8 @@ func (c *Coordinator) recordMergeability(ctx context.Context, tx transaction.Tx,
 	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creationProto sql.Null[[]byte]
-	var sourceProvider sql.NullString
-	var idempotencyKey string
+	var creationProto []byte
+	var sourceProvider, idempotencyKey string
 	var after int64
 	var initialized bool
 	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key,

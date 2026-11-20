@@ -208,7 +208,7 @@ func (g githubFixture) sessionForLabel(label string) string {
 }
 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.
-func (g *githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
+func (g *githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) inboxstore.Claim {
 	t.Helper()
 	g.exec(t, `UPDATE inbox SET claim_until = now() - interval '1 second' WHERE id = $1`, inboxID)
 	g.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 hour' WHERE inbox_id = $1`, inboxID)
@@ -361,19 +361,19 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 }
 
 // record is the second half of a reconcile.
-func (g githubFixture) record(t *testing.T, claim Claim, step githubStep) error {
+func (g githubFixture) record(t *testing.T, claim inboxstore.Claim, step githubStep) error {
 	t.Helper()
 	return g.coordinator.Record(t.Context(), claim, step.Recording)
 }
 
 // reconcile matches and records a page for the subscription.
-func (g githubFixture) reconcile(t *testing.T, claim Claim, sub githubSubscription) error {
+func (g githubFixture) reconcile(t *testing.T, claim inboxstore.Claim, sub githubSubscription) error {
 	t.Helper()
 	return g.record(t, claim, g.prepare(t, sub))
 }
 
 // labels are the labels of the entries' payloads.
-func labels(t *testing.T, entries []Entry) []string {
+func labels(t *testing.T, entries []inboxstore.Entry) []string {
 	t.Helper()
 	var got []string
 	for _, entry := range entries {

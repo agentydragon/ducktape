@@ -8,15 +8,16 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 )
 
-func prStateObservationEntries(t *testing.T, entries []Entry) []Entry {
+func prStateObservationEntries(t *testing.T, entries []inboxstore.Entry) []inboxstore.Entry {
 	t.Helper()
-	var observations []Entry
+	var observations []inboxstore.Entry
 	for _, entry := range entries {
 		if event, ok := entry.Event.(sourceadapter.GitHubObservationEvent); ok &&
 			(event.Event == githubmodel.EventPullRequest || event.Event == githubmodel.EventPullRequestReview) {

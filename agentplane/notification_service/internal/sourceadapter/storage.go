@@ -1,7 +1,6 @@
 package sourceadapter
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -86,16 +85,8 @@ func DecodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (S
 }
 
 // DecodeStoredSubscriptionCreation checks the relational discriminator against the typed protobuf.
-func DecodeStoredSubscriptionCreation(
-	id uuid.UUID, typed sql.Null[[]byte], provider sql.NullString, idempotencyKey string,
-) (Subscribe, error) {
-	if typed.Valid != provider.Valid {
-		return Subscribe{}, fmt.Errorf("subscription %s has incomplete typed creation fields", id)
-	}
-	if !typed.Valid {
-		return Subscribe{}, fmt.Errorf("subscription %s has no typed creation", id)
-	}
-	creation, err := DecodeSubscriptionCreation(typed.V, idempotencyKey, provider.String)
+func DecodeStoredSubscriptionCreation(id uuid.UUID, typed []byte, provider, idempotencyKey string) (Subscribe, error) {
+	creation, err := DecodeSubscriptionCreation(typed, idempotencyKey, provider)
 	if err != nil {
 		return Subscribe{}, fmt.Errorf("subscription %s typed creation: %w", id, err)
 	}

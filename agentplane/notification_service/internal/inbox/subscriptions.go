@@ -45,8 +45,8 @@ const subscriptionColumns = `s.id, s.inbox_id, s.creation_proto, s.source_provid
 // the subscription is judged expired at.
 func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscription, error) {
 	var subscription Subscription
-	var creationProto sql.Null[[]byte]
-	var sourceProvider sql.NullString
+	var creationProto []byte
+	var sourceProvider string
 	var message, kind sql.NullString
 	var lastSuccess, since, observed, nextAttempt sql.NullTime
 	if err := row.Scan(append([]any{
@@ -61,7 +61,7 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 		return Subscription{}, err
 	}
 	subscription.Source = body.Source
-	subscription.SourceProvider = sourceProvider.String
+	subscription.SourceProvider = sourceProvider
 	subscription.ExpiresAt = subscription.ExpiresAt.UTC()
 	subscription.Expired = !subscription.ExpiresAt.After(viewedAt)
 	if nextAttempt.Valid {
@@ -146,8 +146,8 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 		}
 		written := now()
 		var existingID uuid.UUID
-		var existingProto sql.Null[[]byte]
-		var existingProvider sql.NullString
+		var existingProto []byte
+		var existingProvider string
 		err = tx.QueryRowContext(ctx, `SELECT id, creation_proto, source_provider
 			FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
 			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existingProto, &existingProvider)
@@ -260,7 +260,7 @@ func lockSubscription(ctx context.Context, tx transaction.Tx, owner Owner, id uu
 	if err != nil {
 		return Subscription{}, err
 	}
-	inbox, err := owned(ctx, tx, inboxID, owner, true)
+	inbox, err := owned(ctx, tx, inboxID, owner)
 	if err != nil {
 		return Subscription{}, err
 	}

@@ -60,9 +60,3 @@ func Identity(session *dispatcherpb.Session, sessionID string, ref model.Destina
 	}
 	return identity, true
 }
-
-// IdentityRun is the Identity incarnation the Session authority recorded this exact Session placement as
-// executing as; ok is false when it recorded none or the placement is another Sandbox's.
-func IdentityRun(session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) (identity model.Identity, ok bool) {
-	return Identity(session, sessionID, ref)
-}
