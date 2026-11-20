@@ -4,3 +4,13 @@ new file mode 100644
 +++ b/config/crd/bases/BUILD.bazel
 @@ -0,0 +1 @@
 +exports_files(["infra.contrib.fluxcd.io_terraforms.yaml"])
+diff --git a/cmd/manager/BUILD.bazel b/cmd/manager/BUILD.bazel
+--- a/cmd/manager/BUILD.bazel
++++ b/cmd/manager/BUILD.bazel
+@@ -42,5 +42,6 @@
+ go_binary(
+     name = "manager",
+     embed = [":manager_lib"],
++    race = "off",
+     visibility = ["//visibility:public"],
+ )

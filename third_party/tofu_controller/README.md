@@ -35,8 +35,9 @@ commit [`e2db61b`](https://github.com/flux-iac/tofu-controller/commit/e2db61bdd2
 which merged [PR #1901](https://github.com/flux-iac/tofu-controller/pull/1901).
 `MODULE.bazel` fetches both official Go proxy zips for that commit with `archive_override`.
 
-`patches/bazel.patch` exports the CRD YAML; `patches/kustomize-embed.patch` makes embedded
-Kustomize schemas visible to Bazel. Both are build glue.
+`patches/bazel.patch` exports the CRD YAML and builds the production manager without the
+global Go race instrumentation; `image_test` checks the binary packaged in the image.
+`patches/kustomize-embed.patch` makes embedded Kustomize schemas visible to Bazel.
 
 The controller's tests, including the `ExternalArtifact` envtest case, live with the upstream
 source and run in its own CI: they need a `kube-apiserver` and a `tofu` binary, so Ducktape only

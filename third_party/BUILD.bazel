@@ -4,3 +4,9 @@ exports_files([
     "go.mod",
     "go.sum",
 ])
+
+# The image is built in a separate Bazel module; include its regression test in //...
+test_suite(
+    name = "tofu_controller_image_tests",
+    tests = ["@ducktape_tofu_controller//:image_test"],
+)

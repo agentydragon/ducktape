@@ -1,3 +1,4 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -40,4 +41,15 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["tofu-controller:local"],
+)
+
+# Inspect the binary in the image layer, not the test binary's own race setting.
+go_test(
+    name = "image_test",
+    size = "small",
+    srcs = ["image_test.go"],
+    data = [":app_layer"],
+    env = {"TOFU_APP_LAYER": "$(rlocationpath :app_layer)"},
+    visibility = ["//visibility:public"],
+    deps = ["@io_bazel_rules_go//go/runfiles"],
 )
