@@ -1428,13 +1428,12 @@ function Report() {
           <${Text} component="p" mt="sm">
             Website and Haku Console static each had two Ready endpoints on
             ${" "}${webFrontendHA.website.nodes.join(" and ")}, with one allowed
-            disruption per budget. Both website Pods returned HTTP 200 for
-            <code>/</code> and <code>/health</code>; both Haku static Pods
-            returned 200 for <code>/</code>. The website Pods each requested
-            ${" "}${webFrontendHA.website.request_mib} MiB and Haku static
-            ${" "}${webFrontendHA.haku_static.request_mib} MiB. Both VPAs remain
-            in Recreate mode and manage requests only. ${" "}<${Anchor}
-              href=${webFrontendHA.website.pr_url}
+            disruption per budget. Both website Pods returned HTTP 200 for / and
+            /health; both Haku static Pods returned 200 for /. The website Pods
+            each requested ${" "}${webFrontendHA.website.request_mib} MiB and
+            Haku static ${" "}${webFrontendHA.haku_static.request_mib} MiB. Both
+            VPAs remain in Recreate mode and manage requests only.
+            ${" "}<${Anchor} href=${webFrontendHA.website.pr_url}
               >Website PR #18210<//
             >${" · "}<${Anchor} href=${webFrontendHA.haku_static.pr_url}
               >Haku PR #18211<//
