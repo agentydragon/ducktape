@@ -20,13 +20,12 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
-from cluster.cdk8s.haku.database import Db
+from cluster.cdk8s.haku.database import NAMESPACE, Db
 from cluster.cdk8s.haku.migration import Migration
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
 NAME = console.NAME
-NAMESPACE = console.NAMESPACE
 PATH = f"{HAND_WRITTEN_ROOT}/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
 # then the migration converging on its retries behind it.

@@ -129,7 +129,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku import namespace as haku_namespace, ui_egress as haku_ui_egress
 from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -606,8 +606,8 @@ ENV = Environment(
         ),
         traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
-        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE, runner.NAMESPACE),
-        standing_workload_namespaces=(haku_ui_egress.NAMESPACE, runner.NAMESPACE),
+        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_namespace.NAMESPACE, runner.NAMESPACE),
+        standing_workload_namespaces=(haku_namespace.NAMESPACE, runner.NAMESPACE),
     ),
     app=AppProps(
         config=_APP_CONFIG,
@@ -620,7 +620,7 @@ ENV = Environment(
         central_sampler_session_delegation=True,
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_ui_egress.NAMESPACE}),
+        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_namespace.NAMESPACE}),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,
         mcp_client_metadata=McpClientMetadataSettings(

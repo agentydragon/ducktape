@@ -56,6 +56,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
+from cluster.cdk8s.haku.database import NAMESPACE
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -63,7 +64,6 @@ from haku.console.config import CONFIG_FILE_ENV
 from haku.console.settings import Settings
 from util.settings_contract import env_name
 
-NAMESPACE = "haku-console"
 NAME = "haku-console"
 HOSTNAME = "haku.allegedly.works"
 PUBLIC_BASE_URL = f"https://{HOSTNAME}"

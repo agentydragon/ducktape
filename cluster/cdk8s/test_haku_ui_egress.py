@@ -14,6 +14,7 @@ from more_itertools import one
 from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
+from cluster.cdk8s.haku.namespace import NAMESPACE
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +38,7 @@ def test_haku_ui_account_mounts_no_token(resources: list[dict[str, Any]]) -> Non
         for d in resources
         if d["kind"] == "ServiceAccount"
         and d["metadata"]["name"] == ui_egress.SERVICE_ACCOUNT
-        and d["metadata"]["namespace"] == ui_egress.NAMESPACE
+        and d["metadata"]["namespace"] == NAMESPACE
     )
 
     assert account["automountServiceAccountToken"] is False
@@ -89,17 +90,15 @@ def test_haku_sandbox_reaches_the_tls_proxy_and_actions(resources: list[dict[str
     egress = _settings(resources, "egress-go-settings")
     actions = _settings(resources, "actions-settings")
 
-    assert ui_egress.NAMESPACE in egress["allowed_service_account_namespaces"]
+    assert NAMESPACE in egress["allowed_service_account_namespaces"]
     assert egress["forward"]["tls"]
-    assert ui_egress.NAMESPACE in actions["caller_service_account_namespaces"]
+    assert NAMESPACE in actions["caller_service_account_namespaces"]
     # Callers are watched in every allowed namespace, but policies and bindings only in the staging one.
     assert actions["policy_namespace"] == "agentplane-staging"
 
 
 def _standing_records(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        d for d in resources if d["kind"] == "WorkloadCredential" and d["metadata"]["namespace"] == ui_egress.NAMESPACE
-    ]
+    return [d for d in resources if d["kind"] == "WorkloadCredential" and d["metadata"]["namespace"] == NAMESPACE]
 
 
 def _granted(resources: list[dict[str, Any]], namespace: str, account: tuple[str, str]) -> set[tuple[str, str]]:
