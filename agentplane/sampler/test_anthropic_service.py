@@ -23,7 +23,6 @@ from agentplane.sampler.settings import (
     ModelConfig,
 )
 from agentplane.sampler.testing import (
-    METADATA,
     SESSION_ID,
     Endpoint,
     create_request,
@@ -101,9 +100,7 @@ async def wait_command_outcome(stub: Any, command_id: str, expected: int) -> Any
     deadline = asyncio.get_running_loop().time() + 10
     while True:
         result = await stub.admin.GetCommand(
-            sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id=command_id),
-            metadata=METADATA,
-            timeout=10,
+            sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id=command_id), timeout=10
         )
         if result.outcome == expected:
             return result
@@ -145,7 +142,7 @@ async def provider_attempts(engine: Any, command_id: str) -> list[dict[str, Any]
 
 async def assert_reconstructed_request(stub: Any, request_id: str, expected: dict[str, Any]) -> None:
     request = sampler_admin_pb2.ReadProviderRequestRequest(session_id=SESSION_ID, request_id=request_id)
-    chunks = [chunk async for chunk in stub.admin.ReadProviderRequest(request, metadata=METADATA, timeout=10)]
+    chunks = [chunk async for chunk in stub.admin.ReadProviderRequest(request, timeout=10)]
     assert chunks[0].metadata.request_id == request_id
     assert "x-api-key" not in chunks[0].metadata.headers
     assert json.loads(b"".join(chunk.body_chunk for chunk in chunks[1:])) == expected
@@ -174,7 +171,7 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
             request.session_id = SESSION_ID
             request.spec.model = ROUTE
             request.spec.reasoning_effort = "low"
-            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, timeout=10)
 
             if operation == "failed_compaction":
                 await submit_input(
@@ -195,7 +192,6 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 active_before = await store.active_context(SESSION_ID)
                 await stub.admin.Compact(
                     sampler_admin_pb2.CompactRequest(session_id=SESSION_ID, command_id="anthropic-compact-failed"),
-                    metadata=METADATA,
                     timeout=10,
                 )
                 compact_request = None
@@ -259,9 +255,7 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                     assert "body" not in intent.request
                     assert "wire_request" not in intent.request
                     await assert_reconstructed_request(stub, intent.id, compact_request)
-                snapshot = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=METADATA
-                )
+                snapshot = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=SESSION_ID))
                 assert not snapshot.blocked, "exhausting provider retries blocked the Session"
 
                 await submit_input(

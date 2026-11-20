@@ -27,15 +27,7 @@ from agentplane.native.codex.testing.responses_sse import CustomToolCall, Functi
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
-from agentplane.sampler.testing import (
-    METADATA,
-    Endpoint,
-    create_request,
-    service,
-    settings,
-    submit_input,
-    turn_completed,
-)
+from agentplane.sampler.testing import Endpoint, create_request, service, settings, submit_input, turn_completed
 from agentplane.sampler.testing_store import Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.sqlalchemy_engines import postgres_async_engine
@@ -228,7 +220,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(stub, session_id=request.session_id, command_id="first", text="Start", timeout_s=None)
             if failure == "invalid_wait":
                 async with await endpoint.next() as exchange:
@@ -260,7 +252,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
                     await turn_completed(stub, request.session_id, "first")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
                 observed = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
                 )
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())
@@ -303,13 +295,10 @@ async def test_turn_outcomes_preserve_safe_continuation(
             assert frozen_body is not None
             assert json.dumps(frozen_body["input"]).count('"Start"') == 1
             assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
-            observed = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not observed.blocked
             command = await stub.admin.GetCommand(
-                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="first"),
-                metadata=METADATA,
+                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="first")
             )
             assert command.outcome == sampler_pb2.COMMAND_OUTCOME_FAILED
             assert command.failure_reason
@@ -350,9 +339,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 assert "partial-provider-call" not in next_input
                 await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
             assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
-            observed = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not observed.blocked
 
 
@@ -369,7 +356,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub, session_id=request.session_id, command_id="read-recovery", text="Run one command.", timeout_s=None
             )
@@ -384,9 +371,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
             assert (
                 await turn_completed(stub, request.session_id, "read-recovery")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
     assert proxy.dropped.is_set()
@@ -452,7 +437,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub,
                 session_id=request.session_id,
@@ -508,9 +493,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             assert (
                 await turn_completed(stub, request.session_id, "observed-read-fault")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
             tool_intents = [
@@ -527,9 +510,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             assert result["after_seq"] > 0
             assert failure["after_seq"] == result["after_seq"]
             assert failure["intent_id"] == result["intent_id"]
-            stream = stub.admin.FollowEvents(
-                sampler_admin_pb2.FollowEventsRequest(session_id=request.session_id), metadata=METADATA
-            )
+            stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=request.session_id))
             boundaries = [
                 frame.entry.event.boundary_record
                 async for frame in stream
@@ -572,7 +553,7 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub,
                 session_id=request.session_id,
@@ -602,9 +583,7 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
             assert (
                 await turn_completed(stub, request.session_id, "start-ack-lost")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
     assert proxy.dropped.is_set()
@@ -656,7 +635,7 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub,
                 session_id=request.session_id,
@@ -694,9 +673,7 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
             assert (
                 await turn_completed(stub, request.session_id, "uncaught-patch")
             ).status == event_pb2.TURN_STATUS_COMPLETED
-            session = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
-            )
+            session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
     assert proxy.dropped.is_set()
@@ -743,7 +720,7 @@ async def test_host_loss_settles_and_resets_javascript_session(
         config = settings(database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, host_logs)
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub,
                 session_id=request.session_id,
@@ -771,7 +748,7 @@ async def test_host_loss_settles_and_resets_javascript_session(
             async for attempt in _store_retries():
                 with attempt:
                     settled = await stub.admin.GetSession(
-                        sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                        sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
                     )
                     assert not settled.blocked, f"{settled=}"
             abandoned = [
@@ -796,7 +773,7 @@ async def test_host_loss_settles_and_resets_javascript_session(
                 )
             assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
             with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
-                await stub.admin.RecoverSession(recovery, metadata=METADATA)
+                await stub.admin.RecoverSession(recovery)
             assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
             await submit_input(
@@ -851,7 +828,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
         )
         async with service(config) as stub:
             request = create_request(tmp_path)
-            await stub.CreateSession(request, metadata=METADATA)
+            await stub.CreateSession(request)
             await submit_input(
                 stub,
                 session_id=request.session_id,
@@ -952,7 +929,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                     await turn_completed(stub, request.session_id, "stale-json-cell")
                 ).status == event_pb2.TURN_STATUS_COMPLETED
                 observed = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
                 )
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())
