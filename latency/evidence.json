@@ -20314,5 +20314,1549 @@
     "reviewed_reliability_commit": "5ba8dd88b098302416a6b12a8697c896d5ba071b",
     "reviewed_reliability_url": "https://github.com/agentydragon/ducktape/blob/5ba8dd88b098302416a6b12a8697c896d5ba071b/reliability/evidence.json",
     "mechanism": "Recycled Docker action resumes in the private /init cgroup created by prior setup. A fingerprint mismatch forces rebuild and the current guard demands namespace-root membership. Both observed actions passed after an ordinary cold retry."
+  },
+  "weekly_feedback": {
+    "source": "https://github.com/agentydragon/ducktape/blob/eda08fca35/reliability/evidence.json",
+    "method": "50 PR heads per UTC workflow creation day. From the sampled CI workflow creation to the first observed success of all three required check names in their original workflow runs. Includes successful subsequent job attempts on the head by 20 Nov 21:12:39 UTC. Median uses the midpoint; p90 is nearest rank. Timing is conditional on reaching green.",
+    "daily": [
+      {
+        "day": "2026-11-13",
+        "sampled": 50,
+        "n": 39,
+        "median_s": 256,
+        "p90_s": 726
+      },
+      {
+        "day": "2026-11-14",
+        "sampled": 50,
+        "n": 27,
+        "median_s": 534,
+        "p90_s": 937
+      },
+      {
+        "day": "2026-11-15",
+        "sampled": 50,
+        "n": 35,
+        "median_s": 248,
+        "p90_s": 554
+      },
+      {
+        "day": "2026-11-16",
+        "sampled": 50,
+        "n": 29,
+        "median_s": 390,
+        "p90_s": 647
+      },
+      {
+        "day": "2026-11-17",
+        "sampled": 50,
+        "n": 38,
+        "median_s": 210.0,
+        "p90_s": 643
+      },
+      {
+        "day": "2026-11-18",
+        "sampled": 50,
+        "n": 39,
+        "median_s": 165,
+        "p90_s": 911
+      },
+      {
+        "day": "2026-11-19",
+        "sampled": 50,
+        "n": 40,
+        "median_s": 149.0,
+        "p90_s": 251
+      }
+    ],
+    "pooled": {
+      "n": 247,
+      "median_s": 219,
+      "p90_s": 637
+    },
+    "timings": [
+      {
+        "head": "734959564f880f7639a7f815ffc49e124d91d446",
+        "utc_day": "2026-11-13",
+        "seconds": 751,
+        "recovered": false
+      },
+      {
+        "head": "167ee2d8df465236a81c01d4783faf682bfd1e21",
+        "utc_day": "2026-11-13",
+        "seconds": 146,
+        "recovered": false
+      },
+      {
+        "head": "d0cf5541817570c14d65448fc7ee11981cb1fa7d",
+        "utc_day": "2026-11-13",
+        "seconds": 115,
+        "recovered": false
+      },
+      {
+        "head": "0f5090f84c272694740633a31f3ff197d76445c8",
+        "utc_day": "2026-11-13",
+        "seconds": 134,
+        "recovered": false
+      },
+      {
+        "head": "00eb0677792b5a0ae17f3e6d8123c4c87c772b4a",
+        "utc_day": "2026-11-13",
+        "seconds": 110,
+        "recovered": false
+      },
+      {
+        "head": "1e24b535706a86496b8c8af3846726de562a3197",
+        "utc_day": "2026-11-13",
+        "seconds": 119,
+        "recovered": false
+      },
+      {
+        "head": "b31d24190a0f2c8c1e5eea3f8dc93c63f9252c67",
+        "utc_day": "2026-11-13",
+        "seconds": 588,
+        "recovered": false
+      },
+      {
+        "head": "95281e4f8c49d4a20463fd97937ccf95202adba0",
+        "utc_day": "2026-11-13",
+        "seconds": 112,
+        "recovered": false
+      },
+      {
+        "head": "e804a57cf99c4918adbc8c3768ffafdba13bac22",
+        "utc_day": "2026-11-13",
+        "seconds": 224,
+        "recovered": false
+      },
+      {
+        "head": "317586078743f0642c5636f0ec433688f692dad7",
+        "utc_day": "2026-11-13",
+        "seconds": 534,
+        "recovered": false
+      },
+      {
+        "head": "9112b5bb4db2fc04363780e76f522270fdf86dc4",
+        "utc_day": "2026-11-13",
+        "seconds": 637,
+        "recovered": false
+      },
+      {
+        "head": "066da3cd2b50200d78188c5b496bc1db437b976b",
+        "utc_day": "2026-11-13",
+        "seconds": 103,
+        "recovered": false
+      },
+      {
+        "head": "6280fd7afdc42745351e94d27244f7e8247c1f32",
+        "utc_day": "2026-11-13",
+        "seconds": 113,
+        "recovered": false
+      },
+      {
+        "head": "0db7d401e62a2610ef2988261ef88f58db2bc74d",
+        "utc_day": "2026-11-13",
+        "seconds": 97,
+        "recovered": false
+      },
+      {
+        "head": "9de5ac49a1c0495d87b27efab8f3db66b634cdd3",
+        "utc_day": "2026-11-13",
+        "seconds": 621,
+        "recovered": false
+      },
+      {
+        "head": "d90f2840b9f6c091f5c35145ad57b3c7971dd0dc",
+        "utc_day": "2026-11-13",
+        "seconds": 859,
+        "recovered": false
+      },
+      {
+        "head": "041a4f92f643896193c2a5629c84f55ff64138b7",
+        "utc_day": "2026-11-13",
+        "seconds": 726,
+        "recovered": false
+      },
+      {
+        "head": "94b3d6d0e2d07ca3a8cea631eb69cd4026ea5219",
+        "utc_day": "2026-11-13",
+        "seconds": 188,
+        "recovered": false
+      },
+      {
+        "head": "2296e2833009ee071afcc1a7087d18bca6745294",
+        "utc_day": "2026-11-13",
+        "seconds": 120,
+        "recovered": false
+      },
+      {
+        "head": "f8535df2f6fcc9d1e111c56472e56947108194f8",
+        "utc_day": "2026-11-13",
+        "seconds": 153,
+        "recovered": false
+      },
+      {
+        "head": "13fa9237f9ea907a8992a450aa292037a32666a4",
+        "utc_day": "2026-11-13",
+        "seconds": 140,
+        "recovered": false
+      },
+      {
+        "head": "64c03633f34e90d6c0e47e6b0297dbb0c968fd14",
+        "utc_day": "2026-11-13",
+        "seconds": 151,
+        "recovered": false
+      },
+      {
+        "head": "d6307ef97de0c099f209a01a068009befa0aa0d0",
+        "utc_day": "2026-11-13",
+        "seconds": 342,
+        "recovered": false
+      },
+      {
+        "head": "47da5bb1c4d0a76076bcd8b87f3703d963701ada",
+        "utc_day": "2026-11-13",
+        "seconds": 120,
+        "recovered": false
+      },
+      {
+        "head": "0fc548a04e7da5681a75fce8fa2d1d5f38d2c065",
+        "utc_day": "2026-11-13",
+        "seconds": 561,
+        "recovered": false
+      },
+      {
+        "head": "e063221c81ba4cb4a51d6040149b815c4d029795",
+        "utc_day": "2026-11-13",
+        "seconds": 557,
+        "recovered": false
+      },
+      {
+        "head": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+        "utc_day": "2026-11-13",
+        "seconds": 627,
+        "recovered": false
+      },
+      {
+        "head": "55b75f699cb3c828ff6dcdcf7ed400b744942958",
+        "utc_day": "2026-11-13",
+        "seconds": 119,
+        "recovered": false
+      },
+      {
+        "head": "607c7c823a1a6a3e33de3782ea2a2a7cf8b10730",
+        "utc_day": "2026-11-13",
+        "seconds": 160,
+        "recovered": false
+      },
+      {
+        "head": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+        "utc_day": "2026-11-13",
+        "seconds": 544,
+        "recovered": false
+      },
+      {
+        "head": "f69b0dd5501ecd3ab2c716a17994465bc573471f",
+        "utc_day": "2026-11-13",
+        "seconds": 465,
+        "recovered": false
+      },
+      {
+        "head": "0e5c65e2c5be69370a7113bc906bc0a8890b959c",
+        "utc_day": "2026-11-13",
+        "seconds": 316,
+        "recovered": false
+      },
+      {
+        "head": "b544253abd23a944829380ab3f529de6a749fb9a",
+        "utc_day": "2026-11-13",
+        "seconds": 530,
+        "recovered": false
+      },
+      {
+        "head": "2448b1d24d13697e8b9dc0c0a4148dea0d06b6f4",
+        "utc_day": "2026-11-13",
+        "seconds": 519,
+        "recovered": false
+      },
+      {
+        "head": "336fb91df43461b8a6e6c3f5b77640ab0a13812f",
+        "utc_day": "2026-11-13",
+        "seconds": 476,
+        "recovered": false
+      },
+      {
+        "head": "3949837df152758e0e6922b5fdd62d9706aa0f54",
+        "utc_day": "2026-11-13",
+        "seconds": 221,
+        "recovered": false
+      },
+      {
+        "head": "038f773900be7a73d399131ffe431060166a818c",
+        "utc_day": "2026-11-13",
+        "seconds": 256,
+        "recovered": false
+      },
+      {
+        "head": "cba532169e554321c52afae3d543cd7aa69a2d07",
+        "utc_day": "2026-11-13",
+        "seconds": 803,
+        "recovered": false
+      },
+      {
+        "head": "3b37005f7d689b87bc253724b7e547ded4115392",
+        "utc_day": "2026-11-13",
+        "seconds": 299,
+        "recovered": false
+      },
+      {
+        "head": "47574ec5e9fe0394bb5aa30a2f461e042a82757e",
+        "utc_day": "2026-11-14",
+        "seconds": 1449,
+        "recovered": false
+      },
+      {
+        "head": "0bf47ca2a69a8568788a229f29b61597f6062ad0",
+        "utc_day": "2026-11-14",
+        "seconds": 115,
+        "recovered": false
+      },
+      {
+        "head": "87c576a69ca4fee1975933f702159b7a5b7c8a0d",
+        "utc_day": "2026-11-14",
+        "seconds": 652,
+        "recovered": false
+      },
+      {
+        "head": "8da69aa7040d4bd3f9c3c6138f6dcc1d148ce998",
+        "utc_day": "2026-11-14",
+        "seconds": 307,
+        "recovered": false
+      },
+      {
+        "head": "4ff7cf51e6d4eea7c20c8e02f1e3871c5aa7945c",
+        "utc_day": "2026-11-14",
+        "seconds": 184,
+        "recovered": false
+      },
+      {
+        "head": "a49291d92b9f831a33423ef17327ccb7603e2a55",
+        "utc_day": "2026-11-14",
+        "seconds": 617,
+        "recovered": false
+      },
+      {
+        "head": "0e8ca848485cbeaa58bf689dddbe9f8c3f37f65f",
+        "utc_day": "2026-11-14",
+        "seconds": 695,
+        "recovered": false
+      },
+      {
+        "head": "ee5ef310dd3b8dafcae2e988a4e708874717b341",
+        "utc_day": "2026-11-14",
+        "seconds": 575,
+        "recovered": false
+      },
+      {
+        "head": "0b7097d8b93009e05c8ce3e72740816fab4f106b",
+        "utc_day": "2026-11-14",
+        "seconds": 139,
+        "recovered": false
+      },
+      {
+        "head": "f3b2a6b3bf0ddf56395d577ddaaf37b8a9aaae05",
+        "utc_day": "2026-11-14",
+        "seconds": 937,
+        "recovered": false
+      },
+      {
+        "head": "ed45a0ab22e883082f002c28cd001352d111b901",
+        "utc_day": "2026-11-14",
+        "seconds": 587,
+        "recovered": false
+      },
+      {
+        "head": "605da061d5514e186d3557df111548f1150562bd",
+        "utc_day": "2026-11-14",
+        "seconds": 1444,
+        "recovered": false
+      },
+      {
+        "head": "d8b403ac178c776ccc785483dc4b8006bd9bf578",
+        "utc_day": "2026-11-14",
+        "seconds": 89,
+        "recovered": false
+      },
+      {
+        "head": "7ba8c8e539fae6ad35bdded5d9730d7bb6487173",
+        "utc_day": "2026-11-14",
+        "seconds": 491,
+        "recovered": false
+      },
+      {
+        "head": "548d5d2773a74848bdc550517f8ef9053b905de2",
+        "utc_day": "2026-11-14",
+        "seconds": 534,
+        "recovered": false
+      },
+      {
+        "head": "8c2b9e52930d14fdfd8e89a4e9fde1dfdce7865d",
+        "utc_day": "2026-11-14",
+        "seconds": 685,
+        "recovered": false
+      },
+      {
+        "head": "5bdee5509d247dd10a2b4edde36168bf12c12e2c",
+        "utc_day": "2026-11-14",
+        "seconds": 94,
+        "recovered": false
+      },
+      {
+        "head": "3a580a252275e3dbaa0ff1ef972e97c44378cbab",
+        "utc_day": "2026-11-14",
+        "seconds": 495,
+        "recovered": false
+      },
+      {
+        "head": "a45f9572125efa0b11e7dbfd265c1d19122a6927",
+        "utc_day": "2026-11-14",
+        "seconds": 657,
+        "recovered": false
+      },
+      {
+        "head": "c85a49fee5cc7ee9ad75699bf26cdcbaf1f156db",
+        "utc_day": "2026-11-14",
+        "seconds": 659,
+        "recovered": false
+      },
+      {
+        "head": "ceea1a37527e5e6303b54ba427b0099725365cef",
+        "utc_day": "2026-11-14",
+        "seconds": 479,
+        "recovered": false
+      },
+      {
+        "head": "6aae2a61a5deb14876bcad019ba7c86a40bfb634",
+        "utc_day": "2026-11-14",
+        "seconds": 614,
+        "recovered": false
+      },
+      {
+        "head": "e6c50462883b1cb5aa5006f3968333fe31329f3b",
+        "utc_day": "2026-11-14",
+        "seconds": 590,
+        "recovered": false
+      },
+      {
+        "head": "632ae3c4ff1fac6d3caa8c4c4ea3e49c5bb884fb",
+        "utc_day": "2026-11-14",
+        "seconds": 91,
+        "recovered": false
+      },
+      {
+        "head": "268799589920bc44799593f017dadbd051d073da",
+        "utc_day": "2026-11-14",
+        "seconds": 91,
+        "recovered": false
+      },
+      {
+        "head": "a86b53ec611a3a3884d66551a262447592d5e872",
+        "utc_day": "2026-11-14",
+        "seconds": 119,
+        "recovered": false
+      },
+      {
+        "head": "89e7bd1a59a713fc44a4e86eef11a07849dec590",
+        "utc_day": "2026-11-14",
+        "seconds": 127,
+        "recovered": false
+      },
+      {
+        "head": "22a0041d31d859b95899791449d2c36c44a68295",
+        "utc_day": "2026-11-15",
+        "seconds": 512,
+        "recovered": false
+      },
+      {
+        "head": "5312b4c15eaaf47734d0208705c1e910eee03a31",
+        "utc_day": "2026-11-15",
+        "seconds": 400,
+        "recovered": false
+      },
+      {
+        "head": "3312f5b5c700c027ea73435469e43a732597087f",
+        "utc_day": "2026-11-15",
+        "seconds": 98,
+        "recovered": false
+      },
+      {
+        "head": "5a4bbcd133405bc34e0a5dfe478d077545b1f781",
+        "utc_day": "2026-11-15",
+        "seconds": 419,
+        "recovered": false
+      },
+      {
+        "head": "0976f5e4a4003b477117e856f3b77650b0d1ba3e",
+        "utc_day": "2026-11-15",
+        "seconds": 140,
+        "recovered": false
+      },
+      {
+        "head": "abf3b55df71649f87b347c573aabc1975ce90bbf",
+        "utc_day": "2026-11-15",
+        "seconds": 616,
+        "recovered": false
+      },
+      {
+        "head": "959dda16ca404a77c59c52377acea7c234989718",
+        "utc_day": "2026-11-15",
+        "seconds": 504,
+        "recovered": false
+      },
+      {
+        "head": "105693f750e4ffacb47774016ff5a96cec4ddc19",
+        "utc_day": "2026-11-15",
+        "seconds": 330,
+        "recovered": false
+      },
+      {
+        "head": "2861ddb435902d30b9efe43fccf58bdbef0452e7",
+        "utc_day": "2026-11-15",
+        "seconds": 241,
+        "recovered": false
+      },
+      {
+        "head": "aefc5736d01dee9c288235aa64e271b059286ef7",
+        "utc_day": "2026-11-15",
+        "seconds": 95,
+        "recovered": false
+      },
+      {
+        "head": "4f1efe51aabb5c7bee17ce5eb1f35100cb256186",
+        "utc_day": "2026-11-15",
+        "seconds": 100,
+        "recovered": false
+      },
+      {
+        "head": "ff254b0b247c3446b52c305a7556ee242c5ce159",
+        "utc_day": "2026-11-15",
+        "seconds": 103,
+        "recovered": false
+      },
+      {
+        "head": "30c6d44a00d5a639baf590a46b862782e079027a",
+        "utc_day": "2026-11-15",
+        "seconds": 222,
+        "recovered": false
+      },
+      {
+        "head": "b8aa5c997142ca10d189de649a9c26596e9bd98d",
+        "utc_day": "2026-11-15",
+        "seconds": 95,
+        "recovered": false
+      },
+      {
+        "head": "a56132a98269167824862d3e55871792458f47a2",
+        "utc_day": "2026-11-15",
+        "seconds": 130,
+        "recovered": false
+      },
+      {
+        "head": "037992a34e6d46f5e894aecbbe64155278042eb7",
+        "utc_day": "2026-11-15",
+        "seconds": 556,
+        "recovered": false
+      },
+      {
+        "head": "7181d06969608fcea6355b834295a2ba444ef59b",
+        "utc_day": "2026-11-15",
+        "seconds": 299,
+        "recovered": false
+      },
+      {
+        "head": "05d7f96767311b1c90dcb8e9f59e7ed230ea689a",
+        "utc_day": "2026-11-15",
+        "seconds": 100,
+        "recovered": false
+      },
+      {
+        "head": "00d8a4f8fcd945dc4c25c2c9d5e7d8fbfbf16c4b",
+        "utc_day": "2026-11-15",
+        "seconds": 313,
+        "recovered": false
+      },
+      {
+        "head": "e128da81947f8e720a69918b7892b94e520d9bea",
+        "utc_day": "2026-11-15",
+        "seconds": 538,
+        "recovered": false
+      },
+      {
+        "head": "27605798cff712c121f5d93e410eeb6a1928ca37",
+        "utc_day": "2026-11-15",
+        "seconds": 533,
+        "recovered": false
+      },
+      {
+        "head": "2deb91033535e5de3628374fa8c5feee1ba4c108",
+        "utc_day": "2026-11-15",
+        "seconds": 244,
+        "recovered": false
+      },
+      {
+        "head": "e20a18f09be72a4ffcbb5c9c2641407b9cde7a87",
+        "utc_day": "2026-11-15",
+        "seconds": 501,
+        "recovered": false
+      },
+      {
+        "head": "c8c85b0be3f9c0225671b1e2ccff1626dcf8d4ec",
+        "utc_day": "2026-11-15",
+        "seconds": 554,
+        "recovered": false
+      },
+      {
+        "head": "3f53a314e3b8f0b51d035a6655bf3207102d0879",
+        "utc_day": "2026-11-15",
+        "seconds": 150,
+        "recovered": false
+      },
+      {
+        "head": "d320558befc9effaefd2b80e661b955e7107875e",
+        "utc_day": "2026-11-15",
+        "seconds": 491,
+        "recovered": false
+      },
+      {
+        "head": "625f4b8c1e2175c79d51a3bab3fee2c32a2878b0",
+        "utc_day": "2026-11-15",
+        "seconds": 248,
+        "recovered": false
+      },
+      {
+        "head": "e50dcf418c4a502ff74ad7c8cd22c007ae6ea5af",
+        "utc_day": "2026-11-15",
+        "seconds": 555,
+        "recovered": false
+      },
+      {
+        "head": "6a31622d97d7fe34aa6bf4f2a41fd8d5df268399",
+        "utc_day": "2026-11-15",
+        "seconds": 187,
+        "recovered": false
+      },
+      {
+        "head": "2c36a1c2e80e73e42a6fa22cf6c9a36dca278252",
+        "utc_day": "2026-11-15",
+        "seconds": 136,
+        "recovered": false
+      },
+      {
+        "head": "e1d992b322d55f9e3fc6f4500c79c500501283b6",
+        "utc_day": "2026-11-15",
+        "seconds": 139,
+        "recovered": false
+      },
+      {
+        "head": "2826b1a3406da2a845640dda901658532983c385",
+        "utc_day": "2026-11-15",
+        "seconds": 130,
+        "recovered": false
+      },
+      {
+        "head": "77bbbb3cc311b3471fa73485198d27217985833a",
+        "utc_day": "2026-11-15",
+        "seconds": 148,
+        "recovered": false
+      },
+      {
+        "head": "351a06b05eec53b08104907df155f02164779574",
+        "utc_day": "2026-11-15",
+        "seconds": 478,
+        "recovered": false
+      },
+      {
+        "head": "c736fcf78ca7f56d2008014df087bbc4d99c58ae",
+        "utc_day": "2026-11-15",
+        "seconds": 488,
+        "recovered": false
+      },
+      {
+        "head": "a10e66156cb833110905e7a2df5f2582f686fe7c",
+        "utc_day": "2026-11-16",
+        "seconds": 511,
+        "recovered": false
+      },
+      {
+        "head": "dd1a0e9bdee0b48e32bf8cde82b5d2b39b0c6140",
+        "utc_day": "2026-11-16",
+        "seconds": 157,
+        "recovered": false
+      },
+      {
+        "head": "07ca80c27b9ce3f156f8041947cbc9ed12e17182",
+        "utc_day": "2026-11-16",
+        "seconds": 390,
+        "recovered": false
+      },
+      {
+        "head": "00b094526a44389281b29b7730405354bdde9110",
+        "utc_day": "2026-11-16",
+        "seconds": 507,
+        "recovered": false
+      },
+      {
+        "head": "25d84f7867496a178c7381a7a19d4011ce1de835",
+        "utc_day": "2026-11-16",
+        "seconds": 149,
+        "recovered": false
+      },
+      {
+        "head": "c1ee157590c0635e315029fef762b15f20bc7491",
+        "utc_day": "2026-11-16",
+        "seconds": 229,
+        "recovered": false
+      },
+      {
+        "head": "33911f257ffaf3474abb1b713baed9290a2ea0a5",
+        "utc_day": "2026-11-16",
+        "seconds": 736,
+        "recovered": false
+      },
+      {
+        "head": "bd5123fd5f3549ef9ceb3d06a4f538043d51ab8d",
+        "utc_day": "2026-11-16",
+        "seconds": 515,
+        "recovered": false
+      },
+      {
+        "head": "e3495b4569b981584b82017f099fbb2d499b5c9f",
+        "utc_day": "2026-11-16",
+        "seconds": 749,
+        "recovered": false
+      },
+      {
+        "head": "bd5228175587e82eb197f4f4c806ccdcd417865b",
+        "utc_day": "2026-11-16",
+        "seconds": 543,
+        "recovered": false
+      },
+      {
+        "head": "9ace9b42741249f46658a08e6cb1a14afd63fa32",
+        "utc_day": "2026-11-16",
+        "seconds": 261,
+        "recovered": false
+      },
+      {
+        "head": "912a0c54aadbfe07216bc26065b7c2cd8f8c5c26",
+        "utc_day": "2026-11-16",
+        "seconds": 647,
+        "recovered": false
+      },
+      {
+        "head": "f49a44e38b89dd504e36f835924dd7c5b7eb43c0",
+        "utc_day": "2026-11-16",
+        "seconds": 136,
+        "recovered": false
+      },
+      {
+        "head": "68f2201328129a3ef5732f03a509f3f48856708d",
+        "utc_day": "2026-11-16",
+        "seconds": 449,
+        "recovered": false
+      },
+      {
+        "head": "b4f449d4c634069f6109ca836547724697df1284",
+        "utc_day": "2026-11-16",
+        "seconds": 144,
+        "recovered": false
+      },
+      {
+        "head": "9921e2e8caeec981d04341e8762520203a9eb704",
+        "utc_day": "2026-11-16",
+        "seconds": 400,
+        "recovered": false
+      },
+      {
+        "head": "2cd5fd1fdaac2699f40107562be4cda6236c9c1b",
+        "utc_day": "2026-11-16",
+        "seconds": 278,
+        "recovered": false
+      },
+      {
+        "head": "dc21a63c4163451c0d69d563e1256f45d5507305",
+        "utc_day": "2026-11-16",
+        "seconds": 496,
+        "recovered": false
+      },
+      {
+        "head": "311a3aa0c48d1cf7bf79549b8aba540997bcb7c6",
+        "utc_day": "2026-11-16",
+        "seconds": 258,
+        "recovered": false
+      },
+      {
+        "head": "068c6c7dd975f05aade60f7ee8b5568e92c2dcf8",
+        "utc_day": "2026-11-16",
+        "seconds": 519,
+        "recovered": false
+      },
+      {
+        "head": "732cbc4e0bad7a6e66b2eba0a92178bfb522b5ca",
+        "utc_day": "2026-11-16",
+        "seconds": 480,
+        "recovered": false
+      },
+      {
+        "head": "ee42de2891de84d095a0bb0b0f20a8fdc2d05497",
+        "utc_day": "2026-11-16",
+        "seconds": 404,
+        "recovered": false
+      },
+      {
+        "head": "c80b6ab23f41c34ad98ebed916ce6be803942e01",
+        "utc_day": "2026-11-16",
+        "seconds": 142,
+        "recovered": false
+      },
+      {
+        "head": "1ed5a9422a591918c29cca7875f7bcd95b9c5206",
+        "utc_day": "2026-11-16",
+        "seconds": 162,
+        "recovered": false
+      },
+      {
+        "head": "71536c29621bb07dc80edf8e7ceae7d8bc2f692c",
+        "utc_day": "2026-11-16",
+        "seconds": 390,
+        "recovered": false
+      },
+      {
+        "head": "cb2dada67bf09d3d4c6bba7d0ba33fb32a8d1c00",
+        "utc_day": "2026-11-16",
+        "seconds": 189,
+        "recovered": false
+      },
+      {
+        "head": "6315d584645194243cc0f159ce9727b96c74c312",
+        "utc_day": "2026-11-16",
+        "seconds": 106,
+        "recovered": false
+      },
+      {
+        "head": "0df9249725668648e852f712dd12c8360f64ec3d",
+        "utc_day": "2026-11-16",
+        "seconds": 319,
+        "recovered": false
+      },
+      {
+        "head": "be64aee3daaf0e93a26ed3ddfd6293d6ad172339",
+        "utc_day": "2026-11-16",
+        "seconds": 451,
+        "recovered": false
+      },
+      {
+        "head": "36a6f61bdb9b891016224206be9488fed086c1ea",
+        "utc_day": "2026-11-17",
+        "seconds": 131,
+        "recovered": false
+      },
+      {
+        "head": "bf14be2484fefb3cb5f0a31e46a8a24368f77b31",
+        "utc_day": "2026-11-17",
+        "seconds": 147,
+        "recovered": false
+      },
+      {
+        "head": "b550137ca1d607d8cd44fb0a6c2b07ddc15bdfeb",
+        "utc_day": "2026-11-17",
+        "seconds": 110,
+        "recovered": false
+      },
+      {
+        "head": "624302d12a6e55511e7c017e6aa0777514462877",
+        "utc_day": "2026-11-17",
+        "seconds": 643,
+        "recovered": false
+      },
+      {
+        "head": "b8a695e24ef016832f33dbacc3714540f278811a",
+        "utc_day": "2026-11-17",
+        "seconds": 107,
+        "recovered": false
+      },
+      {
+        "head": "1a15ed7a65fb578bdab79c97b0d62b68c585ac29",
+        "utc_day": "2026-11-17",
+        "seconds": 1107,
+        "recovered": false
+      },
+      {
+        "head": "bf75dff8ae27e49b95471c901bc0d0564d95ee38",
+        "utc_day": "2026-11-17",
+        "seconds": 550,
+        "recovered": false
+      },
+      {
+        "head": "fac734c36f7aaa18aec4776628552eef2419934a",
+        "utc_day": "2026-11-17",
+        "seconds": 129,
+        "recovered": false
+      },
+      {
+        "head": "ae1567e3d7bd6d9c0e4e90608c494eb2ad6f73a4",
+        "utc_day": "2026-11-17",
+        "seconds": 208,
+        "recovered": false
+      },
+      {
+        "head": "79f9a6de291b6ccd22d15e348ac1a7b75865e22d",
+        "utc_day": "2026-11-17",
+        "seconds": 146,
+        "recovered": false
+      },
+      {
+        "head": "cfa999c7387c2b2d6981c5b446f6d3f0bfcc4f87",
+        "utc_day": "2026-11-17",
+        "seconds": 102,
+        "recovered": false
+      },
+      {
+        "head": "489598899619b33beb1854ab0f7ea2ef879bad01",
+        "utc_day": "2026-11-17",
+        "seconds": 529,
+        "recovered": false
+      },
+      {
+        "head": "1b1ac6d3fd35e93fe08d22f021c9bd079bb0c361",
+        "utc_day": "2026-11-17",
+        "seconds": 180,
+        "recovered": false
+      },
+      {
+        "head": "979b27e7d0bc257f4f902b11ea68f15478c5b50e",
+        "utc_day": "2026-11-17",
+        "seconds": 742,
+        "recovered": false
+      },
+      {
+        "head": "57b6e926a545e3663492df1266963f8142591407",
+        "utc_day": "2026-11-17",
+        "seconds": 119,
+        "recovered": false
+      },
+      {
+        "head": "4968324ad19043db79119a3cd740d3a99d4a7446",
+        "utc_day": "2026-11-17",
+        "seconds": 534,
+        "recovered": false
+      },
+      {
+        "head": "c2c1badad2f5bff04d28e82e9068971d1f744e5b",
+        "utc_day": "2026-11-17",
+        "seconds": 475,
+        "recovered": false
+      },
+      {
+        "head": "f22c52b407cfffe08605947fa1380ee9f044722e",
+        "utc_day": "2026-11-17",
+        "seconds": 128,
+        "recovered": false
+      },
+      {
+        "head": "117842efb4c5b3513e12a0a04cca12dcbffdb076",
+        "utc_day": "2026-11-17",
+        "seconds": 193,
+        "recovered": false
+      },
+      {
+        "head": "80582d3319f3677dce7fd600bbabed6c6872cecb",
+        "utc_day": "2026-11-17",
+        "seconds": 212,
+        "recovered": false
+      },
+      {
+        "head": "ce0fe973ee8a03211aa23b59e001edcad5df0c5a",
+        "utc_day": "2026-11-17",
+        "seconds": 120,
+        "recovered": false
+      },
+      {
+        "head": "3f3cf0726278b9799a392e6bf6dc6a67908f07db",
+        "utc_day": "2026-11-17",
+        "seconds": 692,
+        "recovered": false
+      },
+      {
+        "head": "5b983de49c0fc17c0678c4d4ac85dd714133b057",
+        "utc_day": "2026-11-17",
+        "seconds": 504,
+        "recovered": false
+      },
+      {
+        "head": "c83983921b7b3a3eda53250bce72b516deab972f",
+        "utc_day": "2026-11-17",
+        "seconds": 557,
+        "recovered": false
+      },
+      {
+        "head": "5dc7ff5edc1ac2fdd6ea1a42ef4494179f7087d0",
+        "utc_day": "2026-11-17",
+        "seconds": 581,
+        "recovered": true
+      },
+      {
+        "head": "dd37a67c979279750abbab4de9b50b44d957d073",
+        "utc_day": "2026-11-17",
+        "seconds": 95,
+        "recovered": false
+      },
+      {
+        "head": "68ec329867dca21ebc9bb3c06aaae8e98b1b2696",
+        "utc_day": "2026-11-17",
+        "seconds": 503,
+        "recovered": false
+      },
+      {
+        "head": "2c6ae9d56f00531584b44e5bc0e17ebe00ffda07",
+        "utc_day": "2026-11-17",
+        "seconds": 483,
+        "recovered": false
+      },
+      {
+        "head": "c76c7d0090561d3de649b25d87f6283ad8ae4566",
+        "utc_day": "2026-11-17",
+        "seconds": 149,
+        "recovered": false
+      },
+      {
+        "head": "913c10b616bfb0e93826a73841c165f59dda08c7",
+        "utc_day": "2026-11-17",
+        "seconds": 286,
+        "recovered": false
+      },
+      {
+        "head": "6a2543718854523d5bb848e9a9d69b60b56ef3a9",
+        "utc_day": "2026-11-17",
+        "seconds": 122,
+        "recovered": false
+      },
+      {
+        "head": "076841e40a87658f1e48142ebe5ae7dfe872c58d",
+        "utc_day": "2026-11-17",
+        "seconds": 162,
+        "recovered": false
+      },
+      {
+        "head": "bffcefff392929102613efb7f0f5fd018f1b0a6e",
+        "utc_day": "2026-11-17",
+        "seconds": 243,
+        "recovered": false
+      },
+      {
+        "head": "fe7abfc87409c3a0c6edf9613a4245b1a2072482",
+        "utc_day": "2026-11-17",
+        "seconds": 399,
+        "recovered": false
+      },
+      {
+        "head": "3f9ccedc751d7978fd7064c800bc4d1daa56e6b8",
+        "utc_day": "2026-11-17",
+        "seconds": 537,
+        "recovered": false
+      },
+      {
+        "head": "4569263ce4e78c7133ce9d49ab7ef55ea23e576e",
+        "utc_day": "2026-11-17",
+        "seconds": 91,
+        "recovered": false
+      },
+      {
+        "head": "6cf0c0b125c4c3c0bc83650843693d869b52f10f",
+        "utc_day": "2026-11-17",
+        "seconds": 223,
+        "recovered": false
+      },
+      {
+        "head": "f97a789d81196f66e81734bde47ef94d2418bd7e",
+        "utc_day": "2026-11-17",
+        "seconds": 138,
+        "recovered": false
+      },
+      {
+        "head": "e62ab02f7bbca266a1e3e9444b752c1b57fcc204",
+        "utc_day": "2026-11-18",
+        "seconds": 100,
+        "recovered": false
+      },
+      {
+        "head": "52a78b0f60d09ed5337f5badfc769ecbd851f165",
+        "utc_day": "2026-11-18",
+        "seconds": 176,
+        "recovered": false
+      },
+      {
+        "head": "6fd45d8da391dc7d283ab1034c339eff07428ec0",
+        "utc_day": "2026-11-18",
+        "seconds": 1388,
+        "recovered": true
+      },
+      {
+        "head": "cc0fb0b0bf63c58d3b9c784b7ef2f5998facaf13",
+        "utc_day": "2026-11-18",
+        "seconds": 441,
+        "recovered": false
+      },
+      {
+        "head": "a7f15c08bd70316b64a5c94d19b21b1796c88958",
+        "utc_day": "2026-11-18",
+        "seconds": 199,
+        "recovered": false
+      },
+      {
+        "head": "f2b016ac40598fbfee6b6a32d9354820f56b030d",
+        "utc_day": "2026-11-18",
+        "seconds": 128,
+        "recovered": false
+      },
+      {
+        "head": "d377747ad77f42309530c6e37f3b6c2fca196b61",
+        "utc_day": "2026-11-18",
+        "seconds": 100,
+        "recovered": false
+      },
+      {
+        "head": "72d2431d7a7333e30157cbe13f5676b90a4dcbd7",
+        "utc_day": "2026-11-18",
+        "seconds": 1786,
+        "recovered": true
+      },
+      {
+        "head": "3119458c52c875038be8a804e242277ef68ce0cb",
+        "utc_day": "2026-11-18",
+        "seconds": 512,
+        "recovered": false
+      },
+      {
+        "head": "4555a5591098ab5dfabb87e6390a95193e34bfa6",
+        "utc_day": "2026-11-18",
+        "seconds": 94,
+        "recovered": false
+      },
+      {
+        "head": "8293eb37dd769bd721117ad44384fafd1e25cf5a",
+        "utc_day": "2026-11-18",
+        "seconds": 99,
+        "recovered": false
+      },
+      {
+        "head": "95a0a0fe9901feaa249fbfdf02ee345eaeca4d6a",
+        "utc_day": "2026-11-18",
+        "seconds": 1049,
+        "recovered": true
+      },
+      {
+        "head": "21e94099df4f4d72ead3756cfeb32904eab0dc95",
+        "utc_day": "2026-11-18",
+        "seconds": 166,
+        "recovered": false
+      },
+      {
+        "head": "2d8f089e470fce5b8101046e9ab2e017ced62222",
+        "utc_day": "2026-11-18",
+        "seconds": 253,
+        "recovered": false
+      },
+      {
+        "head": "fbfa8762242595cd7d8b3e3510f7b68d11d65920",
+        "utc_day": "2026-11-18",
+        "seconds": 102,
+        "recovered": false
+      },
+      {
+        "head": "3bfc52937782f151e4258dbcfbd426fca07cca2b",
+        "utc_day": "2026-11-18",
+        "seconds": 395,
+        "recovered": false
+      },
+      {
+        "head": "4c784e97198f7f24acb2b952780b944c56c9281e",
+        "utc_day": "2026-11-18",
+        "seconds": 480,
+        "recovered": false
+      },
+      {
+        "head": "12e5e5a2eca00452f6dcfc62fefed9980a791e64",
+        "utc_day": "2026-11-18",
+        "seconds": 541,
+        "recovered": false
+      },
+      {
+        "head": "9b22b1d2b2391f015f1f4f9c36946868a1b492ad",
+        "utc_day": "2026-11-18",
+        "seconds": 114,
+        "recovered": false
+      },
+      {
+        "head": "d8fa7437c457425ce326539867dfb5ffa91f0ba4",
+        "utc_day": "2026-11-18",
+        "seconds": 176,
+        "recovered": false
+      },
+      {
+        "head": "797ff79c346bf5cb0864b1b07f20da48c53d36d6",
+        "utc_day": "2026-11-18",
+        "seconds": 215,
+        "recovered": false
+      },
+      {
+        "head": "ffe406fb9351a3e0fde07bbf2309e017c4494677",
+        "utc_day": "2026-11-18",
+        "seconds": 165,
+        "recovered": false
+      },
+      {
+        "head": "0e6894732c10965688f345ccb342e76e44ebee44",
+        "utc_day": "2026-11-18",
+        "seconds": 136,
+        "recovered": false
+      },
+      {
+        "head": "7320186e08ae70eae0996f9459c6b049f5f1c3f1",
+        "utc_day": "2026-11-18",
+        "seconds": 439,
+        "recovered": false
+      },
+      {
+        "head": "c768c1774432e86f92a7033a271d91c45c63b3e3",
+        "utc_day": "2026-11-18",
+        "seconds": 129,
+        "recovered": false
+      },
+      {
+        "head": "f939bcf5a977914923d7b89a7f802f74ce34f9d0",
+        "utc_day": "2026-11-18",
+        "seconds": 633,
+        "recovered": false
+      },
+      {
+        "head": "c4008e2da890127acaa10a0331f9391f8bf2840f",
+        "utc_day": "2026-11-18",
+        "seconds": 604,
+        "recovered": true
+      },
+      {
+        "head": "1de8cf28a426f079447953c80c8889bb1953cc9c",
+        "utc_day": "2026-11-18",
+        "seconds": 911,
+        "recovered": false
+      },
+      {
+        "head": "91751ea2428c9b663f396e63a8d0ad16a9cb5f81",
+        "utc_day": "2026-11-18",
+        "seconds": 422,
+        "recovered": false
+      },
+      {
+        "head": "51e38c5bf8316fdff7c5e2bbb41d5630a2e35f9f",
+        "utc_day": "2026-11-18",
+        "seconds": 141,
+        "recovered": false
+      },
+      {
+        "head": "173a22b51c33aae891b33860e290166a3cbce9e8",
+        "utc_day": "2026-11-18",
+        "seconds": 111,
+        "recovered": false
+      },
+      {
+        "head": "02178774338e3153729fd95cb27d3006ae5ca6b6",
+        "utc_day": "2026-11-18",
+        "seconds": 112,
+        "recovered": false
+      },
+      {
+        "head": "1fff38902ed4dbdbcbcb147a66aba81b39fa5902",
+        "utc_day": "2026-11-18",
+        "seconds": 128,
+        "recovered": false
+      },
+      {
+        "head": "ccbf440f896cae31aec63aea58d277487d859b3c",
+        "utc_day": "2026-11-18",
+        "seconds": 125,
+        "recovered": false
+      },
+      {
+        "head": "0c155b2f4be8d032a94d2f460f56820bd473d38b",
+        "utc_day": "2026-11-18",
+        "seconds": 101,
+        "recovered": false
+      },
+      {
+        "head": "d5e007f0b103c2d27c0f1008da509ef8d709ce07",
+        "utc_day": "2026-11-18",
+        "seconds": 153,
+        "recovered": false
+      },
+      {
+        "head": "2f12df123fb30915dce7ab8d284a136e91ed5298",
+        "utc_day": "2026-11-18",
+        "seconds": 121,
+        "recovered": false
+      },
+      {
+        "head": "c4fbe5881f6370f2b8d5bd8ccd418a9e915c38ee",
+        "utc_day": "2026-11-18",
+        "seconds": 127,
+        "recovered": false
+      },
+      {
+        "head": "3d2c9aee7af78956d22872b20409e9497ff8a087",
+        "utc_day": "2026-11-18",
+        "seconds": 105,
+        "recovered": false
+      },
+      {
+        "head": "c2374aeba59364e184f142e06f0e1a83a6587757",
+        "utc_day": "2026-11-19",
+        "seconds": 251,
+        "recovered": false
+      },
+      {
+        "head": "521069708f1ad0adb50643dca2432c13c67b0efa",
+        "utc_day": "2026-11-19",
+        "seconds": 151,
+        "recovered": false
+      },
+      {
+        "head": "2fe0598852b08e2cfbbc322c49108efaccab39e8",
+        "utc_day": "2026-11-19",
+        "seconds": 120,
+        "recovered": false
+      },
+      {
+        "head": "1d00d4bed642c6db95b7c4c22109e7682b524758",
+        "utc_day": "2026-11-19",
+        "seconds": 642,
+        "recovered": false
+      },
+      {
+        "head": "ba12bdac53704b82cb9e4c014e6c485e758fe6ed",
+        "utc_day": "2026-11-19",
+        "seconds": 238,
+        "recovered": false
+      },
+      {
+        "head": "3022533d6e0a3d79ba5a5db2d602794918dc6b18",
+        "utc_day": "2026-11-19",
+        "seconds": 586,
+        "recovered": false
+      },
+      {
+        "head": "3851d8701b3cd7524f7f47c9fe9568b54f530101",
+        "utc_day": "2026-11-19",
+        "seconds": 121,
+        "recovered": false
+      },
+      {
+        "head": "d88b3fae99f220fa5a68388cd8f1a2db4ceb310e",
+        "utc_day": "2026-11-19",
+        "seconds": 102,
+        "recovered": false
+      },
+      {
+        "head": "33acc4c66c8292be6a1d814bb9a5dc56a8255a28",
+        "utc_day": "2026-11-19",
+        "seconds": 132,
+        "recovered": false
+      },
+      {
+        "head": "599127b8108aca74f6a189faf73426ad42d51f0c",
+        "utc_day": "2026-11-19",
+        "seconds": 115,
+        "recovered": false
+      },
+      {
+        "head": "3ff3a8622426ffd8c5b71c333772e603dacbfc3c",
+        "utc_day": "2026-11-19",
+        "seconds": 154,
+        "recovered": false
+      },
+      {
+        "head": "cb597d20b6f3a5f27311751e4d1b23c80d9e5f22",
+        "utc_day": "2026-11-19",
+        "seconds": 228,
+        "recovered": false
+      },
+      {
+        "head": "dacdd25a92771c42c9c756a43d2adc9253c75f9b",
+        "utc_day": "2026-11-19",
+        "seconds": 123,
+        "recovered": false
+      },
+      {
+        "head": "7585a7d3c530a8098ffc0c824b68b0faeaf8e008",
+        "utc_day": "2026-11-19",
+        "seconds": 187,
+        "recovered": false
+      },
+      {
+        "head": "9a908f3660c854a07c01839c20433a4c58acada7",
+        "utc_day": "2026-11-19",
+        "seconds": 209,
+        "recovered": false
+      },
+      {
+        "head": "341ff2cebeafb9e98abfebdd02d3edfb9d0a75e5",
+        "utc_day": "2026-11-19",
+        "seconds": 100,
+        "recovered": false
+      },
+      {
+        "head": "b1fdb1728d61c1abd6afe7dae2eaffbb05e8a944",
+        "utc_day": "2026-11-19",
+        "seconds": 121,
+        "recovered": false
+      },
+      {
+        "head": "4e231bc6c99031fe39abe5eda6c693404a9551d7",
+        "utc_day": "2026-11-19",
+        "seconds": 125,
+        "recovered": false
+      },
+      {
+        "head": "2a5df1c2e56a306b994b2c3c81b46590c83e97a1",
+        "utc_day": "2026-11-19",
+        "seconds": 160,
+        "recovered": false
+      },
+      {
+        "head": "3db4530703c310f521d3fb479f3df40fcffe37aa",
+        "utc_day": "2026-11-19",
+        "seconds": 133,
+        "recovered": false
+      },
+      {
+        "head": "d911c226fb2c55b1eb0774cf274eb6d713adec2f",
+        "utc_day": "2026-11-19",
+        "seconds": 199,
+        "recovered": false
+      },
+      {
+        "head": "eae59b18e0bf2d56d3fbd504a7796d88bacf3c98",
+        "utc_day": "2026-11-19",
+        "seconds": 295,
+        "recovered": false
+      },
+      {
+        "head": "64e12da4d4bba58173c6693c51edb76eed9b2244",
+        "utc_day": "2026-11-19",
+        "seconds": 99,
+        "recovered": false
+      },
+      {
+        "head": "69875dc872ae1fe8a22547441d2c2952ca5bb673",
+        "utc_day": "2026-11-19",
+        "seconds": 147,
+        "recovered": false
+      },
+      {
+        "head": "cbd7629310f076115531f888cce6c1e39ba05f68",
+        "utc_day": "2026-11-19",
+        "seconds": 147,
+        "recovered": false
+      },
+      {
+        "head": "7c97eabf96442ed1390b867496a224ba9754a8fc",
+        "utc_day": "2026-11-19",
+        "seconds": 110,
+        "recovered": false
+      },
+      {
+        "head": "e881b6a9188126a4a4bb56a6cf9db03761b55fbd",
+        "utc_day": "2026-11-19",
+        "seconds": 230,
+        "recovered": false
+      },
+      {
+        "head": "e3345c3dc91442344c4c810e4cbe35f843b1a95c",
+        "utc_day": "2026-11-19",
+        "seconds": 95,
+        "recovered": false
+      },
+      {
+        "head": "2da2457f5fe55a45e78ee8112f727095a4e79d78",
+        "utc_day": "2026-11-19",
+        "seconds": 175,
+        "recovered": false
+      },
+      {
+        "head": "3e3114a1b92b3c0787f1543097cdcd8100c6e5f6",
+        "utc_day": "2026-11-19",
+        "seconds": 241,
+        "recovered": false
+      },
+      {
+        "head": "ed90c8086576f01ef1e8703324b24cfd407aa2c6",
+        "utc_day": "2026-11-19",
+        "seconds": 211,
+        "recovered": false
+      },
+      {
+        "head": "49017b06f7c9d6d1a22b4967700b0ba6e8980e7c",
+        "utc_day": "2026-11-19",
+        "seconds": 114,
+        "recovered": false
+      },
+      {
+        "head": "b128a872e2803ae7daadce4459d26f31dc188816",
+        "utc_day": "2026-11-19",
+        "seconds": 122,
+        "recovered": false
+      },
+      {
+        "head": "b1eaa7bcd4cd6187c951930365530481c80ddc27",
+        "utc_day": "2026-11-19",
+        "seconds": 219,
+        "recovered": false
+      },
+      {
+        "head": "f77eb9378335f77979ff177f421f7ebd714fd74f",
+        "utc_day": "2026-11-19",
+        "seconds": 109,
+        "recovered": false
+      },
+      {
+        "head": "96e5ae92868e711899242e99a38a78f7d32e6648",
+        "utc_day": "2026-11-19",
+        "seconds": 197,
+        "recovered": false
+      },
+      {
+        "head": "a928d9d746421ac016e37843ba1da019fb0b4e15",
+        "utc_day": "2026-11-19",
+        "seconds": 181,
+        "recovered": false
+      },
+      {
+        "head": "78c9d28895ce311f2000f7a4c98381ddc06e1d22",
+        "utc_day": "2026-11-19",
+        "seconds": 496,
+        "recovered": false
+      },
+      {
+        "head": "5eb655ff2789f64327f37ad5363ab09e87bbc8d9",
+        "utc_day": "2026-11-19",
+        "seconds": 143,
+        "recovered": false
+      },
+      {
+        "head": "4e5d168b6703f4c35d608f4a5ed8a7ae4172abb5",
+        "utc_day": "2026-11-19",
+        "seconds": 109,
+        "recovered": false
+      }
+    ]
   }
 }

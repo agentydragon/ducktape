@@ -58,7 +58,6 @@
         Container,
         Group,
         Paper,
-        SimpleGrid,
         Stack,
         Table,
         Text,
@@ -66,10 +65,10 @@
         Title,
       } from "@mantine/core";
       import { BarChart } from "@mantine/charts";
-      import { html, mount, ManifestStamp } from "../report.js";
+      import { html, mount } from "../report.js";
       // This must match evidence_sha256 in the publication manifest.
       const evidenceSha =
-        "8873394735143bd7450d7d11cac78b72f1feb77b77dce112546751ed9b58d799";
+        "2ea9831b45d6cc273d9b4ecf896233fdac76831986f2b3706bf21913e10b6299";
       const evidenceUrl = `./evidence.json?v=${evidenceSha}`;
       const manifestUrl = `./manifest.json?v=${evidenceSha}`;
 
@@ -115,22 +114,6 @@
         html`<${Group} gap="md"
           >${items.map(({ url, label }) => html`<span key=${url}>${link(url, label)}</span>`)}<//
         >`;
-      const percentage = (n, d) => ((100 * n) / d).toFixed(1) + "%";
-      function Metric({ value, label, detail }) {
-        return html`<${Paper} withBorder p="md">
-          <${Text} size="xl" fw=${700}>${value}<//>
-          <${Text} fw=${600}>${label}<//>
-          <${Text} size="sm" c="dimmed" mt="xs">${detail}<//>
-        <//>`;
-      }
-      const series = [
-        { name: "green", label: "First-pass green", color: "teal.7" },
-        { name: "red", label: "First-pass red", color: "red.7" },
-        { name: "superseded", label: "Superseded", color: "gray.6" },
-        { name: "cancelled", label: "Cancelled", color: "orange.7" },
-        { name: "incomplete", label: "Incomplete", color: "violet.6" },
-        { name: "unknown", label: "Unknown", color: "blue.6" },
-      ];
       function Report() {
         const [query, setQuery] = useState("");
         const findings = e.findings.filter((f) =>
@@ -154,51 +137,35 @@
               <${Title} order=${1} my="sm"
                 >CI reliability · 13–19 November 2026<//
               >
-              <${Text} size="lg">${e.lede}<//>
-              <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src=${manifestUrl}
-              /><//>
-              <${Text} size="sm" mt="xs"
-                >Seven complete UTC days from 13 November 00:00 through 20
-                November 00:00 exclusive. Inspected devel commit${" "}
-                ${link(gh + "/commit/" + e.source_devel_commit, html`<${Code}>${e.source_devel_commit}<//>`)}.<//
+              <${Text} size="lg"
+                >Four of 350 sampled PR heads showed red, then went green on
+                identical tested inputs with a fresh target recovery. All four
+                occurred on 18 November. On 20 November the new VM retry policy
+                absorbed a failure in one of 16 fresh PR verdicts.${" "}
+                ${link("#vm-cutover", "VM retry details")}<//
               >
             </header>
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
-              <${Metric}
-                value=${`${p.outcomes.green} / ${p.sample_size}`}
-                label="PR heads green on the first attempt"
-                detail=${`${percentage(p.outcomes.green, p.sample_size)} in the seven-day sample. ${p.outcomes.red} first-pass red, ${p.outcomes.superseded} superseded and ${p.outcomes.cancelled} cancelled.`}
-              />
-              <${Metric}
-                value=${`${p.same_commit_recoveries.length} / ${p.outcomes.red}`}
-                label="Initially red PR heads recovered on the same tested SHA"
-                detail=${`${p.comparable_red_heads} red heads had a comparable retry and a known outcome. ${p.same_commit_recoveries.length} recovered in that subset.`}
-              />
-              <${Metric}
-                value=${`${m.failures} / ${m.completed}`}
-                label="Failed mainline Bazel test invocations"
-                detail=${`${percentage(m.failures, m.completed)} of completed test commands. ${m.disconnected} disconnected invocations outside this denominator.`}
-              />
-            <//>
             <section id="pr-health">
-              <${Title} order=${2}>First-pass PR health<//>
+              <${Title} order=${2}
+                >PR heads with a verified intermittent failure<//
+              >
               <${Text} my="sm"
-                >${`50 heads per UTC day, selected by stable SHA-based ranking from ${p.frame_size.toLocaleString()} associated devel PR heads. The pooled figure weights each day equally. Daily cancellation counts and both denominators are below.`}<//
+                >13–19 November UTC · 50 heads sampled each day. Seven distinct
+                targets failed or timed out, then passed. Unretried reds make
+                this a lower bound. Each affected head counts once. Zero means
+                no verified case in that day's sample.<//
               >
               <div
                 role="img"
-                aria-label="Stacked bars of first-pass required check outcomes by UTC day. Exact counts appear below."
+                aria-label="Daily count of PR heads with a verified red-to-green target recovery"
               >
                 <${BarChart}
-                  h=${265}
-                  data=${p.daily}
+                  h=${220}
+                  data=${e.flake_trend.daily.map((d) => ({ day: d.day.slice(8), heads: d.confirmed }))}
                   dataKey="day"
-                  type="stacked"
-                  series=${series.filter((item) => p.outcomes[item.name] > 0)}
-                  withLegend
-                  tickLine="y"
-                  yAxisProps=${{ width: 30, allowDecimals: false }}
+                  series=${[{ name: "heads", color: "orange.7" }]}
+                  yAxisProps=${{ allowDecimals: false, width: 32 }}
+                  yAxisLabel="Heads"
                 />
               </div>
               <${Accordion} variant="contained" mt="md">
@@ -208,6 +175,7 @@
                     >${table(
                       [
                         "UTC day",
+                        "Verified intermittent",
                         "Eligible",
                         "Sampled",
                         "Green",
@@ -217,8 +185,9 @@
                         "Incomplete",
                         "Unknown",
                       ],
-                      p.daily.map((d) => [
+                      p.daily.map((d, i) => [
                         d.day,
+                        e.flake_trend.daily[i].confirmed,
                         d.eligible,
                         d.sampled,
                         d.green,
@@ -254,14 +223,36 @@
                 <//>
               <//>
               <${Text} size="sm" mt="md"
-                >The five recoveries took 3m 30s to 19m 49s from the first red
-                check completing to the retry completing. Median 7m 35s. These
-                intervals include the wait before starting the retry.<//
+                >Five of 61 initially red heads recovered on the same tested
+                SHA. Four had a verified target pair. The fifth lacks a verified
+                intermittent target pair. There were 242 first-pass greens, 44
+                superseded heads and three cancellations. The five recoveries
+                took 3m 30s to 19m 49s from the first red check completing to
+                the retry completing. Median 7m 35s. These intervals include the
+                wait before starting the retry.<//
               >
               <${Text} size="sm" mt="sm">${p.method}<//>
             </section>
             <section id="vm-cutover">
-              <${Title} order=${2}>Required VM CI on KVM<//>
+              <${Title} order=${2}
+                >Flakes absorbed by Bazel · VM retry rollout<//
+              >
+              <${Text} mt="sm"
+                >On 20 November, one of 16 fresh required VM verdicts in the
+                sampled PR jobs failed on attempt one and passed on attempt two.
+                The required job stayed green. A separate devel census found one
+                such recovery in 13 fresh VM verdicts. Both hit the
+                recycled-runner rebuild guard.<//
+              >
+              <${Text} my="sm"
+                >The VM suite gained a second attempt on 20 November, after the
+                seven-day chart window. We inspected${" "}
+                ${e.flake_trend.post_shadow_vm.inspected_jobs} required Bazel
+                jobs across 67 post-shadow PR heads. Cached passes and jobs
+                without fresh VM results are excluded. ${pr(18265)} ·
+                ${inv("6e111092-663c-58b6-98b1-3368720d6d9f", "PR attempt evidence")}
+                · ${pr(17940)} retry policy<//
+              >
               <${Text} my="sm">${k.summary}<//>
               ${table(["Post-cutover devel", "Count", "Unit"], k.counts, 340)}
               <${Title} order=${3} mt="md"

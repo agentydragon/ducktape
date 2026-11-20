@@ -1,29 +1,11 @@
 {
-  "validated_at_utc": "2026-11-20T21:36:33.306026+00:00",
-  "validation_scope": "RBE preview of the posted report HTML, reviewed evidence, shared UI, and report navigation",
-  "invocation": "e661146d-aa34-4f42-a720-271ca842d711",
-  "invocation_url": "https://app.buildbuddy.io/invocation/e661146d-aa34-4f42-a720-271ca842d711",
-  "target": "//devinfra/ci/x/latency_report_preview:test_preview",
-  "cases": [
-    "test_preview[desktop-light]",
-    "test_preview[desktop-dark]",
-    "test_preview[mobile-light]",
-    "test_preview[mobile-dark]"
-  ],
-  "screenshots_digest_verified": 20,
+  "verified_at_utc": "2026-11-20T21:52:26+00:00",
+  "scope": "Final served preview in Chrome with real CDN assets. Both light and dark at 1365x900 and 390x844. Inspected rendered chart screenshots. Verified daily chart marks, count-table disclosure, live theme changes and no uncaught page errors.",
   "rendered_sha256": {
-    "index.html": "2987c5439c10535f614c0dda64a6f8f621da242b2c466de03bab71212e1427d2",
-    "latency/index.html": "a28b1150f740f1e102c74ba262fe09e14a227f12b8cdd512951da0e3e3ddacd7",
-    "latency/evidence.json": "4adbcd997e99fba2f5fbc44cf9f420511f87f9d2d31c70a7213783f34d8afa92",
+    "latency/index.html": "42a24a1690b49b489016ccfd670b800e11f1a4cfed1f9248fbab9b7106ea83eb",
+    "latency/evidence.json": "6319dd011142f35ead5e669e0a5235c722d1983053a42bee54d18404892b0a26",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
-  "checks": [
-    "Canonical manifest hashes from the exact preview bytes",
-    "Pinned CDN framework loaded, both charts populated",
-    "Four combinations of desktop/mobile and initial browser theme",
-    "Live scheme change and disclosure toggles",
-    "Document width and report navigation summary",
-    "Visual review of charts and wrapping at desktop/mobile widths"
-  ]
+  "prior_validation": "https://github.com/agentydragon/ducktape/blob/9641389cba/latency/visual-validation.json"
 }

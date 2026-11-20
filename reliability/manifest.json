@@ -2,9 +2,11 @@
   "source_devel_commit": "1cc6bc03be1a1932a219e79fd987eb74ac92bcbc",
   "window_start_utc": "2026-11-13T00:00:00Z",
   "window_end_utc": "2026-11-20T00:00:00Z",
-  "published_at_utc": "2026-11-20T21:30:52.482306+00:00",
+  "published_at_utc": "2026-11-20T21:50:17Z",
   "attribution": "not collected",
-  "previous_report_commit": "5e85f6fb5bdbae5a04b9f719d9ea932496e3ccbb",
-  "report_sha256": "d8850ac928685583e8d0917632fc59b56f27788a4497adfc147d157453a552a4",
-  "evidence_sha256": "8873394735143bd7450d7d11cac78b72f1feb77b77dce112546751ed9b58d799"
+  "previous_report_commit": "9641389cba5e284a416a940b3258c435002bc692",
+  "report_sha256": "4dceb74c953681e1643e54bb08072a4f46d5f9f29c9fcc4206ed2bf3e6f6f3ea",
+  "evidence_sha256": "2ea9831b45d6cc273d9b4ecf896233fdac76831986f2b3706bf21913e10b6299",
+  "visual_validation": "visual-validation.json",
+  "visual_validation_sha256": "931eeda86407feab4a72eef2c485b730a89c2bb1490fc1ab5810073e92c9cea4"
 }
