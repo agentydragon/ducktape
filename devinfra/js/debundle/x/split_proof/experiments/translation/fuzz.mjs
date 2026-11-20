@@ -1078,6 +1078,7 @@ async function main() {
         writeGuided: plan.strategy === "astWriteGuided" ? bundle.writeGuided : null,
         guidedCallbackShape: plan.strategy === "astGuided" ? bundle.guidedCallbackShape : null,
         guidedInitializer: plan.strategy === "astGuided" ? bundle.guidedInitializer : null,
+        guidedMove: plan.strategy === "astGuided" ? bundle.guidedMove : null,
         templates: [...new Set(bundle.units.map((u) => u.tmpl))].sort(),
         reference,
         observed: tree,
