@@ -167,14 +167,12 @@ class Ntfy(Construct):
             self,
             "namespace",
             name=NAMESPACE,
-            vpa=Vpa.AUTO,
+            vpa=Vpa.INITIAL,
             labels={"app.kubernetes.io/name": NAMESPACE},
             annotations={
                 namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
                     '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
-                ),
-                # Allow VPA to restart the single ntfy server to apply a new request.
-                "goldilocks.fairwinds.com/vpa-min-replicas": "1",
+                )
             },
         )
         _secret_store(self)
