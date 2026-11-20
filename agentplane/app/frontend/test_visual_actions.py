@@ -12,6 +12,7 @@ from agentplane.app.frontend.testing.visual_assertions import _open_phone_naviga
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import MOBILE, Viewport
 
 pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -373,7 +374,14 @@ async def _expect_live_preview(surface: Locator, example: ActionExample) -> None
 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example.key)
-async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, example: ActionExample) -> None:
+async def test_action_presentations(
+    view: VisualPage, app: AgentplaneFixture, example: ActionExample, viewport: Viewport
+) -> None:
+    form_factor = "mobile" if viewport == MOBILE else "desktop"
+
+    async def capture(checkpoint: str, target: Locator) -> None:
+        await view.capture(checkpoint, target=target, label=f"{example.key} · {form_factor} · {checkpoint}")
+
     page = view.page
     registered = await page.evaluate("window.agentplaneVisual.actionRendererKeys()")
     keys = [item.key for item in EXAMPLES]
@@ -390,7 +398,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_be_visible()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("sidebar-collapsed", target=sidebar)
+    await capture("sidebar-collapsed", sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         await disclosure.click()
@@ -399,7 +407,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
         await wait_for_stable(page)
-        await view.capture("sidebar-expanded", target=sidebar)
+        await capture("sidebar-expanded", sidebar)
         review_link = sidebar.get_by_role("link", name="Details", exact=True)
     else:
         await expect(disclosure).to_have_count(0)
@@ -430,7 +438,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("pending-detail", target=pending)
+    await capture("pending-detail", pending)
 
     # Native sandbox results are stored directly. MCP results use the actual wire envelope.
     result = (
@@ -458,7 +466,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture("detail-result", target=receipt)
+    await capture("detail-result", receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
@@ -468,7 +476,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(details).to_have_attribute("aria-expanded", "false")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture("history", target=history)
+    await capture("history", history)
 
     await details.click()
     await expect(details).to_have_attribute("aria-expanded", "true")
@@ -477,7 +485,7 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("history-expanded", target=history)
+    await capture("history-expanded", history)
 
 
 if __name__ == "__main__":
