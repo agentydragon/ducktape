@@ -1,4 +1,4 @@
-"""Authoring schema for the Go Runner Gateway deployment settings.
+"""Authoring schema for the Go Sessions (Session Dispatcher) deployment settings.
 
 The black-box tests serialize this model into the Go binary's strict settings loader.
 """
@@ -68,7 +68,7 @@ class Settings(BaseModel):
         min_length=1, description="Namespace holding the Identities a workload SVID may name."
     )
     runner_token_file: Path | None = Field(
-        default=None, description="Projected Gateway-audience token; omit when gateway_tls uses the Sessions role SVID."
+        default=None, description="Projected caller token; omit when gateway_tls uses the Sessions role SVID."
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     kubernetes_client_qps: float = Field(

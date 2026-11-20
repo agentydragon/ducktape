@@ -1,13 +1,13 @@
 # Session Dispatcher
 
 The durable command queue is the Dispatcher role of the
-[Runner Gateway](../README.md). The Go integration app and the Notification Service use the
-Session Dispatcher gRPC contract; the stable Dispatcher Service maps port `8080` to the Gateway's
+[Sessions binary](../README.md). The Go integration app and the Notification Service use the
+Session Dispatcher gRPC contract; the stable `sessions` Service maps port `8080` to the binary's
 shared TLS listener. The credential-holding Sandbox relay reaches that same listener through
 central-proxy CONNECT and presents its Runner SVID. Dispatcher methods retain their caller rules,
 exact service grants and typed delegation policy. EnvironmentService has its own listener. The worker
-delivers through the Runner proxy once the exact Sandbox is ready, with a per-Session PostgreSQL
-delivery lease.
+delivers through the Environments Runtime proxy once the exact Sandbox is ready, with a
+per-Session PostgreSQL delivery lease.
 
 The manual queue, replica and wake probes are documented in the
 [system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
@@ -32,7 +32,7 @@ The manual queue, replica and wake probes are documented in the
   The App persists a cursor with its applied local receipts; `session_client` carries one in the input
   observation token. Both clear expired cursors and resync, while preserving an explicit coverage-loss
   warning or source error. Resync cannot recover a pruned deletion.
-- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
+- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Dispatcher over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
   `DELIVERY_STATE_FAILED`, `DELIVERY_STATE_CANCELLED_IN_DISPATCHER`, and

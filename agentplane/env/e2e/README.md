@@ -41,7 +41,7 @@ isolation while the parent is idle (Claude) or active (Codex), with only one Age
 ### Test infrastructure
 
 Each test is one interaction script run against both harnesses, written against
-`testing/driver.py`: it plays the Runner Gateway's side of the control stream and reads each
+`testing/driver.py`: it plays the Environments proxy's side of the control stream and reads each
 session's Events from the stand-in ingress in `testing/gateway.py`;
 the parametrized `model` fixture is the only place that knows the model API dialect. The scripted
 model is shared with other packages' tests in [`agentplane/testing/`](../../testing):

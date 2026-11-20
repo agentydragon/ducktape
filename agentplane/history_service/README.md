@@ -36,8 +36,8 @@ this setting from the same required settings file.
 
 Runners keep their harnesses running and every journal entry on their state volume, and push the
 backlog once the ingress answers again; nothing is lost while the History Service is away, only
-late. Sender-facing commands remain in the Session Dispatcher and reach runners through the Gateway's
-runner proxy; the Runner Gateway does not call this service.
+late. Sender-facing commands remain in the Session Dispatcher and reach runners through the Environments
+Runtime proxy; no Sessions or Environments binary calls this service.
 
 During shutdown the fold stops and hands back its leases while existing ingress calls drain. Entries
 already acknowledged remain committed in raw history, and a restarted fold projects any remaining

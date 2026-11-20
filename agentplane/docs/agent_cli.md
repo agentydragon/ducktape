@@ -23,8 +23,8 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `environments` uses the Runner Gateway at the existing Session Dispatcher
-endpoint, `session-dispatcher` uses the Session Dispatcher, `history` uses History, `notifications`
+only the Action Service, `environments` calls `EnvironmentService` on Environments, `session-dispatcher`
+uses the Session Dispatcher, `history` uses History, `notifications`
 uses only the Notification Service, and `egress` only the Egress rules API.
 Session commands operate on an existing Sandbox; they do not create an environment. A command whose
 configuration is absent exits `2` naming the missing
