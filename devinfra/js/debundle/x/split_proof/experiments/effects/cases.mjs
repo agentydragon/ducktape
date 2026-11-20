@@ -730,6 +730,60 @@ console.log(w);
     reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
   },
   {
+    name: "Object.freeze changes what Object.isFrozen reads",
+    source: `
+const o = { n: 0 };
+Object.freeze(o);
+const f = Object.isFrozen(o) ? "frozen" : "open";
+console.log(f);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "reverse and pop change the array a later read sees",
+    source: `
+const a = [1, 2, 3];
+a.reverse();
+a.pop();
+const f = a.join();
+console.log(f);
+`,
+    reorders: [{ order: [0, 3, 1, 2, 4], behavior: "differs" }],
+  },
+  {
+    name: "shift and splice change the array a later read sees",
+    source: `
+const a = [1, 2, 3];
+a.shift();
+a.splice(0, 1);
+const f = a.length === 1 ? "one" : "other";
+console.log(f);
+`,
+    reorders: [{ order: [0, 3, 1, 2, 4], behavior: "differs" }],
+  },
+  {
+    name: "Set delete and Map clear change what a later read sees",
+    source: `
+const s = new Set([1, 2]);
+s.delete(1);
+const f = s.has(1) ? "has" : "not";
+console.log(f);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "an object copied by spread holds the same inner object",
+    source: `
+const a = { n: 0 };
+const holder = { k: a };
+const copy = { ...holder };
+copy.k.n = 1;
+const w = a.n === 1 ? "one" : "zero";
+console.log(w);
+`,
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
     name: "vendor premise: listed functions and their members allocate, others are the world",
     source: `
 import { make, kit, other } from "./v.js";
