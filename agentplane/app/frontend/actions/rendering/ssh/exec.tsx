@@ -5,7 +5,6 @@ import type { JSX } from "react";
 import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
-import { CodeBlock } from "../../../../../../util/frontend/code_block";
 import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../ui/shell_command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
@@ -47,7 +46,6 @@ function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element 
     <Stack gap="xs">
       <Group gap="xs">
         <Badge color={result.exit_code === 0 ? "green" : "red"}>Exit {result.exit_code}</Badge>
-        <CodeBlock text={`${result.user}@${result.host}`} presentation="muted" />
       </Group>
       {/* The server keeps only so many bytes of each stream, and says when it dropped the rest. */}
       {result.stdout !== "" && (

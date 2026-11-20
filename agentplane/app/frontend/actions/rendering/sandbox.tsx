@@ -1,8 +1,11 @@
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
+import { stringify } from "yaml";
 import { z } from "zod";
 
 import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../ui/shell_command_view";
+import { TextBlock } from "../../ui/text_block";
+import { Disclosure } from "../../../../../util/frontend/disclosure";
 import { sandboxExecNotes } from "../schemas/sandbox/exec";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
@@ -79,7 +82,10 @@ const info = z.strictObject({
   pod_ips: z.array(z.string()).optional(),
 });
 
-function SandboxInfo({ value }: { value: z.infer<typeof info> }) {
+function SandboxInfo({ value, created = false }: { value: z.infer<typeof info>; created?: boolean }) {
+  const ready = value.conditions.find((condition) => condition.type === "Ready");
+  const details = value.conditions.length > 0 || !!value.node_name || !!value.created_at || !!value.pod_ips?.length;
+
   return (
     <Stack gap="xs">
       <Group gap="xs">
@@ -89,44 +95,42 @@ function SandboxInfo({ value }: { value: z.infer<typeof info> }) {
       <Text size="sm">
         Template: <Code>{value.template}</Code>
       </Text>
-      {value.node_name && (
-        <Text size="sm">
-          Node: <Code>{value.node_name}</Code>
+      {created && (
+        <Text size="sm" fw={600}>
+          {ready?.status === "True" ? "Sandbox created and ready" : "Sandbox created · Waiting for readiness"}
         </Text>
       )}
-      {value.created_at && <Text size="sm">Created: {value.created_at}</Text>}
-      {value.pod_ips?.length ? <Text size="sm">IP addresses: {value.pod_ips.join(", ")}</Text> : null}
-      {value.conditions.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          No conditions reported.
+      {ready && (
+        <Text size="sm">
+          {ready.status === "True" ? "Ready" : "Not ready"}
+          {ready.reason && ` · ${ready.reason}`}
         </Text>
-      ) : (
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Condition</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Details</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {value.conditions.map((item, i) => (
-              <Table.Tr key={i}>
-                <Table.Td>{item.type}</Table.Td>
-                <Table.Td>{item.status}</Table.Td>
-                <Table.Td>
-                  {item.reason && <Text size="sm">{item.reason}</Text>}
-                  {item.message && <Text size="sm">{item.message}</Text>}
-                  {item.last_transition_time && (
-                    <Text size="xs" c="dimmed">
-                      {item.last_transition_time}
-                    </Text>
-                  )}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+      )}
+      {ready?.message && <Text size="sm">{ready.message}</Text>}
+      {details && (
+        <Disclosure summary="Diagnostics">
+          {value.node_name && <Text size="sm">Node {value.node_name}</Text>}
+          {value.created_at && <Text size="sm">Created {value.created_at}</Text>}
+          {value.pod_ips?.length ? <Text size="sm">IP addresses {value.pod_ips.join(", ")}</Text> : null}
+          {value.conditions.length > 0 && (
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Condition</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {value.conditions.map((item, i) => (
+                  <Table.Tr key={i}>
+                    <Table.Td>{item.type}</Table.Td>
+                    <Table.Td>{item.status}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </Disclosure>
       )}
     </Stack>
   );
@@ -134,6 +138,7 @@ function SandboxInfo({ value }: { value: z.infer<typeof info> }) {
 export const sandboxInfoResult: ResultPreview = defineResultPreview(info, ({ result }) => (
   <SandboxInfo value={result} />
 ));
+const sandboxCreated = defineResultPreview(info, ({ result }) => <SandboxInfo value={result} created />);
 export const sandboxListResult: ResultPreview = defineResultPreview(
   z.strictObject({ sandboxes: z.array(info) }),
   ({ result }) => (
@@ -212,7 +217,7 @@ export const sandboxExecPresentation: ActionPresentation = {
 export const sandboxCreatePresentation: ActionPresentation = {
   label: sandboxCreateLabel,
   pane: { collapsed: sandboxCreateArguments, opened: sandboxCreateArguments },
-  details: { arguments: sandboxCreateArguments, nativeResult: sandboxInfoResult },
+  details: { arguments: sandboxCreateArguments, nativeResult: sandboxCreated },
   offersCardDecisionButtons: argumentsMatch(create),
   compactCardExpands: expandsForRejectedArguments(create),
 };
@@ -238,10 +243,47 @@ export const sandboxListPresentation: ActionPresentation = {
   compactCardExpands: expandsForRejectedArguments(empty),
 };
 
+const templateArgs = z.strictObject({ template: z.string().min(1) });
+const podTemplate = z.looseObject({
+  spec: z.looseObject({
+    containers: z.array(z.looseObject({ name: z.string(), image: z.string().optional() })),
+    volumes: z.array(z.looseObject({ name: z.string() })).optional(),
+  }),
+});
+const sandboxTemplatePresentation: ActionPresentation = {
+  fallbackLabel: "Inspect sandbox template",
+  label: definePreview(templateArgs, ({ args }) => (
+    <Text size="sm" fw={600}>
+      Inspect sandbox template {args.template}
+    </Text>
+  )),
+  details: {
+    arguments: { schema: templateArgs, render: () => null },
+    nativeResult: defineResultPreview(podTemplate, ({ result }) => (
+      <Stack gap="xs">
+        {result.spec.containers.map((container) => (
+          <Text key={container.name} size="sm" style={{ overflowWrap: "anywhere" }}>
+            {container.name}
+            {container.image && ` · ${container.image}`}
+          </Text>
+        ))}
+        {result.spec.volumes?.length ? (
+          <Text size="sm">Volumes · {result.spec.volumes.map((volume) => volume.name).join(", ")}</Text>
+        ) : null}
+        <Disclosure summary="Pod template">
+          <TextBlock text={stringify(result)} language="yaml" />
+        </Disclosure>
+      </Stack>
+    )),
+  },
+  compactCardExpands: expandsForRejectedArguments(templateArgs),
+};
+
 export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["exec", sandboxExecPresentation],
   ["create", sandboxCreatePresentation],
   ["get", sandboxGetPresentation],
   ["dispose", sandboxDisposePresentation],
   ["list", sandboxListPresentation],
+  ["get_template", sandboxTemplatePresentation],
 ]);
