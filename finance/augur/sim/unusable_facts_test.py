@@ -4,6 +4,9 @@ Each refusal sits where the fact is declared or lowered, so nothing carries a nu
 price into a month's arithmetic or into the terminal snapshot.
 """
 
+from decimal import Decimal
+from functools import partial
+
 import numpy as np
 import polars as pl
 import pytest
@@ -23,6 +26,7 @@ from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity_series import compile_pe_channels
+from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
@@ -31,19 +35,11 @@ ACME = IssuerId("acme")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 SCALE = quantity_scale_for_asset(VTI)
 HORIZON = 2
-# A per-issuer channel's level when nothing about the issuer is meant to happen.
-QUIET_CHANNELS = {
-    "mark": 1,
-    "regime": int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-    "event_kind": int(PrivateEquityEventKindCode.NONE),
-    "sale_opportunity": 0,
-    "sale_capacity": 1_000_000_000,
-    "eligible": 1_000_000_000,
-    "forced_sale": 0,
-    "liquidity_blocked": 0,
-    "forced_recovery": 0,
-    "company_valuation": 1,
-}
+CENT = Decimal("0.01")
+# One issuer's ten channels, flat over the horizon, where nothing about the issuer is meant to happen.
+private_equity_series = partial(
+    issuer_protocol, ACME, horizon_months=HORIZON, mark_usd=CENT, company_valuation_usd=CENT
+)
 
 
 def alice_holding(*series: Series) -> World:
@@ -56,18 +52,6 @@ def alice_holding(*series: Series) -> World:
 
 def vti_series(*levels: float) -> tuple[Series, ...]:
     return level_series({VTI: [levels]}, rollout_count=1, horizon_months=len(levels) - 1)
-
-
-def private_equity_series(**overrides: tuple[int, ...]) -> tuple[Series, ...]:
-    """One issuer's ten channels, flat over the horizon unless a channel states its own path."""
-    return tuple(
-        Series(
-            series_id=f"private_equity_{channel}:{ACME}",
-            snapshots=HORIZON + 1,
-            values=overrides.get(channel, (level,) * (HORIZON + 1)),
-        )
-        for channel, level in QUIET_CHANNELS.items()
-    )
 
 
 def private_equity_bundle(*, channel: str, month: int, value: float) -> PrivateEquityBundle:
@@ -157,7 +141,7 @@ def test_a_private_equity_mark_is_required_at_the_terminal_snapshot_too() -> Non
 
     holder(*private_equity_series())
     with pytest.raises(ValueError, match=r"(?i)invalid mark value"):
-        holder(*private_equity_series(mark=(1, 1, -1)))
+        holder(*private_equity_series(mark_usd=[CENT, CENT, -CENT]))
 
 
 @pytest.mark.parametrize("bad_price", [0.0, -100.0, float("nan")], ids=["zero", "negative", "nonfinite"])
