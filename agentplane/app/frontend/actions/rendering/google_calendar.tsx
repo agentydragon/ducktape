@@ -92,13 +92,17 @@ const eventPage = z.object({
   next_page_token: z.string().nullish(),
 });
 
-function Field({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+function Field({ label, children }: { label?: string; children: ReactNode }): JSX.Element {
   return (
     <Text component="div" size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      <Text span fw={600}>
-        {label}
-      </Text>
-      {" · "}
+      {label && (
+        <>
+          <Text span fw={600}>
+            {label}
+          </Text>
+          {" · "}
+        </>
+      )}
       {children}
     </Text>
   );
@@ -117,7 +121,6 @@ function CalendarName({ id, name }: { id?: string; name?: string | null }): JSX.
   url.searchParams.set("cid", btoa(String.fromCharCode(...bytes)).replace(/=+$/, ""));
   return (
     <Anchor href={url.href} target="_blank" rel="noreferrer" inherit>
-      <GoogleCalendarIcon />
       {name}
     </Anchor>
   );
@@ -230,7 +233,8 @@ function Target({
   return (
     <Stack gap={4}>
       {showEvent && (
-        <Field label={kind === "series" ? "Series" : "Event"}>
+        // A linked event name carries the Calendar icon, which already says what it is.
+        <Field label={kind === "series" ? "Series" : calendarEventUrl(preview?.htmlLink) ? undefined : "Event"}>
           <EventName id={id} name={preview?.summary} link={preview?.htmlLink} />
         </Field>
       )}
