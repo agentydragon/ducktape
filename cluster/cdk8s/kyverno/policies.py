@@ -269,7 +269,10 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
                 resource_rules=[
                     ValidatingPolicySpecMatchConstraintsResourceRules(
                         api_groups=["external-secrets.io"],
-                        api_versions=["*"],
+                        # Kyverno 1.19 passes a wildcard version literally to its
+                        # background-scan RESTMapper, so it cannot discover stores.
+                        # v1 is the sole version served by our ESO CRD.
+                        api_versions=["v1"],
                         operations=["CREATE", "UPDATE"],
                         resources=["clustersecretstores"],
                     )

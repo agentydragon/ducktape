@@ -95,7 +95,7 @@ spec:
       - apiGroups:
           - external-secrets.io
         apiVersions:
-          - "*"
+          - v1
         operations:
           - CREATE
           - UPDATE
