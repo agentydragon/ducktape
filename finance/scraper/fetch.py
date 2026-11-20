@@ -27,18 +27,16 @@ import argparse
 import asyncio
 import logging
 import os
-import sys
 import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
-from itertools import chain
 from pathlib import Path
 from typing import Protocol
 
 import pygit2
 from pydantic import BaseModel, Field
 
-from finance.evidence.markets import MarketEntry, load_roster, merged_roster
+from finance.evidence.markets import MarketEntry
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceSource
 from finance.scraper.http_fetch import FETCH_ERRORS, HttpGet, http_get as _real_http_get
 from finance.scraper.market_mirror import sync_markets
@@ -280,18 +278,3 @@ async def run_from_args(args: argparse.Namespace, *, markets: Iterable[MarketEnt
         market_max_age=_hours_or_none(args.market_max_age_hours),
         stale_after=_hours_or_none(args.stale_after_hours),
     )
-
-
-async def async_main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    markets = merged_roster(chain.from_iterable(load_roster(path) for path in args.roster))
-    return await run_from_args(args, markets=markets)
-
-
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    return asyncio.run(async_main(argv))
-
-
-if __name__ == "__main__":
-    sys.exit(main())
