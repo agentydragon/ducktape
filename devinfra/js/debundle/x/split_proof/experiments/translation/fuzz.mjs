@@ -1,6 +1,6 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
-//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--effects] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
+//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -8,9 +8,6 @@
 // generator knows what every unit declares and mentions, so its imports do not depend on the checker's scope analysis.
 // Node runs the bundle and every tree. A tree the checker accepts (exit 0) must print the same as the bundle:
 // an accepted tree that does not is a WRONG ACCEPT, and the exit code of this script is 1.
-//
-// `--effects` checks with `translate_effects` (footprints from the abstract interpreter of `lean/Experiments/Effects.lean`,
-// under the premises `effectsPremises` below) instead of `translate`.
 //
 // `--leaks` adds templates whose behavior depends on something a move or a rename changes: `import.meta.url`, direct `eval`,
 // top-level `await` (the checker must refuse these) and `fn.name` (assumed harmless: such wrong accepts are counted apart).
@@ -26,11 +23,9 @@ import { generateAstBundle, astStatistics, printAst } from "./ast_generator.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
-const translateEffects =
-  process.env.TRANSLATE_EFFECTS ?? path.join(here, "../../lean/.lake/build/bin/translate_effects");
-// What `--effects` assumes besides the always-on premises: the world defines no accessors or conversion hooks on program
-// objects (P3), which the generated bundles satisfy.
-const effectsPremises = { noWorldHooks: true };
+// The premises the checker runs under besides the always-on ones: the world defines no accessors or conversion hooks on
+// program objects (P3), which the generated bundles satisfy.
+const premises = { noWorldHooks: true };
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -641,6 +636,36 @@ const TEMPLATES = [
       });
     },
   ],
+  // ---- the bundle changes an intrinsic, and a unit reads what it changed
+  [
+    "intrinsicStatic",
+    2,
+    false,
+    (g) => {
+      const n = g.fresh("fz");
+      const v = g.fresh("v");
+      g.add("staticPatch", `Symbol.${n} = Symbol("${n}");`);
+      g.add("staticRead", `const ${top(v)} = typeof Symbol.${n};`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", json: true, data: true }],
+      });
+    },
+  ],
+  [
+    "intrinsicPrototype",
+    2,
+    false,
+    (g) => {
+      const n = g.fresh("fz");
+      const v = g.fresh("v");
+      const via = g.r.pick([`{}`, `[]`, `function () {}`, `new Map()`]);
+      g.add("prototypePatch", `Object.prototype.${n} = "${n}";`);
+      g.add("prototypeRead", `const ${top(v)} = typeof (${via}).${n};`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", json: true, data: true }],
+      });
+    },
+  ],
   // ---- how a write and an alias can reach an object: the analysis must see every route
   [
     "aliasOf",
@@ -1146,12 +1171,13 @@ function split(bundle, r, opts) {
   return { files, mapping, strategy, capture: capture || taken !== null, modules: paths.length, rename };
 }
 
+// `lean_binary` runs the checker in Lean's interpreter, which takes seconds a call on a busy worker: a hang is a minute.
 function run(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), 15000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), 60000);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", (error) => {
@@ -1193,7 +1219,6 @@ async function main() {
   const leaks = args.includes("--leaks");
   const callbackCorpus = args.includes("--callback-corpus");
   const astCorpus = args.includes("--ast-corpus");
-  const effects = args.includes("--effects");
   if (callbackCorpus && astCorpus) throw new Error("choose one structured corpus");
   const astTypes = {};
   const astFeatures = {};
@@ -1234,7 +1259,7 @@ async function main() {
     }
     const bundleJson = path.join(dir, "bundle.json");
     const premisesJson = path.join(dir, "premises.json");
-    writeFileSync(premisesJson, JSON.stringify(effectsPremises));
+    writeFileSync(premisesJson, JSON.stringify(premises));
     try {
       writeFileSync(bundleJson, JSON.stringify(frontBundle(bundleFile)));
     } catch (error) {
@@ -1280,9 +1305,7 @@ async function main() {
       }
       writeFileSync(certJson, JSON.stringify({ pairs: plan.mapping }));
       const [checked, ran] = await Promise.all([
-        effects
-          ? run(translateEffects, [bundleJson, outputJson, certJson, "--premises", premisesJson])
-          : run(translate, [bundleJson, outputJson, certJson]),
+        run(translate, [bundleJson, outputJson, certJson, "--premises", premisesJson]),
         run(process.execPath, [path.join(treeDir, "entry.js")]),
       ]);
       const tree = behavior(ran);
@@ -1313,8 +1336,6 @@ async function main() {
         (plan.modules > 1 || plan.mapping.some(([, , original], index) => original !== index))
       )
         bump("ast/nontrivialAccepted");
-      if (astCorpus && /inferred identity call/.test(checked.stdout)) bump("ast/inferredIdentity");
-      if (astCorpus && /inferred closure factory/.test(checked.stdout)) bump("ast/inferredFactory");
       if (astCorpus && t === 0 && (!same || verdict !== "accept"))
         throw new Error(`AST safe control ${round}: ${verdict}, same=${same}`);
       if (callbackCorpus && t % 2 === 0 && (!same || verdict !== "accept"))
@@ -1386,8 +1407,6 @@ async function main() {
         types: astTypes,
         features: astFeatures,
         plans: planTypes,
-        inferredIdentityPlans: tally["ast/inferredIdentity"] ?? 0,
-        inferredFactoryPlans: tally["ast/inferredFactory"] ?? 0,
         guidedDifferentPlans: tally["ast/guidedDifferent"] ?? 0,
         indirectGuidedDifferentPlans: tally["ast/indirectGuidedDifferent"] ?? 0,
         indirectArrowGuidedDifferentPlans: tally["ast/indirectArrowGuidedDifferent"] ?? 0,
@@ -1445,10 +1464,6 @@ async function main() {
     throw new Error("AST corpus did not reject a divergent indirect callback through OrderOk");
   if (astCorpus && args.includes("--require-updates") && !astTypes.UpdateExpression)
     throw new Error("AST corpus did not exercise mutable updates");
-  if (astCorpus && args.includes("--require-inferred-identity") && !tally["ast/inferredIdentity"])
-    throw new Error("AST corpus did not exercise identity inference");
-  if (astCorpus && args.includes("--require-inferred-factory") && !tally["ast/inferredFactory"])
-    throw new Error("AST corpus did not exercise factory inference");
   console.log(
     `${count} bundles x ${trees} trees, seed ${seed}${leaks ? ", with leak templates" : ""}; ${invalidBundles} invalid bundles skipped, ${refused} trees the front end refused`
   );

@@ -1,1 +1,1 @@
-{ "code": 0, "contains": "inferred identity call", "node_stdout": ["side\nresult 1\n", "side\nresult 1\n"] }
+{ "code": 0, "contains": "PLAN SOUND", "node_stdout": ["side\nresult 1\n", "side\nresult 1\n"] }

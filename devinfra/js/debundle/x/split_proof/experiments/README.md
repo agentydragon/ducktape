@@ -1,6 +1,6 @@
 # Experiments: what it costs to go further
 
-Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts. The [ESMeta spike](esmeta/README.md) investigates a fuller JavaScript semantics; [inferred identity](inferred_identity.md) connects a MiniJS identity call to a conditional plan proof.
+Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts. The [ESMeta spike](esmeta/README.md) investigates a fuller JavaScript semantics.
 Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Sound plans without a spec
@@ -365,15 +365,15 @@ Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the pl
 
 | Outcome                                                                                  | Entries |
 | ---------------------------------------------------------------------------------------- | ------- |
-| both accept, same stdout                                                                 | 66      |
+| both accept, same stdout                                                                 | 68      |
 | both reject (`atomic_conflict` 8, `cycle` 7)                                             | 15      |
-| I reject, debundle accepts (8 would run, 2 do not load)                                  | 10      |
+| I reject, debundle accepts (6 would run, 2 do not load)                                  | 8       |
 | I accept and the output differs                                                          | 0       |
 | refusal tests (debundle's error text)                                                    | 13      |
 | not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists) | 103     |
 
 - **It found two soundness gaps in my front end,** both fixed or guarded: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`).
-- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (5), repeated `var` (3), export names (1), and an import for evaluation order (1).
+- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), export names (1), and an import for evaluation order (1).
 
 ## 12. Translation validation: is this tree the bundle, renamed and reshuffled?
 
@@ -396,7 +396,7 @@ What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.
 
 Evidence, none of it a proof:
 
-- 60 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 47 reordered programs. Node runs 46 of them differently from the original, and `translate_effects` must not accept those; it must accept the 47th, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units: no wrong accept in 1,100 so far.
+- 65 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 52 reordered programs. Node runs 51 of them differently from the original, and `translate_effects` must not accept those; it must accept the 52nd, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units: no wrong accept in 1,100 so far.
 - The translation fuzzer with `--effects`: six runs of 100 to 300 random bundles each (the random catalog on three seeds, the AST corpus, the callback corpus, `--leaks`), 0 wrong accepts. On one seed it accepts 375 trees that Node agrees with, `translate` 322.
 - 54 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): the cases or the fuzzer must catch each.
 

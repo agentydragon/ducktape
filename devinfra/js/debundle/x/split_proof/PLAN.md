@@ -28,13 +28,15 @@ The adapter resolves `binding` selectors and hole-free templates by exact AST sh
 - `UniqueDefs` becomes "one module per name". Several `var` declarations of a name may sit in one module and keep their order, because they conflict. This changes `Semantics.lean`: the last declarer wins. `split_correct` needs a new proof.
 - Entries: 2 of the 4 `statement claimed by two modules` (the other 2 are refusal tests), `sibling_declarator_ownership`, and the 3 `UniqueDefs` rejections.
 
-## 3. Purity precision (5 `strict-but-runs`)
+## 3. Purity precision (3 of 5 `strict-but-runs` left)
 
-Every call and `new` is an effect today. That makes 37% of the statements in the six real bundles effects ([`experiments/README.md`](experiments/README.md) § 6).
+[`Effects.lean`](lean/Experiments/Effects.lean) runs pure local calls and applies a table of standard-function summaries ([`experiments/effects/`](experiments/effects/README.md)); `initialization/frozen_callback` and `native_collections/duplicate_primitive_spread` pass now. Left:
 
-- Add a pure-call class to [`Lower.lean`](lean/Experiments/Lower.lean): audited builtins on fresh arguments (`Object.freeze`, `Object.fromEntries`, `new Set`, `new Map`, `new Proxy` with a fresh handler), and local functions whose body is pure in its arguments. Take the builtin summaries and the soundness argument from [`docs/purity_soundness.md`](../../docs/purity_soundness.md) and `facts/abstract_domain/builtins.rs`.
-- This moves trust into footprint extraction, which Lean does not prove. Guard it with the corpus' rejections that must stay rejected (`proxy_constructor/effectful_proxy_keys`, `freeze_effectful_argument`, `freeze_proxy_receiver`), the fuzzer and the mutation test.
-- Also lowers false rejections on real bundles.
+- `emission/proxy_constructor/fresh_args`: `new Proxy` is a call into the world. A proxy runs its handler's traps, and an empty handler can gain one later, so a row needs a soundness argument ([`docs/purity_soundness.md`](../../docs/purity_soundness.md)).
+- `callbacks/from_entries_map_does_not_run_stored_callback_during_construction`: the result is exported, and what is read from an exported object is the world's, since a module in a cycle may have changed it. A claim in the spec that no cyclic importer observes it would clear it.
+- `initialization/frozen_record`: the declaration of `later` moves before the unit that gives `peek` to the world. Moving a declaration earlier is harmless when nothing in between can call `peek`; the model orders every reader and binder pair. A hint (step 2) says it.
+
+Guard anything added with the corpus' rejections that must stay rejected (`proxy_constructor/effectful_proxy_keys`, `freeze_effectful_argument`, `freeze_proxy_receiver`), the fuzzer and the mutation test.
 
 ## 4. Model verbatim `export` names (2 entries, and the `ExportNames` guard goes)
 

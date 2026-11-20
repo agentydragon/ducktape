@@ -1,12 +1,12 @@
-// Runs every case of `cases.mjs`: front end, `effects`, and compares each unit's classification with the expectation.
+// Runs every case of `cases.mjs`: front end, `lower`, and compares each unit's classification with the expectation.
 // A case may also list `reorders`: the same units in another order, written as a one-module tree. Node runs both; the
-// order must change what Node prints (`differs`) or not (`same`), and `translate_effects` must not accept a tree that
+// order must change what Node prints (`differs`) or not (`same`), and `translate` must not accept a tree that
 // differs. A `same` reorder with `accepted: true` is a positive anchor: the analysis is precise enough to allow it.
 //
 //   node run.mjs [--show] [--permutations N [--seed S]]
 //
 // `--permutations N` also runs N random permutations of the units of every case (after the listed reorders) and fails on
-// a wrong accept: a tree that `translate_effects` accepts and Node runs differently.
+// a wrong accept: a tree that `translate` accepts and Node runs differently.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,9 +17,8 @@ import { fileURLToPath } from "node:url";
 const { cases, premises } = await import(process.env.CASES ? path.resolve(process.env.CASES) : "./cases.mjs");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const effects = process.env.EFFECTS ?? path.join(here, "../../lean/.lake/build/bin/effects");
-const translateEffects =
-  process.env.TRANSLATE_EFFECTS ?? path.join(here, "../../lean/.lake/build/bin/translate_effects");
+const lower = process.env.LOWER ?? path.join(here, "../../lean/.lake/build/bin/lower");
+const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
 const pair = path.join(here, "../translation/pair.mjs");
 const frontend = path.join(here, "../translation/frontend.mjs");
 const show = process.argv.includes("--show");
@@ -48,13 +47,18 @@ const work = mkdtempSync(path.join(tmpdir(), "effects_"));
 const premisesFile = path.join(work, "premises.json");
 writeFileSync(premisesFile, JSON.stringify(premises));
 
-const classify = (f) => {
-  if (f.effect) return "world";
+// `world` says nothing about what the unit may change; a case that expects `world writes a b` (`world writes -` for no
+// names) also checks that.
+const classify = (f, wanted) => {
   const own = new Set(f.defs);
   const others = f.writes.filter((n) => !own.has(n)).sort();
+  if (f.effect) return wanted?.startsWith("world writes ") ? `world writes ${others.join(" ") || "-"}` : "world";
   return others.length === 0 ? "pure" : `writes ${others.join(" ")}`;
 };
-const normalize = (e) => (e.startsWith("writes ") ? `writes ${e.slice(7).split(" ").sort().join(" ")}` : e);
+const normalize = (e) => {
+  const m = e.match(/^(world )?writes (.*)$/);
+  return m ? `${m[1] ?? ""}writes ${m[2].split(" ").sort().join(" ")}` : e;
+};
 
 // A module outside the tree that a case imports: state that the program shares with the world.
 const vendorFile = path.join(work, "vendor_module.js");
@@ -73,7 +77,7 @@ const nodeOutput = (file) => {
   return `${r.status}\n${r.stdout}${r.status === 0 ? "" : r.stderr.split("\n")[0]}`;
 };
 
-// The verdict of `translate_effects` on the bundle's units in `order`, all in one module, and Node's verdict.
+// The verdict of `translate` on the bundle's units in `order`, all in one module, and Node's verdict.
 const reorder = (c, bundleFile, bundleJson, lines, order) => {
   const out = path.join(work, "out");
   rmSync(out, { recursive: true, force: true });
@@ -86,16 +90,15 @@ const reorder = (c, bundleFile, bundleJson, lines, order) => {
     ["tree", [frontend, "tree", out, "--entry", "entry.js", "--out", outputJson]],
     ["pairing", [pair, bundleJson, outputJson, "--out", certJson]],
   ]) {
-    const r = spawnSync("node", args, { encoding: "utf8" });
+    const r = spawnSync(process.execPath, args, { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`${c.name}: ${name} of [${order}]: ${r.stderr}`);
   }
-  const checked = spawnSync(translateEffects, [bundleJson, outputJson, certJson, "--premises", premisesFile], {
+  const checked = spawnSync(translate, [bundleJson, outputJson, certJson, "--premises", premisesFile], {
     encoding: "utf8",
     maxBuffer: 1 << 26,
   });
   const verdict = { 0: "accepted", 1: "rejected", 4: "obligations" }[checked.status];
-  if (!verdict)
-    throw new Error(`${c.name}: translate_effects exit ${checked.status}: ${checked.stdout}${checked.stderr}`);
+  if (!verdict) throw new Error(`${c.name}: translate exit ${checked.status}: ${checked.stdout}${checked.stderr}`);
   return { verdict, node: nodeOutput(path.join(out, "entry.js")), checked };
 };
 
@@ -105,16 +108,17 @@ for (const raw of cases) {
   const source = path.join(work, "case.mjs");
   const bundle = path.join(work, "bundle.json");
   writeFileSync(source, c.source);
-  const front = spawnSync("node", [frontend, "bundle", source, "--out", bundle], { encoding: "utf8" });
+  const front = spawnSync(process.execPath, [frontend, "bundle", source, "--out", bundle], { encoding: "utf8" });
   if (front.status !== 0) throw new Error(`${c.name}: ${front.stderr}`);
-  const run = spawnSync(effects, [bundle, "--premises", premisesFile], { encoding: "utf8", maxBuffer: 1 << 26 });
+  const run = spawnSync(lower, [bundle, "--premises", premisesFile], { encoding: "utf8", maxBuffer: 1 << 26 });
   if (run.status !== 0) throw new Error(`${c.name}: ${run.stderr}`);
-  const got = run.stdout
+  const footprints = run.stdout
     .trim()
     .split("\n")
-    .map((l) => classify(JSON.parse(l)));
-  const want = (c.expect ?? got).map(normalize);
-  const ok = got.length === want.length && got.every((g, i) => g === want[i]);
+    .map((l) => JSON.parse(l));
+  const want = c.expect?.map(normalize);
+  const got = footprints.map((f, i) => classify(f, want?.[i]));
+  const ok = want === undefined || (got.length === want.length && got.every((g, i) => g === want[i]));
   if (!ok) failures++;
   console.log(`${ok ? "pass" : "FAIL"}  ${c.name}`);
   const lines = c.source.trim().split("\n");

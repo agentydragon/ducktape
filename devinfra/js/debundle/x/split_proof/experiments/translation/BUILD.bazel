@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -18,7 +18,7 @@ _SHIFT_FUZZ_DATA = [
 
 js_test(
     name = "shift_fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--seed",
         "1",
@@ -32,7 +32,7 @@ js_test(
 
 js_test(
     name = "shift_fuzz_second_seed_test",
-    size = "small",
+    size = "medium",
     args = [
         "--seed",
         "2026",
@@ -92,7 +92,7 @@ _LOWER_CALLBACK_FUZZ_DATA = [
 
 js_test(
     name = "ast_emitter_fuzz_test",
-    size = "small",
+    size = "medium",
     data = _LOWER_CALLBACK_FUZZ_DATA + ["ast_generator.mjs"],
     entry_point = "ast_emitter_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
@@ -100,7 +100,7 @@ js_test(
 
 js_test(
     name = "ast_emitter_fuzz_seed_2027_test",
-    size = "small",
+    size = "medium",
     args = ["2027"],
     data = _LOWER_CALLBACK_FUZZ_DATA + ["ast_generator.mjs"],
     entry_point = "ast_emitter_fuzz_test.mjs",
@@ -109,7 +109,7 @@ js_test(
 
 js_test(
     name = "lower_callback_fuzz_test",
-    size = "small",
+    size = "medium",
     data = _LOWER_CALLBACK_FUZZ_DATA,
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
@@ -127,17 +127,10 @@ js_test(
 
 js_test(
     name = "unary_literal_safety_test",
-    size = "small",
-    data = _CHECKER_RUNFILES + [
-        "pair.mjs",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
+    size = "medium",
+    data = _LOWER_CALLBACK_FUZZ_DATA,
     entry_point = "unary_literal_safety_test.mjs",
-    env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )
 
 js_test(
@@ -170,30 +163,9 @@ js_test(
     },
 )
 
-js_binary(
-    name = "identity_certificate_tool",
-    data = [
-        "fixtures/local_identity/bundle.js",
-        "scope_metadata.mjs",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    entry_point = "identity_certificate.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-)
-
-js_run_binary(
-    name = "identity_certificate_source",
-    stdout = "generated/IdentityCertificate.lean",
-    tool = ":identity_certificate_tool",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
-)
-
 js_test(
     name = "ast_fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--ast-corpus",
         "--count",
@@ -206,8 +178,6 @@ js_test(
         "4",
         "--require-accepted",
         "--require-ast-coverage",
-        "--require-inferred-factory",
-        "--require-inferred-identity",
     ],
     data = _CHECKER_RUNFILES + ["ast_generator.mjs"],
     entry_point = "fuzz.mjs",
@@ -216,7 +186,7 @@ js_test(
 
 js_test(
     name = "ast_fuzz_second_seed_test",
-    size = "small",
+    size = "medium",
     args = [
         "--ast-corpus",
         "--count",
@@ -238,7 +208,7 @@ js_test(
 
 js_test(
     name = "callback_fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--callback-corpus",
         "--count",
@@ -258,7 +228,7 @@ js_test(
 
 js_test(
     name = "callback_fuzz_second_seed_test",
-    size = "small",
+    size = "medium",
     args = [
         "--callback-corpus",
         "--count",
@@ -278,22 +248,77 @@ js_test(
 
 js_test(
     name = "fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--count",
-        "16",
+        "40",
         "--seed",
-        "1",
+        "3",
         "--trees",
         "4",
         "--jobs",
-        "2",
+        "4",
         "--require-accepted",
     ],
     data = _CHECKER_RUNFILES + ["ast_generator.mjs"],
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
-    tags = ["manual"],
+)
+
+js_test(
+    name = "fuzz_leaks_test",
+    size = "medium",
+    args = [
+        "--leaks",
+        "--count",
+        "40",
+        "--seed",
+        "3",
+        "--trees",
+        "4",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES + ["ast_generator.mjs"],
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+# The golden cases of the effect analysis: what each unit of a small bundle touches, and Node's verdict on reorders.
+_EFFECTS = "//devinfra/js/debundle/x/split_proof/experiments/effects"
+
+_EFFECTS_CASES_DATA = _CHECKER_RUNFILES + [
+    "pair.mjs",
+    _EFFECTS + ":cases",
+    "//devinfra/js/debundle/x/split_proof/lean:lower",
+]
+
+_EFFECTS_CASES_ENV = {
+    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+}
+
+js_test(
+    name = "effects_cases_test",
+    size = "medium",
+    data = _EFFECTS_CASES_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = _EFFECTS_CASES_ENV,
+)
+
+js_test(
+    name = "effects_permutations_test",
+    size = "large",
+    args = [
+        "--permutations",
+        "3",
+        "--seed",
+        "1",
+    ],
+    data = _EFFECTS_CASES_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = _EFFECTS_CASES_ENV,
 )
 
 js_test(
@@ -339,41 +364,6 @@ exports_files(
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
 
-js_binary(
-    name = "frontend_lean",
-    data = [
-        "frontend.mjs",
-        "scope_metadata.mjs",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-    ],
-    entry_point = "frontend_lean.mjs",
-    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
-)
-
-js_test(
-    name = "callback_mutation_test",
-    size = "medium",
-    data = _CHECKER_RUNFILES + [
-        "ast_generator.mjs",
-        "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_alias_and_inert:translate",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate",
-    ],
-    entry_point = "callback_mutation_test.mjs",
-    env = {
-        "FACTORY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate)",
-        "IDENTITY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate)",
-        "NO_ALIAS_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate)",
-        "NO_ALIAS_AND_INERT_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_alias_and_inert:translate)",
-        "NO_DEFERRED_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
-)
-
 js_test(
     name = "ast_generator_validation_test",
     data = [
@@ -399,22 +389,6 @@ js_test(
 )
 
 js_test(
-    name = "callback_indirect_probe",
-    size = "large",
-    data = _CHECKER_RUNFILES + [
-        "ast_generator.mjs",
-        "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
-    ],
-    entry_point = "callback_indirect_probe.mjs",
-    env = {
-        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
-    tags = ["manual"],
-)
-
-js_test(
     name = "ast_indirect_callback_test",
     args = [
         "--ast-corpus",
@@ -435,54 +409,8 @@ js_test(
 )
 
 js_test(
-    name = "observed_fence_mutation_test",
-    args = ["17"],
-    data = _CHECKER_RUNFILES + [
-        "ast_generator.mjs",
-        "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
-    ],
-    entry_point = "observed_fence_mutation_test.mjs",
-    env = {
-        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
-)
-
-js_test(
-    name = "observed_fence_mutation_second_seed_test",
-    args = ["2026"],
-    data = _CHECKER_RUNFILES + [
-        "ast_generator.mjs",
-        "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
-    ],
-    entry_point = "observed_fence_mutation_test.mjs",
-    env = {
-        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
-)
-
-js_test(
-    name = "observed_fence_sweep",
-    size = "large",
-    data = _CHECKER_RUNFILES + [
-        "ast_generator.mjs",
-        "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
-    ],
-    entry_point = "fence_sweep.mjs",
-    env = {
-        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
-        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
-    },
-    tags = ["manual"],
-)
-
-js_test(
     name = "shift_script_fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--seed",
         "1",
@@ -497,7 +425,7 @@ js_test(
 
 js_test(
     name = "shift_modern_fuzz_test",
-    size = "small",
+    size = "medium",
     args = [
         "--seed",
         "1",

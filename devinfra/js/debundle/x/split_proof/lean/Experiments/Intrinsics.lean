@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import Std.Data.HashMap
 import Std.Data.HashSet
+import Experiments.IntrinsicMembers
 
 /-!
 # What the standard library does, as data
@@ -9,10 +10,13 @@ The effect analysis (`Effects.lean`) runs a bundle's top-level code abstractly. 
 into is a call into *the world*: it may do anything. This file lists the standard functions that are not: what they
 change, what they store where, what they return.
 
-**Premise P1: the intrinsics are not patched.** Nothing assigns to `Object`, `Array.prototype`, `Map.prototype`,
-… and nothing redefines a property of them, so `Object.keys` is the function this table describes. The analysis
-treats a write to an intrinsic object as a world effect, so a bundle that patches one gets more obligations, not a wrong
-verdict; what it does not check is that *another* script (loaded before the bundle) did not patch it.
+**Premise P1: nothing the analysis cannot see patches the intrinsics.** `Object.keys` is the function this table
+describes, and `Object.prototype` has the members it has. A patch the bundle makes itself is seen: a store, a
+definition, a deletion or a change of prototype on an intrinsic reached by name (`Object.prototype.x = …`,
+`Object.defineProperty(Array.prototype, …)`, `Object.setPrototypeOf(…)`; not through a value that may also be
+another object), and a store into the global object under the name of an intrinsic (`globalThis.Promise = …`). Any unit may read what a patch changes, so then every unit that is not
+a function declaration is treated as touching the world (`Effects.footprints`). Not seen: a patch by another script
+loaded before or during the bundle, one through a computed key into `window`, one through a value the world returned.
 
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
 accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made, and
@@ -236,11 +240,8 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
 ]
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,
-symbol or bigint has), generated from Node by `data/gen_members.mjs`. -/
-def members : Std.HashSet String :=
-  match Lean.Json.parse (include_str "data/intrinsic_members.json") with
-  | .ok j => Std.HashSet.ofList ((j.getArr?.toOption.getD #[]).toList.map fun x => x.getStr?.toOption.getD "")
-  | .error _ => {}
+symbol or bigint has), generated from Node by `experiments/effects/gen_members.mjs`. -/
+def members : Std.HashSet String := Std.HashSet.ofList memberPaths
 
 /-- Globals that name an intrinsic object or function. Everything else undeclared is the environment. -/
 def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [

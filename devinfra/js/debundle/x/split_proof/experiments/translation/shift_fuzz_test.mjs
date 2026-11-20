@@ -156,6 +156,7 @@ function emptyCoverage() {
         unstable: 0,
         loweringRejected: 0,
         emitterRejected: 0,
+        acceptedThrowing: 0,
         acceptedSame: 0,
         acceptedSameOk: 0,
         acceptedSameReordered: 0,
@@ -220,6 +221,7 @@ const stats = {
   unstable: 0,
   loweringRejected: 0,
   emitterRejected: 0,
+  acceptedThrowing: 0,
   accepted: 0,
   acceptedOk: 0,
   reordered: 0,
@@ -402,6 +404,13 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
       for (const kind of executed) stats.modernReorderedExecuted[kind]++;
     }
   }
+  // Premise P4: the checker's claim is for sources that complete. After a reorder, a source that throws may throw
+  // something else, or throw first.
+  if (baseline.status !== "ok") {
+    stats.acceptedThrowing++;
+    record("acceptedThrowing");
+    continue;
+  }
   const emitted = run(out, "entry.mjs", marker);
   if (!emitted) throw new Error(`seed ${seed}: emitted tree did not complete; artifacts at ${dir}`);
   if (JSON.stringify(baseline) !== JSON.stringify(emitted)) {
@@ -435,6 +444,7 @@ for (const row of Object.values(coverage)) {
       row.unstable +
       row.loweringRejected +
       row.emitterRejected +
+      row.acceptedThrowing +
       row.acceptedSame
   );
   assert(row.acceptedSameOkInSide <= row.acceptedSameInSide && row.acceptedSameInSide <= row.acceptedSame);

@@ -3,7 +3,7 @@ import Std.Data.HashMap
 import Std.Data.HashSet
 import EsmSplit.Cli
 import EsmSplit.Correct
-import Experiments.Lower
+import Experiments.Effects
 
 /-!
 # Is this output tree the bundle, renamed and reshuffled?
@@ -375,22 +375,10 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
            metaUrls := ctx.metaUrls
            extraExports := extraExports }
 
-/-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`. -/
+/-- The bundle as the checker sees it: one statement per unit, footprints from `Effects`. -/
 def bundleOfFootprints (fps : Array Lower.Footprint) : Bundle :=
   fps.toList.map fun f =>
-    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect, observedInit := f.observedInit, nonReentrant := f.nonReentrant }
-
-def bundleOf (units : Array Json) : Bundle :=
-  bundleOfFootprints (Lower.finalize (units.map Lower.analyzeTop))
-
-/-- Where the footprints of a bundle's units come from: the bundle, its units' annotated trees, and the names other
-modules can observe while it evaluates. Alongside the footprints, the lines to print about how they were made. -/
-abbrev Footprinter := Json → Array Json → Array String → Array Lower.Footprint × List String
-
-/-- The syntactic scan of `Lower`, with its trusted identity and factory recognizers. -/
-def syntacticFootprints : Footprinter := fun _ units exported =>
-  let (fps, identityScanExhausted) := Lower.finalizeWithScanStatus (units.map Lower.analyzeTop) exported
-  (fps, if identityScanExhausted then ["  identity inference disabled: annotated JSON exceeds scan depth limit"] else [])
+    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
 
 /-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle: what `OrderOk` rejects. -/
 def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id.run do
@@ -408,11 +396,12 @@ def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id
         if sample.size < 5 then sample := sample.push (a, b)
   return (count, sample)
 
-def mainWith (footprinter : Footprinter) (args : List String) : IO UInt32 := do
-  let (table?, args) := match args with
-    | [b, o, c, "--table", t] => (some t, [b, o, c])
-    | l => (none, l)
-  let [bundlePath, outPath, certPath] := args | IO.eprintln "usage: translate <bundle.json> <output.json> <cert.json> [--table <file>]"; return 2
+/-- `translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>]` -/
+def main (args : List String) : IO UInt32 := do
+  let (table?, args) := Effects.takeFlag "--table" args
+  let (premPath?, args) := Effects.takeFlag "--premises" args
+  let [bundlePath, outPath, certPath] := args | IO.eprintln "usage: translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>]"; return 2
+  let prem ← Effects.loadPremises premPath?
   let t0 ← IO.monoMsNow
   let read (p : String) : IO Json := do IO.ofExcept (Json.parse (← IO.FS.readFile p))
   let bundleJ ← read bundlePath
@@ -435,16 +424,10 @@ def mainWith (footprinter : Footprinter) (args : List String) : IO UInt32 := do
     let t2 ← IO.monoMsNow
     -- Exports are removed from `units` by the frontend but may be observed by external modules.
     let exported := (arr (fld bundleJ "exports")).map fun e => str (fld e "local")
-    let (fps, notes) ← IO.lazyPure fun _ => footprinter bundleJ units exported
-    for note in notes do IO.println note
+    let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf bundleJ) prem exported
+    for line in Effects.premiseLines prem analysis do IO.println line
     let B := bundleOfFootprints fps
-    for i in [:fps.size] do
-      if let some f := fps[i]? then
-        if let some name := f.inferredIdentity then
-          IO.println s!"  inferred identity call: unit {i}, binding `{name}` (trusted source analysis)"
-        if let some name := f.inferredFactory then
-          IO.println s!"  inferred closure factory: unit {i}, binding `{name}` (trusted source analysis; fresh allocation)"
-    IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units are effects"
+    IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units touch the world"
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder
     IO.println s!"  modules evaluated from the entry: {order.length} of {P.mods.length}"
@@ -461,7 +444,5 @@ def mainWith (footprinter : Footprinter) (args : List String) : IO UInt32 := do
     IO.println s!"OBLIGATIONS: {n} pairs of conflicting units run in the opposite order from the bundle"
     for (a, b) in sample do IO.println s!"    unit {b} came first in the bundle; the output runs unit {a} before it"
     return 4
-
-def main : List String → IO UInt32 := mainWith syntacticFootprints
 
 end Translate

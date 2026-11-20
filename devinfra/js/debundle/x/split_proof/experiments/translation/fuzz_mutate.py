@@ -1,7 +1,7 @@
-"""Mutation test of the effect analysis' tests: weaken the checker in a scratch copy, rebuild `translate_effects` and
-`effects`, run the cases of `experiments/effects` (`run.mjs`), then `fuzz.mjs --effects`.
+"""Mutation test of the analysis' tests: weaken the checker in a scratch copy, rebuild `translate` and `lower`, run the
+cases of `experiments/effects` (`run.mjs`), then `fuzz.mjs`.
 
-    python3 fuzz_mutate.py [bundles-per-mutant] [seed] [only-substring]
+    [SHARD=i/n] python3 fuzz_mutate.py [bundles-per-mutant] [seed] [only-substring]
 
 A mutant that neither the cases nor the fuzzer flag as a WRONG ACCEPT either is harmless (the rule it removes is
 redundant or conservative) or shows a gap in the catalog. Each line says which.
@@ -98,14 +98,14 @@ MUTANTS = {
     ),
     "call and apply do not call": (
         EFFECTS,
-        '  if path == "Function.prototype.call" then\n    return ← callAll thisV (args[0]?.getD #[]) (args.drop 1) false fr site',
-        '  if path == "Function.prototype.call" then\n    return #[]',
+        "      return ← callAll thisV (args[0]?.getD #[]) (args.drop 1) false deeper site",
+        "      return #[]",
         "`f.call(o)` writes `o`",
     ),
     "bound functions are not called": (
         EFFECTS,
-        "  | .bound target bthis bargs => callAll target bthis (bargs ++ args) isNew fr site",
-        "  | .bound target bthis bargs => pure #[]",
+        "    callAll target bthis (bargs ++ args) isNew { fr with depth := fr.depth + 1 } site\n",
+        "    pure #[]\n",
         "`f.bind(o)()` writes `o`",
     ),
     "captured cells are not reachable": (
@@ -285,8 +285,8 @@ MUTANTS = {
     ),
     "setPrototypeOf stores contents": (
         EFFECTS,
-        "      else if c ≥ 2 then joinProto (c - 1) (pos 2)",
-        "      else if c ≥ 2 then joinAny (c - 1) (pos 2)",
+        "        joinProto (c - 1) (pos 2)\n",
+        "        joinAny (c - 1) (pos 2)\n",
         "a method found through a prototype set later",
     ),
     "getPrototypeOf returns nothing": (
@@ -318,6 +318,51 @@ MUTANTS = {
         "  if ob.escaped then escapeAV v\n",
         "",
         "an object assigned to a variable or a property the world holds",
+    ),
+    "exported names are not held by the world": (
+        EFFECTS,
+        "    for n in exported do\n      if let some c := (← get).mods[n]? then escapeObj c",
+        "    for n in ([] : Array String) do\n      if let some c := (← get).mods[n]? then escapeObj c",
+        "an exported function that a module outside calls back while this one runs",
+    ),
+    "a change to an intrinsic is not noticed": (
+        EFFECTS,
+        "    else { s with patches := s.patches.push { unit := s.unit, path, key, what } }",
+        "    else s",
+        "an accessor the bundle defines on Object.prototype and a unit that reads a plain object",
+    ),
+    "a read of an intrinsic member is not recorded": (
+        EFFECTS,
+        '    unless path.startsWith "env:" || path.startsWith "vendor" do recBuiltinRead path key\n',
+        "",
+        "a unit that reads a static member that another unit adds",
+    ),
+    "the members of an intrinsic that a call lists are not read": (
+        EFFECTS,
+        "  recBuiltinsRead all\n",
+        "",
+        "Object.keys of an intrinsic that another unit added a member to",
+    ),
+    "X.prototype is a value of the world": (
+        EFFECTS,
+        '      else if k == "prototype" && members.contains child then return AV.ofObj (← builtinObj child)\n',
+        "",
+        "a store into Object.prototype is then a store into a value the world made",
+    ),
+    "a standard function has no call, apply or bind": (
+        EFFECTS,
+        '      else if (k == "call" || k == "apply" || k == "bind") && !path.endsWith ".prototype"',
+        '      else if false && !path.endsWith ".prototype"',
+        "Object.prototype.hasOwnProperty.call is then a call into the world (precision)",
+    ),
+    "a bound function is called without a level": (
+        EFFECTS,
+        "  | .bound target bthis bargs =>\n    tick\n    if (← isBroke) then return AV.top\n"
+        "    if fr.depth ≥ maxDepth then\n      -- the target may run later, at any time\n      escapeAV target\n"
+        "      escapeAV bthis\n      for a in bargs do escapeAV a\n      return ← worldCall (thisV :: args)\n"
+        "    callAll target bthis (bargs ++ args) isNew { fr with depth := fr.depth + 1 } site\n",
+        "  | .bound target bthis bargs => callAll target bthis (bargs ++ args) isNew fr site\n",
+        "a bound function that holds itself recurses until the stack overflows",
     ),
     "Promise.resolve is not an effect": (
         "Experiments/Intrinsics.lean",
@@ -353,8 +398,10 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         lean = pathlib.Path(tmp) / "lean"
         shutil.copytree(ROOT / "lean", lean, symlinks=True, ignore=shutil.ignore_patterns("bin"))
-        for name, (file, old, new, why) in MUTANTS.items():
-            if only not in name:
+        # `SHARD=i/n` takes every n-th mutant starting at i, so that n copies can run at once
+        index, shards = (int(x) for x in os.environ.get("SHARD", "0/1").split("/"))
+        for n, (name, (file, old, new, why)) in enumerate(MUTANTS.items()):
+            if only not in name or n % shards != index:
                 continue
             path = lean / file
             original = path.read_text()
@@ -375,11 +422,7 @@ def main():
                 (lean / f).write_text(text.replace("by decide +kernel", "by sorry"))
             try:
                 build = subprocess.run(
-                    ["lake", "build", "translate_effects", "effects"],
-                    check=False,
-                    cwd=lean,
-                    capture_output=True,
-                    text=True,
+                    ["lake", "build", "translate", "lower"], check=False, cwd=lean, capture_output=True, text=True
                 )
                 if build.returncode:
                     first = next((ln for ln in build.stdout.splitlines() if "error" in ln), "")
@@ -387,8 +430,8 @@ def main():
                     continue
                 env = dict(
                     os.environ,
-                    TRANSLATE_EFFECTS=str(lean / ".lake/build/bin/translate_effects"),
-                    EFFECTS=str(lean / ".lake/build/bin/effects"),
+                    TRANSLATE=str(lean / ".lake/build/bin/translate"),
+                    LOWER=str(lean / ".lake/build/bin/lower"),
                 )
                 cases = subprocess.run(
                     ["node", str(HERE / "../effects/run.mjs")], check=False, env=env, capture_output=True, text=True
@@ -398,7 +441,7 @@ def main():
                     print(f"{'CAUGHT by cases':18} {name:36} {first.strip()[:90]}  [{why}]", flush=True)
                     continue
                 run = subprocess.run(
-                    ["node", str(HERE / "fuzz.mjs"), "--effects", "--count", count, "--seed", seed],
+                    ["node", str(HERE / "fuzz.mjs"), "--count", count, "--seed", seed],
                     check=False,
                     env=env,
                     capture_output=True,

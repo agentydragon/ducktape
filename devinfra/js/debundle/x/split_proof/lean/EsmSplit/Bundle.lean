@@ -50,13 +50,10 @@ structure Stmt where
   assigns : List Name := []
   /-- A `function` declaration: its binding exists before any code runs. -/
   hoisted : Bool := false
-  /-- May do anything observable when run (any call, member access, operator, read of an
-      undeclared global, …). Effectful statements keep their relative order. -/
+  /-- Touches the world: the environment, or code that is not known (a call into a library, a function it was handed).
+      Effectful statements keep their relative order. A statement that only builds and changes objects of the program
+      is not an effect: its `writes` order it against whoever shares an object with it. -/
   effect  : Bool := false
-  /-- Pure initialization that must stay ordered against potentially reentrant effects. -/
-  observedInit : Bool := false
-  /-- This effect neither reenters nor fails before completion (excluding resource exhaustion). -/
-  nonReentrant : Bool := false
   deriving Repr, Inhabited
 
 /-- What a statement binds: the names it declares and the names it assigns. -/
@@ -310,16 +307,15 @@ end reads
 /-! ## Conflicts -/
 
 /-- Statements `i` and `j` must keep their relative order if they conflict:
-both have effects, a potentially reentrant effect crosses an observed initializer, one reads a name
-the other binds (declares or assigns), or both bind the same name.
-A hoisted declaration is available from the start, so nobody waits for it. -/
+both have effects, one reads a name the other binds (declares or assigns), or both bind the same name.
+A hoisted declaration is available from the start, so nobody waits for it, and running it changes nothing. -/
 def Bundle.conflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i
   let b := B.stmt j
-  ((a.effect && b.effect) || (a.effect && b.observedInit && !a.nonReentrant) || (b.effect && a.observedInit && !b.nonReentrant))
+  (a.effect && b.effect)
     || (!b.hoisted && b.binds.any (B.readsOf i).contains)
     || (!a.hoisted && a.binds.any (B.readsOf j).contains)
-    || a.binds.any b.binds.contains
+    || (!a.hoisted && !b.hoisted && a.binds.any b.binds.contains)
 
 /-- Conflict is independent of argument order, including for hoisted declarations. -/
 theorem Bundle.conflict_symm (B : Bundle) (i j : Nat) : B.conflict i j = B.conflict j i := by
@@ -327,7 +323,8 @@ theorem Bundle.conflict_symm (B : Bundle) (i j : Nat) : B.conflict i j = B.confl
     apply Bool.eq_iff_iff.mpr
     simp only [List.any_eq_true, List.contains_iff_mem]
     constructor <;> rintro ⟨x, hx, hy⟩ <;> exact ⟨x, hy, hx⟩
-  simp only [Bundle.conflict, overlap_symm, Bool.and_comm, Bool.or_comm, Bool.or_left_comm, Bool.or_assoc]
+  simp only [Bundle.conflict, overlap_symm, Bool.and_comm, Bool.and_assoc, Bool.or_comm, Bool.or_left_comm,
+    Bool.or_assoc]
 
 /-- Statements and read sets of all statements, as arrays, for the checks that look them up many times. -/
 def Bundle.readsTab (B : Bundle) : Array NameSet :=
@@ -340,10 +337,10 @@ def Bundle.readsTab (B : Bundle) : Array NameSet :=
 def Bundle.conflictT (arr : Array Stmt) (tab : Array NameSet) (i j : Nat) : Bool :=
   let a := arr.getD i default
   let b := arr.getD j default
-  ((a.effect && b.effect) || (a.effect && b.observedInit && !a.nonReentrant) || (b.effect && a.observedInit && !b.nonReentrant))
+  (a.effect && b.effect)
     || (!b.hoisted && b.binds.any (tab.getD i ∅).contains)
     || (!a.hoisted && a.binds.any (tab.getD j ∅).contains)
-    || a.binds.any b.binds.contains
+    || (!a.hoisted && !b.hoisted && a.binds.any b.binds.contains)
 
 theorem Bundle.readsTab_getD (B : Bundle) (i : Nat) : B.readsTab.getD i ∅ = B.readsOf i := by
   by_cases hi : i < B.length

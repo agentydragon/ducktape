@@ -181,6 +181,25 @@ structure Fr where
   /-- the class whose constructor runs, for `super(…)` -/
   klass : Option Nat := none
 
+/-- A change the bundle makes to an intrinsic (see `patchIntrinsic`). -/
+structure Patch where
+  unit : Nat
+  /-- the object changed: `Symbol`, `Array.prototype`, or `global` for a global that names an intrinsic -/
+  path : String
+  /-- the member changed, if it is known -/
+  key  : Option String
+  what : String
+
+/-- The members that the language itself reads, besides the code of the program: a conversion, a spread, an `await`,
+`instanceof`, `new`. A change to one of these, or to a prototype (`for…in` reads it), or to a member that is not known,
+can be read by any unit. A change to any other member of a function or a namespace is read where the program names it
+(`Symbol.dispose`, `Promise.withResolvers`), which `recBuiltinRead` records. -/
+def implicitKeys : List String :=
+  ["valueOf", "toString", "toLocaleString", "toJSON", "then", "catch", "finally", "constructor", "__proto__", "prototype"]
+
+def Patch.tracked (p : Patch) : Bool :=
+  !p.path.endsWith ".prototype" && (match p.key with | some k => !implicitKeys.contains k | none => false)
+
 structure St where
   objs     : Array Obj := #[{ kind := .world, escaped := true }]
   sites    : Std.HashMap (Nat × UInt64) Nat := {}
@@ -223,6 +242,8 @@ structure St where
   callLabel : String := ""
   /-- the frame of the function being run: accessors run from here -/
   cur      : Fr := {}
+  /-- what the bundle changes in the intrinsics, once for each member -/
+  patches  : Array Patch := #[]
 
 abbrev M := StateM St
 
@@ -274,6 +295,52 @@ def setTrace (why : String := "") : M Unit :=
 def recWrite (o : Nat) : M Unit := modify fun s => { s with writes := s.writes.insert o }
 def getObj (o : Nat) : M Obj := return (← get).objs[o]!
 def modObj (o : Nat) (f : Obj → Obj) : M Unit := modify fun s => { s with objs := s.objs.modify o f }
+
+/-- The bundle changes an intrinsic, or replaces a global that names one: premise P1 does not hold for this program.
+A unit that reads what was changed may read either value, so `footprints` orders it like a call into the world: the
+units that read the member (`recBuiltinRead`), or, for a change that is not read by name (see `implicitKeys`), every
+unit that is not a function declaration. -/
+def patchIntrinsic (path : String) (key : Option String) (what : String) : M Unit :=
+  modify fun s =>
+    if s.patches.any (fun p => p.path == path && p.key == key) then s
+    else { s with patches := s.patches.push { unit := s.unit, path, key, what } }
+
+/-- Whether every object among `v` is an intrinsic, and there is one. A change to it is then a change the bundle makes
+by name (`Object.prototype.x = …`). A change through a value that may also be another object is not counted: the sets
+of values the analysis computes are wide (`while (up !== proto) up = Object.getPrototypeOf(up)` may also end at
+`Object.prototype`), and counting those would make every library a patch. Objects of the environment and of a vendor
+library are the world's, and an effect already. -/
+def onlyIntrinsics (v : AV) : M Bool := do
+  let mut found := false
+  for c in v do
+    if c == 0 then continue
+    if c == 1 then return false
+    match (← get).objs[c - 1]!.kind with
+    | .builtin p =>
+      if p.startsWith "env:" || p.startsWith "vendor" then return false
+      found := true
+    | _ => return false
+  return found
+
+/-- A change to the objects of `v`, whose keys are not known: a patch when they are all intrinsics. -/
+def noteChange (v : AV) (what : String) : M Unit := do
+  if ← onlyIntrinsics v then
+    for c in v do
+      if c ≥ 2 then
+        if let .builtin p := (← get).objs[c - 1]!.kind then patchIntrinsic p none s!"{what} {p}"
+
+/-- A read of a member of an intrinsic (`Symbol.dispose`), or of all of them: `footprints` compares what a unit read with
+what the bundle patches. The names start with `%`, which no variable does. -/
+def recBuiltinRead (path : String) (key : Option String) : M Unit :=
+  modify fun s => { s with reads := s.reads.insert ("%" ++ path ++ "." ++ key.getD "*") }
+
+/-- Everything about the intrinsic objects among `v` is read: `Object.keys(Symbol)`, `for (k in Promise)`. -/
+def recBuiltinsRead (v : AV) : M Unit := do
+  for c in v do
+    if c ≥ 2 then
+      match (← get).objs[c - 1]!.kind with
+      | .builtin p => unless p.startsWith "env:" || p.startsWith "vendor" do recBuiltinRead p none
+      | _ => pure ()
 
 def builtinObj (path : String) : M Nat := do
   match (← get).builtins[path]? with
@@ -564,6 +631,7 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
   match ob.kind with
   | .world => return AV.top
   | .builtin path =>
+    unless path.startsWith "env:" || path.startsWith "vendor" do recBuiltinRead path key
     match key with
     | none => return AV.top
     | some k =>
@@ -578,6 +646,14 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       else if path.startsWith "env:" then
         setTrace ("read of " ++ path)
         return AV.top
+      -- a standard function is a function: it has `call`, `apply` and `bind`
+      else if (k == "call" || k == "apply" || k == "bind") && !path.endsWith ".prototype"
+          && !["Math", "JSON", "Reflect", "Atomics", "Intl"].contains path then
+        return AV.ofObj (← builtinObj ("Function.prototype." ++ k))
+      -- a constructor's prototype and a prototype's constructor are intrinsic objects, which a store can patch
+      else if k == "prototype" && members.contains child then return AV.ofObj (← builtinObj child)
+      else if k == "constructor" && path.endsWith ".prototype" then
+        return AV.ofObj (← builtinObj (path.toRawSubstring.dropRight 10).toString)
       -- the property exists but is not summarized: a call of it is a call into the world
       else if members.contains child then return AV.top
       -- a prototype has only the members it has
@@ -645,6 +721,7 @@ partial def accessorsOn (o : Nat) (key : Option String) (kind : String) (seen : 
 
 /-- Store `v` under `key` into every object of `target`. -/
 partial def setAV (target : AV) (key : Option String) (v : AV) : M Unit := do
+  let definite ← onlyIntrinsics target
   for c in target do
     if c == 0 then continue
     if c == 1 then
@@ -653,8 +730,15 @@ partial def setAV (target : AV) (key : Option String) (v : AV) : M Unit := do
     let ob ← getObj o
     match ob.kind with
     | .builtin p =>
-      -- P1: the intrinsics are not patched, so this is the environment: a global, a title, a handler the world keeps
-      if p.startsWith "env:" then setTrace ("store into " ++ p) else setWorld ("store into " ++ p)
+      -- the environment: a global, a title, a handler the world keeps
+      if p.startsWith "env:" then
+        setTrace ("store into " ++ p)
+        -- replacing a global that names an intrinsic changes what the name means to every unit
+        if let some k := key then
+          if intrinsicGlobals.contains k then patchIntrinsic "global" (some k) s!"store into {p}.{k}"
+      else
+        setWorld ("store into " ++ p)
+        if definite then patchIntrinsic p key s!"store into {p}{key.elim "" ("." ++ ·)}"
       escapeAV v
     | .world => setWorld "store into the world"; escapeAV v
     | _ =>
@@ -686,7 +770,9 @@ partial def contentsOf (a : AV) : M AV := do
         parts := parts.push AV.top
         worldMayHaveAccessors (c - 1)
       match ob.kind with
-      | .builtin _ => parts := parts.push AV.top
+      | .builtin p =>
+        unless p.startsWith "env:" || p.startsWith "vendor" do recBuiltinRead p none
+        parts := parts.push AV.top
       | _ => pure ()
   return AV.joinMany parts
 
@@ -715,8 +801,17 @@ partial def callVal (c : Nat) (thisV : AV) (args : List AV) (isNew : Bool) (fr :
       joinProto inst (← getVal c (some "prototype"))
       construct (c - 1) inst args fr site
     else return #[]
-  | .builtin path => callBuiltin path thisV args isNew fr site
-  | .bound target bthis bargs => callAll target bthis (bargs ++ args) isNew fr site
+  | .builtin path => callBuiltin path thisV args fr site
+  | .bound target bthis bargs =>
+    tick
+    if (← isBroke) then return AV.top
+    if fr.depth ≥ maxDepth then
+      -- the target may run later, at any time
+      escapeAV target
+      escapeAV bthis
+      for a in bargs do escapeAV a
+      return ← worldCall (thisV :: args)
+    callAll target bthis (bargs ++ args) isNew { fr with depth := fr.depth + 1 } site
   | _ => return #[]
 
 partial def callAll (callee : AV) (thisV : AV) (args : List AV) (isNew : Bool) (fr : Fr) (site : UInt64) : M AV := do
@@ -836,13 +931,13 @@ partial def superCall (fr : Fr) (args : List AV) : M AV := do
       match pob.kind with
       | .klass .. => r := r.join (← construct (c - 1) inst args fr 31)
       | .func code scope cthis => r := r.join (← callFunc code scope cthis fr.this args fr 37)
-      | .builtin path => r := r.join (← callBuiltin path fr.this args true fr 41)
+      | .builtin path => r := r.join (← callBuiltin path fr.this args fr 41)
       | _ => pure ()
   if ob.proto.isEmpty then r := r.join (← worldCall (fr.this :: args))
   return r
 
 /-- Apply a summary from the table, or a vendor entry. -/
-partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (isNew : Bool) (fr : Fr) (site : UInt64) :
+partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (fr : Fr) (site : UInt64) :
     M AV := do
   if path.startsWith "vendor-member:" then
     -- a member the premise lists: allocates a new object of the family, holding the receiver and the arguments
@@ -862,11 +957,14 @@ partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (isNew : B
       return AV.ofObj o
     | none => return ← worldCall (thisV :: args)
   -- `f.call(t, …)`, `f.apply(t, args)`, `f.bind(t, …)`: the receiver is the function
-  if path == "Function.prototype.call" then
-    return ← callAll thisV (args[0]?.getD #[]) (args.drop 1) false fr site
-  if path == "Function.prototype.apply" then
+  if path == "Function.prototype.call" || path == "Function.prototype.apply" then
+    -- a level of the call chain, or a value that holds this function would recurse for ever
+    if fr.depth ≥ maxDepth then return ← worldCall (thisV :: args)
+    let deeper : Fr := { fr with depth := fr.depth + 1 }
+    if path == "Function.prototype.call" then
+      return ← callAll thisV (args[0]?.getD #[]) (args.drop 1) false deeper site
     let a ← contentsOf (args[1]?.getD #[])
-    return ← callAll thisV (args[0]?.getD #[]) (List.replicate 4 a) false fr site
+    return ← callAll thisV (args[0]?.getD #[]) (List.replicate 4 a) false deeper site
   if path == "Function.prototype.bind" then
     let o ← alloc (.bound thisV (args[0]?.getD #[]) (args.drop 1)) (some (mixHash (mixHash fr.path site) 71))
     return AV.ofObj o
@@ -880,12 +978,14 @@ partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (isNew : B
 partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
   let pos (i : Nat) : AV := if i == 0 then thisV else args[i - 1]?.getD #[]
   let all : AV := AV.joinAll (thisV :: args)
+  recBuiltinsRead all
   if s.world then setTrace ("call of " ++ (← get).callLabel)
   for p in s.convertsContents do convert [← contentsOf (pos p)] fr (mixHash site (UInt64.ofNat p))
   for p in s.iterates do let _ ← iterate (pos p) false
   for p in s.optionalIterates do let _ ← iterate (pos p) true
   for p in s.retains do escapeAV (pos p)
   for p in s.muts do
+    noteChange (pos p) "mutation of"
     for c in pos p do
       if c == 1 then setWorld "mutation of a value the world made"
       else if c ≥ 2 then
@@ -896,6 +996,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     setAV thisV none (AV.joinAll args)
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
   if s.setProto then
+    noteChange (pos 1) "prototype of"
     for c in pos 1 do
       if c == 1 then setWorld "prototype of a value the world made"
       else if c ≥ 2 then joinProto (c - 1) (pos 2)
@@ -915,13 +1016,20 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     if accessor then
       for c in pos 1 do
         if c ≥ 2 then modObj (c - 1) fun x => { x with acc := "*" :: x.acc }
+  let deeper : Fr := { fr with depth := fr.depth + 1 }
+  -- callbacks that cannot be run from here may run later, at any time
+  let tooDeep := fr.depth ≥ maxDepth && !(s.callsWithWorld.isEmpty && s.calls.isEmpty)
+  if tooDeep then
+    for p in s.callsWithWorld ++ s.calls do escapeAV (pos p)
+    let _ ← worldCall (thisV :: args)
   for p in s.callsWithWorld do
-    let _ ← callAll (pos p) AV.prim [AV.top, AV.top] false fr (mixHash site (UInt64.ofNat (p + 100)))
+    unless tooDeep do
+      let _ ← callAll (pos p) AV.prim [AV.top, AV.top] false deeper (mixHash site (UInt64.ofNat (p + 100)))
   let mut calledRet : AV := #[]
-  if !s.calls.isEmpty then
+  if !s.calls.isEmpty && !tooDeep then
     let elems ← contentsOf (AV.joinAll (thisV :: args))
     for p in s.calls do
-      calledRet := calledRet.join (← callAll (pos p) AV.prim [elems, AV.prim, thisV] false fr (mixHash site (UInt64.ofNat p)))
+      calledRet := calledRet.join (← callAll (pos p) AV.prim [elems, AV.prim, thisV] false deeper (mixHash site (UInt64.ofNat p)))
   let mkArr (contents : AV) : M AV := do
     let o ← alloc .array (some (mixHash (mixHash fr.path site) 53))
     joinAny o contents
@@ -1068,7 +1176,9 @@ partial def evalIdent (fr : Fr) (n : String) : M AV := do
       return AV.ofObj o
     else if n == "undefined" then return #[]
     else if primGlobals.contains n then return AV.prim
-    else if intrinsicGlobals.contains n then return AV.ofObj (← builtinObj n)
+    else if intrinsicGlobals.contains n then
+      recBuiltinRead "global" (some n)
+      return AV.ofObj (← builtinObj n)
     else if envGlobals.contains n then return AV.ofObj (← builtinObj ("env:" ++ n))
     else
       -- an undeclared global the analysis does not know: the environment
@@ -1125,6 +1235,10 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     return AV.prim
   | "Identifier" => evalIdent fr (str (fld j "name"))
   | "ThisExpression" => return fr.this
+  -- `import.meta` is the module's record of its environment; `new.target` is the function being constructed, or nothing
+  | "MetaProperty" =>
+    if str (fld (fld j "meta") "name") == "import" then return AV.ofObj (← builtinObj "env:import.meta")
+    else return AV.top
   | "ParenthesizedExpression" | "ChainExpression" => eval fr (fld j "expression")
   | "TemplateLiteral" =>
     let vs ← (items (fld j "expressions")).toList.mapM (eval fr)
@@ -1166,6 +1280,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     let a ← eval fr (fld j "left")
     let b ← eval fr (fld j "right")
     let op := str (fld j "operator")
+    if op == "in" then recBuiltinsRead b
     if op == "===" || op == "!==" then pure () else convert [a, b] fr (shallow j)
     return AV.prim
   | "LogicalExpression" =>
@@ -1468,6 +1583,7 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
     if typ left == "VariableDeclaration" && (str (fld left "kind")).endsWith "using" then giveUp "using" s
     let fr' ← newFrame fr (lexicalNames #[left])
     let right ← eval fr (fld s "right")
+    if typ s == "ForInStatement" then recBuiltinsRead right
     let elems ← if typ s == "ForOfStatement" then iterate right else pure AV.prim
     if flag s "await" then awaitValue elems fr (shallow s)
     fixLoop do
@@ -1616,6 +1732,8 @@ structure Result where
   /-- the biggest abstract values: (size, object) -/
   biggest : Array (Nat × String)
   dbg : Array Nat
+  /-- what the bundle changes in the intrinsics -/
+  patches : Array Patch
 
 def analyze (units : Array Json) (imports : Std.HashMap String (String × String)) (prem : Premises)
     (exported : Array String) : Result :=
@@ -1671,7 +1789,7 @@ def analyze (units : Array Json) (imports : Std.HashMap String (String × String
       s!"#{o} {k}{match ob.name with | some n => " " ++ n | none => ""} any={ob.any.size} props={ob.props.size} keys={(ob.props.toList.take 6).map (·.1)} sizes={(ob.props.toList.take 6).map (·.2.size)}"
     return { units, escaped := namesReaching s par escapedObjs, used := s.usedVendor.toArray, unknown := s.unknown,
              gaveUp, objects := s.objs.size, escapedObjs := (escapedObjs.map describe).toArray, steps,
-             dbg := s.dbg,
+             dbg := s.dbg, patches := s.patches,
              biggest := ((List.range s.objs.size).toArray.map fun o =>
                let ob := s.objs[o]!
                (ob.any.size + ob.props.fold (fun n _ v => n + v.size) 0, describe o)).qsort (fun a b => a.1 > b.1) |>.extract 0 6 }
@@ -1687,15 +1805,22 @@ def footprints (units : Array Json) (imports : Std.HashMap String (String × Str
     (exported : Array String := #[]) : Array Footprint × Result :=
   let tops := units.map analyzeTop
   let r := analyze units imports prem exported
+  let wide := r.patches.any (!·.tracked)
+  let tracked := r.patches.filter (·.tracked)
+  let named : Std.HashSet String := tracked.foldl (fun s p => s.insert ("%" ++ p.path ++ "." ++ p.key.getD "*")) {}
+  let any : Std.HashSet String := tracked.foldl (fun s p => s.insert ("%" ++ p.path ++ ".*")) {}
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
   -- what an import stands for is held by the world: unknown code may have changed it
   let importNames := imports.toArray.map (·.1)
   let fps := (tops.zip r.units).map fun (t, e) =>
-    let eager := if e.world then (dedupeArr (t.rawEager ++ t.rawLazy)).toList else (dedupeArr t.rawEager).toList
+    -- P1 does not hold when the bundle changes an intrinsic: a unit that reads what it changed may read either value
+    let patched := !t.hoisted && (wide || e.reads.any fun rd => rd.startsWith "%" && (named.contains rd || any.contains rd))
+    let world := e.world || patched
+    let eager := if world then (dedupeArr (t.rawEager ++ t.rawLazy)).toList else (dedupeArr t.rawEager).toList
     let seeds : Std.HashSet String := Std.HashSet.ofList eager
     { defs := t.defs, eager, lazy := (dedupeArr t.rawLazy).toList,
-      deps := (dedupeArr e.reads).toList.filter (!seeds.contains ·), hoisted := t.hoisted, effect := e.world,
-      observedInit := false, nonReentrant := false,
+      deps := (dedupeArr e.reads).toList.filter (fun n => !n.startsWith "%" && !seeds.contains n),
+      hoisted := t.hoisted, effect := world,
       writes := (dedupeArr (if e.unk then e.writes ++ r.escaped ++ importNames else e.writes)).toList,
       assigns := (dedupeArr ((t.assignedEager ++ t.assignedLazy).filter declared.contains)).toList,
       fallback := (dedupeArr t.fallback).toList, rawEager := (dedupeArr t.rawEager).toList,
@@ -1748,11 +1873,13 @@ def importsOf (bundleJ : Json) : Std.HashMap String (String × String) :=
 /-- What a verdict rests on, one line each: the premises of this analysis and what it did not understand. -/
 def premiseLines (prem : Premises) (r : Result) : List String :=
   ["  analysis premises (assumed, not checked):",
-   "    P1 the intrinsics (`Object`, `Array`, `Map`, `Promise`, …) are not patched",
+   "    P1 nothing the analysis cannot see patches the intrinsics (`Object`, `Array`, `Map`, `Promise`, …)",
    s!"    P3 the world defines no accessors or conversion hooks on program objects, and converting a value it made runs no program code: {prem.noWorldHooks}",
    "    P4 evaluation completes (no uncaught exception, no hang)",
    "    P5 no other chunk runs during evaluation except through callbacks this chunk gave the world",
    s!"    vendor: {r.used.size} imports assumed to only allocate{if r.used.isEmpty then "" else ": " ++ ", ".intercalate r.used.toList}"]
+  ++ (if r.patches.isEmpty then [] else
+        [s!"  P1 does not hold: the bundle changes an intrinsic ({", ".intercalate (r.patches.toList.take 4 |>.map fun p => s!"unit {p.unit}: {p.what}")}); " ++ (if r.patches.any (!·.tracked) then "every unit that is not a function declaration counts as touching the world" else "the units that read what it changes count as touching the world")])
   ++ (if r.unknown.isEmpty then [] else
         [s!"  node types the analysis did not understand (each made its unit touch the world): {", ".intercalate (dedupeArr r.unknown).toList}"])
   ++ [s!"  {r.objects} abstract objects; {r.gaveUp} units out of budget"]

@@ -1,22 +1,24 @@
 load("@rules_lean//lean:lean.bzl", "lean_binary")
 
-_LOWER = "//devinfra/js/debundle/x/split_proof/lean:lower_mutation_source"
+_SOURCE = "//devinfra/js/debundle/x/split_proof/lean:translate_mutation_source"
 
-_BASE = "//devinfra/js/debundle/x/split_proof/lean:translation_mutation_base_sources"
+_BASE = "//devinfra/js/debundle/x/split_proof/lean:translate_mutation_base_sources"
 
+# The checker with every statement's computed write footprint erased. `ast_write_mutation_test` runs the generated
+# AST corpus against it and against the real checker. The genrule fails if the edited line is not present exactly once.
 genrule(
-    name = "mutated_lower",
-    srcs = [_LOWER],
-    outs = ["Experiments/Lower.lean"],
-    cmd = "test \"$$(grep -F -c 'let writes := if effect then' $(location " + _LOWER + "))\" -eq 1 && " +
-          "sed 's@let writes := if effect then .*@let writes : List String := []@' $(location " + _LOWER + ") > $@",
+    name = "mutated_translate",
+    srcs = [_SOURCE],
+    outs = ["Experiments/Translate.lean"],
+    cmd = "test \"$$(grep -F -c 'writes := f.writes,' $(location " + _SOURCE + "))\" -eq 1 && " +
+          "sed 's/writes := f.writes,/writes := [],/' $(location " + _SOURCE + ") > $@",
 )
 
 lean_binary(
     name = "translate",
     srcs = [
         _BASE,
-        ":mutated_lower",
+        ":mutated_translate",
     ],
     entry = "Experiments/TranslateMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],

@@ -1,0 +1,16 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+# The golden cases for the effect analysis. The tests that run them are `effects_cases_test` and
+# `effects_permutations_test` in //devinfra/js/debundle/x/split_proof/experiments/translation, beside the checker's other
+# tests.
+js_library(
+    name = "run",
+    srcs = ["run.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+js_library(
+    name = "cases",
+    srcs = ["cases.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)

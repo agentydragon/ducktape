@@ -48,8 +48,6 @@ function emit(name, code, selectedSide, force = false) {
 }
 const goodResult = emit("good", good);
 assert.equal(goodResult.result.status, 0, `${goodResult.result.stdout}\n${goodResult.result.stderr}`);
-assert.match(goodResult.result.stdout, /inferred closure factory/);
-assert.match(readFileSync(path.join(goodResult.dir, "certificate.lean"), "utf8"), /Trusted closure-factory inference/);
 const source = path.join(tmp, "factory-source.mjs");
 writeFileSync(source, good);
 const before = run(process.execPath, [source]);
@@ -72,13 +70,11 @@ for (const args of [
 }
 const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
-assert.match(checked.stdout, /inferred closure factory/);
 const multi = good
   .replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);")
   .replace("result();", "void (result(), result2());");
 const multiResult = emit("multi", multi);
 assert.equal(multiResult.result.status, 0, `${multiResult.result.stdout}\n${multiResult.result.stderr}`);
-assert.equal((multiResult.result.stdout.match(/inferred closure factory/g) ?? []).length, 2);
 const multiSource = path.join(tmp, "multi-source.mjs");
 writeFileSync(multiSource, multi);
 const multiBefore = run(process.execPath, [multiSource]);
@@ -106,30 +102,11 @@ for (const observer of ["result();", "globalThis.observe(result);"]) {
   assert.notEqual(result.status, 0, `${observer}: ${result.stdout}\n${result.stderr}`);
   assert(!existsSync(path.join(dir, "entry.mjs")), observer);
 }
+// Moving the side statement before the factory call changes the output when the call or the factory can print.
 for (const [name, bad] of [
   ["body", good.replace("return async", 'console.log("body"); return async')],
   ["argument", good.replace("factory(callback)", 'factory((console.log("argument"), callback))')],
-  ["default", good.replace("factory(f)", 'factory(f = console.log("default"))')],
-  ["destructure", good.replace("factory(f)", "factory({f})")],
   ["reassign", good.replace("const result", 'factory = f => { console.log("changed"); return f; };\nconst result')],
-  ["eval", good.replace("const result", 'eval("factory = f => f");\nconst result')],
-  ["callback_reassign", good.replace("const result", 'callback = () => console.log("changed");\nconst result')],
-  ["callback_destructure", good.replace("const result", '[callback] = [() => console.log("changed")];\nconst result')],
-  [
-    "callback_for_of",
-    good.replace("const result", 'for (callback of [() => console.log("changed")]) {}\nconst result'),
-  ],
-  ["callback_for_in", good.replace("const result", "for (callback in {changed: 1}) {}\nconst result")],
-  ["callback_update", good.replace("const result", "callback++;\nconst result")],
-  ["callback_nested_write", good.replace("const result", "function change() { callback = () => {}; }\nconst result")],
-  [
-    "callback_default_write",
-    good.replace("const result", "function change(x = (callback = () => {})) { let callback; }\nconst result"),
-  ],
-  [
-    "callback_after_inner_shadow",
-    good.replace("const result", "function change() { { let callback; } callback = () => {}; }\nconst result"),
-  ],
   [
     "eager_callback",
     good.replace("return async (...args) => f(...args)", "return (f(), async (...args) => f(...args))"),
@@ -141,11 +118,13 @@ for (const [name, bad] of [
       'return (console.log("eager"), async (...args) => f(...args))'
     ),
   ],
-  [
-    "tdz",
-    good.replace('function callback() { console.log("callback"); }', 'const callback = () => console.log("callback");'),
-  ],
 ]) {
+  const variantSource = path.join(tmp, `${name}-variant.mjs`);
+  writeFileSync(variantSource, bad);
+  const forcedVariant = emit(`${name}-forced`, bad, undefined, true);
+  const original = run(process.execPath, [variantSource]);
+  const split = run(process.execPath, [path.join(forcedVariant.dir, "entry.mjs")]);
+  assert.notEqual(split.stdout, original.stdout, `${name}: the split should change the output`);
   const { dir, result } = emit(name, bad);
   assert.equal(result.status, 1, `${name}: ${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /FAIL\s+OrderOk/, name);
@@ -205,7 +184,6 @@ trigger();`,
   const rejected = emit(name, code, side);
   assert.equal(rejected.result.status, 1, `${name}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
   assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, name);
-  assert.doesNotMatch(rejected.result.stdout, /inferred closure factory/, name);
   assert(!existsSync(path.join(rejected.dir, "entry.mjs")), name);
   const sourceFile = path.join(tmp, `${name}-source.mjs`);
   writeFileSync(sourceFile, code);
@@ -230,40 +208,10 @@ trigger();`,
   const checkedForced = run(process.env.TRANSLATE, [originalBundle, outputTree, pairing]);
   assert.equal(checkedForced.status, 4, `${name}: ${checkedForced.stdout}\n${checkedForced.stderr}`);
   assert.match(checkedForced.stdout, /FAIL\s+OrderOk/, name);
-  assert.doesNotMatch(checkedForced.stdout, /inferred closure factory/, name);
 }
 
-// Frontend exports are stored outside the unit list, so the translator must
-// explicitly treat the result as externally observable.
-{
-  const code = `${good}\nexport { result };\n`;
-  const rejected = emit("exported", code, [3]);
-  assert.equal(rejected.result.status, 1, rejected.result.stdout);
-  assert.match(rejected.result.stdout, /FAIL\s+OrderOk/);
-  assert.doesNotMatch(rejected.result.stdout, /inferred closure factory/);
-  const sourceFile = path.join(tmp, "factory-export-source.mjs");
-  writeFileSync(sourceFile, code);
-  const forced = emit("exported-forced", code, [3], true);
-  assert.equal(forced.result.status, 1, forced.result.stdout);
-  const originalBundle = path.join(tmp, "factory-export-bundle.json");
-  const outputTree = path.join(tmp, "factory-export-tree.json");
-  const pairing = path.join(tmp, "factory-export-pairing.json");
-  for (const args of [
-    [frontend, "bundle", sourceFile, "--out", originalBundle],
-    [frontend, "tree", forced.dir, "--entry", "entry.mjs", "--out", outputTree],
-    [path.join(here, "pair.mjs"), originalBundle, outputTree, "--out", pairing],
-  ]) {
-    const r = run(process.execPath, args);
-    assert.equal(r.status, 0, r.stderr);
-  }
-  const checkedExport = run(process.env.TRANSLATE, [originalBundle, outputTree, pairing]);
-  assert.equal(checkedExport.status, 4, checkedExport.stdout);
-  assert.doesNotMatch(checkedExport.stdout, /inferred closure factory/);
-  assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
-}
-
-// A fallback syntax node may hide deferred behavior; do not infer from a
-// statement that mentions the result and contains such a node.
+// A fallback syntax node may hide deferred behavior; the statement is
+// reported with its fallback nodes.
 {
   const code = `function factory(f) { return () => f(); }
 function callback() {}
@@ -271,6 +219,5 @@ const result = factory(callback);
 console.log(import.meta.url, result);`;
   const result = emit("fallback_factory", code, []);
   assert.equal(result.result.status, 0, `${result.result.stdout}\n${result.result.stderr}`);
-  assert.doesNotMatch(result.result.stdout, /inferred closure factory/);
   assert.match(result.result.stdout, /1 with fallback nodes/);
 }

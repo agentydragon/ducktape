@@ -26,11 +26,3 @@ root = "Experiments.EvalOrder"
 [[lean_exe]]
 name = "translate"
 root = "Experiments.TranslateMain"
-
-[[lean_exe]]
-name = "effects"
-root = "Experiments.EffectsMain"
-
-[[lean_exe]]
-name = "translate_effects"
-root = "Experiments.TranslateEffectsMain"

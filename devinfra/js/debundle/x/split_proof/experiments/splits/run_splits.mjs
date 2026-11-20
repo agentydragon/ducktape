@@ -9,7 +9,8 @@
 //             blocks: k = 2…8 contiguous blocks
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
-// For each split: `lowersplit --force` (checks, writes the modules even when rejected), then
+// The bundle's footprints are computed once (`lower`); each split is checked with `lowersplit --force --footprints`
+// (checks, writes the modules even when rejected), then
 // `smoke.mjs` on the entry module. One JSON line per split:
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
@@ -24,6 +25,7 @@ import { smoke } from "./smoke.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lowering = path.join(here, "../lowering/bundles");
 const lowersplit = path.join(here, "../../lean/.lake/build/bin/lowersplit");
+const lower = path.join(here, "../../lean/.lake/build/bin/lower");
 
 const [bundle, strategy, ...rest] = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -46,6 +48,12 @@ const run = (cmd, args) =>
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
 
+// The analysis takes minutes on a big bundle and does not depend on the split: run it once.
+const work = await mkdtemp(path.join(tmpdir(), "footprints_"));
+const footprints = path.join(work, "footprints.jsonl");
+const analysis = await run(lower, [path.join(lowering, `${bundle}.json`)]);
+if (analysis.code !== 0) throw new Error(`lower exit ${analysis.code}: ${analysis.stderr.split("\n").pop()}`);
+await writeFile(footprints, analysis.stdout);
 const bundleJson = JSON.parse(await readFile(path.join(lowering, `${bundle}.json`), "utf8"));
 const n = bundleJson.statements.length;
 const baseline = JSON.stringify(await smoke(family, path.join(lowering, `${bundle}.mjs`)));
@@ -76,6 +84,8 @@ async function worker() {
         path.join(lowering, `${bundle}.json`),
         path.join(dir, "spec.json"),
         path.join(dir, "out"),
+        "--footprints",
+        footprints,
         "--force",
       ]);
       const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(([, what]) =>
@@ -108,6 +118,7 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: jobs }, worker));
+await rm(work, { recursive: true, force: true });
 console.log(`${bundle} ${strategy}: ${plans.length} splits`, tally);
 if (tally["accept/different"]) {
   console.error("UNSOUND: an accepted split behaves differently");

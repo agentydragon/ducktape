@@ -784,6 +784,58 @@ console.log(w);
     reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
   },
   {
+    name: "an object a handler stores into an object the world holds: reading and writing it keep their order",
+    source: `
+const box = {};
+const et = new EventTarget();
+et.addEventListener("go", () => { box.v = { n: 0 }; });
+et.dispatchEvent(new Event("go"));
+const t = box.v;
+t.n = 1;
+const w = box.v.n === 1 ? "one" : "zero";
+console.log(w);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 4, 6, 5, 7], behavior: "differs" }],
+  },
+  {
+    name: "a computed key reads every property",
+    source: `
+const a = { n: 0 };
+const o = { x: a };
+const k = ["x", "y"][0];
+const t = o[k];
+t.n = 1;
+const w = a.n === 1 ? "one" : "zero";
+console.log(w);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 5, 4, 6], behavior: "differs" }],
+  },
+  {
+    name: "the same call made by two units writes in both",
+    source: `
+const o = { n: 0 };
+const bump = () => { o.n++; };
+const twice = () => { bump(); };
+twice();
+twice();
+const w = o.n === 2 ? "two" : "other";
+console.log(w);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 5, 4, 6], behavior: "differs" }],
+  },
+  {
+    name: "a loop stores through a variable it assigns later in its body",
+    source: `
+const a = { n: 0 };
+const b = { n: 0 };
+let p = a;
+for (const i of [1, 2]) { p.n = i; p = b; }
+const w = b.n === 2 ? "two" : "other";
+console.log(w);
+`,
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
     name: "vendor premise: listed functions and their members allocate, others are the world",
     source: `
 import { make, kit, other } from "./v.js";
@@ -799,5 +851,148 @@ const u = s.parse(1);
       { from: "./v.js", local: "kit", imported: "kit" },
       { from: "./v.js", local: "other", imported: "other" },
     ],
+  },
+  {
+    // A module that imports this one back (a cycle) can have given `globalThis.notify` a closure over `observe`.
+    name: "an exported function can be called by the world, and so can what it reads",
+    source: `
+let state = 0;
+export function observe() { return state; }
+state = 1;
+globalThis.notify();
+`,
+    expect: ["pure", "pure", "writes state", "world writes observe state"],
+  },
+  {
+    name: "reading an intrinsic prototype and calling its methods changes nothing",
+    source: `
+const o = { x: 1 };
+const has = Object.prototype.hasOwnProperty.call(o, "x");
+const same = Object.getPrototypeOf(o) === Object.prototype;
+const doubled = [1, 2].map((v) => v * 2);
+const ctor = o.constructor === Object;
+`,
+    expect: ["pure", "pure", "pure", "pure", "pure"],
+  },
+  {
+    // P1 does not hold when the bundle itself changes an intrinsic: every unit that is not a function declaration may
+    // read what it changed, through a prototype or a call of a standard function.
+    name: "a store into an intrinsic prototype: every unit may read it",
+    source: `
+const o = {};
+Object.prototype.tag = "patched";
+const seen = o.tag;
+console.log(seen);
+`,
+    expect: ["world", "world", "world", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    // A static member that is changed is read where the program names it: only those units touch the world.
+    name: "a polyfill of a static member: only the units that read it touch the world",
+    source: `
+const o = { n: 1 };
+Symbol.polyfilled = Symbol("polyfilled");
+const t = typeof Symbol.polyfilled;
+const u = typeof Symbol.iterator;
+const p = [o];
+console.log(t);
+`,
+    expect: ["pure", "world", "world", "pure", "pure", "world"],
+    reorders: [{ order: [0, 2, 1, 3, 4, 5], behavior: "differs" }],
+  },
+  {
+    name: "listing the members of an intrinsic reads every member that was added",
+    source: `
+Symbol.polyfilled = 1;
+const n = Object.keys(Symbol).length;
+console.log(n);
+`,
+    expect: ["world", "world", "world"],
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "the in operator reads every member of an intrinsic",
+    source: `
+Symbol.polyfilled = 1;
+const has = "polyfilled" in Symbol;
+console.log(has);
+`,
+    expect: ["world", "world", "world"],
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "an accessor defined on Object.prototype runs when a plain object is read",
+    source: `
+function inspect(options) { return options.missing; }
+Object.defineProperty(Object.prototype, "missing", { configurable: true, get() { console.log("getter"); } });
+const result = inspect({});
+console.log("done");
+`,
+    expect: ["pure", "world", "world", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "Object.assign into an intrinsic prototype",
+    source: `
+const o = {};
+Object.assign(Object.prototype, { tag: "patched" });
+const seen = o.tag;
+console.log(seen);
+`,
+    expect: ["world", "world", "world", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "the prototype of an intrinsic prototype is replaced",
+    source: `
+const a = [];
+Object.setPrototypeOf(Array.prototype, { tag: "patched" });
+const seen = a.tag;
+console.log(seen);
+`,
+    expect: ["world", "world", "world", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a global that names an intrinsic is replaced",
+    source: `
+globalThis.Array = class { static isArray() { return "patched"; } };
+const r = Array.isArray([]);
+console.log(r);
+`,
+    expect: ["world", "world", "world"],
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    // `proto[k]` holds the bound function after the first round, so a call of it calls itself: the analysis stops at
+    // its depth limit and treats the rest as a call into the world.
+    name: "a bound function stored where its target came from calls itself",
+    source: `
+const proto = { a() { return 1; } };
+const inst = {};
+for (const k in proto) { proto[k] = proto[k].bind(inst); }
+const r = proto.a();
+`,
+    expect: ["pure", "pure", "world", "world"],
+  },
+  {
+    name: "import.meta is read from the environment",
+    source: `
+const here = import.meta.url;
+const a = 1;
+console.log(a);
+`,
+    expect: ["world", "pure", "world"],
+  },
+  {
+    name: "a function nobody gave the world is out of its reach",
+    source: `
+let state = 0;
+function observe() { return state; }
+state = 1;
+globalThis.notify();
+`,
+    expect: ["pure", "pure", "writes state", "world writes -"],
   },
 ];

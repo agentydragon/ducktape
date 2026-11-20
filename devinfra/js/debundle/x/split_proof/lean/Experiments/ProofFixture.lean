@@ -44,8 +44,8 @@ theorem execution_order : Example.plan.execOrder = [1, 0, 2] := by decide +kerne
 theorem safe_inversion : [1, 0].Sublist Example.plan.execOrder ∧
     Bundle.conflictT Example.bundle.toArray Example.bundle.readsTab 0 1 = false := by decide +kernel
 
-/-- A hoisted binding may be read early, but a write to that binding still conflicts.
-Exercise the executable table lookup in both argument orders. -/
+/-- A hoisted binding exists before any code runs: it may be read or written early. Exercise the executable table
+lookup in both argument orders. -/
 def hoistedControl : Bundle := [
   { src := "", defs := ["fn"], hoisted := true },
   { src := "", eager := ["fn"] },
@@ -57,8 +57,18 @@ theorem hoisted_read_both_directions :
     Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 1 0 = false := by decide +kernel
 
 theorem hoisted_write_both_directions :
-    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 0 2 = true ∧
-    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 2 0 = true := by decide +kernel
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 0 2 = false ∧
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 2 0 = false := by decide +kernel
+
+/-- A write to a binding that is not hoisted conflicts with its declaration. -/
+def declaredControl : Bundle := [
+  { src := "", defs := ["x"] },
+  { src := "", writes := ["x"] }
+]
+
+theorem declared_write_both_directions :
+    Bundle.conflictT declaredControl.toArray declaredControl.readsTab 0 1 = true ∧
+    Bundle.conflictT declaredControl.toArray declaredControl.readsTab 1 0 = true := by decide +kernel
 
 /-- The unsafe generated control moves `copy` before its declaration of `one`.
 Use the same original-order conflict query as the translation diagnostic. -/
