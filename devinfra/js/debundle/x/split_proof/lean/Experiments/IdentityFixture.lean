@@ -13,27 +13,28 @@ theorem source_accepted : sourceBundle IdentityExample.bundle = some program := 
 
 theorem program_value : program = [
     ⟨["identity"], .lam "x" (.lvar "x"), true⟩,
+    ⟨["other"], .lam "x" (.lvar "x"), true⟩,
     ⟨["first"], .app (.gvar "identity") (.num 1), false⟩,
-    ⟨["second"], .app (.gvar "identity") (.num 2), false⟩
+    ⟨["second"], .app (.gvar "other") (.num 2), false⟩
   ] := by decide +kernel
 
 theorem extracted_footprints : IdentityExample.bundle.map (fun s => { s with src := "" }) = toBundle program := by
   rfl
 
-theorem automatically_discovered : (deriveIdentity program 1).isSome = true := by decide +kernel
+theorem automatically_discovered : (deriveIdentity program 2).isSome = true := by decide +kernel
 
 def plan : Plan := mkPlan IdentityExample.bundle IdentityExample.control_crossing
 
-theorem crossing_order : plan.execOrder = [0, 2, 1] := by decide +kernel
+theorem crossing_order : plan.execOrder = [0, 1, 3, 2] := by decide +kernel
 
 theorem crossing_perm : Permutes (toBundle program) plan := by decide +kernel
 
-theorem crossing_conditional : ConditionalOrderOk (toBundle program) plan (fun i => i == 1) := by decide +kernel
+theorem crossing_conditional : ConditionalOrderOk (toBundle program) plan (fun i => i == 2) := by decide +kernel
 
 theorem well_formed : WF program := by
   intro st hst hh
   simp [program_value] at hst
-  rcases hst with rfl | rfl | rfl <;> simp_all
+  rcases hst with rfl | rfl | rfl | rfl <;> simp_all
 
 theorem crossing_preserves (fuel : Nat) (w0 : World) :
     plan.execOrder.foldl (fun s i => cstep program fuel i s) (G0 program, w0) =

@@ -3,7 +3,7 @@
   "fails": "OrderOk",
   "entry": "main.mjs",
   "modules": {
-    "base.mjs": ["identity", "second"],
+    "base.mjs": ["identity", "other", "second"],
     "main.mjs": ["first"]
   }
 }
