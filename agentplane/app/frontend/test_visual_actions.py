@@ -375,7 +375,9 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     assert len(keys) == len(set(keys)), "Duplicate Action visual example"
     assert set(keys) == set(registered), "Every registered Action renderer needs a named visual example"
 
-    summaries = {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
+    summaries: dict[str, object] | None = (
+        {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
+    )
     await app.show_action_preview(example.group, example.name, example.arguments, summaries)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(page)

@@ -364,9 +364,8 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("does not register any action whose Haku renderer depended on lookups", async () => {
+  it("preserves recorded data for lookup-dependent Haku Actions that have no Agentplane preview", async () => {
     const excluded = [
-      ["gmail", "threads_modify_labels"],
       ["gmail", "threads_get"],
       ["gmail", "messages_get"],
       ["google_calendar", "create_event"],
@@ -388,7 +387,6 @@ describe("Action presentation slots", () => {
       ["tana", "import_tana_paste"],
       ["tana", "trash_node"],
       ["tana", "edit_node"],
-      ["tana", "move_node"],
       ["tana", "set_field_option"],
     ] as const;
     const result = parseCallToolResult({
@@ -408,6 +406,41 @@ describe("Action presentation slots", () => {
       const raw = await drawDetailsResult(action, result);
       expect(raw.textContent).toContain("Structured content");
       expect(raw.textContent).toContain('"lookup_dependent_value": "preserve raw response"');
+    }
+  });
+
+  it("shows Gmail label changes and recorded thread IDs while live subjects are unavailable", async () => {
+    const action = identity("gmail", "threads_modify_labels");
+    const details = await mount(
+      renderDetailsArguments(action, { thread_ids: ["thread-1", "thread-2"], add: ["Reviewed"], remove: ["Inbox"] })
+    );
+    expect(details.textContent).toContain("Add labels Reviewed");
+    expect(details.textContent).toContain("Remove labels Inbox");
+    expect(details.textContent).toContain("thread-1");
+    expect(details.textContent).toContain("thread-2");
+  });
+
+  it("shows Tana placement and recorded node IDs while live names are unavailable", async () => {
+    const action = identity("tana", "move_node");
+    const details = await mount(
+      renderDetailsArguments(action, {
+        nodeId: "draft",
+        targetNodeId: "project",
+        sourceParentId: "inbox",
+        position: "after",
+        referenceNodeId: "checklist",
+        keepSourceReference: true,
+      })
+    );
+    for (const text of [
+      "Node draft",
+      "Destination project",
+      "Source parent inbox",
+      "Reference node checklist",
+      "Position after",
+      "Keep the source reference",
+    ]) {
+      expect(details.textContent).toContain(text);
     }
   });
 
