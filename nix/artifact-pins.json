@@ -241,8 +241,8 @@
       "sha256": "omVUBjtPS3y2qljKxhZRs0jWRsELbrjEN+KE+q5md8M="
     },
     "skill-cdk8s_builders": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-1c995fde60c8/cdk8s_builders.skill",
-      "sha256": "HJlf3mDIjAYnzo/LxV7aGglvkq592Jf0oourjiasAGM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-cb574df05f83/cdk8s_builders.skill",
+      "sha256": "y1dN8F+DoJwS0yExTwSbAjptaI01M4+TBhhT+MQ0wXk="
     },
     "plaid-spend-desktop": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-b7b3d3de136b/plaid_spend_desktop-0.1.0-py3-none-any.whl",
