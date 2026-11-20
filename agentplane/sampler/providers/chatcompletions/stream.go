@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -269,8 +270,14 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 	}
 	m := message{Role: "assistant", Content: s.text.String(), Reasoning: s.reasoning.String(), ToolCalls: s.calls}
 	switch s.audit.FinishReason {
-	case "stop", "tool_calls":
-		if (s.audit.FinishReason == "tool_calls") != (len(s.calls) > 0) {
+	case "tool_calls":
+		if len(s.calls) == 0 {
+			// TabbyAPI can report this finish reason even when its tool parser yields no calls.
+			slog.WarnContext(ctx, "Chat Completions finished with tool_calls but sent no tool calls", "response_id", s.audit.ID)
+			return nil, &protocol.ProviderTransientError{Cause: errors.New("invalid Chat Completions stream: tool_calls finish without any tool calls")}
+		}
+	case "stop":
+		if len(s.calls) > 0 {
 			return nil, malformed("finish reason does not match tool calls")
 		}
 	default:
