@@ -508,6 +508,17 @@ spec:
             name: static-metadata
           name: configmap-static-metadata
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: haku-console
+  namespace: haku-console
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-console
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -638,6 +649,17 @@ spec:
       volumes:
         - emptyDir: {}
           name: nginx-conf
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: static
+  namespace: haku-console
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-console-static
 ---
 apiVersion: v1
 kind: Service

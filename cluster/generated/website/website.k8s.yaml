@@ -108,6 +108,17 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: website
+  namespace: website
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: website
+---
 apiVersion: v1
 kind: Service
 metadata:
