@@ -364,7 +364,7 @@ a message has a sender, which is another agent or an event source such as GitHub
 structured, like a GitHub webhook, or unstructured text; a subscription connects an inbox to an event
 source, with its configuration (which pull requests, for example). Today's terms to reconcile with it
 include entries and their event identities (`actions`, `github`, `message`), notices, sources and
-`DestinationRef`. The `InboxesPerAccount` quota now counts per Sandbox incarnation, so its name goes with this rethink.
+`DestinationRef`. The `InboxesPerAccount` quota counts inboxes per execution Identity, so its name goes with this rethink.
 
 **Operator direction, 2026-11-14 01:11–01:12 UTC:** the service "might make good sense to split
 into, approximately", "one service/thing that holds inboxes for agents" and "github webhook
