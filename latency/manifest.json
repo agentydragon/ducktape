@@ -1,11 +1,13 @@
 {
   "vm_shadow_review": {
-    "cutoff_utc": "2026-11-20T00:20:41Z",
+    "cutoff_utc": "2026-11-20T02:47:00Z",
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
     "evidence_key": "vm_shadow_review",
-    "browser_preview_invocation": "5132a3f7-5744-4bd3-b22f-debb069d7fb8",
-    "browser_cases_passed": 4
+    "manual_test_source": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+    "paired_evidence": "../vm-pairs.json",
+    "paired_evidence_sha256": "e4e98b6d871c27b3fc1fbefa90d819ea42b0c614688359c3c9aabf3d4c310f91",
+    "browser_preview_invocation": "1c662b3f-60e8-45f2-bac3-f59174b93a50"
   },
   "source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",
   "window_start_utc": "2026-11-18T10:10:38.530145Z",
@@ -19,8 +21,8 @@
   "history_base_gh_pages_commit": "df20865667f8763ed90432479fcad38335439849",
   "population": "18 November rollout checkpoint: two merged changes, live HPA configuration, three fresh acceptance executions / six scenario verdicts and exact-head PR CI attempts. No post-rollout production cohort.",
   "feedback_clock": "Acceptance action/setup clocks only. Historical cohort and graph clocks keep their original definitions. Production required-feedback effect is unmeasured.",
-  "report_sha256": "a551a1933723f0825acc461fb6d84127f4fe2019880e8b8ec778c5e2faf0fe1c",
-  "evidence_sha256": "cbebc754c3515716d0568be333e94cab0fecae85a6bbaeaf285ef129e8b8b336",
+  "report_sha256": "ce48a449fa8a79f163a385627213065e174ceaca240e949b0e4fee1dac73c580",
+  "evidence_sha256": "3f76b2a3011ef02a0ae410e1f8b2c3b4a4e29cd9943ce07227594f369e8475f1",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",

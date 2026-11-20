@@ -1,0 +1,1039 @@
+{
+  "manual": {
+    "source_sha": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+    "first_submission_utc": "2026-11-20T01:01:47Z",
+    "last_client_exit_utc": "2026-11-20T02:42:20Z",
+    "pairs": [
+      {
+        "pair": 1,
+        "managed": {
+          "invocation": "654b7b57-0231-45eb-bb96-0f8103cec599",
+          "final": "no-bazel-verdict",
+          "attempts": [],
+          "native": [
+            {
+              "queue_s": 0.065,
+              "preparation_s": 0.6,
+              "process_s": 650.048,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 651.422,
+          "missing_reason": "Bazel transport failure; both scenarios passed in recovered worker JUnit."
+        },
+        "kvm": {
+          "invocation": "654b7b57-0231-45eb-bb96-0f8103cec599",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 289.875,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 46.83,
+              "process_s": 289.876,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 336.64
+        }
+      },
+      {
+        "pair": 2,
+        "managed": {
+          "invocation": "ce3832f2-0e6f-4a11-9694-ea470223a6e5",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 597.668,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 4.375,
+              "preparation_s": 2.861,
+              "process_s": 597.668,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 605.418
+        },
+        "kvm": {
+          "invocation": "ce3832f2-0e6f-4a11-9694-ea470223a6e5",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 173.805,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 0.816,
+              "process_s": 173.806,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 174.636
+        }
+      },
+      {
+        "pair": 3,
+        "managed": {
+          "invocation": "82579c9c-09c1-4863-91b1-652ce29ba9d1",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 347.4,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.062,
+              "preparation_s": 0.465,
+              "process_s": 347.4,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 349.502
+        },
+        "kvm": {
+          "invocation": "82579c9c-09c1-4863-91b1-652ce29ba9d1",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 273.808,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 3.13,
+              "preparation_s": 48.804,
+              "process_s": 273.809,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 327.007
+        }
+      },
+      {
+        "pair": 4,
+        "managed": {
+          "invocation": "5d342765-84ee-4821-a88c-ba281674703e",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 446.274,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.061,
+              "preparation_s": 0.341,
+              "process_s": 109.428,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "queue_s": 0.059,
+              "preparation_s": 2.309,
+              "process_s": 446.275,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 559.362
+        },
+        "kvm": {
+          "invocation": "5d342765-84ee-4821-a88c-ba281674703e",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 193.885,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 1.038,
+              "process_s": 193.886,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 195.052
+        }
+      },
+      {
+        "pair": 5,
+        "managed": {
+          "invocation": "3a129167-8ad1-4c3a-85b1-16e19cf082aa",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 407.473,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 14.078,
+              "preparation_s": 0.428,
+              "process_s": 407.474,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 422.49
+        },
+        "kvm": {
+          "invocation": "3a129167-8ad1-4c3a-85b1-16e19cf082aa",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 298.765,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 1.24,
+              "process_s": 298.766,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 300.068
+        }
+      },
+      {
+        "pair": 6,
+        "managed": {
+          "invocation": "ec5df37a-86d2-49b5-a8c8-8e4445616671",
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 713.398,
+              "fixture": "warm",
+              "failure_signature": "Claude VM missed readiness at 300 s with guest RCU stalls."
+            },
+            {
+              "status": "FAILED",
+              "seconds": 920.712,
+              "fixture": "cold",
+              "failure_signature": "Claude VM missed readiness at 300 s with guest RCU stalls."
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.094,
+              "preparation_s": 1.502,
+              "process_s": 713.398,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "queue_s": 2.407,
+              "preparation_s": 0.613,
+              "process_s": 920.713,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 1639.99
+        },
+        "kvm": {
+          "invocation": "ec5df37a-86d2-49b5-a8c8-8e4445616671",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 279.412,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 4.046,
+              "preparation_s": 9.004,
+              "process_s": 279.412,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 293.419
+        }
+      },
+      {
+        "pair": 7,
+        "managed": {
+          "invocation": "f5fa23c7-3e74-4497-8922-4f2565604920",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 570.487,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.096,
+              "preparation_s": 2.923,
+              "process_s": 570.487,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 574.011
+        },
+        "kvm": {
+          "invocation": "f5fa23c7-3e74-4497-8922-4f2565604920",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 313.331,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 56.286,
+              "process_s": 313.332,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 370.404
+        }
+      },
+      {
+        "pair": 8,
+        "managed": {
+          "invocation": "19cb2356-5200-46b1-b1c0-2920b8bc54f8",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 710.296,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.372,
+              "preparation_s": 2.379,
+              "process_s": 710.297,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 713.596
+        },
+        "kvm": {
+          "invocation": "19cb2356-5200-46b1-b1c0-2920b8bc54f8",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 177.37,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 0.556,
+              "process_s": 177.371,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 177.993
+        }
+      },
+      {
+        "pair": 9,
+        "managed": {
+          "invocation": "df6900c6-5093-4dc5-9594-a788194056d1",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 500.307,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.099,
+              "preparation_s": 2.884,
+              "process_s": 500.307,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 503.896
+        },
+        "kvm": {
+          "invocation": "df6900c6-5093-4dc5-9594-a788194056d1",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 158.846,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 1.099,
+              "process_s": 158.847,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 160.074
+        }
+      },
+      {
+        "pair": 10,
+        "managed": {
+          "invocation": "939bccfa-f34c-4d7e-a502-6f404e5b737c",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 640.936,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.057,
+              "preparation_s": 0.284,
+              "process_s": 640.937,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 641.841
+        },
+        "kvm": {
+          "invocation": "939bccfa-f34c-4d7e-a502-6f404e5b737c",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 259.721,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 4.404,
+              "preparation_s": 46.212,
+              "process_s": 259.722,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 311.42
+        }
+      },
+      {
+        "pair": 11,
+        "managed": {
+          "invocation": "c6444460-8e33-45ef-8bdc-c37429d64151",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 473.418,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 56.478,
+              "preparation_s": 3.033,
+              "process_s": 473.418,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 533.516
+        },
+        "kvm": {
+          "invocation": "c6444460-8e33-45ef-8bdc-c37429d64151",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 168.766,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 0.546,
+              "process_s": 168.767,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 169.502
+        }
+      },
+      {
+        "pair": 12,
+        "managed": {
+          "invocation": "3abf4228-5285-4c35-b7f1-1d2a694c3781",
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 953.92,
+              "fixture": "cold",
+              "failure_signature": "Claude VM missed readiness at 300 s with guest RCU stalls."
+            },
+            {
+              "status": "FAILED",
+              "seconds": 547.705,
+              "fixture": "warm",
+              "failure_signature": "Guest shutdown failed during teardown."
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.129,
+              "preparation_s": 2.427,
+              "process_s": 953.921,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "queue_s": 0.064,
+              "preparation_s": 0.573,
+              "process_s": 547.705,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 1506.142
+        },
+        "kvm": {
+          "invocation": "3abf4228-5285-4c35-b7f1-1d2a694c3781",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 166.44,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 0.432,
+              "process_s": 166.441,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 167.051
+        }
+      }
+    ]
+  },
+  "devel_push": {
+    "collector_merge_sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+    "window_start_utc": "2026-11-20T00:16:49Z",
+    "created_through_utc": "2026-11-20T02:47:00Z",
+    "attempts": [
+      {
+        "run": 44662182074,
+        "attempt": 1,
+        "sha": "37e76f32187196b4fb10448745ee252de677ac35",
+        "workflow": "success",
+        "artifact_id": 14596346418,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44662108246,
+        "attempt": 1,
+        "sha": "1883ea011000bbaf50d4a6137d0c5f2cc1da43db",
+        "workflow": "cancelled",
+        "artifact_id": 14595573363,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44661961308,
+        "attempt": 1,
+        "sha": "8a2a60610dbc791aaac40af049775465eb0a45d8",
+        "workflow": "cancelled",
+        "artifact_id": 14596310915,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44661048355,
+        "attempt": 1,
+        "sha": "765c7fd985195e463edf1c2ca71450a28be95caa",
+        "workflow": "success",
+        "artifact_id": 14596286220,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44660817361,
+        "attempt": 1,
+        "sha": "d1ec682cb9f0b11d71da9b1e11d2c270971efebe",
+        "workflow": "cancelled",
+        "artifact_id": 14595397600,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44660636046,
+        "attempt": 1,
+        "sha": "691c50d0d2012d76d5eba627b54906f5f38c3b2c",
+        "workflow": "success",
+        "artifact_id": 14596625506,
+        "selection": "fresh",
+        "collection_errors": false,
+        "managed": {
+          "invocation": "b097c34c-6634-5430-ab0a-e20589e6983f",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 364.351,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.01,
+              "preparation_s": 0.228,
+              "process_s": 364.351,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 364.924
+        },
+        "kvm": {
+          "invocation": "2e2d1d6d-2822-59f8-aa2d-8479d10571f5",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 302.364,
+              "fixture": "cold"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 8.92,
+              "process_s": 302.364,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 311.025
+        }
+      },
+      {
+        "run": 44660075387,
+        "attempt": 1,
+        "sha": "d8373c06b0287ea1b80f1f67839582afaac8a3d7",
+        "workflow": "success",
+        "artifact_id": 14595851031,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44659945689,
+        "attempt": 1,
+        "sha": "dad71322148655b9a7cade298e1ec28ab92259e6",
+        "workflow": "cancelled",
+        "artifact_id": 14595470858,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44659775138,
+        "attempt": 1,
+        "sha": "1c4d85e4432601beb637c6ad9d7b3c6daeeb0688",
+        "workflow": "cancelled",
+        "artifact_id": 14594534199,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44659757356,
+        "attempt": 1,
+        "sha": "0b219a8392d2f49aceac36341fab144e9d15d27d",
+        "workflow": "cancelled",
+        "artifact_id": 14595565207,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44659617278,
+        "attempt": 1,
+        "sha": "78888f837b47138bd713fb4d9dcf703eab3aec1e",
+        "workflow": "cancelled",
+        "artifact_id": 14593869971,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44659181441,
+        "attempt": 1,
+        "sha": "1070b2337000fa6173f6fa5f34bceb0134aacb13",
+        "workflow": "cancelled",
+        "artifact_id": 14594936633,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44657292986,
+        "attempt": 1,
+        "sha": "cfd1c8cee898572e089f12ea8afff94a4151ecc8",
+        "workflow": "success",
+        "artifact_id": 14595976393,
+        "selection": "fresh",
+        "collection_errors": false,
+        "managed": {
+          "invocation": "0881c66d-2a37-5d06-933b-552dd2ab4128",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 346.293,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.097,
+              "preparation_s": 3.783,
+              "process_s": 382.318,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "queue_s": 0.045,
+              "preparation_s": 1.791,
+              "process_s": 346.293,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 734.899
+        },
+        "kvm": {
+          "invocation": "f8c889a8-30b0-5e80-b96c-ee61ac5e7576",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 315.149,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 2.426,
+              "process_s": 315.15,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 318.07
+        }
+      },
+      {
+        "run": 44656736327,
+        "attempt": 1,
+        "sha": "90e980efa448a170c8bd9cfc7bc8940dab377713",
+        "workflow": "cancelled",
+        "artifact_id": 14593283568,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44656146923,
+        "attempt": 1,
+        "sha": "3bc3a9a293d460fed8559f641afc4e2a3378ac30",
+        "workflow": "cancelled",
+        "artifact_id": 14594305133,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44656100215,
+        "attempt": 1,
+        "sha": "f06123ce5d357cee389472ad482cc96dc2aeb9a6",
+        "workflow": "success",
+        "artifact_id": 14592804525,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44655877725,
+        "attempt": 1,
+        "sha": "5dbf5d0bd7df97d89803dd6de33c6dbde65f39b1",
+        "workflow": "cancelled",
+        "artifact_id": 14592629456,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44654818984,
+        "attempt": 1,
+        "sha": "4a06f9f1601b4e225d19b131f10ae2c320dd194b",
+        "workflow": "success",
+        "artifact_id": 14593955360,
+        "selection": "fresh",
+        "collection_errors": false,
+        "managed": {
+          "invocation": "6eeb6149-5402-52bd-bd37-2898a5b46ed1",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 427.513,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": 0.059,
+              "preparation_s": 0.493,
+              "process_s": 427.513,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 428.561
+        },
+        "kvm": {
+          "invocation": "557c89b9-6f1a-52af-9be1-6afab74e0825",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 199.708,
+              "fixture": "warm"
+            }
+          ],
+          "native": [
+            {
+              "queue_s": null,
+              "preparation_s": 1.144,
+              "process_s": 199.708,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "first_enqueue_to_last_worker_end_s": 200.969
+        }
+      },
+      {
+        "run": 44653916181,
+        "attempt": 1,
+        "sha": "b968de15fb3630a1cf2e27b38552487c902eba6e",
+        "workflow": "success",
+        "artifact_id": 14591708527,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44652092846,
+        "attempt": 1,
+        "sha": "62823958347d6700c85796d4d2cc102d6c144a97",
+        "workflow": "success",
+        "artifact_id": 14591951434,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44652065802,
+        "attempt": 1,
+        "sha": "37bd2fd770816410c6d0ac30eb8ddcb81b0650eb",
+        "workflow": "cancelled",
+        "artifact_id": 14591736120,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44652040842,
+        "attempt": 1,
+        "sha": "0974968529037b4c660b99c9c301d8fc3830f67b",
+        "workflow": "success",
+        "artifact_id": 14590434410,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44650898860,
+        "attempt": 1,
+        "sha": "891ddd96961e8dfb9a74dee491607c199a1574cd",
+        "workflow": "success",
+        "artifact_id": 14591327146,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44650427373,
+        "attempt": 1,
+        "sha": "bfa65c0f1b9570826f7059ca2931060fcea8a2ab",
+        "workflow": "success",
+        "artifact_id": 14591287109,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44650331562,
+        "attempt": 1,
+        "sha": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+        "workflow": "success",
+        "artifact_id": 14590446997,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44649631191,
+        "attempt": 1,
+        "sha": "aab3e9ccb2cce96fcefd6e328957cfb9b07a611c",
+        "workflow": "success",
+        "artifact_id": 14591110859,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44647517622,
+        "attempt": 1,
+        "sha": "8ab916f16d04cf38f52912580f7568a4120cc220",
+        "workflow": "success",
+        "artifact_id": 14589158484,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44646644135,
+        "attempt": 1,
+        "sha": "01811a9f1f451e6b65bdcb97b9a66968e35deb52",
+        "workflow": "success",
+        "artifact_id": 14588169020,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44646329457,
+        "attempt": 1,
+        "sha": "55a117c219b8e56f4f4de32ecd79d9cf074434d4",
+        "workflow": "success",
+        "artifact_id": 14588672375,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44646272662,
+        "attempt": 1,
+        "sha": "ee5dd4958c12560056125f56518e4cf542af93ca",
+        "workflow": "cancelled",
+        "artifact_id": 14588317436,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44646112465,
+        "attempt": 1,
+        "sha": "e375b7f32d9943f40d24c24571a833dc9ca5d8b6",
+        "workflow": "cancelled",
+        "artifact_id": 14589660370,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44645863361,
+        "attempt": 1,
+        "sha": "9ae7ea6aec6ea17951799fffe11713d2e2d2e0b2",
+        "workflow": "success",
+        "artifact_id": 14588861463,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44645792809,
+        "attempt": 1,
+        "sha": "6fedad03b3b3941b355fe81b92e90d2cf0741eb1",
+        "workflow": "cancelled",
+        "artifact_id": 14587154866,
+        "selection": "no-invocation",
+        "collection_errors": true
+      },
+      {
+        "run": 44645526945,
+        "attempt": 1,
+        "sha": "d7adde084d21b78579da6ce6518c746127ac4301",
+        "workflow": "success",
+        "artifact_id": 14588099603,
+        "selection": "cached",
+        "collection_errors": false
+      },
+      {
+        "run": 44644577743,
+        "attempt": 1,
+        "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+        "workflow": "success",
+        "artifact_id": 14587774242,
+        "selection": "cached",
+        "collection_errors": false
+      }
+    ]
+  },
+  "labels": {
+    "managed": "//agentplane/system_tests/suites:test_vm",
+    "kvm": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled"
+  },
+  "units": "Seconds. Queue is enqueue to worker start, preparation is worker start to process start, process is native execution start to completion. Null marks unavailable or inverted clocks. The enqueue to final worker completion interval includes all native retries. A missing Bazel verdict remains missing even when the worker passed. Each pair ran both Claude and Codex."
+}

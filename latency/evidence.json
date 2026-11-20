@@ -2,43 +2,57 @@
   "vm_shadow_review": {
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "merged_at_utc": "2026-11-20T00:16:49Z",
-    "cutoff_utc": "2026-11-20T00:20:41Z",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
-    "observation": "The first devel push archived a cached managed VM pass. The collector correctly skipped the cluster KVM run, leaving zero fresh pairs at this review. Future uncached managed results trigger the same suite on cluster KVM at the same commit.",
-    "complete_fresh_pairs": 0,
+    "cutoff_utc": "2026-11-20T02:47:00Z",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
+    "paired_evidence": "../vm-pairs.json",
+    "complete_fresh_pairs": 3,
+    "workflow_attempts_reviewed": 35,
     "selections": {
-      "cached": 1
+      "cached": 17,
+      "no-invocation": 15,
+      "fresh": 3
     },
-    "workflow_attempts": [
+    "manual": {
+      "source_sha": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+      "pairs": 12,
+      "complete_bazel_pairs": 11,
+      "both_passed_first": 9,
+      "managed_only_failed_first": 2,
+      "kvm_only_failed_first": 0,
+      "both_failed_first": 0,
+      "missing_managed_verdicts": 1,
+      "managed_retry_recoveries": 0,
+      "managed_test_retries": 2,
+      "managed_final_test_failures": 2,
+      "kvm_final_test_failures": 0,
+      "managed_median_first_seconds": 570.487,
+      "kvm_median_first_seconds": 226.803,
+      "median_within_pair_seconds_saved": 341.5,
+      "kvm_shorter_pairs": 11,
+      "kvm_fixture": {
+        "cold": 5,
+        "warm": 7
+      }
+    },
+    "sections": [
       {
-        "run_id": 44644577743,
-        "attempt": 1,
-        "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
-        "collector_status": "completed",
-        "collector_conclusion": "success",
-        "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743/job/135983790115",
-        "artifact_id": 14587774242,
-        "pair": {
-          "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-          "run_id": "44644577743",
-          "run_attempt": "1",
-          "managed": "e6746ad0-ca61-54fa-af91-a009f69d5456",
-          "shadow": "41d9737f-82b5-5ee2-8bc9-043cd3924147",
-          "managed_label": "//agentplane/system_tests/suites:test_vm",
-          "shadow_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-          "selection": "cached"
-        },
-        "collection_errors": false,
-        "routes": {},
-        "managed_result": {
-          "status": "PASSED",
-          "cachedLocally": true,
-          "invocation_url": "https://app.buildbuddy.io/invocation/e6746ad0-ca61-54fa-af91-a009f69d5456"
-        }
+        "heading": "How much faster was KVM?",
+        "text": "In the 12-pair manual batch, KVM had a shorter first attempt in all 11 pairs with two Bazel verdicts. The median within-pair saving was 5m42s. Median first attempts were 9m31s on managed TCG and 3m47s on cluster KVM. One managed worker passed both scenarios after Bazel lost its result."
+      },
+      {
+        "heading": "Fixture reuse and retries",
+        "text": "Median KVM first attempts took 2m54s with a warm fixture (7) and 4m39s with a cold fixture (5). Managed medians were 7m26s warm (5) and 10m19s cold (6). The two failed managed tests spent another 15m21s and 9m08s on their retries. Both still failed."
+      },
+      {
+        "heading": "What did ordinary devel pushes see?",
+        "text": "Three fresh pairs on three commits passed on both routes. KVM’s first attempt took 31s, 62s and 3m48s less. One managed run also spent over six minutes on a failed Firecracker execution before its passing Bazel attempt. All three KVM queue clocks were inverted, so KVM admission delay is unknown for these pushes."
+      },
+      {
+        "heading": "Routing recommendation",
+        "text": "Prioritize KVM for the VM suite and keep measuring it in shadow. The manual batch tested one commit with at most two pairs in flight. Ordinary shadows start after the managed result. Measure contention with required Firecracker work and the PR critical path before moving the required suite."
       }
     ],
-    "recommendation": "Keep the required suite on its current route while paired timings accumulate. At each review, compare time to first result and final verdict, including retry time. Split valid queue, preparation and execution clocks by fixture state. Check whether shadow demand delays required Firecracker work before revising the latency recommendation. Check coverage at 50 fresh pairs and reassess routing at 200."
+    "selection_note": "Of 35 devel push attempts, 17 reused a cached managed result and 15 cancelled runs had no managed invocation. The remaining 3 produced fresh, complete pairs. Review selection at 50 fresh push pairs and reassess routing at 200."
   },
   "schema_version": 3,
   "reviewed_at_utc": "2026-11-18T11:09:14.807132+00:00",
