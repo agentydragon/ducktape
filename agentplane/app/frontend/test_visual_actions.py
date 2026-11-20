@@ -3411,7 +3411,7 @@ async def test_action_presentations(
         await raw_switch.press("Space")
         await expect(raw_switch).to_be_checked()
         await expect(receipt).to_contain_text('"item_ids": [')
-        await expect(receipt).to_contain_text('"item_id": 52')
+        await expect(receipt).to_contain_text(r'\"item_id\": 52')
 
 
 if __name__ == "__main__":
