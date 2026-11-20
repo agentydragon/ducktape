@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
@@ -663,31 +664,18 @@ func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testin
 	rotatedDER := readCertificateDER(t, rotated.CertFile)
 	assertGRPCClientReconnectsAfterExpiry(t, clientCredentials, serverCredentials, shortLeaf.NotAfter, func() {
 		workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER)
-		time.Sleep(100 * time.Millisecond)
-		waitForWorkloadClientHandshake(t, clientCredentials, serverCredentials, rotatedDER)
+		eventually.Within(t, 5*time.Second, func() (bool, string) {
+			_, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
+			if err != nil {
+				t.Fatalf("handshake during Workload API rotation: %v", err)
+			}
+			return bytes.Equal(peerLeaf(t, serverInfo).Raw, rotatedDER), "Workload API source did not rotate the presented client certificate"
+		})
 	})
 	if err := opened.Close(); err != nil {
 		t.Fatal(err)
 	}
 	workloadServer.waitForStreamsToClose(t)
-}
-
-func waitForWorkloadClientHandshake(t *testing.T, client, server credentials.TransportCredentials, want []byte) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, serverInfo, err := handshake(t, client, server)
-		if err != nil {
-			t.Fatalf("handshake during Workload API rotation: %v", err)
-		}
-		if got := peerLeaf(t, serverInfo); bytes.Equal(got.Raw, want) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Workload API source did not rotate the presented client certificate")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 }
 
 func assertGRPCClientReconnectsAfterExpiry(
