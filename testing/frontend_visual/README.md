@@ -182,7 +182,7 @@ page, with their own server setup and network policy. Diagnostic screenshots nee
 published as visual-review assets.
 
 Screenshots, diagnostics, and traces go to Bazel undeclared outputs as test-output records.
-See the [PR visual review policy](../../../devinfra/pr_visuals/README.md#review-policy).
+See the [PR visual review policy](../../devinfra/pr_visuals/README.md#review-policy).
 
 Run browser tests on RBE through `bbr`, or use PR CI. Pytest selection/sharding and the
 weekly `visual`-tagged determinism sweep continue to apply.

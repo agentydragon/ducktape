@@ -24,7 +24,7 @@ observed after loading, then compare each with its current value. The loader doc
 in [`_already_loaded`](../../oci/oci.py#L150).
 
 `start_postgres_container` writes per-step timings to `container_setup.log`, including lock
-wait, image load, and container startup ([fixture](../../../util/testing/postgres_fixtures.py)).
+wait, image load, and container startup ([fixture](../../../testing/postgres_fixtures.py)).
 The file handler flushes each record to Bazel's undeclared outputs as `container_setup.log`, so
 that artifact can distinguish a slow import from time in `container.start()`. The image-load
 lock does not serialize or bound container starts; that contention remains unresolved, and the
