@@ -6,7 +6,15 @@ package(
 )
 
 py_library(
-    name = "helpers",
-    srcs = ["helpers.py"],
-    deps = ["@pypi//fastmcp_slim"],
+    name = "ref_data",
+    srcs = ["ref_data.py"],
+    deps = [
+        ":results",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_library(
+    name = "results",
+    srcs = ["results.py"],
 )

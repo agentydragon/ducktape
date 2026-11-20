@@ -1,21 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "common",
-    srcs = ["common.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//gmail_archiver:gmail_client",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
     name = "filters",
     srcs = ["filters.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":common",
+        ":options",
         "//gmail_api:labels",
         "//gmail_archiver:dirs",
         "//gmail_archiver:filter_planner",
@@ -36,8 +26,18 @@ py_library(
     srcs = ["labels.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":common",
+        ":options",
         "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_library(
+    name = "options",
+    srcs = ["options.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//gmail_archiver:gmail_client",
         "@pypi//typer",
     ],
 )

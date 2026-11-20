@@ -11,13 +11,13 @@ from typing import Annotated, Literal
 
 from pydantic import Discriminator, Field, model_validator
 
-from devinfra.claude.claude_api.hooks.common import CamelModel
 from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedHookSpecificOutput
 from devinfra.claude.claude_api.hooks.elicitation import (
     ElicitationHookSpecificOutput,
     ElicitationResultHookSpecificOutput,
 )
 from devinfra.claude.claude_api.hooks.file_changed import FileChangedHookSpecificOutput
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel
 from devinfra.claude.claude_api.hooks.notification import NotificationHookSpecificOutput
 from devinfra.claude.claude_api.hooks.permission_denied import PermissionDeniedHookSpecificOutput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestHookSpecificOutput

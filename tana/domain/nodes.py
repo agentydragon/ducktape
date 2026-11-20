@@ -63,6 +63,10 @@ class BaseNode(BaseModel):
         return self.props.is_trash
 
 
+# A tuple's first child is its key; a tuple with fewer children has no value.
+MIN_TUPLE_CHILDREN = 2
+
+
 class TupleNode(BaseNode):
     """Node representing a tuple (key/value pairs)."""
 

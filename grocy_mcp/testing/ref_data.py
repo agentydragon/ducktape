@@ -1,26 +1,13 @@
-"""Shared test fixtures and helpers for grocy_mcp e2e tests."""
+"""Reference data for the grocy_mcp e2e tests."""
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 from fastmcp.client import Client
 
-
-def unwrap_result(result: Any) -> Any:
-    """Extract unwrapped structured content from a FastMCP CallToolResult.
-
-    FastMCP wraps non-object return types (lists, unions) in {"result": ...}
-    with the x-fastmcp-wrap-result flag. We use structured_content for test
-    assertions (raw JSON-like access) and unwrap the synthetic wrapper.
-    """
-    sc = result.structured_content
-    assert sc is not None, "No structured_content in CallToolResult"
-    if isinstance(sc, dict) and len(sc) == 1 and "result" in sc:
-        return sc["result"]
-    return sc
+from grocy_mcp.testing.results import unwrap_result
 
 
 @dataclass

@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Discriminator, Field, Tag
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel, HookInputBase
 
 # --- PermissionSuggestion types (discriminated union on "type") ---
 

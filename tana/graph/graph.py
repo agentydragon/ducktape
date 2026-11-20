@@ -4,8 +4,8 @@ from collections import defaultdict
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, ValuesView
 from typing import Any, cast, overload
 
-from tana.domain.constants import LANGUAGE_KEY_ID, MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import DOC_CLASS, BaseNode, CodeBlockNode, TupleNode, UnknownNode
+from tana.domain.nodes import DOC_CLASS, MIN_TUPLE_CHILDREN, BaseNode, CodeBlockNode, TupleNode, UnknownNode
+from tana.domain.system_nodes import LANGUAGE_KEY_ID, SUPERTAG_KEY_ID
 from tana.domain.types import NodeId
 from tana.graph.wrappers import is_wrapper
 

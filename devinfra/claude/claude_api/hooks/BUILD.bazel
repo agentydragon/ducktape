@@ -1,18 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "common",
-    srcs = ["common.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "session_start",
     srcs = ["session_start.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -21,7 +14,7 @@ py_library(
     name = "pre_tool_use",
     srcs = ["pre_tool_use.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
@@ -29,7 +22,7 @@ py_library(
     srcs = ["post_tool_use.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -38,35 +31,35 @@ py_library(
     name = "user_prompt_submit",
     srcs = ["user_prompt_submit.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "notification",
     srcs = ["notification.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "stop",
     srcs = ["stop.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "subagent_start",
     srcs = ["subagent_start.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "subagent_stop",
     srcs = ["subagent_stop.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
@@ -74,7 +67,7 @@ py_library(
     srcs = ["post_tool_use_failure.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -84,7 +77,7 @@ py_library(
     srcs = ["permission_request.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -94,7 +87,7 @@ py_library(
     srcs = ["elicitation.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -104,7 +97,7 @@ py_library(
     srcs = ["config_change.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -114,7 +107,7 @@ py_library(
     srcs = ["setup.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -124,7 +117,7 @@ py_library(
     srcs = ["pre_compact.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -134,7 +127,7 @@ py_library(
     srcs = ["post_compact.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         ":pre_compact",
     ],
 )
@@ -144,7 +137,7 @@ py_library(
     srcs = ["instructions_loaded.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -154,7 +147,7 @@ py_library(
     srcs = ["worktree_create.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -163,42 +156,42 @@ py_library(
     name = "worktree_remove",
     srcs = ["worktree_remove.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "session_end",
     srcs = ["session_end.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "teammate_idle",
     srcs = ["teammate_idle.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "task_completed",
     srcs = ["task_completed.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "stop_failure",
     srcs = ["stop_failure.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
     name = "task_created",
     srcs = ["task_created.py"],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [":hook_base"],
 )
 
 py_library(
@@ -206,7 +199,7 @@ py_library(
     srcs = ["cwd_changed.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -216,7 +209,7 @@ py_library(
     srcs = ["file_changed.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -226,7 +219,7 @@ py_library(
     srcs = ["permission_denied.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
+        ":hook_base",
         "@pypi//pydantic",
     ],
 )
@@ -236,10 +229,10 @@ py_library(
     srcs = ["output.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
         ":cwd_changed",
         ":elicitation",
         ":file_changed",
+        ":hook_base",
         ":notification",
         ":permission_denied",
         ":permission_request",
@@ -302,4 +295,11 @@ py_library(
         ":worktree_remove",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "hook_base",
+    srcs = ["hook_base.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
 )
