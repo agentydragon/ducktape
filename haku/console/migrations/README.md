@@ -1,7 +1,7 @@
 # Console schema baseline
 
 `0135` is the frozen final schema of the former chain, retaining its last revision
-ID. Databases already at `0135` apply nothing. An older deployment must reach
+ID. Databases already at `0135` apply only the later revisions. An older deployment must reach
 `0135` using the pre-squash image before adopting this baseline; do not stamp an
 older database forward or reset it. Downgrade-to-base remains unsupported, as it
 was for the previous console baseline.

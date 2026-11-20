@@ -245,11 +245,10 @@ bulk channels.
 ## Invariants — preserve these when changing anything
 
 1. Never add `httproutes`/`gateways` (or `networkpolicies`) to Haku's Role; never weaken the
-   Kyverno route denylist.
+   `restrict-agent-gateway-routes` admission policy.
 2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
    A Haku-owned write credential must be scoped to its surface and named in the canonical base
-   hard-rule inventory; any other write capability requires its own closure-style server (the
-   credential stays behind a console server entry, as with `kubectl-passthrough-mcp` above) and
+   hard-rule inventory; any other write capability requires its own closure-style server and
    an inventory update. In particular, `haku-mail-token` may mutate only the contents of Haku's
    `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
 3. The console renders **no** Haku-authored content. No haku-state credential is reflected into
