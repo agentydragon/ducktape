@@ -3311,8 +3311,11 @@ async def test_action_presentations(
         raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
         await raw_switch.press("Space")
         await expect(raw_switch).to_be_checked()
-        await expect(receipt).to_contain_text('"Label_19"')
-        await expect(receipt).to_contain_text('"Label_99"')
+        raw_result = receipt.get_by_test_id("action-execution-outcome")
+        if example.name == "threads_get":
+            await raw_result.get_by_role("button", name="Show more", exact=True).click()
+        await expect(raw_result).to_contain_text('"Label_19"')
+        await expect(raw_result).to_contain_text('"Label_99"')
     if example.key == "google_calendar.delete_event":
         await expect(receipt.get_by_role("link", name="Facilities coordination", exact=True)).to_have_count(0)
         raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
