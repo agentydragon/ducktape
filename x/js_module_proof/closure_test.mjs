@@ -298,7 +298,8 @@ function shadow(seed, delta) { return seed + delta; }
 function add(a, b) { return (a + b) + seed; }
 function choose(flag, value) { if (flag) { return value + seed; } else { return value + 1; } }
 function local(flag, value) { let total = value + seed; if (flag) { let value = 2; return total + value; } else { return total + value; } }
-export { shadow, add, choose, local };
+function maybe(flag) { if (flag) { throw seed + flag; } else { return seed; } }
+export { shadow, add, choose, local, maybe };
 `
   );
   await writeFile(
@@ -308,7 +309,7 @@ export { shadow, add, choose, local };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -336,6 +337,15 @@ export { shadow, add, choose, local };
     { value: 9 },
   ]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
+  const throwingCalls = [
+    { name: "maybe", args: [0] },
+    { name: "maybe", args: [1] },
+    { name: "maybe", args: [0] },
+  ];
+  const throwingTrace = execute(parameterSource, throwingCalls);
+  assert.deepEqual(throwingTrace.results, [{ value: 4 }]);
+  assert.deepEqual(throwingTrace.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 5 } });
+  assert.deepEqual(execute(join(parameterOut, "entry.mjs"), throwingCalls), throwingTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,

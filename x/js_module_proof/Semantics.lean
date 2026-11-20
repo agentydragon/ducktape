@@ -13,6 +13,7 @@ inductive NumericExpr where
   | add (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
   | local (name : String) (initial body : NumericExpr)
+  | raise (value : NumericExpr)
   deriving DecidableEq, Repr
 
 inductive Operation where
@@ -49,22 +50,34 @@ def lookupBinding : List (String × Nat) → String → Option Nat
   | [], _ => none
   | (key, value) :: rest, name => if key == name then some value else lookupBinding rest name
 
-def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option Nat
-  | .literal value => some value
+/- `Except.error` is a JavaScript throw, while `none` means the model could
+   not evaluate an unsupported or uninitialized operation. -/
+def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except Nat Nat)
+  | .literal value => some (.ok value)
   | .name name => match lookupBinding locals name with
-    | some value => some value
-    | none => lookupBinding globals name
+    | some value => some (.ok value)
+    | none => (lookupBinding globals name).map Except.ok
   | .add left right => do
-    let leftValue ← evaluateExpression locals globals left
-    let rightValue ← evaluateExpression locals globals right
-    pure (leftValue + rightValue)
+    match ← evaluateExpression locals globals left with
+    | .error value => pure (.error value)
+    | .ok leftValue =>
+      match ← evaluateExpression locals globals right with
+      | .error value => pure (.error value)
+      | .ok rightValue => pure (.ok (leftValue + rightValue))
   | .conditional test consequent alternative => do
-    let condition ← evaluateExpression locals globals test
-    if condition == 0 then evaluateExpression locals globals alternative
-    else evaluateExpression locals globals consequent
+    match ← evaluateExpression locals globals test with
+    | .error value => pure (.error value)
+    | .ok condition =>
+      if condition == 0 then evaluateExpression locals globals alternative
+      else evaluateExpression locals globals consequent
   | .local name initial body => do
-    let value ← evaluateExpression locals globals initial
-    evaluateExpression ((name, value) :: locals) globals body
+    match ← evaluateExpression locals globals initial with
+    | .error value => pure (.error value)
+    | .ok value => evaluateExpression ((name, value) :: locals) globals body
+  | .raise expression => do
+    match ← evaluateExpression locals globals expression with
+    | .error value => pure (.error value)
+    | .ok value => pure (.error value)
 
 def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
   | [], _, _ => none
@@ -131,8 +144,9 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
     | .returnUndefined => some { state with returns := state.returns ++ [none] }
     | .throwNumber value => some { state with thrown := some value }
     | .returnExpression expression parameters => do
-      let value ← evaluateExpression parameters state.bindings expression
-      pure { state with returns := state.returns ++ [some value] }
+      match ← evaluateExpression parameters state.bindings expression with
+      | .error value => pure { state with thrown := some value }
+      | .ok value => pure { state with returns := state.returns ++ [some value] }
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

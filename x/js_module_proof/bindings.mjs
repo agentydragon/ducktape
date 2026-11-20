@@ -177,6 +177,7 @@ function expressionFunction(node) {
   };
   const returning = (statement) => {
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
+    if (statement?.type === "ThrowStatement") return { kind: "raise", value: expression(statement.argument) };
     if (statement?.type === "BlockStatement") return sequence(statement.body);
     if (statement?.type === "IfStatement" && statement.alternate)
       return {
@@ -200,6 +201,8 @@ function expressionFunction(node) {
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
       case "local":
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
+      case "raise":
+        return free(item.value, bound);
     }
     throw new Error("unknown numeric expression");
   };
@@ -517,6 +520,8 @@ function leanExpression(expression) {
       return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
       return `.local ${str(expression.name)} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
+    case "raise":
+      return `.raise (${leanExpression(expression.value)})`;
   }
   throw new Error("unknown expression");
 }
@@ -755,6 +760,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
       return initial > body ? initial : body;
     }
+    if (expression.kind === "raise") return expressionBound(expression.value, bound);
     throw new Error("unknown expression");
   };
   for (const calls of candidates.slice(0, 64)) {

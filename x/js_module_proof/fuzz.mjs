@@ -400,6 +400,7 @@ function parameterCase(seed, index) {
   const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
   const left = { type: "BinaryExpression", operator: "+", left: id(parameters[0]), right: id(parameters[1]) };
   const value = { type: "BinaryExpression", operator: "+", left, right: id("base") };
+  const thrownValue = 1 + rand(8);
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -411,10 +412,7 @@ function parameterCase(seed, index) {
           test: id("y"),
           consequent: {
             type: "BlockStatement",
-            body: [
-              declaration("temp", value),
-              returnNode({ type: "BinaryExpression", operator: "+", left: id("temp"), right: id("base") }),
-            ],
+            body: [declaration("temp", value), { type: "ThrowStatement", argument: literal(thrownValue) }],
           },
           alternate: {
             type: "BlockStatement",
@@ -445,6 +443,8 @@ function parameterCase(seed, index) {
       { name: "calculate", args: [1 + rand(8), 1 + rand(8)] },
     ],
     grammar: "parameter",
+    expectThrow: true,
+    thrownValue,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -855,7 +855,16 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
-      if (input.grammar === "parameter") summary.parameterCompared++;
+      if (input.grammar === "parameter") {
+        summary.parameterCompared++;
+        if (
+          before.error?.thrown?.kind !== "number" ||
+          before.error.thrown.value !== input.thrownValue ||
+          before.error.index !== 1 ||
+          before.results.length !== 1
+        )
+          throw new Error("generated parameter branch did not preserve the numeric throw and return prefix");
+      }
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
