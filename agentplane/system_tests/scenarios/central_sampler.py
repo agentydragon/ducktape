@@ -821,54 +821,43 @@ async def _assert_projected_ready_for_input(deployed: CentralStack, session_id: 
 
 
 async def _create_exact_codex_session(
-    deployed: CentralStack,
-    session_id: str,
-    *,
-    cwd: str,
-    model_name: str,
-    setup_script: str,
-    expected_sandbox_uid: str,
-    timeout_s: float,
+    deployed: CentralStack, session_id: str, *, cwd: str, setup_script: str
 ) -> session_dispatcher_pb2.CreateSessionResponse:
     """Create a Codex Session pinned to the expected Sandbox incarnation."""
     spec = session_pb2.SessionSpec(
         placement=session_pb2.SessionPlacement(
             central_sampler_v1=session_pb2.CentralSamplerV1Placement(
-                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=expected_sandbox_uid)
+                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
             )
         ),
         cwd=cwd,
-        model=model_name,
+        model=MODEL,
     )
     created: session_dispatcher_pb2.CreateSessionResponse = await deployed.dispatcher.CreateSession(
         session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=setup_script),
-        timeout=timeout_s,
+        timeout=15,
     )
     return created
 
 
 async def _submit_exact_input(
-    deployed: CentralStack, session_id: str, *, expected_sandbox_uid: str, command_id: str, text: str, timeout_s: float
+    deployed: CentralStack, session_id: str, *, command_id: str, text: str
 ) -> session_dispatcher_pb2.SubmitInputResponse:
     """Submit one command only to the expected exact Sandbox placement."""
     submitted: session_dispatcher_pb2.SubmitInputResponse = await deployed.dispatcher.SubmitInput(
         session_dispatcher_pb2.SubmitInputRequest(
-            session_id=session_id, expected_sandbox_uid=expected_sandbox_uid, command_id=command_id, text=text
+            session_id=session_id, expected_sandbox_uid=deployed.sandbox_uid, command_id=command_id, text=text
         ),
-        timeout=timeout_s,
+        timeout=15,
     )
     return submitted
 
 
-async def _send_single_exec_cell(
-    request: ModelRequest[ResponsesRequest], *, call_id: str, source: str, response_model: str
-) -> None:
+async def _send_single_exec_cell(request: ModelRequest[ResponsesRequest], *, call_id: str, source: str) -> None:
     """Send exactly one code-mode cell without waiting for its continuation."""
     async with request._exchange as exchange:
         await exchange.send(
-            *responses_sse.response_stream(
-                [responses_sse.CustomToolCall(call_id, "exec", source)], model=response_model
-            ).events
+            *responses_sse.response_stream([responses_sse.CustomToolCall(call_id, "exec", source)], model=MODEL).events
         )
 
 
@@ -878,9 +867,6 @@ async def _start_central_codex_turn(
     session_id: str,
     *,
     cwd: str,
-    model_name: str,
-    setup_script: str,
-    expected_sandbox_uid: str,
     command_id: str,
     text: str,
     check_dispatch_command_id: bool = False,
@@ -888,18 +874,8 @@ async def _start_central_codex_turn(
 ) -> tuple[CodexModel, ModelRequest[ResponsesRequest]]:
     model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
-    await _create_exact_codex_session(
-        deployed,
-        session_id,
-        cwd=cwd,
-        model_name=model_name,
-        setup_script=setup_script,
-        expected_sandbox_uid=expected_sandbox_uid,
-        timeout_s=15,
-    )
-    submitted = await _submit_exact_input(
-        deployed, session_id, expected_sandbox_uid=expected_sandbox_uid, command_id=command_id, text=text, timeout_s=15
-    )
+    await _create_exact_codex_session(deployed, session_id, cwd=cwd, setup_script=":\n")
+    submitted = await _submit_exact_input(deployed, session_id, command_id=command_id, text=text)
     if check_dispatch_command_id:
         assert submitted.dispatch.command_id == command_id
     await _wait_for_setup(deployed, session_id)
@@ -917,7 +893,6 @@ async def _start_gateway_process(
     command: str,
     process_handle: str,
     result_expression: str,
-    response_model: str,
 ) -> ModelRequest[ResponsesRequest]:
     await _send_single_exec_cell(
         request,
@@ -925,7 +900,6 @@ async def _start_gateway_process(
         source=_gateway_process_start_cell(
             command=command, process_handle=process_handle, yield_time_ms=1000, result_expression=result_expression
         ),
-        response_model=response_model,
     )
     request = await asyncio.wait_for(model.request(), timeout=30)
     assert any(
@@ -966,9 +940,6 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Start a process, wait for its result, and report the single side effect.",
         )
@@ -981,7 +952,6 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             command=command,
             process_handle="gateway-roll-handle",
             result_expression="{session_id: started.session_id, output: started.output}",
-            response_model=MODEL,
         )
         assert request.native.client_metadata.session_id == session_id
         await _wait_for_execution_progress(
@@ -992,7 +962,6 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             request,
             call_id="read-live-process",
             source=_gateway_process_read_cell(process_handle="gateway-roll-handle", wait_ms=30000),
-            response_model=MODEL,
         )
         read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
         (
@@ -1023,12 +992,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _wait_for_folded_turn(deployed, session_id, first_command)
         await _assert_projected_ready_for_input(deployed, session_id)
         await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
-            command_id=second_command,
-            text="Confirm the Session still accepts another input.",
-            timeout_s=15,
+            deployed, session_id, command_id=second_command, text="Confirm the Session still accepts another input."
         )
         request = await asyncio.wait_for(model.request(), timeout=30)
         assert any("Confirm the Session still accepts" in text for text in request.user_texts)
@@ -1100,22 +1064,9 @@ async def delegated_action_wait_keeps_code_mode_live(
     async with central_stack(cluster, template=executor.template) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        await _create_exact_codex_session(
-            deployed,
-            session_id,
-            cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
+        await _create_exact_codex_session(deployed, session_id, cwd=executor.cwd, setup_script=":\n")
         await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
-            command_id=command_id,
-            text="Call the echo Action and report its result.",
-            timeout_s=15,
+            deployed, session_id, command_id=command_id, text="Call the echo Action and report its result."
         )
         await _wait_for_setup(deployed, session_id)
         request = await asyncio.wait_for(model.request(), timeout=30)
@@ -1202,9 +1153,6 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Keep one process running across an abrupt Gateway crash.",
         )
@@ -1215,7 +1163,6 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
             command="printf 'once\\n' >> gateway-crash-marker; sleep 90",
             process_handle="gateway-crash-handle",
             result_expression="started",
-            response_model=MODEL,
         )
         cursor, process_id, native_session_id = await _started_gateway_roll_process(
             deployed, session_id, "gateway-crash-marker"
@@ -1224,7 +1171,6 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
             request,
             call_id="read-crash-process",
             source=_gateway_process_read_cell(process_handle="gateway-crash-handle", wait_ms=30000),
-            response_model=MODEL,
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1256,10 +1202,8 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
         await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=second_command,
             text="Confirm this Session accepts input after the Gateway crash.",
-            timeout_s=15,
         )
         request = await asyncio.wait_for(model.request(), timeout=30)
         assert any("after the Gateway crash" in text for text in request.user_texts)
@@ -1280,9 +1224,6 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Wait for one process through a sustained Gateway outage and report any uncertain outcome.",
         )
@@ -1293,7 +1234,6 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
             command="printf 'once\\n' >> gateway-budget-marker; sleep 300",
             process_handle="gateway-budget-handle",
             result_expression="started",
-            response_model=MODEL,
         )
         cursor, process_id, native_session_id = await _started_gateway_roll_process(
             deployed, session_id, "gateway-budget-marker"
@@ -1302,7 +1242,6 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
             request,
             call_id="read-budget-process",
             source=_gateway_process_read_cell(process_handle="gateway-budget-handle", wait_ms=30000),
-            response_model=MODEL,
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-budget-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1358,10 +1297,8 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=second_command,
             text="Confirm this Session accepts input after retry exhaustion.",
-            timeout_s=15,
         )
         request = await asyncio.wait_for(model.request(), timeout=30)
         assert any("after retry exhaustion" in text for text in request.user_texts)
@@ -1382,9 +1319,6 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command,
             text="Start one long-running process and continue this turn after any executor disruption.",
         )
@@ -1395,7 +1329,6 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             command="printf 'once\\n' >> gateway-loss-marker; sleep 120",
             process_handle="gateway-loss-handle",
             result_expression="started",
-            response_model=MODEL,
         )
         await _wait_for_execution_progress(
             deployed, session_id, event_pb2.ExecutionProgress.KIND_PROCESS, event_pb2.ExecutionProgress.PHASE_RUNNING
@@ -1407,7 +1340,6 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
             request,
             call_id="read-expiring-process",
             source=_gateway_process_read_cell(process_handle="gateway-loss-handle", wait_ms=30000),
-            response_model=MODEL,
         )
         read_intent = await _wait_for_executor_dispatch_after(
             deployed, session_id, cursor, process_id, "read-expiring-process"
@@ -1463,10 +1395,8 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=second_command,
             text="Confirm the replacement executor left this Session able to accept another input.",
-            timeout_s=15,
         )
         request = await asyncio.wait_for(model.request(), timeout=30)
         assert any("Confirm the replacement executor" in text for text in request.user_texts)
@@ -1513,22 +1443,14 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         interrupted_model = scripted.session_model(interrupted_session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(interrupted_model, CodexModel)
         interrupted_created = await _create_exact_codex_session(
-            deployed,
-            interrupted_session_id,
-            cwd=cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
+            deployed, interrupted_session_id, cwd=cwd, setup_script=":\n"
         )
         assert interrupted_created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         interrupted_input = await _submit_exact_input(
             deployed,
             interrupted_session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=interrupted_command_id,
             text="Start a long-running executor command and keep this turn active.",
-            timeout_s=15,
         )
         assert interrupted_input.dispatch.command_id == interrupted_command_id
         await _wait_for_setup(deployed, interrupted_session_id)
@@ -1575,20 +1497,10 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             deployed,
             session_id,
             cwd=cwd,
-            model_name=MODEL,
             setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
         )
         assert created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
-        submitted = await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
-            command_id=command_id,
-            text=prompt,
-            timeout_s=15,
-        )
+        submitted = await _submit_exact_input(deployed, session_id, command_id=command_id, text=prompt)
         assert submitted.dispatch.command_id == command_id
         changes = deployed.dispatcher.WatchDispatches(
             session_dispatcher_pb2.WatchDispatchesRequest(
@@ -1788,23 +1700,13 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         )
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        created = await _create_exact_codex_session(
-            deployed,
-            session_id,
-            cwd=cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
+        created = await _create_exact_codex_session(deployed, session_id, cwd=cwd, setup_script=":\n")
         assert created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=first_command_id,
             text="Start a process that records one marker and remains running.",
-            timeout_s=15,
         )
         assert submitted.dispatch.command_id == first_command_id
         await _wait_for_setup(deployed, session_id)
@@ -1855,15 +1757,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
 
         # Central session admission must not require or wake an executor incarnation.
         suspended_session_id = str(uuid4())
-        await _create_exact_codex_session(
-            deployed,
-            suspended_session_id,
-            cwd=cwd,
-            model_name=MODEL,
-            setup_script="",
-            expected_sandbox_uid=deployed.sandbox_uid,
-            timeout_s=15,
-        )
+        await _create_exact_codex_session(deployed, suspended_session_id, cwd=cwd, setup_script="")
         async with asyncio.timeout(30):
             while True:
                 opening = await deployed.dispatcher.GetSession(
@@ -1893,10 +1787,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         submitted = await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=resumed_command_id,
             text="Run a new exec command and report the marker file contents.",
-            timeout_s=15,
         )
         assert submitted.dispatch.command_id == resumed_command_id
         request = await model.request()
@@ -1994,9 +1886,6 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=command_id,
             text="Start an executor process and keep this turn active.",
             check_dispatch_command_id=True,
@@ -2106,10 +1995,8 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         submitted = await _submit_exact_input(
             deployed,
             session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=next_command_id,
             text="Read the process marker without starting the earlier command again.",
-            timeout_s=15,
         )
         assert submitted.dispatch.command_id == next_command_id
         request = await model.request()
@@ -2282,9 +2169,6 @@ async def history_outage_backfills_completed_turn(
             scripted,
             session_id,
             cwd=executor.cwd,
-            model_name=MODEL,
-            setup_script=":\n",
-            expected_sandbox_uid=deployed.sandbox_uid,
             command_id=command_id,
             text="Complete this synthetic turn while History is unavailable.",
             check_dispatch_command_id=True,
@@ -2371,12 +2255,7 @@ async def history_outage_backfills_completed_turn(
 
         await _assert_projected_ready_for_input(deployed, session_id)
         submitted = await _submit_exact_input(
-            deployed,
-            session_id,
-            expected_sandbox_uid=deployed.sandbox_uid,
-            command_id=next_command_id,
-            text="Complete a subsequent input after History recovery.",
-            timeout_s=15,
+            deployed, session_id, command_id=next_command_id, text="Complete a subsequent input after History recovery."
         )
         assert submitted.dispatch.command_id == next_command_id
         request = await asyncio.wait_for(model.request(), timeout=30)
