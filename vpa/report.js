@@ -23,6 +23,8 @@ import { html, mount } from "../report.js";
 
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
+const designSource =
+  "https://github.com/agentydragon/ducktape/blob/d81bd68165097b089cace9ae168b6e8f202f1b7e/";
 const github = "https://github.com/agentydragon/ducktape/";
 const modeLabels = {
   Off: "Recommend",
@@ -70,6 +72,23 @@ function Stat({ value, label, detail }) {
     <${Text} size="sm" c="dimmed">${detail}<//>
   <//>`;
 }
+
+const cutoverProof = {
+  "default-vpa-requests-only":
+    "Cover externally authored namespaces and workload overrides; compare effective policies before retiring the admission fallback.",
+  "default-revision-history-limit":
+    "Compare chart and operator output, API defaulting and admitted values; preserve rollback history and cleanup behavior.",
+  "default-disable-service-links":
+    "Account for every operator-created Pod, not only cdk8s templates; test explicit and absent fields.",
+  "require-gitops":
+    "It is audit-only today. Decide whether to retain its signals and verify subject and operator exemptions.",
+  "restrict-agent-gateway-routes":
+    "Preserve enforced namespace, route-kind and API-version coverage, including direct API writes.",
+  "require-secret-store-conditions":
+    "Preserve enforced admission for private and public sources and separately replace the existing-object background scan.",
+  "agentplane-staging-launcher-relay":
+    "Preserve fail-closed owner and credential checks, mutation, protected mounts, VM lifecycle and ephemeral-container update protection.",
+};
 
 function Inventory({ workloads }) {
   const [search, setSearch] = useState("");
@@ -180,7 +199,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=cnpg-20261120")
+    fetch("./evidence.json?v=policy-20261120")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -228,6 +247,7 @@ function Report() {
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
+        ><${Anchor} href="#architecture">Policy refactor<//
         ><${Anchor} href="#batches">Recommended batches<//
         ><${Anchor} href="#inventory">Search inventory<//><//
       >
@@ -333,6 +353,199 @@ function Report() {
           >VPA FAQ<//
         ><//
       >
+    </section>
+
+    <section id="architecture">
+      <${Title} order=${2} mt="xl"
+        >Define VPA behavior once; retire Kyverno incrementally<//
+      >
+      <${Text} size="sm" c="dimmed">
+        ${`Architecture review: ${data.architecture_review.observed_at_utc}; devel ${data.architecture_review.source_devel_commit}. The workload and metrics snapshot above remains from 02:58 UTC.`}
+      <//>
+      <${Text} component="p">
+        The intended direction is broader VPA request coverage and, eventually,
+        no Kyverno. Author the common behavior in cdk8s once, keep Goldilocks as
+        the owner of VPAs it generates, and remove each Kyverno responsibility
+        only after its remaining runtime inputs have another owner. The first
+        refactor should preserve today’s effective behavior; adoption changes
+        belong in separately reviewable batches.
+      <//>
+      <${Title} order=${3} size="h4" mt="md"
+        >Small profiles, explicit exceptions<//
+      >
+      <${Text} component="p">
+        Extend the existing namespace helper with typed profiles for
+        recommendation only, Initial and Recreate, and for requests-only versus
+        requests-and-limits. Use the same policy builder for workload
+        annotations, controlled resources, per-container bounds and exclusions.
+        These names are illustrative, not an existing API:
+      <//>
+      <${Code} block
+        >${"namespace(..., vpa=initial_requests())\nnamespace(..., vpa=recreate_requests())\nnamespace(..., vpa=initial_requests_and_limits())"}<//
+      >
+      <${Text} component="p" mt="sm">
+        An eligible new service can choose Initial request-only in one
+        expression; promote it to Recreate when eviction is acceptable. Preserve
+        existing request-and-limit policies unless a specific workload is
+        reviewed. A workload-level resource policy replaces the namespace policy
+        in Goldilocks, so the builder must emit a complete policy, including the
+        intended controlled values, rather than silently dropping them.
+        ${" "}<${Anchor}
+          href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/vpa/vpa.go#L209-L219"
+          >Goldilocks precedence<//
+        >
+      <//>
+      <${Text} component="p">
+        Keep singleton eviction opt-in. In the installed Goldilocks v4.16.1,
+        <${Code}>minReplicas<//> comes from the namespace, so a request for one
+        evictable singleton must review the effect on every VPA there. Do not
+        promise a per-workload override that Goldilocks will ignore. For custom
+        targets such as CNPG, pilot a separately owned VPA and prove there is no
+        duplicate target or controller conflict. ${" "}<${Anchor}
+          href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/vpa/vpa.go#L159-L162"
+          >Namespace minimum<//
+        >
+      <//>
+      <${Title} order=${3} size="h4" mt="md">Migration sequence<//>
+      <${Table.ScrollContainer}
+        minWidth=${720}
+        type="native"
+        tabIndex=${0}
+        aria-label="VPA configuration migration sequence"
+      >
+        <${Table} striped withTableBorder>
+          <${Table.Thead}
+            ><${Table.Tr}
+              ><${Table.Th}>Step<//><${Table.Th}>Change<//
+              ><${Table.Th}>Gate<//><//
+            ><//
+          >
+          <${Table.Tbody}>
+            <${Table.Tr}
+              ><${Table.Td}>1 · Refactor<//
+              ><${Table.Td}
+                >Add the shared profile / annotation builder and use it for
+                existing repeated policies.<//
+              ><${Table.Td}
+                >Compare rendered metadata and effective VPA specs; preserve
+                modes, values, overrides and single ownership.<//
+              ><//
+            >
+            <${Table.Tr}
+              ><${Table.Td}>2 · Adopt<//
+              ><${Table.Td}
+                >Convert reviewed workloads to Initial or Recreate profiles in
+                small batches.<//
+              ><${Table.Td}
+                >Check admission, HPA, node fit, bounds and disruption; compare
+                actual pod resources after a normal creation.<//
+              ><//
+            >
+            <${Table.Tr}
+              ><${Table.Td}>3 · Retire VPA fallback<//
+              ><${Table.Td}
+                >Keep the current Kyverno auto-mode default temporarily while
+                migrating its callers.<//
+              ><${Table.Td}
+                >Inventory namespaces from Helm, operators and other
+                repositories; ensure each intended input has an explicit owner
+                before removing the mutation. Never blanket-default existing
+                Initial VPAs to requests-only.<//
+              ><//
+            >
+            <${Table.Tr}
+              ><${Table.Td}>4 · Remove Kyverno<//
+              ><${Table.Td}
+                >Migrate its remaining defaults, security enforcement, dynamic
+                injection and cleanup separately.<//
+              ><${Table.Td}
+                >Prove each replacement on real admission/cleanup paths,
+                including private sources and failure behavior, before disabling
+                the policy or controller.<//
+              ><//
+            >
+          <//>
+        <//>
+      <//>
+      <${Title} order=${3} size="h4" mt="lg">What Kyverno still owns<//>
+      <${Text} component="p">
+        The live inventory found 7 ClusterPolicies and 2 namespaced
+        CleanupPolicies, with no ClusterCleanupPolicies or legacy exceptions.
+        This is a cluster snapshot, not an inventory of every test cluster or
+        private repository. cdk8s can render its own inputs, but cannot
+        retroactively author Pods created by KubeVirt or another operator.
+      <//>
+      <${Table.ScrollContainer}
+        minWidth=${980}
+        type="native"
+        tabIndex=${0}
+        aria-label="Kyverno retirement inventory"
+      >
+        <${Table} striped withTableBorder verticalSpacing="sm">
+          <${Table.Thead}
+            ><${Table.Tr}
+              ><${Table.Th}>Live policy<//
+              ><${Table.Th}>Current responsibility<//
+              ><${Table.Th}>Candidate direction<//
+              ><${Table.Th}>Before removal<//><//
+            ><//
+          >
+          <${Table.Tbody}>
+            ${data.architecture_review.kyverno.policies.map(
+              (p) =>
+                html`<${Table.Tr} key=${p.name}>
+                  <${Table.Td}><${Code}>${p.name}<//><//
+                  ><${Table.Td}>${p.role}<//><${Table.Td}>${p.direction}<//
+                  ><${Table.Td}>${cutoverProof[p.name]}<//>
+                <//>`,
+            )}
+            <${Table.Tr}>
+              <${Table.Td}
+                ><${Code}>sandbox-janitor<//> / <${Code}>reap-wedged-jobs<//><//
+              >
+              <${Table.Td}
+                >Scheduled cleanup in claude-sandbox and thrive-scraper.<//
+              >
+              <${Table.Td}
+                >Use an appropriately scoped janitor or native TTL where it
+                actually applies.<//
+              >
+              <${Table.Td}
+                >Preserve age, selection, permissions and schedule; Job TTL only
+                handles finished Jobs, not wedged active Jobs or other resource
+                kinds.<//
+              >
+            <//>
+          <//>
+        <//>
+      <//>
+      <${Text} component="p">
+        The existing revision-history policy intends to default to 3, but 224 of
+        237 live long-running controllers had 10 at this later observation. That
+        count does not tell us whether charts, API defaulting or policy matching
+        supplied each value; investigate before assuming the policy can simply
+        be deleted.
+      <//>
+      <${Text} component="p">
+        The API server is v1.35.1 and already advertises native
+        ValidatingAdmissionPolicy. Native MutatingAdmissionPolicy was not
+        advertised in this snapshot; assess feature gates or an upgrade before
+        relying on it. Native admission validation does not by itself reproduce
+        Kyverno’s background scan. The launcher relay also reads live owner and
+        credential objects and injects into KubeVirt-created Pods, so a static
+        cdk8s rewrite alone cannot replace it. ${" "}<${Anchor}
+          href="https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/"
+          >Kubernetes validation<//
+        >
+        ${" · "}<${Anchor}
+          href="https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/"
+          >Mutation API<//
+        >
+        ${" · "}<${Anchor}
+          href=${designSource + "cluster/cdk8s/agentplane/launcher_relay.py"}
+          >Launcher policy source<//
+        >
+      <//>
     </section>
 
     <section id="coverage">

@@ -15923,5 +15923,81 @@
       "study-casino": 2,
       "tofu-state": 2
     }
+  },
+  "architecture_review": {
+    "observed_at_utc": "2026-11-20T03:36:52Z",
+    "source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
+    "kubernetes_api_server": "v1.35.1",
+    "native_validating_admission_policy": "advertised and in use",
+    "native_mutating_admission_policy": "not advertised on the observed API server",
+    "kyverno": {
+      "cluster_policies": 7,
+      "namespaced_cleanup_policies": 2,
+      "cluster_cleanup_policies": 0,
+      "legacy_policy_exceptions": 0,
+      "new_cel_policies": "none observed",
+      "policies": [
+        {
+          "name": "default-vpa-requests-only",
+          "role": "Mutate qualifying auto-mode namespaces when the annotation is absent",
+          "direction": "Generate complete profiles in cdk8s; retain fallback until externally authored namespaces are covered."
+        },
+        {
+          "name": "default-revision-history-limit",
+          "role": "Attempt to default Deployment, StatefulSet and DaemonSet revision history at admission",
+          "direction": "Move to owner/chart output where possible; investigate effective defaults and dynamic owners."
+        },
+        {
+          "name": "default-disable-service-links",
+          "role": "Mutate Pods on creation to disable service-link injection",
+          "direction": "Set in authored pod templates; inventory and replace behavior for operator-created pods."
+        },
+        {
+          "name": "require-gitops",
+          "role": "Audit direct Deployment, StatefulSet and DaemonSet changes",
+          "direction": "Assess whether audit adds value and move to native validation/audit if retained."
+        },
+        {
+          "name": "restrict-agent-gateway-routes",
+          "role": "Enforce route and Gateway restrictions in agent namespaces",
+          "direction": "Evaluate equivalent native validating admission policy with equivalent scope and failure behavior."
+        },
+        {
+          "name": "require-secret-store-conditions",
+          "role": "Enforce scoped ClusterSecretStore access and background-scan existing stores",
+          "direction": "Evaluate native admission validation plus an explicit replacement for background scanning."
+        },
+        {
+          "name": "agentplane-staging-launcher-relay",
+          "role": "Fail-closed validation and mutation of KubeVirt launcher pods, using live owner and credential context",
+          "direction": "Study an owner-integrated implementation or narrowly scoped admission controller; retain until security and lifecycle parity is proven."
+        }
+      ],
+      "cleanup": [
+        {
+          "namespace": "claude-sandbox",
+          "name": "sandbox-janitor",
+          "schedule": "20 * * * *",
+          "role": "Reap aged sandbox resources"
+        },
+        {
+          "namespace": "thrive-scraper",
+          "name": "reap-wedged-jobs",
+          "schedule": "*/30 * * * *",
+          "role": "Reap wedged Jobs"
+        }
+      ]
+    },
+    "revision_history_observation": {
+      "population": "237 live Deployments, StatefulSets and DaemonSets",
+      "values": {
+        "2": 11,
+        "3": 2,
+        "10": 224
+      },
+      "interpretation": "Not evidence of whether chart, apiserver defaulting, Kyverno matching, or another owner supplied each value; investigate before replacing policy."
+    },
+    "goldilocks": "v4.16.1 reads namespace defaults, workload-level mode/resource policy overrides, and namespace-level minReplicas; workload resource policy replaces rather than merges the namespace policy.",
+    "preferred_direction": "Central typed cdk8s VPA profiles, preserving existing effective modes and RequestsAndLimits policies; retire Kyverno only after dynamic mutations, enforcement and cleanup have equivalent ownership or explicitly accepted outcomes."
   }
 }
