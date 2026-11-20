@@ -51,7 +51,7 @@ function usePendingRequests(): ActionRequest[] {
 
 /** One row per pending request: expandable preview where it adds something, decision buttons where eligible,
     details link. */
-function PendingActionList({
+export function PendingActionList({
   pending,
   onNavigate,
 }: {

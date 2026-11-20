@@ -163,6 +163,7 @@ import {
   type ThreadPayloadReference,
 } from "../../../history_service/api/history/history_service_pb";
 import { DisclosureVisual } from "./disclosure_visual";
+import { ActionPresentationsVisual } from "./action_presentations_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../sessions/local_commands";
 import { electricEntityVariant } from "../sessions/testing/electric_entity";
@@ -4176,6 +4177,21 @@ const visualHarness = {
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
+  },
+  mountActionPresentations(sidebarWidth: number, detailWidth: number, mcp: boolean): void {
+    const receipt = ACTIONS[0];
+    if (previewAction === null || receipt?.execution === undefined) {
+      throw new Error("Seed a pending Action and a receipt before mounting their presentations.");
+    }
+    mount(
+      <ActionPresentationsVisual
+        pending={previewAction}
+        receipt={receipt}
+        sidebarWidth={sidebarWidth}
+        detailWidth={detailWidth}
+        mcp={mcp}
+      />
+    );
   },
   mountOperationPresentation(): void {
     mount(<OperationPresentationVisual />);
