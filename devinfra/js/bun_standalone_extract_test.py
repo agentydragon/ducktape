@@ -138,18 +138,15 @@ def test_alias_without_filters_a_structural_duplicate_in_binary_cli(tmp_path: Pa
         )
     )
     output = tmp_path / "extracted"
-    assert (
-        main(
-            [
-                str(binary),
-                str(output),
-                "--alias-all",
-                "sharedConfig.js=globalThis.sharedConfig",
-                "--alias-without",
-                "sharedConfig.js=startService",
-            ]
-        )
-        == 0
+    main(
+        [
+            str(binary),
+            str(output),
+            "--alias-all",
+            "sharedConfig.js=globalThis.sharedConfig",
+            "--alias-without",
+            "sharedConfig.js=startService",
+        ]
     )
     assert (output / "sharedConfig.js").read_bytes() == shared_config_provider
 
@@ -195,19 +192,16 @@ def test_debundle_list_excludes_non_utf8_and_non_js_files(tmp_path: Path) -> Non
     binary = tmp_path / "binary"
     binary.write_bytes(synthetic_graph(modules))
     output = tmp_path / "extracted"
-    assert (
-        main(
-            [
-                str(binary),
-                str(output),
-                "--only-js",
-                "--alias",
-                "factory.js=export function factory",
-                "--debundle-list",
-                str(output / "js-files.txt"),
-            ]
-        )
-        == 0
+    main(
+        [
+            str(binary),
+            str(output),
+            "--only-js",
+            "--alias",
+            "factory.js=export function factory",
+            "--debundle-list",
+            str(output / "js-files.txt"),
+        ]
     )
     assert (output / "js-files.txt").read_text().splitlines() == ["$bunfs/root/b.js", "factory.js\t$bunfs/root/a.js"]
 

@@ -34,6 +34,7 @@ func (m memoryContent) GetContent(id content.ContentID) (content.StoredContent, 
 
 func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 	configs := []samplersettings.ModelConfig{
+		{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON},
 		{API: protocol.APIStyleResponses, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectLite}},
 		{API: protocol.APIStyleResponses, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectStandard}},
 		{API: protocol.APIStyleAnthropicMessages, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, AnthropicMessages: &anthropic.Config{MaxTokens: 1024}},

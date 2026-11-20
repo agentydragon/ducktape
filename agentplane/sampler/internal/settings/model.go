@@ -78,8 +78,18 @@ func (c ModelConfig) Validate() error {
 		if err := c.AnthropicMessages.Validate(); err != nil {
 			return invalidSettingWithCause("anthropic_messages", "settings are invalid", err)
 		}
+	case protocol.APIStyleChatCompletions:
+		if c.Responses != (responses.Config{}) || c.AnthropicMessages != nil {
+			return invalidSetting("api", "Chat Completions cannot set options for another API")
+		}
+		if c.ExecEncoding != protocol.ExecEncodingJSON {
+			return invalidSetting("exec_encoding", "chat_completions requires exec_encoding json")
+		}
+		if len(c.ReasoningEfforts) != 1 || c.ReasoningEfforts[0] != "" {
+			return invalidSetting("reasoning_efforts", "chat_completions uses the provider default reasoning effort")
+		}
 	default:
-		return invalidSetting("api", "model api must be responses or anthropic_messages")
+		return invalidSetting("api", "model api must be responses, anthropic_messages, or chat_completions")
 	}
 	return nil
 }
@@ -96,6 +106,8 @@ func (c ModelConfig) Compatible(other ModelConfig) bool {
 		return c.Responses.Compatible(other.Responses)
 	case protocol.APIStyleAnthropicMessages:
 		return c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
+	case protocol.APIStyleChatCompletions:
+		return true
 	default:
 		return false
 	}

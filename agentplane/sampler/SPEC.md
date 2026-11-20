@@ -327,7 +327,7 @@ missing cell), unknown or `null` tool arguments are rejected, and audio truncati
 tokens from data URL size rather than decoded duration.
 
 A flat top-level `models` map allowlists public route IDs and reasoning efforts. Each entry binds a
-named `connection`, explicit `provider_model`, `api` (`responses` or `anthropic_messages`) and
+named `connection`, explicit `provider_model`, `api` (`responses`, `anthropic_messages` or `chat_completions`) and
 `exec_encoding`. Connections declare a base URL and `auth.type` (`bearer`, `agentplane_ingress` or
 `anthropic_api_key`). Bearer and Anthropic API key connections require exactly one inline credential
 or rotating credential file. Agentplane ingress accepts that credential mode or, with `tls`, a
@@ -378,9 +378,7 @@ continuation, matching Codex. `response.completed.output` is retained as evidenc
 but does not replace or supplement them: Antigravity through LiteLLM can rewrite
 reasoning and add terminal-only messages.
 
-Each conversation is pinned to an explicit API: `responses` or `anthropic_messages`. Responses
-context contains native Responses items; Anthropic context contains native Messages API messages.
-Neither protocol is stored inside the other's item envelope. Protocol adapters own input rendering,
+Each conversation is pinned to its API and retains its native items or messages. Protocol adapters own input rendering,
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
@@ -389,6 +387,14 @@ stream event and its derived History observations commit atomically before parsi
 evidence failure stops the stream without acknowledging the pending effect.
 Each provider-evidence write also requires its sampling or compaction intent to remain the current
 open intent under the owner fence, so late stream evidence from a settled or superseded intent is rejected.
+
+Chat Completions streams one choice over `/v1/chat/completions` using JSON `exec`. A valid
+`stop` or `tool_calls` followed by `[DONE]` commits the assembled assistant message.
+Tool arguments must be complete JSON objects before any call can execute. The store retains
+reasoning content when supplied and pairs each tool result with its native call ID. Later
+notifications use system messages. The route uses the provider's default reasoning setting
+and requires sessions to fit within the provider's context window. Image tool results become
+text notices.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.

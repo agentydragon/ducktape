@@ -211,7 +211,10 @@ def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> No
     captured: dict[str, ContainerExecServerConfig] = {}
 
     class FakeDockerClient:
-        async def close(self) -> None:
+        async def __aenter__(self) -> FakeDockerClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
             pass
 
     docker_client = FakeDockerClient()

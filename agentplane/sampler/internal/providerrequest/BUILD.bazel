@@ -16,6 +16,7 @@ go_library(
         "//agentplane/sampler/internal/toolcontract",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
         "@org_golang_google_protobuf//proto",
     ],

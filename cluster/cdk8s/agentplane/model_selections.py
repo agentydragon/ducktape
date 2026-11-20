@@ -29,6 +29,7 @@ class HarnessRoutes:
     # Routes offered by the service-side central sampler. This is independent of Codex so
     # API-only models never become Codex models through the subscription-compatible wrapper.
     central_sampler: tuple[Route, ...] = ()
+    central_sampler_chat_canary: Route | None = None
 
     @property
     def all(self) -> tuple[Route, ...]:
@@ -54,7 +55,17 @@ _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
 # GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
 _AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
 
+QWEN_CHAT_CANARY_ROUTE = OLLAMA_QWEN_IQ4XS_256K.openai
+
+
+def chat_completions_id(route: Route) -> str:
+    return route.id + "-chat-completions"
+
+
+QWEN_CHAT_CANARY_ID = chat_completions_id(QWEN_CHAT_CANARY_ROUTE)
+
 STAGING_APP_MODELS = HarnessRoutes(
+    central_sampler_chat_canary=QWEN_CHAT_CANARY_ROUTE,
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
     codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
     central_sampler=(

@@ -185,7 +185,7 @@ class ModelConfig(BaseModel):
 
     connection: str
     provider_model: str
-    api: Literal["responses", "anthropic_messages"]
+    api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
     exec_encoding: Literal["freeform", "json"]
@@ -206,7 +206,7 @@ class ModelConfig(BaseModel):
                 raise ValueError("responses settings are required for the responses API")
             if self.anthropic_messages is not None:
                 raise ValueError("anthropic_messages settings are only valid for the anthropic_messages API")
-        else:
+        elif self.api == "anthropic_messages":
             if self.responses is not None:
                 raise ValueError("responses settings are only valid for the responses API")
             if self.exec_encoding != "json":
@@ -216,6 +216,13 @@ class ModelConfig(BaseModel):
             unsupported_efforts = self.reasoning_efforts - {"low", "medium", "high", "xhigh", "max"}
             if unsupported_efforts:
                 raise ValueError(f"unsupported Anthropic reasoning efforts: {sorted(unsupported_efforts)}")
+        else:
+            if self.responses is not None or self.anthropic_messages is not None:
+                raise ValueError("Chat Completions cannot set options for another API")
+            if self.exec_encoding != "json":
+                raise ValueError("chat_completions requires exec_encoding json")
+            if self.reasoning_efforts != {""}:
+                raise ValueError("chat_completions uses the provider default reasoning effort")
         return self
 
 
@@ -354,7 +361,11 @@ class Settings(BaseModel):
             connection = self.connections.get(config.connection)
             if connection is None:
                 raise ValueError(f"model {model} references unknown connection {config.connection}")
-            expected_auth = {"bearer", "agentplane_ingress"} if config.api == "responses" else {"anthropic_api_key"}
+            expected_auth = (
+                {"bearer", "agentplane_ingress"}
+                if config.api in {"responses", "chat_completions"}
+                else {"anthropic_api_key"}
+            )
             if connection.auth.type not in expected_auth:
                 raise ValueError(
                     f"model {model} {config.api} API requires {' or '.join(sorted(expected_auth))} connection auth"

@@ -46,6 +46,7 @@ go_library(
         "//agentplane/sampler/internal/tooloutput",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

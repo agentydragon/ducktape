@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"google.golang.org/protobuf/proto"
 )
@@ -33,6 +34,7 @@ type ProjectionKey string
 
 const (
 	anthropicProjectionKey     ProjectionKey = "anthropic_messages/v1"
+	chatProjectionKey          ProjectionKey = "chat_completions/v1"
 	responsesProjectionVersion ProjectionKey = "responses/v1/"
 )
 
@@ -89,6 +91,25 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 		return Recipe{ProfileID: profile, History: Complete{IDs: ids}}, nil
 	}
 	switch snapshot.API {
+	case protocol.APIStyleChatCompletions:
+		if preparation.Compaction {
+			return Recipe{}, protocol.ErrPrecondition
+		}
+		profile, system := snapshot.PreviousProfileID, snapshot.PreviousFirstID
+		if profile == "" {
+			tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
+			if err != nil {
+				return Recipe{}, err
+			}
+			profile, system, err = chatcompletions.PrepareRequest(store, preparation.ModelConfig.ProviderModel, snapshot.Instructions, tools)
+			if err != nil {
+				return Recipe{}, err
+			}
+		}
+		if system == "" {
+			return Recipe{}, protocol.ErrInvalid
+		}
+		return Recipe{ProfileID: profile, PrefixIDs: []content.ContentID{system}, History: Projection{Key: chatProjectionKey}}, nil
 	case protocol.APIStyleResponses:
 		tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
 		if err != nil {
@@ -212,6 +233,9 @@ func prepareAnthropic(s Content, snapshot Snapshot, body anthropic.Request) (Rec
 func ProjectionFor(config samplersettings.ModelConfig) ProjectionKey {
 	if config.API == protocol.APIStyleResponses {
 		return responsesProjectionVersion + ProjectionKey(config.Responses.Dialect) + "/" + ProjectionKey(config.ExecEncoding)
+	}
+	if config.API == protocol.APIStyleChatCompletions {
+		return chatProjectionKey
 	}
 	return anthropicProjectionKey
 }
