@@ -129,7 +129,25 @@ def _values() -> dict[str, object]:
         },
         "cleanupController": {
             "enabled": True,
-            "replicas": 1,
+            # Each replica serves policy validation and cleanup webhooks. The
+            # elected leader maintains certificates and schedules cleanup jobs.
+            "replicas": 2,
+            "podDisruptionBudget": {"minAvailable": 1},
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/component": "cleanup-controller",
+                            "app.kubernetes.io/instance": "{{ .Release.Name }}",
+                        }
+                    },
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
             "annotations": initial_memory_request_annotations(
