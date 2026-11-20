@@ -16,11 +16,6 @@ import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon
 
 export { default as SyncErrorIcon } from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
 export { default as SyncCurrentIcon } from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs";
-export { default as BellIcon } from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
-export { default as UsersIcon } from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
-export { default as CalendarIcon } from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
-export { default as RepeatIcon } from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
-export { default as MailIcon } from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 export { default as ListIcon } from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 export { default as ListDetailsIcon } from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 
