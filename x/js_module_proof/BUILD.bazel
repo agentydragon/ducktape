@@ -152,3 +152,27 @@ js_test(
         "@lean_dist//:runtime",
     ],
 )
+
+js_test(
+    name = "binding_graph_corpus_test",
+    data = [
+        "Bindings.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ] + glob(["example/bindings/**"]),
+    entry_point = "binding_graph_corpus_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 10,
+)

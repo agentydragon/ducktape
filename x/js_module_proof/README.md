@@ -101,7 +101,13 @@ reads return `unknown`.
 The Acorn frontend converts source and actual outputs into the same small AST.
 Lean checks that each emitted statement matches its assigned source statement,
 that imports resolve to the correct exported declarations, and that the entry
-exports match the source. The module scheduler and the shared named-cell
+exports match the source. For every reference it also computes the actual
+output owner and its source statement index, and checks that the resolved
+declaration equals the source-side declaration. The axiom-free general theorem
+`accepted_reference_owner` proves that this holds for every reference in any
+accepted graph. This is a checked sufficient condition on the restricted AST,
+not a proof of the Acorn conversion or ECMAScript's linking rules. The module
+scheduler and the shared named-cell
 execution state then model initialization and future exported calls. A safe
 result proves equal modeled initialization and matching execution for any
 finite sequence of subsequent calls. An unsafe result includes a Lean proof of
@@ -183,6 +189,12 @@ modified output.
 The multiple-binding test exercises the safe and unsafe assignments, replays
 their certificates, rejects wrong imports, changed bodies and missing statements,
 and accepts another program with more declarations, functions and calls.
+An additional 30-case sharded corpus constructs emitted files independently of
+the generator and varies declaration and import order, values, initialization
+order and malformed outputs. It compares proved cases and unsafe witnesses with
+Node, and checks that unsupported aliases, cycles, temporal dead zone reads,
+and writes through imports are not proved safe. Exported calls in this subset
+return no values and cannot expose later cell values without a reader function.
 
 BuildBuddy includes untracked files in its patch. Use a clean or sparse
 checkout if the working checkout contains unrelated untracked material.

@@ -87,6 +87,42 @@ def moduleValid (source : List BindingStmt) (modules : List BindingModule) (inde
 def publicNames (module : BindingModule) : List String :=
   module.exports ++ module.imports.flatMap (fun i => i.reexports)
 
+/- A declaration's identity is its index in the original statement list.
+   Resolve against the extracted module statements and imports, not the
+   generator or the source-side lookup. -/
+def sourceDeclaration (source : List BindingStmt) (name : String) : Option (Nat × BindingStmt) :=
+  ((List.range source.length).zip source).find? (fun pair => declaredName pair.2 == some name)
+
+def localDeclaration (module : BindingModule) (name : String) : Option (Nat × BindingStmt) :=
+  (module.assignment.zip module.statements).find? (fun pair => declaredName pair.2 == some name)
+
+def resolveReference (modules : List BindingModule) (index : Nat) (name : String) : Option (Nat × (Nat × BindingStmt)) := do
+  let module ← elementAt modules index
+  match localDeclaration module name with
+  | some declaration => some (index, declaration)
+  | none => module.imports.findSome? (fun imported => do
+      if !imported.locals.contains name then none else
+        let owner ← elementAt modules imported.dependency
+        if !owner.exports.contains name then none else
+          (localDeclaration owner name).map (fun declaration => (imported.dependency, declaration)))
+
+def referenceNames : BindingStmt → List String
+  | .variable _ _ => []
+  | .function _ target source => [target, source]
+  | .call name => [name]
+  | .record name => [name]
+
+def referenceMatches (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
+  let resolved := resolveReference modules index name
+  resolved.isSome && decide (resolved.map Prod.snd = sourceDeclaration source name)
+
+def allReferencesMatch (source : List BindingStmt) (modules : List BindingModule) : Bool :=
+  (List.range modules.length).all (fun index =>
+    match elementAt modules index with
+    | none => false
+    | some module => module.statements.all (fun statement =>
+        (referenceNames statement).all (referenceMatches source modules index)))
+
 def modulesValid (source : List BindingStmt) (sourceExports : List String)
     (modules : List BindingModule) (entry : Nat) : Bool :=
   let names := definitions source
@@ -104,7 +140,67 @@ def modulesValid (source : List BindingStmt) (sourceExports : List String)
       | none => false
       | some module => moduleValid source modules index module) &&
     assigned.all (fun index => index < source.length) &&
-    (List.range source.length).all (fun index => assigned.count index == 1)
+    (List.range source.length).all (fun index => assigned.count index == 1) &&
+    allReferencesMatch source modules
+
+/- Accepted references resolve to a concrete output owner and the same
+   source-indexed declaration. This is a theorem about the restricted AST and
+   linker; the extraction of JavaScript into this AST remains trusted. -/
+theorem binding_and_left (a b : Bool) (h : (a && b) = true) : a = true := by
+  cases a <;> cases b <;> cases h <;> rfl
+
+theorem binding_and_right (a b : Bool) (h : (a && b) = true) : b = true := by
+  cases a <;> cases b <;> cases h <;> rfl
+
+theorem binding_all_member {α : Type} (predicate : α → Bool) (items : List α)
+    (item : α) (all : items.all predicate = true) (member : item ∈ items) : predicate item = true := by
+  induction items with
+  | nil => cases member
+  | cons first rest ih =>
+    change (predicate first && rest.all predicate) = true at all
+    cases member with
+    | head => exact binding_and_left _ _ all
+    | tail _ member => exact ih (binding_and_right _ _ all) member
+
+theorem accepted_reference_resolves (source : List BindingStmt) (exports : List String)
+    (modules : List BindingModule) (entry index : Nat) (module : BindingModule)
+    (statement : BindingStmt) (name : String)
+    (accepted : modulesValid source exports modules entry = true)
+    (inRange : index ∈ List.range modules.length)
+    (moduleAt : elementAt modules index = some module)
+    (inModule : statement ∈ module.statements)
+    (isReference : name ∈ referenceNames statement) :
+    (resolveReference modules index name).isSome = true ∧
+      (resolveReference modules index name).map Prod.snd = sourceDeclaration source name := by
+  have allMatch : allReferencesMatch source modules = true := binding_and_right _ _ accepted
+  unfold allReferencesMatch at allMatch
+  have atIndex := binding_all_member _ _ index allMatch inRange
+  rw [moduleAt] at atIndex
+  have atStatement := binding_all_member _ _ statement atIndex inModule
+  have atName := binding_all_member _ _ name atStatement isReference
+  unfold referenceMatches at atName
+  exact ⟨binding_and_left _ _ atName, of_decide_eq_true (binding_and_right _ _ atName)⟩
+
+theorem accepted_reference_owner (source : List BindingStmt) (exports : List String)
+    (modules : List BindingModule) (entry index : Nat) (module : BindingModule)
+    (statement : BindingStmt) (name : String)
+    (accepted : modulesValid source exports modules entry = true)
+    (inRange : index ∈ List.range modules.length)
+    (moduleAt : elementAt modules index = some module)
+    (inModule : statement ∈ module.statements)
+    (isReference : name ∈ referenceNames statement) :
+    ∃ owner declaration, resolveReference modules index name = some (owner, declaration) ∧
+      sourceDeclaration source name = some declaration := by
+  have resolved := accepted_reference_resolves source exports modules entry index module statement name
+    accepted inRange moduleAt inModule isReference
+  cases h : resolveReference modules index name with
+  | none => rw [h] at resolved; cases resolved.1
+  | some result =>
+    cases result with
+    | mk owner declaration =>
+      refine ⟨owner, declaration, rfl, ?_⟩
+      rw [h] at resolved
+      exact resolved.2.symm
 
 def asEffectModules (modules : List BindingModule) : List EffectModule :=
   modules.map (fun module =>

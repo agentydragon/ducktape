@@ -41,11 +41,33 @@ for (const safe of [true, false]) {
       execute(source, ["increment", "increment"]),
       execute(join(out, "entry.mjs"), ["increment", "increment"])
     );
+  const application = safe
+    ? `
+theorem fixture_reference : ∃ owner declaration,
+    resolveReference bindingModules 1 "amount" = some (owner, declaration) ∧
+      sourceDeclaration bindingSource "amount" = some declaration := by
+  let selected := bindingModules[1]'(by decide)
+  apply accepted_reference_owner bindingSource bindingExports bindingModules bindingEntry 1 selected
+    (.function "increment" "count" "amount") "amount"
+  · exact binding_graph_valid
+  · change 1 ∈ [0, 1, 2, 3]
+    exact List.Mem.tail _ (List.Mem.head _)
+  · decide
+  · change (BindingStmt.function "increment" "count" "amount") ∈
+      [BindingStmt.variable "count" 0, BindingStmt.function "increment" "count" "amount", BindingStmt.call "increment"]
+    exact List.Mem.tail _ (List.Mem.head _)
+  · change "amount" ∈ ["count", "amount"]
+    exact List.Mem.tail _ (List.Mem.head _)
+#print axioms fixture_reference
+`
+    : "";
   const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
-    input: models + checked.value.certificate,
+    input: models + checked.value.certificate + application,
   });
   assert.equal(proof.status, 0, proof.stdout + proof.stderr);
+  assert.match(proof.stdout, /'accepted_reference_owner' does not depend on any axioms/);
+  if (safe) assert.match(proof.stdout, /'fixture_reference' does not depend on any axioms/);
   assert.match(
     proof.stdout,
     safe ? /'binding_future_calls' does not depend on any axioms/ : /'binding_difference' does not depend on any axioms/
