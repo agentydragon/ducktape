@@ -1407,6 +1407,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
         ":opentofu_runtime",
         ":vpa_policy",
         "//cluster/cdk8s/external_secrets:single_secret_store",

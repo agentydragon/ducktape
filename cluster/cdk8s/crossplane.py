@@ -21,7 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import flux, namespaces, opentofu_runtime
+from cluster.cdk8s import flux, namespaces, node_scheduling, opentofu_runtime
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
@@ -94,7 +94,7 @@ def chart(app: App) -> Chart:
         "core-disruption-budget",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         spec=k8s.PodDisruptionBudgetSpec(
-            min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=core_selector)
+            min_available=k8s.IntOrString.from_number(2), selector=k8s.LabelSelector(match_labels=core_selector)
         ),
     )
     helm_release(
@@ -108,8 +108,9 @@ def chart(app: App) -> Chart:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         values={
-            "replicas": 2,
+            "replicas": 3,
             "leaderElection": True,
+            "affinity": k8s.Affinity(node_affinity=node_scheduling.zone_affinity(node_scheduling.HOME_AND_OVH_ZONES)),
             "topologySpreadConstraints": [
                 {
                     "maxSkew": 1,
@@ -118,7 +119,18 @@ def chart(app: App) -> Chart:
                     "nodeTaintsPolicy": "Honor",
                     "labelSelector": {"matchLabels": core_selector},
                     "matchLabelKeys": ["pod-template-hash"],
-                }
+                },
+                # Three replicas normally cover OVH and both home zones. With one zone left,
+                # allow replacements there on different hosts instead of blocking recovery.
+                k8s.TopologySpreadConstraint(
+                    topology_key=node_scheduling.ZONE_LABEL,
+                    max_skew=1,
+                    min_domains=1,
+                    when_unsatisfiable="DoNotSchedule",
+                    label_selector=k8s.LabelSelector(match_labels=core_selector),
+                    match_label_keys=["pod-template-hash"],
+                    node_taints_policy="Honor",
+                ),
             ],
         },
         post_renderers=[

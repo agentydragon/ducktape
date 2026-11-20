@@ -14,7 +14,7 @@ metadata:
   name: crossplane
   namespace: crossplane-system
 spec:
-  minAvailable: 1
+  minAvailable: 2
   selector:
     matchLabels:
       app: crossplane
@@ -71,8 +71,19 @@ spec:
               kind: Deployment
               name: crossplane
   values:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values:
+                    - hil-ovh
+                    - home-lan
+                    - atlas
     leaderElection: true
-    replicas: 2
+    replicas: 3
     topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -83,4 +94,15 @@ spec:
         maxSkew: 1
         nodeTaintsPolicy: Honor
         topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+      - labelSelector:
+          matchLabels:
+            app: crossplane
+            release: crossplane
+        matchLabelKeys:
+          - pod-template-hash
+        maxSkew: 1
+        minDomains: 1
+        nodeTaintsPolicy: Honor
+        topologyKey: topology.kubernetes.io/zone
         whenUnsatisfiable: DoNotSchedule
