@@ -223,7 +223,7 @@ ARGUMENT_LAYOUTS = [
             "previous": True,
             "tail": -1,
         },
-        ["container sidecar-", "previous run", "tail -1"],
+        ["container sidecar-", "previous run", "last 100 lines (default)"],
         "previous run",
         id="previous-pod-logs",
     ),
@@ -398,7 +398,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "pods_log",
             {"name": "web-0", "previous": True, "tail": -1},
-            "previous run, tail -1",
+            "previous run, last 100 lines (default)",
             id="pod-log",
         ),
         pytest.param(
@@ -1325,11 +1325,11 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     page = view.page
     await expect(page.get_by_text("Apply ConfigMap apps/settings", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]:visible')).to_be_visible()
-    await expect(
-        page.locator('[data-operation-heading="Resource 1 · ConfigMap apps/settings"]:visible')
-    ).to_be_visible()
-    await expect(page.locator('[data-operation-heading="Resource 2 · Secret apps/token"]:visible')).to_be_visible()
-    await expect(page.locator(".cm-editor").first).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(receipt.get_by_text("Secret apps/token", exact=True)).to_be_visible()
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor").last).to_be_visible()
     await view.check(context="Kubernetes apply summary with formatted manifest and returned resources")
     await view.capture(target=page.locator("#app"))
 
