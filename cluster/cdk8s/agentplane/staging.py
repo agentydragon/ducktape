@@ -507,7 +507,7 @@ ENV = Environment(
                 provider_model=route.id,
                 api="chat_completions",
                 exec_encoding="json",
-                reasoning_efforts={""},
+                reasoning_efforts={"", *route.reasoning_efforts},
                 chat_compaction=ChatCompactionConfig(
                     max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
                 ),

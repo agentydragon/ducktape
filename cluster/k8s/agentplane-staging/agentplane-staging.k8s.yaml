@@ -3335,7 +3335,10 @@ data:
           },
           "exec_encoding": "json",
           "reasoning_efforts": [
-            ""
+            "",
+            "high",
+            "low",
+            "medium"
           ]
         },
         "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated": {
@@ -3349,7 +3352,10 @@ data:
           },
           "exec_encoding": "json",
           "reasoning_efforts": [
-            ""
+            "",
+            "high",
+            "low",
+            "medium"
           ]
         }
       },
@@ -3738,7 +3744,10 @@ data:
           reasoning_efforts: []
         - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
           display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
         - model: anthropic-api/ant-messages/claude-opus-5-5
           display_name: Opus 5.5 — Anthropic API
           reasoning_efforts:
@@ -3773,7 +3782,10 @@ data:
             - max
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
           display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
-          reasoning_efforts: []
+          reasoning_efforts:
+            - low
+            - medium
+            - high
       harnesses:
         HARNESS_CLAUDE:
           - antigravity/ant-messages/claude-opus-4-6-thinking
@@ -6845,7 +6857,10 @@ data:
               reasoning_efforts: []
             - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
               display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
-              reasoning_efforts: []
+              reasoning_efforts:
+                - low
+                - medium
+                - high
             - model: anthropic-api/ant-messages/claude-opus-5-5
               display_name: Opus 5.5 — Anthropic API
               reasoning_efforts:
@@ -6880,7 +6895,10 @@ data:
                 - max
             - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
               display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
-              reasoning_efforts: []
+              reasoning_efforts:
+                - low
+                - medium
+                - high
           harnesses:
             HARNESS_CLAUDE:
               - antigravity/ant-messages/claude-opus-4-6-thinking
