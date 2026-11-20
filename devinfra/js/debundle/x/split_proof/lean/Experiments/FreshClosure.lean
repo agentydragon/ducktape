@@ -9,8 +9,13 @@ The body is deferred, and invoking it is modeled only as observing that identity
 
 namespace FreshClosure
 
-abbrev ClosureId := Nat
-abbrev SetId := Nat
+structure ClosureId where
+  value : Nat
+  deriving DecidableEq, Repr
+
+structure SetId where
+  value : Nat
+  deriving DecidableEq, Repr
 
 inductive Event where
   | log (value : Int)
@@ -29,16 +34,17 @@ structure World where
   /-- Set and closure identities have separate types: neither is an observable
   numeric address, and a Set can never be identical to a closure. -/
   setResult : Option SetId
+  sets : SetId → Bool
   nextSet : SetId
   events : List Event
 
-def update {α : Type} (f : Nat → α) (key : Nat) (value : α) : Nat → α :=
-  fun x => if x == key then value else f x
+def update {κ α : Type} [DecidableEq κ] (f : κ → α) (key : κ) (value : α) : κ → α :=
+  fun x => if x = key then value else f x
 
 /-- The factory evaluates its argument now, creates a fresh private parameter
 cell and closure, then initializes the result. No deferred body runs here. -/
 def make (w : World) : World :=
-  { w with closures := update w.closures w.nextClosure (some w.argument), result := some w.nextClosure, nextClosure := w.nextClosure + 1 }
+  { w with closures := update w.closures w.nextClosure (some w.argument), result := some w.nextClosure, nextClosure := ⟨w.nextClosure.value + 1⟩ }
 
 inductive Stmt where
   | log (value : Int)
@@ -61,11 +67,11 @@ def step (s : Stmt) (w : World) : World :=
   match s with
   | .log value => { w with events := w.events ++ [.log value] }
   | .writeArgument value => { w with argument := value }
-  | .pureNewSet => { w with setResult := some w.nextSet, nextSet := w.nextSet + 1 }
+  | .pureNewSet => { w with setResult := some w.nextSet, sets := update w.sets w.nextSet true, nextSet := ⟨w.nextSet.value + 1⟩ }
   | .publishResult => { w with events := w.events ++ [.escaped w.result] }
   | .invokeResult => { w with events := w.events ++ [.invoked (invoke w)] }
-  | .reentrantNewSet => { w with setResult := some w.nextSet, nextSet := w.nextSet + 1, events := w.events ++ [.invoked (invoke w)] }
-  | .allocateClosure => { w with closures := update w.closures w.nextClosure (some 0), nextClosure := w.nextClosure + 1 }
+  | .reentrantNewSet => { w with setResult := some w.nextSet, sets := update w.sets w.nextSet true, nextSet := ⟨w.nextSet.value + 1⟩, events := w.events ++ [.invoked (invoke w)] }
+  | .allocateClosure => { w with closures := update w.closures w.nextClosure (some 0), nextClosure := ⟨w.nextClosure.value + 1⟩ }
 
 /-- Syntax-directed sufficient condition. Escape, invocation, a reentrant
 constructor, argument changes, and competing closure allocations are refused. -/
@@ -94,15 +100,22 @@ theorem allocated_closure_fresh (w : World) (h : w.closures w.nextClosure = none
     w.closures w.nextClosure = none ∧ (make w).closures w.nextClosure = some w.argument := by
   simp [h, make, update]
 
+/-- Set freshness also requires an unused next identity; incrementing the
+counter alone does not prove the surrounding allocator has maintained it. -/
+theorem allocated_set_fresh (w : World) (h : w.sets w.nextSet = false) :
+    w.sets w.nextSet = false ∧ (step .pureNewSet w).sets w.nextSet = true := by
+  simp [h, step, update]
+
 namespace Examples
 
 def initial : World := {
   argument := 11
   closures := fun _ => none
   result := none
-  nextClosure := 0
+  nextClosure := ⟨0⟩
   setResult := none
-  nextSet := 0
+  sets := fun _ => false
+  nextSet := ⟨0⟩
   events := []
 }
 

@@ -341,6 +341,7 @@ lean_axiom_test(
         "FreshClosure.make_step_commute",
         "FreshClosure.inferred_swap_preserves_continuation",
         "FreshClosure.allocated_closure_fresh",
+        "FreshClosure.allocated_set_fresh",
         "FreshClosure.Examples.set_creation_accepted",
         "FreshClosure.Examples.later_call_observes_argument",
         "FreshClosure.Examples.changed_argument_rejected",
