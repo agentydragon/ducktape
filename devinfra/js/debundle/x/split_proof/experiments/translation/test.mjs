@@ -18,6 +18,10 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
   const fixture = path.join(here, "fixtures", name);
   const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "translation_"));
   const bundleJson = path.join(work, "bundle.json");
+  const expectFile = path.join(fixture, "expect.json");
+  const baseExpect = existsSync(expectFile)
+    ? JSON.parse(readFileSync(expectFile, "utf8"))
+    : { code: 0, contains: "PLAN SOUND" };
   const front = run(process.execPath, [
     path.join(here, "frontend.mjs"),
     "bundle",
@@ -25,6 +29,16 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
     "--out",
     bundleJson,
   ]);
+  if (baseExpect.frontend_error) {
+    if (front.status === 0 || !front.stderr.includes(baseExpect.frontend_error))
+      throw new Error(`${name}: expected frontend error ${baseExpect.frontend_error}, got ${front.stderr}`);
+    const original = run(process.execPath, [path.join(fixture, "bundle.js")]);
+    if (original.status === 0 || !original.stderr.includes(baseExpect.node_error))
+      throw new Error(`${name}: expected Node ${baseExpect.node_error}, got ${original.stderr}`);
+    console.log(`pass  ${name}: frontend and Node reject invalid input`);
+    if (!process.argv.includes("--keep")) rmSync(work, { recursive: true, force: true });
+    continue;
+  }
   if (front.status !== 0) throw new Error(front.stderr);
   const check = (outDir, certMode, baseCert) => {
     const outputJson = path.join(work, "output.json");
@@ -53,10 +67,6 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
   writeFileSync(baseCert, readFileSync(path.join(work, "cert.json")));
   const baseOutput = path.join(work, "base_output.json");
   writeFileSync(baseOutput, readFileSync(path.join(work, "output.json")));
-  const expectFile = path.join(fixture, "expect.json");
-  const baseExpect = existsSync(expectFile)
-    ? JSON.parse(readFileSync(expectFile, "utf8"))
-    : { code: 0, contains: "PLAN SOUND" };
   if (baseExpect.node_error) {
     const original = run(process.execPath, [path.join(fixture, "bundle.js")]);
     if (original.status !== 0) throw new Error(`${name}: original bundle failed: ${original.stderr}`);
