@@ -571,11 +571,11 @@ func TestSubscribeRequiresSessionID(t *testing.T) {
 
 const messageID = "00000000-0000-0000-0000-0000000000c1"
 
-// acceptedMessage is a message to the test recipient's Sandbox as the service pins it.
+// acceptedMessage is a message to the test recipient's Session as the service pins it.
 func acceptedMessage() *notificationspb.Message {
 	return &notificationspb.Message{
-		Id: messageID, DestinationRef: &notificationspb.DestinationRef{Namespace: "test-recipient-ns", Name: "test-recipient", Uid: "test-recipient-uid"},
-		SessionId: "test-recipient-session", IdempotencyKey: "test-key", AcceptedAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
+		Id: messageID, SessionId: "test-recipient-session", IdempotencyKey: "test-key",
+		AcceptedAt: timestamppb.New(time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)),
 	}
 }
 
@@ -684,7 +684,7 @@ func TestMessageShowsWhatTheSenderCanFollow(t *testing.T) {
 	if code != 0 || len(looked) != 1 || looked[0].GetMessageId() != messageID {
 		t.Fatalf("exit %d, lookups %v, stderr %q", code, looked, stderr)
 	}
-	for _, want := range []string{messageID, "to test-recipient-ns/test-recipient session test-recipient-session", "accepted 2026-01-08T00:00:00Z", "acknowledged"} {
+	for _, want := range []string{messageID, "to session test-recipient-session", "accepted 2026-01-08T00:00:00Z", "acknowledged"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout %q does not contain %q", stdout, want)
 		}

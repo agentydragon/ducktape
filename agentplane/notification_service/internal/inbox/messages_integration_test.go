@@ -19,12 +19,11 @@ func messageQuotas() Quotas {
 	return quotas
 }
 
-// message is a message from sender to the fixture owner's Sandbox, for the Session body names.
+// message is a message from sender to the fixture owner, for the Session body names.
 func (f fixture) message(sender model.ServiceAccount, key, text string) Message {
-	creation := f.body(key)
 	return Message{
-		Sender: AccountSender{Account: sender, UID: "test-sender-uid"}, Recipient: f.incarnation(), DestinationRef: creation.DestinationRef, SessionID: creation.SessionID,
-		IdempotencyKey: key, Body: text,
+		Sender: AccountSender{Account: sender, UID: "test-sender-uid"}, Recipient: f.incarnation(),
+		SessionID: f.body(key).SessionID, IdempotencyKey: key, Body: text,
 	}
 }
 
@@ -77,7 +76,7 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 	}
 	f.openInbox(t)
 	sent := f.send(t, message)
-	if sent.DestinationRef != (model.DestinationRef{}) || sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
+	if sent.SessionID != message.SessionID || sent.IdempotencyKey != "first" ||
 		sent.Covered || sent.Acknowledged || sent.InboxRetired {
 		t.Fatalf("sent = %+v", sent)
 	}

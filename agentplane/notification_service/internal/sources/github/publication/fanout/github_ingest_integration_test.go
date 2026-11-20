@@ -16,7 +16,6 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -324,10 +323,10 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	g := newGitHubFixture(t)
 	source := g.source(githubmodel.PullRequestSubject{Number: 7})
 	idle := g.follow(t, source, "idle")
-	backedOff := g.followIn(t, otherDestination("backed-off"), source, "backed-off")
-	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
-	expired := g.followIn(t, otherDestination("expired"), source, "expired")
-	retired := g.followIn(t, otherDestination("retired"), source, "retired")
+	backedOff := g.followIn(t, "backed-off", source, "backed-off")
+	cancelled := g.followIn(t, "cancelled", source, "cancelled")
+	expired := g.followIn(t, "expired", source, "expired")
+	retired := g.followIn(t, "retired", source, "retired")
 	otherApp := newGitHubFixtureWithStoreFixture(t, fixtureForDatabase(t, g.db, g.databaseURL, defaultQuotas()))
 	foreign := otherApp.follow(t, source, "other-app")
 
@@ -374,12 +373,6 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 			t.Errorf("%s source changed from %+v to %+v", name, was[name], current)
 		}
 	}
-}
-
-// otherDestination is another destination of the fixture's owner, for a subscription that must not share the
-// fixture's inbox.
-func otherDestination(name string) model.DestinationRef {
-	return model.DestinationRef{Namespace: "test-namespace", Name: name, UID: "test-uid"}
 }
 
 func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {

@@ -192,7 +192,6 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 func (f fixture) subscribe(t *testing.T) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),

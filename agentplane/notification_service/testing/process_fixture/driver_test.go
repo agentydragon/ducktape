@@ -291,9 +291,6 @@ func TestNotificationProcessDriver(t *testing.T) {
 			Identity:   model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
 			SandboxUID: input.SeedSubscription.SandboxUID,
 		}, sourceadapter.Subscribe{
-			DestinationRef: model.DestinationRef{
-				Namespace: input.Namespace, Name: input.SeedSubscription.SandboxName, UID: input.SeedSubscription.SandboxUID,
-			},
 			SessionID:      "notification-process-" + uuid.NewString(),
 			IdempotencyKey: idempotencyKey,
 			Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID}),

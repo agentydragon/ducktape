@@ -18,13 +18,6 @@ func EncodeSubscriptionCreation(creation Subscribe) ([]byte, string, error) {
 		return nil, "", err
 	}
 	stored := &storagepb.SubscriptionCreation{SessionId: creation.SessionID, LifetimeDays: creation.LifetimeDays}
-	if creation.DestinationRef != (model.DestinationRef{}) {
-		stored.DestinationRef = &storagepb.DestinationRef{
-			Namespace: creation.DestinationRef.Namespace,
-			Name:      creation.DestinationRef.Name,
-			Uid:       creation.DestinationRef.UID,
-		}
-	}
 	provider, err := subscriptionSourceProvider(creation.Source)
 	if err != nil {
 		return nil, "", err
@@ -59,11 +52,6 @@ func DecodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (S
 	creation := Subscribe{
 		SessionID: stored.GetSessionId(), IdempotencyKey: idempotencyKey,
 		LifetimeDays: stored.GetLifetimeDays(),
-	}
-	// Older writers stored the destination here. It remains readable during rollback but no longer
-	// participates in a Session's subscription identity or idempotency.
-	if ref := stored.GetDestinationRef(); ref != nil {
-		creation.DestinationRef = model.DestinationRef{Namespace: ref.GetNamespace(), Name: ref.GetName(), UID: ref.GetUid()}
 	}
 	switch source := stored.GetSource().(type) {
 	case *storagepb.SubscriptionCreation_Actions:

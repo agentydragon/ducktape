@@ -1,28 +1,42 @@
 package migrations
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
 )
 
-func prepareSessionReaderSchema(t *testing.T, db *sql.DB) {
+// applyUpTo applies every migration whose name sorts before the exclusive bound, so a test can
+// exercise one migration against the schema its predecessor left.
+func applyUpTo(ctx context.Context, t *testing.T, db *sql.DB, exclusiveBound string) {
 	t.Helper()
-	resetSchema(t, db)
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, previousMigrations(t, exclusiveBound),
+		goose.WithTableName("notification_service_goose_version"), goose.WithDisableGlobalRegistry(true))
+	if err != nil {
+		t.Fatal("create migration provider:", err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("apply migrations before %s: %v", exclusiveBound, err)
+	}
+}
 
+// previousMigrations are the migration files whose names sort below the exclusive bound, so a provider
+// can stop at the schema one migration left behind.
+func previousMigrations(t *testing.T, exclusiveBound string) fstest.MapFS {
+	t.Helper()
 	files, err := scripts.ReadDir("notifications")
 	if err != nil {
 		t.Fatal("read notification migrations:", err)
 	}
 	previous := fstest.MapFS{}
 	for _, file := range files {
-		if file.Name() >= "00021_" {
+		if file.Name() >= exclusiveBound {
 			continue
 		}
 		data, err := scripts.ReadFile("notifications/" + file.Name())
@@ -31,14 +45,13 @@ func prepareSessionReaderSchema(t *testing.T, db *sql.DB) {
 		}
 		previous[file.Name()] = &fstest.MapFile{Data: data}
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, previous,
-		goose.WithTableName("notification_service_goose_version"), goose.WithDisableGlobalRegistry(true))
-	if err != nil {
-		t.Fatal("create pre-migration provider:", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatal("apply schema through Session reader expansion:", err)
-	}
+	return previous
+}
+
+func prepareSessionReaderSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+	resetSchema(t, db)
+	applyUpTo(t.Context(), t, db, "00021_")
 	assertApplied(t, db, 20)
 }
 
@@ -60,11 +73,10 @@ func TestSessionInboxDataMigrationRekeysWithoutChangingMailboxState(t *testing.T
 	db := cloneDatabase(t)
 	prepareSessionReaderSchema(t, db)
 	_, subscription := seedSubscription(t, db, "session-key-migration")
-	legacyDestination := model.DestinationRef{Namespace: "sandbox-namespace", Name: "sandbox-name", UID: "sandbox-uid"}
-	legacyKey := model.DestinationKey(legacyDestination, "session-key-migration")
-	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET owner_namespace = $2, owner_name = $3,
-		destination_key = $4, destination_namespace = $2, destination_name = $3, destination_uid = $5
-		WHERE id = $1`, subscription.InboxID, legacyDestination.Namespace, legacyDestination.Name, legacyKey, legacyDestination.UID); err != nil {
+	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET owner_namespace = 'sandbox-namespace', owner_name = 'sandbox-name',
+		destination_key = 'session-key-migration-legacy-sha',
+		destination_namespace = 'sandbox-namespace', destination_name = 'sandbox-name', destination_uid = 'sandbox-uid'
+		WHERE id = $1`, subscription.InboxID); err != nil {
 		t.Fatal("restore legacy Sandbox-keyed inbox fixture:", err)
 	}
 
@@ -89,41 +101,28 @@ func TestSessionInboxDataMigrationRekeysWithoutChangingMailboxState(t *testing.T
 		t.Fatal("insert delivery receipt:", err)
 	}
 
-	var oldKey, sessionID, ownerNamespace, ownerName, destinationNamespace, destinationName, destinationUID string
-	if err := db.QueryRowContext(t.Context(), `SELECT destination_key, session_id, owner_namespace, owner_name,
-		destination_namespace, destination_name, destination_uid FROM inbox WHERE id = $1`, subscription.InboxID).
-		Scan(&oldKey, &sessionID, &ownerNamespace, &ownerName, &destinationNamespace, &destinationName, &destinationUID); err != nil {
+	var sessionID, legacyKey string
+	if err := db.QueryRowContext(t.Context(), `SELECT session_id, destination_key FROM inbox WHERE id = $1`, subscription.InboxID).
+		Scan(&sessionID, &legacyKey); err != nil {
 		t.Fatal("read legacy inbox key:", err)
 	}
-	if oldKey == sessionID {
+	if legacyKey == sessionID {
 		t.Fatal("fixture destination key unexpectedly equals its Session ID")
 	}
 
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal("apply Session inbox data migration:", err)
-	}
+	applyUpTo(t.Context(), t, db, "00022_")
+	assertApplied(t, db, 21)
 
-	var newKey, migratedSessionID string
-	var ownerNamespaceAfter, ownerNameAfter, destinationNamespaceAfter, destinationNameAfter, destinationUIDAfter string
+	var migratedSessionID string
 	var lastCursor, acknowledged, covered int64
-	if err := db.QueryRowContext(t.Context(), `SELECT destination_key, session_id, owner_namespace, owner_name,
-		destination_namespace, destination_name, destination_uid, last_cursor, acknowledged, covered
+	if err := db.QueryRowContext(t.Context(), `SELECT session_id, last_cursor, acknowledged, covered
 		FROM inbox WHERE id = $1`, subscription.InboxID).Scan(
-		&newKey, &migratedSessionID, &ownerNamespaceAfter, &ownerNameAfter,
-		&destinationNamespaceAfter, &destinationNameAfter, &destinationUIDAfter,
-		&lastCursor, &acknowledged, &covered,
+		&migratedSessionID, &lastCursor, &acknowledged, &covered,
 	); err != nil {
 		t.Fatal("read migrated inbox:", err)
 	}
-	if newKey != sessionID || migratedSessionID != sessionID {
-		t.Fatalf("migrated key/session = %q/%q, want %q", newKey, migratedSessionID, sessionID)
-	}
-	if ownerNamespaceAfter != ownerNamespace || ownerNameAfter != ownerName ||
-		destinationNamespaceAfter != destinationNamespace || destinationNameAfter != destinationName || destinationUIDAfter != destinationUID {
-		t.Fatalf("migration changed legacy metadata: owner %q/%q (want %q/%q), destination %q/%q/%q (want %q/%q/%q)",
-			ownerNamespaceAfter, ownerNameAfter, ownerNamespace, ownerName,
-			destinationNamespaceAfter, destinationNameAfter, destinationUIDAfter,
-			destinationNamespace, destinationName, destinationUID)
+	if migratedSessionID != sessionID {
+		t.Fatalf("migrated session = %q, want %q", migratedSessionID, sessionID)
 	}
 	if lastCursor != 1 || acknowledged != 0 || covered != 1 {
 		t.Fatalf("migrated inbox cursors = last %d, acknowledged %d, covered %d; want 1, 0, 1", lastCursor, acknowledged, covered)
@@ -162,7 +161,6 @@ func TestSessionInboxDataMigrationRekeysWithoutChangingMailboxState(t *testing.T
 		t.Fatalf("delivery receipt changed: command=%s through=%d text=%q attempted=%t admitted=%t confirmed=%t runner_cursor=%d runner_entry=%x",
 			gotCommandID, throughCursor, text, attempted, admitted, confirmed, runnerCursor, gotRunnerEntry)
 	}
-	assertApplied(t, db, 21)
 }
 
 func TestSessionInboxDataMigrationReportsUnkeyedRowsAndChangesNothing(t *testing.T) {
@@ -176,6 +174,8 @@ func TestSessionInboxDataMigrationReportsUnkeyedRowsAndChangesNothing(t *testing
 	if err := db.QueryRowContext(t.Context(), `SELECT destination_key FROM inbox WHERE id = $1`, validSubscription.InboxID).Scan(&validKeyBefore); err != nil {
 		t.Fatal("read valid key before migration:", err)
 	}
+	// The reader schema is recorded through version 20, so the service's own migrator runs 21 and
+	// then 22; 21 refuses the unkeyed row and neither advances.
 	err := Up(t.Context(), db)
 	if err == nil || !strings.Contains(err.Error(), invalidID.String()) || !strings.Contains(err.Error(), "no derivable Session ID") {
 		t.Fatalf("migration error = %v, want the unkeyed inbox ID and no-derivable-Session report", err)
@@ -194,11 +194,71 @@ func TestSessionInboxDataMigrationReportsUnkeyedRowsAndChangesNothing(t *testing
 		t.Fatalf("failed migration changed inbox data: valid key %q (before %q), invalid key/session/destination %q/%q/%q",
 			validKeyAfter, validKeyBefore, invalidKeyAfter, invalidSessionAfter, invalidDestinationUID)
 	}
-	var applied int
-	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM notification_service_goose_version WHERE version_id = 21 AND is_applied`).Scan(&applied); err != nil {
-		t.Fatal("inspect failed migration history:", err)
+	for _, version := range []int64{21, 22} {
+		var applied int
+		if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM notification_service_goose_version WHERE version_id = $1 AND is_applied`, version).Scan(&applied); err != nil {
+			t.Fatal("inspect failed migration history:", err)
+		}
+		if applied != 0 {
+			t.Fatalf("migration %d recorded %d applied rows after refusing an unkeyed inbox", version, applied)
+		}
 	}
-	if applied != 0 {
-		t.Fatalf("migration 21 recorded %d applied rows after refusing an unkeyed inbox", applied)
+}
+
+// TestContractMigrationRekeysAWriterThatOutranTheCutover covers the shape found in staging: a writer
+// predating the cutover derived a row's key from its Sandbox after migration 21 had keyed it by Session.
+// The contract step rekeys that row instead of refusing, because the key is derived from the Sandbox the
+// Session already names and one inbox per Session is already enforced, and it keeps the mailbox state.
+func TestContractMigrationRekeysAWriterThatOutranTheCutover(t *testing.T) {
+	db := cloneDatabase(t)
+	resetSchema(t, db)
+	applyUpTo(t.Context(), t, db, "00022_")
+	assertApplied(t, db, 21)
+	_, subscription := seedSubscription(t, db, "contract-migration")
+	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET destination_key = 'pre-cutover-derived-key',
+		owner_namespace = 'agentplane', owner_name = 'pre-cutover-worker',
+		destination_namespace = 'agentplane', destination_name = 'pre-cutover-worker', destination_uid = 'pre-cutover-sandbox-uid'
+		WHERE id = $1`, subscription.InboxID); err != nil {
+		t.Fatal("restore a pre-cutover writer's inbox fixture:", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE inbox SET last_cursor = 1, covered = 1 WHERE id = $1`, subscription.InboxID); err != nil {
+		t.Fatal("set the retained unread cursor:", err)
+	}
+
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("contract migration over a pre-cutover writer's key:", err)
+	}
+	assertApplied(t, db, 22)
+
+	var sessionID string
+	var lastCursor, acknowledged, covered int64
+	if err := db.QueryRowContext(t.Context(), `SELECT session_id, last_cursor, acknowledged, covered
+		FROM inbox WHERE id = $1`, subscription.InboxID).Scan(
+		&sessionID, &lastCursor, &acknowledged, &covered,
+	); err != nil {
+		t.Fatal("read the rekeyed inbox:", err)
+	}
+	if sessionID != "contract-migration" {
+		t.Fatalf("rekeyed session = %q, want contract-migration", sessionID)
+	}
+	if lastCursor != 1 || acknowledged != 0 || covered != 1 {
+		t.Fatalf("rekeyed mailbox cursors = last %d, acknowledged %d, covered %d; want 1, 0, 1", lastCursor, acknowledged, covered)
+	}
+	var subscriptions int
+	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM subscription WHERE inbox_id = $1`, subscription.InboxID).Scan(&subscriptions); err != nil {
+		t.Fatal("count the retained subscription:", err)
+	}
+	if subscriptions != 1 {
+		t.Fatalf("subscriptions after the contract rekey = %d, want 1", subscriptions)
+	}
+	for _, column := range []string{"destination_key", "destination_namespace", "destination_name", "destination_uid", "owner_namespace", "owner_name"} {
+		var present bool
+		if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (
+			SELECT 1 FROM pg_attribute WHERE attrelid = 'inbox'::regclass AND attname = $1 AND NOT attisdropped)`, column).Scan(&present); err != nil {
+			t.Fatalf("inspect inbox.%s: %v", column, err)
+		}
+		if present {
+			t.Errorf("inbox.%s survived the Session key contract", column)
+		}
 	}
 }

@@ -15,10 +15,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestInboxViewOmitsMissingLegacyDestination(t *testing.T) {
+func TestInboxViewKeysTheInboxByItsSession(t *testing.T) {
 	view := inboxView(inboxstore.Inbox{SessionID: "session-without-sandbox"})
-	if view.GetSessionId() != "session-without-sandbox" || view.DestinationRef != nil {
-		t.Fatalf("inbox view = %v; want Session ID and no destination", view)
+	if view.GetSessionId() != "session-without-sandbox" {
+		t.Fatalf("inbox view = %v; want the Session ID", view)
 	}
 }
 
@@ -37,8 +37,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	}
 	github := parsed.(sourceadapter.GitHubSource)
 	if err := (sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-ns", Name: "test-sandbox", UID: "test-uid"},
-		SessionID:      "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
+		SessionID: "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
 	}).Validate(); err != nil {
 		t.Fatalf("selector was refused: %v", err)
 	}

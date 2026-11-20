@@ -338,8 +338,8 @@ message GetMessageResponse {
 message Message {
   // UUID.
   string id = 1;
-  // With the UID of the Sandbox the message was accepted for.
-  DestinationRef destination_ref = 2;
+  reserved 2;
+  reserved "destination_ref";
   string session_id = 3;
   string idempotency_key = 4;
   google.protobuf.Timestamp accepted_at = 5;
@@ -350,16 +350,6 @@ message Message {
   bool acknowledged = 7;
   // The recipient's inbox was retired, as when its Sandbox is deleted: a message no notice covered never will be.
   bool inbox_retired = 8;
-}
-
-// The Sandbox a Session runs in, by the identity that tells it from a Sandbox recreated under the same name.
-message DestinationRef {
-  // 1 to 63 characters.
-  string namespace = 1;
-  // 1 to 63 characters.
-  string name = 2;
-  // 1 to 128 characters.
-  string uid = 3;
 }
 
 // Where events come from. Exactly one field is set: the source's provider.
@@ -581,7 +571,8 @@ message GitHubSubjectStatus {
 message Inbox {
   // UUID.
   string id = 1;
-  DestinationRef destination_ref = 2;
+  reserved 2;
+  reserved "destination_ref";
   string session_id = 3;
   // The cursor of the newest committed entry, or 0 for none.
   int64 last_cursor = 4;

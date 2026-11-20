@@ -169,7 +169,6 @@ func TestClaimHoldsTheInboxForTheLease(t *testing.T) {
 	after := time.Now()
 	requireEqual(t, claim.ID, subscription.InboxID)
 	requireEqual(t, claim.Holder(), Owner{Identity: f.identity})
-	requireEqual(t, claim.DestinationRef, model.DestinationRef{})
 	requireEqual(t, claim.SessionID, f.sessionID)
 
 	// Nothing else is due while the lease holds, and the next work is its expiry.

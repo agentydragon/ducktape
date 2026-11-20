@@ -3626,6 +3626,12 @@ Grouped by the node, PR or merge each waits for.
   (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/sessions/local_commands.ts`)
   are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
   its Sandbox UID fence, and never replay an uncertain command. Source: [app TODO](../app/TODO.md).
+- **Notification Session-key contract rollout (in review):** migration 22 drops the Sandbox inbox key and
+  destination columns, so `cluster/cdk8s/agentplane/notifications.py` holds the Deployment at `Recreate`
+  through a `CLEANUP` marker. Restore the environment's rolling profile once staging and each other
+  environment run and pass their checks on that schema; the drop removes what a pre-contract image reads,
+  so rollback takes a backup taken before migration 22 plus the paired images. Source:
+  [Notification Service](../notification_service/README.md).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 

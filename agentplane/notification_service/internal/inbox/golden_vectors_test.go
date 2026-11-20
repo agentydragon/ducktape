@@ -5,26 +5,19 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// golden.json holds persisted destination keys and payload and runner-byte vectors shared with older writers. The
+// golden.json holds persisted payload and runner-byte vectors shared with older writers. The
 // retired Python service and fixture generator are in git history at commit 180ae8a62d.
 //
 //go:embed golden.json
 var goldenJSON []byte
 
 type golden struct {
-	DestinationKeys []struct {
-		Name           string               `json:"name"`
-		DestinationRef model.DestinationRef `json:"destination_ref"`
-		SessionID      string               `json:"session_id"`
-		Key            string               `json:"key"`
-	} `json:"destination_keys"`
 	// ActionEvents are Action events as the Action Service sends them, with the payload Python stores for each.
 	ActionEvents []struct {
 		Name    string          `json:"name"`
