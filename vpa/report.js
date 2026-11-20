@@ -120,9 +120,7 @@ function Inventory({ workloads }) {
       />
     <//>
     <${Text} size="sm" c="dimmed" aria-live="polite"
-      >Showing ${Math.min(shown, filtered.length)} of ${filtered.length}
-      matching controller templates. Omitted fields are labeled unset; they are
-      not zero usage.<//
+      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching controller templates. Omitted fields are labeled unset; they are not zero usage.`}<//
     >
     <${Table.ScrollContainer}
       minWidth=${1040}
@@ -225,10 +223,7 @@ function Report() {
         policies unless evidence justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >Cluster snapshot around 20 November 2026, 02:58 UTC · seven-day metrics
-        end ${data.history_end_utc} · inspected devel
-        ${data.source_devel_commit}. Cluster state may have moved since
-        collection.<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Cluster state may have moved since collection.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -313,11 +308,8 @@ function Report() {
             observations only; neither requests nor limits are changed.<//
           >
           <${Text} component="p"
-            ><strong>Initial (${counts.vpa_modes.Initial}):</strong> changes
-            apply at pod creation, with no VPA eviction.
-            ${data.vpa_policies.Initial.noContainerPolicies} have no explicit
-            container policy and therefore use the VPA default of requests and
-            limits; 4 contain an explicit request-only policy.<//
+            ><strong>Initial (${counts.vpa_modes.Initial}):</strong>
+            ${` changes apply at pod creation, with no VPA eviction. ${data.vpa_policies.Initial.noContainerPolicies} have no explicit container policy and therefore use the VPA default of requests and limits; 4 contain an explicit request-only policy.`}<//
           >
           <${Text} component="p" mb=${0}
             ><strong>Recreate (${counts.vpa_modes.Recreate}):</strong> all 51
@@ -349,28 +341,10 @@ function Report() {
     <section id="coverage">
       <${Title} order=${2} mt="xl">Where requests are missing or misleading<//>
       <${Text} component="p"
-        >Among ${counts.template_containers} regular containers in
-        ${counts.controller_templates} Deployment, StatefulSet and DaemonSet
-        templates, ${counts.template_resource_missing.requests_memory_missing}
-        omit memory requests,
-        ${counts.template_resource_missing.limits_memory_missing} omit memory
-        limits, and ${counts.template_resource_missing.limits_cpu_missing} omit
-        CPU limits. These are template fields, not admitted-pod settings; a
-        missing CPU limit is often intentional.<//
+        >${`Among ${counts.template_containers} regular containers in ${counts.controller_templates} Deployment, StatefulSet and DaemonSet templates, ${counts.template_resource_missing.requests_memory_missing} omit memory requests, ${counts.template_resource_missing.limits_memory_missing} omit memory limits, and ${counts.template_resource_missing.limits_cpu_missing} omit CPU limits. These are template fields, not admitted-pod settings; a missing CPU limit is often intentional.`}<//
       >
       <${Text} component="p"
-        >Among ${counts.active_pod_containers} regular containers in
-        ${counts.active_pods} Running or Pending pods,
-        ${counts.active_pod_resource_missing.requests_memory_missing} have no
-        admitted memory request and
-        ${counts.active_pod_resource_missing.limits_memory_missing} have no
-        memory limit. This includes
-        ${data.cnpg.instance_containers_without_request} CNPG instance
-        containers and 63 Piraeus containers; the classes are not a count of
-        independently fixable services. Init/ephemeral containers are excluded.
-        Metrics were available for
-        ${counts.metrics_covered_active_pods}/${counts.active_pods} active
-        pods.<//
+        >${`Among ${counts.active_pod_containers} regular containers in ${counts.active_pods} Running or Pending pods, ${counts.active_pod_resource_missing.requests_memory_missing} have no admitted memory request and ${counts.active_pod_resource_missing.limits_memory_missing} have no memory limit. This includes ${data.cnpg.instance_containers_without_request} CNPG instance containers and 63 Piraeus containers; the classes are not a count of independently fixable services. Init/ephemeral containers are excluded. Metrics were available for ${counts.metrics_covered_active_pods}/${counts.active_pods} active pods.`}<//
       >
       <${Text} component="p"
         >Examples at the snapshot: the Piraeus LINSTOR controller had no request
