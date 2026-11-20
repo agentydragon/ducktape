@@ -5,6 +5,7 @@ directory's `kustomization.yaml` names the release URL and patches it
 from __future__ import annotations
 
 from cdk8s import App, Chart, Yaml
+from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Json6902Patch, PatchTarget
@@ -43,6 +44,21 @@ def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
 
 VIRT_OPERATOR_ON_HIL = _on_hil("virt-operator", KUBEVIRT_NAMESPACE)
 CDI_OPERATOR_ON_HIL = _on_hil("cdi-operator", _CDI_NAMESPACE)
+
+
+def virt_operator_chart(app: App) -> Chart:
+    chart = Chart(app, "virt-operator", disable_resource_name_hashes=True)
+    # The upstream release has two admission-serving replicas and owns their Deployment.
+    k8s.KubePodDisruptionBudget(
+        chart,
+        "disruption-budget",
+        metadata=k8s.ObjectMeta(name="virt-operator", namespace=KUBEVIRT_NAMESPACE),
+        spec=k8s.PodDisruptionBudgetSpec(
+            min_available=k8s.IntOrString.from_number(1),
+            selector=k8s.LabelSelector(match_labels={"kubevirt.io": "virt-operator"}),
+        ),
+    )
+    return chart
 
 
 def virt_operator_namespace_patch(app: App) -> Chart:
