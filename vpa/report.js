@@ -1452,8 +1452,8 @@ function Report() {
             certificate, External Secrets and KEDA webhooks have disruption
             budgets and remain Initial. Evaluate eviction for each dependency
             independently, including placement, endpoint readiness, client
-            behavior and failure recovery. The
-            <${Anchor} href="#controller-ha"
+            behavior and failure recovery. The ${" "}<${Anchor}
+              href="#controller-ha"
               >Crossplane and metrics-server follow-up<//
             >
             ${" "}records their deployed replicas and the remaining Sidekiq
