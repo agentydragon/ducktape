@@ -75,16 +75,6 @@ struct AuthoringConfig {
     import_order: BTreeMap<String, Vec<ModulePath>>,
 }
 
-/// Read one chunk's explicit priority from verified authoring configuration.
-/// `None` means the chunk has no declaration; `Some(vec![])` is explicit.
-pub fn read_chunk_import_order(
-    config_bytes: &[u8],
-    chunk_id: &str,
-) -> Result<Option<Vec<ModulePath>>> {
-    let (config, _) = parse_authoring_config(config_bytes)?;
-    Ok(config.import_order.get(chunk_id).cloned())
-}
-
 /// Update one chunk's priority while retaining every other YAML claim and
 /// metadata field from the existing authoring configuration.
 pub fn update_chunk_import_order(
@@ -828,7 +818,7 @@ chunk_renames:
     }
 
     #[test]
-    fn chunk_import_order_reads_absence_and_empty_and_updates_only_its_key() {
+    fn update_chunk_import_order_replaces_only_its_chunk_entry() {
         let bytes = br#"
 main_chunk_id: static/main
 module_roots:
@@ -851,55 +841,23 @@ import_order:
   empty: []
 "#;
         let mut original_value: serde_yaml::Value = serde_yaml::from_slice(bytes).unwrap();
-        assert_eq!(
-            read_chunk_import_order(bytes, "static/main").unwrap(),
-            Some(vec![
-                ModulePath::parse("core/runtime", "").unwrap(),
-                ModulePath::parse("utils/date", "").unwrap(),
-            ])
-        );
-        assert_eq!(
-            read_chunk_import_order(bytes, "empty").unwrap(),
-            Some(Vec::new())
-        );
-        assert_eq!(read_chunk_import_order(bytes, "missing").unwrap(), None);
-
         let priority = vec![ModulePath::parse("new/owner", "").unwrap()];
-        let updated = update_chunk_import_order(bytes, "static/main", priority.clone()).unwrap();
-        assert_eq!(
-            read_chunk_import_order(&updated, "static/main").unwrap(),
-            Some(priority)
-        );
-        assert_eq!(
-            read_chunk_import_order(&updated, "empty").unwrap(),
-            Some(Vec::new())
-        );
+        let updated = update_chunk_import_order(bytes, "static/main", priority).unwrap();
 
-        let mut updated_value: serde_yaml::Value = serde_yaml::from_slice(&updated).unwrap();
+        let (_, mut updated_value) = parse_authoring_config(&updated).unwrap();
         let import_order_key = serde_yaml::Value::String("import_order".to_string());
+        assert_eq!(
+            updated_value
+                .as_mapping_mut()
+                .unwrap()
+                .remove(&import_order_key),
+            Some(serde_yaml::from_str("{static/main: [new/owner], empty: []}").unwrap())
+        );
         original_value
             .as_mapping_mut()
             .unwrap()
             .remove(&import_order_key);
-        updated_value
-            .as_mapping_mut()
-            .unwrap()
-            .remove(&import_order_key);
         assert_eq!(updated_value, original_value);
-    }
-
-    #[test]
-    fn chunk_import_order_config_keeps_strict_authoring_fields() {
-        let bytes = br#"
-main_chunk_id: main
-inputs:
-  root: snapshot
-  js_list_path: js.txt
-unassigned_mode:
-  main: {kind: inline_in_entry}
-unknown: true
-"#;
-        assert!(read_chunk_import_order(bytes, "main").is_err());
     }
 
     #[test]
@@ -941,7 +899,6 @@ unassigned_mode:
   main: {kind: inline_in_entry}
 unknown: true
 "#;
-        assert!(read_chunk_import_order(bytes, "main").is_err());
         assert!(update_chunk_import_order(bytes, "main", Vec::new()).is_err());
     }
 

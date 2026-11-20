@@ -59,9 +59,7 @@ pub use validation::{
     validate_assignment_with_priority, validate_assignment_with_schedule,
 };
 #[cfg(test)]
-pub use validation::{
-    validate_assignment, validate_assignment_retaining_schedule, validate_assignment_with_verdict,
-};
+pub use validation::{validate_assignment, validate_assignment_with_verdict};
 
 /// A `define_logical_module` member whose `binding.name` did not
 /// resolve to a top-level declaration in the chunk. Collected across chunks
