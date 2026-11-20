@@ -883,6 +883,11 @@ spec:
       name: study-casino
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/study-casino-vpa/**"
+          to: "@artifact/cluster/generated/study-casino-vpa/"
+      name: study-casino-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/talos-cloud-controller-manager/**"
           to: "@artifact/cluster/generated/talos-cloud-controller-manager/"
       name: talos-cloud-controller-manager

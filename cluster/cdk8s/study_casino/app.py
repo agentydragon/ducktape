@@ -30,6 +30,16 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
+from vpa_crds.io.k8s.autoscaling import (
+    VerticalPodAutoscaler,
+    VerticalPodAutoscalerSpec,
+    VerticalPodAutoscalerSpecResourcePolicy,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
+    VerticalPodAutoscalerSpecTargetRef,
+    VerticalPodAutoscalerSpecUpdatePolicy,
+)
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
@@ -53,6 +63,8 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/study-casino"
+VPA_NAME = "study-casino-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/study-casino-image-pins"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
@@ -91,7 +103,7 @@ def _namespace(scope: Construct) -> None:
         scope,
         "namespace",
         name=_NAMESPACE,
-        # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+        # The app has an explicit VPA. Keep the database and provisioning Job out of Goldilocks.
         vpa=Vpa.DISABLED,
         labels={"name": _NAMESPACE},
     )
@@ -369,6 +381,40 @@ def chart(app: App) -> Chart:
                 kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group="rbac.authorization.k8s.io"
             )
         ],
+    )
+    return chart
+
+
+def vpa_chart(app: App) -> Chart:
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    VerticalPodAutoscaler(
+        chart,
+        _NAME,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        spec=VerticalPodAutoscalerSpec(
+            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=_NAME),
+            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
+            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
+                container_policies=[
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
+                        container_name="app",
+                        controlled_resources=["memory"],
+                        controlled_values="RequestsOnly",
+                        min_allowed={
+                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
+                                "224Mi"
+                            )
+                        },
+                        max_allowed={
+                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
+                                "240Mi"
+                            )
+                        },
+                    ),
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
+                ]
+            ),
+        ),
     )
     return chart
 

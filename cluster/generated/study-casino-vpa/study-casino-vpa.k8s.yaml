@@ -1,0 +1,24 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: study-casino
+  namespace: study-casino
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: app
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 240Mi
+        minAllowed:
+          memory: 224Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: study-casino
+  updatePolicy:
+    updateMode: Initial
