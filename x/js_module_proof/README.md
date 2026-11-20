@@ -104,7 +104,11 @@ Top-level calls to such functions remain unsupported.
 The captured variable must have a different name from `seed`: the shared Lean
 lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone
 reference rather than falling through to an outer one. Other closure shapes
-remain unsupported. Public exports must be functions. Imports and
+remain unsupported by the proof. The generator can also emit candidate splits
+for some synchronous nested functions, parameters, blocks and branches after
+checking their lexical free references and rejecting imported writes. The
+validator returns `unknown` for those candidates; generation is not a proof.
+Public exports must be functions. Imports and
 exports use unaliased names, source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
@@ -158,8 +162,9 @@ splits against Node and Lean. Other trials generate programs with nested,
 escaping closures, parameters,
 shadowed bindings, captured writes, bounded loops and branches, plus cyclic
 graphs or invalid assignments.
-More general closure programs are independently executed in Node when the splitter
-refuses them.
+More general closure programs are executed independently in Node; when candidate
+generation succeeds, the fuzzer also compares the emitted modules. The summary
+reports generated and compared closure cases separately from refusals.
 
 ```sh
 nix develop .#js-module-proof
