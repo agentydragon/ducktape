@@ -9,7 +9,7 @@ cluster/docs/cdk8s.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
@@ -60,7 +60,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm import database
-from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.litellm.config import CONFIG_MAP_NAME, ConfigMapSpec, proxy_configs
 from cluster.cdk8s.litellm.upstreams import (
     RUGGED_LOCAL_LLM_ENABLED,
     RUGGED_LOCAL_LLM_KEY_ENV,
@@ -104,13 +104,6 @@ _EnvEntry = _LiteralEnv | _SecretEnv
 
 
 @dataclass(frozen=True)
-class ServiceSpec:
-    """The small set of Service fields that differs between the proxies."""
-
-    type: ServiceType | None = ServiceType.CLUSTER_IP
-
-
-@dataclass(frozen=True)
 class ProxySpec:
     """Configuration for one instance of the reusable LiteLLM construct."""
 
@@ -133,7 +126,6 @@ class ProxySpec:
     # _add_deployment, not a raw dict.
     topology_spread_constraints: tuple[k8s.TopologySpreadConstraint, ...] = ()
     strategy: DeploymentStrategy | None = None
-    service: ServiceSpec = field(default_factory=ServiceSpec)
     hostname: str | None = None
     forgejo_image_credentials: bool = False
 
@@ -287,7 +279,7 @@ class LiteLLMProxy(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(
-                name=self.spec.config.config_map_name,
+                name=CONFIG_MAP_NAME,
                 namespace=self.spec.namespace,
                 labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
                 annotations={
@@ -385,7 +377,7 @@ class LiteLLMProxy(Construct):
             metadata=ApiObjectMetadata(name=ref.name, namespace=ref.pods.namespace, labels=ref.labels),
             selector=deployment,
             ports=[ref.port.service_port()],
-            type=self.spec.service.type,
+            type=ServiceType.CLUSTER_IP,
         )
 
     def _add_service_account(self) -> ServiceAccount:
