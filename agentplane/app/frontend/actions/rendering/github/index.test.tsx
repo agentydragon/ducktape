@@ -325,3 +325,42 @@ describe("GitHub Action receipts", () => {
     expect([...receipt.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["Review staging changes"]);
   });
 });
+
+describe("GitHub workflow outcomes", () => {
+  it("shows async cancellation as requested despite GitHub's success text", async () => {
+    const action = create(ActionIdentitySchema, { group: "github", name: "actions_run_trigger" });
+    const result = {
+      content: [],
+      structuredContent: { message: "Workflow run has been cancelled", run_id: 81, status_code: 202 },
+      isError: false,
+    };
+    expect(renderActionOutcome(action, result)?.label).toBe("Cancellation requested");
+    const view = await mount(
+      renderDetailsResult(action, result, {
+        requestId: "test-request",
+        arguments: { ...REPOSITORY, method: "cancel_workflow_run", run_id: 81 },
+      })
+    );
+    expect(shownText(view)).toContain("Cancellation requested");
+    expect(view.querySelector("a")?.getAttribute("href")).toBe(
+      "https://github.com/test-owner/test-repo/actions/runs/81"
+    );
+  });
+
+  it("keeps submitted scan text and opaque scanner responses behind Raw", async () => {
+    const action = create(ActionIdentitySchema, { group: "github", name: "run_secret_scanning" });
+    const marker = "fixture-only-sensitive-value";
+    const view = await mount(renderDetailsArguments(action, { ...REPOSITORY, files: [marker] }));
+    expect(shownText(view)).toContain("One block");
+    expect(shownText(view)).not.toContain(marker);
+    for (const isError of [true, false]) {
+      expect(
+        renderDetailsResult(action, {
+          content: [{ type: "text", text: marker }],
+          structuredContent: { message: "This may be a different provider variant." },
+          isError,
+        })
+      ).toBeNull();
+    }
+  });
+});

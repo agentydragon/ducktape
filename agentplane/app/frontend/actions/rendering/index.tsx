@@ -139,8 +139,9 @@ export function renderDetailsResult(
   result: CallToolResult,
   context?: ResultPreviewContext
 ): ReactNode | null | undefined {
-  if (result.isError) return undefined;
   const details = presentation(action)?.details;
+  if (details?.result === null) return null;
+  if (result.isError) return undefined;
   if (details?.envelopeResult) {
     const rendered = renderResultPreview(details.envelopeResult, result, context);
     if (rendered !== undefined) return rendered;
@@ -150,7 +151,7 @@ export function renderDetailsResult(
     return details.emptyResult;
   }
   const preview = details?.result;
-  if (preview === undefined || preview === null) return preview;
+  if (preview === undefined) return undefined;
   if (value === undefined || !toolContentRestatesValue(result, value)) return undefined;
   return renderResultPreview(preview, value, context);
 }

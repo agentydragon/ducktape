@@ -116,7 +116,7 @@ export function githubPresentation<S extends z.ZodType>({
   request?: (props: PreviewProps<z.infer<S>>) => ReactNode;
   compact?: (props: PreviewProps<z.infer<S>>) => ReactNode;
   staticCard?: boolean;
-  result: ResultPreview;
+  result: ResultPreview | null;
   outcome?: (value: unknown) => ActionOutcome | undefined;
 }): ActionPresentation {
   const preview = request ? definePreview(schema, request) : { schema, render: () => null };
