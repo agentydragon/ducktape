@@ -1351,26 +1351,27 @@ function Report() {
           <//>
           <${Text} component="p" mt="sm">
             <strong>Crossplane core.</strong>${" "}Flux and Helm reported Ready.
-            Two Ready webhook endpoints served from
+            Two Ready webhook endpoints served from${" "}
             ${crossplaneHA.ready_endpoints.map(({ node }) => node).join(" and ")}.
-            The disruption budget allowed ${crossplaneHA.disruptions_allowed}
-            disruption, and the core leader lease was renewing. Both Pods
-            received a ${quantityMiB(crossplaneHA.admitted_memory_request)}
-            memory request with a
-            ${quantityMiB(crossplaneHA.admitted_memory_limit)}
+            The disruption budget allowed
+            ${crossplaneHA.disruptions_allowed}${" "} disruption, and the core
+            leader lease was renewing. Both Pods received a
+            ${quantityMiB(crossplaneHA.admitted_memory_request)}${" "} memory
+            request with a${" "}
+            ${quantityMiB(crossplaneHA.admitted_memory_limit)}${" "}
             limit.${" "}<${Anchor} href=${crossplaneHA.pr_url}>PR #18145<//>
           <//>
           <${Text} component="p" mt="sm">
             <strong>metrics-server.</strong>${" "}Flux and Helm reported Ready.
-            Two Ready endpoints served from
+            Two Ready endpoints served from${" "}
             ${metricsHA.ready_endpoints.map(({ node }) => node).join(" and ")}.
-            The disruption budget allowed ${metricsHA.disruptions_allowed}
+            The disruption budget allowed ${metricsHA.disruptions_allowed}${" "}
             disruption and the aggregated APIService was Available. It returned
-            metrics for ${metricsHA.node_metrics_returned} nodes at
-            ${controllerHATime} UTC and
+            metrics for ${metricsHA.node_metrics_returned} nodes at${" "}
+            ${controllerHATime} UTC and${" "}
             ${metricsHA.earlier_node_metrics_returned} in an adjacent sample.
             Four successive checks at 17:58 UTC returned metrics for all nine
-            Ready nodes. Both Pods received a
+            Ready nodes. Both Pods received a${" "}
             ${quantityMiB(metricsHA.admitted_memory_request)} memory request
             with a ${quantityMiB(metricsHA.admitted_memory_limit)} limit.
             Hostname anti-affinity preserves host separation, while zone
@@ -1379,10 +1380,10 @@ function Report() {
             >
           <//>
           <${Text} component="p" mt="sm" mb=${0}>
-            <strong>Sidekiq capacity.</strong>${" "}Sidekiq was
+            <strong>Sidekiq capacity.</strong>${" "}Sidekiq was${" "}
             ${sidekiq.available_replicas}/${sidekiq.desired_replicas} available.
-            The 17:44 UTC placement model left about
-            ${sidekiq.adverse_scenario_remaining_mib_on_ovh_ns103711.toLocaleString("en-US")}
+            The 17:44 UTC placement model left about${" "}
+            ${sidekiq.adverse_scenario_remaining_mib_on_ovh_ns103711.toLocaleString("en-US")}${" "}
             MiB on ovh-ns103711 in a modeled overlap involving a provider move,
             controller replacements and ${" "}<${Anchor}
               href=${sidekiq.staging_proposal_url}
