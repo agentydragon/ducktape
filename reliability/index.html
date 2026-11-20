@@ -52,6 +52,7 @@
       import { useState } from "react";
       import {
         Accordion,
+        Alert,
         Anchor,
         Code,
         Container,
@@ -66,9 +67,28 @@
       } from "@mantine/core";
       import { BarChart } from "@mantine/charts";
       import { html, mount, ManifestStamp } from "../report.js";
-      const response = await fetch("./evidence.json");
-      if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-      const e = await response.json();
+      // This must match evidence_sha256 in the publication manifest.
+      const evidenceSha =
+        "8873394735143bd7450d7d11cac78b72f1feb77b77dce112546751ed9b58d799";
+      const evidenceUrl = `./evidence.json?v=${evidenceSha}`;
+      const manifestUrl = `./manifest.json?v=${evidenceSha}`;
+
+      async function loadEvidence() {
+        const response = await fetch(evidenceUrl, { cache: "no-cache" });
+        if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
+
+        const bytes = await response.arrayBuffer();
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        const receivedSha = Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        if (receivedSha !== evidenceSha)
+          throw new Error("Evidence does not match this report");
+
+        return JSON.parse(new TextDecoder().decode(bytes));
+      }
+
+      const e = await loadEvidence().catch(() => null);
       const gh = "https://github.com/agentydragon/ducktape";
       const bb = "https://app.buildbuddy.io/invocation/";
       const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
@@ -136,7 +156,7 @@
               >
               <${Text} size="lg">${e.lede}<//>
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json"
+                ><${ManifestStamp} src=${manifestUrl}
               /><//>
               <${Text} size="sm" mt="xs"
                 >Seven complete UTC days from 13 November 00:00 through 20
@@ -392,8 +412,8 @@
             </section>
             <footer>
               ${links([
-                { url: "./evidence.json", label: "Reviewed evidence" },
-                { url: "./manifest.json", label: "Publication manifest" },
+                { url: evidenceUrl, label: "Reviewed evidence" },
+                { url: manifestUrl, label: "Publication manifest" },
                 { url: "../latency/", label: "CI latency" },
                 { url: "../", label: "All reports" },
               ])}
@@ -401,7 +421,22 @@
           <//>
         <//>`;
       }
-      mount(Report);
+      function EvidenceUnavailable() {
+        return html`<${Container} component="main" size="sm" py="xl">
+          <${Stack} gap="md">
+            <${Title} order=${1}>CI reliability<//>
+            <${Alert} color="red" title="Report data unavailable">
+              The evidence for this report version could not be loaded. Reload
+              the report to try again.
+            <//>
+            <${Group}>
+              ${link("./", "Reload report")} ${link("../", "All reports")}
+            <//>
+          <//>
+        <//>`;
+      }
+
+      mount(e ? Report : EvidenceUnavailable);
     </script>
   </body>
 </html>
