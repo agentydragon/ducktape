@@ -15,11 +15,13 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
+_CONTROLLER_CPU_REQUEST = "100m"
 
 
 def _values(webhook_issuer: str) -> dict[str, object]:
@@ -44,7 +46,10 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # while the pod reported 1/1 Ready with 0 restarts. On an HDD node that
         # starves containerd's CRI calls past their deadlines and strands every pod
         # scheduled there. See docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md.
-        "resources": {"limits": {"cpu": "500m", "memory": "512Mi"}, "requests": {"cpu": "100m", "memory": "256Mi"}},
+        "resources": {
+            "limits": {"cpu": "500m", "memory": "512Mi"},
+            "requests": {"cpu": _CONTROLLER_CPU_REQUEST, "memory": "256Mi"},
+        },
         # Both settings below apply to the controller and, separately, to the webhook
         # under `webhook:` — the chart takes no inherited value.
         #
@@ -81,7 +86,37 @@ def _values(webhook_issuer: str) -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "external-secrets-operator", disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                # Startup peaked at 229Mi over 30 days. Keep the existing 256Mi reservation
+                # and pin CPU during the switch: VPA 1.7.1 may apply a stale CPU recommendation
+                # until the recommender processes controlledResources.
+                ContainerPolicy(
+                    container_name="external-secrets",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("memory",),
+                    min_allowed={"memory": "256Mi", "cpu": _CONTROLLER_CPU_REQUEST},
+                    max_allowed={"memory": "384Mi", "cpu": _CONTROLLER_CPU_REQUEST},
+                ),
+                # The webhook has no CPU request. Its 30-day peak two-minute rate was 4.2m
+                # (3.1m at startup), and startup memory peaked at 179Mi.
+                ContainerPolicy(
+                    container_name="webhook",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": "15m", "memory": "256Mi"},
+                    max_allowed={"cpu": "100m", "memory": "384Mi"},
+                ),
+                # Additional chart containers need their own review before VPA sizes them.
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",

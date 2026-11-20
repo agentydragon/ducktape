@@ -40,6 +40,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cert_manager:issuer",
         "@pypi//cdk8s",
     ],
