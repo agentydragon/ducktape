@@ -95,17 +95,15 @@ Health methods remain public. Linkage methods remain bearer-free because the cal
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
 
-Operator integration summaries resolve live display metadata from the MCP groups configured as
-`gmail` and `tana`. `GetGmailThreadSummaries` reads subjects for a recorded Gmail relabel or draft
-reply, or threads returned by a recorded search. `GetTanaNodeSummaries` reads node and workspace
-names for supported Tana Actions, using an explicit allowlist of ID fields per tool. Both methods
-take the saved request UUID and derive resource IDs from its arguments or successful result. The service calls
-the fixed read tools `threads_get` in metadata format and `read_node` at depth zero. Tana's
+Operator integration summaries use only the saved request UUID. Gmail reads thread subjects for
+recorded thread reads, relabeling, draft replies and search results. Its resource summary reads
+draft and message subjects, label names and filter rules. Draft replacements and deletions, label
+changes and filter deletions look up the target only while approval is pending. Tana reads node and
+workspace names for supported Actions using an allowlist of recorded ID fields. Tana's
 `list_workspaces` has no filter, so the service returns only the workspace named in the saved
-request. It tries up to eight distinct thread or node IDs per call within a shared two-second
-lookup budget and omits unavailable results. The reads create no Action request, Decision or
-Execution. Names and subjects reflect current provider data and can change after the request
-was recorded. The original IDs remain on the receipt.
+request. The service uses fixed read tools and tries up to eight distinct IDs within its shared
+two-second lookup budget. It omits unavailable results. These reads create no Action request,
+Decision or Execution. Provider metadata can change later. The original IDs stay on the receipt.
 
 `GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar event get, update, delete,
 or list-instances request. It sends at most one `get_event` to the configured Calendar MCP group

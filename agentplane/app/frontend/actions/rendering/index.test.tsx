@@ -331,6 +331,43 @@ describe("Action presentation slots", () => {
     expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
   });
 
+  it("shows a Gmail filter's exceptions and forwarding destination before approval", async () => {
+    const action = identity("gmail", "filters_create");
+    const args = {
+      criteria: { subject: "Staging", negatedQuery: "is:starred", hasAttachment: true },
+      action: { addLabelIds: ["STARRED"], removeLabelIds: ["INBOX"], forward: "reviewer@example.com" },
+    };
+    const pane = await mount(renderPaneOpened(action, args));
+    expect(pane.textContent).toContain("Excludes query is:starred");
+    expect(pane.textContent).toContain("Forward to reviewer@example.com");
+    expect(pane.textContent).toContain("Add labels Starred");
+    expect(pane.textContent).toContain("Remove labels Inbox");
+    expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
+  });
+
+  it("acknowledges a Gmail deletion only for a successful empty result", async () => {
+    const action = identity("gmail", "labels_delete");
+    const empty = { content: [], isError: false };
+    const receipt = await mount(renderDetailsResult(action, empty));
+    expect(receipt.textContent).toContain("Label deleted.");
+    expect(renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
+    expect(
+      renderDetailsResult(action, { ...empty, structuredContent: { error: "unexpected variant" } })
+    ).toBeUndefined();
+  });
+
+  it("shows the provider's partial relabel failure without an applied receipt", async () => {
+    const action = identity("gmail", "threads_modify_labels");
+    const failure = parseCallToolResult({
+      content: [{ type: "text", text: "failed to modify 1/2 thread(s) (1 sub-exception)" }],
+      isError: true,
+    });
+    if (!failure) throw new Error("the fixture is not a CallToolResult");
+    const receipt = await drawDetailsResult(action, failure);
+    expect(receipt.textContent).toContain("failed to modify 1/2 thread(s)");
+    expect(receipt.textContent).not.toContain("Updated labels");
+  });
+
   it("renders Grocy list options and results without resolving IDs", async () => {
     for (const [name, args, expected] of [
       ["products_list", { detail: "full" }, "Full Product records"],
@@ -369,8 +406,6 @@ describe("Action presentation slots", () => {
 
   it("preserves recorded data for lookup-dependent Haku Actions that have no Agentplane preview", async () => {
     const excluded = [
-      ["gmail", "threads_get"],
-      ["gmail", "messages_get"],
       ["grocy_sf", "stock_add"],
       ["grocy_sf", "stock_consume"],
       ["grocy_sf", "stock_entry_edit"],
@@ -1031,11 +1066,12 @@ describe("card decision buttons capability", () => {
     }
   );
 
-  it("offers card decisions when the Gmail search shows its scope", () => {
+  it("keeps compact Gmail search approvals for visible scope and sends custom labels to review", () => {
     const search = identity("gmail", "threads_list");
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(true);
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(true);
+    expect(actionOffersCardDecisionButtons(search, { labelIds: ["Label_19"] })).toBe(false);
   });
 
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {

@@ -14,15 +14,21 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 )
 
+type gmailPreviewProvider interface {
+	GmailThreadSummaries(context.Context, []string) []*operator_action_servicepb.GmailThreadSummary
+	GmailDraftSubjects(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
+	GmailMessageSubjects(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
+	GmailLabelNames(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
+	GmailFilters(context.Context, []string) []*operator_action_servicepb.GmailFilterSummary
+}
+
 // IntegrationPreviews binds operator lookups to the configured providers.
 type IntegrationPreviews struct {
 	GoogleCalendar interface {
 		GoogleCalendarEventPreview(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
 	}
-	Gmail interface {
-		GmailThreadSummaries(context.Context, []string) []*operator_action_servicepb.GmailThreadSummary
-	}
-	Tana interface {
+	Gmail gmailPreviewProvider
+	Tana  interface {
 		TanaNodeSummaries(context.Context, []string) []*operator_action_servicepb.TanaNodeSummary
 		TanaWorkspaceSummary(context.Context, string) *operator_action_servicepb.TanaWorkspaceSummary
 	}
@@ -38,17 +44,21 @@ func (s *OperatorService) GetGmailThreadSummaries(ctx context.Context, request *
 	}
 	var ids []string
 	switch receipt.Action.Name {
-	case "threads_modify_labels", "drafts_create":
+	case "threads_modify_labels", "drafts_create", "drafts_update", "threads_get":
 		var args struct {
 			ThreadIDs []string `json:"thread_ids"`
 			ThreadID  string   `json:"thread_id"`
+			ID        string   `json:"id"`
 		}
 		if json.Unmarshal(receipt.Arguments, &args) != nil {
 			return nil, invalidRequest("invalid Gmail preview arguments")
 		}
-		if receipt.Action.Name == "drafts_create" {
+		switch receipt.Action.Name {
+		case "drafts_create", "drafts_update":
 			ids = []string{args.ThreadID}
-		} else {
+		case "threads_get":
+			ids = []string{args.ID}
+		default:
 			ids = args.ThreadIDs
 		}
 	case "threads_list":
@@ -66,6 +76,76 @@ func (s *OperatorService) GetGmailThreadSummaries(ctx context.Context, request *
 	response := &operator_action_servicepb.GetGmailThreadSummariesResponse{}
 	if s.previews.Gmail != nil {
 		response.Threads = s.previews.Gmail.GmailThreadSummaries(ctx, previewIDs(ids))
+	}
+	return response, nil
+}
+
+func (s *OperatorService) GetGmailResourceSummaries(ctx context.Context, request *operator_action_servicepb.GetGmailResourceSummariesRequest) (*operator_action_servicepb.GetGmailResourceSummariesResponse, error) {
+	receipt, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Action.Group != "gmail" {
+		return nil, invalidRequest("request has no matching Gmail preview")
+	}
+	var args struct {
+		ID       string   `json:"id"`
+		DraftID  string   `json:"draft_id"`
+		LabelID  string   `json:"label_id"`
+		FilterID string   `json:"filter_id"`
+		LabelIDs []string `json:"labelIds"`
+		Action   struct {
+			Add    []string `json:"addLabelIds"`
+			Remove []string `json:"removeLabelIds"`
+		}
+	}
+	if json.Unmarshal(receipt.Arguments, &args) != nil {
+		return nil, invalidRequest("invalid Gmail preview arguments")
+	}
+	response := &operator_action_servicepb.GetGmailResourceSummariesResponse{}
+	provider := s.previews.Gmail
+	if provider == nil {
+		return response, nil
+	}
+	pending := receipt.State == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
+	switch receipt.Action.Name {
+	case "drafts_get":
+		response.Drafts = provider.GmailDraftSubjects(ctx, previewIDs([]string{args.ID}))
+	case "drafts_update", "drafts_delete":
+		if pending {
+			response.Drafts = provider.GmailDraftSubjects(ctx, previewIDs([]string{args.DraftID}))
+		}
+	case "drafts_list":
+		var list struct {
+			Drafts []struct{ ID string }
+		}
+		if recordedPreviewResult(receipt, &list) {
+			ids := make([]string, 0, len(list.Drafts))
+			for _, draft := range list.Drafts {
+				ids = append(ids, draft.ID)
+			}
+			response.Drafts = provider.GmailDraftSubjects(ctx, previewIDs(ids))
+		}
+	case "messages_get":
+		response.Messages = provider.GmailMessageSubjects(ctx, previewIDs([]string{args.ID}))
+	case "threads_list":
+		response.Labels = provider.GmailLabelNames(ctx, previewIDs(args.LabelIDs))
+	case "labels_get":
+		response.Labels = provider.GmailLabelNames(ctx, previewIDs([]string{args.ID}))
+	case "labels_patch", "labels_delete":
+		if pending {
+			response.Labels = provider.GmailLabelNames(ctx, previewIDs([]string{args.LabelID}))
+		}
+	case "filters_get":
+		response.Filters = provider.GmailFilters(ctx, previewIDs([]string{args.ID}))
+	case "filters_delete":
+		if pending {
+			response.Filters = provider.GmailFilters(ctx, previewIDs([]string{args.FilterID}))
+		}
+	case "filters_create":
+		response.Labels = provider.GmailLabelNames(ctx, previewIDs(append(args.Action.Add, args.Action.Remove...)))
+	default:
+		return nil, invalidRequest("request has no matching Gmail preview")
 	}
 	return response, nil
 }

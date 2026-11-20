@@ -23,6 +23,8 @@ import {
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
+  GetGmailResourceSummariesResponseSchema,
+  type GetGmailResourceSummariesResponse,
   GetGmailThreadSummariesResponseSchema,
   GetGoogleCalendarEventPreviewResponseSchema,
   type GoogleCalendarEventPreview,
@@ -165,6 +167,17 @@ export async function getGoogleCalendarEventPreview(
     )
   );
   return response.event;
+}
+
+export async function getGmailResourceSummaries(
+  requestId: string,
+  signal: AbortSignal
+): Promise<GetGmailResourceSummariesResponse> {
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}/gmail-resource-summaries`;
+  return fromJsonString(
+    GetGmailResourceSummariesResponseSchema,
+    await fetchText(path, { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" }, fetch)
+  );
 }
 
 export async function actionHistory(
