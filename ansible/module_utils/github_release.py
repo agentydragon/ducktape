@@ -16,19 +16,9 @@ from typing import Any
 class ActionError(Exception):
     """Custom exception for action module errors."""
 
-    def __init__(self, message: str):
-        self.message = message
-        super().__init__(message)
-
 
 def _fail(result, msg: str) -> dict[str, Any]:
     return result | {"failed": True, "msg": msg}
-
-
-def _prune_dict(x: dict[str, Any], keys: set[str]):
-    """Remove specified keys from a dictionary."""
-    for key in keys & x.keys():
-        del x[key]
 
 
 @dataclass
@@ -42,8 +32,6 @@ class ReleaseSpec:
 
     def resolve(self) -> dict[str, Any]:
         """Gets GitHub release info."""
-        result: dict[str, Any] = {}
-
         # Make API request
         try:
             req = urllib.request.Request(
@@ -53,51 +41,13 @@ class ReleaseSpec:
             with urllib.request.urlopen(req) as response:
                 release_data = json.loads(response.read().decode("utf-8"))
         except Exception as e:
-            return _fail(result, f"Error fetching release info: {e!s}")
-
-        # Clear known-unused keys
-        for asset in release_data.get("assets", []):
-            # explicitly kept: 'label', 'name', 'url'
-            _prune_dict(
-                asset,
-                {
-                    "content_type",
-                    "created_at",
-                    "download_count",
-                    "id",
-                    "node_id",
-                    "size",
-                    "state",
-                    "updated_at",
-                    "uploader",
-                    "zipball_url",
-                    "tarball_url",
-                    "url",  # API URL; we use browser_download_url
-                },
-            )
-        _prune_dict(
-            release_data,
-            {
-                "author",
-                "body",
-                "created_at",
-                "draft",
-                "html_url",
-                "id",
-                "node_id",
-                "prerelease",
-                "published_at",
-                "reactions",
-            },
-        )
-        result["release_data"] = release_data
+            return _fail({}, f"Error fetching release info: {e!s}")
 
         # Handle acknowledged version if provided
         if self.acknowledged_version:
             latest_version = release_data["tag_name"]
             if not latest_version:
-                return _fail(result, "Failed to extract version information of latest release.")
-            result["latest_version"] = latest_version
+                return _fail({}, "Failed to extract version information of latest release.")
 
             if self.acknowledged_version != latest_version:
                 # Create a minimal failure result with just essential info
@@ -114,17 +64,17 @@ class ReleaseSpec:
                 }
 
         if not (assets := release_data.get("assets")):
-            return _fail(result, "No assets found in release data.")
+            return _fail({}, "No assets found in release data.")
         if not self.asset_pattern:
-            return _fail(result, "No asset pattern provided.")
+            return _fail({}, "No asset pattern provided.")
         matches = [asset for asset in assets if re.search(self.asset_pattern, asset["name"])]
         if len(matches) > 1:
-            return _fail(result, f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.")
+            return _fail({}, f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.")
         if not matches:
             available = ", ".join(asset["name"] for asset in assets)
-            return _fail(result, f"No assets match {self.asset_pattern}. Available: {available}")
+            return _fail({}, f"No assets match {self.asset_pattern}. Available: {available}")
         if not (url := matches[0].get("browser_download_url")):
-            return _fail(result, "No download URL found for the asset.")
+            return _fail({}, "No download URL found for the asset.")
         return {"asset_url": url}
 
     def get_api_url(self) -> str:
