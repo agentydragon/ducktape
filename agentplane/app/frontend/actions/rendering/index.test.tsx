@@ -476,7 +476,7 @@ describe("Action presentation slots", () => {
         arguments: { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" },
       })
     );
-    expect(receipt.textContent).toBe("Calendar node for week containing 2026-10-12");
+    expect(receipt.querySelector("a")?.textContent).toBe("Calendar node for week containing 2026-10-12");
     expect(receipt.querySelector("a")?.getAttribute("href")).toBe("https://app.tana.inc?nodeid=calendar-week-42");
   });
 
