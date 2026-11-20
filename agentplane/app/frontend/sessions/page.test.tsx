@@ -1228,7 +1228,7 @@ it("shows a materialization failure without treating missing History as a delete
   expect(container.textContent).toContain("Session materialization failed · invalid model");
   expect(container.textContent).not.toContain("Sandbox no longer exists");
   expect(container.textContent).toContain("composer-test · Central sampler");
-  expect(composer(container).disabled).toBe(true);
+  expect(container.querySelector("textarea")).toBeNull();
 });
 
 it("does not infer deletion when no exact Sandbox identity is known", async () => {

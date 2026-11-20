@@ -208,7 +208,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {notice}
           </Text>
         )}
-        {thread && (
+        {thread && (!materializationFailed || thread.summary.projectionEpoch) && (
           <sync.Thread key={threadId} threadId={threadId}>
             <ThreadConversation
               threadId={threadId}
