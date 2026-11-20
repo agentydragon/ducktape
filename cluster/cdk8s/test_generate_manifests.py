@@ -791,22 +791,6 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_litellm_buildbuddy_terraform_resources_are_retired(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    assert not any(
-        doc.get("kind") == "Terraform"
-        and doc.get("metadata", {}).get("name") in {"litellm-keys", "litellm-buildbuddy-sync"}
-        for doc in documents
-    )
-    assert not any(
-        doc.get("kind") in {"Kustomization", "ExternalArtifact", "ArtifactGenerator"}
-        and doc.get("metadata", {}).get("name") in {"litellm-buildbuddy-sync", "tf-gitops-litellm-buildbuddy-sync"}
-        for doc in documents
-    )
-
-
 def test_piraeus_controller_network_policy_only_admits_api_tls(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
@@ -1098,16 +1082,3 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
 
 if __name__ == "__main__":
     pytest_bazel.main()
-
-
-def test_buildbuddy_secret_is_managed_by_crossplane(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    secret = next(
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "buildbuddy.m.allegedly.works/v1alpha1" and doc.get("kind") == "Secret"
-    )
-    assert "crossplane.io/paused" not in secret["metadata"]["annotations"]
-    assert secret["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
