@@ -1,6 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
 # gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
 # gazelle:resolve py kyverno_namespaceddeletingpolicy_crds //cluster/cdk8s/providers/kyverno:namespaceddeletingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
