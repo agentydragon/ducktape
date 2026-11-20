@@ -64,7 +64,7 @@ theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
   · rw [B.step_hoisted M hb, B.step_hoisted M hb]
   simp only [Bool.not_eq_true] at ha hb
   simp [Bundle.conflict, ha, hb, List.any_eq_false] at h
-  obtain ⟨⟨⟨hE, hR1⟩, hR2⟩, hW⟩ := h
+  obtain ⟨⟨⟨⟨⟨hE, _, _⟩, hR1⟩, hR2⟩, hW⟩ := h
   have ej : ∀ (f : Name → V) (x : V), (B.reads j).map (fun u => if (B.stmt i).binds.contains u = true
         then x else f u) = (B.reads j).map f := fun f x =>
     List.map_congr_left fun u hu => by
