@@ -289,6 +289,25 @@ data:
           cluster: cluster
           user: opentofu-sso-providers
     current-context: root
+  opentofu-thrive-scrape: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-thrive-scrape
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-thrive-scrape
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-thrive-scrape
+    current-context: root
 immutable: false
 ---
 apiVersion: pkg.crossplane.io/v1beta1
