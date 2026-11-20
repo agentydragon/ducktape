@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "84282e738af1f1ba04dc9035001b78e483971ac3d0f8b2565f4ca1dd3e727904",
-  "evidence_sha256": "cad81b4846a98bd884f4478803eb917b7d3def4dcde7ef6dfd43481e43ddba6d",
+  "report_script_sha256": "ec9b72c7b2f28d9bcd8b9337f9517fb0d91c8dcba5c617273026ec64f372149b",
+  "evidence_sha256": "86b809428005d9be402080a902f0afc732c85282ce7c373e646deffe80eaf11f",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -22,5 +22,7 @@
   "latest_rollout_followup_source_devel_commit": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
   "latest_rollout_wave_at_utc": "2026-11-20T10:38:53Z",
   "latest_rollout_wave_source_devel_commit": "346dba542bacc233937f8780c8150302ca5e1c46",
-  "plan_reviewed_at_utc": "2026-11-20T10:37Z"
+  "plan_reviewed_at_utc": "2026-11-20T10:37Z",
+  "retirement_progress_at_utc": "2026-11-20T11:00:13Z",
+  "retirement_progress_source_devel_commit": "679e908a4d7d325c7e47f21d583a9da99f33a612"
 }

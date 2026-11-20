@@ -19039,5 +19039,142 @@
       }
     },
     "workloads_observed_at_utc": "2026-11-20T10:32:57+00:00"
+  },
+  "retirement_progress": {
+    "observed_at_utc": "2026-11-20T11:00:13Z",
+    "source_devel_commit": "679e908a4d7d325c7e47f21d583a9da99f33a612",
+    "prs": {
+      "18145": {
+        "draft": true,
+        "head_sha": "a27990300204fadce68ab5493a02a849ed9c9f21",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18145",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18145,
+        "state": "open",
+        "title": "[capacity gate] Replicate Crossplane core admission across nodes"
+      },
+      "18147": {
+        "draft": false,
+        "head_sha": "7892d2cb5cd3bd16b035ff014b055e0a620ac675",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18147",
+        "merge_commit_sha": "47a36f6232d5e95f1005411069036854d05f09a4",
+        "merged_at": "2026-11-20T10:46:02Z",
+        "number": 18147,
+        "state": "closed",
+        "title": "Allow VPA to resize Kyverno admission requests"
+      },
+      "18148": {
+        "draft": false,
+        "head_sha": "f05d741d7f7149c24c10e237d15a30f8751bb818",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18148",
+        "merge_commit_sha": "68e444e414aae87d1cc47affbe77adb09cd21cd2",
+        "merged_at": "2026-11-20T10:45:32Z",
+        "number": 18148,
+        "state": "closed",
+        "title": "Spread KEDA admission webhooks across worker nodes"
+      },
+      "18152": {
+        "draft": false,
+        "head_sha": "16e37a7c9c57c1ed70cbb5bb14e09b5a1ecc6e6c",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18152",
+        "merge_commit_sha": "679e908a4d7d325c7e47f21d583a9da99f33a612",
+        "merged_at": "2026-11-20T10:54:19Z",
+        "number": 18152,
+        "state": "closed",
+        "title": "Replicate the KEDA external metrics API across workers"
+      },
+      "18153": {
+        "draft": false,
+        "head_sha": "203641700415f58d5134b91754d3a689484403a3",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18153",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18153,
+        "state": "open",
+        "title": "Add native admission for agent sandbox Gateway API writes"
+      },
+      "18156": {
+        "draft": true,
+        "head_sha": "674b3f5a0d3f6638fd5862a60f4f312af68c6ade",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18156",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18156,
+        "state": "open",
+        "title": "[Native admission rollout gate] Retire the Kyverno Gateway route rule"
+      },
+      "18158": {
+        "draft": true,
+        "head_sha": "6beda43f602722b0cef2b64da6ac8594d25829e8",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18158",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18158,
+        "state": "open",
+        "title": "[Explicit -1 contract gate] Retire the Kyverno revision-history default"
+      }
+    },
+    "rollouts": {
+      "kyverno-admission-controller": {
+        "pr": 18147,
+        "ready": 3,
+        "ready_endpoints": 3,
+        "distinct_ready_endpoint_nodes": 3,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 2,
+        "vpa_mode": "Recreate",
+        "pod_identities_preserved_at_promotion": 3
+      },
+      "keda-admission-webhooks": {
+        "pr": 18148,
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 1,
+        "vpa_mode": "Initial",
+        "tls_verified_on_both_endpoints": true,
+        "invalid_scaled_object_dry_run_denied": true
+      },
+      "keda-operator-metrics-apiserver": {
+        "pr": 18152,
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 1,
+        "vpa_mode": "Initial",
+        "api_service_tls_readiness_verified_on_both_endpoints": true,
+        "existing_autoscaler_metric_query_succeeded": true,
+        "checks_observed_at_utc": "2026-11-20T10:55:30Z"
+      }
+    },
+    "retirement": {
+      "live_cluster_policies": 6,
+      "live_cleanup_policies": 2,
+      "gateway": {
+        "native_pr": 18153,
+        "legacy_removal_pr": 18156,
+        "native_stack": 18157,
+        "state": "Awaiting native rollout proof",
+        "initial_probe_at_utc": "2026-11-20T10:50:31Z",
+        "sandbox_existing_matching_objects": 0,
+        "kyverno_denied": 20,
+        "operator_admitted": 10,
+        "production_api_accepted_policy_and_binding_dry_run": true
+      },
+      "revision_history": {
+        "pr": 18158,
+        "state": "Explicit −1 gate",
+        "probe_at_utc": "2026-11-20T10:53:54Z",
+        "create_update_omitted_admitted": 10,
+        "valid_explicit_create_values_preserved": [0, 3, 10],
+        "negative_probe_at_utc": "2026-11-20T10:58:15Z",
+        "kyverno_mutates_explicit_negative_one_to": 3,
+        "native_statefulset_negative_retains_unlimited_revisions": true,
+        "live_writes_performed": false
+      }
+    }
   }
 }
