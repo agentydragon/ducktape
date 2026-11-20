@@ -64,7 +64,10 @@ py_library(
         "//agentplane/testing/envtest:server",  # keep: fixture subprocess
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+    visibility = _TEST_VISIBILITY + [
+        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
