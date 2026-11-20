@@ -65,7 +65,7 @@ These don't fix the root cause but provide defense in depth:
   Prevents a single transient failure from permanently blocking the dependency chain.
 - **Kyverno HA** — 3 replicas on control plane nodes with topology spread constraints.
   Ensures every API server has a local Kyverno pod, eliminating cross-node webhook calls.
-- **ClusterIP readiness gate** — `verify_clusterip_routing()` in `bootstrap.py` creates
+- **ClusterIP readiness gate** — `verify_clusterip_routing()` in `network_readiness.py`, which `bootstrap.py` calls, creates
   a busybox pod on each node and runs `nslookup kubernetes.default.svc` to verify Cilium
   BPF service maps are populated before deploying Flux.
 
