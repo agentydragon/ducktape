@@ -248,6 +248,8 @@ function Report() {
   const sidekiq = controllerHA.sidekiq;
   const stagingInitial = data.agentplane_staging_initial;
   const stagingInitialTime = stagingInitial.observed_at_utc.slice(11, 16);
+  const webFrontendHA = data.web_frontend_ha;
+  const webFrontendHATime = webFrontendHA.observed_at_utc.slice(11, 16);
   const stagingAdmissionTime =
     stagingInitial.admission_verification.observed_at_utc.slice(11, 16);
   const revisionHistoryCutover = data.revision_history_cutover;
@@ -1414,6 +1416,36 @@ function Report() {
             256 MiB for sessions and 128 MiB for each other selected container.
             All eight kept their CPU requests and limits. The dry runs created
             no Pods. Verify resources and scheduling on actual replacements.
+          <//>
+        <//>
+        <${Paper} id="web-frontend-ha" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4"
+            >Website and Haku Console static replicas<//
+          >
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${webFrontendHATime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            Website and Haku Console static each had two Ready endpoints on
+            ${" "}${webFrontendHA.website.nodes.join(" and ")}, with one allowed
+            disruption per budget. Both website Pods returned HTTP 200 for
+            <code>/</code> and <code>/health</code>; both Haku static Pods
+            returned 200 for <code>/</code>. The website Pods each requested
+            ${" "}${webFrontendHA.website.request_mib} MiB and Haku static
+            ${" "}${webFrontendHA.haku_static.request_mib} MiB. ${" "}<${Anchor}
+              href=${webFrontendHA.website.pr_url}
+              >Website PR #18210<//
+            >${" · "}<${Anchor} href=${webFrontendHA.haku_static.pr_url}
+              >Haku PR #18211<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            Both use revision-scoped hostname spread with two minimum domains.
+            If only one host is eligible, the second replica remains Pending;
+            hostname separation does not guarantee zone separation. Anonymous
+            requests to both public entry routes returned HTTP 200.
+            Authenticated Haku actions and recovery after an actual host failure
+            were not tested.
           <//>
         <//>
       <//>

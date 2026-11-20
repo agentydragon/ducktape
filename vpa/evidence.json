@@ -19687,5 +19687,39 @@
         }
       }
     }
+  },
+  "web_frontend_ha": {
+    "observed_at_utc": "2026-11-20T18:26:35Z",
+    "website": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/18210",
+      "merge_commit": "205aba8401dae54c0f187d2c34bac38253419348",
+      "flux_ready": true,
+      "nodes": ["optiplex", "wyrm2"],
+      "ready_pods": 2,
+      "ready_endpoints": 2,
+      "allowed_disruptions": 1,
+      "request_mib": 50,
+      "direct_paths_http_200": ["/", "/health"],
+      "public_url": "https://www.agentydragon.com/",
+      "public_http_status": 200
+    },
+    "haku_static": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/18211",
+      "merge_commit": "2b3941979bbcd8eb7f24865c98528538898849f1",
+      "flux_ready": true,
+      "nodes": ["optiplex", "wyrm2"],
+      "ready_pods": 2,
+      "ready_endpoints": 2,
+      "allowed_disruptions": 1,
+      "request_mib": 100,
+      "direct_paths_http_200": ["/"],
+      "public_url": "https://haku.allegedly.works/",
+      "public_http_status": 200
+    },
+    "topology_key": "kubernetes.io/hostname",
+    "minimum_domains": 2,
+    "revision_scoped": true,
+    "host_failure_tested": false,
+    "haku_authenticated_actions_tested": false
   }
 }
