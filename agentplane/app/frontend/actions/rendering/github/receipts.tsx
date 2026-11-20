@@ -140,12 +140,13 @@ const pullRequest = z
     id: z.union([z.string().min(1), z.int().positive()]).optional(),
     number: z.int().positive().optional(),
     html_url: z.string().optional(),
+    url: z.string().optional(),
     title: z.string().optional(),
     state: z.enum(["open", "closed"]).optional(),
     draft: z.boolean().optional(),
     merged: z.boolean().optional(),
   })
-  .refine((pr) => pr.id !== undefined || pr.number !== undefined || pr.html_url !== undefined);
+  .refine((pr) => pr.id !== undefined || pr.number !== undefined || pr.html_url !== undefined || pr.url !== undefined);
 const pullRequestWriteResult = z.union([awaiting, pullRequest]);
 
 export function awaitingGitHubSubmission(value: unknown): { label: string; failed: boolean } | undefined {
@@ -169,7 +170,10 @@ function pullRequestWriteReceipt(created: boolean): ResultPreview {
     if ("status" in result) return <Text size="sm">GitHub is waiting for the form to be submitted.</Text>;
     const create = zCreatePullRequestArguments.safeParse(context?.arguments);
     const update = zUpdatePullRequestArguments.safeParse(context?.arguments);
-    const href = githubHref(result.html_url) ?? (update.success ? pullRequestLink(update.data) : undefined);
+    const href =
+      githubHref(result.html_url) ??
+      githubHref(result.url) ??
+      (update.success ? pullRequestLink(update.data) : undefined);
     const number = result.number ?? pullRequestNumber(href);
     const title = result.title || (create.success ? create.data.title : update.success ? update.data.title : undefined);
     const status = pullRequestState(result);

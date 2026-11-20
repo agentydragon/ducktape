@@ -656,7 +656,7 @@ EXAMPLES = (
             "state": "closed",
             "body": "Closed in favor of a smaller change.\nThe readiness checks move to a follow-up.",
         },
-        {"id": "4200", "html_url": "https://github.com/example/service/pull/42"},
+        {"id": "4200", "url": "https://github.com/example/service/pull/42"},
         "Pull request updated.",
     ),
     ActionExample(
