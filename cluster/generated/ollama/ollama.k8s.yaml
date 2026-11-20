@@ -851,6 +851,12 @@ data:
       draft_mode: mtp
       draft_num_tokens: 3
       draft_cache_mode: Q8
+
+    memory:
+      sysmem_kv_cache: 8192
+      disk_cache_dir: /prefix-cache
+      disk_cache_size: 16384
+      disk_cache_flush_on_idle: true
   tabbyapi_serve.py: |
     """Run the pinned TabbyAPI app with a request lock for its single generation slot."""
 
@@ -1009,6 +1015,45 @@ spec:
   storageClassName: ""
   volumeName: wyrm2-tabbyapi-flash-next-abliterated
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wyrm2-tabbyapi-prefix-cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 16Gi
+  claimRef:
+    name: tabbyapi-prefix-cache
+    namespace: ollama
+  local:
+    path: /games/tabbyapi-prefix-cache
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - wyrm2
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tabbyapi-prefix-cache
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 16Gi
+  storageClassName: ""
+  volumeName: wyrm2-tabbyapi-prefix-cache
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1025,6 +1070,8 @@ spec:
     type: Recreate
   template:
     metadata:
+      annotations:
+        ducktape.org/tabbyapi-config-sha256: 058938af9943cd8aa5fe9a1719751fb3285cae3b45a1cc7829a82bee000ced30
       labels:
         app.kubernetes.io/name: tabbyapi
         ducktape.org/tabbyapi-model-switching: "true"
@@ -1057,7 +1104,7 @@ spec:
               nvidia.com/gpu: "2"
             requests:
               cpu: "4"
-              memory: 12Gi
+              memory: 20Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1093,6 +1140,8 @@ spec:
               name: config
               readOnly: true
               subPath: chat_template.jinja
+            - mountPath: /prefix-cache
+              name: tabbyapi-prefix-cache
             - mountPath: /dev/shm
               name: shm
       nodeSelector:
@@ -1110,6 +1159,9 @@ spec:
           persistentVolumeClaim:
             claimName: tabbyapi-flash-next-abliterated
             readOnly: true
+        - name: tabbyapi-prefix-cache
+          persistentVolumeClaim:
+            claimName: tabbyapi-prefix-cache
         - configMap:
             name: tabbyapi-config
           name: config
