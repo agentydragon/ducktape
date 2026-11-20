@@ -19,23 +19,6 @@ interface Props {
   snapshotSlug?: string;
 }
 
-const TARGET_STYLES = {
-  tp: {
-    bg: "bg-green-50 dark:bg-green-950",
-    border: "border-green-200 dark:border-green-800",
-    iconColor: "text-green-600 dark:text-green-400",
-    textColor: "text-green-700 dark:text-green-300",
-    creditColor: "text-green-600 dark:text-green-400",
-  },
-  fp: {
-    bg: "bg-red-50 dark:bg-red-950",
-    border: "border-red-200 dark:border-red-800",
-    iconColor: "text-red-600 dark:text-red-400",
-    textColor: "text-red-700 dark:text-red-300",
-    creditColor: "text-red-600 dark:text-red-400",
-  },
-} as const;
-
 export default function IssueComment({
   kind,
   issueId,
@@ -126,7 +109,7 @@ export default function IssueComment({
                   if (target.credit <= 0) return null;
 
                   const TargetIcon = target.kind === "tp" ? CheckCircle : XCircle;
-                  const targetStyles = TARGET_STYLES[target.kind];
+                  const targetColors = issueColors[target.kind];
                   const targetId = target.kind === "tp" ? target.tp_id : target.fp_id;
                   const linkedTarget =
                     snapshotSlug && targetId && target.occurrence_id ? (
@@ -136,7 +119,7 @@ export default function IssueComment({
                         occurrenceId={target.occurrence_id}
                       />
                     ) : (
-                      <span className={targetStyles.textColor}>
+                      <span className={targetColors.textDark}>
                         {targetId}/{target.occurrence_id}
                       </span>
                     );
@@ -144,12 +127,12 @@ export default function IssueComment({
                   return (
                     <div
                       key={`${edge.critique_issue_id}-${targetId}-${target.occurrence_id}`}
-                      className={`text-xs p-1.5 rounded border ${targetStyles.bg} ${targetStyles.border}`}
+                      className={`text-xs p-1.5 rounded border ${targetColors.bg} ${targetColors.border}`}
                     >
                       <div className="flex items-center gap-2">
-                        <TargetIcon size={12} className={targetStyles.iconColor} />
+                        <TargetIcon size={12} className={targetColors.text} />
                         <span className="font-mono">{linkedTarget}</span>
-                        <span className={`${targetStyles.creditColor} font-medium`}>(+{target.credit.toFixed(2)})</span>
+                        <span className={`${targetColors.text} font-medium`}>(+{target.credit.toFixed(2)})</span>
                       </div>
                       {edge.rationale ? (
                         <div className="text-gray-600 dark:text-gray-400 mt-1">{edge.rationale}</div>

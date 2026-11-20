@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { UnstyledButton } from "@mantine/core";
 import type { GradingEdgeInfo } from "../lib/schema";
+import { issueColors } from "../lib/colors";
 import CritiqueIssueLink from "../lib/CritiqueIssueLink";
 import OccurrenceLink from "../lib/OccurrenceLink";
 
@@ -39,15 +40,11 @@ export default function GradingEdges({ edges, defaultOpen = false, runId, snapsh
               const target = edge.target;
               const credit = target.credit;
               const isTP = target.kind === "tp";
-              const bgColor = isTP ? "bg-green-50 dark:bg-green-950" : "bg-red-50 dark:bg-red-950";
-              const borderColor = isTP
-                ? "border-green-200 dark:border-green-800"
-                : "border-red-200 dark:border-red-800";
-              const textColor = isTP ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
+              const colors = issueColors[target.kind];
               const targetId = isTP ? target.tp_id : target.fp_id;
 
               return (
-                <div key={edgeKey(edge)} className={`p-2 rounded border text-xs ${bgColor} ${borderColor}`}>
+                <div key={edgeKey(edge)} className={`p-2 rounded border text-xs ${colors.bg} ${colors.border}`}>
                   <div className="flex items-center gap-2 mb-1">
                     {runId ? (
                       <CritiqueIssueLink runId={runId} issueId={edge.critique_issue_id} />
@@ -56,7 +53,7 @@ export default function GradingEdges({ edges, defaultOpen = false, runId, snapsh
                     )}
                     <span className="text-gray-400 dark:text-gray-500">→</span>
                     {snapshotSlug ? (
-                      <span className={textColor}>
+                      <span className={colors.text}>
                         <OccurrenceLink
                           snapshotSlug={snapshotSlug}
                           issueId={targetId}
@@ -64,11 +61,11 @@ export default function GradingEdges({ edges, defaultOpen = false, runId, snapsh
                         />
                       </span>
                     ) : (
-                      <span className={textColor}>
+                      <span className={colors.text}>
                         {targetId}/{target.occurrence_id}
                       </span>
                     )}
-                    <span className={`${textColor} font-medium`}>
+                    <span className={`${colors.text} font-medium`}>
                       (+{credit.toFixed(2)}
                       {isTP ? "" : " FP"})
                     </span>

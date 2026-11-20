@@ -196,6 +196,7 @@ ts_library(
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:CritiqueIssueLink",
         "//props/frontend/src/lib:OccurrenceLink",
+        "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:schema",
     ],
 )
@@ -226,6 +227,7 @@ ts_library(
         "//props/frontend:node_modules/@mantine/core",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
+        "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:fileTypes",
         "//props/frontend/src/lib:highlighting",
         "//props/frontend/src/lib:icons",
