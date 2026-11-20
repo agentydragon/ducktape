@@ -282,7 +282,11 @@ export async function validateBindings(sourcePath, specPath, out) {
   const has = (result, name) => result.stdout.includes(`'${name}' does not depend on any axioms`);
   const proof = runLean(prefix + same);
   if (proof.error || proof.status === null)
-    return { result: "unknown", reason: "Lean could not be run", detail: String(proof.error) };
+    return {
+      result: "unknown",
+      reason: "Lean could not be run",
+      detail: proof.error ? String(proof.error) : `Lean terminated by ${proof.signal ?? "unknown signal"}`,
+    };
   if (
     !["accepted_reference_owner", "binding_graph_valid", "binding_source_ready", "binding_output_ready"].every((name) =>
       has(proof, name)
