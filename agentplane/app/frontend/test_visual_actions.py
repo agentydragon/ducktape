@@ -216,6 +216,28 @@ GMAIL_FILTER = {
     "action": {"addLabelIds": ["STARRED"], "removeLabelIds": ["INBOX"], "forward": "archive@example.com"},
 }
 
+GITHUB_REPO: dict[str, object] = {"owner": "example", "repo": "service"}
+GITHUB_PULL = {**GITHUB_REPO, "pullNumber": 42}
+GITHUB_ISSUE = {**GITHUB_REPO, "issue_number": 7}
+GITHUB_PULL_ROW = {
+    "number": 42,
+    "title": "Document deployment checks",
+    "state": "open",
+    "draft": True,
+    "merged": False,
+    "html_url": "https://github.com/example/service/pull/42",
+    "head": {"ref": "docs"},
+    "base": {"ref": "devel"},
+}
+GITHUB_ISSUE_ROW = {
+    "number": 7,
+    "title": "Review staging readiness",
+    "state": "OPEN",
+    "html_url": "https://github.com/example/service/issues/7",
+    "labels": ["deployments"],
+    "assignees": ["test-reviewer"],
+}
+
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
@@ -745,6 +767,195 @@ EXAMPLES = (
         },
         "Handle deployment checks",
         compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "list_pull_requests",
+        {**GITHUB_REPO, "state": "open", "base": "devel"},
+        [GITHUB_PULL_ROW],
+        "Document deployment checks",
+    ),
+    ActionExample(
+        "github",
+        "pull_request_read",
+        {**GITHUB_PULL, "method": "get_review_comments", "perPage": 10},
+        {
+            "review_threads": [
+                {
+                    "id": "PRRT_test",
+                    "is_resolved": False,
+                    "is_outdated": False,
+                    "total_count": 1,
+                    "comments": [
+                        {
+                            "path": "docs/deploy.md",
+                            "line": 12,
+                            "author": "test-reviewer",
+                            "body": "Please document the rollback.",
+                            "html_url": "https://github.com/example/service/pull/42#discussion_r81",
+                        }
+                    ],
+                }
+            ],
+            "totalCount": 1,
+            "pageInfo": {"hasNextPage": False, "hasPreviousPage": False},
+        },
+        "Please document the rollback.",
+    ),
+    ActionExample(
+        "github",
+        "merge_pull_request",
+        {
+            **GITHUB_PULL,
+            "merge_method": "squash",
+            "expectedHeadSha": "0123456789abcdef",
+            "commit_title": "Document deployment checks",
+        },
+        {
+            "sha": "0123456789abcdef0123456789abcdef01234567",
+            "merged": True,
+            "message": "Pull Request successfully merged",
+        },
+        "Pull request merged.",
+    ),
+    ActionExample(
+        "github", "request_copilot_review", GITHUB_PULL, {"status": "requested"}, "Copilot review requested."
+    ),
+    ActionExample(
+        "github",
+        "pull_request_review_write",
+        {**GITHUB_PULL, "method": "submit_pending", "event": "REQUEST_CHANGES", "body": "Add a rollback section."},
+        "pending pull request review successfully submitted",
+        "pending pull request review successfully submitted",
+    ),
+    ActionExample(
+        "github",
+        "add_comment_to_pending_review",
+        {
+            **GITHUB_PULL,
+            "path": "docs/deploy.md",
+            "subjectType": "LINE",
+            "line": 12,
+            "side": "RIGHT",
+            "body": "Please indicate the previous revision.",
+        },
+        "pull request review comment successfully added to pending review",
+        "pull request review comment successfully added to pending review",
+    ),
+    ActionExample(
+        "github",
+        "add_reply_to_pull_request_comment",
+        {**GITHUB_PULL, "commentId": 81, "body": "Added the rollback instructions.", "reaction": "+1"},
+        {
+            "comment": {"id": "82", "url": "https://github.com/example/service/pull/42#discussion_r82"},
+            "reaction": {"id": "91"},
+        },
+        "Reply and reaction posted",
+    ),
+    ActionExample(
+        "github",
+        "issue_read",
+        {**GITHUB_ISSUE, "method": "get"},
+        {
+            "method": "get",
+            "issue": {**GITHUB_ISSUE_ROW, "state": "open", "body": "Confirm readiness on the staging environment."},
+        },
+        "Confirm readiness on the staging environment.",
+    ),
+    ActionExample(
+        "github",
+        "list_issues",
+        {
+            **GITHUB_REPO,
+            "state": "OPEN",
+            "labels": ["deployments"],
+            "field_filters": [{"field_name": "Priority", "value": "P1"}],
+        },
+        {"issues": [GITHUB_ISSUE_ROW], "totalCount": 4, "pageInfo": {"hasNextPage": True, "hasPreviousPage": False}},
+        "More results available.",
+    ),
+    ActionExample(
+        "github",
+        "search_issues",
+        {"query": "repo:example/service is:open label:deployments"},
+        {"items": [GITHUB_ISSUE_ROW], "total_count": 1, "incomplete_results": False},
+        "Review staging readiness",
+    ),
+    ActionExample(
+        "github",
+        "issue_write",
+        {
+            **GITHUB_ISSUE,
+            "method": "update",
+            "title": "Review staging readiness",
+            "state": "closed",
+            "state_reason": "completed",
+            "labels": ["deployments"],
+            "issue_fields": [{"field_name": "Priority", "field_option_name": "P1"}],
+        },
+        {"id": "7700", "url": "https://github.com/example/service/issues/7"},
+        "Issue updated.",
+    ),
+    ActionExample(
+        "github",
+        "sub_issue_write",
+        {**GITHUB_ISSUE, "method": "add", "sub_issue_id": 7800, "replace_parent": True},
+        {
+            "method": "add",
+            "issue": {
+                "number": 8,
+                "title": "Document rollback checks",
+                "html_url": "https://github.com/example/service/issues/8",
+                "assignees": [],
+            },
+        },
+        "Sub-issue linked.",
+    ),
+    ActionExample(
+        "github",
+        "add_issue_comment",
+        {**GITHUB_ISSUE, "body": "Staging is ready for review.", "reaction": "rocket"},
+        {
+            "comment": {"id": "70", "url": "https://github.com/example/service/issues/7#issuecomment-70"},
+            "reaction": {"id": "71"},
+        },
+        "Comment and reaction posted",
+    ),
+    ActionExample(
+        "github",
+        "update_issue_comment",
+        {**GITHUB_REPO, "comment_id": 70, "body": "Staging and rollback checks both passed."},
+        {"id": "70", "html_url": "https://github.com/example/service/issues/7#issuecomment-70"},
+        "Comment updated",
+    ),
+    ActionExample(
+        "github",
+        "list_issue_fields",
+        GITHUB_REPO,
+        [
+            {
+                "id": "IF_priority",
+                "name": "Priority",
+                "data_type": "SINGLE_SELECT",
+                "visibility": "PRIVATE",
+                "options": [{"id": "IF_opt", "name": "P1", "color": "ORANGE"}],
+            }
+        ],
+        "Options P1",
+    ),
+    ActionExample(
+        "github",
+        "list_issue_types",
+        GITHUB_REPO,
+        [{"id": 1, "name": "Bug", "description": "Unexpected application behavior", "is_enabled": True}],
+        "Unexpected application behavior",
+    ),
+    ActionExample(
+        "github",
+        "get_label",
+        {**GITHUB_REPO, "name": "deployments"},
+        {"name": "deployments", "description": "Release and rollout work", "color": "0366d6"},
+        "Release and rollout work",
     ),
     ActionExample(
         "gmail",
