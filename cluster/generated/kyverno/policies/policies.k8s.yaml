@@ -81,11 +81,10 @@ spec:
         message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
   validationFailureAction: audit
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
 metadata:
   annotations:
-    pod-policies.kyverno.io/autogen-controllers: none
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/description: Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment variables from colliding with application settings.
     policies.kyverno.io/severity: medium
@@ -93,21 +92,28 @@ metadata:
     policies.kyverno.io/title: Default Service Links off
   name: default-disable-service-links
 spec:
-  admission: true
-  background: false
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              operations:
-                - CREATE
-      mutate:
-        patchStrategicMerge:
-          spec:
-            enableServiceLinks: false
-      name: default-disable-service-links
+  autogen:
+    podControllers:
+      controllers: []
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+  mutations:
+    - applyConfiguration:
+        expression: "Object{spec: Object.spec{enableServiceLinks: false}}"
+      patchType: ApplyConfiguration
 ---
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy

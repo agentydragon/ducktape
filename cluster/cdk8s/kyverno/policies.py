@@ -21,8 +21,20 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExcludeAnySubjects,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
-    ClusterPolicySpecRulesMutate,
     ClusterPolicySpecValidationFailureAction,
+)
+from kyverno_mutatingpolicy_crds.io.kyverno.policies import (
+    MutatingPolicy,
+    MutatingPolicySpec,
+    MutatingPolicySpecAutogen,
+    MutatingPolicySpecAutogenPodControllers,
+    MutatingPolicySpecEvaluation,
+    MutatingPolicySpecEvaluationAdmission,
+    MutatingPolicySpecEvaluationBackground,
+    MutatingPolicySpecMatchConstraints,
+    MutatingPolicySpecMatchConstraintsResourceRules,
+    MutatingPolicySpecMutations,
+    MutatingPolicySpecMutationsApplyConfiguration,
 )
 from kyverno_validatingpolicy_crds.io.kyverno.policies import (
     ValidatingPolicy,
@@ -181,34 +193,49 @@ def default_disable_service_links_chart(app: App) -> Chart:
 
     Pod-only and CREATE-only deliberately: mutating controller templates would create
     Flux/SSA ownership conflicts, while every Pod (including Pods created by custom
-    operators) still passes through admission.
+    operators) still passes through admission. Hence autogen is switched off.
     """
-    return _cluster_policy_chart(
-        app,
-        "default-disable-service-links",
-        annotations=_annotations(
-            autogen=False,
-            title="Default Service Links off",
-            category="Best Practices",
-            severity="medium",
-            subject="Pod",
-            description=(
-                "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
-                "variables from colliding with application settings."
+    chart = _chart(app, "default-disable-service-links")
+    MutatingPolicy(
+        chart,
+        "policy",
+        metadata=ApiObjectMetadata(
+            name="default-disable-service-links",
+            annotations=_annotations(
+                title="Default Service Links off",
+                category="Best Practices",
+                severity="medium",
+                subject="Pod",
+                description=(
+                    "Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment "
+                    "variables from colliding with application settings."
+                ),
             ),
         ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-disable-service-links",
-                    match=match_resources(ClusterPolicySpecRulesMatchAnyResources(kinds=["Pod"], operations=[_CREATE])),
-                    mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"enableServiceLinks": False}}),
+        spec=MutatingPolicySpec(
+            autogen=MutatingPolicySpecAutogen(pod_controllers=MutatingPolicySpecAutogenPodControllers(controllers=[])),
+            evaluation=MutatingPolicySpecEvaluation(
+                admission=MutatingPolicySpecEvaluationAdmission(enabled=True),
+                background=MutatingPolicySpecEvaluationBackground(enabled=False),
+            ),
+            match_constraints=MutatingPolicySpecMatchConstraints(
+                resource_rules=[
+                    MutatingPolicySpecMatchConstraintsResourceRules(
+                        api_groups=[""], api_versions=["v1"], operations=["CREATE"], resources=["pods"]
+                    )
+                ]
+            ),
+            mutations=[
+                MutatingPolicySpecMutations(
+                    patch_type="ApplyConfiguration",
+                    apply_configuration=MutatingPolicySpecMutationsApplyConfiguration(
+                        expression="Object{spec: Object.spec{enableServiceLinks: false}}"
+                    ),
                 )
             ],
         ),
     )
+    return chart
 
 
 def require_secret_store_conditions_chart(app: App) -> Chart:
