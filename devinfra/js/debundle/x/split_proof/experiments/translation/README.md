@@ -16,6 +16,10 @@ node pair.mjs bundle.json output.json --out cert.json
 
 Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and reshuffled. `4` the translation is faithful, but the output runs some effectful units in a different order, and nothing justifies it yet (a list of **obligations**).
 
+## Escaped callbacks and initialization
+
+A callback can escape before a later `const`, `let`, class, or other non-hoisted binding initializes, and an unrelated effect can invoke it indirectly. An otherwise inert initializer is therefore kept effectful when its binding is exported, used in deferred code, read by an inert initializer that can form an alias, or mentioned in a fallback-containing statement. This deliberately conservative rule preserves ordering against unknown effects. Hoisted function declarations remain available from instantiation. The source footprint analysis and its correspondence to JavaScript are still trusted rather than proved.
+
 ## Local identity calls
 
 The source analyzer infers that a `const` initialized by `f(1)` is inert only for a deliberately narrow case: `f` is a unique module-scope, non-async, non-generator function declaration whose sole statement returns its one plain parameter; the call has exactly one single-digit numeric literal argument; and the entire bundle contains exactly two identifier occurrences named `f` (the declaration and the call), with no identifier named `eval`. The parameter and return reference must have the same frontend-resolved binder. Any extra occurrence, including a shadow, alias, exported reference or assignment even inside a deferred body, disables the inference. The result must not be exported or referenced from deferred code, an inert statement that could form an alias, or a statement with unsupported syntax; otherwise an already-escaped callback could read it before initialization. The read of `f` and all binding-order checks remain. Unsupported syntax falls back to effectful.

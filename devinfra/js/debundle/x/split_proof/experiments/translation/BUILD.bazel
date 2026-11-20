@@ -68,6 +68,22 @@ js_test(
 )
 
 js_test(
+    name = "inert_escape_test",
+    data = _CHECKER_RUNFILES + [
+        "fixtures/inert_escape/seed2026_round3.js.txt",
+        "fixtures/inert_escape/seed2026_round8.js.txt",
+        "pair.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "inert_escape_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
     name = "factory_emission_test",
     data = _CHECKER_RUNFILES + [
         "pair.mjs",
