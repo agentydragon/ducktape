@@ -127,10 +127,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
 	defer environmentConn.Close()
-	environments, err := sandboxes.NewEnvironmentReader(environmentpb.NewEnvironmentServiceClient(environmentConn))
-	if err != nil {
-		return fmt.Errorf("configure Environment Service reader: %w", err)
-	}
+	environments := environmentpb.NewEnvironmentServiceClient(environmentConn)
 	sessionClient, err := sessionclient.New(dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Session client: %w", err)
