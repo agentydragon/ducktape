@@ -23,13 +23,17 @@ valid generated and hand-written consumers pass. No duplicate consumer/provider 
 
 ## Fleet rule waivers
 
-Proxy policies that already broke a rule when the rules started covering every App carry
-`unpinned_https_egress` waivers at their write call, each under a `CLEANUP(added 2026-10-12)`
-comment. For each unpinned proxy, either pin `serverNames` or keep the waiver with a comment
-saying why it is exempt by design, as Agentplane's egress proxy does.
+Two `unpinned_https_egress` waivers remain, each at its write call:
+
+- `github-api-proxy` (`x/github_api_proxy/proxy.py`) carries a `CLEANUP(added 2026-10-12)`
+  comment. Pin its `serverNames`, or keep the waiver with a comment saying why it is exempt
+  by design.
+- Agentplane's egress proxy (`agentplane/generation.py`) is exempt by design and documented
+  there: the interception proxy terminates TLS, so its allowlist is the egress PolicySets.
+
 Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
-Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.
+Done: no `CLEANUP(added 2026-10-12)` waiver remains except documented by-design exemptions.
 
 ## Fleet rule references
 
