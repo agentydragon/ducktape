@@ -20087,5 +20087,19 @@
     "vpa_generation": 2,
     "vpa_observed_generation": 1,
     "note": "VPA promotion was observed; no eviction or disruption was tested."
+  },
+  "staging_history_notifications_spread": {
+    "observed_at_utc": "2026-11-20T22:26:56Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18306",
+    "targets": ["history-service", "notifications"],
+    "ready_and_updated_replicas_each": 2,
+    "nodes": ["ovh-ns102453", "ovh-ns103711"],
+    "pdb_allowed_disruptions_each": 1,
+    "vpa_mode_each": "Initial",
+    "vpa_memory_target_each": "128Mi",
+    "constraint": "revision-scoped hard hostname spread, maxSkew=1, minDomains=2",
+    "history_recovery_suites": "4 passed: 2 fresh, 2 cached",
+    "notifications_recovery_suites": "2 passed from cache",
+    "note": "No deliberate live termination or node-failure test."
   }
 }

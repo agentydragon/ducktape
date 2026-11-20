@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/244b14cd063024bd6ac0e6077c7d13c746fdc8e1/";
+const currentSource = github + "blob/3f734ef8a5f6b81f2d5d041603e7529cf671369a/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2209`).then((r) => {
+        fetch(`${url}?v=20261120-2226`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -318,6 +318,18 @@ function Report() {
             injection or reconciliation; readiness does not prove informer sync,
             and no eviction or handoff was tested.<//
           >
+          <${Text} component="p"
+            >At 22:27 UTC, staging ${" "}<${Anchor}
+              href=${github + "pull/18301"}
+              >frontend<//
+            >, ${" "}<${Anchor} href=${github + "pull/18306"}
+              >History Service and Notifications<//
+            >${" "}each had two Ready replicas on different nodes, a PDB
+            allowing one disruption, and revision-scoped hard hostname spread.
+            Frontend uses Recreate; History and Notifications remain Initial.
+            Recovery suites passed, but no deliberate live termination or node
+            failure was tested.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
@@ -332,42 +344,15 @@ function Report() {
             Goldilocks remains disabled for dynamic Sandboxes. ${" "}<${Anchor}
               href=${github + "pull/18293"}
               >Electric<//
-            >${" "}has a 448–576 MiB memory-request range. Its 448 MiB target
-            was applied in an owner-backed admission dry run, preserving its
-            100m CPU request and 1 GiB memory limit. Its existing singleton
-            remained Ready. A second Electric on the same stream can pass health
-            checks while refusing new shapes, so VPA must not evict the running
-            Pod.<//
-          >
-          <${Text} component="p"
-            >The ${" "}<${Anchor} href=${github + "pull/18301"}
-              >staging frontend<//
-            >${" "}has two Ready replicas on distinct nodes, a PDB allowing one
-            disruption, and revision-scoped required hostname spread. Its
-            ${" "}<${Anchor} href=${github + "pull/18305"}>VPA<//>${" "}uses
-            Recreate with memory requests bounded to 32–40 MiB; no eviction or
-            disruption was tested.<//
+            >${" "}uses Initial with a 448–576 MiB memory request range; its 448
+            MiB target was applied in an owner-backed admission dry run. A
+            second Electric on the same stream can pass health checks while
+            refusing new shapes, so VPA must not evict its singleton.<//
           >
           <${Text} component="p" mb=${0}
-            >Loki read-proxy is Initial with a 128–160 MiB memory request range
-            and a 50m CPU pin. Its target is 128 MiB; an owner-matched admission
-            dry run applied 50m/128 MiB and preserved the 200m/256 MiB limits.
-            Its existing singleton remains Ready and has not been replaced. Ntfy
-            and CDviz also need a non-evicting approach while singletons.<//
-          >
-          <${Text} component="p" mb=${0}
-            >At 21:31 UTC, ${" "}<${Anchor} href=${github + "pull/18274"}
-              >Study Casino<//
-            >${" "} had an Initial memory-request VPA bounded to 224–240 MiB.
-            Its target was 224 MiB; an owner-matched admission dry run applied
-            25m CPU and 224 MiB memory while preserving the 256 MiB limit. Its
-            existing singleton remained Ready.<//
-          >
-          <${Text} component="p" mb=${0}
-            >The roaming-node controller has an Initial memory-request VPA
-            bounded to 64–80 MiB. A server-side admission dry run applied an 80
-            MiB request while preserving its 10m CPU request and 128 MiB memory
-            limit; its existing singleton remained Ready.<//
+            >Ntfy and CDviz also need non-evicting policies while singletons.
+            The inventory below shows their effective policies and admitted Pod
+            resources; historical admission checks remain in the evidence.<//
           >
         <//>
         <${Paper} withBorder p="md" radius="md">
@@ -454,7 +439,9 @@ function Report() {
             checking PDBs, endpoints, spread, capacity and rollout behavior.
             Keep singletons such as ntfy and CDviz in Initial until replacement
             is safe. Preserve VPAs already managing both requests and limits; do
-            not silently weaken their policies. Storage work has a separate
+            not silently weaken their policies. The remaining staging spread
+            cohort needs service-specific recovery checks and a fresh concurrent
+            capacity review before rollout. Storage work has a separate
             owner.<//
           ><//
         >
@@ -509,8 +496,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        22:09 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at 244b14cd06<//
+        22:26 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at 3f734ef8a5<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
