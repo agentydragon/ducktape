@@ -54,7 +54,7 @@ History summary appears with its materialization state. History-only records can
 members. Metadata and History watches refresh the joins without polling.
 
 The Thread page uses Dispatcher placement to identify the exact Environment before History exists.
-Failed materialization and its reason are visible and command controls are disabled. Missing identity
+Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
 is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.

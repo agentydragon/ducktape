@@ -217,6 +217,8 @@ type ThreadFixture = {
   launchOutcome?: LaunchOutcome;
 };
 
+const CONVERSATION_EPOCH = "20260921";
+
 function threadFixture(fixture: ThreadFixture): ThreadView {
   const { id, name, createdAgo, archived, foldedThrough, firstEventAgo, lastEventAgo, sandbox, harnessState } = fixture;
   const at = (msAgo: number) => timestampFromDate(new Date(ago(msAgo)));
@@ -228,6 +230,7 @@ function threadFixture(fixture: ThreadFixture): ThreadView {
       archived: archived ?? false,
     },
     {
+      projectionEpoch: CONVERSATION_EPOCH,
       foldedThrough,
       ...(firstEventAgo === undefined ? {} : { firstEventAt: at(firstEventAgo) }),
       ...(lastEventAgo === undefined ? {} : { lastEventAt: at(lastEventAgo) }),
@@ -1533,7 +1536,6 @@ const GMAIL_DRAFT_ACTION: ActionRequest = fromJson(ActionRequestSchema, {
 });
 
 const CONVERSATION_SOURCE = "visual-runner";
-const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
 function payloadKey(ownerId: string, field: ThreadPayloadField, generation: string): string {
