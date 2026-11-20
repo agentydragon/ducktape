@@ -311,6 +311,7 @@ class Console(Construct):
         pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
+        _API.pods.disruption_budget(self, "disruption-budget", name=_API.name)
         Service(
             self,
             "service",
@@ -378,6 +379,7 @@ class Console(Construct):
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
         pod_policy.harden(deployment)
+        _STATIC.pods.disruption_budget(self, "static-disruption-budget", name=_STATIC.name)
         Service(
             self,
             "static-service",

@@ -197,6 +197,10 @@ def _web_deployment(chart: Chart) -> None:
     )
 
 
+def _web_disruption_budget(chart: Chart) -> None:
+    WEB_SERVICE.pods.disruption_budget(chart, "web-disruption-budget", name=NAME)
+
+
 def _control_deployment(chart: Chart) -> None:
     _deployment(
         chart,
@@ -308,6 +312,7 @@ def chart(app: App) -> Chart:
     _database(chart)
     _data_claim(chart)
     _web_deployment(chart)
+    _web_disruption_budget(chart)
     _control_deployment(chart)
     _service_and_route(chart)
     _network_policies(chart)
