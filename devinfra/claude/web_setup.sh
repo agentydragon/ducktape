@@ -120,7 +120,7 @@ log "web_setup.sh commit: $SETUP_COMMIT"
 log "Installing Nix (Determinate installer)..."
 # Idempotent: on a persistent rootfs, Nix from a prior session's install is
 # already present. The installer fetches its binary from a GitHub release, which
-# 403s in GitHub-repo-scoped sessions (see AGENTS.md "Repository Scope") — skip
+# 403s in GitHub-repo-scoped sessions (see <devinfra/claude/docs/web_setup.md> § Setup script) — skip
 # the reinstall when a working Nix is already there instead of hard-failing.
 if [ -x /nix/var/nix/profiles/default/bin/nix ] && /nix/var/nix/profiles/default/bin/nix --version >/dev/null 2>&1; then
   log "Nix already installed ($(/nix/var/nix/profiles/default/bin/nix --version)); skipping installer."

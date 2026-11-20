@@ -20,10 +20,9 @@ startup_env_script: devinfra/secrets/web_env.sh
 
 idle_watchdog: false
 
-# Exercise the full git_shim surface in the container E2E matrix.
-# pre-commit (which invokes git stash internally) is not run in this test,
-# so block_stash=true here is safe. CLI profile leaves block_stash=false for
-# this reason — see profiles/cli/profile.yaml.
+# Exercise the full git_shim surface in the container E2E matrix. The CLI profile
+# leaves block_stash=false because `git commit` once died under the block
+# (unexplained, see profiles/cli/profile.yaml); this test never runs pre-commit.
 git_shim:
   block_add_all: true
   block_stash: true

@@ -110,8 +110,9 @@ web/remote session lacks that marker, treat it as platform drift and report it.
 
 Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo
 `bazel query` operations (6000+ packages), this is insufficient — the Skyframe
-analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g`
-when it detects Firecracker.
+analysis cache alone needs ~4Gi. The session bazelrc that
+[`claude-hook`](../../claude_hook/main.rs) generates sets `-Xmx8g` when it
+detects Firecracker.
 
 ## Anthropic-Specific Components
 
