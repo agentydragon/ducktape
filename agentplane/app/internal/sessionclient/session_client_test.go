@@ -113,7 +113,7 @@ func TestCreateSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) 
 	}
 }
 
-func TestCreateSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
+func TestCreateSessionForwardsNilUUID(t *testing.T) {
 	dispatcher := &fakeSessionDispatcher{opening: &dispatcherpb.Session{
 		SessionId: uuid.Nil.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: sessionClientTestSpec().GetPlacement().GetEnvironmentHosted()}},
 	}}

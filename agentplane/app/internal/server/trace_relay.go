@@ -38,8 +38,8 @@ func appHTTPHandler(next http.Handler) http.Handler {
 	traced := observability.HTTPHandler(next)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/telemetry/v1/traces" {
-			// Like the Python implementation, keep OTLP export requests outside the server spans
-			// that they can themselves cause to be exported.
+			// Keep OTLP export requests outside the server spans that they can themselves cause
+			// to be exported.
 			next.ServeHTTP(writer, request)
 			return
 		}

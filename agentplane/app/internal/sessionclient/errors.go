@@ -55,8 +55,7 @@ func (e *DispatcherRequestTimeoutError) Error() string {
 
 func (e *DispatcherRequestTimeoutError) Unwrap() error { return e.Cause }
 
-// RefusedError is the typed counterpart of the Python FAILED_PRECONDITION
-// transport error.
+// RefusedError is the typed form of a FAILED_PRECONDITION gRPC status.
 type RefusedError struct {
 	Code    codes.Code
 	Details string
