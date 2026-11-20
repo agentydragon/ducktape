@@ -3,8 +3,8 @@
 **Status: open.** A data NVMe stopped responding, and reattaching its DRBD
 volumes after a node reboot restored most services. A second reboot cleared a
 stalled CLI Proxy resync. A damaged SeaweedFS replica was removed after its
-files were preserved; the physical fault remains unexplained and one older
-SeaweedFS record still needs a filer-reference check.
+files were preserved. A subsequent metadata screen found no current reference
+to an older record on that copy; the physical fault remains unexplained.
 
 ## Timeline
 
@@ -67,8 +67,12 @@ entry absent from the two writable copies; it may be a deletion removed during
 compaction. A two-way index check and full scrub found no problems in the two
 writable copies. Their captured files had different whole-file hashes, but all
 80 live indexed records had matching headers and bodies at the time of the
-check. A three-minute filer-wide reference scan timed out, so whether the extra
-record was referenced elsewhere remained unknown.
+check. A three-minute filer-wide reference scan timed out. A later bounded
+read-only screen covered all 54 filer metadata tables, including 710
+gzip-compressed records. It found no direct reference to the extra record and
+no manifest chunks in the candidate metadata. The checks used separate
+snapshots while writes continued, and assume standard protobuf or gzip
+encoding, so they do not prove global absence at one instant.
 
 At the owner's request, the damaged extra replica was removed at 08:23 after
 its four volume files had been preserved privately and checked against the
@@ -147,8 +151,7 @@ it did not establish this same mechanism.
 - Verify CLI Proxy's real credential operations; investigate or reauthorize the
   Claude credential with the invalid refresh token. Decide retention of the
   sensitive temporary recovery copies.
-- Complete the filer-wide reference check for the preserved SeaweedFS record,
-  verify reads through the collector's mount, and decide recovery-copy
-  retention. Investigate the physical NVMe and node with OVH.
+- Verify reads through the collector's mount and decide retention of the
+  preserved SeaweedFS files. Investigate the physical NVMe and node with OVH.
 - Investigate the misleading database health signal, stuck Talos shutdown,
   and incident alerting. Preserve the exact incident evidence separately.
