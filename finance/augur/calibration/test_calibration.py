@@ -271,10 +271,24 @@ async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameMod
     assert math.isclose(family.kl_bits, 0.0146, abs_tol=1e-3)
 
 
-async def test_threshold_ladder_family_derives_categorical_distribution(cpi_ladder: CpiLadder) -> None:
-    clients = mock_price_clients({Platform.KALSHI: {"CPI-T3.0": 0.90, "CPI-T3.5": 0.60, "CPI-T4.0": 0.20}})
+@pytest.mark.parametrize(
+    ("direction", "rung_prices"),
+    [
+        # Survival rungs `P(value > threshold)` fall with the threshold; CDF rungs `P(value < threshold)` rise.
+        pytest.param(Direction.ABOVE, {"CPI-T3.0": 0.90, "CPI-T3.5": 0.60, "CPI-T4.0": 0.20}, id="above"),
+        pytest.param(Direction.BELOW, {"CPI-T3.0": 0.10, "CPI-T3.5": 0.40, "CPI-T4.0": 0.80}, id="below"),
+    ],
+)
+async def test_threshold_ladder_family_derives_categorical_distribution(
+    cpi_ladder: CpiLadder, direction: Direction, rung_prices: dict[str, float]
+) -> None:
+    (ladder,) = cpi_ladder.catalog.threshold_ladder_families
+    catalog = cpi_ladder.catalog.model_copy(
+        update={"threshold_ladder_families": [ladder.model_copy(update={"direction": direction})]}
+    )
+    clients = mock_price_clients({Platform.KALSHI: rung_prices})
     result = await run_calibration(
-        cpi_ladder.catalog,
+        catalog,
         horizon_months=_HORIZON,
         rollout_seeds=cpi_ladder.seeds,
         price_clients=clients,
