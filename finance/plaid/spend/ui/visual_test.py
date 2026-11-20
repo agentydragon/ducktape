@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -446,13 +445,15 @@ async def test_history_controls_and_category_highlighting(page: Page, view: Visu
     await expect(category).to_have_attribute("aria-pressed", "true")
     await graph.get_by_text("How this chart works").hover()
     await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "unclassified")
-    other = graph.get_by_role("button", pressed=False).first
+    other = graph.get_by_role("button", name="Holiday travel", exact=False)
     await other.click()
     await expect(other).to_have_attribute("aria-pressed", "true")
     await expect(category).to_have_attribute("aria-pressed", "true")
     await graph.get_by_text("How this chart works").hover()
-    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", re.compile(r".*,.*"))
-    await view.capture("spending-history-multiple-categories", label="Multiple highlighted categories", animations="disabled")
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "travel,unclassified")
+    await view.capture(
+        "spending-history-multiple-categories", label="Multiple highlighted categories", animations="disabled"
+    )
     await category.click()
     await expect(category).to_have_attribute("aria-pressed", "false")
     await expect(other).to_have_attribute("aria-pressed", "true")
