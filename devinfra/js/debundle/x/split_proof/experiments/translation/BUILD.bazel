@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -52,6 +52,15 @@ js_test(
         ":node_modules/acorn",
     ],
     entry_point = "prototype_guard_test.mjs",
+)
+
+js_binary(
+    name = "prototype_guard",
+    data = [
+        "prototype_guard.mjs",
+        ":node_modules/acorn",
+    ],
+    entry_point = "prototype_guard_cli.mjs",
 )
 
 exports_files(
