@@ -1,7 +1,5 @@
 """TabbyAPI serving the staged EXL3 Flash-Next checkpoints on wyrm2."""
 
-from hashlib import sha256
-
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
@@ -19,8 +17,6 @@ _CHECKPOINTS = (
     ("weights", MODEL_NAME, "tabbyapi-flash-next", "100Gi"),
     ("abliterated-weights", _ABLITERATED_MODEL, "tabbyapi-flash-next-abliterated", "61Gi"),
 )
-_PREFIX_CACHE = "tabbyapi-prefix-cache"
-_PREFIX_CACHE_PATH = "/prefix-cache"
 _HOSTNAME_LABEL = "kubernetes.io/hostname"
 _SWITCHING_LABEL = {"ducktape.org/tabbyapi-model-switching": "true"}
 _PODS = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
@@ -29,7 +25,7 @@ MODELS_PATH = "/v1/models"
 _SOURCE_DIR = "ducktape/cluster/cdk8s/ollama"
 
 
-def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None:
+def _weights(scope: Construct, model_name: str, claim: str, capacity: str) -> None:
     size = k8s.Quantity.from_string(capacity)
     volume = f"{_NODE}-{claim}"
     k8s.KubePersistentVolume(
@@ -40,7 +36,8 @@ def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None
             access_modes=["ReadWriteOnce"],
             capacity={"storage": size},
             claim_ref=k8s.ObjectReference(name=claim, namespace=NAMESPACE),
-            local=k8s.LocalVolumeSource(path=path),
+            # The pre-staged checkpoint is a read-only cache on the wyrm2 NVMe filesystem.
+            local=k8s.LocalVolumeSource(path=f"/games/llm-models/{model_name}"),
             node_affinity=k8s.VolumeNodeAffinity(
                 required=k8s.NodeSelector(
                     node_selector_terms=[
@@ -69,7 +66,7 @@ def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None
     )
 
 
-def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
+def _deploy(scope: Construct, config: ConfigMap) -> None:
     models = k8s.HttpGetAction(path=MODELS_PATH, port=k8s.IntOrString.from_string(SERVICE.port.name))
     k8s.KubeDeployment(
         scope,
@@ -80,10 +77,7 @@ def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(
-                    labels={**_PODS.selector, **_SWITCHING_LABEL},
-                    annotations={"ducktape.org/tabbyapi-config-sha256": config_checksum},
-                ),
+                metadata=k8s.ObjectMeta(labels={**_PODS.selector, **_SWITCHING_LABEL}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
@@ -139,7 +133,6 @@ def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
                                     )
                                     for _, name, _, _ in _CHECKPOINTS
                                 ],
-                                k8s.VolumeMount(name=_PREFIX_CACHE, mount_path=_PREFIX_CACHE_PATH),
                                 k8s.VolumeMount(name="shm", mount_path="/dev/shm"),
                             ],
                         )
@@ -154,10 +147,6 @@ def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
                             )
                             for volume, _, claim, _ in _CHECKPOINTS
                         ],
-                        k8s.Volume(
-                            name=_PREFIX_CACHE,
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_PREFIX_CACHE),
-                        ),
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config.name)),
                         k8s.Volume(
                             name="shm",
@@ -174,21 +163,19 @@ def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
 
 def add_tabbyapi(scope: Construct) -> None:
     sources = Runfiles.CreateOrRaise().root() / _SOURCE_DIR
-    config_yaml = (sources / "tabbyapi-config.yml").read_text()
     config = ConfigMap(
         scope,
         "tabbyapi-config",
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
-            "config.yml": config_yaml,
+            "config.yml": (sources / "tabbyapi-config.yml").read_text(),
             "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
     )
     for _, name, claim, capacity in _CHECKPOINTS:
-        _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
-    _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
-    _deploy(scope, config, sha256(config_yaml.encode()).hexdigest())
+        _weights(scope, name, claim, capacity)
+    _deploy(scope, config)
     k8s.KubeService(
         scope,
         "tabbyapi-service",
