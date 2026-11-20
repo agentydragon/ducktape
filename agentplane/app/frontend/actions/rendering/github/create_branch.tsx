@@ -23,13 +23,9 @@ function CreateBranchLabel({ args }: { args: CreateBranchArguments }): JSX.Eleme
   );
 }
 
-// Nothing is left once the label has drawn every argument; the schema still gates the empty view.
-function NoFurtherArguments(): null {
-  return null;
-}
-
 export const createBranchLabel: ArgumentsPreview = definePreview(zCreateBranchArguments, CreateBranchLabel);
-export const createBranchArguments: ArgumentsPreview = definePreview(zCreateBranchArguments, NoFurtherArguments);
+// The label already names every validated argument.
+const createBranchArguments: ArgumentsPreview = { schema: zCreateBranchArguments, render: () => null };
 
 export const createBranchPresentation: ActionPresentation = {
   fallbackLabel: "Create GitHub branch",
