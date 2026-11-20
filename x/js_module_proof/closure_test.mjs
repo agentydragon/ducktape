@@ -117,7 +117,11 @@ export { readFirst, readSecond };
     shadowSource,
     (await readFile(source, "utf8")).replace("let value = seed", "let seed = seed").replace("++value", "++seed")
   );
-  assert.equal(cli("generate", shadowSource, spec, join(root, "shadow-out")).result, "unknown");
+  const shadowOut = join(root, "shadow-out");
+  assert.equal(cli("generate", shadowSource, spec, shadowOut).result, "generated");
+  assert.equal(cli("validate", shadowSource, spec, shadowOut).result, "unknown");
+  assert.equal(execute(shadowSource, []).error?.name, "ReferenceError");
+  assert.equal(execute(join(shadowOut, "entry.mjs"), []).error?.name, "ReferenceError");
 }
 
 if (unsafe) {
@@ -202,4 +206,41 @@ export { read, fail };
   await writeFile(emitted, (await readFile(emitted, "utf8")).replace("throw 7", "throw 8"));
   assert.equal(cli("validate", throwSource, throwSpec, throwOut).result, "unknown");
   assert.notDeepEqual(execute(join(throwOut, "entry.mjs"), calls).error, beforeThrow.error);
+}
+
+if (!unsafe) {
+  const scopeSource = join(root, "scope-source.mjs");
+  const scopeSpec = join(root, "scope-spec.json");
+  const scopeOut = join(root, "scope-out");
+  await writeFile(
+    scopeSource,
+    `let seed = 4;
+function calculate(arg) {
+  let value = seed;
+  function nested(seed) { return seed + value; }
+  if (arg) { let value = arg; return nested(value); }
+  return nested(1);
+}
+function read() { return calculate(3); }
+export { read };
+`
+  );
+  const scopeModules = {
+    "state.mjs": { imports: [], statements: [0] },
+    "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+    "reader.mjs": { imports: ["logic.mjs"], statements: [2] },
+    "entry.mjs": { imports: ["reader.mjs"], statements: [] },
+  };
+  await writeFile(scopeSpec, JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: scopeModules }));
+  assert.equal(cli("generate", scopeSource, scopeSpec, scopeOut).result, "generated");
+  assert.equal(cli("validate", scopeSource, scopeSpec, scopeOut).result, "unknown");
+  assert.deepEqual(execute(scopeSource, ["read"]).results, [{ value: 7 }]);
+  assert.deepEqual(execute(join(scopeOut, "entry.mjs"), ["read"]), execute(scopeSource, ["read"]));
+  assert.match(await readFile(join(scopeOut, "logic.mjs"), "utf8"), /import \{ seed \}/);
+  const writeSource = join(root, "scope-write-source.mjs");
+  await writeFile(
+    writeSource,
+    (await readFile(scopeSource, "utf8")).replace("let value = seed;", "seed += arg; let value = seed;")
+  );
+  assert.equal(cli("generate", writeSource, scopeSpec, join(root, "scope-write-out")).result, "unknown");
 }

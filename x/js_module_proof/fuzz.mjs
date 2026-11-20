@@ -629,6 +629,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     closureCases: 0,
     closureSourceExecuted: 0,
     closureRefused: 0,
+    closureGenerated: 0,
+    closureCompared: 0,
     closureDepths: {},
     closureShadowed: 0,
     closureWrites: 0,
@@ -730,6 +732,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       }
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
+      if (input.grammar === "closure") summary.closureGenerated++;
       const mutated = index % 8 === 2;
       if (mutated) {
         const file = join(out, input.cell0Owner);
@@ -759,6 +762,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
         if (equal === input.expectUnsafe || (!input.expectThrow && (before.error || after.error)))

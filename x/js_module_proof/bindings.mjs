@@ -17,6 +17,126 @@ const identifier = (node) => {
 const list = (values) => `[${values.join(", ")}]`;
 const str = JSON.stringify;
 
+// Conservative lexical analysis for generating candidate modules before the
+// corresponding execution semantics are supported by the proof checker. Each
+// block predeclares its lexical bindings, including declarations that are not
+// initialized yet, so a shadowing name never becomes a spurious import.
+function scopedFunction(node) {
+  check(node.type === "FunctionDeclaration" && !node.async && !node.generator, "unsupported function");
+  const name = identifier(node.id);
+  check(name !== "globalThis" && name !== "eval", "unsupported function name");
+  const reads = new Set(),
+    writes = new Set();
+  const addDeclarations = (body, frame) => {
+    for (const stmt of body) {
+      if (stmt.type === "VariableDeclaration") {
+        check(stmt.kind === "let" || stmt.kind === "const", "unsupported declaration kind");
+        for (const decl of stmt.declarations) frame.add(identifier(decl.id));
+      } else if (stmt.type === "FunctionDeclaration") frame.add(identifier(stmt.id));
+    }
+  };
+  const visitFunction = (fn, scopes) => {
+    check(!fn.async && !fn.generator, "unsupported function kind");
+    const frame = new Set(fn.params.map(identifier));
+    if (fn.id) frame.add(identifier(fn.id));
+    if (fn.body.type === "BlockStatement") {
+      addDeclarations(fn.body.body, frame);
+      for (const stmt of fn.body.body) visit(stmt, [frame, ...scopes]);
+    } else visit(fn.body, [frame, ...scopes]);
+  };
+  const reference = (id, scopes, write = false) => {
+    const value = identifier(id);
+    check(!["globalThis", "eval", "arguments"].includes(value), "unsupported dynamic or host reference");
+    if (!scopes.some((scope) => scope.has(value))) {
+      reads.add(value);
+      if (write) writes.add(value);
+    }
+  };
+  const visit = (item, scopes) => {
+    check(item && typeof item === "object", "unsupported expression");
+    switch (item.type) {
+      case "Identifier":
+        reference(item, scopes);
+        break;
+      case "Literal":
+        check(
+          typeof item.value === "number" && Number.isSafeInteger(item.value) && item.value >= 0,
+          "unsupported literal"
+        );
+        break;
+      case "BlockStatement": {
+        const frame = new Set();
+        addDeclarations(item.body, frame);
+        for (const stmt of item.body) visit(stmt, [frame, ...scopes]);
+        break;
+      }
+      case "VariableDeclaration":
+        check(item.kind === "let" || item.kind === "const", "unsupported declaration kind");
+        for (const decl of item.declarations) {
+          identifier(decl.id);
+          if (decl.init) visit(decl.init, scopes);
+        }
+        break;
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+        visitFunction(item, scopes);
+        break;
+      case "ReturnStatement":
+        if (item.argument) visit(item.argument, scopes);
+        break;
+      case "ThrowStatement":
+        visit(item.argument, scopes);
+        break;
+      case "ExpressionStatement":
+        visit(item.expression, scopes);
+        break;
+      case "BinaryExpression":
+      case "LogicalExpression":
+        visit(item.left, scopes);
+        visit(item.right, scopes);
+        break;
+      case "ConditionalExpression":
+        visit(item.test, scopes);
+        visit(item.consequent, scopes);
+        visit(item.alternate, scopes);
+        break;
+      case "IfStatement":
+        visit(item.test, scopes);
+        visit(item.consequent, scopes);
+        if (item.alternate) visit(item.alternate, scopes);
+        break;
+      case "CallExpression":
+        check(!item.optional && item.callee.type !== "Super", "unsupported call");
+        visit(item.callee, scopes);
+        for (const arg of item.arguments) visit(arg, scopes);
+        break;
+      case "AssignmentExpression":
+        reference(item.left, scopes, true);
+        visit(item.right, scopes);
+        break;
+      case "UpdateExpression":
+        reference(item.argument, scopes, true);
+        break;
+      case "EmptyStatement":
+        break;
+      default:
+        check(false, `unsupported scoped syntax: ${item.type}`);
+    }
+  };
+  visitFunction(node, []);
+  return { kind: "scopedFunction", name, references: [...reads], writes: [...writes] };
+}
+
+function candidateStatement(node) {
+  try {
+    return statement(node);
+  } catch (error) {
+    if (node.type !== "FunctionDeclaration" || !String(error).includes("unknown:")) throw error;
+    return scopedFunction(node);
+  }
+}
+
 // This is a syntax-directed conversion to the Lean AST, shared by source and
 // output extraction. It does not compare output against generator text.
 function statement(node) {
@@ -121,11 +241,11 @@ function sourceAst(text) {
   for (const node of parseModule(text)) {
     if (node.type === "ExportNamedDeclaration" && !node.declaration && !node.source) exports.push(...exportNames(node));
     else if (node.type === "ExportNamedDeclaration" && node.declaration && !node.source) {
-      const item = statement(node.declaration);
+      const item = candidateStatement(node.declaration);
       check(declarationName(item), "expected an exported declaration");
       exports.push(declarationName(item));
       statements.push({ ast: item, source: text.slice(node.declaration.start, node.declaration.end) });
-    } else statements.push({ ast: statement(node), source: text.slice(node.start, node.end) });
+    } else statements.push({ ast: candidateStatement(node), source: text.slice(node.start, node.end) });
   }
   check(
     statements.length > 0 && statements.length <= 20 && exports.length > 0,
@@ -166,10 +286,13 @@ function readSpec(spec, count) {
 }
 
 const declarationName = (item) =>
-  ["variable", "constant", "function", "reader", "thrower", "factory", "closure", "wrapper"].includes(item.kind)
+  ["variable", "constant", "function", "reader", "thrower", "factory", "closure", "wrapper", "scopedFunction"].includes(
+    item.kind
+  )
     ? item.name
     : null;
 function references(item) {
+  if (item.kind === "scopedFunction") return item.references;
   if (item.kind === "function") return [item.target, item.source];
   if (item.kind === "reader" || item.kind === "factory") return [item.source];
   if (item.kind === "closure") return [item.factory];
@@ -197,6 +320,11 @@ function generateFiles(source, spec, names) {
         check(defs.get(item.target) === name, "cannot write an imported binding");
         check(!immutable.has(item.target), "cannot write a const binding");
       }
+      if (item.kind === "scopedFunction")
+        for (const target of item.writes) {
+          check(defs.get(target) === name, "cannot write an imported binding");
+          check(!immutable.has(target), "cannot write a const binding");
+        }
     }
   const referencesByModule = Object.fromEntries(
     names.map((name) => [
@@ -338,6 +466,10 @@ function execute(path, calls = []) {
 
 export async function validateBindings(sourcePath, specPath, out) {
   const { source, spec, names, text } = await load(sourcePath, specPath);
+  check(
+    !source.statements.some((item) => item.ast.kind === "scopedFunction"),
+    "scoped function execution is not modeled"
+  );
   const files = await Promise.all(names.map((name) => readFile(resolve(out, name), "utf8")));
   const actual = files.map((text) => outputAst(text, names));
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
