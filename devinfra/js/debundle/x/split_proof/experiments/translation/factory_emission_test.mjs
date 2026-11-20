@@ -24,11 +24,17 @@ function emit(name, code, selectedSide) {
   const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
   const side = selectedSide ?? [parsed.body.length - 2];
   writeFileSync(ast, JSON.stringify(lowerDump(code, acorn, eslintScope)));
-  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: {
-    "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
-    "side.mjs": side.map(i => `#${i}`),
-  }}));
-  return {dir, result: run(process.env.LOWERSPLIT, [ast, spec, dir, "--lean", path.join(dir, "certificate.lean")])};
+  writeFileSync(
+    spec,
+    JSON.stringify({
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
+        "side.mjs": side.map((i) => `#${i}`),
+      },
+    })
+  );
+  return { dir, result: run(process.env.LOWERSPLIT, [ast, spec, dir, "--lean", path.join(dir, "certificate.lean")]) };
 }
 const goodResult = emit("good", good);
 assert.equal(goodResult.result.status, 0, `${goodResult.result.stdout}\n${goodResult.result.stderr}`);
@@ -46,14 +52,20 @@ const frontend = path.join(here, "frontend.mjs");
 const bundle = path.join(goodResult.dir, "bundle.json");
 const tree = path.join(goodResult.dir, "tree.json");
 const cert = path.join(goodResult.dir, "cert.json");
-for (const args of [[frontend, "bundle", source, "--out", bundle], [frontend, "tree", goodResult.dir, "--entry", "entry.mjs", "--out", tree], [path.join(here, "pair.mjs"), bundle, tree, "--out", cert]]) {
+for (const args of [
+  [frontend, "bundle", source, "--out", bundle],
+  [frontend, "tree", goodResult.dir, "--entry", "entry.mjs", "--out", tree],
+  [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
+]) {
   const r = run(process.execPath, args);
   assert.equal(r.status, 0, r.stderr);
 }
 const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 assert.match(checked.stdout, /inferred closure factory/);
-const multi = good.replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);").replace("result();", "void (result(), result2());");
+const multi = good
+  .replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);")
+  .replace("result();", "void (result(), result2());");
 const multiResult = emit("multi", multi);
 assert.equal(multiResult.result.status, 0, `${multiResult.result.stdout}\n${multiResult.result.stderr}`);
 assert.equal((multiResult.result.stdout.match(/inferred closure factory/g) ?? []).length, 2);
@@ -78,9 +90,9 @@ assert.equal(escapeAfter.status, 0, escapeAfter.stderr);
 assert.equal(escapeAfter.stdout, escapeBefore.stdout);
 assert.equal(escapeAfter.stdout, "side\ncallback\n");
 // Moving an observer/call before the result exists must be rejected.
-for (const observer of ['result();', 'globalThis.observe(result);']) {
+for (const observer of ["result();", "globalThis.observe(result);"]) {
   const bad = good.replace('console.log("side");', observer);
-  const {dir, result} = emit(`observer${observer.length}`, bad);
+  const { dir, result } = emit(`observer${observer.length}`, bad);
   assert.notEqual(result.status, 0, `${observer}: ${result.stdout}\n${result.stderr}`);
   assert(!existsSync(path.join(dir, "entry.mjs")), observer);
 }
@@ -93,17 +105,38 @@ for (const [name, bad] of [
   ["eval", good.replace("const result", 'eval("factory = f => f");\nconst result')],
   ["callback_reassign", good.replace("const result", 'callback = () => console.log("changed");\nconst result')],
   ["callback_destructure", good.replace("const result", '[callback] = [() => console.log("changed")];\nconst result')],
-  ["callback_for_of", good.replace("const result", 'for (callback of [() => console.log("changed")]) {}\nconst result')],
-  ["callback_for_in", good.replace("const result", 'for (callback in {changed: 1}) {}\nconst result')],
-  ["callback_update", good.replace("const result", 'callback++;\nconst result')],
-  ["callback_nested_write", good.replace("const result", 'function change() { callback = () => {}; }\nconst result')],
-  ["callback_default_write", good.replace("const result", 'function change(x = (callback = () => {})) { let callback; }\nconst result')],
-  ["callback_after_inner_shadow", good.replace("const result", 'function change() { { let callback; } callback = () => {}; }\nconst result')],
-  ["eager_callback", good.replace("return async (...args) => f(...args)", "return (f(), async (...args) => f(...args))")],
-  ["returned_eager_call", good.replace("return async (...args) => f(...args)", 'return (console.log("eager"), async (...args) => f(...args))')],
-  ["tdz", good.replace("function callback() { console.log(\"callback\"); }", 'const callback = () => console.log("callback");')],
+  [
+    "callback_for_of",
+    good.replace("const result", 'for (callback of [() => console.log("changed")]) {}\nconst result'),
+  ],
+  ["callback_for_in", good.replace("const result", "for (callback in {changed: 1}) {}\nconst result")],
+  ["callback_update", good.replace("const result", "callback++;\nconst result")],
+  ["callback_nested_write", good.replace("const result", "function change() { callback = () => {}; }\nconst result")],
+  [
+    "callback_default_write",
+    good.replace("const result", "function change(x = (callback = () => {})) { let callback; }\nconst result"),
+  ],
+  [
+    "callback_after_inner_shadow",
+    good.replace("const result", "function change() { { let callback; } callback = () => {}; }\nconst result"),
+  ],
+  [
+    "eager_callback",
+    good.replace("return async (...args) => f(...args)", "return (f(), async (...args) => f(...args))"),
+  ],
+  [
+    "returned_eager_call",
+    good.replace(
+      "return async (...args) => f(...args)",
+      'return (console.log("eager"), async (...args) => f(...args))'
+    ),
+  ],
+  [
+    "tdz",
+    good.replace('function callback() { console.log("callback"); }', 'const callback = () => console.log("callback");'),
+  ],
 ]) {
-  const {dir, result} = emit(name, bad);
+  const { dir, result } = emit(name, bad);
   assert.equal(result.status, 1, `${name}: ${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
