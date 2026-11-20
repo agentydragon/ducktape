@@ -495,6 +495,8 @@ structure Footprint where
   /-- A source-derived trusted identity-call inference, if used for this unit. -/
   inferredIdentity : Option String := none
   inferredFactory : Option String := none
+  /-- names the statement reads through functions it runs without mentioning them: see `Stmt.deps` -/
+  deps     : List String := []
 
 def dedupe (a : Array String) : List String := a.toList.eraseDups
 
@@ -609,6 +611,6 @@ def Footprint.toJson (f : Footprint) : Json :=
   Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),
     ("hoisted", Lean.toJson f.hoisted), ("effect", Lean.toJson f.effect), ("observedInit", Lean.toJson f.observedInit), ("nonReentrant", Lean.toJson f.nonReentrant),
     ("writes", Lean.toJson f.writes), ("assigns", Lean.toJson f.assigns), ("fallback", Lean.toJson f.fallback),
-    ("rawEager", Lean.toJson f.rawEager), ("rawLazy", Lean.toJson f.rawLazy)]
+    ("rawEager", Lean.toJson f.rawEager), ("rawLazy", Lean.toJson f.rawLazy), ("deps", Lean.toJson f.deps)]
 
 end Lower

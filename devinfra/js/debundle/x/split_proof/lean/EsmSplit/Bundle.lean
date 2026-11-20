@@ -36,6 +36,11 @@ structure Stmt where
   eager   : List Name := []
   /-- Names read only inside function bodies created here, i.e. when they are called later. -/
   lazy    : List Name := []
+  /-- Names the statement may also read when it runs, beyond the ones it mentions: a function it calls, which it
+      reached through an object another statement filled, mentions them. They order the statement like `eager` does,
+      but the statement's text does not use them, so a module need not import them (`Hygienic` looks at `eager`
+      and `lazy`). -/
+  deps    : List Name := []
   /-- Names, declared elsewhere, that running the statement may assign: reassigned variables and the
       objects whose contents it changes. It lists every such name, including the ones a function it
       calls assigns (unknown code lists them all). Reading such a name is mentioning it in `eager`. -/
@@ -74,7 +79,7 @@ def Bundle.ownerOf (B : Bundle) (u : Name) : Option Nat := B.findIdx? (·.defs.c
 /-! ## The read closure
 
 Running a statement may call any function value it can read, and a function body reads its `lazy`
-names. So what a statement may read is its `eager` names plus, transitively, whatever the
+names. So what a statement may read is its `eager` and `deps` names plus, transitively, whatever the
 declarations of those names mention. -/
 
 /-- A set of names (as a predicate) is closed: a name in it brings in everything its declarations mention. -/
@@ -220,18 +225,18 @@ theorem closeFrom_spec (idx : Index) : ∀ (fuel : Nat) (work : List Name) (seen
 
 /-- More fuel than `closeFrom` can use: one step per name pushed, and each declared name pushes at most once. -/
 def Bundle.fuel (B : Bundle) : Nat :=
-  1 + (B.map fun s => (s.defs.length + 1) * (s.eager.length + s.lazy.length + 1)).sum
+  1 + (B.map fun s => (s.defs.length + 1) * (s.eager.length + s.lazy.length + 1) + s.deps.length).sum
 
 /-- Everything running statement `i` may read, given the index of `B`. A hoisted declaration reads nothing when run.
 `none` if the fuel ran out. -/
 def Bundle.readsSet (B : Bundle) (idx : Index) (i : Nat) : Option NameSet :=
   let s := B.stmt i
-  if s.hoisted then some ∅ else closeFrom idx B.fuel s.eager ∅
+  if s.hoisted then some ∅ else closeFrom idx B.fuel (s.eager ++ s.deps) ∅
 
 /-- `readsSet` with the statements, the index and the fuel passed in, so a loop builds them once. -/
 def readsSetWith (arr : Array Stmt) (idx : Index) (fuel : Nat) (i : Nat) : Option NameSet :=
   let s := arr.getD i default
-  if s.hoisted then some ∅ else closeFrom idx fuel s.eager ∅
+  if s.hoisted then some ∅ else closeFrom idx fuel (s.eager ++ s.deps) ∅
 
 theorem readsSetWith_eq (B : Bundle) (idx : Index) (i : Nat) :
     readsSetWith B.toArray idx B.fuel i = B.readsSet idx i := by
@@ -259,7 +264,7 @@ section reads
 variable {B : Bundle} {i : Nat}
 
 theorem Bundle.reads_super (hc : (B.readsSet B.index i).isSome = true) (hh : (B.stmt i).hoisted = false) :
-    ∀ w ∈ (B.stmt i).eager, w ∈ B.reads i := by
+    ∀ w ∈ (B.stmt i).eager ++ (B.stmt i).deps, w ∈ B.reads i := by
   intro w hw
   obtain ⟨R, hR⟩ := Option.isSome_iff_exists.1 hc
   simp only [Bundle.readsSet, hh, Bool.false_eq_true, ↓reduceIte] at hR
@@ -283,7 +288,7 @@ theorem Bundle.reads_closed (hc : (B.readsSet B.index i).isSome = true) :
     · exact (B.mem_index u w).2 ⟨s, hs, hw⟩
 
 theorem Bundle.reads_least {P : Name → Prop} (hP : B.Closed P)
-    (h : (B.stmt i).hoisted = false → ∀ w ∈ (B.stmt i).eager, P w) : ∀ w ∈ B.reads i, P w := by
+    (h : (B.stmt i).hoisted = false → ∀ w ∈ (B.stmt i).eager ++ (B.stmt i).deps, P w) : ∀ w ∈ B.reads i, P w := by
   intro w hw
   rw [Bundle.mem_reads] at hw
   by_cases hs : (B.readsSet B.index i).isSome = true
@@ -348,9 +353,10 @@ theorem Bundle.readsTab_getD (B : Bundle) (i : Nat) : B.readsTab.getD i ∅ = B.
       have : B.readsSet B.index i = some ∅ := by
         have hh : (default : Stmt).hoisted = false := rfl
         have he : (default : Stmt).eager = [] := rfl
+        have hd : (default : Stmt).deps = [] := rfl
         cases hf : B.fuel with
-        | zero => simp [Bundle.readsSet, h1, hh, he, hf, closeFrom]
-        | succ n => simp [Bundle.readsSet, h1, hh, he, hf, closeFrom]
+        | zero => simp [Bundle.readsSet, h1, hh, he, hd, hf, closeFrom]
+        | succ n => simp [Bundle.readsSet, h1, hh, he, hd, hf, closeFrom]
       simp [Bundle.readsOf, this]
     rw [h2]; simp [Bundle.readsTab, hi]
 

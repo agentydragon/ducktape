@@ -209,7 +209,8 @@ theorem ok_reads {P : List MStmt} (hc : ReadsClosed (toBundle P)) {G : Env} (hG 
     exact List.mem_map.2 ⟨_, List.getElem_mem hi, rfl⟩
   have hcl := closed_reads hc hj u hu _ hdecl
   rcases hg' with h | h
-  · exact Bundle.reads_least (closed_reads hc hj) (fun _ w hw => hcl w (List.mem_append.2 (Or.inl hw))) g h
+  · exact Bundle.reads_least (closed_reads hc hj)
+      (fun _ w hw => hcl w (List.mem_append.2 (Or.inl (by simpa [stmt_toBundle P hi, MStmt.fp] using hw)))) g h
   · exact hcl g (List.mem_append.2 (Or.inr h))
 
 /-- Initial bindings: the hoisted function declarations. -/
