@@ -184,7 +184,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. The paired VM review found KVM first attempts were a median 4m28s shorter across 100 manual pairs. KVM also ran faster in all four fresh devel pairs collected before the shadow was retired. Whole-PR latency and fleet reuse remain open."}
+                ${"After the KVM cutover, 17 successful backend heads reached required green in 10m24s at the median and 23m27s at p90. Five needed a second Bazel attempt. The report links the long paths and the same-head recovery intervals."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

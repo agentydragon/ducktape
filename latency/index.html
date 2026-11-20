@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI configuration changes deployed</title>
+    <title>CI latency after the VM routing cutover</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -49,11 +49,8 @@
     <script type="module">
       import {
         Accordion,
-        Alert,
         Anchor,
-        Badge,
         Box,
-        Code,
         Container,
         Group,
         Paper,
@@ -71,2180 +68,300 @@
       } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch("./evidence.json");
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-      const e = await response.json(),
-        c = e.cohort;
-      const backendGraph = e.backend_graph_comparison;
-      const configurationRollout = e.ci_configuration_rollout;
-      document.title =
-        configurationRollout?.title ??
-        backendGraph?.verdict_title ??
-        "CI latency and ordinary Firecracker reuse";
+      const evidence = await response.json();
       const gh = "https://github.com/agentydragon/ducktape";
-      const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
+      const source = evidence.source_devel_commit;
+      const post = "after shadow retired";
+      const groups = evidence.groups.filter((g) => g.period === post);
+      const byPr = new Map(evidence.cases.map((c) => [c.pr, c]));
+      const link = (href, label) => html`<${Anchor} href=${href}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
-      const inv = (id) =>
-        link(`https://app.buildbuddy.io/invocation/${id}`, id.slice(0, 8));
-      const fmt = (s) => {
-        if (s == null) return "Unobserved";
-        const rounded = Math.round(s);
-        return `${Math.floor(rounded / 60)}m ${(rounded % 60).toString().padStart(2, "0")}s`;
+      const file = (path, label) => link(`${gh}/blob/${source}/${path}`, label);
+      const prior = `${gh}/blob/${evidence.prior_report_commit}/latency`;
+      const seconds = (v) =>
+        v == null ? "Unknown" : `${Number(v.toFixed(2))}s`;
+      const time = (v) => {
+        if (v == null) return "Unknown";
+        const s = Math.round(v);
+        return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
       };
-      const num = (n) => (n == null ? "Unknown" : Number(n).toFixed(1));
-      const table = (headers, rows, width = 800) =>
-        html`<${Table.ScrollContainer} minWidth=${width}
-          ><${Table} striped withTableBorder
-            ><${Table.Thead}
+      const utc = (s) => s?.slice(11, 19) ?? "Unknown";
+      const short = (label) => label?.split(":").at(-1) ?? "Unknown";
+      const job = (j, label) => link(j.html_url, label);
+      const build = (i, label) =>
+        link(`https://app.buildbuddy.io/invocation/${i}`, label);
+      const table = (headers, rows, width = 600) => html`
+        <${Table.ScrollContainer} minWidth=${width}>
+          <${Table} striped withTableBorder style=${{ overflowWrap: "normal" }}>
+            <${Table.Thead}
               ><${Table.Tr}
                 >${headers.map((h) => html`<${Table.Th}>${h}<//>`)}<//
               ><//
-            ><${Table.Tbody}
+            >
+            <${Table.Tbody}
               >${rows.map((row) => html`<${Table.Tr}>${row.map((v) => html`<${Table.Td}>${v}<//>`)}<//>`)}<//
-            ><//
-          ><//
-        >`;
-      const current = c.fresh_groups.find(
-        (g) => g.name === "Backend production",
-      );
-      const caseBy = (n) => e.selected_cases.find((x) => x.pr === n);
-      const prior = e.historical.previous_report;
-      const priorUrl = `${gh}/blob/${prior.commit}/latency/index.html`;
-      const capacity = e.kvm_pool.timeline
-        .filter((_, i) => i % 4 === 0)
-        .map((x) => ({
-          ...x,
-          time: new Date(x.t * 1000).toISOString().slice(11, 16),
-        }));
-      const phaseTimeline = () => {
-        const x = caseBy(16947),
-          base = Date.parse(x.timeline.first_workflow),
-          vm = x.tests.find((t) => t.label.endsWith(":test_vm"));
-        const phase = e.physical_phases.find(
-          (p) => p.pr === 16947 && p.target_path.endsWith("__test_vm"),
-        ).spans;
-        const rows = [
-          { name: "VM process", start: vm.start, end: vm.end },
-          ...phase
-            .filter((p) =>
-              [
-                "system_test.stack.setup",
-                "system_test.case",
-                "system_test.stack.cleanup",
-              ].includes(p.name),
-            )
-            .map((p, i) => ({
-              name:
-                p.name === "system_test.case"
-                  ? `Concurrent VM case ${i}`
-                  : p.name.replace("system_test.stack.", "Stack "),
-              start: p.start,
-              end: p.end,
-            })),
-        ];
-        return html`<${Box} style=${{ overflowX: "auto" }} mt="lg"
-          ><svg
-            role="img"
-            aria-label="Nested wall-clock VM phases for PR 16947; seconds from first workflow creation; overlapping cases are not additive"
-            width="1000"
-            height=${rows.length * 34 + 46}
-            viewBox=${`0 0 1000 ${rows.length * 34 + 46}`}
-          >
-            ${[0, 100, 200, 300, 400, 500].map((t) => html`<text x=${190 + t * 1.35} y="18" font-size="13" fill="currentColor">${t}s</text>`)}
-            ${rows.map((r, i) => {
-              const start = (Date.parse(r.start) - base) / 1000,
-                end = (Date.parse(r.end) - base) / 1000;
-              return html`<text
-                  x="0"
-                  y=${52 + i * 34}
-                  font-size="13"
-                  fill="currentColor"
-                  >${r.name}</text
-                ><rect
-                  x=${190 + start * 1.35}
-                  y=${34 + i * 34}
-                  width=${Math.max(2, (end - start) * 1.35)}
-                  height="24"
-                  rx="3"
-                  fill=${i === 0 ? "#228be6" : i === 1 ? "#12b886" : "#f59f00"}
-                  ><title>
-                    ${r.name}: ${start.toFixed(1)}–${end.toFixed(1)}s from
-                    workflow creation
-                  </title></rect
-                >`;
-            })}
-          </svg><//
-        >`;
+            >
+          <//>
+        <//>
+      `;
+      const titles = {
+        "Agentplane backend": "Backend",
+        "Agentplane tests / fixtures": "Fixtures",
+        Documentation: "Docs",
+        Frontend: "Frontend",
+        "Other code / tooling": "Tooling",
+        "Other infrastructure": "Other infra",
+        "cdk8s infrastructure": "cdk8s",
       };
-      const dispositions = [
-        [
-          "Native fixtures, partitions, trust reuse",
-          "Merged #16675/#16689/#16695/#16700. Runtime cut remains established by prior configured queries: App files 0 in native Pod/central/Gateway; App Pod retains 8. Current natural traces now include successful warm reuse. This does not measure a complete-feedback treatment. Full historical PR selector replay remains deferred behind the resource/guest long pole; single-file historical replay 79→15 App tests, positive controls 45→45 and 20→20 is retained.",
-        ],
-        [
-          "Four-worker Pod port",
-          "Merged #16659. Historical same-input warm 22-case ABBA:363.3→289.2s action mean (20.4%), CPU 883.2→844.3s, peak 5.07→5.12 GiB; faster-control sensitivity 13.8%. Current split has different inventories. Exposure threshold ends 22 Nov 11:01 UTC; not yet mature. No attributed fleet gain.",
-        ],
-        [
-          "Rejected allocations",
-          "Two ordinary pytest stacks:293.608→313.861s slowest action (+6.9%), CPU 718.740→1046.335s (+45.6%), same 15 cases. Duplicated setup defeated that arrangement. Bridge 8s hards saved 24.9% elapsed but cost 62.8% more CPU; blanket Python bytecode added 3455 cold compiles/4203 CPU-s for 4.494s import reduction. Do not repeat unchanged.",
-        ],
-        [
-          "Guest and shared-stack architecture",
-          "Direct-guest private systemd proof and missing-proof negative passed. Native ownership screen 200.769 vs 202.192s did not isolate a gain; shared-guest 343/424/246/357s changed fresh-fixture coverage and cleanup. Codex-only root removed 26.2% bytes but only 4.0% time in one confounded pair. Historical 376f graph replay 442.484→365.475s (17.4%), CPU+5.4%,562 NEW launches/4118 JUnit exposures; not current fleet feedback.",
-        ],
-        [
-          "Image store and imports",
-          "Store continuity #15188, image-import overlap #15966 and usable-image guard #16040 are merged. Historical warm setup 46.992→32.216s; whole graphs had different VM roots. #15126 bulk import and #15214 image split are still OPEN. Hold promotion until same-source complete graphs show savings. Current warm traces establish retained baseline attachment, not each optimization’s treatment effect.",
-        ],
-        [
-          "Artifact mounts and MCP overlap",
-          "Artifact feasibility #16047 remains OPEN/manual: real harnesses passed, input bytes fell only 47044B. MCP overlap #16038 merged: case 112.336→96.833s, whole action 254.348→265.866s. Current 1+3+4 partition differs. No transfer or CI saving credited.",
-        ],
-        [
-          "KVM placement and capacity",
-          "Old one-worker reservation incident is historical. #15822 closed; #15996 pilot/capacity evidence merged. Four actions on three slots queued 215.314s; Pod still last. Prior #16378 had 537.14s queue/444.392s conditional feedback headroom with 36/36 saturated samples. The historical 09:15–10:45 UTC window had 1–2 registered workers and a consequential 416s wait on a failed head. Later #17015 permits eight workers and removes host spread; the earlier same-input qualification shows the slow registration ramp under the prior policy. #17045 now removes scale-up stabilization; the latest burst above finds reservation overcount and failed bootstrap holding excess capacity. Required routing remains unchanged.",
-        ],
-        [
-          "Reliability and recovery",
-          "Browser route lifetime #16045/#16051, auth/guest diagnostics #16053/#16055, readiness #16299/#16344 and Claude resume transcript #16704 are merged. Current #16865 is a concrete managed snapshot TSC-scaling failure; #16972 exposes Kine fatal exit. Neither is evidence those prior mechanisms were repaired or regressed. Stream diagnostic #16041 remains OPEN; two-reset native control still exhausted WaitExecution budget despite physical success.",
-        ],
-        [
-          "Ownership and unfinished diagnoses",
-          "Natural browser auth trigger, admitted-turn guest stall, early QEMU crash #16057 and retained-VM failures remain distinct. New Kine fatal narrows the local failure chain; its trigger remains unproven. Map runner shutdown/reconciliation ownership, then simplify one race-tested path. No blanket retry, replay, timeout increase or validation-policy change.",
-        ],
-        [
-          "Measurement commitments",
-          "Original ten-lane cohorts and methods remain linked below. Seven-day/50-fresh-outcome follow-ups for baseline, MCP and browser repairs are not mature; new selected cases are not substitutes. Current report advances fleet sampling, physical long paths, pool clocks and one provider early-failure signal. Matched full-graph architecture qualification and trust-reuse cost attribution remain open in #16034/#16099.",
-        ],
-      ];
-      function Qualification() {
-        const q = e.vm_kvm_qualification;
-        const a = q.aggregate_by_arm;
-        return html`<section id="vm-kvm-qualification">
-          <${Title} order=${2}
-            >Earlier VM routing qualification · slow scale-up policy<//
-          >
-          <${Text} my="sm"
-            >${q.window_utc.join(" → ")} UTC · pinned source
-            <${Code}>${q.source_devel_commit}<//>. ${q.workload}<//
-          >
-          <${Alert}
-            title=${q.status}
-            color=${q.qualified ? "green" : "yellow"}
-            my="md"
-          >
-            ${q.decision}
-          <//>
-          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
-            <${Paper} withBorder p="md"
-              ><${Text} c="dimmed">Managed VM process<//>
-              <${Title} order=${3}>${fmt(a.control.vm.process.p50)} median<//>
-              <${Text}
-                >p90 ${fmt(a.control.vm.process.p90)} · mean
-                ${fmt(a.control.vm.process.mean)} ·
-                n=${a.control.vm.process.n}<//
-              >
-            <//>
-            <${Paper} withBorder p="md"
-              ><${Text} c="dimmed">KVM VM process<//>
-              <${Title} order=${3}>${fmt(a.candidate.vm.process.p50)} median<//>
-              <${Text}
-                >p90 ${fmt(a.candidate.vm.process.p90)} · mean
-                ${fmt(a.candidate.vm.process.mean)} ·
-                n=${a.candidate.vm.process.n}<//
-              >
-            <//>
-            <${Paper} withBorder p="md"
-              ><${Text} c="dimmed">KVM VM admission wait<//>
-              <${Title} order=${3}>${fmt(a.candidate.vm.queue.p90)} p90<//>
-              <${Text}
-                >Valid queue n=${a.candidate.vm.queue.n};
-                ${a.candidate.vm.invalid_queue_count} unknown/inverted clocks.
-                Waiting is additional to execution.<//
-              >
-            <//>
-          <//>
-          <${Box}
-            role="img"
-            data-chart="qualification-process"
-            aria-label="VM test process median and p90 by configured execution lane, seconds"
-          >
-            <${BarChart}
-              h=${240}
-              data=${["control", "candidate"].map((k) => ({ lane: k === "control" ? "Managed TCG" : "Shared KVM", Median: a[k].vm.process.p50, p90: a[k].vm.process.p90 }))}
-              dataKey="lane"
-              series=${[
-                { name: "Median", color: "blue.6" },
-                { name: "p90", color: "orange.6" },
-              ]}
-              withLegend
-              valueFormatter=${(v) => `${num(v)}s`}
-            />
-          <//>
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          ${table(
-            [
-              "Lane / fixture state",
-              "VM actions",
-              "Process p50 / p90 / mean",
-              "Setup median",
-              "Concurrent-case envelope median",
-              "Retained-baseline cleanup median",
-            ],
-            ["control", "candidate"].flatMap((k) =>
-              Object.entries(a[k].vm_by_persistence || {}).map(([state, v]) => [
-                `${k} / ${state}`,
-                v.process.n,
-                `${num(v.process.p50)} / ${num(v.process.p90)} / ${num(v.process.mean)}s`,
-                fmt(v.setup_seconds.p50),
-                fmt(v.case_envelope_seconds.p50),
-                fmt(v.cleanup_seconds.p50),
-              ]),
-            ),
-            1100,
-          )}
-          ${table(
-            [
-              "Round / lane / invocation",
-              "All selected actions",
-              "Registered start → end",
-              "Bazel command",
-              "VM process p50 / p90 / mean",
-              "VM queue p50 / p90 / mean (valid n)",
-              "Firecracker queue p50 / p90 / mean (valid n)",
-              "Last selected test",
-            ],
-            q.runs.map((r) => [
-              html`${r.round} · ${r.arm}<br />${inv(r.invocation)}`,
-              `${r.passed_actions}/${r.actions} passed; ${r.failed_actions} failed`,
-              `${r.registered_at_arm_start ?? "Unknown"} → ${r.registered_at_arm_end ?? "Unknown"}`,
-              fmt(r.command_elapsed_s),
-              `${num(r.vm.process.p50)} / ${num(r.vm.process.p90)} / ${num(r.vm.process.mean)}s`,
-              `${num(r.vm.queue.p50)} / ${num(r.vm.queue.p90)} / ${num(r.vm.queue.mean)}s (n=${r.vm.queue.n})`,
-              `${num(r.firecracker.queue.p50)} / ${num(r.firecracker.queue.p90)} / ${num(r.firecracker.queue.mean)}s (n=${r.firecracker.queue.n})`,
-              r.last_test,
-            ]),
-            1450,
-          )}
-          <${Text} size="sm" my="sm">${q.feedback_boundary}<//>
-          <${Alert}
-            title="Interrupted third control · retained outcome"
-            color="gray"
-            my="md"
-          >
-            ${inv(q.interrupted_control.invocation)} ·
-            ${q.interrupted_control.reason} ${q.interrupted_control.disposition}
-          <//>
-          <${Title} order=${3} mt="lg"
-            >Requested workers versus registered capacity<//
-          >
-          <${Box}
-            role="img"
-            data-chart="qualification-capacity"
-            aria-label="Qualification window desired workers, registered executors and occupied tasks at fifteen-second resolution"
-            my="md"
-          >
-            <${LineChart}
-              h=${280}
-              data=${q.timeline.map((p) => ({ ...p, time: new Date(p.t * 1000).toISOString().slice(11, 19) }))}
-              dataKey="time"
-              series=${[
-                { name: "desired", label: "Desired workers", color: "gray.6" },
-                { name: "registered", label: "Registered", color: "blue.6" },
-                { name: "busy", label: "Tasks in progress", color: "teal.6" },
-              ]}
-              withLegend
-              withDots=${false}
-              curveType="step"
-              yAxisProps=${{ allowDecimals: false }}
-            />
-          <//>
-          <${Text} my="sm">${q.admission_mechanism}<//>
-          <${Text} size="sm"
-            >Local reservations can duplicate actions and are not a central
-            backlog count. Executing-task gauges include preparation and upload.
-            Sampled registration, VMI readiness and native worker logs were
-            checked separately.<//
-          >
-          <${Title} order=${3} mt="lg"
-            >Coverage, resource and cleanup qualification<//
-          >
-          ${table(
-            ["Criterion", "Observed result", "Limit / disposition"],
-            q.gates.map((g) => [g.criterion, g.result, g.limit]),
-            1050,
-          )}
-          ${table(["Resource / scope", "Observed value", "Interpretation"], q.resource_rows, 1050)}
-          <${Text} my="sm">${q.resource_summary}<//>
-          <${Text} size="sm"
-            >Historical next action at collection: ${q.next_action} Follow-up:
-            #17045 is now deployed; the new scale-up experiment above supersedes
-            that recommendation and defers fixture reuse behind startup and
-            demand control.<//
-          >
-          <${Accordion} variant="contained" mt="md">
-            <${Accordion.Item} value="qualification-methods">
-              <${Accordion.Control}
-                >Qualification commands, clocks and limits<//
-              >
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${link(`${gh}/blob/${q.source_devel_commit}/agentplane/system_tests/suites/test_vm.py`, "Both unchanged harness cases")}
-                  ${link(`${gh}/blob/${q.source_devel_commit}/agentplane/system_tests/x/vm_kvm/BUILD.bazel`, "Existing manual KVM configuration")}
-                  ${link(`${gh}/pull/17015`, "Merged pool capacity change")}
-                <//><//
-              >
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function ScaleupQualification() {
-        const q = e.kvm_scaleup_qualification;
-        return html`<section id="kvm-scaleup-qualification">
-          <${Title} order=${2}
-            >Faster scale-up: cold and registered-worker bursts<//
-          >
-          <${Text} my="sm"
-            >${q.observation_window_utc.join(" → ")} UTC. ${pr(17045)} deployed
-            +4 workers /60s, zero scale-up stabilization; min1/max8 at that
-            observation. The later min2 rollout is recorded above. Scale-down
-            remains −1/300s with a 900s stabilization window.<//
-          >
-          <${Alert}
-            title="Four test processes requested eight workers"
-            color="yellow"
-            my="md"
-            >${q.finding}<//
-          >
-          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
-            ${q.arms.map((a) => html`<${Paper} withBorder p="md"><${Text} c="dimmed">${a.name === "cold" ? "Cold · one registered worker" : "Warm · six registered workers"}<//><${Title} order=${3}>${fmt(a.command_elapsed_s)} command<//><${Text}>${a.new_physical_actions} NEW actions /${a.junit.tests} passing cases · ${inv(a.invocation)}<//><//>`)}
-            <${Paper} withBorder p="md"
-              ><${Text} c="dimmed">Coverage retained<//
-              ><${Title} order=${3}>8 actions /16 cases<//
-              ><${Text}
-                >Real Claude and Codex harnesses; no retries, failures or skips.
-                Maximum own physical concurrency:4.<//
-              ><//
-            >
-          <//>
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          <${Box}
-            role="img"
-            data-chart="scaleup-process"
-            aria-label="Firecracker process median and p90, seconds; four actions per burst"
-          >
-            <${BarChart}
-              h=${240}
-              data=${q.arms.map((a) => ({ burst: a.name, Median: a.clocks.process.p50, p90: a.clocks.process.p90 }))}
-              dataKey="burst"
-              series=${[
-                { name: "Median", color: "blue.6" },
-                { name: "p90", color: "orange.6" },
-              ]}
-              withLegend
-              valueFormatter=${(v) => `${num(v)}s`}
-            />
-          <//>
-          ${table(
-            [
-              "Burst / clock",
-              "Valid n /4",
-              "p50 (s)",
-              "p90 (s)",
-              "Mean (s)",
-              "Missing / invalid",
-            ],
-            q.arms.flatMap((a) =>
-              ["queue", "worker_prep", "process"].map((k) => [
-                `${a.name} / ${k}`,
-                a.clocks[k].n,
-                num(a.clocks[k].p50),
-                num(a.clocks[k].p90),
-                num(a.clocks[k].mean),
-                4 - a.clocks[k].n,
-              ]),
-            ),
-            880,
-          )}
-          <${Alert} title="Warm queue latency is unknown" color="gray" my="md"
-            >All four warm queued→worker-start intervals are inverted, as is one
-            cold interval. They are excluded, never clamped to zero. Process
-            intervals are valid for all eight actions. Queue, preparation and
-            process percentiles are different populations and must not be
-            added.<//
-          >
-          <${Title} order=${3} mt="lg"
-            >Pool demand, registration and physical work<//
-          >
-          <${Box}
-            role="img"
-            data-chart="scaleup-capacity"
-            aria-label="Desired and registered workers, executor task gauge and this experiment's native test processes; UTC sampled about every eleven seconds"
-            my="md"
-          >
-            <${LineChart}
-              h=${300}
-              data=${q.timeline.map((p) => ({ ...p, time: new Date(p.t * 1000).toISOString().slice(11, 19) }))}
-              dataKey="time"
-              series=${[
-                { name: "desired", label: "Desired workers", color: "gray.6" },
-                { name: "registered", label: "Registered", color: "blue.6" },
-                { name: "busy", label: "Task gauge", color: "teal.6" },
-                {
-                  name: "owned_test_processes",
-                  label: "Own test processes",
-                  color: "orange.6",
-                },
-              ]}
-              withLegend
-              withDots=${false}
-              curveType="step"
-              yAxisProps=${{ allowDecimals: false }}
-            />
-          <//>
-          <${Text} my="sm">${q.scaleup_observation}<//>
-          <${Text} my="sm">${q.demand_observation}<//>
-          <${Text} size="sm"
-            >${q.sampling.observations} pool observations; requested 10s
-            spacing, maximum gap ${num(q.sampling.maximum_observation_gap_s)}s.
-            Registration requires scheduler-health on current VMI pods;
-            freshness was checked separately. The task gauge includes
-            preparation/upload and may include unrelated shared-pool work;
-            own-process counts use completed native execution intervals. Local
-            reservations are duplicate views, not distinct backlog.<//
-          >
-          <${Title} order=${3} mt="lg">Bootstrap and idle scale-down<//>
-          <${Text} my="sm">${q.boot_failure}<//>
-          <${Text} my="sm">${q.recovery.observation}<//>
-          ${table(["Qualification", "Result", "Limit"], q.gates, 1050)}
-          <${Title} order=${3} mt="lg">RAM, CPU and disk pressure<//>
-          ${table(["Metric / scope", "Observed value", "Boundary"], q.resource_rows, 1050)}
-          <${Text} size="sm">${q.resource_boundary}<//>
-          <${Title} order=${3} mt="lg"
-            >Disposition of the earlier recommendation<//
-          >
-          <${Text} my="sm"
-            >The prebuilt-image experiment proposed in this collection is now
-            complete in the comparison above. It tested a NixOS bundle with a
-            different kernel and Docker version; production adoption
-            subsequently merged in #17184. Automatic recovery of
-            never-registered workers and distinct scheduler-demand ownership are
-            still open. Required VM routing remains managed; the bounded Docker
-            reuse follow-up above now tests fixture retention. Fleet routing
-            still needs reliable pool control. The original proposal is retained
-            in the evidence for this observation window.<//
-          >
-          <${Text} my="sm"
-            >${q.rejected_query.finding} Focused rule test:
-            ${inv(q.rejected_query.invocation)}.
-            ${link("https://www.buildbuddy.io/docs/prometheus-metrics-on-prem/", "BuildBuddy metric definitions")}.
-            No demand-query patch was published or deployed.<//
-          >
-          <${Accordion} variant="contained" mt="md"
-            ><${Accordion.Item} value="scaleup-methods"
-              ><${Accordion.Control}
-                >Scale-up experiment commands, identity and limits<//
-              ><${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  <${Code} block>${q.command}<//>
-                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${link(`${gh}/blob/${q.deployed_policy_commit}/cluster/cdk8s/buildbuddy_kvm_worker.py`, "Deployed worker policy and demand guard")}
-                  ${link(`${gh}/blob/${q.effective_test_source}/agentplane/system_tests/suites/test_firecracker.py`, "Unchanged Firecracker test source")}
-                <//><//
-              ><//
-            ><//
-          >
-        </section>`;
-      }
-
-      function PostfixQualification() {
-        const q = e.kvm_postfix_qualification;
-        if (!q) return null;
-        const seconds = (v) => (v == null ? "Unknown" : `${num(v)}s`);
-        const range = (v) =>
-          v.p50 == null || v.max == null
-            ? "Unknown"
-            : `${num(v.p50)} / ${num(v.max)}s`;
-        return html`<section id="postfix-qualification">
-          <${Title} order=${2}>Recycling qualification after teardown fixes<//>
-          <${Text} my="sm"
-            >${q.window_utc.join(" → ")} UTC · frozen source
-            <${Code}>${q.source_commit}<//><//
-          >
-          <${Alert}
-            title=${q.headline}
-            color=${q.qualified ? "green" : "yellow"}
-            my="md"
-            >${q.decision}<//
-          >
-          <${Text} my="sm">${q.cleanup_summary}<//>
-          ${table(
-            [
-              "Cleanup qualification",
-              "Result",
-              "Processes",
-              "Kernel mappings",
-              "Original error",
-            ],
-            q.cleanup_runs.map((a) => [
-              html`${a.name} · ${inv(a.invocation)}`,
-              a.outcome,
-              a.processes,
-              a.mappings,
-              a.original_error,
-            ]),
-            1100,
-          )}
-          <${Text} size="sm" my="sm">${q.cleanup_mechanism}<//>
-          <${Title} order=${3} mt="lg">Shutdown verbosity trial<//>
-          <${Text} my="sm">${q.shutdown_trial.summary}<//>
-          ${table(
-            [
-              "Arm",
-              "Actions / cases passed",
-              "Storage proof",
-              "Orderly poweroff",
-              "ACPI → proof p50 / max",
-            ],
-            q.shutdown_trial.rows.map((a) => [
-              html`${a.name} · ${inv(a.invocation)}`,
-              a.tests,
-              a.proof,
-              a.poweroff,
-              a.clock,
-            ]),
-            1000,
-          )}
-          <${Text} size="sm" my="sm">${q.shutdown_trial.limits}<//>
-          <${Title} order=${3} mt="lg">Unpinned mixed bursts<//>
-          <${Text} my="sm">${q.timing_summary}<//>
-          ${table(
-            [
-              "Burst",
-              "Request → completion",
-              "NEW actions",
-              "JUnit verdicts",
-              "Warm VM fixtures",
-              "Complete guest poweroff",
-            ],
-            q.arms.map((a) => [
-              html`${a.name} · ${inv(a.invocation)}`,
-              fmt(a.outer_s),
-              a.action_description,
-              a.junit_description,
-              a.warm_description,
-              a.shutdown_description,
-            ]),
-            1100,
-          )}
-          <${Box}
-            role="img"
-            data-chart="postfix-process"
-            aria-label="Median VM and Firecracker process seconds after teardown fixes; four requested actions per workload and burst"
-            my="md"
-          >
-            <${BarChart}
-              h=${280}
-              data=${q.arms.map((a) => ({ burst: a.name, VM: a.vm_process_median_s, Firecracker: a.fc_process_median_s }))}
-              dataKey="burst"
-              series=${[
-                { name: "VM", color: "blue.6" },
-                { name: "Firecracker", color: "teal.6" },
-              ]}
-              withLegend
-              valueFormatter=${(v) => `${num(v)}s`}
-            />
-          <//>
-          <${Text} size="sm" my="sm"
-            >Bars include failed actions. Process time excludes remote queue and
-            worker preparation; request wall includes the entire selected graph.
-            Neither measures GitHub required-check feedback.<//
-          >
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          <${Text} my="sm">${q.reuse_summary}<//>
-          ${q.managed_failure_summary ? html`<${Text} my="sm">${q.managed_failure_summary}<//>` : null}
-          <${Text} my="sm">${q.shutdown_summary}<//>
-          ${table(
-            [
-              "Burst / workload",
-              "n / requested",
-              "Queue p50 / max",
-              "Worker prep p50 / max",
-              "Process p50 / max",
-              "Stack setup p50",
-            ],
-            q.workloads.map((w) => [
-              w.name,
-              `${w.n} / ${w.requested}`,
-              `${range(w.queue)} (${w.queue.n}/${w.n} clocks)`,
-              range(w.prep),
-              range(w.process),
-              seconds(w.setup.p50),
-            ]),
-            1100,
-          )}
-          <${Title} order=${3} mt="lg">Memory and disposal<//>
-          ${table(["Window", "KVM guest RAM min GB", "Guest OOM increments", "KVM host RAM min GB", "Host OOM increments"], q.resource_rows, 1000)}
-          <${Text} my="sm">${q.resource_summary}<//>
-          <${Text} my="sm">${q.disposal_summary}<//>
-          <${Accordion} variant="separated" mt="md"
-            ><${Accordion.Item} value="postfix-method"
-              ><${Accordion.Control}
-                >Post-fix protocol, all outcomes and limits<//
-              ><${Accordion.Panel}>
-                ${q.method.map((t) => html`<${Text} my="sm">${t}<//>`)}
-                ${table(
-                  [
-                    "Window",
-                    "Guest CPU max cores",
-                    "Guest I/O PSI p95 %",
-                    "Guest memory PSI p95 %",
-                    "Guest disk min GB",
-                  ],
-                  q.resource_pressure_rows,
-                  1000,
-                )}
-                <${Text} size="sm" my="sm"
-                  >These pool-wide samples include unrelated work. Pressure
-                  observations do not identify which disk, cache or network
-                  operation caused a delay.<//
-                >
-                <${Box}
-                  role="img"
-                  data-chart="postfix-capacity"
-                  aria-label="Desired, registered and busy workers during post-fix comparison; includes unrelated work"
-                  my="md"
-                >
-                  <${LineChart}
-                    h=${240}
-                    data=${q.timeline}
-                    dataKey="time"
-                    series=${[
-                      { name: "Desired", color: "blue.6" },
-                      { name: "Registered", color: "teal.6" },
-                      { name: "Busy", color: "orange.6" },
-                    ]}
-                    withDots=${false}
-                    withLegend
-                    connectNulls=${false}
-                  />
-                <//>
-                ${(q.autoscaler_notes ?? []).map((t) => html`<${Text} size="sm" my="sm">${t}<//>`)}
-                <${Code} block>${q.command}<//>
-                ${table(
-                  [
-                    "Burst / target / run",
-                    "Outcome",
-                    "Queue",
-                    "Prep",
-                    "Process",
-                    "Fixture",
-                  ],
-                  q.actions.map((a) => [
-                    a.name,
-                    a.outcome,
-                    seconds(a.queue_s),
-                    seconds(a.prep_s),
-                    seconds(a.process_s),
-                    a.fixture,
-                  ]),
-                  1050,
-                )}
-                ${q.limits.map((t) => html`<${Text} my="sm">${t}<//>`)}
-                ${link("./evidence.json", "Reviewed post-fix action, shutdown and cleanup evidence")}
-              <//><//
-            ><//
-          >
-        </section>`;
-      }
-
-      function MixedRecycling() {
-        const q = e.kvm_mixed_recycling;
-        if (!q) return null;
-        return html`<section id="mixed-recycling">
-          <${Title} order=${2}
-            >Unpinned mixed bursts: recycled KVM versus managed VMs<//
-          >
-          <${Text} my="sm"
-            >${q.window_utc.join(" → ")} UTC · frozen source
-            <${Code}>${q.source_commit}<//><//
-          >
-          <${Alert} title=${q.headline} color=${q.alert_color ?? "blue"} my="md"
-            >${q.decision}<//
-          >
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          <${Text} my="sm">${q.failure_summary}<//>
-          ${table(
-            [
-              "Burst",
-              "Inner Bazel",
-              "Request → completion",
-              "NEW actions",
-              "JUnit cases",
-              "Warm VM hits",
-            ],
-            q.arms.map((a) => [
-              html`${a.name} · ${inv(a.invocation)}`,
-              fmt(a.inner_s),
-              fmt(a.outer_s),
-              a.action_description,
-              a.junit_description,
-              a.warm_description,
-            ]),
-            1050,
-          )}
-          <${Box}
-            role="img"
-            data-chart="mixed-process"
-            aria-label="Median VM and Firecracker process seconds in each mixed burst; four requested actions per workload and burst"
-            my="md"
-          >
-            <${BarChart}
-              h=${280}
-              data=${q.arms.map((a) => ({ burst: a.name, VM: a.vm_process_median_s, Firecracker: a.fc_process_median_s }))}
-              dataKey="burst"
-              series=${[
-                { name: "VM", color: "blue.6" },
-                { name: "Firecracker", color: "teal.6" },
-              ]}
-              withLegend
-              valueFormatter=${(v) => `${num(v)}s`}
-            />
-          <//>
-          <${Text} size="sm" my="sm"
-            >Bars show median process seconds for four actions per workload and
-            burst, including failed actions. Process clocks exclude remote queue
-            and worker preparation. The selected graph also includes Pod,
-            platform, dispatcher and gateway tests. This is not a measurement of
-            GitHub required-check feedback.<//
-          >
-          ${table(
-            [
-              "Burst / workload",
-              "n / requested",
-              "Queue p50 / max",
-              "Worker prep p50 / max",
-              "Process p50 / max",
-              "Stack setup p50",
-            ],
-            q.workloads.map((w) => [
-              w.name,
-              `${w.n} / ${w.requested}`,
-              `${num(w.queue.p50)} / ${num(w.queue.max)}s (${w.queue.n}/${w.n} clocks)`,
-              `${num(w.prep.p50)} / ${num(w.prep.max)}s (${w.prep.n}/${w.n})`,
-              `${num(w.process.p50)} / ${num(w.process.max)}s`,
-              `${num(w.setup.p50)}s`,
-            ]),
-            1100,
-          )}
-          <${Text} my="sm">${q.reuse_summary}<//>
-          <${Title} order=${3} mt="lg">Retention rollout and memory<//>
-          <${Text} my="sm">${q.rollout.summary}<//>
-          ${table(["Existing worker", "Restart verified UTC", "Effective cap", "Work disk"], q.rollout.rows, 800)}
-          ${table(["Window", "KVM guest RAM min GB", "Guest OOM increments", "KVM host RAM min GB", "Host OOM increments"], q.resource_rows, 1000)}
-          <${Text} my="sm">${q.resource_summary}<//>
-          <${Text} my="sm">${q.cleanup_summary}<//>
-          <${Accordion} variant="separated" mt="md">
-            <${Accordion.Item} value="mixed-method"
-              ><${Accordion.Control}
-                >Mixed-burst protocol, all outcomes and limits<//
-              ><${Accordion.Panel}>
-                ${q.method.map((t) => html`<${Text} my="sm">${t}<//>`)}
-                <${Box}
-                  role="img"
-                  data-chart="mixed-capacity"
-                  aria-label="Current mixed comparison window sampled pool desired, registered and busy workers"
-                  my="md"
-                >
-                  <${LineChart}
-                    h=${240}
-                    data=${q.timeline}
-                    dataKey="time"
-                    series=${[
-                      { name: "Desired", color: "blue.6" },
-                      { name: "Registered", color: "teal.6" },
-                      { name: "Busy", color: "orange.6" },
-                    ]}
-                    withDots=${false}
-                    withLegend
-                    connectNulls=${false}
-                  />
-                <//>
-                <${Text} size="sm"
-                  >Pool samples include unrelated work. Missing or stale
-                  observations remain gaps. This is not central pending-action
-                  backlog.<//
-                >
-                <${Code} block>${q.command}<//>
-                ${table(
-                  [
-                    "Burst / target / run",
-                    "Outcome",
-                    "Queue",
-                    "Prep",
-                    "Process",
-                    "Fixture",
-                  ],
-                  q.actions.map((a) => [
-                    a.name,
-                    a.outcome,
-                    `${num(a.queue_s)}s`,
-                    `${num(a.prep_s)}s`,
-                    `${num(a.process_s)}s`,
-                    a.fixture,
-                  ]),
-                  1050,
-                )}
-                ${q.limits.map((t) => html`<${Text} my="sm">${t}<//>`)}
-                ${link("./evidence.json", "Reviewed action, lifecycle, resource and cleanup evidence")}
-              <//><//
-            >
-          <//>
-        </section>`;
-      }
-
-      function DockerRecycling() {
-        const q = e.kvm_docker_recycling;
-        if (!q) return null;
-        return html`<section id="docker-recycling">
-          <${Title} order=${2}>Warm K3s and KubeVirt in Docker runners<//>
-          <${Text} my="sm"
-            >${q.window_utc.join(" → ")} UTC · experiment source
-            <${Code}>${q.source_commit}<//> · ${pr(17220)} · retention policy
-            ${pr(17263)}<//
-          >
-          <${Alert} title=${q.headline} color="blue" my="md">${q.decision}<//>
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          ${
-            q.initial_trials
-              ? html`<${Box}
-                    role="img"
-                    data-chart="docker-process"
-                    aria-label="Four sequential same-worker actions, process and nested setup seconds; one observation per bar"
-                    my="md"
-                  >
-                    <${BarChart}
-                      h=${260}
-                      data=${q.runs.map((r) => ({ action: r.variant, Process: r.process_s, Setup: r.setup_s }))}
-                      dataKey="action"
-                      series=${[
-                        { name: "Process", color: "blue.6" },
-                        { name: "Setup", color: "teal.6" },
-                      ]}
-                      withLegend
-                      valueFormatter=${(v) => `${num(v)}s`}
-                    />
-                  <//>
-                  <${Text} size="sm"
-                    >Setup is inside process time; the bars are not additive.
-                    Each row is one action, in execution order.<//
-                  >`
-              : null
-          }
-          ${table(
-            [
-              "Action",
-              "Fixture",
-              "Queue",
-              "Inputs",
-              "Process",
-              "Stack setup",
-              "JUnit",
-            ],
-            q.runs.map((r) => [
-              html`${r.variant} · ${inv(r.invocation)}`,
-              r.fixture_outcome,
-              r.queue_s == null ? "Clock skew" : `${num(r.queue_s)}s`,
-              `${num(r.input_s)}s`,
-              `${num(r.process_s)}s`,
-              r.setup_s == null ? "Unavailable" : `${num(r.setup_s)}s`,
-              r.junit_description,
-            ]),
-            1100,
-          )}
-          ${table(
-            [
-              "Current full-suite action",
-              "Total GB",
-              "Anonymous GB",
-              "File cache GB",
-            ],
-            q.memory_measurements.map((m) => [
-              m.point,
-              (m.total_bytes / 1e9).toFixed(2),
-              m.anonymous_bytes == null
-                ? "Not sampled"
-                : (m.anonymous_bytes / 1e9).toFixed(2),
-              m.file_bytes == null
-                ? "Not sampled"
-                : (m.file_bytes / 1e9).toFixed(3),
-            ]),
-            700,
-          )}
-          <${Text} size="sm" my="sm">${q.memory_boundary}<//>
-          <${Text} my="sm">${q.identity_proof}<//>
-          <${Text} my="sm">${q.cleanup}<//>
-          <${Text} my="sm">${q.limits}<//>
-          <${Accordion} variant="separated">
-            ${
-              q.initial_trials
-                ? html`<${Accordion.Item} value="docker-recycling-history">
-                    <${Accordion.Control}
-                      >Initial 2 GB trials and unresolved shutdown failures<//
-                    >
-                    <${Accordion.Panel}>
-                      <${Text} my="sm">${q.initial_trials.summary}<//>
-                      ${table(
-                        ["Earlier action", "Process", "Outcome"],
-                        q.initial_trials.runs.map((r) => [
-                          html`${r.variant} · ${inv(r.invocation)}`,
-                          `${num(r.process_s)}s`,
-                          r.junit_description,
-                        ]),
-                        1050,
-                      )}
-                      <${Text} my="sm">${q.initial_trials.limits}<//>
-                      <${Text} my="sm">${q.initial_trials.cleanup}<//>
-                      ${link(`${gh}/blob/${q.initial_report_commit}/latency/index.html`, "Full initial report with original window and memory accounting")}
-                    <//>
-                  <//> `
-                : null
-            }
-            <${Accordion.Item} value="docker-recycling-method">
-              <${Accordion.Control}
-                >Docker recycling experiment commands, identity and limits<//
-              >
-              <${Accordion.Panel}>
-                <${Text} my="sm">${q.method}<//>
-                <${Text} my="sm">${q.storage_repair}<//>
-                <${Text} my="sm">${q.resource_constraints}<//>
-                <${Text} my="sm">${q.previous_work_disposition}<//>
-                ${table(["Runtime / storage check", "Verified result"], q.runtime_checks ?? [], 950)}
-                <${Text} my="sm"
-                  >${link("./evidence.json", "Reviewed evidence and native execution identities")}
-                  ·
-                  ${link(`${gh}/blob/${q.source_commit}/agentplane/system_tests/x/vm_kvm/README.md`, "Reproduction and disposal recipe")}<//
-                >
-              <//>
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function WorkerImageComparison() {
-        const q = e.worker_image_comparison;
-        if (!q) return null;
-        const readyTrials = q.startup_trials.filter(
-          (r) => r.status === "ready" && Number.isFinite(r.vm_ready_s),
-        );
-        const startupRows = q.startup_trials.map((r) => [
-          `${r.variant} / ${r.trial}`,
-          html`<${Text} component="span" style=${{ whiteSpace: "nowrap" }}
-            >${r.status === "ready" ? "Ready" : "Pending"}<//
-          >`,
-          r.image_cache,
-          r.vm_ready_s == null ? "Pending" : `${num(r.vm_ready_s)}s`,
-          r.kernel_boots,
-          r.bootstrap,
-        ]);
-        const runRows = q.runs.map((r) => [
-          r.invocation ? html`${r.variant} · ${inv(r.invocation)}` : r.variant,
-          r.status === "pending"
-            ? "Pending"
-            : `${r.actions} actions / ${r.junit_cases} cases`,
-          r.command_s == null ? "Unknown" : `${num(r.command_s)}s`,
-          r.creation_to_completion_s == null
-            ? "Unknown"
-            : `${num(r.creation_to_completion_s)}s`,
-          r.process_total_s == null ? "Unknown" : `${num(r.process_total_s)}s`,
-          r.cpu_total_s == null ? "Unknown" : `${num(r.cpu_total_s)} CPU-s`,
-        ]);
-        return html`<section id="worker-image-comparison">
-          <${Title} order=${2}>Ubuntu versus prebuilt NixOS workers<//>
-          <${Text} my="sm"
-            >${q.window_utc.join(" → ")} UTC · fixed source
-            <${Code}>${q.source_devel_commit}<//>.<//
-          >
-          <${Alert} title=${q.headline} color="blue" my="md">${q.decision}<//>
-          <${Text} my="sm">${q.comparison_boundary}<//>
-          ${
-            readyTrials.length
-              ? html`<${Box}
-                  role="img"
-                  data-chart="worker-startup"
-                  aria-label="Successful fresh worker creation to registered Ready, seconds; cached containerDisk images"
-                >
-                  <${BarChart}
-                    h=${260}
-                    data=${readyTrials.map((r) => ({
-                      trial: `${r.variant === "NixOS repaired candidate" ? "NixOS" : r.variant} ${r.trial}`,
-                      Ready: r.vm_ready_s,
-                    }))}
-                    dataKey="trial"
-                    series=${[{ name: "Ready", color: "blue.6" }]}
-                    valueFormatter=${(v) => `${num(v)}s`}
-                  />
-                <//>`
-              : html`<${Text} size="sm" my="sm"
-                  >No successful startup measurements are available yet.<//
-                >`
-          }
-          ${table(["Variant / fresh boot", "Status", "Image cache", "VM creation → Ready", "Guest kernel boots", "Bootstrap"], startupRows, 1200)}
-          ${
-            q.failed_boots.length
-              ? html`<${Title} order=${3} mt="lg"
-                    >Failed boot, excluded from startup chart<//
-                  >
-                  ${table(
-                    ["Candidate", "Status", "Actions", "Ready", "Failure"],
-                    q.failed_boots.map((r) => [
-                      html`<${Text}
-                        component="span"
-                        style=${{ whiteSpace: "nowrap" }}
-                        >${r.variant}<//
-                      >`,
-                      html`<${Text}
-                        component="span"
-                        style=${{ whiteSpace: "nowrap" }}
-                        >Never registered<//
-                      >`,
-                      r.actions_launched,
-                      html`<${Text}
-                        component="span"
-                        style=${{ whiteSpace: "nowrap" }}
-                        >Not reached<//
-                      >`,
-                      r.reason,
-                    ]),
-                    1150,
-                  )}`
-              : null
-          }
-          <${Text} size="sm" my="sm">${q.cold_pull_boundary}<//>
-          <${Title} order=${3} mt="lg">Same four-action burst, one task slot<//>
-          ${table(["Worker / invocation", "Fresh actions / cases", "Bazel command", "VM creation → last worker completion¹", "Action process total", "Action CPU"], runRows, 1200)}
-          <${Text} size="sm" my="sm"
-            >¹ NixOS includes an earlier failed outer dependency fetch and retry
-            delay. Neither this column nor Bazel elapsed isolates the image
-            effect; process total is a separate within-worker clock.<//
-          >
-          ${table(
-            [
-              "Worker",
-              "Target / run / execution order",
-              "Inner RBE queue",
-              "Preparation",
-              "Input fetch",
-              "Process",
-              "Output upload",
-              "Cases",
-            ],
-            q.action_rows.map((r) => [
-              r.variant,
-              `${r.target} / ${r.run} / ${r.order}`,
-              r.queue_s == null ? "Unknown" : `${num(r.queue_s)}s`,
-              `${num(r.preparation_s)}s`,
-              `${num(r.input_fetch_s)}s`,
-              `${num(r.process_s)}s`,
-              `${num(r.upload_s)}s`,
-              r.cases,
-            ]),
-            1250,
-          )}
-          <${Text} my="sm">${q.workload_interpretation}<//>
-          <${Text} size="sm" my="sm">${q.identity_summary}<//>
-          <${Alert}
-            title="Outer-runner fetch failure, excluded from the matched burst"
-            color="gray"
-            my="md"
-            >${inv(q.failed_launches[0].invocation)} ·
-            ${q.failed_launches[0].reason}. Zero remote TestRunner actions or
-            JUnit cases; the unchanged retry passed on the same empty worker.<//
-          >
-          <${Title} order=${3} mt="lg">Resources and cleanup<//>
-          ${table(["Scope", "Observed result", "Limit"], q.resource_rows, 1050)}
-          <${Text} my="sm">${q.cleanup}<//>
-          <${Accordion} variant="contained" mt="md">
-            <${Accordion.Item} value="worker-image-methods">
-              <${Accordion.Control}
-                >Worker comparison commands, identity and limits<//
-              >
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${q.artifact_rows ? table(["Worker", "ContainerDisk digest", "Guest kernel / Docker", "Image source"], q.artifact_rows, 1100) : null}
-                  <${Code} block>${q.command}<//>
-                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${q.limits.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${link(`${gh}/pull/17137`, "Fresh-boot ordering repair")}
-                  ${link(`${gh}/pull/17090`, "Merged worker image and functional qualification")}
-                  ${link(`${gh}/blob/${q.source_devel_commit}/devinfra/buildbuddy/kvm/x/nixos_worker_qualification/README.md`, "Disposable canary recipe")}
-                <//><//
-              >
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function NaturalScheduling() {
-        const q = e.natural_firecracker_scheduling;
-        if (!q) return null;
-        return html`<section id="natural-scheduling">
-          <${Title} order=${2}>Ordinary scheduling with parallel VM tests<//>
-          <${Text} c="dimmed" size="sm">${q.window_label}<//>
-          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
-            >${q.summary}<//
-          >
-          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
-            ${q.cards.map(
-              (card) =>
-                html`<${Paper} withBorder p="md">
-                  <${Text} c="dimmed">${card.label}<//>
-                  <${Title} order=${3}>${card.value}<//>
-                  <${Text} size="sm">${card.note}<//>
-                <//>`,
-            )}
-          <//>
-          <${Box}
-            role="img"
-            data-chart="natural-batch-feedback"
-            aria-label="Selected local bbr command wall clock seconds for five batches; not required CI feedback"
-            my="lg"
-          >
-            <${BarChart}
-              h=${300}
-              data=${q.chart}
-              orientation="vertical"
-              dataKey="label"
-              yAxisProps=${{ width: 175 }}
-              series=${[{ name: "Batch feedback", color: "blue.6" }]}
-              valueFormatter=${(v) => `${num(v)}s`}
-            />
-          <//>
-          ${q.limits.map((x) => html`<${Text} size="sm" c="dimmed" my="sm">${x}<//>`)}
-          <${Title} order=${3} mt="lg">Five-batch comparison<//>
-          ${table(q.headers, q.rows, 1150)}
-          ${q.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
-          <${Text} my="sm">${q.cleanup_summary}<//>
-          <${Text} my="sm">${q.next_action}<//>
-          <${Group} gap="md" my="md"
-            >${q.links.map((x) => link(x.url, x.label))}<//
-          >
-          <${Accordion} variant="contained" multiple=${true} mt="md">
-            <${Accordion.Item} value="natural-actions">
-              <${Accordion.Control}>Detailed batch actions<//>
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${table(q.action_headers, q.action_rows, 1150)}
-                <//><//
-              >
-            <//>
-            <${Accordion.Item} value="natural-methods">
-              <${Accordion.Control}>Measurement protocol and limits<//>
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${q.methods.map((x) => html`<${Text} size="sm">${x}<//>`)}
-                  ${q.limits.map((x) => html`<${Text} size="sm">${x}<//>`)}
-                <//><//
-              >
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function LatestMeasurements() {
-        const q = e.ci_latency_followup;
-        if (!q) return null;
-        return html`<section id="latest-measurements">
-          <${Title} order=${2}>Tooling and Firecracker follow-up<//>
-          <${Text} c="dimmed" size="sm">${q.window_label}<//>
-          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
-            >${q.summary}<//
-          >
-          <${Title} order=${3} id="nix-setup">Nix tooling setup<//>
-          <${Text} my="sm">${q.nix.summary}<//>
-          ${table(q.nix.headers, q.nix.rows, 1000)}
-          ${q.nix.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
-          <${Group} gap="md" my="md"
-            >${q.nix.links.map((x) => link(x.url, x.label))}<//
-          >
-          <${Title} order=${3} id="firecracker-reuse" mt="xl"
-            >Firecracker fixture reuse<//
-          >
-          <${Text} my="sm">${q.firecracker.summary}<//>
-          ${
-            q.firecracker.chart.length
-              ? html`<${Box}
-                  role="img"
-                  data-chart="firecracker-followup"
-                  aria-label="Firecracker test process seconds in the manual comparison; selected actions, not required CI feedback"
-                  my="lg"
-                >
-                  <${BarChart}
-                    h=${300}
-                    data=${q.firecracker.chart}
-                    orientation="vertical"
-                    dataKey="label"
-                    yAxisProps=${{ width: 185 }}
-                    series=${[{ name: "Test process", color: "blue.6" }]}
-                    valueFormatter=${(v) => `${num(v)}s`}
-                  />
-                <//>`
-              : null
-          }
-          ${table(q.firecracker.headers, q.firecracker.rows, 1150)}
-          ${q.firecracker.findings.map((x) => html`<${Text} my="sm">${x}<//>`)}
-          <${Group} gap="md" my="md"
-            >${q.firecracker.links.map((x) => link(x.url, x.label))}<//
-          >
-          <${Accordion} variant="contained" mt="md"
-            ><${Accordion.Item} value="followup-methods">
-              <${Accordion.Control}>Follow-up protocol and limits<//>
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${q.methods.concat(q.limits).map((x) => html`<${Text} size="sm">${x}<//>`)}
-                <//><//
-              >
-            <//><//
-          >
-        </section>`;
-      }
-
-      function RequiredCiCanary() {
-        const q = e.kvm_required_ci_canary;
-        if (!q) return null;
-        return html`<section id="required-ci-canary">
-          <${Title} order=${2}>VM recycling through the required CI checks<//>
-          ${
-            q.current_disposition
-              ? html`<${Alert}
-                  color="blue"
-                  title=${q.current_disposition.status}
-                  my="md"
-                >
-                  ${q.current_disposition.summary}<br />
-                  ${link(q.current_disposition.revert_pr, "Merged revert #17420")}
-                  <${Text} size="sm" mt="sm"
-                    >${q.current_disposition.revert_validation}<//
-                  >
-                <//>`
-              : null
-          }
-          <${Text} c="dimmed" size="sm">${q.window_label}<//>
-          <${Alert} title=${q.verdict_title} color=${q.verdict_color} my="md"
-            >${q.summary}<//
-          >
-          <${Text} my="sm">${q.interpretation}<//>
-          <${Box}
-            role="img"
-            data-chart="required-ci-wall"
-            aria-label="Required check completion in minutes for each canary head; failed outcomes are retained"
-            my="lg"
-          >
-            <${BarChart}
-              h=${300}
-              data=${q.arms.filter((a) => a.required_result_s != null).map((a) => ({ label: a.name.startsWith("managed") ? "Managed (failed)" : a.fixture === "cold" ? "KVM cold (pass)" : "KVM warm (pass)", "Required result": a.required_result_s / 60 }))}
-              orientation="vertical"
-              yAxisProps=${{ width: 175 }}
-              dataKey="label"
-              series=${[{ name: "Required result", color: "blue.6" }]}
-              valueFormatter=${(v) => `${num(v)} min`}
-            />
-          <//>
-          ${table(
-            [
-              "Head / required results",
-              "VM route / fixture",
-              "First workflow → required results",
-              "Last required check",
-              "Source / test invocation",
-            ],
-            q.arms.map((a) => [
-              html`${a.name}<br />${link(a.pr_url, a.head.slice(0, 12))}<br />${a.check_result}`,
-              a.route_and_fixture,
-              fmt(a.required_result_s),
-              a.last_required,
-              html`<${Code}>${a.tested_merge}<//><br />${inv(a.invocation)}`,
-            ]),
-            1100,
-          )}
-          <${Title} order=${3} mt="lg">Physical work and lifecycle evidence<//>
-          ${table(q.action_headers, q.action_rows, 1200)}
-          <${Text} size="sm" my="sm">${q.action_note}<//>
-          ${table(["Gate", "Observed evidence", "Boundary"], q.lifecycle_rows, 1100)}
-          <${Text} my="sm">${q.disposal_summary}<//>
-          <${Title} order=${3} mt="lg">Where the required path spent time<//>
-          <${Text} my="sm">${q.timeline_analysis.summary}<//>
-          ${table(q.timeline_analysis.display_headers, q.timeline_analysis.display_rows, 1050)}
-          <${Text} size="sm" my="sm">${q.timeline_analysis.limit}<//>
-          <${Text} my="sm">${q.source_comparison}<//>
-          <${Text} my="sm">${q.next_action}<//>
-          <${Accordion} variant="contained" mt="md">
-            <${Accordion.Item} value="required-ci-protocol">
-              <${Accordion.Control}
-                >Required-check canary protocol and limits<//
-              >
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${q.limits.map((m) => html`<${Text} size="sm">${m}<//>`)}
-                  ${q.links.map((l) => link(l.url, l.label))}
-                <//><//
-              >
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function BackendGraphComparison() {
-        const q = backendGraph;
-        if (!q) return null;
-        const executed = q.arms.filter(
-          (arm) =>
-            arm.state !== "not-run" &&
-            arm.feedback_seconds != null &&
-            !arm.feedback_censored,
-        );
-        const caseSummary = (counts) =>
-          counts == null
-            ? "Unknown"
-            : `Passed ${counts.passed}; failed ${counts.failed}; errors ${counts.errors}; skipped ${counts.skipped}${counts.unknown ? `; unobserved ${counts.unknown}` : ""}`;
-        const duration = (seconds) =>
-          seconds == null ? "Unobserved" : `${fmt(seconds)} (${num(seconds)}s)`;
-        const rows = q.arms.map(
-          (arm) =>
-            html`<${Table.Tr} key=${arm.name} data-arm=${arm.name}>
-              <${Table.Td}>${arm.name}<//>
-              <${Table.Td} style=${{ minWidth: 100 }}
-                ><${Badge}
-                  color=${arm.state === "passed" ? "green" : arm.state === "failed" ? "red" : "gray"}
-                  variant="light"
-                  >${arm.state}<//
-                >${arm.status_note ? html`<${Text} size="xs" c="dimmed">${arm.status_note}<//>` : null}<//
-              >
-              <${Table.Td}>${duration(arm.feedback_seconds)}<//>
-              <${Table.Td} style=${{ whiteSpace: "nowrap" }}
-                >${arm.test_targets ?? "Unknown"}<//
-              >
-              <${Table.Td} style=${{ whiteSpace: "nowrap" }}
-                >${arm.test_actions ?? "Unknown"}<//
-              >
-              <${Table.Td}>${caseSummary(arm.case_counts)}<//>
-              <${Table.Td}>${duration(arm.firecracker_setup_seconds)}<//>
-              <${Table.Td}>${arm.firecracker_reuse || "Unknown"}<//>
-              <${Table.Td}>${duration(arm.vm_process_seconds)}<//>
-              <${Table.Td}>${arm.last_finisher ?? "Unknown"}<//>
-              <${Table.Td}
-                ><${Group} gap="xs">
-                  ${arm.test_invocation_url ? link(arm.test_invocation_url, "Test") : "—"}
-                  ${arm.build_invocation_url ? link(arm.build_invocation_url, "Build") : "—"}
-                <//><//
-              >
-            <//>`,
-        );
-        return html`<section id="backend-graph">
-          <${Title} order=${2}>Backend graph comparison<//>
-          <${Alert} title=${q.verdict_title} color="blue" my="md">
-            ${q.summary}
-          <//>
-          <${Text} my="sm">
-            ${`Observation window (UTC): ${q.observation_window_utc.join(" → ")}`}
-          <//>
-          <${Group} gap="md" my="sm">
-            <${Text}>
-              ${"Source: "}<${Code}
-                >${link(`${gh}/commit/${q.source_commit}`, q.source_commit)}<//
-              >
-            <//>
-            ${link(q.source_pr_url, "Source PR")}
-            ${q.repair_pr_url ? link(q.repair_pr_url, "Readiness repair") : null}
-            ${link(q.reference_invocation_url, "Reference invocation")}
-          <//>
-          ${q.source_note ? html`<${Text} size="sm" my="sm">${q.source_note}<//>` : null}
-          <${Text} size="sm" c="dimmed" my="sm">
-            The bars show observed command completion durations. Arms stopped by
-            operator cancellation appear only in the table. Failed-arm durations
-            do not establish successful latency.
-          <//>
-          <${Box}
-            data-chart="backend-graph-feedback"
-            role=${executed.length ? "img" : "status"}
-            aria-label=${`Observed feedback duration in seconds for arms without operator cancellation, including failed outcomes: ${executed.map((arm) => `${arm.name} ${arm.state}`).join(", ") || "no measured executed arms"}`}
-            my="lg"
-          >
-            ${
-              executed.length
-                ? html`<${BarChart}
-                    h=${280}
-                    data=${executed.map((arm) => ({
-                      arm: arm.name,
-                      "Observed feedback": arm.feedback_seconds,
-                    }))}
-                    dataKey="arm"
-                    orientation="vertical"
-                    yAxisProps=${{ width: 170 }}
-                    series=${[{ name: "Observed feedback", color: "blue.6" }]}
-                    withLegend
-                    valueFormatter=${(value) => `${num(value)}s`}
-                  />`
-                : html`<${Text} c="dimmed">
-                    No executed arm has a measured feedback duration.
-                  <//>`
-            }
-          <//>
-          <${Table.ScrollContainer} minWidth=${1450}>
-            <${Table} striped withTableBorder>
-              <${Table.Thead}>
-                <${Table.Tr}>
-                  ${[
-                    "Arm",
-                    "State",
-                    "Observed feedback",
-                    "Test targets",
-                    "Test actions",
-                    "Cases",
-                    "Firecracker setup",
-                    "Firecracker reuse",
-                    "Managed VM process",
-                    "Last finisher",
-                    "Invocations",
-                  ].map((heading) => html`<${Table.Th}>${heading}<//>`)}
-                <//>
-              <//>
-              <${Table.Tbody}>${rows}<//>
-            <//>
-          <//>
-          <${Accordion} variant="contained" multiple=${true} mt="md">
-            <${Accordion.Item} value="backend-graph-evidence">
-              <${Accordion.Control} aria-label="Backend graph evidence">
-                Backend graph evidence
-              <//>
-              <${Accordion.Panel}>
-                <${Stack} gap="sm">
-                  <${Title} order=${3}>Findings<//>
-                  ${q.failure_analysis?.curated_log ? link(q.failure_analysis.curated_log, "Managed executor panic excerpt") : null}
-                  ${q.findings.map((finding) => html`<${Text}>${finding}<//>`)}
-                  <${Title} order=${3}>Recommendations<//>
-                  ${q.recommendations.map((recommendation) => html`<${Text}>${recommendation}<//>`)}
-                  <${Text} size="sm" c="dimmed">
-                    ${`Stop reason: ${q.stop_reason ?? "No early-stop reason supplied."}`}
-                  <//>
-                <//>
-              <//>
-            <//>
-            <${Accordion.Item} value="backend-graph-methods">
-              <${Accordion.Control} aria-label="Backend graph methods">
-                Backend graph methods
-              <//>
-              <${Accordion.Panel}>
-                <${Stack} gap="sm">
-                  ${q.methods.map((method) => html`<${Text}>${method}<//>`)}
-                <//>
-              <//>
-            <//>
-          <//>
-        </section>`;
-      }
-
-      function ConfigurationRollout() {
-        const q = e.ci_configuration_rollout;
-        if (!q) return null;
-        return html`<section id="ci-config-rollout">
-          <${Title} order=${2}
-            >18 November rollout and measurement checkpoint<//
-          >
-          <${Alert}
-            title="Whole-CI impact is not measured yet"
-            color="blue"
-            my="md"
-          >
-            ${q.summary}
-          <//>
-          ${table(
-            ["Change", "Merged UTC", "Deployed behavior", "Cost and coverage"],
-            q.changes.map((x) => [
-              html`<${Stack} gap="xs"
-                ><${Text} fw=${600}>${x.name}<//>${pr(x.pr)}<//
-              >`,
-              x.merged_at_utc,
-              x.state,
-              x.tradeoff,
-            ]),
-            1050,
-          )}
-          <${Text} size="sm" c="dimmed" my="sm">
-            HPA observed ${q.cluster_observation.captured_at_utc}: minimum
-            ${q.cluster_observation.min_replicas}, maximum
-            ${q.cluster_observation.max_replicas}, current/desired
-            ${q.cluster_observation.current_replicas}/${q.cluster_observation.desired_replicas}.
-            The exact reconciliation instant was not sampled. This is a
-            configuration check under load.
-          <//>
-          <${Title} order=${3} mt="lg">Acceptance before promotion<//>
-          ${table(
-            [
-              "Fresh execution",
-              "Fixture setup",
-              "Action process",
-              "Cases",
-              "Baseline / final disposal",
-            ],
-            q.acceptance.runs.map((x) => [
-              html`<${Stack} gap="xs"
-                ><${Text}>${x.label}<//>${inv(x.invocation)}<//
-              >`,
-              `${num(x.setup_seconds)}s`,
-              `${num(x.process_seconds)}s`,
-              `${x.junit_passes} passed`,
-              `${x.baseline}; ${x.final_discard_requested ? "discard requested" : "retained for repeat"}`,
-            ]),
-            850,
-          )}
-          <${Text} size="sm" my="sm">${q.acceptance.limits}<//>
-          <${Text} my="sm">
-            Initial PR CI passed 2,021/2,022 targets; the managed VM Codex case
-            hit the timer-stall symptom. The identical-head retry passed
-            2,022/2,022, including a fresh VM execution. The timer-stall cause
-            remains open. These attempts validate the rollout and are not a
-            before/after latency comparison.
-          <//>
-          <${Accordion} variant="contained" multiple=${true} my="md">
-            <${Accordion.Item} value="rollout-measurement">
-              <${Accordion.Control}>How to measure the effect later<//>
-              <${Accordion.Panel}>
-                ${table(
-                  ["Measure", "Comparison rule"],
-                  q.future_measurement.plan.map((x) => [x.metric, x.method]),
-                  850,
-                )}
-                <${Text} size="sm" my="sm"
-                  >No new measurement job is scheduled by this report update.
-                  The earlier 10–16 November cohort remains historical.<//
-                >
-              <//>
-            <//>
-            <${Accordion.Item} value="rollout-evidence">
-              <${Accordion.Control}>Rollout revisions and CI evidence<//>
-              <${Accordion.Panel}
-                ><${Stack} gap="sm">
-                  <${Text}
-                    >Inspected devel:
-                    <${Code}>${q.inspected_source_devel_commit}<//><//
-                  >
-                  ${q.changes.map((x) => html`<${Text}>${x.name}: head <${Code}>${x.head}<//>; merge ${link(`${gh}/commit/${x.merge_commit}`, x.merge_commit)}; ${link(`${gh}/blob/${q.inspected_source_devel_commit}/${x.source_path}`, "effective source")}<//>`)}
-                  ${link(`${gh}/actions/runs/${q.ci.run}/attempts/1`, "Initial CI attempt (failed managed VM)")}
-                  ${link(`${gh}/actions/runs/${q.ci.run}/attempts/2`, "Identical-head retry (all required checks passed)")}
-                  ${link(`${gh}/actions/workflows/firecracker-cold.yml`, "Nightly/manual cold-start workflow (active; first scheduled result not observed)")}
-                  ${link("./evidence.json", "Reviewed rollout and acceptance evidence")}
-                  ${link(`${gh}/blob/${q.previous_report_commit}/latency/index.html`, "Report before this deployment checkpoint")}
-                <//><//
-              >
-            <//>
-          <//>
-        </section>`;
-      }
-
+      const phases = evidence.kvm_pool.timeline
+        .filter(
+          (_, i) => i % 10 === 0 || i === evidence.kvm_pool.timeline.length - 1,
+        )
+        .map((r) => ({
+          ...r,
+          utc: new Date(r.at * 1000).toISOString().slice(11, 16),
+        }));
+      const failureRows = [18106, 18243, 18254, 18256, 18273].map((n) => {
+        const c = byPr.get(n);
+        return [
+          pr(n),
+          evidence.rerun_causes[n],
+          time(c.failure_before_job_red_s),
+          time(c.prior_red_to_retry_job_created_s),
+          time(c.feedback_s),
+          html`${job(c.jobs[0], "Attempt 1")} ·
+          ${build(c.attempts[0].inner, "Bazel")}`,
+        ];
+      });
+      const comparable = evidence.groups.filter(
+        (g) => g.group === "Agentplane backend",
+      );
       function Report() {
-        return html`<${Container}
-          component="main"
-          size="76rem"
-          py="xl"
-          style=${{ overflowWrap: "anywhere" }}
-          ><${Stack} gap="xl">
+        return html`<${Container} component="main" size="72rem" py="xl" style=${{ overflowWrap: "anywhere" }}>
+          <${Stack} gap="xl">
             <header>
-              ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
-                >CI latency · Firecracker rollout reviewed 18 November 2026
-                UTC<//
-              >
-              <${Title} order=${1} my="sm"
-                >${configurationRollout?.title ?? backendGraph?.verdict_title ?? "CI latency and ordinary Firecracker reuse"}<//
-              >
-              <${Text} size="lg"
-                >${configurationRollout?.summary ?? backendGraph?.summary ?? e.natural_firecracker_scheduling?.summary ?? e.ci_latency_followup?.summary ?? e.kvm_required_ci_canary?.current_disposition?.summary ?? "Earlier measurements follow."}<//
-              >
-              <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />Each experiment
-                has its own source and observation window. Earlier tooling,
-                controlled reuse, canary heads, loaded bursts, cleanup
-                qualification, worker-image comparisons and PR cohorts retain
-                their original windows.<//
-              >
+              ${link("../", "Ducktape reports")}
+              <${Title} order=${1} mt="md" mb="xs">Backend PRs reached green in 10m24s at the median<//>
+              <${Text} size="lg">Five of 17 successful backend heads needed a second required Bazel attempt after the VM routing change. On successful first attempts, Pod and Firecracker each finished last more often than VM.<//>
+              <${Text} c="dimmed" size="sm" mt="sm">20 November 2026 UTC · Post-shadow window 07:36:33–21:12:40 UTC · Inspected devel ${evidence.source_devel_commit}<//>
+              <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
             </header>
-            <section id="vm-shadow">
-              <${Title} order=${2}
-                >Managed TCG and cluster KVM · paired VM runs<//
-              >
-              <${Text} size="sm" mt="sm">${e.vm_shadow_review.sample_note}<//>
-              ${e.vm_shadow_review.sections.map(
-                ({ heading, text }) =>
-                  html`<div key=${heading}>
-                    <${Title} order=${3} mt="md">${heading}<//>
-                    <${Text} mt="xs">${text}<//>
-                  </div>`,
-              )}
-              <${Text} size="sm" mt="sm"
-                >${e.vm_shadow_review.selection_note}<//
-              >
-              <${Text} size="sm" mt="xs">
-                ${link(e.vm_shadow_review.run_url, "Fresh pre-cutover pair")}${" · "}
-                ${link(e.vm_shadow_review.paired_evidence, "Per-pair measurements")}${" · "}
-                ${link(e.vm_shadow_review.routing_url, "Merged routing change")}${" · "}
-                ${link(e.vm_shadow_review.required_pr_invocation_url, "Required PR VM execution")}${" · "}
-                ${link(e.vm_shadow_review.post_cutover_url, "First post-cutover run")}${" · "}
-                ${link(e.vm_shadow_review.fresh_post_cutover_artifact_url, "Fresh post-cutover archive")}${" · "}
-                ${link("https://app.buildbuddy.io/invocation/2de8e501-a373-4c7c-908b-cabd1681e04a", "Manual pair 64")}${" · "}
-                ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "Archive reference")}
-              <//>
-            </section>
-            <${ConfigurationRollout} />
-            <${BackendGraphComparison} />
-            <${NaturalScheduling} />
-            <${LatestMeasurements} />
-            <${RequiredCiCanary} />
-            <${PostfixQualification} />
-            <${MixedRecycling} />
-            <${DockerRecycling} />
-            <${WorkerImageComparison} />
-            <${ScaleupQualification} />
-            <${Qualification} />
-            <${Title} order=${2}>Existing PR feedback measurements<//>
-            <${Text}
-              >The following cohort, managed-resource trial and historical
-              findings retain their original windows. The new burst experiment
-              did not recollect these PR heads or measure a fleet
-              improvement.<//
-            >
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Retained backend subset<//
-                ><${Title} order=${2}>8m52s median<//
-                ><${Text}
-                  >12 green,1 failed at collection; no superseded-head
-                  census.<//
-                ><//
-              >
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">VM-only conditional headroom<//
-                ><${Title} order=${2}>120s /179s<//
-                ><${Text}
-                  >In #16947/#16976; another test becomes last. Zero on
-                  #16906.<//
-                ><//
-              >
-              <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Earlier failure announcement<//
-                ><${Title} order=${2}>9m26s<//
-                ><${Text}
-                  >Provider live status preceded the final red job on #16972.
-                  Agent receipt is unobserved.<//
-                ><//
-              >
-            <//>
             <section id="cohort">
-              <${Title} order=${2}
-                >What different PRs experienced · 10–16 November<//
-              >
-              <${Text} my="sm"
-                >${c.frame_count} newly opened devel-base PRs formed the 10 Nov
-                00:00→16 Nov 10:45 UTC frame; ${c.selected_count} selected,
-                ${c.included} included. Systematic chronological selection
-                within each day and path class uses 6 production/3 fixture heads
-                per early day, 12/6 on 15–16 November, and 2 per other
-                class/day. Failed outcomes remain visible. This is a balanced
-                sample, not a traffic-weighted census.<//
-              >
-              <${Box}
-                role="img"
-                data-chart="feedback"
-                aria-label="Required CI gate median and p90 in minutes by PR class"
-                ><${BarChart}
-                  h=${360}
-                  data=${c.groups.map((g) => ({ label: `${g.name} (n=${g.green_s.n})`, Median: g.green_s.p50 / 60, p90: g.green_s.p90 / 60 }))}
-                  dataKey="label"
-                  orientation="vertical"
-                  series=${[
+              <${Title} order=${2}>Time to required checks passing<//>
+              <${Text} my="sm">From the first observed CI workflow creation for the exact head to the last accepted required check. The 67 post-shadow heads include 60 green, one failed, five canceled and one incomplete. Green timing includes successful reruns. Push time, historical merge eligibility and agent receipt remain unobserved.<//>
+              <${Box} role="img" data-chart="pr-feedback" aria-label="Median and p90 minutes to required checks passing by change class">
+                <${BarChart} h=${290} data=${groups.map((g) => ({ class: titles[g.group], Median: g.green.p50 / 60, p90: g.green.p90 / 60 }))}
+                  dataKey="class" series=${[
                     { name: "Median", color: "blue.6" },
                     { name: "p90", color: "orange.6" },
                   ]}
-                  withLegend
-                  yAxisProps=${{ width: 190 }}
-                  valueFormatter=${(v) => `${num(v)}min`}
-              /><//>
+                  orientation="vertical" yAxisProps=${{ width: 76 }} xAxisLabel="Minutes" withLegend valueFormatter=${(v) => time(v * 60)} />
+              <//>
               ${table(
                 [
-                  "Changed paths",
-                  "Heads",
-                  "Green / failed / cancelled / pending",
+                  "Change class",
+                  "Sample / frame",
+                  "Green",
+                  "Failed / canceled / incomplete",
                   "Median",
                   "p90",
                   "Mean",
                 ],
-                c.groups.map((g) => [
-                  g.name,
-                  g.n,
-                  `${g.outcomes.green || 0} / ${g.outcomes.failed || 0} / ${g.outcomes.cancelled || 0} / ${g.outcomes.pending || 0}`,
-                  fmt(g.green_s.p50),
-                  fmt(g.green_s.p90),
-                  fmt(g.green_s.mean),
+                groups.map((g) => [
+                  g.group,
+                  `${g.heads} / ${g.frame}`,
+                  g.green.n,
+                  [
+                    g.outcomes.failed ?? 0,
+                    g.outcomes.cancelled ?? 0,
+                    g.outcomes.incomplete ?? 0,
+                  ].join(" / "),
+                  time(g.green.p50),
+                  time(g.green.p90),
+                  time(g.green.mean),
                 ]),
-                970,
+                750,
               )}
-              <${Text} my="sm"
-                >Production source excludes test-only files and BUILD-only
-                changes; frontend includes App frontend paths. Mixed
-                infrastructure has precedence. These corrected classes differ
-                from the prior report. The full week includes earlier
-                failure/retry exposure:51 green/53 production heads,10m23s
-                median,19m05s p90,11m34s mean. Eight successful heads have
-                repeated Bazel checks. Among the 11 new green heads with one
-                attempt, mean 8m17s; the 12-head new mean includes #16865’s
-                recovery.<//
-              >
-              <${Text} size="sm"
-                >Previously:13–15 November 58/59 production heads,9m34s
-                median,15m25s p90,9m41s mean. Earlier 10–13 November 124/129
-                green,11m27s median,23m38s p90. Changed frames, definitions,
-                source, cache and workload mix prevent a causal speedup claim.
-                Bazel is last on 130/133 green heads across all current classes;
-                the other gates still constrain unusual changes.<//
-              >
+              <${Text} size="sm" mt="sm">Test & Build finished last on all 60 green heads. A modeled 60-second reduction to Test & Build would save 54 seconds per green head on average. The imports gate would become last on 14 heads and Pre-commit on one, with their clocks held fixed.<//>
             </section>
-            <section id="timelines">
-              <${Title} order=${2}
-                >Linked physical paths: different work finishes last<//
-              >
+            <section id="vm-shadow">
+              <${Title} order=${2}>VM cutover follow-up<//>
+              <${Text} my="sm">Required VM CI moved to recycled cluster KVM at 05:41 UTC. The managed TCG shadow stopped at 07:36 UTC. KVM was faster in 97 of 100 manual pairs on 89 revisions, with a median paired saving of 4m28s and 2 first-attempt failures versus 23 on managed TCG. Warm fixture exposure differed across arms. Four fresh devel pairs also favored KVM. These clocks cover the VM test.<//>
               ${table(
                 [
-                  "Head / source",
-                  "Gate feedback",
-                  "Assignment delay",
-                  "Runner setup",
-                  "Remote envelope",
-                  "Inner Bazel",
-                  "Last fresh test",
+                  "Backend head window",
+                  "Green / sampled",
+                  "Median",
+                  "p90",
+                  "Mean",
                 ],
-                [16817, 16947, 16906, 16976, 16972, 15309].map((p) => {
-                  const x = caseBy(p);
+                comparable.map((g) => [
+                  g.period,
+                  `${g.green.n} / ${g.heads}`,
+                  time(g.green.p50),
+                  time(g.green.p90),
+                  time(g.green.mean),
+                ]),
+              )}
+              <${Text} mt="sm">After retirement, the median was 9m31s on 12 one-attempt heads and 21m06s on five rerun heads. Different source changes, cache states and failures across the windows prevent a routing-effect estimate. On 12 successful first attempts with physical test records, the latest physical test was Pod on three, Firecracker on three, VM on two, and another test on four.<//>
+              <${Text} mt="sm">Keep measuring for seven days through 27 November, or until 50 fresh required VM executions if that takes longer. Count VM failures and VM-last heads on verified cutover ancestry, report warm and cold separately, and retain managed Pod and Firecracker competitors on the same heads. A PR and a devel run both hit the namespace guard when a recycled fixture needed a rebuild. Keep tracking fresh exposure after the rebuild path is repaired.<//>
+              <${Text} size="sm" mt="sm">${pr(18046)} routing · ${pr(18079)} shadow retirement · ${link("../vm-pairs.json", "Paired data")} · ${link(`${prior}/index.html#vm-shadow`, "Previous review")}<//>
+            </section>
+            <section id="reruns">
+              <${Title} order=${2}>Failure recovery drove the backend tail<//>
+              <${Text} my="sm">The informational BuildBuddy status preceded final red by 4 seconds to 10m32s. For #18243, an early test failure was followed by 7m42s of ongoing CI before final red, then 11m03s until GitHub created the next job. Assignment on that retry took 2s. GitHub identifies the triggering account type as User on these five retries. The request source and reason for the interval are unobserved.<//>
+              ${table(["PR", "First failure", "Live failure → job red", "Red → retry job created", "Time to green", "Evidence"], failureRows, 860)}
+              <${Text} size="sm" mt="sm">PR subscriptions receive completed check-run facts and commit statuses by default. The linked status timestamps measure GitHub publication. The completed job logs and selected BuildBuddy artifacts were readable during review. First queryability, webhook delivery, inbox acknowledgement and harness receipt need separate clocks. ${file("agentplane/notification_service/docs/agents/github.md", "Subscription behavior")}<//>
+            </section>
+            <section id="cases">
+              <${Title} order=${2}>What finished last on green heads<///>
+              <${Text} my="sm">All times in the middle columns are UTC. The GitHub Test + Build + lint step includes outer Remote Bazel allocation and setup, inner Bazel, any subsequent build and finalization. The phase data leave outer allocation unresolved.<///>
+              ${table(
+                [
+                  "PR",
+                  "CI workflow",
+                  "Job starts",
+                  "Remote step",
+                  "Inner test",
+                  "Bazel critical-path test",
+                  "Required green",
+                ],
+                [18234, 18244, 18246, 18255, 18265].map((n) => {
+                  const c = byPr.get(n),
+                    a = c.attempts[0],
+                    j = c.jobs[0];
                   return [
-                    html`${link(x.job_url, `#${p}`)}<br /><${Code}
-                        >${x.tested_merge.slice(0, 12)}<//
-                      >`,
-                    x.outcome === "failed"
-                      ? "Failed; not ready"
-                      : fmt(x.feedback_s),
-                    fmt(x.timeline.job_created_to_started_s),
-                    fmt(x.timeline.setup_s),
-                    fmt(x.timeline.remote_envelope_s),
-                    html`${inv(x.invocation)} ${fmt(x.bazel_elapsed_s)}`,
-                    x.last_test?.label.split(":").pop(),
+                    pr(n),
+                    utc(c.start),
+                    utc(j.started_at),
+                    j.remote.map(utc).join("–"),
+                    build(a.inner, time(a.duration_s)),
+                    short(a.critical_path.test),
+                    job(j, time(c.feedback_s)),
                   ];
                 }),
-                1150,
+                785,
               )}
-              <${Text} size="sm" mt="sm"
-                >The remote envelope contains outer allocation, checkout,
-                selection, inner Bazel and finalization. Inner Bazel is nested,
-                not additive. Its unexplained remainder is not labelled queue.
-                #16976 is a supplementary 657s job observation without
-                reconstructed workflow-start feedback; #15309 is the 10 November
-                repeated-attempt tail, not a current-source case.<//
-              >
-              ${phaseTimeline()}
-              <${Text} size="sm"
-                >Aligned VM phases for #16947, in seconds from workflow
-                creation. Setup and cleanup are inside the VM process; the two
-                guest cases overlap. These are driver spans aligned to native
-                action clocks, not CPU time or a sum of independent savings. On
-                narrow screens, scroll the timeline sideways.<//
-              >
               <${SimpleGrid} cols=${{ base: 1, md: 2 }} mt="md">
-                <${Paper} withBorder p="md"
-                  ><${Title} order=${3}>App #16947: warm VM still last<//
-                  ><${Text} my="sm"
-                    >550s feedback;405.880s inner invocation;389.49s dependency
-                    critical path. VM process 382.210s:63.413s setup,239.616s
-                    longest concurrent case,27.928s cleanup. Readiness
-                    133.897/117.892s overlaps across the two guests. Native
-                    Codex initialization 13.454s is nested in the case. Next
-                    fresh test finishes 120.100s earlier.<//
-                  ><${Text}
-                    >This source already contains the native Pod split and trust
-                    reuse. Those cuts do not remove this VM’s real App
-                    image:scenario resources, offered models, supervised Session
-                    creation and admission/History use App clients. Treating all
-                    App-triggered VM work as unnecessary would silently change
-                    coverage.<//
-                  ><//
-                >
-                <${Paper} withBorder p="md"
-                  ><${Title} order=${3}
-                    >Shared-service #16906: a budget witness<//
-                  ><${Text} my="sm"
-                    >647s feedback;507.241s inner invocation;432.34s critical
-                    path. Gateway-budget TestRunner 393.284s:123.603s cold
-                    setup,218.327s scenario,24.484s cleanup. Dispatcher finishes
-                    10.747s earlier; VM is not last and its readiness is
-                    40.756/51.041s.<//
-                  ><${Text}
-                    >The test starts one process, observes an uncertain executor
-                    read across an outage, requires no mutation replay, then
-                    proves input recovery and one marker. Its 300s sleep keeps
-                    that process alive; this is a specific recovery contract,
-                    not a volume stress test. Cutting its timeout or sharing a
-                    globally rolled service changes the proof.<//
-                  ><//
-                >
+                <${Paper} withBorder p="md">
+                  <${Title} order=${3}>Managed Pod admission<///>
+                  <${Text} mt="xs">#18244 spent 163.1s between managed RBE queue and worker start, then 299.7s in the process. Driver spans show 54.7s setup, a 179.8s envelope for the first through last case, and 32.5s stack cleanup. Removing the queue alone gives up to 116.4s before Firecracker becomes last. The equivalent gap on #18255 is 133.5s.<//>
+                <//>
+                <${Paper} withBorder p="md">
+                  <${Title} order=${3}>Firecracker scenario and cleanup<///>
+                  <${Text} mt="xs">#18246 ran for 412.3s with a confirmed warm fixture. Setup took 50.6s. The live-guest continuity case occupied 212.9s, including 56.6s sandbox cleanup. The proxy-trust negative case followed for 74.9s, followed by 50.2s stack cleanup. The live-guest case exercises the one-minute idle policy, suspend/checkpoint, credential rotation and same-process resume. ${file("agentplane/system_tests/scenarios/firecracker.py", "Scenario source")}<//>
+                <//>
+                <${Paper} withBorder p="md">
+                  <${Title} order=${3}>Fast and slow KVM VM paths<///>
+                  <${Text} mt="xs">#18234 had 42.2s warm setup inside a 182s VM action. On #18265, the first action failed before scenario execution after a baseline fingerprint mismatch. The recycled runner entered in private cgroup 0::/init and the rebuild expected 0::/. The retry passed both cases after 193.4s cold setup. Shortening VM on that head could save up to 25.2s before Gateway budget became last. ${file("agentplane/system_tests/k3s/baseline.py", "Namespace check")}${" · "}${link("../reliability/#vm-cutover", "Corroborating devel report")}<//>
+                <//>
+                <${Paper} withBorder p="md">
+                  <${Title} order=${3}>KVM input fetch delayed a failed attempt<///>
+                  <${Text} mt="xs">#18106 assigned VM and Firecracker actions after 5.2s and 3.6s. They then spent 581.1s and 581.9s in input fetch, on two distinct workers, with 65.6 MB across four recorded files on each action. Both tests passed. The long fetch deferred final job red after the separate Gateway crash case failed. Native metadata leaves the responsible CAS object and network path unknown.<//>
+                <//>
               <//>
-              <${Text} my="sm"
-                >Supplementary App #16976 strengthens the resource
-                question:458.620s VM process,51.576s warm setup,334.931s longest
-                case,28.136s cleanup; readiness 166.846/208.741s. Native Codex
-                initialization 29.765s and harness start 46.217s are inside that
-                case. Readiness observers use actual EnvironmentService watches,
-                not a proven removable polling sleep. Source/cache/host
-                conditions differ across these natural heads; these contrasts
-                are not matched hardware measurements.<//
-              >
+            </section>
+            <section id="capacity">
+              <${Title} order=${2}>Runner and executor capacity<///>
+              <${Text} my="sm">GitHub recorded 27.35 occupied runner-hours and a peak of 40 in the 19:42:40–21:12:40 UTC window, a lower bound based on completed assigned jobs. Among 69 assigned, completed PR Test & Build jobs, creation to start was 2s median, 3s p90 and 65s maximum. No measured PR Test & Build job was awaiting assignment at the cutoff. The longest waits across all job types occurred in dependent release and image steps. Default CodeQL setup is off.<///>
+              <${Text} my="sm">Decoded action properties on #18244 put VM and Firecracker on self-hosted Docker in <code>kvm-vm</code>, one concurrent task per worker. Pod used the managed Firecracker action lane. Outer Remote Bazel runner admission and provider-wide quotas are unobserved.<///>
               ${table(
                 [
-                  "Case",
-                  "NEW test actions",
-                  "Test process seconds",
-                  "Observed CPU seconds",
-                  "Missing CPU actions",
+                  "Physical TestRunner population",
+                  "Process n",
+                  "Process median / p90",
+                  "Valid queue n",
+                  "Queue median / p90",
+                  "Unknown queue",
                 ],
-                e.selected_cases.map((x) => [
-                  pr(x.pr),
-                  x.fresh_tests,
-                  num(x.test_process_s),
-                  num(x.test_cpu_s_observed),
-                  x.cpu_missing,
-                ]),
-                940,
+                [
+                  ["KVM VM", "vm"],
+                  ["KVM Firecracker", "firecracker"],
+                  [
+                    "Managed Pod, dispatcher, Gateway budget, central",
+                    "other_four_long",
+                  ],
+                ].map(([label, k]) => {
+                  const s = evidence.native_cost[k];
+                  return [
+                    label,
+                    s.process.n,
+                    `${time(s.process.p50)} / ${time(s.process.p90)}`,
+                    s.queue.n,
+                    `${seconds(s.queue.p50)} / ${seconds(s.queue.p90)}`,
+                    s.queue_unknown,
+                  ];
+                }),
+                760,
               )}
-              <${Text} size="sm"
-                >Independent physical TestRunner resources summed in their own
-                units. These totals include shards and broad service-change
-                fanout; they are neither elapsed CI nor additional timeline
-                phases. Browser shards can dominate compute while finishing
-                before VM. VM kernel/OOM checks and browser pagination
-                boundaries exercise particular behavior; no costly volume stress
-                workload was established in these selected long poles.<//
-              >
-            </section>
-            <section id="queues">
-              <${Title} order=${2}>Where queues actually matter<//>
-              ${table(["Service / eligible work", "Observed clocks", "Capacity and limits"], [["GitHub Test & Build", `${e.recent_window.reviewed_bazel_jobs.n} completed assigned jobs; created→start p50 ${fmt(e.recent_window.reviewed_bazel_jobs.created_to_start.p50)},p90 ${fmt(e.recent_window.reviewed_bazel_jobs.created_to_start.p90)}`, "Includes trust/dependency orchestration; not a pure runner-starvation distribution."], ["Outer managed Remote Bazel", "Remote envelopes 184–828s in linked current jobs; allocation not separately timed", "Account entitlement, provider backlog and warm-floor price remain unobserved. More inner KVM workers cannot fix an outer queue."], ...e.pool_comparison.map((p) => [p.pool, `${p.n} NEW test actions; valid queue n=${p.queue.n},p50=${num(p.queue.p50)}s, p90=${num(p.queue.p90)}s; prep p90=${num(p.preparation.p90)}s`, `${p.invalid_queue_count} invalid queue clocks. ${p.pool.startsWith("self") ? "Decoded Pool=kvm-vm, self-hosted=true, Docker; one task per worker." : "Default Firecracker route; no KVM Pool request. Provider-wide capacity not observable."}`]), ["Nested fixtures", "K3s, guest readiness and cleanup are inside TestRunner", "A fixture/API wait is not another RBE queue."]], 1100)}
-              <${Box}
-                role="img"
-                data-chart="capacity"
-                aria-label="Registered KVM executors, occupied tasks and local reservations from 09:15 to 10:45 UTC"
-                my="lg"
-                ><${LineChart}
-                  h=${290}
-                  data=${capacity}
-                  dataKey="time"
-                  series=${[
+              <${Text} size="sm" mt="sm">The four managed labels reached a 195.6s maximum native queue. Twenty KVM queue clocks were inverted. Keep those unknown. At one-minute resolution the KVM telemetry recorded up to eight registered workers, with task counts available jointly on 684 of 816 points. No joint sample reached eight registered and eight tasks. Short queue bursts and misses still remain possible.<///>
+              <${Box} role="img" data-chart="kvm-pool" mt="md" aria-label="KVM desired workers, registered workers and executor task gauge">
+                <${LineChart} h=${215} data=${phases} dataKey="utc" domain=${[0, 8]} withLegend connectNulls=${false}
+                  strokeWidth=${2} withDots=${false} series=${[
                     {
                       name: "registered",
                       label: "Registered",
                       color: "blue.6",
                     },
-                    {
-                      name: "tasks",
-                      label: "Tasks in progress",
-                      color: "teal.6",
-                    },
-                    {
-                      name: "local_reservations",
-                      label: "Local reservations",
-                      color: "orange.6",
-                    },
-                  ]}
-                  withLegend
-                  withDots=${false}
-                  curveType="step"
-                  yAxisProps=${{ allowDecimals: false }}
-              /><//>
-              <${Text}
-                >361 joint 15s observations:1–2 registered workers; local
-                reservations peak 7;87 points show reservations while every
-                registered worker has a task. The chart uses 60s samples;
-                evidence retains 15s. As of this historical 09:15–10:45 UTC
-                window, the maximum was three with strict host spread, 4-CPU /
-                8-GiB guests and 7-GiB advertised. Later merged #17015 raised
-                the maximum to eight, reduced CPU requests to two and removed
-                host spread; the qualification above measures that deployed
-                state.
-                ${link("https://grafana.allegedly.works/d/buildbuddy-executor-pool", "Executor pool dashboard")}.
-                Reservations can duplicate physical actions; they are not
-                central backlog.<//
-              >
-              <${Text} my="sm"
-                >The 416.330s valid KVM wait belongs to failed #16972, so
-                removing it does not make that head green. Three other KVM queue
-                intervals are inverted by about 1s and remain unknown. Earlier
-                #16378’s537.14s queue and 444.392s conditional headroom remain
-                valid historical tail evidence, not a current capacity forecast.
-                The later qualification above exercises the relaxed placement
-                and records the actual registration ramp; eight-worker and
-                scale-down/drain qualification remain incomplete.<//
-              >
-              <${Text} size="sm"
-                >90 mincensus:839 runs,1961 job
-                attempts,${num(e.recent_window.runner_hours)}completed assigned
-                runner-hours, mean${num(e.recent_window.runner_hours / 1.5)}busy
-                runners, peak 36. This repository’s lower bound excludes
-                unfinished jobs and older work. The older unfinished-run sweep
-                changed 18 reported→15 returned and was visibly rejected. CodeQL
-                default setup is off; the six-language scheduled/manual workflow
-                used 1833 runner-seconds here, max-parallel 2. This is not
-                renewed PR-triggered CodeQL contention.<//
-              >
+                    { name: "tasks", label: "Tasks", color: "teal.6" },
+                    { name: "desired", label: "Desired", color: "gray.6" },
+                  ]} />
+              <//>
+              <${Text} size="sm" mt="sm">Chart samples every ten minutes from the one-minute census. The task gauge includes input preparation and upload. ${link("https://grafana.allegedly.works/d/buildbuddy-executor-pool", "Executor pool dashboard")}<//>
+              <${Text} mt="sm">Across the selected backend and fixture invocations, 1,072 unique originating TestRunner actions used 27.68 process-hours and 46.99 observed CPU-hours. CPU was missing for 37 actions, including all sampled KVM VM and Firecracker actions. Thread-browser shards consumed 3.44 process-hours across 112 actions. Runner hours and remote action costs use different clocks.<///>
             </section>
-            <section id="experiment">
-              <${Title} order=${2}
-                >Resource experiment and its evidence boundary<//
-              >
-              <${Text} my="sm"
-                >Hypothesis: a larger managed VM allocation shortens real
-                guest/native execution enough to matter on App changes. The
-                bounded trial requests 8/16/16/8 compute units on one frozen
-                source, retaining both harnesses and all assertions, and stops
-                on failure. This differs from the old KVM-worker CPU experiment:
-                the changed variable is the managed TCG test action’s
-                allocation. Native action metadata must confirm delivered
-                resources, unchanged input roots and non-platform command
-                identity before comparing time.<//
-              >
-              <${Alert} title="Observed trial state" color="yellow"
-                >${e.experiment.result || e.experiment.status}<//
-              >
-              <${Text} my="sm"
-                >${inv(e.experiment.first_invocation)} ·
-                ${link(`https://app.buildbuddy.io/invocation/${e.experiment.outer_invocation || "c66f8d42-3a4f-4 bb 2-b55a-aea 843b30b54"}`, "Outer experiment")}.
-                ${e.experiment.interpretation || "No allocation or CI-speedup claim is made before the trial finishes and identities are reviewed."}<//
-              >
-              <${Text} size="sm"
-                >The previous report’s configured runfiles probe remains valid
-                for its pinned source:0 App files in native Pod/central/Gateway,
-                positive App consumers 7–8. Its common renderer still imports
-                App settings. No full historical-PR replay or causal renderer
-                speedup is newly claimed; the measured runtime long poles take
-                priority over repeating that query. That earlier 10:58–11:11 UTC
-                allocation trial changed no deployed capacity or required
-                coverage. The separate #17015 capacity rollout and later
-                qualification are described above.<//
-              >
-            </section>
-            <section id="recovery">
-              <${Title} order=${2}>Failures, reruns and agent access<//>
-              <${Text} my="sm"
-                >#16865’s first attempt failed restoring a managed Firecracker
-                snapshot:the provider could not set TSC scaling (EINVAL), before
-                its VM test ran. Second attempt started 06:12:05 UTC after the
-                first required job ended 06:03:01, a9m04s request/availability
-                gap. The triggering account is a user identity; who or what made
-                the request, and why then, are unobserved. The gap is not
-                assigned to an operator or scheduler. Final feedback 19m05s
-                includes recovery. #15309’s older first attempt failed the Pod
-                suite; its 25m07s green clock is retained without calling it a
-                flake from a later pass alone.<//
-              >
-              <${Text} my="sm"
-                >#16972 is a distinct retained-fixture failure. K3s logs show
-                slow Kine operations followed by 10:27:02 UTCfatal “Transaction
-                commit failed:sql:transaction has already been committed or
-                rolled back”; containerd import then reports EOF and API calls
-                fail. The one retained memory sample reports~16.3 GiBavailable
-                and zero sampled memory PSI; it does not exclude an unsampled
-                event or identify the transaction trigger. A warm fingerprint
-                alone is not the cause. Next discriminate resumed-daemon
-                transaction/deadline failure from storage/native process exit
-                using that exact baseline incarnation and native SQLite/Kine
-                evidence; preserve unknown-outcome ownership rather than
-                retrying a mutation.<//
-              >
+            <section id="actions">
+              <${Title} order=${2}>Where to spend the next investigation<///>
               ${table(
-                ["Signal", "Observed milestone / limit"],
+                ["Priority", "Change or test", "Expected effect and boundary"],
                 [
                   [
-                    "Required gate result",
-                    "Exact-head latest required checks and ALL attempts collected.130/133 greenheads end with Bazel; historical auto-merge eligibility remains unobserved.",
+                    "1 · Failure recovery",
+                    "Extend the bbapi failedTest lookup to include the TIMED_OUT group. On the exact #18273 invocation, GetTarget returned TIMED_OUT while first-failure returned an empty label. The timeout action finished 7m15s before the live failure status. Verify when the broader query can first see a timeout and that the subscriber receives the attempt and invocation link.",
+                    "This recovers a missing failure category without changing required tests. The 7m15s is the physical-action-to-status interval. API indexing and subscriber delivery would reduce the available lead. Fix repeat failures separately to improve time to green.",
                   ],
                   [
-                    "Early failure status — one head",
-                    "#16972 live ordinary-tests status:pending 10:23:16, failure 10:27:42; final required job red 10:37:08. Provider publication precedes the job by 566s. A later 10:59:28 pending record is a new rerun, outside the cohort read.",
+                    "2 · Managed Pod queue",
+                    "Scope a burst comparison to the same Pod actions and measure managed admission against a reserved compatible lane. Treat provider TSC snapshot-restore failures as a separate retry cause. Verify a retry receives a compatible or fresh snapshot before proposing any automatic retry.",
+                    "2m43s and 3m16s observed waits, with 1m56s and 2m14s conditional headroom on those heads. Needs confirmed routing, admission and capacity cost. KVM's current worker minimum does not serve managed Pod.",
                   ],
                   [
-                    "First queryability / logs",
-                    "Completed GitHub logs, invocation metadata and selected artifacts were actually read. Their first accessible time was not sampled; an advertised deterministic URL does not prove an invocation exists.",
+                    "3 · Firecracker scenario overlap",
+                    "Compare serial and concurrent execution of the independent proxy-trust negative and live-guest cases under one fixture. Keep separate guest and credential identities, one-minute idle policy, cleanup and required cold coverage. Measure nested admission and peak memory before extending to loaded runs.",
+                    "Up to 75s on the #18246 trace if the shorter case overlaps fully without slowing the long case. A second whole stack repeats setup. Three first-pass backend heads had Firecracker as latest physical finisher.",
                   ],
                   [
-                    "Webhook → inbox → agent",
-                    "Current notification source supports check_run/status subscriptions and event filters. This session exposes no subscription/inbox receipt clock; provider timestamps are not delivery or harness receipt.",
-                  ],
-                  [
-                    "Actual readiness for auto-merge",
-                    "Current policy requires Test & Build, Pre-commit, Build artifacts + imports; zero ordinary approvals, no code-owner approval, non-strict up-to-date checks. PR/linear history and extra approval for unattributed changes remain. Historical draft/conflict/review/branch conditions are missing.",
+                    "4 · Verify the VM recycle failure",
+                    "Make Docker namespace preparation idempotent when a recycled runner with verified private cgroups is already in its /init child. Exercise a clean fixture followed by a fingerprint-changing action on the same runner. Keep negative coverage for host or unprepared namespaces.",
+                    "Matching receipts on #18265 and a devel push confirm the rebuild predicate. About 25s conditional headroom on #18265 before Gateway budget becomes last. The two-worker minimum and fleet warm-hit rate still need a matched comparison.",
                   ],
                 ],
                 1000,
               )}
-              <${Text} size="sm" mt="sm"
-                >Use the existing live status/invocation watcher for earlier
-                diagnostic feedback; waiting for the final Test & Build job can
-                add minutes after a known failure. This is a verified
-                provider-clock example, not an agent-delivery percentile. Actual
-                push, first access and agent-feedbackp 50/p90 remain
-                unavailable.<//
-              >
+              <${Text} mt="sm">A 30% reduction from the 9m31s one-attempt median requires 2m51s. Reaching a four-minute mean requires a 4m52s reduction from the observed 8m52s mean. None of the isolated observed path reductions covers that distance. A larger design would narrow App-triggered guest, Firecracker and managed Pod work together. Keep an end-to-end App→guest witness and the separate guest lifecycle, PKI and recovery assertions. Compare on the same selected source changes with exact gates and action inputs before counting a gain.<///>
+              <${Text} mt="sm">The 20 November cold job reached its 30-minute GitHub timeout. BuildBuddy finished successfully about eight seconds after GitHub canceled it. Two executor attempts failed waiting for CAS Read responses before the test process started. Input fetch consumed 2m53s, 8m50s and 3m33s across two failed starts and the passing attempt. The passing process took 6m50s. Inspect the worker-side CAS read path before changing the cold test budget. ${link(evidence.cold_workflow[1].html_url, "Passed run")} · ${link(evidence.cold_workflow[0].html_url, "Timed-out GitHub job")}${" · "}${build(evidence.cold_execution.invocation, "Recovered BuildBuddy result")}<//>
             </section>
-            <section id="options">
-              <${Title} order=${2}
-                >Options against 30% and a four-minute mean<//
-              >
-              ${table(
-                [
-                  "Intervention / owner",
-                  "Benefit and moved bottleneck",
-                  "Cost, contract and next discriminating check",
-                ],
-                [
-                  [
-                    "Managed hardware — provider entitlement or placement owner",
-                    "A source-only allocation bump is rejected under current 16-vCPU / 32-GiB per-runner limits. VM-only conditional bounds remain 120s (21.8%) on #16947; 179s (27.2%) on #16976; zero on #16906.",
-                    "Decide whether to obtain a different managed entitlement or independent real-KVM capacity, then repeat the same-input experiment. No performance result exists for either rejected shape. Explicit admission is not provider-wide saturation. Preserve both real harness cases, systemd/OOM/History and cleanup.",
-                  ],
-                  [
-                    "Guest proof boundaries — VM suite and driver",
-                    "A native kernel/lifecycle fixture could stop App-only API changes from invalidating all guest proof. Preserve a separate real App→VM integration witness. Even deleting the current VM path leaves Pod/Dispatcher and about two minutes of workflow overhead; no general four-minute forecast.",
-                    "Larger engineering/review cost. Inventory unique App, guest, PKI, revocation and resume assertions; one native slice plus unchanged App witness is the smallest trial. This changes validation ownership/selection and needs explicit coverage review before promotion.",
-                  ],
-                  [
-                    "KVM tail capacity — cluster pool owner",
-                    "Historical headroom reaches 444s, but the recent 416s wait is on a failed head; typical managed VM/budget paths stay unchanged.",
-                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; faster scale-up and the prebuilt NixOS worker (#17184) are also adopted. Earlier three-round qualification passed functionally but lost on admission. The new Docker reuse qualification above supersedes the initial 2 GB rejection; ordinary scheduler affinity was subsequently demonstrated for Firecracker and #17585 enabled its fixture reuse. #17586 raised the live minimum to two (maximum eight). Their production effect remains unmeasured. The required VM route stays managed; matched admission/drain and eight-worker saturation remain untested.",
-                  ],
-                  [
-                    "Retained daemon correctness — K3s baseline owner",
-                    "Avoid the observed local failure chain and expensive rerun tail if its trigger is repaired. An extra retry does not establish safe cleanup.",
-                    "Inspect exact native transaction/deadline and daemon-exit evidence across restoration. Current nine baseline opens include six warm and three missing-marker cold, with one warm test failing later. This is selected exposure, not a fleet miss rate. Keep fingerprint, cleanliness and fresh identities.",
-                  ],
-                  [
-                    "Several paths together — test architecture",
-                    "A 30% typical gain requires shortening several paths or avoiding invalidation while preserving witnesses; one resource or queue tweak cannot establish it.",
-                    "Do not add overlapping savings. Compare matched full selectors, all gates, stack lifetimes, compute and physical failures. Previous two-stack/shared-guest negatives constrain those arrangements, not every decomposition design.",
-                  ],
-                ],
-                1160,
-              )}
-            </section>
-            <${Accordion} variant="contained" multiple=${true}>
-              <${Accordion.Item} value="prior"
-                ><${Accordion.Control}>Prior work and open commitments<//
-                ><${Accordion.Panel}
-                  ><${Text} mb="md"
-                    >The complete latest report, manifest and substantive
-                    experiment/phase evidence were read before sampling.
-                    ${link(priorUrl, "Pinned 15 November report")} ·
-                    ${link(`${gh}/blob/${prior.commit}/latency/evidence.json`, "Pinned supporting evidence")}
-                    ·
-                    ${link("../agentplane-test-architecture/", "Architecture record")}.
-                    Historical numbers keep their original sources and
-                    windows.<//
-                  >${table(["Workstream", "Disposition"], dispositions, 1100)}<${Title}
-                    order=${3}
-                    mt="lg"
-                    >Original ten lanes — retained 13 November context<//
-                  >${table(
-                    ["Lane", "Original result and measurement commitment"],
-                    e.prior_work.lanes.map((l) => [
-                      l.title,
-                      `${l.observed} Next:${l.measurement}`,
-                    ]),
-                    1100,
-                  )}<${Text} size="sm" mt="sm"
-                    >Current open/merged states were re-read for #15126, #15214,
-                    #16047, #16041, #16489, #16659, #16695, #16700, #16704. Held
-                    experiments remain held; no new source PR or monitoring
-                    schedule is implied.<//
-                  ><//
-                ><//
-              >
-              <${Accordion.Item} value="heads"
-                ><${Accordion.Control}>Exact heads, gates and limits<//
-                ><${Accordion.Panel}
-                  >${table(
-                    [
-                      "PR / head",
-                      "Class",
-                      "Outcome at read",
-                      "CI-gate feedback",
-                      "Bazel checks",
-                    ],
-                    c.heads.map((h) => [
-                      html`${pr(h.pr)}<br /><${Code}>${h.head}<//>`,
-                      h.class,
-                      h.outcome,
-                      fmt(h.feedback_s),
-                      h.bazel_attempts,
-                    ]),
-                    1100,
-                  )}<${Stack} mt="md" gap="sm"
-                    >${c.limits.map((l) => html`<${Text} size="sm">${l}<//>`)}<//
-                  ><//
-                ><//
-              >
-              <${Accordion.Item} value="methods"
-                ><${Accordion.Control}
-                  >Reproduction, clocks and evidence limits<//
-                ><${Accordion.Panel}
-                  ><${Stack} gap="sm"
-                    ><${Text}
-                      >Search was split by UTCday, verified below 1000 results,
-                      page-complete; large PRfile lists were REST-paginated.
-                      Every check suite/run connection was checked. Path
-                      definitions were corrected for test BUILD files and App
-                      frontend before the final systematic selection; saved
-                      check responses were reused, with no outcome criterion.
-                      Conservative collection envelope 10:43:22→10:51:55 UTC
-                      covers the non-atomic reads and reclassification.<//
-                    ><${Text}
-                      >The packaged collector verified 839 fixed-window runs.
-                      Its independent old-live sweep raced; saved runs were
-                      resumed with the same verified job-pagination helper.165
-                      open PRheads were separately read for supporting check
-                      data. evidence.sh generated reviewed runner/step data.
-                      Native GetExecution NEW-origin rows provide fresh costs;
-                      Action/Command decoding verifies routing. Inverted clocks
-                      remain unknown; nested and concurrent spans are not
-                      summed. Selection and test cache misses are distinct.<//
-                    ><${Text}
-                      >Raw APIpayloads, logs, profiles, Commands, webhook data
-                      and executor identities remain private. Only reviewed
-                      measurements/provenance are published. No Shapley
-                      allocation was measured. Managed account entitlement,
-                      first APIavailability, notification delivery, causal fleet
-                      benefit and a qualified 30%architecture remain explicit
-                      gaps.<//
-                    ><${Group}
-                      >${link("./evidence.json", "Reviewed evidence")}${link("./manifest.json", "Source manifest")}${link(`${gh}/blob/${e.source_devel_commit}/.github/workflows/ci.yml`, "Inspected workflow")}${link(priorUrl, "Previous report")}<//
-                    ><//
-                  ><//
-                ><//
-              >
+            <${Accordion} variant="separated">
+              <${Accordion.Item} value="method">
+                <${Accordion.Control}>Population, clocks and provenance<//>
+                <${Accordion.Panel}>
+                  <${Text} mb="sm">151 exact latest heads sampled from 264 matching heads across 19 November 20:00 through 20 November 21:12 UTC. GitHub returned 888 PR CI runs for the full window. The frame includes earlier heads and cross-repository runs. Gate estimates use only the joined latest same-repository devel heads with complete changed-file classes, plus one large-diff head in an unclassified row. Exact check attempts and cutoff outcomes appear in the evidence. These are balanced path samples and the earlier 10–16 November report used a different sampling frame.<///>
+                  <${Text} mb="sm">The devel ruleset requires Test & Build, Pre-commit and Build artifacts + imports, with non-strict status checks and zero ordinary approvals. It requires a PR, linear history and extra approval for unattributed changes. Auto-merge is enabled in repository settings. Historical draft, review and conflict transitions were unavailable. Of the 60 green post-shadow heads all were already merged at collection. The sample does not assign auto-merge-ready timestamps.<///>
+                  <${Text} mb="sm">BuildBuddy test invocations use deterministic run-and-attempt IDs. For linked traces, the synthetic test commit's parents identify the PR head and tested base. All listed post-shadow timelines have a tested base containing the route change. Native test process clocks, fixture spans and GitHub step intervals overlap. The 90-minute runner census excludes unfinished jobs. The independent older-active scan raced pagination, returning 14 records against a reported 26.<///>
+                  <${Text} size="sm">${link(`${gh}/rules/15894562`, "Ruleset")} · ${file(".github/workflows/bazel-ci.yml", "Bazel CI workflow")} · ${file("devinfra/ci/skills/ci_latency/SKILL.md", "Collection method")} · ${link("./evidence.json", "Exact heads, cases and supporting data")}<///>
+                <//>
+              <//>
+              <${Accordion.Item} value="history">
+                <${Accordion.Control}>Prior measurements and experiments<//>
+                <${Accordion.Panel}>
+                  <${Text} mb="sm">The 10–16 November baseline recorded 51 green of 53 backend heads, with 10m23s median and 19m05s p90. The 18 November Firecracker acceptance measured 40.6s warm setup against 106.3s on the cold seed. Selected current traces show reuse in operation. Fleet reuse, the two-worker warm floor's latency benefit, and cost attribution remain open.<///>
+                  <${Text} mb="sm">Prior two-stack sharding duplicated setup and increased the slowest action and CPU cost. The managed resource trial hit an admission limit. The paired admission archives, previous canary, rejected trials, timeline graphs and the original methods remain in the pinned snapshot.<///>
+                  <${Text} size="sm">${link(`${prior}/index.html`, "Prior latency dashboard")} · ${link(`${prior}/evidence.json`, "Prior evidence")} · ${link("../agentplane-test-architecture/", "Architecture record")}<///>
+                <//>
+              <//>
             <//>
-            <footer>
-              <${Text} size="sm" c="dimmed"
-                >This latency snapshot redeploys when its gh-pages PR merges.
-                Reliability and other report populations retain their own
-                windows. Measurements, conditional bounds and untested
-                architecture estimates are distinct.<//
-              >
-            </footer>
-          <//><//
-        >`;
+          <//>
+        <//>`;
       }
       mount(Report);
     </script>
