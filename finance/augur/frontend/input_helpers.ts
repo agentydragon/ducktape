@@ -27,7 +27,6 @@ type SleeveWeight =
 type SleeveIdentity = RequiredKind<WithoutWeight<SleeveWeight>>;
 type ProductInput = Omit<
   typeof DEFAULT_PRODUCT_INPUT_BASE,
-  | "horizonMonths"
   | "spendIndex"
   | "sleeveWeights"
   | "rentalLocationId"
@@ -44,7 +43,6 @@ type ProductInput = Omit<
   rentalFullPropertyMonthly: number | null;
   propertyLifecycleEvents: LifecycleInputEvent[];
 };
-type ProductInputWithHorizon = ProductInput & Pick<typeof DEFAULT_PRODUCT_INPUT_BASE, "horizonMonths">;
 type SellableRow = {
   key: string | null;
   sleeve: SleeveIdentity;
@@ -70,9 +68,10 @@ type ProjectionShared = {
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
 export const DEFAULT_ROLLOUT_COUNT = 500;
 export const DEFAULT_FIRST_SEED = 1;
+// Likewise not a product-input field: the app shell owns the horizon (see `horizonMonthsDefault`).
+const DEFAULT_HORIZON_MONTHS = 48;
 
 export const DEFAULT_PRODUCT_INPUT_BASE = {
-  horizonMonths: 48,
   monthlySpend: 1400,
   spendIndex: "inflation",
   sleeveWeights: null,
@@ -151,7 +150,6 @@ export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
   const overrides = bootstrap.product_input_defaults;
   const overridesNotNull = Object.fromEntries(
     Object.entries({
-      horizonMonths: overrides?.horizon_months,
       monthlySpend: overrides?.monthly_spend,
       spendIndex: overrides?.spend_index,
       cashFloor: overrides?.cash_floor,
@@ -177,8 +175,8 @@ export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
       leasingFeeMonths: overrides?.leasing_fee_months,
       avgTenancyMonths: overrides?.avg_tenancy_months,
     }).filter(([, value]) => value != null)
-  ) as Partial<ProductInputWithHorizon>;
-  const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull } as ProductInputWithHorizon;
+  ) as Partial<ProductInput>;
+  const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull } as ProductInput;
   for (const key of [
     "monthlySpend",
     "cashFloor",
@@ -190,11 +188,9 @@ export function productInputDefaults(bootstrap: Bootstrap): ProductInput {
     if (base[key] != null) base[key] = Number(base[key]);
   }
   // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so we
-  // only fall back to the first location when YAML didn't pin a `rental_location_id`. `horizonMonths`
-  // is NOT part of the input object — it's the tab-shared `?h=` control (see `horizonMonthsDefault`).
-  const { horizonMonths: _horizonMonths, ...baseWithoutHorizon } = base;
+  // only fall back to the first location when YAML didn't pin a `rental_location_id`.
   return {
-    ...baseWithoutHorizon,
+    ...base,
     rentalLocationId: base.rentalLocationId ?? bootstrap.locations[0]?.id ?? null,
   };
 }
@@ -250,7 +246,7 @@ export function modelFromSearch(searchString: string, bootstrap: Bootstrap) {
 // `max_horizon_months`.
 export function horizonMonthsDefault(bootstrap: Bootstrap) {
   const override = bootstrap.product_input_defaults?.horizon_months;
-  return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.max_horizon_months);
+  return clampInteger(override ?? DEFAULT_HORIZON_MONTHS, 1, bootstrap.max_horizon_months);
 }
 
 export function clampHorizonMonths(value: number | null, bootstrap: Bootstrap) {
@@ -475,25 +471,6 @@ export function productScenario(
 // passed in `shared` rather than read from `input`, since the app shell owns them
 // (see `?n=`/`?x=`/`?h=`). `sellable` rides along for the same reason: it comes from the fetched
 // portfolio the shell owns, and an unedited target allocation is seeded from it.
-function productProjectionSamplingRequest(
-  input: ProductInput,
-  bootstrap: Bootstrap,
-  metric: (typeof METRIC_OPTIONS)[number],
-  shared: ProjectionShared,
-  percentiles: number[]
-): Pick<Parameters<typeof fetchProductProjectionSummary>[0], "scenario" | "first_seed" | "rollout_count" | "metric"> & {
-  percentiles: number[];
-} {
-  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
-  return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
-    first_seed: clampFirstSeed(firstSeed),
-    rollout_count: clampRolloutCount(rolloutCount, bootstrap),
-    metric: metric.value,
-    percentiles,
-  };
-}
-
 export function productProjectionSummaryRequest(
   input: ProductInput,
   bootstrap: Bootstrap,
@@ -502,13 +479,13 @@ export function productProjectionSummaryRequest(
   fanPercentiles: number[],
   terminalPercentiles: number[]
 ): Parameters<typeof fetchProductProjectionSummary>[0] {
-  const request = productProjectionSamplingRequest(input, bootstrap, metric, shared, fanPercentiles);
+  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
-    scenario: request.scenario,
-    first_seed: request.first_seed,
-    rollout_count: request.rollout_count,
-    metric: request.metric,
-    fan_percentiles: request.percentiles,
+    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
+    first_seed: clampFirstSeed(firstSeed),
+    rollout_count: clampRolloutCount(rolloutCount, bootstrap),
+    metric: metric.value,
+    fan_percentiles: fanPercentiles,
     terminal_percentiles: terminalPercentiles,
   };
 }

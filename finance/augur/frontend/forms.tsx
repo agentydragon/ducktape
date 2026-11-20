@@ -36,12 +36,9 @@ function isLifecycleEventKind(value: string): value is LifecycleEvent["kind"] {
   return LIFECYCLE_KINDS.some((option) => option.value === value);
 }
 
-export function DisclosureArrow({ collapsed, className = "" }: { collapsed: boolean; className?: string }) {
+export function DisclosureArrow({ collapsed }: { collapsed: boolean }) {
   return (
-    <span
-      aria-hidden="true"
-      className={`text-[8px] transition-transform ${collapsed ? "" : "rotate-90"} ${className}`.trim()}
-    >
+    <span aria-hidden="true" className={`text-[8px] transition-transform ${collapsed ? "" : "rotate-90"}`.trim()}>
       ▶
     </span>
   );
@@ -58,13 +55,11 @@ export function LifecycleEventsEditor({
   events,
   horizonMonths,
   onChange,
-  showLabel = true,
   className = "",
 }: {
   events: LifecycleEvent[];
   horizonMonths: number | null;
   onChange: (events: LifecycleEvent[]) => void;
-  showLabel?: boolean;
   className?: string;
 }) {
   const maxMonth = Math.max(1, Number(horizonMonths) - 1);
@@ -88,7 +83,6 @@ export function LifecycleEventsEditor({
   };
   return (
     <div className={`grid gap-2 ${className}`.trim()}>
-      {showLabel && <div className="augur-field-label">Timeline (mid-horizon changes)</div>}
       {events.length > 0 && (
         <div className="overflow-hidden rounded border border-slate-300 divide-y divide-slate-300 dark:border-slate-600 dark:divide-slate-600">
           {events.map((event, index) => (
@@ -236,14 +230,10 @@ export function SleeveWeightsControl({
   sleeveWeights,
   portfolio,
   onChange,
-  label = "Target allocation (relative weights)",
-  compact = false,
 }: {
   sleeveWeights: SleeveWeightsInput;
   portfolio: SellableSleevesInput;
   onChange: (weights: SleeveWeights) => void;
-  label?: string | null;
-  compact?: boolean;
 }) {
   // One row per sellable sleeve (a held security, or a TLH portfolio) with an integer weight. Only RATIOS matter, so the row also
   // shows each weight as a percentage of their sum — that is the number a person actually reasons
@@ -268,8 +258,7 @@ export function SleeveWeightsControl({
     );
 
   return (
-    <div className={compact ? "" : "mt-3"}>
-      {label && <div className="augur-field-label mb-2">{label}</div>}
+    <div>
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
         {sellable.map((row) => {
           const weight = weightByKey.get(row.key) ?? 0;
