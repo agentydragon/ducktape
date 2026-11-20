@@ -51,7 +51,7 @@ def chart(app: App) -> Chart:
             "rbac": {"enabled": True},
             "serviceAccount": {"create": True, "name": NAME},
             # Reflector was OOM-killed at the 256Mi limit on 2026-11-19.
-            "resources": {"requests": {"memory": "128Mi", "cpu": "100m"}, "limits": {"memory": "768Mi", "cpu": "200m"}},
+            "resources": {"requests": {"memory": "512Mi", "cpu": "100m"}, "limits": {"memory": "768Mi", "cpu": "200m"}},
         },
     )
     return chart

@@ -54,7 +54,7 @@ spec:
         memory: 768Mi
       requests:
         cpu: 100m
-        memory: 128Mi
+        memory: 512Mi
     serviceAccount:
       create: true
       name: reflector
