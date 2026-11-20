@@ -45,19 +45,19 @@ editing a route.
       including the obsolete Nebula certificate-generation state records.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
-      `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
+      `grocy-{sf,vallejo}` workloads use PVC-to-PVC `rsyncTLS`;
       Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
-      That does not cover Forgejo's shared storage. The Forgejo loss above was
+      That does not cover Forgejo's shared storage. The earlier Forgejo loss was
       survivable only because nothing had been pushed yet, not because we had a
       backup. Destination choice is non-trivial: copying between PVCs on the same
       SeaweedFS cluster doesn't protect against
-      the failure mode we just hit (defeats the grocy/tana pattern when
+      the failure mode we just hit (defeats the grocy pattern when
       the primary is already on SeaweedFS). `local-path-proxmox` was unavailable
       during that incident; reassess it against the current Piraeus storage
       design. Off-cluster object storage (B2 / R2 / OVH Object Storage) remains
       an option and overlaps with the observability-backend decision below.
 - [ ] **Convert PVC backups to snapshot/retention, not Direct rsync.**
-      Current `grocy-{sf,vallejo}` and `tana-mcp` volsync configs use
+      Current `grocy-{sf,vallejo}` volsync configs use
       `copyMethod: Direct` rsync into a single destination PVC. When the
       source PVC ends up empty for any reason — fresh reprovision after a
       node rename, a wipe, accidental delete-and-recreate — the next
@@ -120,7 +120,7 @@ editing a route.
       after the rotator is available. Separately decide whether bootstrap or session
       startup should make the newly minted token available before the rotator's Git
       commit/push and local re-source cycle.
-- [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
+- [ ] Decouple wyrm2 from tofu: `proxmox_virtual_environment_vm.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
@@ -476,5 +476,3 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 - <bootstrap.md>
 - <troubleshooting.md>
 - <lessons_learned/2025_11_28_eso_password_generator_desync.md>
-
-**Monthly Cost**: OVH Kimsufi bare metal (3× KS-5 + 2× KS-GAME, HIL); refresh figure (was ~EUR64/mo on the retired Hetzner CPX31 fleet).

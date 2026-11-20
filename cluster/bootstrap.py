@@ -122,7 +122,7 @@ def deploy_persistent_auth() -> None:
     These are idempotent — if they already exist, tofu apply is a no-op.
     On fresh bootstrap, they're created first so infrastructure can use them.
     Targeted applies don't need -exclude (tofu doesn't allow combining them,
-    and the target lists don't include module.wyrm2).
+    and the target lists don't include proxmox_virtual_environment_vm.wyrm2).
     """
     log.info("Phase 1: Persistent Auth")
 
