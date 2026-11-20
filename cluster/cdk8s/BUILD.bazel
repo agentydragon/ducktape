@@ -1529,6 +1529,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":vpa_policy",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
     ],
