@@ -454,6 +454,29 @@
           inherit pkgs;
           baseShell = self.devShells.${system}.default;
         };
+        js-module-proof =
+          let
+            acorn = pkgs.stdenvNoCC.mkDerivation {
+              pname = "js-module-proof-acorn";
+              version = "8.18.0";
+              src = pkgs.fetchurl {
+                url = "https://registry.npmjs.org/acorn/-/acorn-8.18.0.tgz";
+                hash = "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==";
+              };
+              installPhase = ''
+                mkdir -p "$out/lib/node_modules/acorn"
+                cp -r . "$out/lib/node_modules/acorn"
+              '';
+            };
+          in
+          pkgs.mkShell {
+            inputsFrom = [ self.devShells.${system}.default ];
+            packages = [
+              pkgs.lean4
+              pkgs.nodejs
+            ];
+            NODE_PATH = "${acorn}/lib/node_modules";
+          };
       };
 
       # One binding, because `system` is dynamic: Nix merges repeated *static* attribute paths but

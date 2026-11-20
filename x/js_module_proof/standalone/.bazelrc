@@ -1,0 +1,11 @@
+build --config=rbe
+common --repo_env=DO_NOT_TRACK=1
+build:rbe --remote_executor=grpcs://remote.buildbuddy.io
+build:rbe --remote_cache=grpcs://remote.buildbuddy.io
+build:rbe --spawn_strategy=remote
+build:rbe --remote_local_fallback=false
+build:rbe --shell_executable=/bin/bash
+build:rbe --remote_default_exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5
+build:rbe --remote_default_exec_properties=workload-isolation-type=firecracker
+build:rbe --remote_default_exec_properties=recycle-runner=true
+build:rbe --remote_download_minimal

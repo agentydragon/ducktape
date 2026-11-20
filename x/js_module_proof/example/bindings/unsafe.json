@@ -1,0 +1,10 @@
+{
+  "kind": "bindings",
+  "entry": "entry.mjs",
+  "modules": {
+    "amount.mjs": { "imports": [], "statements": [1] },
+    "state.mjs": { "imports": ["amount.mjs"], "statements": [0, 2] },
+    "observe.mjs": { "imports": ["state.mjs"], "statements": [4] },
+    "entry.mjs": { "imports": ["state.mjs", "observe.mjs"], "statements": [3] }
+  }
+}

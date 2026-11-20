@@ -1,0 +1,4 @@
+{
+  "state.mjs": ["count", "increment"],
+  "reader.mjs": ["current"]
+}

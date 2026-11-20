@@ -1,0 +1,11 @@
+{
+  "kind": "combined",
+  "state": "state.mjs",
+  "reader": "reader.mjs",
+  "entry": "entry.mjs",
+  "modules": {
+    "state.mjs": [0, 1],
+    "reader.mjs": [3, 4],
+    "entry.mjs": [2]
+  }
+}
