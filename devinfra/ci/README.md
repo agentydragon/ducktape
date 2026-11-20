@@ -14,7 +14,7 @@ result can satisfy either selection.
 | Ordinary tests, including the Agentplane Pod, dispatcher and MCP suites | BuildBuddy-managed executors. These tests run without nested hardware virtualization.                                                                                                                                                                                                                                                               |
 | `//agentplane/system_tests/suites:test_vm`                              | Self-hosted `kvm-vm` pool. The cluster runs the BuildBuddy workers as KubeVirt VMs. Each worker exposes `/dev/kvm` to the Docker test action, so the inner KubeVirt guests for the Claude and Codex scenarios boot with hardware acceleration. The test requires KVM. The measured configuration permits recycling the K3s fixture between actions. |
 | `//agentplane/system_tests/suites:test_firecracker`                     | The same hosted pool supplies the KVM device needed to boot Firecracker guests.                                                                                                                                                                                                                                                                     |
-| `//agentplane/system_tests/suites:test_vm_tcg`                          | Managed BuildBuddy with QEMU software emulation. This manual target runs the same VM cases as a non-blocking comparison on eligible devel pushes. Other manual diagnostics and cold-worker benchmarks run only when selected explicitly.                                                                                                            |
+| `//agentplane/system_tests/suites:test_vm_tcg`                          | Managed BuildBuddy with QEMU software emulation. Run explicitly to compare the same VM cases with the hosted KVM suite.                                                                                                                                                                                                                             |
 
 The hosted VM route was faster and had fewer first-attempt failures in paired runs of the same
 source revisions. The [latency report](https://agentydragon.github.io/ducktape/latency/#vm-shadow)
@@ -22,14 +22,17 @@ and [reliability report](https://agentydragon.github.io/ducktape/reliability/#vm
 the sample, uncertainty and follow-up evidence. Test execution time and time spent waiting for a worker
 are separate measurements.
 
-The [shadow workflow](../../.github/workflows/vm-shadow.yml) selects a fresh attempt of the required
-suite on devel and forces the managed comparison on that SHA. Each arm allows two total attempts.
-It archives attempt results, case outcomes and executor records in the Actions artifact
-`vm-pair-<run_id>-<run_attempt>`. In version 2 of `pair.json`, `required_route` and `shadow_route`
-name the executor directories (`kvm/` and `managed/`). Older artifacts stored the required managed
-results under `managed/` and the hosted KVM shadow under `shadow/`. Setting the repository variable
-`VM_SHADOW_DISABLED=true` pauses the comparison. The required route is set in the
-[system-test targets](../../agentplane/system_tests/suites/BUILD.bazel).
+To compare the two [VM targets](../../agentplane/system_tests/suites/BUILD.bazel) on demand,
+run both at the same revision and force fresh test results:
+
+```sh
+bbr test --test_tag_filters= --nocache_test_results --flaky_test_attempts=2 \
+  //agentplane/system_tests/suites:test_vm //agentplane/system_tests/suites:test_vm_tcg
+```
+
+The completed devel experiment recorded pairs in `vm-pair-<run_id>-<run_attempt>` Actions artifacts.
+Version 2 of `pair.json` identifies the executor directories with `required_route` and `shadow_route`.
+Earlier artifacts stored the required managed results under `managed/` and the hosted KVM results under `shadow/`.
 
 ## PR visual review
 
