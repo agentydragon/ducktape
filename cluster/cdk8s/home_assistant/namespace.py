@@ -9,14 +9,17 @@ from cluster.cdk8s.generation import namespace_chart, write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
+NAMESPACE = "home-assistant"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant"
+
 
 def write_manifests(root: Path) -> None:
     write_charts(
         root,
-        f"{HAND_WRITTEN_ROOT}/home-assistant",
+        OUTPUT_DIR,
         partial(
             namespace_chart,
-            name="home-assistant",
+            name=NAMESPACE,
             vpa=Vpa.RECOMMEND,
             labels={
                 # Home Assistant and Matter need the host network for mDNS, Bluetooth and

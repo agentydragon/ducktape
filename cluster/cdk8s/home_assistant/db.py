@@ -13,11 +13,10 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.home_assistant.namespace import NAMESPACE, OUTPUT_DIR
 
-_OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant"
 # Home Assistant's recorder will read `uri` from this Cluster's generated `-app` Secret.
-DATABASE = cluster.PostgresRef.generated(name="home-assistant-db", namespace="home-assistant")
+DATABASE = cluster.PostgresRef.generated(name="home-assistant-db", namespace=NAMESPACE)
 
 
 def chart(app: App) -> Chart:
@@ -37,4 +36,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, _OUTPUT_DIR, chart, manifest_name="db.k8s.yaml")
+    write_charts(root, OUTPUT_DIR, chart, manifest_name="db.k8s.yaml")
