@@ -6,10 +6,9 @@ apart is what lets a simulator answer both "how much treasury interest did alice
 "how much of it can California tax" — a ledger that resolved the exemption on the way in
 could answer only the second, and would report exempt income as no income at all.
 
-Two taxpayers and two sources is the smallest shape that can catch the row arithmetic going
-wrong. A row is `taxpayer * source_count + source`, so with one taxpayer the first term
-vanishes and with one source the second does; either degenerate shape agrees with a plain
-per-taxpayer index that is wrong. Four distinct amounts separate them.
+Two taxpayers and two sources is the smallest shape that can catch income booked to the wrong
+taxpayer or the wrong source: with one taxpayer a lookup that ignores the taxpayer still agrees,
+and with one source a lookup that ignores the source does. Four distinct amounts separate them.
 """
 
 from dataclasses import dataclass
@@ -56,7 +55,7 @@ ORDINARY_SOURCE = "ordinary"
 # Through December of the first year, so the year-end assessment has fired.
 HORIZON_MONTHS = 13
 WAGE_MONTH, INTEREST_MONTH = 0, 3
-# Four distinct amounts, one per (taxpayer, source): any collision in the row arithmetic
+# Four distinct amounts, one per (taxpayer, source): income booked to the wrong pair
 # produces a visibly wrong sum rather than a plausible one.
 ALICE_WAGES, ALICE_INTEREST = Decimal(120_000), Decimal(45_000)
 BOB_WAGES, BOB_INTEREST = Decimal(260_000), Decimal(70_000)

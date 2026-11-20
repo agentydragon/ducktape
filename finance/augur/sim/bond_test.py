@@ -1,7 +1,6 @@
 """Nominal and indexed bond acceptance through explicit monthly claim-payment actions.
 
-The same fixed cash, income-character and redemption expectations formerly exercised the
-configured runner. Product carrying-value projection remains a separate backend regression.
+Product carrying-value projection remains a separate backend regression.
 """
 
 from decimal import Decimal

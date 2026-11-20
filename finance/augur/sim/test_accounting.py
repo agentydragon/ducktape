@@ -1,4 +1,4 @@
-"""Native cash admission controls, preserving full books and successful action prefixes."""
+"""Cash admission controls, preserving full books and successful action prefixes."""
 
 from copy import deepcopy
 
