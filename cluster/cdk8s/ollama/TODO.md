@@ -35,8 +35,8 @@ in the inference run record.
   experiment beyond the checkpoint's native 262,144 tokens. Evaluate
   retrieval at several positions and a long-context tool round trip
   against the native-context baseline, alongside prefill latency and VRAM.
-- **Measure prefix-cache overhead and restart recovery.** Use the
+- **Measure prefix-cache writeback overhead.** Use the
   [211K-prefix results](../../docs/inference/runs/2026-11-19_tabby_prefix_cache/README.md)
-  for the current RAM and NVMe tiers. Compare RAM alone with both tiers
-  enabled to isolate writeback overhead. Check cached-token reuse and recurrent
-  replay across a pod restart. See the [experiment runbook](prefix-cache-probe.md).
+  for the current RAM and NVMe tiers, including the replay after pod replacement.
+  Compare RAM alone with both tiers enabled to isolate writeback overhead.
+  See the [experiment runbook](prefix-cache-probe.md).
