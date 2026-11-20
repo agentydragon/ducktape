@@ -59,6 +59,7 @@ class Provider(StrEnum):
     GOOGLE = "google"
     MISTRAL = "mistral"
     OLLAMA = "ollama"
+    TABBYAPI = "tabbyapi"
     RUGGED_LOCAL = "rugged-local"
     GROQ = "groq"
 
@@ -99,6 +100,7 @@ def shape_mode(shape: ApiShape) -> str:
 _UPSTREAM_DEFINER: dict[str, str] = {
     "anthropic": "ant",
     "openai": "oai",
+    "hosted_vllm": "oai",  # TabbyAPI speaks OpenAI Chat Completions.
     "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
@@ -541,6 +543,15 @@ _QWEN_EFFORTS = ("low", "medium", "high")
 
 OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
 OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
+TABBYAPI_CHAT = Upstream(Provider.TABBYAPI, "hosted_vllm", "chat", supports_function_calling=True)
+TABBYAPI_QWEN_ABLITERATED = Route(
+    Model(
+        "qwen3.8-flash-next-abliterated", display_name="Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw)", reasoning=True
+    ),
+    TABBYAPI_CHAT,
+    upstream_model="qwen38-exl3-250-abliterated",
+    reasoning_efforts=_QWEN_EFFORTS,
+)
 _GPT_OSS_20B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_20B, 128 * 1024))
 OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
 _GPT_OSS_120B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024))
@@ -772,6 +783,7 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 # Rugged's local routes are served through LiteLLM alongside the other providers.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
+    TABBYAPI_QWEN_ABLITERATED,
     *RUGGED_LOCAL_CANDIDATE_ROUTES,
     *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,

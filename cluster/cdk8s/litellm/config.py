@@ -11,6 +11,7 @@ from model_catalog.catalog import (
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
     SERVED_ROUTES,
+    TABBYAPI_CHAT,
     ApiShape,
     EmbeddingLimits,
     Provider,
@@ -70,9 +71,10 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         # LiteLLM's hosted_vllm adapter sends Messages directly through Chat
         # Completions instead of the OpenAI adapter's intermediate Responses hop.
         params.update(
-            model=f"hosted_vllm/{tabby_endpoint.MODEL_NAME}",
-            api_base=tabby_endpoint.API_BASE,
-            api_key="tabbyapi",
+            model=f"hosted_vllm/{tabby_endpoint.MODEL_NAME}", api_base=tabby_endpoint.API_BASE, api_key="tabbyapi"
+        )
+    if route.id in _TABBY_QWEN_IDS or upstream == TABBYAPI_CHAT:
+        params.update(
             allowed_openai_params=["reasoning_effort"],
             # TabbyAPI implements Chat Completions; let LiteLLM translate Responses.
             use_chat_completions_api=True,

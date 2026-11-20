@@ -8,6 +8,25 @@ network:
 model:
   model_dir: /models
   model_name: qwen38-exl3-268
+  inline_model_loading: true
+  # Keep the same budgets on startup and when a request switches checkpoints.
+  use_as_default:
+    - backend
+    - max_seq_len
+    - cache_size
+    - cache_mode
+    - max_batch_size
+    - tensor_parallel
+    - gpu_split
+    - gpu_split_auto
+    - vision
+    - ngram_ram
+    - chunk_size
+    - output_chunking
+    - warmup
+    - draft_mode
+    - draft_num_tokens
+    - draft_cache_mode
   backend: exllamav3
   max_seq_len: 262144
   cache_size: 270336

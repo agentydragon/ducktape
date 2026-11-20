@@ -2,8 +2,11 @@
 
 ## TabbyAPI
 
-TabbyAPI serves Qwen3.8 Flash-Next EXL3 2.68-bit with a 262,144-token context
-and one active request. It reserves both 5090s.
+TabbyAPI starts with Qwen3.8 Flash-Next EXL3 2.68-bit and can switch to the
+abliterated 2.50-bit checkpoint by request. Both use the two 5090s, a configured
+262,144-token context, and one active generation stream. Switching checkpoints
+waits for the current request to finish, reloads weights from NVMe, and clears
+the in-memory prompt cache.
 
 With the original 28/30 GiB loader budgets, a 137K-token prefill ran out of
 memory with about 200 MiB free on GPU 0 and 11.3 GiB free on GPU 1. The
@@ -17,10 +20,13 @@ Repeat with a fresh prefix after mixed requests.
 
 The LiteLLM compatibility IDs
 `ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
-deployment and share its server-side context. Gatus probes the private
+deployment and select the stock checkpoint. Select
+`tabbyapi/oai-chat/qwen3.8-flash-next-abliterated` in LiteLLM or
+**Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI Chat Completions**
+in the Agentplane staging central sampler. Gatus probes the private
 `/v1/models` endpoint. LiteLLM handles client authentication.
 
-The static local volume mounts the [staged checkpoint](#tabbyapi-checkpoint-staging)
+The static local volumes mount the [staged checkpoints](#tabbyapi-checkpoint-staging)
 on the wyrm2 NVMe read-only. The ConfigMap overlays a chat template that supports
 mid-conversation system messages and maps the established `high` effort to
 Qwen's `xhigh`.
@@ -46,7 +52,7 @@ Checkpoint files live under `/games/llm-models/` on `wyrm2`.
 | Directory                     | Use                                                   | Source                                                                                                                                                           |
 | ----------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `qwen38-exl3-268`             | Serving, 2.68 bpw self-calibrated, 8-bit n-gram table | [turboderp revision `d660113`](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/d660113325e1eba20e760a9063580139bdbdfc22)                           |
-| `qwen38-exl3-250-abliterated` | Candidate, 2.50 bpw, 3-bit n-gram table               | [ghost-actual revision `1354024`](https://huggingface.co/ghost-actual/Qwen3.8-Flash-Next-Abliterated-EXL3-2.50bpw/tree/135402464a8d351ca6ecb6969f2a6f4061681a24) |
+| `qwen38-exl3-250-abliterated` | Serving on demand, 2.50 bpw, 3-bit n-gram table       | [ghost-actual revision `1354024`](https://huggingface.co/ghost-actual/Qwen3.8-Flash-Next-Abliterated-EXL3-2.50bpw/tree/135402464a8d351ca6ecb6969f2a6f4061681a24) |
 
 The candidate quantizes [OrcaRouter's abliterated BF16 checkpoint](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored).
 The ablation is in the model weights. The download includes the MTP weights and

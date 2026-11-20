@@ -108,12 +108,12 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
     }
     if central_sampler_enabled:
         sampler_ids = [route.id for route in models.central_sampler]
-        if (canary := models.central_sampler_chat_canary) is not None:
-            model_id = chat_completions_id(canary)
+        for route in models.central_sampler_chat:
+            model_id = chat_completions_id(route)
             options.append(
                 ModelOption(
                     model=model_id,
-                    display_name=f"{canary.display_name} — TabbyAPI Chat Completions (canary)",
+                    display_name=f"{route.display_name} — TabbyAPI Chat Completions",
                     reasoning_efforts=[],
                 )
             )
