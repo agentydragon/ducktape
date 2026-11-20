@@ -1231,6 +1231,25 @@ it("shows a materialization failure without treating missing History as a delete
   expect(container.querySelector("textarea")).toBeNull();
 });
 
+it("keeps retained History visible and the composer disabled after a materialization failure", async () => {
+  sharedThread = {
+    summary: { projectionEpoch: "retained-epoch" },
+    session: {
+      sessionId: THREAD.metadata.threadId,
+      status: {
+        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED,
+        reason: "invalid model",
+      },
+    },
+  };
+  const container = await renderAfterThreadsSnapshot(
+    threadState({ rows: [viewState(), testItem(1, ItemKind.TOOL_CALL, { toolName: "retained-tool" })] })
+  );
+  expect(container.textContent).toContain("Session materialization failed · invalid model");
+  expect(container.textContent).toContain("retained-tool");
+  expect(composer(container).disabled).toBe(true);
+});
+
 it("does not infer deletion when no exact Sandbox identity is known", async () => {
   sharedThread = { summary: { sandbox: undefined, attached: undefined }, session: undefined };
   const container = await renderAfterThreadsSnapshot();
