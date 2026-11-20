@@ -8,11 +8,45 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
 _FLUX_NAMESPACE = "flux-system"
+_ADMISSION_CPU_REQUEST = "100m"
+_ADMISSION_MEMORY_LIMIT = "384Mi"
+_BACKGROUND_CPU_REQUEST = "50m"
+_BACKGROUND_MEMORY_LIMIT = "256Mi"
+_CLEANUP_CPU_REQUEST = "10m"
+_CLEANUP_MEMORY_LIMIT = "128Mi"
+_REPORTS_CPU_REQUEST = "100m"
+_REPORTS_MEMORY_REQUEST = "256Mi"
+_REPORTS_MEMORY_LIMIT = "512Mi"
+
+
+def _initial_memory_annotations(
+    container_name: str, *, cpu_request: str, memory_floor: str, memory_limit: str
+) -> dict[str, str]:
+    return {
+        VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+            ContainerPolicy(
+                container_name=container_name,
+                controlled_values=ControlledValues.REQUESTS_ONLY,
+                controlled_resources=("memory",),
+                # VPA 1.7.1 admission can still use a stale CPU target from Off mode.
+                min_allowed={"cpu": cpu_request, "memory": memory_floor},
+                max_allowed={"cpu": cpu_request, "memory": memory_limit},
+            ),
+            ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+        ),
+    }
 
 
 def _values() -> dict[str, object]:
@@ -24,6 +58,20 @@ def _values() -> dict[str, object]:
         # cross-node hops that can fail during early bootstrap.
         "admissionController": {
             "replicas": 3,
+            # Deployment metadata keeps the Pod template unchanged. Peak 30-day
+            # working set was 206Mi, including 158Mi in the first 10 minutes.
+            "annotations": _initial_memory_annotations(
+                "kyverno",
+                cpu_request=_ADMISSION_CPU_REQUEST,
+                memory_floor="224Mi",
+                memory_limit=_ADMISSION_MEMORY_LIMIT,
+            ),
+            "container": {
+                "resources": {
+                    "limits": {"memory": _ADMISSION_MEMORY_LIMIT},
+                    "requests": {"cpu": _ADMISSION_CPU_REQUEST, "memory": "128Mi"},
+                }
+            },
             # All four controllers carry this. Without a priority class they sort
             # with ordinary workloads under kubelet eviction, and a node whose disk was
             # filled by something else entirely evicts them for a few KiB apiece — which
@@ -85,26 +133,50 @@ def _values() -> dict[str, object]:
             "enabled": True,
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
-            "resources": {"limits": {"cpu": "200m", "memory": "256Mi"}, "requests": {"cpu": "50m", "memory": "64Mi"}},
+            # Peak 30-day working set was 191Mi during startup.
+            "annotations": _initial_memory_annotations(
+                "controller",
+                cpu_request=_BACKGROUND_CPU_REQUEST,
+                memory_floor="208Mi",
+                memory_limit=_BACKGROUND_MEMORY_LIMIT,
+            ),
+            "resources": {
+                "limits": {"cpu": "200m", "memory": _BACKGROUND_MEMORY_LIMIT},
+                "requests": {"cpu": _BACKGROUND_CPU_REQUEST, "memory": "64Mi"},
+            },
         },
         "cleanupController": {
             "enabled": True,
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
-            "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
+            # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
+            "annotations": _initial_memory_annotations(
+                "controller", cpu_request=_CLEANUP_CPU_REQUEST, memory_floor="124Mi", memory_limit=_CLEANUP_MEMORY_LIMIT
+            ),
+            "resources": {
+                "limits": {"cpu": "100m", "memory": _CLEANUP_MEMORY_LIMIT},
+                "requests": {"cpu": _CLEANUP_CPU_REQUEST, "memory": "32Mi"},
+            },
         },
         "reportsController": {
             "enabled": True,
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
+            # Preserve the existing 256Mi reservation. Peak 30-day working set was 204Mi.
+            "annotations": _initial_memory_annotations(
+                "controller",
+                cpu_request=_REPORTS_CPU_REQUEST,
+                memory_floor=_REPORTS_MEMORY_REQUEST,
+                memory_limit=_REPORTS_MEMORY_LIMIT,
+            ),
             "resources": {
                 # No CPU limit: this controller syncs an informer cache over ALL resources
                 # (--skipResourceFilters=true) + runs background scans; the object
                 # deserialization is CPU-heavy. A 100m limit throttled cache sync to ~83s,
                 # blowing the leader-election lease deadline -> crashloop. Matches the
                 # admission-controller (also uncapped CPU). Memory raised to hold the cache.
-                "limits": {"memory": "512Mi"},
-                "requests": {"cpu": "100m", "memory": "256Mi"},
+                "limits": {"memory": _REPORTS_MEMORY_LIMIT},
+                "requests": {"cpu": _REPORTS_CPU_REQUEST, "memory": _REPORTS_MEMORY_REQUEST},
             },
         },
         "crds": {"install": True},
@@ -120,6 +192,7 @@ def _values() -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "kyverno", disable_resource_name_hashes=True)
+    # Keep namespace-wide VPA in recommendation mode, including the Helm migration Job.
     namespace = namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     helm_release(
         chart,
