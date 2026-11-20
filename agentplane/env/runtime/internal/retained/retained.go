@@ -97,9 +97,6 @@ func MatchesSetupScript(record *Record, script string) bool {
 	return string(record.SetupScript) == script
 }
 
-// HasSetupScript reports whether a setup source was retained.
-func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
-
 func ReservationSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: proto.Clone(record.Placement).(*sessionpb.EnvironmentHostedPlacement)}}, Cwd: record.Cwd, Model: record.InitialModel,

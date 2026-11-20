@@ -85,7 +85,8 @@ durable user data and uncertain-effect handling in any accepted change.
   [snapshots](runtime/session/inputs.go), operation revisions, local slots and
   [lifecycle status](runtime/session/resources.go) coordinate the same work; Codex app-server has a
   related pattern. Keep durable journal authority, admission guards, completion ordering and no replay.
-  Prototype one operation before deciding whether a broader change actually saves code.
+  The setup snapshot no longer duplicates whether the retained script is present. Prototype one
+  operation before deciding whether a broader ownership change actually saves code.
 - **Bootstrap output:** COSI retains every output chunk and loads it on restart, although no production
   reader of the output bytes was found. `OpenLog` validates the sequence without cloning each payload
   again. Decide whether full retained output is needed before changing the contract. A bounded/indexed
