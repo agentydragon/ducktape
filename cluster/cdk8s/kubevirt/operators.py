@@ -44,6 +44,7 @@ def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
 
 VIRT_OPERATOR_ON_HIL = _on_hil("virt-operator", KUBEVIRT_NAMESPACE)
 CDI_OPERATOR_ON_HIL = _on_hil("cdi-operator", _CDI_NAMESPACE)
+# TODO(https://github.com/agentydragon/ducktape/issues/18159): Simplify these availability and placement patches.
 VIRT_OPERATOR_AVAILABILITY = Json6902Patch(
     patch=Yaml.stringify(
         [
