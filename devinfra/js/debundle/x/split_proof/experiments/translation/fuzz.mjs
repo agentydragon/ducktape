@@ -991,14 +991,14 @@ async function main() {
         : astCorpus && t === 0
           ? bundle.units.map(() => 0)
           : astCorpus && t === 1 && bundle.guidedPlace
-            ? bundle.guidedPlace
+            ? bundle.units.map(() => 0)
             : astCorpus && t === 2 && bundle.writeGuided
               ? bundle.units.map(() => 0)
               : undefined;
       const plan = split(bundle, tr, {
         renameLocals: !callbackCorpus && tr.chance(0.5),
         place,
-        moveBefore: astCorpus && t === 2 ? bundle.writeGuided : undefined,
+        moveBefore: astCorpus && t === 1 ? bundle.guidedMove : astCorpus && t === 2 ? bundle.writeGuided : undefined,
         controlName:
           astCorpus && t === 0
             ? "astControl"
@@ -1034,7 +1034,15 @@ async function main() {
           `bundle ${round} tree ${t}: unexpected translate exit ${checked.status}\n${checked.stdout}${checked.stderr}`
         );
       const verdict = outcome.name;
-      if (astCorpus && plan.strategy === "astGuided" && !same) bump("ast/guidedDifferent");
+      if (astCorpus && plan.strategy === "astGuided" && !same) {
+        bump("ast/guidedDifferent");
+        if (bundle.guidedCallbackShape !== "direct") {
+          bump("ast/indirectGuidedDifferent");
+          if (bundle.guidedInitializer === "ArrowFunctionExpression") bump("ast/indirectArrowGuidedDifferent");
+          if (bundle.guidedInitializer === "Literal") bump("ast/indirectLiteralGuidedDifferent");
+          if (verdict === "obligations") bump("ast/indirectGuidedObligations");
+        }
+      }
       if (astCorpus && plan.strategy === "astWriteGuided" && !same) {
         bump("ast/writeGuidedDifferent");
         if (verdict === "obligations") bump("ast/writeGuidedObligations");
@@ -1068,6 +1076,8 @@ async function main() {
         same,
         plan: { strategy: plan.strategy, modules: plan.modules, rename: plan.rename, capture: plan.capture },
         writeGuided: plan.strategy === "astWriteGuided" ? bundle.writeGuided : null,
+        guidedCallbackShape: plan.strategy === "astGuided" ? bundle.guidedCallbackShape : null,
+        guidedInitializer: plan.strategy === "astGuided" ? bundle.guidedInitializer : null,
         templates: [...new Set(bundle.units.map((u) => u.tmpl))].sort(),
         reference,
         observed: tree,
@@ -1119,6 +1129,10 @@ async function main() {
         inferredIdentityPlans: tally["ast/inferredIdentity"] ?? 0,
         inferredFactoryPlans: tally["ast/inferredFactory"] ?? 0,
         guidedDifferentPlans: tally["ast/guidedDifferent"] ?? 0,
+        indirectGuidedDifferentPlans: tally["ast/indirectGuidedDifferent"] ?? 0,
+        indirectArrowGuidedDifferentPlans: tally["ast/indirectArrowGuidedDifferent"] ?? 0,
+        indirectLiteralGuidedDifferentPlans: tally["ast/indirectLiteralGuidedDifferent"] ?? 0,
+        indirectGuidedObligations: tally["ast/indirectGuidedObligations"] ?? 0,
         writeGuidedDifferentPlans: tally["ast/writeGuidedDifferent"] ?? 0,
         writeGuidedObligations: tally["ast/writeGuidedObligations"] ?? 0,
         nontrivialAcceptedPlans: tally["ast/nontrivialAccepted"] ?? 0,
@@ -1167,6 +1181,8 @@ async function main() {
         `AST coverage incomplete: missing=${missing.join(",")} depth=${astDepth} features=${JSON.stringify(astFeatures)}`
       );
   }
+  if (astCorpus && args.includes("--require-indirect-guided") && !tally["ast/indirectGuidedObligations"])
+    throw new Error("AST corpus did not reject a divergent indirect callback through OrderOk");
   if (astCorpus && args.includes("--require-updates") && !astTypes.UpdateExpression)
     throw new Error("AST corpus did not exercise mutable updates");
   if (astCorpus && args.includes("--require-inferred-identity") && !tally["ast/inferredIdentity"])

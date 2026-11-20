@@ -104,6 +104,7 @@ function walk(node, visit, depth = 0) {
  * have lexical environments, and recursive calls to a function being built are excluded. */
 export function generateAstBundle(seed, round) {
   const pick = random((seed * 100003 + round) >>> 0);
+  const callbackPick = random((seed * 100019 + round + 17) >>> 0);
   let next = 0;
   const fresh = () => `v${next++}`;
   // Deferred closures may capture these reserved bindings before their declarations.
@@ -113,6 +114,7 @@ export function generateAstBundle(seed, round) {
   const futureCallable = pick(2) === 0;
   let pendingReady = false;
   let earlyCallbacks = 0;
+  let indirectEarlyCallbacks = 0;
   const env = {
     values: [],
     functions: [],
@@ -282,6 +284,20 @@ export function generateAstBundle(seed, round) {
       scope.callbackNeedsPending = !!target.needsPending;
       scope.callbackFromEarly = !pendingReady && !!target.needsPending;
       if (scope.callbackFromEarly) earlyCallbacks++;
+      // The saved callback can reach its target through a deferred wrapper and
+      // an object/array cell. Both are generated AST, not source templates.
+      const shape = ["direct", "wrapper", "object", "array", "objectWrapper", "arrayWrapper"][callbackPick(6)];
+      scope.callbackShape = shape;
+      if (scope.callbackFromEarly && shape !== "direct") indirectEarlyCallbacks++;
+      let savedValue = ref(target);
+      if (shape.toLowerCase().includes("wrapper"))
+        savedValue = { type: "ArrowFunctionExpression", params: [], body: call(savedValue, [num(1)]) };
+      if (shape.startsWith("object"))
+        savedValue = {
+          type: "ObjectExpression",
+          properties: [{ type: "Property", key: id("value", "property"), value: savedValue }],
+        };
+      if (shape.startsWith("array")) savedValue = { type: "ArrayExpression", elements: [savedValue] };
       return {
         node: exprStmt({
           type: "AssignmentExpression",
@@ -292,7 +308,7 @@ export function generateAstBundle(seed, round) {
             property: id("saved", "property"),
             computed: false,
           },
-          right: ref(target),
+          right: savedValue,
         }),
         defs: [],
       };
@@ -301,18 +317,31 @@ export function generateAstBundle(seed, round) {
       return {
         node: log(
           call(
-            {
-              type: "MemberExpression",
-              object: id("globalThis", "global"),
-              property: id("saved", "property"),
-              computed: false,
-            },
+            scope.callbackShape.startsWith("object") || scope.callbackShape.startsWith("array")
+              ? {
+                  type: "MemberExpression",
+                  object: {
+                    type: "MemberExpression",
+                    object: id("globalThis", "global"),
+                    property: id("saved", "property"),
+                    computed: false,
+                  },
+                  property: scope.callbackShape.startsWith("object") ? id("value", "property") : num(0),
+                  computed: scope.callbackShape.startsWith("array"),
+                }
+              : {
+                  type: "MemberExpression",
+                  object: id("globalThis", "global"),
+                  property: id("saved", "property"),
+                  computed: false,
+                },
             [expression(scope, 1)]
           ),
           "callback"
         ),
         defs: [],
         deferredInvocation: !!scope.callbackFromEarly,
+        callbackShape: scope.callbackShape,
       };
     if (kind === "factory") {
       const binding = { name: fresh(), scope: "top" };
@@ -438,6 +467,9 @@ export function generateAstBundle(seed, round) {
         env.functions.push(future);
       } else {
         init = identities.length ? call(ref(choose(identities)), [num(1 + pick(8))]) : expression(env, 2);
+        // Also exercise watched literal initialization independently of the
+        // existing random expression stream.
+        if (callbackPick(2) === 0) init = num(1 + callbackPick(8));
         env.values.push(future);
       }
       units.push({ ast: declare(future, init, "const"), defs: [future.name] });
@@ -447,7 +479,14 @@ export function generateAstBundle(seed, round) {
       (futureCallable ? env.functions : env.values).push(alias);
       pendingReady = true;
     } else {
-      const { node, defs, deferredInvocation = false, topLevelWrite, writeRead } = statement(env, 2, true);
+      const {
+        node,
+        defs,
+        deferredInvocation = false,
+        callbackShape,
+        topLevelWrite,
+        writeRead,
+      } = statement(env, 2, true);
       if (topLevelWrite) written.push({ binding: topLevelWrite, writer: units.length });
       if (writeRead)
         writeReadPairs.push({
@@ -456,7 +495,7 @@ export function generateAstBundle(seed, round) {
           name: writeRead.binding.name,
           snapshot: defs[0],
         });
-      units.push({ ast: node, defs, deferredInvocation });
+      units.push({ ast: node, defs, deferredInvocation, callbackShape });
     }
   }
   const observed = snapshots.length ? choose(snapshots) : null;
@@ -492,7 +531,11 @@ export function generateAstBundle(seed, round) {
     source: printAst(ast),
     pending: [future.name, alias.name],
     earlyCallbacks,
+    indirectEarlyCallbacks,
     guidedPlace,
+    guidedMove: guidedPlace ? { writer: initIndex, reader: invokeIndex } : null,
+    guidedCallbackShape: guidedPlace ? units[invokeIndex].callbackShape : null,
+    guidedInitializer: guidedPlace ? units[initIndex].ast.declarations[0].init.type : null,
     // Pick a snapshot that is actually logged; other random code remains
     // generated independently and the candidate need not be accepted.
     writeGuided: writeReadPairs.find((pair) => pair.snapshot === observed?.name) ?? null,
@@ -512,6 +555,7 @@ export function astStatistics(bundle) {
     directIdentifierCalls: 0,
     forwardReferences: 0,
     earlyCallbacks: bundle.earlyCallbacks,
+    indirectEarlyCallbacks: bundle.indirectEarlyCallbacks,
   };
   const saved = (e) =>
     e?.type === "MemberExpression" && e.object?.name === "globalThis" && e.property?.name === "saved";
@@ -521,7 +565,7 @@ export function astStatistics(bundle) {
     if (node.type === "ReturnStatement" && node.argument?.type === "ArrowFunctionExpression")
       features.returnedClosures++;
     if (node.type === "AssignmentExpression" && saved(node.left)) features.callbackStores++;
-    if (node.type === "CallExpression" && saved(node.callee)) features.callbackCalls++;
+    if (node.type === "CallExpression" && (saved(node.callee) || saved(node.callee?.object))) features.callbackCalls++;
     if (node.type === "VariableDeclarator" && node.init?.type === "Identifier") features.aliases++;
     if (
       node.type === "FunctionDeclaration" &&

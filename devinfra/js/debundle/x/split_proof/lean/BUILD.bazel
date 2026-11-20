@@ -407,3 +407,26 @@ lean_axiom_test(
         "ObservedInitializer.binding_read_remains_ordered",
     ],
 )
+
+filegroup(
+    name = "translate_mutation_base_sources",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Correct.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/Plan.lean",
+        "EsmSplit/Render.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+        "Experiments/Lower.lean",
+        "Experiments/TranslateMain.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
+
+filegroup(
+    name = "translate_mutation_source",
+    srcs = ["Experiments/Translate.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
