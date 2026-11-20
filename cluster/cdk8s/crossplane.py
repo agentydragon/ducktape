@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from textwrap import dedent
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, ServiceAccount
+from cdk8s_plus_34 import Cpu, ServiceAccount, k8s
 from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     Provider,
     ProviderSpec,
     ProviderSpecPackagePullSecrets,
     ProviderSpecRuntimeConfigRef,
+)
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
 
@@ -53,6 +60,7 @@ _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    core_selector = {"app": NAME, "release": NAME}
     namespaces.namespace(
         chart,
         "namespace",
@@ -81,6 +89,14 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
+    k8s.KubePodDisruptionBudget(
+        chart,
+        "core-disruption-budget",
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
+        spec=k8s.PodDisruptionBudgetSpec(
+            min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=core_selector)
+        ),
+    )
     helm_release(
         chart,
         NAME,
@@ -91,7 +107,50 @@ def chart(app: App) -> Chart:
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
-        values={},
+        values={
+            "replicas": 2,
+            "leaderElection": True,
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {"matchLabels": core_selector},
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
+        },
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=NAME),
+                            # Chart 2.4.2 only probes the health port's TCP listener. Crossplane's
+                            # HTTP readiness endpoint waits for the actual TLS webhook server.
+                            patch=dedent("""\
+                                apiVersion: apps/v1
+                                kind: Deployment
+                                metadata:
+                                  name: crossplane
+                                spec:
+                                  template:
+                                    spec:
+                                      containers:
+                                        - name: crossplane
+                                          readinessProbe:
+                                            httpGet:
+                                              path: /readyz
+                                              port: readyz
+                                            periodSeconds: 5
+                                            timeoutSeconds: 2
+                                """),
+                        )
+                    ]
+                )
+            )
+        ],
     )
     return chart
 
