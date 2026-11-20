@@ -8,12 +8,12 @@ Usage:
 """
 
 import logging
+import os
 import subprocess
 
 from python.runfiles import Runfiles
 
 from devinfra.oci.oci import bazel_crane, read_oci_layout_digest
-from props.agents.env import get_required_env
 
 # (rlocation of OCI layout dir, repository name, tag override for variants)
 IMAGES: list[tuple[str, str, str | None]] = [
@@ -32,9 +32,9 @@ IMAGES: list[tuple[str, str, str | None]] = [
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    registry = get_required_env("PROPS_REGISTRY_URL")
-    username = get_required_env("PROPS_REGISTRY_USERNAME")
-    password = get_required_env("PROPS_REGISTRY_PASSWORD")
+    registry = os.environ["PROPS_REGISTRY_URL"]
+    username = os.environ["PROPS_REGISTRY_USERNAME"]
+    password = os.environ["PROPS_REGISTRY_PASSWORD"]
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
     crane = bazel_crane(registry=registry, username=username, password=password)

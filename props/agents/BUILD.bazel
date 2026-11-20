@@ -33,7 +33,6 @@ py_library(
     name = "push_images",
     srcs = ["push_images.py"],
     deps = [
-        ":env",
         "//devinfra/oci",
         "@rules_python//python/runfiles",
     ],
@@ -92,9 +91,4 @@ py_test(
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
 )
