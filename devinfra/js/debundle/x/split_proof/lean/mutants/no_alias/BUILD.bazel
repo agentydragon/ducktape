@@ -8,8 +8,8 @@ genrule(
     name = "mutated_lower",
     srcs = [_LOWER],
     outs = ["Experiments/Lower.lean"],
-    cmd = "test \"$$(grep -F -c 'let refs := t.rawLazy ++ (if t.inert then t.rawEager else #[])' $(location " + _LOWER + "))\" -eq 1 && " +
-          "sed 's|let refs := t.rawLazy ++ (if t.inert then t.rawEager else #\\[\\])|let refs := t.rawLazy|' $(location " + _LOWER + ") > $@",
+    cmd = "test \"$$(grep -F -c 'let refs := t.rawLazy ++ (if t.inert || !t.fallback.isEmpty then t.rawEager else #[])' $(location " + _LOWER + "))\" -eq 1 && " +
+          "sed 's@let refs := t.rawLazy ++ (if t.inert || !t.fallback.isEmpty then t.rawEager else #\\[\\])@let refs := t.rawLazy ++ (if !t.fallback.isEmpty then t.rawEager else #[])@' $(location " + _LOWER + ") > $@",
 )
 
 lean_binary(
