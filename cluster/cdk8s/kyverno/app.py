@@ -43,7 +43,7 @@ def _values() -> dict[str, object]:
                     "kyverno",
                     cpu_request=_ADMISSION_CPU_REQUEST,
                     memory_floor="224Mi",
-                    memory_limit=_ADMISSION_MEMORY_LIMIT,
+                    memory_ceiling=_ADMISSION_MEMORY_LIMIT,
                 )
             ),
             "container": {
@@ -119,7 +119,7 @@ def _values() -> dict[str, object]:
                     "controller",
                     cpu_request=_BACKGROUND_CPU_REQUEST,
                     memory_floor="208Mi",
-                    memory_limit=_BACKGROUND_MEMORY_LIMIT,
+                    memory_ceiling=_BACKGROUND_MEMORY_LIMIT,
                 )
             ),
             "resources": {
@@ -137,7 +137,7 @@ def _values() -> dict[str, object]:
                     "controller",
                     cpu_request=_CLEANUP_CPU_REQUEST,
                     memory_floor="124Mi",
-                    memory_limit=_CLEANUP_MEMORY_LIMIT,
+                    memory_ceiling=_CLEANUP_MEMORY_LIMIT,
                 )
             ),
             "resources": {
@@ -155,7 +155,7 @@ def _values() -> dict[str, object]:
                     "controller",
                     cpu_request=_REPORTS_CPU_REQUEST,
                     memory_floor=_REPORTS_MEMORY_REQUEST,
-                    memory_limit=_REPORTS_MEMORY_LIMIT,
+                    memory_ceiling=_REPORTS_MEMORY_LIMIT,
                 )
             ),
             "resources": {

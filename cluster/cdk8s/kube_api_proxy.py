@@ -59,7 +59,10 @@ def _deployment(chart: Chart) -> None:
                 **initial_memory_request_annotations(
                     # The working set peaked below 10Mi. Cap the global 100Mi recommendation floor.
                     ContainerPolicy.memory_requests_only(
-                        "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
+                        "nginx",
+                        cpu_request=_NGINX_CPU_REQUEST,
+                        memory_floor=_NGINX_MEMORY_REQUEST,
+                        memory_ceiling="24Mi",
                     )
                 ),
             },

@@ -31,7 +31,7 @@ class ContainerPolicy(BaseModel):
 
     @classmethod
     def memory_requests_only(
-        cls, container_name: str, *, cpu_request: str, memory_floor: str, memory_limit: str
+        cls, container_name: str, *, cpu_request: str, memory_floor: str, memory_ceiling: str
     ) -> Self:
         """Bound memory requests and pin CPU against recommendations cached before opt-in."""
         return cls(
@@ -39,7 +39,7 @@ class ContainerPolicy(BaseModel):
             controlled_values=ControlledValues.REQUESTS_ONLY,
             controlled_resources=("memory",),
             min_allowed={"cpu": cpu_request, "memory": memory_floor},
-            max_allowed={"cpu": cpu_request, "memory": memory_limit},
+            max_allowed={"cpu": cpu_request, "memory": memory_ceiling},
         )
 
 

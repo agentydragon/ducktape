@@ -192,7 +192,7 @@ class HaMcpApp(Construct):
                             "ha-mcp",
                             cpu_request=_CPU_REQUEST,
                             memory_floor="256Mi",
-                            memory_limit=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
+                            memory_ceiling=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
                         )
                     ),
                     "description": (

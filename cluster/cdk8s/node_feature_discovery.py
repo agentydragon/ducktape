@@ -26,14 +26,14 @@ def chart(app: App) -> Chart:
             Vpa.INITIAL,
             (
                 ContainerPolicy.memory_requests_only(
-                    "gc", cpu_request="10m", memory_floor="128Mi", memory_limit="256Mi"
+                    "gc", cpu_request="10m", memory_floor="128Mi", memory_ceiling="256Mi"
                 ),
                 ContainerPolicy.memory_requests_only(
-                    "master", cpu_request="100m", memory_floor="128Mi", memory_limit="256Mi"
+                    "master", cpu_request="100m", memory_floor="128Mi", memory_ceiling="256Mi"
                 ),
                 # The worker's 30-day working-set peak was ~68 MiB, above its 64 MiB template request.
                 ContainerPolicy.memory_requests_only(
-                    "worker", cpu_request="5m", memory_floor="96Mi", memory_limit="128Mi"
+                    "worker", cpu_request="5m", memory_floor="96Mi", memory_ceiling="128Mi"
                 ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
