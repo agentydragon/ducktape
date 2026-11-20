@@ -167,9 +167,14 @@ node x/js_module_proof/fuzz.mjs --seed 123 --cases 1000 --output-dir "$OUTPUT_DI
 ```
 
 The seed and case index determine each case independently; `--start N --cases 1`
-replays one case. Failure artifacts include source, assignment, generated files,
+replays one case. `--shard I --shards N` selects the indices congruent to I
+modulo N, so independent workers cover the same range without overlap.
+Failure artifacts include source, assignment, generated files,
 Node observations and, if available, the validator verdict. Cases with a Node difference and an unknown or unvalidated verdict are retained
-for investigation; other non-failing cases are removed. The fuzzer keeps files only inside the chosen output directory.
+for investigation; other non-failing cases are removed. An unmodified split that
+is proved but differs in Node is reduced by removing statements, calls, empty
+modules and imports while preserving that failure, with the result saved under
+`minimized/`. The fuzzer keeps files only inside the chosen output directory.
 Lean checking is expensive: `--validate-every N` selects a reproducible
 approximately 1/N sample for validation while still splitting and running all
 supported cases in Node. The summary distinguishes unvalidated cases, unknowns,

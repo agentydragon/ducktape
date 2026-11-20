@@ -610,10 +610,14 @@ async function minimizeProvedDifference(input, root) {
 // Every generated case is reproducible independently from seed and index.
 // Results and all emitted modules are retained on an invariant failure.
 export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery = 1, shard = 0, shards = 1 }) {
+  if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
+    throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
   const summary = {
     seed,
     start,
+    shard,
+    shards,
     cases: 0,
     constantCases: 0,
     modeledClosureCases: 0,
@@ -827,27 +831,35 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
     const opts = Object.fromEntries(Array.from({ length: args.length / 2 }, (_, i) => [args[2 * i], args[2 * i + 1]]));
     if (
       Object.keys(opts).some(
-        (key) => !["--seed", "--start", "--cases", "--output-dir", "--validate-every"].includes(key)
+        (key) =>
+          !["--seed", "--start", "--cases", "--output-dir", "--validate-every", "--shard", "--shards"].includes(key)
       )
     )
       throw new Error("unknown option");
     const seed = Number(opts["--seed"] ?? 1),
       start = Number(opts["--start"] ?? 0),
       cases = Number(opts["--cases"] ?? 100),
-      validateEvery = Number(opts["--validate-every"] ?? 1);
+      validateEvery = Number(opts["--validate-every"] ?? 1),
+      shard = Number(opts["--shard"] ?? 0),
+      shards = Number(opts["--shards"] ?? 1);
     if (
-      ![seed, start, cases, validateEvery].every(Number.isSafeInteger) ||
+      ![seed, start, cases, validateEvery, shard, shards].every(Number.isSafeInteger) ||
       seed < 0 ||
       seed > 0xffffffff ||
       start < 0 ||
       cases < 1 ||
       validateEvery < 1 ||
+      shards < 1 ||
+      shard < 0 ||
+      shard >= shards ||
       !opts["--output-dir"]
     )
-      throw new Error("usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N]");
+      throw new Error(
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N]"
+      );
     console.log(
       JSON.stringify(
-        await runFuzz({ seed, start, cases, validateEvery, outputDir: resolve(opts["--output-dir"]) }),
+        await runFuzz({ seed, start, cases, validateEvery, shard, shards, outputDir: resolve(opts["--output-dir"]) }),
         null,
         2
       )

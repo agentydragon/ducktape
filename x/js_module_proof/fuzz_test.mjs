@@ -12,6 +12,10 @@ const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
+await assert.rejects(
+  runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, shard: 2, shards: 2 }),
+  /shard must/
+);
 const shrinkInput = makeCase(123, 0);
 const keptNode = JSON.stringify(shrinkInput.ast.body[0]);
 const keptCall = shrinkInput.calls[0];
