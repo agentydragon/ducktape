@@ -25,6 +25,31 @@ fn assert_success(result: &CommandResult) {
     );
 }
 
+/// Assert that the debundler refused the input and that stderr contains every diagnostic.
+#[track_caller]
+fn assert_rejected(result: &CommandResult, diagnostics: &[&str]) {
+    assert_rejected_case("debundler", result, diagnostics);
+}
+
+/// [`assert_rejected`] for one case of a table: `case` prefixes the failure messages.
+#[track_caller]
+fn assert_rejected_case(case: &str, result: &CommandResult, diagnostics: &[&str]) {
+    assert!(
+        !result.status.success(),
+        "{case}: expected a rejection, got exit status {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr
+    );
+    for diagnostic in diagnostics {
+        assert!(
+            result.stderr.contains(diagnostic),
+            "{case}: stderr lacks {diagnostic:?}\nstderr:\n{}",
+            result.stderr
+        );
+    }
+}
+
 #[test]
 fn named_from_module_default_accepts_all_upstream_export_forms() {
     // Named exports before/after their declaration and anonymous function/class
@@ -367,7 +392,7 @@ fn named_from_default_rejects_non_object_literal_default() {
     // function` shapes should use the `named_from_module_default`
     // wrapper instead (which handles anonymous default fn/class via
     // `DefaultDecl::{Fn,Class}` — see
-    // `named_from_module_default_handles_anonymous_default_class`).
+    // `named_from_module_default_accepts_all_upstream_export_forms`).
     let upstream_source = r#"export default class {
   ping() { return "pong"; }
 }
@@ -378,17 +403,9 @@ fn named_from_default_rejects_non_object_literal_default() {
         chunk_source: "export { ping } from \"lib\";\n",
     });
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler should fail on class default for named-from-default shape",
-    );
-    assert!(
-        fixture
-            .result
-            .stderr
-            .contains("named-from-default: upstream has no export default declaration"),
-        "expected no-export-default error; got stderr:\n{}",
-        fixture.result.stderr,
+    assert_rejected(
+        &fixture.result,
+        &["named-from-default: upstream has no export default declaration"],
     );
 }
 
@@ -497,27 +514,13 @@ fn partial_swap_rejects_split_brain_residual_reachability() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler should reject split-brain partial swap",
-    );
-    assert!(
-        fixture.result.stderr.contains("split-brain vendor swap"),
-        "expected split-brain diagnostic in stderr:\n{}",
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture
-            .result
-            .stderr
-            .contains("swapped path: swapped export `object`"),
-        "{}",
-        fixture.result.stderr
-    );
-    assert!(
-        fixture.result.stderr.contains("dependency of item"),
-        "{}",
-        fixture.result.stderr
+    assert_rejected(
+        &fixture.result,
+        &[
+            "split-brain vendor swap",
+            "swapped path: swapped export `object`",
+            "dependency of item",
+        ],
     );
 }
 
@@ -568,15 +571,7 @@ fn partial_swap_rejects_function_default_returning_shared_callback() {
         symbols: vec![("e6", "zod", "boolean")],
         upstream_version: "3.23.8",
     });
-    assert!(
-        !fixture.result.status.success(),
-        "shared default callback must prevent partial swap",
-    );
-    assert!(
-        fixture.result.stderr.contains("split-brain vendor swap"),
-        "expected split-brain diagnostic in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["split-brain vendor swap"]);
 }
 
 #[test]
@@ -628,15 +623,7 @@ fn partial_swap_rejects_accessor_default_returning_shared_callback() {
         symbols: vec![("e6", "zod", "boolean")],
         upstream_version: "3.23.8",
     });
-    assert!(
-        !fixture.result.status.success(),
-        "accessor-produced shared callback must prevent partial swap",
-    );
-    assert!(
-        fixture.result.stderr.contains("split-brain vendor swap"),
-        "expected split-brain diagnostic in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["split-brain vendor swap"]);
 }
 
 #[test]
@@ -752,20 +739,9 @@ fn partial_swap_rejects_observable_side_effect_reading_swapped_binding() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler should reject an observable side effect that reads a swapped binding\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture
-            .result
-            .stderr
-            .contains("observable side-effect item")
-            && fixture.result.stderr.contains("swap-reachable"),
-        "expected observable-side-effect soundness diagnostic in stderr:\n{}",
-        fixture.result.stderr,
+    assert_rejected(
+        &fixture.result,
+        &["observable side-effect item", "swap-reachable"],
     );
 }
 
@@ -819,16 +795,7 @@ fn partial_swap_rejects_island_registration_that_a_residual_reader_observes() {
             argument,
             "Object.keys(registry).join(\",\")",
         ));
-        assert!(
-            !fixture.result.status.success(),
-            "{argument}: the registration a residual reader observes must not be dropped\nstderr:\n{}",
-            fixture.result.stderr,
-        );
-        assert!(
-            fixture.result.stderr.contains("`registry`"),
-            "{argument}: expected the retained registry named in stderr:\n{}",
-            fixture.result.stderr,
-        );
+        assert_rejected_case(argument, &fixture.result, &["`registry`"]);
     }
 }
 
@@ -866,16 +833,7 @@ fn partial_swap_rejects_island_registration_through_an_alias() {
          export const e6 = () => all.has(\"onMouseEnter\");\n\
          export const keepMe = () => Object.keys(registry).join(\",\");\n",
     );
-    assert!(
-        !fixture.result.status.success(),
-        "a registration through an alias must not be dropped\nstderr:\n{}",
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("`registry`"),
-        "expected the retained registry named in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["`registry`"]);
 }
 
 /// React DOM's DevTools injection: island internals handed to a host global.
@@ -915,11 +873,7 @@ fn partial_swap_rejects_island_internals_handed_to_chunk_code() {
          export const e6 = () => internals.all.has(\"mouseout\");\n\
          export const keepMe = () => Object.keys(registry).join(\",\");\n",
     );
-    assert!(
-        !fixture.result.status.success(),
-        "internals handed to chunk code may fill the registry\nstderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &[]);
 }
 
 /// An island call that only compares retained state by identity (the
@@ -959,18 +913,7 @@ fn partial_swap_reports_every_refused_registration() {
          export const e6 = () => all.has(\"a\");\n\
          export const keepMe = () => Object.keys(first).concat(Object.keys(second)).join(\",\");\n",
     );
-    assert!(
-        !fixture.result.status.success(),
-        "both registrations a residual reader observes must be refused\nstderr:\n{}",
-        fixture.result.stderr,
-    );
-    for retained in ["`first`", "`second`"] {
-        assert!(
-            fixture.result.stderr.contains(retained),
-            "expected {retained} named in stderr:\n{}",
-            fixture.result.stderr,
-        );
-    }
+    assert_rejected(&fixture.result, &["`first`", "`second`"]);
 }
 
 /// The same IIFE calling a function it declares, which fills the registry a
@@ -983,16 +926,7 @@ fn partial_swap_rejects_island_iife_calling_its_own_registration() {
          export const e6 = () => all.has(\"mouseout\");\n\
          export const keepMe = () => Object.keys(registry).join(\",\");\n",
     );
-    assert!(
-        !fixture.result.status.success(),
-        "the registration a residual reader observes must not be dropped\nstderr:\n{}",
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("`registry`"),
-        "expected the retained registry named in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["`registry`"]);
 }
 
 #[test]
@@ -1025,15 +959,7 @@ fn partial_swap_rejects_version_mismatch() {
         upstream_version: "9.9.9",
     });
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler should fail on partial-swap version mismatch",
-    );
-    assert!(
-        fixture.result.stderr.contains("version mismatch"),
-        "expected version-mismatch error in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["version mismatch"]);
 }
 
 struct PartialSwapFixtureArgs<'a> {
@@ -1514,18 +1440,10 @@ fn partial_swap_rejects_local_export_of_a_dotted_member_read() {
         )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
-    assert!(
-        !fixture.result.status.success(),
-        "{}",
-        fixture.result.stdout
+    assert_rejected(
+        &fixture.result,
+        &["static/app/entry.js", "zodBoolean", "e6"],
     );
-    for diagnostic in ["static/app/entry.js", "zodBoolean", "e6"] {
-        assert!(
-            fixture.result.stderr.contains(diagnostic),
-            "{}",
-            fixture.result.stderr
-        );
-    }
 }
 
 #[test]
@@ -2407,18 +2325,7 @@ fn partial_swap_rejects_consumers_that_would_lose_swapped_exports() {
             )],
         );
         let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
-        assert!(
-            !fixture.result.status.success(),
-            "{label}: {}",
-            fixture.result.stdout
-        );
-        for diagnostic in diagnostics {
-            assert!(
-                fixture.result.stderr.contains(diagnostic),
-                "{label}: {}",
-                fixture.result.stderr
-            );
-        }
+        assert_rejected_case(label, &fixture.result, &diagnostics);
     }
 }
 
@@ -2455,17 +2362,7 @@ fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
         "write_js_tree": { "out_dir": &ws.out_root },
     });
     let result = ws.run_spec(&spec, &[]);
-    assert!(
-        !result.status.success(),
-        "debundler must reject a boundary mapping key that collides with a real export\nstdout:\n{}\nstderr:\n{}",
-        result.stdout,
-        result.stderr,
-    );
-    assert!(
-        result.stderr.contains("collides") && result.stderr.contains("`a`"),
-        "expected boundary-rename collision diagnostic in stderr:\n{}",
-        result.stderr,
-    );
+    assert_rejected(&result, &["collides", "`a`"]);
 }
 
 // ─── full swap: caller contract + export-shape validation ───────────────
@@ -2530,18 +2427,7 @@ fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
         upstream_source: "export const unrelated = 1;\n",
         default_export_aliases: &[],
     });
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject a default-exporting chunk swapped against an upstream without a default\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("export shape mismatch")
-            && fixture.result.stderr.contains("default"),
-        "expected export-shape mismatch naming `default` in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["export shape mismatch", "default"]);
 }
 
 #[test]
@@ -2601,18 +2487,7 @@ fn named_from_module_default_rejects_unverified_named_exports() {
         upstream_source: "export default function f() { return \"pkg\"; }\n",
         default_export_aliases: &[],
     });
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject named exports that are not verified aliases of the chunk default\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("named-from-module-default")
-            && fixture.result.stderr.contains("other"),
-        "expected over-claim diagnostic naming `other` in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["named-from-module-default", "other"]);
 }
 
 #[test]
@@ -2643,18 +2518,7 @@ fn named_from_module_default_rejects_single_named_export_without_assertion() {
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &[],
     });
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject an unasserted single-named-export chunk\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("named-from-module-default")
-            && fixture.result.stderr.contains("c"),
-        "expected unverified-alias diagnostic naming `c` in stderr:\n{}",
-        fixture.result.stderr,
-    );
+    assert_rejected(&fixture.result, &["named-from-module-default", "c"]);
 }
 
 #[test]
@@ -2707,17 +2571,9 @@ fn named_from_json_default_rejects_names_missing_from_json() {
         upstream_source: "{ \"version\": \"1.2.3\" }\n",
         default_export_aliases: &[],
     });
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject vendor named exports missing from the upstream JSON keys",
-    );
-    assert!(
-        fixture
-            .result
-            .stderr
-            .contains("named-from-json-default wrapper shape mismatch"),
-        "expected JSON wrapper shape mismatch in stderr:\n{}",
-        fixture.result.stderr,
+    assert_rejected(
+        &fixture.result,
+        &["named-from-json-default wrapper shape mismatch"],
     );
 }
 
@@ -2833,12 +2689,7 @@ fn vendor_namespaces_reject_reserved_binding_names() {
         )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("lib", &root)]);
-    assert!(!fixture.result.status.success());
-    assert!(
-        fixture.result.stderr.contains("not a valid JS identifier"),
-        "{}",
-        fixture.result.stderr
-    );
+    assert_rejected(&fixture.result, &["not a valid JS identifier"]);
 }
 
 #[test]
@@ -3216,12 +3067,7 @@ fn bundled_reentry_proof_requires_closed_bundle() {
         ),
     ] {
         let fixture = browser_bundled_reentry_fixture(bundle, loader);
-        assert!(!fixture.result.status.success());
-        assert!(
-            fixture.result.stderr.contains("atomic-group conflict"),
-            "{}",
-            fixture.result.stderr
-        );
+        assert_rejected(&fixture.result, &["atomic-group conflict"]);
     }
 }
 
@@ -3285,16 +3131,9 @@ fn named_swap_cannot_capture_a_source_global() {
         }
         let extra_args: &[&str] = if dry_run { &["--dry-run"] } else { &[] };
         let result = ws.run_spec_with_args(&spec, &[(PACKAGE_NAME, &package_root)], extra_args);
-        assert!(
-            !result.status.success(),
-            "capturing source globals must be rejected (materialized={materialized}, reports={with_reports}, dry_run={dry_run}):\n{}",
-            result.stdout
-        );
-        assert!(
-            result.stderr.contains("source global `observer` captured"),
-            "{}",
-            result.stderr
-        );
+        let case =
+            format!("materialized={materialized}, reports={with_reports}, dry_run={dry_run}");
+        assert_rejected_case(&case, &result, &["source global `observer` captured"]);
         assert!(!ws.out_root.join("app/static/app/entry.js").exists());
     }
 }
