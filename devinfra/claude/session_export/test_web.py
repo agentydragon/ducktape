@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 import pytest_bazel
+from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
 from devinfra.claude.session_export.conftest import (
@@ -36,6 +37,42 @@ OWNER = "test-owner-subject"
 REFUSAL_BODY = "test-refusal-body"
 
 Serve = Callable[..., AbstractAsyncContextManager[str]]
+
+
+def _mock_idp(issuer_url: str, *, subject: str = OWNER) -> Starlette:
+    private_key, public_key = generate_rsa_keypair()
+    return build_mock_oidc_app(
+        issuer_url=issuer_url,
+        private_key=private_key,
+        public_key=public_key,
+        subject=subject,
+        extra_id_token_claims={"preferred_username": "test-owner"},
+    )
+
+
+def _oidc_settings(*, app_url: str, idp_url: str) -> dict[str, Any]:
+    """The `OIDCSettings` fields of a page whose login at `idp_url` admits only `OWNER`."""
+    return {
+        "database_url": "postgresql://unused.invalid/unused",
+        "public_base_url": app_url,
+        "oidc_issuer": idp_url,
+        "oidc_client_id": "test-client",
+        "oidc_client_secret": "test-client-secret",
+        "oidc_session_secret": "test-session-secret",
+        "oidc_allowed_subject": OWNER,
+    }
+
+
+def _supervisor(store: SessionStore, credentials_file: Path, token_endpoint: FakeTokenEndpoint) -> SyncSupervisor:
+    return SyncSupervisor(
+        credentials=CredentialStore(credentials_file),
+        store=store,
+        token_client=token_endpoint.client,
+        interval=3600,
+        workers=1,
+        live_streams=0,
+        live_window=timedelta(hours=1),
+    )
 
 
 async def _next_sse_frame(response: httpx.Response) -> dict[str, str]:
@@ -68,38 +105,17 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             (frontend / "index.html").write_text(
                 "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
             )
-        private_key, public_key = generate_rsa_keypair()
         with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
             idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
-            idp = build_mock_oidc_app(
-                issuer_url=idp_url,
-                private_key=private_key,
-                public_key=public_key,
-                subject=subject,
-                extra_id_token_claims={"preferred_username": "test-owner"},
-            )
             settings = ServeSettings(
-                database_url="postgresql://unused.invalid/unused",
-                credentials_file=tmp_path / "credential.json",
-                public_base_url=app_url,
-                oidc_issuer=idp_url,
-                oidc_client_id="test-client",
-                oidc_client_secret="test-client-secret",
-                oidc_session_secret="test-session-secret",
-                oidc_allowed_subject=OWNER,
+                **_oidc_settings(app_url=app_url, idp_url=idp_url), credentials_file=tmp_path / "credential.json"
             )
-            supervisor = SyncSupervisor(
-                credentials=CredentialStore(settings.credentials_file),
-                store=store,
-                token_client=FakeTokenEndpoint(token_response, status=token_status).client,
-                interval=3600,
-                workers=1,
-                live_streams=0,
-                live_window=timedelta(hours=1),
+            supervisor = _supervisor(
+                store, settings.credentials_file, FakeTokenEndpoint(token_response, status=token_status)
             )
             # The app runs in this loop, not in a thread: its store holds this loop's asyncpg connections.
             async with (
-                idp_endpoint.serve(idp),
+                idp_endpoint.serve(_mock_idp(idp_url, subject=subject)),
                 app_endpoint.serve_in_loop(
                     create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend)
                 ),
@@ -174,48 +190,15 @@ async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncCli
 
 async def test_pairing_can_start_on_one_web_replica_and_finish_on_another(store: SessionStore, tmp_path: Path) -> None:
     """Both public pods proxy to the single control process that owns the PKCE attempt and credential."""
-    private_key, public_key = generate_rsa_keypair()
     with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
         idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
-        idp = build_mock_oidc_app(
-            issuer_url=idp_url,
-            private_key=private_key,
-            public_key=public_key,
-            subject=OWNER,
-            extra_id_token_claims={"preferred_username": "test-owner"},
-        )
         web_settings = WebSettings(
-            database_url="postgresql://unused.invalid/unused",
-            public_base_url=app_url,
-            oidc_issuer=idp_url,
-            oidc_client_id="test-client",
-            oidc_client_secret="test-client-secret",
-            oidc_session_secret="test-session-secret",
-            oidc_allowed_subject=OWNER,
-            control_base_url="http://control",
+            **_oidc_settings(app_url=app_url, idp_url=idp_url), control_base_url="http://control"
         )
-        control_settings = ServeSettings(
-            database_url="postgresql://unused.invalid/unused",
-            credentials_file=tmp_path / "credential.json",
-            public_base_url=app_url,
-            oidc_issuer=idp_url,
-            oidc_client_id="test-client",
-            oidc_client_secret="test-client-secret",
-            oidc_session_secret="test-session-secret",
-            oidc_allowed_subject=OWNER,
-        )
-        supervisor = SyncSupervisor(
-            credentials=CredentialStore(control_settings.credentials_file),
-            store=store,
-            token_client=FakeTokenEndpoint(PAIRED_RESPONSE).client,
-            interval=3600,
-            workers=1,
-            live_streams=0,
-            live_window=timedelta(hours=1),
-        )
+        supervisor = _supervisor(store, tmp_path / "credential.json", FakeTokenEndpoint(PAIRED_RESPONSE))
         control_app = create_control_app(supervisor=supervisor)
         async with (
-            idp_endpoint.serve(idp),
+            idp_endpoint.serve(_mock_idp(idp_url)),
             httpx.AsyncClient(
                 base_url="http://control", transport=httpx.ASGITransport(app=control_app)
             ) as control_client,

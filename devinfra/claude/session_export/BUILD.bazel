@@ -48,6 +48,7 @@ py_library(
         ":sync",
         ":web",
         "//devinfra/bazel:workspace",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],

@@ -9,7 +9,6 @@ import { getStatus } from "./api";
 import { App } from "./app";
 
 vi.mock("./api", () => ({
-  ApiError: class extends Error {},
   getStatus: vi.fn(),
   syncNow: vi.fn(),
   startPairing: vi.fn(),

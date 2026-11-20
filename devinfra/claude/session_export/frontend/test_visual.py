@@ -49,6 +49,10 @@ async def noisy_view(open_fixture: OpenFixture) -> AsyncIterator[VisualPage]:
 @pytest_asyncio.fixture(loop_scope="session")
 async def history_view(open_fixture: OpenFixture) -> AsyncIterator[VisualPage]:
     async with open_fixture("history") as view:
+        # The transcript is scrolled to its tail with the newest card (sequence 17) in view.
+        await view.page.wait_for_function(
+            "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
+        )
         yield view
 
 
@@ -169,18 +173,11 @@ async def test_narration_is_visible(open_fixture: OpenFixture) -> None:
 
 
 async def test_history_opens_at_tail(history_view: VisualPage) -> None:
-    page = history_view.page
-    await page.wait_for_function(
-        "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
-    )
     await _capture(history_view)
 
 
 async def test_loading_older_history_preserves_anchor(history_view: VisualPage) -> None:
     page = history_view.page
-    await page.wait_for_function(
-        "() => {\n                const viewport = document.querySelector('[aria-label=\"Session transcript\"] .mantine-ScrollArea-viewport');\n                const latest = document.querySelector('[data-history-sequences~=\"17\"]');\n                if (!viewport || !latest || viewport.scrollHeight <= viewport.clientHeight) return false;\n                const box = viewport.getBoundingClientRect(), card = latest.getBoundingClientRect();\n                return Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1\n                    && card.bottom > box.top && card.top < box.bottom;\n            }"
-    )
     thinking = page.locator('details[aria-label="Thinking"]')
     await expect(thinking).to_be_attached()
     await thinking.evaluate(

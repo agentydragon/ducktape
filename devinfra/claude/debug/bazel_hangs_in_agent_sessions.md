@@ -132,8 +132,6 @@ collected yet.
 
 - `devinfra/claude/claude_hook/main.rs:write_session_bazelrc` — where the
   mitigations live.
-- The old Python-era Bazelrc template was removed; it was not consulted at
-  runtime anymore.
 
 ## Adjacent failure mode: stuck `claude-hook shim` (2026-05-18)
 

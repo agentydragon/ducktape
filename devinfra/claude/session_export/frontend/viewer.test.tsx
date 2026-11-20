@@ -122,6 +122,35 @@ function mockWatchStream() {
   return stream;
 }
 
+const TRANSCRIPT_VIEWPORT = '[aria-label="Session transcript"] .mantine-ScrollArea-viewport';
+
+function findButton(container: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes(text)
+  );
+}
+
+async function typeInto(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function changedFrame(sessionId: string): MessageEvent {
+  return new MessageEvent("changed", { data: JSON.stringify({ session_ids: [sessionId] }) });
+}
+
+/** happy-dom has no layout: gives the viewport a size and a scroll position short of its end. */
+async function scrollTranscriptUp(container: HTMLElement, scrollHeight: number): Promise<HTMLElement> {
+  const viewport = container.querySelector<HTMLElement>(TRANSCRIPT_VIEWPORT)!;
+  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: scrollHeight });
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
+  viewport.scrollTop = 100;
+  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  return viewport;
+}
+
 it("recovers an initial session-list network failure by retrying on its own", async () => {
   vi.useFakeTimers();
   vi.mocked(listSessions)
@@ -160,9 +189,7 @@ it("keeps the selected session when the session list is hidden and shown", async
   expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
     "Selected after toggling"
   );
-  const showButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Show session list")
-  );
+  const showButton = findButton(container, "Show session list");
   expect(showButton).toBeDefined();
   await act(async () => showButton?.click());
   expect(container.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
@@ -356,26 +383,18 @@ it("applies committed session and transcript changes without restarting the watc
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1));
   const article = container.querySelector('[data-fold-kind="message"]')!;
   const list = container.querySelector('[aria-label="Session list"] button')!;
-  const viewport = container.querySelector(
-    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-  ) as HTMLElement;
-  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1000 });
-  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
-  viewport.scrollTop = 100;
-  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  const viewport = await scrollTranscriptUp(container, 1000);
   const toolRun = container.querySelector('[data-fold-kind="tool-run"]')!;
   const control = toolRun.querySelector<HTMLButtonElement>("button")!;
   await act(async () => control.click());
   expect(control.getAttribute("aria-expanded")).toBe("true");
 
-  await act(async () =>
-    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
-  );
+  await act(async () => stream.dispatchEvent(changedFrame(session.id)));
   expect(finishRefresh).toBeDefined();
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelector('[data-fold-kind="tool-run"]')).toBe(toolRun);
   expect(container.querySelector('[aria-label="Session list"] button')).toBe(list);
-  expect(container.querySelector('[aria-label="Session transcript"] .mantine-ScrollArea-viewport')).toBe(viewport);
+  expect(container.querySelector(TRANSCRIPT_VIEWPORT)).toBe(viewport);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
   await vi.waitFor(() => expect(container?.querySelector("h4")?.textContent).toBe("Renamed live session"));
@@ -418,9 +437,7 @@ it("updates an older loaded session into and out of the active filter across a s
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain(session.title));
-  const loadMore = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Load more sessions")
-  )!;
+  const loadMore = findButton(container, "Load more sessions")!;
   await act(async () => loadMore.click());
   await vi.waitFor(() => expect(container?.textContent).toContain(olderArchived.title));
 
@@ -437,9 +454,7 @@ it("updates an older loaded session into and out of the active filter across a s
   await act(async () => activeOption.click());
   await vi.waitFor(() => expect(finishActiveFilter).toBeDefined());
 
-  await act(async () =>
-    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [olderArchived.id] }) }))
-  );
+  await act(async () => stream.dispatchEvent(changedFrame(olderArchived.id)));
   await vi.waitFor(() => expect(container?.textContent).toContain(olderActive.title));
   await act(async () => finishActiveFilter?.({ data: [], next_cursor: null, resume_token: "watch-1" }));
   expect(container?.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
@@ -447,29 +462,19 @@ it("updates an older loaded session into and out of the active filter across a s
   );
 
   const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "renamed older");
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await typeInto(search, "renamed older");
   expect(container.querySelector('#session-sidebar button[aria-pressed="true"]')?.textContent).toContain(
     olderActive.title
   );
 
-  await act(async () =>
-    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [olderArchived.id] }) }))
-  );
+  await act(async () => stream.dispatchEvent(changedFrame(olderArchived.id)));
   await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(2));
   await vi.waitFor(() => {
     const rows = [...(container?.querySelectorAll<HTMLButtonElement>("#session-sidebar button[aria-pressed]") ?? [])];
     expect(rows.some((button) => button.textContent?.includes(olderActive.title))).toBe(false);
   });
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "");
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () =>
-    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [newSession.id] }) }))
-  );
+  await typeInto(search, "");
+  await act(async () => stream.dispatchEvent(changedFrame(newSession.id)));
   await vi.waitFor(() => expect(container?.textContent).toContain(newSession.title));
   expect(watchSessions).toHaveBeenCalledTimes(1);
 });
@@ -496,11 +501,9 @@ it("coalesces a burst of selected-session changes without abandoning an in-fligh
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
-  const changedFrame = (): MessageEvent =>
-    new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) });
-  await act(async () => stream.dispatchEvent(changedFrame()));
+  await act(async () => stream.dispatchEvent(changedFrame(session.id)));
   await vi.waitFor(() => expect(finishFirstCatchup).toBeDefined());
-  await act(async () => stream.dispatchEvent(changedFrame()));
+  await act(async () => stream.dispatchEvent(changedFrame(session.id)));
   await act(async () => finishFirstCatchup?.(eventPage([second, first])));
 
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 4"));
@@ -521,9 +524,7 @@ it("aborts per-session live detail reads when the viewer unmounts", async () => 
   });
   const viewer = await mountWithMantine(<SessionViewer />);
   await vi.waitFor(() => expect(watchSessions).toHaveBeenCalledTimes(1));
-  await act(async () =>
-    stream.dispatchEvent(new MessageEvent("changed", { data: JSON.stringify({ session_ids: [session.id] }) }))
-  );
+  await act(async () => stream.dispatchEvent(changedFrame(session.id)));
   await vi.waitFor(() => expect(detailSignal).toBeDefined());
   await viewer.unmount();
   expect(detailSignal?.aborted).toBe(true);
@@ -569,9 +570,7 @@ it("loads newest events first, prepends older pages without duplication, and fol
     latestRawEvent.open = true;
     latestRawEvent.dispatchEvent(new Event("toggle"));
   });
-  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Load older events")
-  )!;
+  const loadOlder = findButton(container, "Load older events")!;
   await act(async () => loadOlder.click());
   await vi.waitFor(() => expect(container?.querySelectorAll("[data-raw-event]")).toHaveLength(4));
 
@@ -613,23 +612,13 @@ it("catches up every page after a reconnect without dropping the selected older 
 
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 1"));
-  const loadMoreSessions = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Load more sessions")
-  )!;
+  const loadMoreSessions = findButton(container, "Load more sessions")!;
   await act(async () => loadMoreSessions.click());
-  const olderSessionButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes(olderSession.title)
-  )!;
+  const olderSessionButton = findButton(container, olderSession.title)!;
   await act(async () => olderSessionButton.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("Message 1000"));
 
-  const viewport = container.querySelector(
-    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
-  ) as HTMLElement;
-  Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 5000 });
-  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
-  viewport.scrollTop = 100;
-  await act(async () => viewport.dispatchEvent(new Event("scroll")));
+  const viewport = await scrollTranscriptUp(container, 5000);
   await act(async () => {
     stream.onerror?.();
   });
@@ -680,9 +669,7 @@ it("keeps older-page pagination available when the newest loaded page contains o
   await vi.waitFor(() => expect(container?.querySelectorAll("[data-event-strip]")).toHaveLength(1));
   expect(container.querySelectorAll("[data-event-dot]")).toHaveLength(1);
   expect(container.querySelector("[data-event-json]")).toBeNull();
-  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Load older events")
-  );
+  const loadOlder = findButton(container, "Load older events");
   expect(loadOlder).toBeDefined();
   await act(async () => loadOlder?.click());
   await vi.waitFor(() => expect(container?.textContent).toContain("First message"));
@@ -719,15 +706,9 @@ it("keeps suppressed events inspectable without expanding JSON or hook noise by 
 
   // Search within a payload field, including records omitted from the folded view.
   const search = container.querySelector<HTMLInputElement>('[aria-label="Search event data"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "fixture-pre-0");
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await typeInto(search, "fixture-pre-0");
   expect(container.querySelectorAll("[data-raw-event]")).toHaveLength(1);
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "not-in-this-fixture");
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await typeInto(search, "not-in-this-fixture");
   expect(container.textContent).toContain("No loaded events match these filters.");
   await act(async () => container?.querySelector<HTMLButtonElement>('[aria-label="Show folded transcript"]')!.click());
   expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
@@ -751,9 +732,7 @@ it("keeps an open tool disclosure when older history extends its activity group"
   container = await renderViewer();
   await vi.waitFor(() => expect(container?.querySelector('[data-fold-kind="tool-run"] button')).not.toBeNull());
   await act(async () => container?.querySelector<HTMLButtonElement>('[data-fold-kind="tool-run"] button')!.click());
-  const loadOlder = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Load older events")
-  )!;
+  const loadOlder = findButton(container, "Load older events")!;
   await act(async () => loadOlder.click());
   await vi.waitFor(() =>
     expect(container?.querySelector('[data-fold-kind="tool-group"] button[aria-expanded="true"]')).not.toBeNull()

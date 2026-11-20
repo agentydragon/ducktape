@@ -814,8 +814,6 @@ mod tests {
     use super::*;
     use crate::test_util::PathFixture;
 
-    // --------- C.3: write_session_bazelrc / write_buildbuddy_bazelrc ---------
-
     struct SessionFixture {
         _f: PathFixture,
         session_dir: PathBuf,

@@ -71,10 +71,10 @@ def diff_manifests(
         re = right.get(path)
 
         if le and not re:
-            live_match = excl.matching_only_in_live(path)
+            live_pat = excl.matching_only_in_live(path)
             vol_pat = excl.matching_volatile(path)
-            if live_match is not None:
-                record(*live_match)
+            if live_pat is not None:
+                record("only_in_live", live_pat)
                 results.append(DiffResult(path=path, status="expected_only_left", left=le))
             elif vol_pat is not None:
                 record("volatile_paths", vol_pat)
@@ -318,14 +318,7 @@ def _generate_pattern_section(hits: PatternHits, excl: Exclusions, total_exclude
     lines.append("")
 
     # Group by category, preserving YAML order
-    categories = [
-        "skip_paths",
-        "volatile_paths",
-        "hash_may_differ",
-        "only_in_live",
-        "session_hook_artifacts",
-        "only_in_built",
-    ]
+    categories = ["skip_paths", "volatile_paths", "hash_may_differ", "only_in_live", "only_in_built"]
     for cat in categories:
         cat_pats = [(pat, hits.get((cat, pat), 0)) for c, pat in all_pats if c == cat]
         if not cat_pats:
