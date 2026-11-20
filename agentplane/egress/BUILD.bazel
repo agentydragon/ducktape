@@ -23,7 +23,6 @@ py_library(
         "//cluster/cdk8s/public_coder:__pkg__",
         "//cluster/validation:__pkg__",
     ],
-    deps = ["@pypi//pydantic"],
 )
 
 py_library(
