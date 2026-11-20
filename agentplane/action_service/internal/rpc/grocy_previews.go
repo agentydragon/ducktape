@@ -1,8 +1,10 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -27,8 +29,8 @@ func (s *OperatorService) GetGrocyReferenceSummaries(ctx context.Context, reques
 	if receipt.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || s.previews.Grocy == nil {
 		return response, nil
 	}
-	if keys := grocyPreviewReferences(receipt.Action.Name, receipt.Arguments); len(keys) != 0 {
-		response.References = s.previews.Grocy.GrocyReferenceSummaries(ctx, keys)
+	if keys, fields := grocyPreviewReferences(receipt.Action.Name, receipt.Arguments); len(keys) != 0 {
+		response.References = s.previews.Grocy.GrocyReferenceSummaries(ctx, keys, fields)
 	}
 	return response, nil
 }
@@ -44,9 +46,12 @@ type grocyReferenceFields struct {
 	ProductGroup  json.RawMessage `json:"product_group"`
 	ShoppingList  json.RawMessage `json:"shopping_list"`
 	EntryID       json.RawMessage `json:"entry_id"`
+	ClearFields   []string        `json:"clear_fields"`
 }
 
-func grocyPreviewReferences(action string, raw json.RawMessage) []string {
+const grocyProductPreviewItems = 32
+
+func grocyPreviewReferences(action string, raw json.RawMessage) ([]string, map[string][]string) {
 	var args struct {
 		grocyReferenceFields
 		Items           []grocyReferenceFields `json:"items"`
@@ -66,9 +71,15 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 		ObjectIDs       []json.RawMessage      `json:"object_ids"`
 	}
 	if json.Unmarshal(raw, &args) != nil {
-		return nil
+		return nil, nil
 	}
-	const limit = 8
+	limit := 8
+	var changedFields map[string][]string
+	if action == "products_edit" {
+		args.Items = args.Items[:min(len(args.Items), grocyProductPreviewItems)]
+		limit = len(args.Items) * 7 // Product itself and at most six proposed linked values per edit.
+		changedFields = make(map[string][]string)
+	}
 	keys := make([]string, 0, limit)
 	seen := make(map[string]bool, limit)
 	add := func(kind string, values ...json.RawMessage) {
@@ -99,6 +110,11 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 		for _, item := range args.Items {
 			if action == "products_edit" {
 				add("product_edits", item.Product)
+				var id int64
+				if json.Unmarshal(item.Product, &id) == nil && id > 0 {
+					key := "product_edits/" + strconv.FormatInt(id, 10)
+					changedFields[key] = grocyChangedProductLinks(changedFields[key], item)
+				}
 			}
 			add("products", item.ParentProduct)
 			add("locations", item.Location)
@@ -110,7 +126,7 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 		add("locations", args.Locations...)
 	case "stock_entries_list":
 		if (args.Products == nil) == (args.EntryIDs == nil) {
-			return nil
+			return nil, nil
 		}
 		add("products", args.Products...)
 		add("stock_entries", args.EntryIDs...)
@@ -149,7 +165,29 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 			add(args.EntityType, args.ObjectIDs...)
 		}
 	}
-	return keys
+	return keys, changedFields
+}
+
+// Keep the same field order as the approval view and union changes for repeated product IDs.
+func grocyChangedProductLinks(fields []string, item grocyReferenceFields) []string {
+	for _, link := range []struct {
+		name      string
+		value     json.RawMessage
+		clearable bool
+	}{
+		{"location", item.Location, false},
+		{"stock_qu", item.StockUnit, false},
+		{"purchase_qu", item.PurchaseUnit, false},
+		{"consume_qu", item.ConsumeUnit, false},
+		{"parent_product", item.ParentProduct, true},
+		{"product_group", item.ProductGroup, true},
+	} {
+		changed := len(link.value) != 0 && !bytes.Equal(link.value, []byte("null"))
+		if (changed || link.clearable && slices.Contains(item.ClearFields, link.name)) && !slices.Contains(fields, link.name) {
+			fields = append(fields, link.name)
+		}
+	}
+	return fields
 }
 
 func grocyNamedEntity(kind string) bool {

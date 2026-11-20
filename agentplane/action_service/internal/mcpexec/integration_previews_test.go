@@ -3,10 +3,13 @@ package mcpexec
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -176,7 +179,7 @@ func TestGrocySummariesMatchExactTypedReferences(t *testing.T) {
 	result := &mcp.CallToolResult{StructuredContent: map[string]any{
 		"result": []map[string]any{{"kind": "ok", "entity_type": "locations", "object_id": 7, "data": map[string]any{"name": "Pantry", "description": "internal"}}},
 	}}
-	if got := grocyEntitySummary("locations/7", result); got == nil || got.summary.GetName() != "Pantry" || got.summary.GetKey() != "locations/7" {
+	if got := grocyEntitySummary("locations/7", result); got == nil || got.GetName() != "Pantry" || got.GetKey() != "locations/7" {
 		t.Errorf("summary = %v", got)
 	}
 	for _, key := range []string{"products/7", "locations/8"} {
@@ -268,14 +271,14 @@ func TestGrocyApprovalValuesFromExactRows(t *testing.T) {
 	if product == nil {
 		t.Fatal("no product summary")
 	}
-	got := product.summary.GetProductEditCurrent()
+	got := product.GetProductEditCurrent()
 	if got.GetLocationId() != 4 || got.GetMinimumStock() != 0.5 ||
 		got.GetShelfLifeDays() != -1 || got.GetParentProductId() != 0 ||
 		got.GetDescription() != "Keep dry" || got.GetCalories() != 911 {
 		t.Errorf("unexpected product values: %v", got)
 	}
-	if product.links[0] != "locations/4" {
-		t.Errorf("unexpected product refs: %v", product.links)
+	if key := grocyProductLink(got, "location"); key != "locations/4" {
+		t.Errorf("unexpected location reference: %q", key)
 	}
 	result := textResultForPreview(`[
 	  {"kind":"ok","entity_type":"shopping_list","object_id":52,"data":{
@@ -286,10 +289,10 @@ func TestGrocyApprovalValuesFromExactRows(t *testing.T) {
 	if item == nil {
 		t.Fatal("no shopping item summary")
 	}
-	if item.summary.GetName() != "Rolled oats" || len(item.links) != 0 {
-		t.Errorf("expected product name from the exact item lookup: %v, links %v", item.summary, item.links)
+	if item.GetName() != "Rolled oats" {
+		t.Errorf("expected product name from the exact item lookup: %v", item)
 	}
-	current := item.summary.GetShoppingItemCurrent()
+	current := item.GetShoppingItemCurrent()
 	if current.GetAmount() != 2.5 || current.Done == nil || current.GetDone() || current.GetNote() != "Plain" ||
 		current.GetListName() != "Weekly shop" || current.GetUnitName() != "Bag" {
 		t.Errorf("unexpected shopping fields: %v", current)
@@ -297,6 +300,102 @@ func TestGrocyApprovalValuesFromExactRows(t *testing.T) {
 	if item := grocyEntitySummary("shopping_list/53", result); item != nil {
 		t.Errorf("mismatched item returned %v", item)
 	}
+}
+
+func TestGrocyProductEditResolvesChangedLinksInBatches(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "grocy-product-preview-test"}, nil)
+	calls := make(chan string, 32)
+	server.AddTool(&mcp.Tool{Name: "entities_get", InputSchema: json.RawMessage(`{
+		"type":"object",
+		"properties":{"entity_type":{"type":"string"},"object_ids":{"type":"array","items":{"type":"integer"}}},
+		"required":["entity_type","object_ids"]
+	}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			EntityType string  `json:"entity_type"`
+			ObjectIDs  []int64 `json:"object_ids"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		select {
+		case calls <- fmt.Sprintf("%s:%d", args.EntityType, len(args.ObjectIDs)):
+		default:
+			return nil, fmt.Errorf("too many preview requests")
+		}
+		var rows []map[string]any
+		for _, id := range args.ObjectIDs {
+			data := map[string]any{"name": fmt.Sprintf("%s %d", args.EntityType, id)}
+			switch args.EntityType {
+			case "products":
+				// The unrelated unit refs would have consumed the old lookup budget.
+				data["location_id"] = id + 100
+				data["qu_id_stock"] = 3 * id
+				data["qu_id_purchase"] = 3*id + 1
+				data["qu_id_consume"] = 3*id + 2
+			case "locations":
+				data["name"] = fmt.Sprintf("Cupboard %d", id)
+			}
+			rows = append(rows, map[string]any{"kind": "ok", "entity_type": args.EntityType, "object_id": id, "data": data})
+		}
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"result": rows}}, nil
+	})
+	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	defer upstream.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "grocy-preview-client"}, nil)
+	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connected.Close()
+	executor := &Executor{key: "grocy_sf", available: true, current: &session{client: connected}}
+
+	check := func(t *testing.T, count, firstChanged int) {
+		var keys []string
+		fields := make(map[string][]string)
+		for id := 1; id <= count; id++ {
+			key := fmt.Sprintf("product_edits/%d", id)
+			keys = append(keys, key)
+			if id >= firstChanged {
+				fields[key] = []string{"location"}
+			}
+		}
+		names := make(map[string]string)
+		currentLocations := make(map[string]int64)
+		for _, row := range executor.GrocyReferenceSummaries(t.Context(), keys, fields) {
+			names[row.GetKey()] = row.GetName()
+			currentLocations[row.GetKey()] = row.GetProductEditCurrent().GetLocationId()
+		}
+		for id, key := range keys {
+			location := int64(id + 101)
+			if id := currentLocations[key]; id != location {
+				t.Errorf("%s location ID = %d, want %d", key, id, location)
+			}
+			if id+1 >= firstChanged {
+				name := names[fmt.Sprintf("locations/%d", location)]
+				if want := fmt.Sprintf("Cupboard %d", location); name != want {
+					t.Errorf("%s location name = %q, want %q", key, name, want)
+				}
+			}
+		}
+		var actual []string
+		for len(calls) > 0 {
+			actual = append(actual, <-calls)
+		}
+		want := []string{fmt.Sprintf("products:%d", count), fmt.Sprintf("locations:%d", count-firstChanged+1)}
+		if !slices.Equal(actual, want) {
+			t.Errorf("MCP calls = %v, want %v", actual, want)
+		}
+	}
+	t.Run("two name edits cannot crowd out third location", func(t *testing.T) { check(t, 3, 3) })
+	t.Run("twenty location edits", func(t *testing.T) { check(t, 20, 1) })
+}
+
+func grocyEntitySummary(key string, result *mcp.CallToolResult) *operator_action_servicepb.GrocyReferenceSummary {
+	summaries := grocyEntitySummaries([]string{key}, result)
+	if len(summaries) == 1 {
+		return summaries[0]
+	}
+	return nil
 }
 
 func textResultForPreview(text string) *mcp.CallToolResult {

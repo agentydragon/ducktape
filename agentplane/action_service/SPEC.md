@@ -120,7 +120,8 @@ It reads only the types and fields defined for each supported tool, using `entit
 `stock_entries_list` within the same two-second lookup budget. Product edit and shopping-item
 edit or remove previews include current values for the referenced records. The Grocy server
 resolves shopping-item names from the exact linked product, list and unit during the item read.
-For product edits, the Action Service follows up to eight distinct linked IDs for names.
+The preview reads up to 32 product-edit items and batches exact IDs by entity type. For those
+product edits it resolves an old linked name only if the Action changes or clears that field.
 Name-only product requests show the supplied name and proposed fields. Once a request leaves
 pending review, the UI uses the names and identifiers in its saved inputs and result.
 
