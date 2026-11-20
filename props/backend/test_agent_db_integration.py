@@ -20,9 +20,10 @@ from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus
 from props.orchestration.agent_credentials import AgentCredentials
-from props.testing.constants import DEFAULT_TEST_MODEL, TRAIN_EXAMPLE
+from props.testing.examples import TRAIN_EXAMPLE
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

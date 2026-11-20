@@ -55,9 +55,9 @@ from props.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.orchestration.agent_credentials import AgentCredentials
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_GRADER_DIGEST, make_fake_critic_run
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

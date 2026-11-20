@@ -25,7 +25,7 @@ from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, Subm
 from props.agents.critic.testing.mocks import CriticMock
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

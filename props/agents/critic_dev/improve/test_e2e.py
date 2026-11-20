@@ -28,7 +28,7 @@ from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.core.agent_types import CriticDevImproveTypeConfig
 from props.db.database import Database
 from props.db.models import AgentRun
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

@@ -27,8 +27,8 @@ from props.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.db.snapshots import LocationAnchor
-from props.testing.constants import BUDGET_TEST_MODEL, DEFAULT_TEST_MODEL
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
+from props.testing.models import BUDGET_TEST_MODEL, DEFAULT_TEST_MODEL
 
 # Synthetic digests for DB-level tests (not real OCI images)
 FAKE_CRITIC_DIGEST = "sha256:" + "0" * 64

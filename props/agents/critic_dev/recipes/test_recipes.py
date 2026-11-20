@@ -24,8 +24,8 @@ from openai_utils.testing.responses import PlayGen
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.core.agent_types import TargetMetric
 from props.db.models import AgentRun
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST
+from props.testing.models import DEFAULT_TEST_MODEL
 from util.exec.models import BaseExecResult
 
 # gazelle:include_dep //testing:postgres_fixtures

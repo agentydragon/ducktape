@@ -41,7 +41,7 @@ from openai_utils.model import (
     ResponsesResult,
     ResponseUsage,
 )
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.models import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 

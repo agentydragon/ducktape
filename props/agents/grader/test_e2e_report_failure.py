@@ -20,8 +20,8 @@ from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //props/agents/grader/testing:e2e_pytest_plugins
 pytest_plugins = ("props.agents.grader.testing.e2e_pytest_plugins",)

@@ -20,8 +20,8 @@ from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.llm_proxy import routes
 from props.llm_proxy.app import create_app
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

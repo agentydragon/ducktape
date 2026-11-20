@@ -55,7 +55,7 @@ py_test(
         "//props/core:agent_types",
         "//props/db:database",
         "//props/db:models",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:e2e_container",
         "//props/testing/fixtures:e2e_infra",
