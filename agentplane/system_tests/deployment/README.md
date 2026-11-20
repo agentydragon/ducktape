@@ -27,8 +27,10 @@ not declare: Pod and MCP suites share a recycling key, while their deployment re
 different service images. A later MCP suite imports any edge or fixture-server images it needs.
 Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
-while a fresh kubelet waits for its image-GC minimum age. See the
-[storage-pressure reproduction](../k3s/debug/2026_11_02_image_store_pressure.md).
+while a fresh kubelet waits for its image-GC minimum age. Replacing a fixture's stable tag leaves the old
+config-ID alias and its unpacked layers on imagefs, which is the snapshotter tmpfs, not the disk that
+`EstimatedFreeDiskBytes` sizes. A controlled reproduction with cleanup disabled filled imagefs to 96.7% and the
+kubelet evicted a Pod on `imagefs.available`; with cleanup it stayed at 44.1%.
 During imports, using half of a group's starting filesystem headroom triggers an intermediate
 sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
