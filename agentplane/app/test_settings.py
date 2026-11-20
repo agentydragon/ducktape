@@ -44,7 +44,13 @@ def _settings_fields() -> dict[str, object]:
         "policy_service_tls": ClientTLS(
             ca_file=Path("/var/run/agentplane/trust/ca.pem"), server_uri=POLICY_CONTROLLER_URI
         ),
+        "policy_service_token_file": Path("/run/policy/token"),
         "notifications_url": "http://notifications.test:8080",
+        "notifications_token_file": Path("/run/notifications/token"),
+        "runner_gateway_token_file": Path("/run/runner-gateway/token"),
+        "session_dispatcher_token_file": Path("/run/session-dispatcher/token"),
+        "history_service_token_file": Path("/run/history/token"),
+        "egress_admin_token_file": Path("/run/egress-admin/token"),
     }
 
 
@@ -76,29 +82,43 @@ def test_policy_service_requires_tls_and_an_explicit_target() -> None:
         Settings.model_validate(fields)
 
 
-def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:
-    legacy = _settings()
-    assert legacy.session_dispatcher_token_file == Path("/var/run/secrets/agentplane-session-dispatcher/token")
-
-    migrated = _settings(
+def test_service_svid_callers_need_no_token_file_setting() -> None:
+    configured = _settings(
         session_dispatcher_tls=_svid(SESSION_DISPATCHER_URI),
+        session_dispatcher_token_file=None,
         runner_gateway_tls=_svid(SESSION_DISPATCHER_URI),
+        runner_gateway_token_file=None,
         history_service_tls=_svid(HISTORY_SERVICE_URI),
+        history_service_token_file=None,
         policy_service_tls=_svid(POLICY_CONTROLLER_URI),
+        policy_service_token_file=None,
         egress_admin_tls=_svid(EGRESS_PROXY_URI),
+        egress_admin_token_file=None,
         notifications_tls=_svid(NOTIFICATIONS_URI),
+        notifications_token_file=None,
     )
-    assert migrated.session_dispatcher_token_file is None
-    assert migrated.runner_gateway_token_file is None
-    assert migrated.history_service_token_file is None
-    assert migrated.policy_service_token_file is None
-    assert migrated.egress_admin_token_file is None
-    assert migrated.notifications_token_file is None
+    assert configured.session_dispatcher_token_file is None
+    assert configured.runner_gateway_token_file is None
+    assert configured.history_service_token_file is None
+    assert configured.policy_service_token_file is None
+    assert configured.egress_admin_token_file is None
+    assert configured.notifications_token_file is None
+
+
+def test_bearer_callers_state_their_token_file_explicitly() -> None:
+    token = Path("/run/secrets/agentplane-session-dispatcher/token")
+    configured = _settings(session_dispatcher_token_file=token)
+    assert configured.session_dispatcher_token_file == token
+
+    unset = _settings_fields()
+    del unset["session_dispatcher_token_file"]
+    with pytest.raises(ValidationError, match="session_dispatcher caller authentication"):
+        Settings.model_validate(unset)
 
 
 @pytest.mark.parametrize("server_uri", [SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI])
 def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
-    configured = _settings(runner_gateway_tls=_svid(server_uri))
+    configured = _settings(runner_gateway_tls=_svid(server_uri), runner_gateway_token_file=None)
     assert configured.runner_gateway_token_file is None
     assert configured.runner_gateway_tls is not None
     assert configured.runner_gateway_tls.server_uri == server_uri
@@ -142,8 +162,14 @@ def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid()
             "client_uri must be",
         ),
         ({"session_dispatcher_tls": None, "session_dispatcher_token_file": None}, "a token file is required"),
-        ({"runner_gateway_tls": _svid(HISTORY_SERVICE_URI)}, "runner_gateway_tls.server_uri must identify"),
-        ({"session_dispatcher_tls": _svid(SANDBOX_CONTROLLER_URI)}, "session_dispatcher_tls.server_uri must identify"),
+        (
+            {"runner_gateway_tls": _svid(HISTORY_SERVICE_URI), "runner_gateway_token_file": None},
+            "runner_gateway_tls.server_uri must identify",
+        ),
+        (
+            {"session_dispatcher_tls": _svid(SANDBOX_CONTROLLER_URI), "session_dispatcher_token_file": None},
+            "session_dispatcher_tls.server_uri must identify",
+        ),
         ({"connection_service_tls": _svid(SESSION_DISPATCHER_URI)}, "connection_service_tls.server_uri must identify"),
         ({"environment_service": {"target": "controller:8082", "request_timeout_s": 10}}, "Field required"),
         (

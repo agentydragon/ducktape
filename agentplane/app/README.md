@@ -150,7 +150,7 @@ service caller allowlist `spiffe://agentplane/app` before rolling out an app ima
 The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
 operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
 The BFF routes call generated gRPC methods
-with the app's service SVID; `session_dispatcher_token_file` stays unset in staging, so no bearer
+with the app's service SVID; the staging settings name no `session_dispatcher_token_file`, so no bearer
 metadata is sent. Unary routes return ProtoJSON; the watch keeps a
 bounded initial read before starting its streaming response and then relays frames until the operator
 session ends, the app drains or the browser goes. Reads carry no Thread check, so an operator can read

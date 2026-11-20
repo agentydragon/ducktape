@@ -239,6 +239,7 @@ def fixture_config() -> dict[str, object]:
         "runner_gateway_token_file": "/test-unused-token",
         "session_dispatcher_token_file": "/test-unused-token",
         "history_service_token_file": "/test-unused-token",
+        "egress_admin_token_file": "/test-unused-token",
         "egress_admin_url": unused,
         "connection_service_url": unused,
         "action_federation": {
@@ -638,6 +639,7 @@ async def app_process(
                 "history_service_token_file": "",
                 "history_service_tls": history.reader_tls.model_dump(mode="json"),
                 "policy_service_target": "127.0.0.1:1",
+                "policy_service_token_file": "/test-unused-token",
                 "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
                 "notifications_url": f"http://127.0.0.1:{notices_port}",
                 "notifications_token_file": str(token),
@@ -654,7 +656,6 @@ async def app_process(
                 settings["environment_service"] = EnvironmentServicePeer(
                     target=environments.target, request_timeout_s=20, tls=environments.tls
                 ).model_dump(mode="json")
-                # Empty Go strings clear legacy defaults; YAML null would leave those defaults intact.
                 settings.update(
                     {
                         "runner_gateway_target": environments.target,

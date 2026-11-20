@@ -158,23 +158,29 @@ class Settings(BaseModel):
         description="Optional separate Sandbox Controller EnvironmentService endpoint; omission uses the Session Dispatcher peer.",
     )
     policy_service_target: str = Field(min_length=1)
-    policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")
+    policy_service_token_file: Path | None = Field(
+        default=None, description="Explicit bearer token file; omit when the caller presents its service SVID."
+    )
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl = Field(
         description="The Notification Service's endpoint; its host and port serve the operator gRPC API."
     )
-    notifications_token_file: Path | None = Path("/var/run/secrets/agentplane-notifications/token")
+    notifications_token_file: Path | None = Field(
+        default=None, description="Explicit bearer token file; omit when the caller presents its service SVID."
+    )
     notifications_request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     runner_gateway_token_file: Path | None = Field(
-        default=Path("/var/run/secrets/agentplane-runner-gateway/token"),
-        description="The rotating projected ServiceAccount token for the Runner Gateway audience.",
+        default=None,
+        description="Bearer token file for the Runner Gateway audience; omission selects the configured service SVID.",
     )
     session_dispatcher_token_file: Path | None = Field(
-        default=Path("/var/run/secrets/agentplane-session-dispatcher/token"),
-        description="The rotating projected ServiceAccount token for the Session Dispatcher audience.",
+        default=None,
+        description="Bearer token file for the Session Dispatcher audience; omission selects the service SVID.",
     )
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    history_service_token_file: Path | None = Path("/var/run/secrets/agentplane-history-service/token")
+    history_service_token_file: Path | None = Field(
+        default=None, description="Explicit bearer token file; omit when the caller presents its service SVID."
+    )
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
@@ -188,7 +194,9 @@ class Settings(BaseModel):
         default=None,
         description="Electric replicating the History Service fold; omit to disable authenticated thread-sync routes.",
     )
-    egress_admin_token_file: Path | None = Path("/var/run/secrets/agentplane-egress-admin/token")
+    egress_admin_token_file: Path | None = Field(
+        default=None, description="Explicit bearer token file; omit when the caller presents its service SVID."
+    )
     egress_admin_timeout: float = Field(
         default=5, gt=0, allow_inf_nan=False, description="Seconds to wait for the proxy's initial decision snapshot."
     )
@@ -205,45 +213,6 @@ class Settings(BaseModel):
     @model_validator(mode="after")
     def validate_service_callers(self) -> Settings:
         """Keep service-token callers paired with their receiver and caller identities."""
-        # Match Go's YAML loader: an omitted legacy default is cleared for SVID mode,
-        # while an explicitly configured bearer token remains an authentication conflict.
-        if (
-            self.session_dispatcher_tls is not None
-            and self.session_dispatcher_tls.uses_svid
-            and "session_dispatcher_token_file" not in self.model_fields_set
-        ):
-            self.session_dispatcher_token_file = None
-        if (
-            self.runner_gateway_tls is not None
-            and self.runner_gateway_tls.uses_svid
-            and "runner_gateway_token_file" not in self.model_fields_set
-        ):
-            self.runner_gateway_token_file = None
-        if (
-            self.history_service_tls is not None
-            and self.history_service_tls.uses_svid
-            and "history_service_token_file" not in self.model_fields_set
-        ):
-            self.history_service_token_file = None
-        if (
-            self.policy_service_tls is not None
-            and self.policy_service_tls.uses_svid
-            and "policy_service_token_file" not in self.model_fields_set
-        ):
-            self.policy_service_token_file = None
-        if (
-            self.egress_admin_tls is not None
-            and self.egress_admin_tls.uses_svid
-            and "egress_admin_token_file" not in self.model_fields_set
-        ):
-            self.egress_admin_token_file = None
-        if (
-            self.notifications_tls is not None
-            and self.notifications_tls.uses_svid
-            and "notifications_token_file" not in self.model_fields_set
-        ):
-            self.notifications_token_file = None
-
         for name, tls, token_file, server_uris in (
             (
                 "session_dispatcher",

@@ -315,6 +315,7 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
             electric_url=electric.url,
             config={
                 "policy_service_target": f"127.0.0.1:{policy_port}",
+                "policy_service_token_file": "",
                 "policy_service_tls": ClientTLS(
                     ca_file=policy_ca_file,
                     server_uri=POLICY_CONTROLLER_URI,
