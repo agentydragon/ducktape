@@ -471,7 +471,7 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     runtime_catalog=_RUNTIME_CATALOG,
-    hostname_spread_services=frozenset({"frontend"}),
+    hostname_spread_services=frozenset({"frontend", "history-service", "notifications"}),
     # Every launch also acts as the shared diagnostics account.
     # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
     #   removes the ServiceAccount-subject rendering and this switch.
