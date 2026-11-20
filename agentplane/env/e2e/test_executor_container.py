@@ -121,7 +121,7 @@ def _kill_exec_server(companion: CodexExecServerContainer) -> None:
     for process in /proc/[0-9]*; do
       args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
       case "$args" in
-        "/opt/codex/bin/codex exec-server --listen "*)
+        "/execution-service serve --listen "*)
           kill -KILL "${process##*/}"
           exit 0
           ;;
@@ -131,7 +131,7 @@ def _kill_exec_server(companion: CodexExecServerContainer) -> None:
     """
     result = companion.container.get_wrapped_container().exec_run(["/bin/sh", "-c", script])
     if result.exit_code:
-        raise RuntimeError(f"could not kill Codex exec-server: {result.output!r}")
+        raise RuntimeError(f"could not kill native execution service: {result.output!r}")
 
 
 def _wait_for_executor_file(path: Path) -> None:
@@ -267,7 +267,7 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: sessi
     exit_path = tmp_path / "server-exit"
     pid_path = tmp_path / "pipe-holder.pid"
     marker = f"executor-pipe-holder-{uuid4().hex}"
-    (tmp_path / "exec-server").write_text(
+    (tmp_path / "serve").write_text(
         textwrap.dedent(
             f"""\
             setsid /bin/sh -c \\

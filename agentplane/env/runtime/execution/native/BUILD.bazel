@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "native",
+    srcs = ["native.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native",
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_test(
+    name = "native_test",
+    srcs = ["native_test.go"],
+    embed = [":native"],
+    race = "on",
+)

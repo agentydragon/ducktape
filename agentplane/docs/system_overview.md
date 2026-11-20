@@ -83,6 +83,7 @@ flowchart LR
         guest -->|native supervision| manager
         vmexecution -->|executor supervision| manager
         manager -->|service lifetime and cgroup| vmexec
+        vmexecution -->|loopback typed gRPC| vmexec
       end
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]
@@ -403,7 +404,7 @@ flowchart LR
     proxy[Environments Executor :8082]
     runtime[Environment Runtime]
     execution[Execution Service]
-    executor[Loopback Codex exec-server]
+    executor[Native execution backend and Codex API]
     history[History ingress and Thread fold]
     llm[LLM ingress]
     responses[Responses API providers]
@@ -415,7 +416,7 @@ flowchart LR
     sampler -->|Executor RPCs: mTLS, sampler SVID| proxy
     proxy -->|mTLS Executor gRPC| runtime
     runtime -->|direct Executor calls| execution
-    execution -->|local Codex JSON-RPC over WebSocket| executor
+    execution -->|loopback typed gRPC| executor
     sampler -->|mTLS sampler SVID + typed Session delegation: acknowledged journal outbox| history
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
@@ -537,10 +538,10 @@ flowchart LR
           host[Session and harness components]
           execution[Execution API]
         end
-        exec[Companion container and exec-server]
+        exec[Companion container and execution backend]
         runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
-        execution -->|ownership gRPC over Unix socket| exec
+        execution -->|ownership gRPC over Unix socket and typed gRPC| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
@@ -551,11 +552,12 @@ flowchart LR
         end
         manager[systemd manager]
         harness[Codex app-server: workload slice]
-        vmexec[exec-server: executor slice]
+        vmexec[Execution backend: executor slice]
         vmruntime -->|service lifetime| manager
         vmhost -->|native launch / fence| manager
         vmexecution -->|executor launch / fence| manager
         manager -->|service lifetime and cgroup| vmexec
+        vmexecution -->|loopback typed gRPC| vmexec
         manager -->|service lifetime and cgroup| harness
         harness -->|loopback WebSocket tools| vmexec
     end

@@ -2,14 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -116,58 +114,54 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
 	return nil
 }
 
+type executionTestServer struct {
+	executorpb.UnimplementedExecutorServer
+	opened, closed chan string
+	notify         bool
+}
+
+func (s *executionTestServer) OpenSession(r *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	id := "native-" + r.GetRequestId()
+	if r.GetResumeSessionId() != "" {
+		id = r.GetResumeSessionId()
+	}
+	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}, ExecutionSessionId: id}
+	if err := stream.Send(response); err != nil {
+		return err
+	}
+	s.opened <- id
+	defer func() {
+		select {
+		case s.closed <- id:
+		default:
+		}
+	}()
+	if s.notify {
+		if err := stream.Send(&executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte("event")}}}); err != nil {
+			return err
+		}
+	}
+	<-stream.Context().Done()
+	return nil
+}
+
 func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan string, <-chan string) {
 	t.Helper()
-	opened := make(chan string, 8)
-	closed := make(chan string, 8)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			return
-		}
-		var sessionID string
-		defer func() {
-			connection.CloseNow()
-			if sessionID != "" {
-				select {
-				case closed <- sessionID:
-				default:
-				}
-			}
-		}()
-		_, payload, err := connection.Read(request.Context())
-		if err != nil {
-			return
-		}
-		var initialize struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(payload, &initialize) != nil || initialize.ID == "" {
-			return
-		}
-		sessionID = "native-" + initialize.ID
-		response := []byte(fmt.Sprintf(`{"id":%q,"result":{"sessionId":%q,"environmentInfo":{"shell":{"name":"bash","path":"/bin/bash"}}}}`, initialize.ID, sessionID))
-		if connection.Write(request.Context(), websocket.MessageText, response) != nil {
-			return
-		}
-		if _, _, err := connection.Read(request.Context()); err != nil { // initialized notification
-			return
-		}
-		opened <- sessionID
-		if notify {
-			payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"sessionId":%q}}`, sessionID))
-			if connection.Write(request.Context(), websocket.MessageText, payload) != nil {
-				return
-			}
-		}
-		for {
-			if _, _, err := connection.Read(request.Context()); err != nil {
-				return
-			}
-		}
-	}))
-	t.Cleanup(server.Close)
-	return "ws" + strings.TrimPrefix(server.URL, "http"), opened, closed
+	s := &executionTestServer{opened: make(chan string, 8), closed: make(chan string, 8), notify: notify}
+	return startExecutorTestGRPC(t, s), s.opened, s.closed
+}
+
+func startExecutorTestGRPC(t *testing.T, service executorpb.ExecutorServer) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	executorpb.RegisterExecutorServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	return listener.Addr().String()
 }
 
 func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {

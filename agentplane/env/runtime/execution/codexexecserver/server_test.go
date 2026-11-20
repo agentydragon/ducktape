@@ -39,7 +39,7 @@ func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
 	if _, err := start(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("managed start error = %v, want %v", err, wantErr)
 	}
-	if observed.StopGrace != executorStopGrace || observed.FenceTimeout != fenceDeadline || observed.Dir != "/state" || strings.Join(observed.Command, " ") != "/bin/codex exec-server --listen ws://127.0.0.1:4501" {
+	if observed.StopGrace != executorStopGrace || observed.FenceTimeout != fenceDeadline || observed.Dir != "/state" || strings.Join(observed.Command, " ") != "/bin/codex serve --listen ws://127.0.0.1:4501" {
 		t.Fatalf("managed process configuration = %+v", observed)
 	}
 	if _, found := observed.Env["OPENAI_API_KEY"]; found || observed.Env["PATH"] != "/bin" {

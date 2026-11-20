@@ -182,7 +182,7 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 		return status.Error(codes.Aborted, "executor companion already owned or fencing")
 	}
 	process, err := s.supervisor.NewProcess(supervision.ProcessConfig{
-		Command:   []string{s.binary, "exec-server", "--listen", s.listen},
+		Command:   []string{s.binary, "serve", "--listen", s.listen},
 		Env:       request.GetEnvironment(),
 		StopGrace: 5 * time.Second,
 	})
@@ -192,7 +192,7 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 	}
 	if err := process.Start(s.lifetime); err != nil {
 		// No process started, so this idle generation does not need a fence.
-		fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+		fmt.Fprintln(os.Stderr, "start execution backend:", err)
 		s.state.mu.Unlock()
 		return status.Error(codes.FailedPrecondition, err.Error()+"; "+process.ExitDescription())
 	}
@@ -209,7 +209,7 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 	go forwardOutput(s.lifetime, s.cancel, "stdout", process.Stdout(), os.Stdout)
 	go forwardOutput(s.lifetime, s.cancel, "stderr", process.Stderr(), os.Stderr)
 	if err := process.CloseStdin(); err != nil {
-		fmt.Fprintln(os.Stderr, "close Codex executor stdin:", err)
+		fmt.Fprintln(os.Stderr, "close execution backend stdin:", err)
 		s.cancel()
 		return status.Error(codes.Unavailable, "could not close executor stdin")
 	}
@@ -284,7 +284,7 @@ func (s *companionOwnership) fenceLoop(
 			process := s.process
 			if process == nil || s.expectedExit == nil {
 				s.mu.Unlock()
-				fmt.Fprintln(os.Stderr, "owned Codex executor has no process lifecycle handle")
+				fmt.Fprintln(os.Stderr, "owned execution backend has no process lifecycle handle")
 				cancel()
 				return
 			}
@@ -300,7 +300,7 @@ func (s *companionOwnership) fenceLoop(
 			}
 			finish()
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "fence Codex executor process domain:", err)
+				fmt.Fprintln(os.Stderr, "fence execution backend process domain:", err)
 				// An incomplete in-container fence falls back to the runtime's
 				// whole-namespace teardown.
 				cancel()
@@ -310,7 +310,7 @@ func (s *companionOwnership) fenceLoop(
 			s.mu.Lock()
 			if s.process != process {
 				s.mu.Unlock()
-				fmt.Fprintln(os.Stderr, "Codex executor changed during process-domain fence")
+				fmt.Fprintln(os.Stderr, "execution backend changed during process-domain fence")
 				cancel()
 				return
 			}
@@ -331,9 +331,9 @@ func (s *companionOwnership) fenceLoop(
 func waitForExecutor(process *supervision.Process, expectedExit *atomic.Bool, unexpectedExit func()) {
 	code, err := process.Wait(context.Background())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Codex executor cleanup failed:", err)
+		fmt.Fprintln(os.Stderr, "execution backend cleanup failed:", err)
 	} else {
-		fmt.Fprintln(os.Stderr, "Codex executor exited with status:", code)
+		fmt.Fprintln(os.Stderr, "execution backend exited with status:", code)
 	}
 	if !expectedExit.Load() {
 		unexpectedExit()
@@ -344,7 +344,7 @@ func waitForExecutor(process *supervision.Process, expectedExit *atomic.Bool, un
 // must be able to return so the container runtime can fence those descendants.
 func forwardOutput(ctx context.Context, cancel context.CancelFunc, name string, source io.Reader, destination io.Writer) {
 	if _, err := io.Copy(destination, source); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "copy Codex executor %s: %v\n", name, err)
+		fmt.Fprintf(os.Stderr, "copy execution backend %s: %v\n", name, err)
 		cancel()
 	}
 }

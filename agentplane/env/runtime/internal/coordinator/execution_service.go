@@ -199,7 +199,7 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string, process
 			return service.Config{}, errors.New("VM execution service requires its explicit systemd launcher")
 		}
 		serviceConfig.Backend = "systemd"
-		serviceConfig.Binary = config.CodexBinary
+		serviceConfig.Binary = "/run/agentplane/environment/bin/agentplane-execution-service"
 		serviceConfig.WorkingDirectory = config.StateDir
 
 	} else {

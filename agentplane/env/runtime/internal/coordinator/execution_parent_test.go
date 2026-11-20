@@ -251,7 +251,6 @@ func (p *heldExecutionWorker) registerExecutionWorker() func() {
 func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
 	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
-	config.CodexBinary = "/bin/false"
 	config.HarnessEnvironment = map[string]string{}
 	r, err := newTestRuntime(t, config.Config, nil, runtimeDeps{
 		startExecution: func(context.Context, Config, string) (executionHandle, error) {

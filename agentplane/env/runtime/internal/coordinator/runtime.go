@@ -56,7 +56,6 @@ type Config struct {
 	PodPID1                     bool
 	VMProcessLauncher           *supervision.SystemdLauncher
 	CodexExecServer             *codexexecserver.Config
-	CodexBinary                 string
 	HarnessEnvironment          map[string]string
 	InitializationCwd           string
 	SessionReconcileConcurrency int
@@ -195,8 +194,8 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Supervision == "pid1" && os.Getpid() != 1 && deps.prepareSupervisor == nil {
 		return nil, errors.New("Pod environment Runtime must be PID 1")
 	}
-	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
-		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
+	if config.CodexExecServer != nil && (config.HarnessEnvironment == nil) {
+		return nil, errors.New("execution service requires a resolved harness environment")
 	}
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		return nil, err

@@ -13,7 +13,7 @@ flowchart LR
     S["Session manager, retained store and journals"]
     C["Session and harness controllers"]
     B["Bootstrap"]
-    E["Execution lifecycle and adapter"]
+    E["Execution lifecycle and typed proxy"]
     H["History delivery worker"]
     R -->|"construct and own"| S & C & B & E & H
     C -->|"direct bootstrap wait"| B
@@ -21,13 +21,13 @@ flowchart LR
     S -->|"inventory and journal sources"| H
   end
   C -->|"supervise"| Native["Claude, shared Codex app-server, setup and workspace helpers"]
-  E -.->|"VM supervised launch / Pod companion ownership"| X["Codex exec-server"]
+  E -.->|"VM supervised launch / Pod companion ownership"| X["Native execution service"]
   H -->|"gRPC journal push"| History["History ingress"]
   History -->|"exact cursor ACK"| H
 ```
 
 The Pod execution companion retains its external Unix ownership/fence protocol and separate PID
-namespace. Native protocol probing establishes Execution readiness; a published status cannot
+namespace. Typed gRPC and Codex protocol probes establish Execution readiness; a published status cannot
 substitute for the live owner check. VM transient units retain their systemd invocation and cgroup
 fences. See [supervision](../supervision/docs/supervision.md).
 

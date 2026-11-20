@@ -45,13 +45,13 @@ type Readiness struct {
 
 // Resolve supplies defaults for omitted windows and rejects invalid direct Go configuration.
 func (r Readiness) Resolve() (Readiness, error) {
-	if err := resolveDuration("Codex exec-server readiness timeout", &r.Timeout, 20*time.Second); err != nil {
+	if err := resolveDuration("execution backend readiness timeout", &r.Timeout, 20*time.Second); err != nil {
 		return Readiness{}, err
 	}
-	if err := resolveDuration("Codex exec-server readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
+	if err := resolveDuration("execution backend readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
 		return Readiness{}, err
 	}
-	if err := resolveDuration("Codex exec-server readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
+	if err := resolveDuration("execution backend readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
 		return Readiness{}, err
 	}
 	return r, nil
@@ -134,7 +134,7 @@ type nativeProcess interface {
 	ExitDescription() string
 }
 
-// NativeStart creates the platform-specific launch adapter used by the exec-server lifecycle.
+// NativeStart creates the platform-specific launch adapter used by the execution backend lifecycle.
 func NativeStart(config NativeConfig) Start {
 	return func(ctx context.Context) (*supervision.Instance, error) {
 		env := maps.Clone(config.Environment)
@@ -148,10 +148,10 @@ func NativeStart(config NativeConfig) Start {
 			return claimContainer(ctx, config.Config.ContainerSocket, env)
 		}
 		if config.Supervisor == nil && config.LaunchProcess == nil {
-			return nil, errors.New("Codex exec-server supervisor is not configured")
+			return nil, errors.New("execution backend supervisor is not configured")
 		}
 		processConfig := supervision.ProcessConfig{
-			Command:      []string{config.Binary, "exec-server", "--listen", config.Config.URL},
+			Command:      []string{config.Binary, "serve", "--listen", config.Config.URL},
 			Dir:          config.StateDir,
 			Env:          env,
 			StopGrace:    executorStopGrace,
@@ -180,7 +180,7 @@ func NativeStart(config NativeConfig) Start {
 			for {
 				n, err := process.Stderr().Read(buffer)
 				if n > 0 {
-					zap.L().Info("Codex exec-server stderr", zap.String("text", string(buffer[:n])))
+					zap.L().Info("execution backend stderr", zap.String("text", string(buffer[:n])))
 				}
 				if err != nil {
 					return
@@ -190,7 +190,7 @@ func NativeStart(config NativeConfig) Start {
 		done := make(chan error, 1)
 		go func() {
 			code, err := process.Wait(context.Background())
-			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("Codex exec-server exited: code=%d; %s", code, process.ExitDescription()), err)
+			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err)
 		}()
 		return &supervision.Instance{
 			PID: process.PID(), Done: done,

@@ -6,14 +6,16 @@ package(
 )
 
 go_binary(
-    name = "adapter_bin",
+    name = "typedproxy_bin",
     srcs = ["main.go"],
-    race = "off",
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
-        "//agentplane/env/runtime/execution/adapter:execution",
+        "//agentplane/env/runtime/execution/native",
+        "//agentplane/env/runtime/execution/typedbackend",
+        "//agentplane/env/runtime/execution/typedproxy",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],

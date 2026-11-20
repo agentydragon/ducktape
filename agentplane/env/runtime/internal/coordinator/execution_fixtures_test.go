@@ -5,13 +5,15 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type localExecutionHandle struct {
-	adapter  *adapter.Adapter
+	adapter  *typedproxy.Proxy
 	mu       sync.Mutex
 	exited   chan childExit
 	expected bool
@@ -57,19 +59,42 @@ func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Conte
 	t.Helper()
 	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
 	config.CodexExecServer = &codexexecserver.Config{URL: url}
-	config.CodexBinary = "/bin/false"
 	config.HarnessEnvironment = map[string]string{}
-	if acquire == nil {
-		acquire = func(context.Context) (string, error) { return url, nil }
-	}
+
 	config.deps.startExecution = func(_ context.Context, config Config, _ string) (executionHandle, error) {
-		localAdapter, err := adapter.New(adapter.Config{Context: context.Background(), Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+		target := url
+		if target == "ws://unused" {
+			target = "127.0.0.1:1"
+		}
+		conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		client := executorpb.NewExecutorClient(conn)
+		if acquire != nil {
+			client = &delayedExecutorClient{ExecutorClient: client, acquire: acquire}
+		}
+		localAdapter, err := typedproxy.New(context.Background(), client, func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 			return accept(ctx)
-		}, Acquire: acquire})
+		}, nil)
 		if err != nil {
 			return nil, err
 		}
 		return &localExecutionHandle{adapter: localAdapter}, nil
 	}
 	return config
+}
+
+// delayedExecutorClient keeps the fixture's blocked-open admission seam.
+type delayedExecutorClient struct {
+	executorpb.ExecutorClient
+	acquire func(context.Context) (string, error)
+}
+
+func (c *delayedExecutorClient) OpenSession(ctx context.Context, r *executorpb.OpenSessionRequest, opts ...grpc.CallOption) (executorpb.Executor_OpenSessionClient, error) {
+	if _, err := c.acquire(ctx); err != nil {
+		return nil, err
+	}
+	return c.ExecutorClient.OpenSession(ctx, r, opts...)
 }

@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/sethvargo/go-retry"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
@@ -98,11 +102,34 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		case <-lifetime.Done():
 		}
 	}()
+	endpoint, err := url.Parse(config.ExecutorURL)
+	if err != nil {
+		return err
+	}
+	backendConn, err := grpc.NewClient("passthrough:///"+endpoint.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer backendConn.Close()
+	healthClient := healthpb.NewHealthClient(backendConn)
+	checkTyped := func(ctx context.Context) error {
+		result, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{})
+		if err != nil {
+			return err
+		}
+		if result.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+			return errors.New("typed execution backend is not serving")
+		}
+		return nil
+	}
 	readiness, endReadiness := context.WithTimeout(lifetime, config.Readiness.Timeout)
 	err = retry.Do(readiness, retry.NewConstant(config.Readiness.ProbeInterval), func(ctx context.Context) error {
 		probeCtx, endProbe := context.WithTimeout(ctx, config.Readiness.ProbeTimeout)
 		defer endProbe()
 		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
+			return retry.RetryableError(err)
+		}
+		if err := checkTyped(probeCtx); err != nil {
 			return retry.RetryableError(err)
 		}
 		return nil
@@ -139,10 +166,40 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			cancel()
 		}
 	}()
-	executionAdapter, err := adapter.New(adapter.Config{
-		Context: lifetime, Admit: config.admit,
-		Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
-	})
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		failures := 0
+		for {
+			select {
+			case <-lifetime.Done():
+				return
+			case <-ticker.C:
+			}
+			attempt, end := context.WithTimeout(lifetime, 3*time.Second)
+			err := checkTyped(attempt)
+			end()
+			if lifetime.Err() != nil {
+				return
+			}
+			if err == nil {
+				failures = 0
+				continue
+			}
+			failures++
+			if failures >= 3 {
+				select {
+				case backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, fmt.Errorf("typed execution backend health: %w", err)):
+				default:
+				}
+				cancel()
+				return
+			}
+		}
+	}()
+
+	executionAdapter, err := typedproxy.New(lifetime, executorpb.NewExecutorClient(backendConn), config.admit, nil)
 	if err != nil {
 		return err
 	}

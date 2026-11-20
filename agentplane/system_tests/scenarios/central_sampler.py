@@ -325,7 +325,7 @@ mode="$1"
 for process in /proc/[0-9]*; do
   args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
   case "$args" in
-    "/bin/codex exec-server --listen "*)
+    "/run/agentplane/environment/bin/agentplane-execution-service serve --listen "*)
       pid="${process##*/}"
       set -- $(cat "$process/stat")
       shift 21

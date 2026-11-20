@@ -346,8 +346,8 @@ func (e *Transport) watchSession(streamCtx context.Context, stream grpc.ServerSt
 			cancel()
 			return
 		}
-		if len(response.NativeFrames) != 0 {
-			// Notifications are evidence and wakeups. Cursor reads remain authoritative for
+		if response.ProcessChanged || len(response.NativeFrames) != 0 {
+			// Notifications are wakeups; native frames also carry evidence. Cursor reads remain authoritative for
 			// output, so duplicate or coalesced wakeups cannot duplicate process bytes.
 			e.processChanges.SignalProcessChange()
 		}

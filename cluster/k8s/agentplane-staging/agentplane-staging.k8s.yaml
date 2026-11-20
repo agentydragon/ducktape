@@ -5185,7 +5185,7 @@ spec:
             - --health-listen
             - :4502
             - --binary
-            - /bin/codex
+            - /run/agentplane/environment/bin/agentplane-execution-service
           command:
             - /run/agentplane/environment/bin/agentplane-execution-service
           env:

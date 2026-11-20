@@ -235,7 +235,7 @@ class EnvironmentSandboxTemplate(Construct):
                 "--health-listen",
                 f":{_EXECUTOR_HEALTH_PORT}",
                 "--binary",
-                "/bin/codex",
+                _EXECUTION_SERVICE_BINARY,
             ],
             working_dir=_STATE_DIR,
             security_context=sandbox_pod.workload_security_context(),

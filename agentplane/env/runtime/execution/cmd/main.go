@@ -15,6 +15,9 @@ import (
 const invalidCompanionUsage = "executor companion requires PID 1, absolute socket and binary paths, an HTTP health address, and a private PID namespace"
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "serve" {
+		os.Exit(runServer(os.Args[2:]))
+	}
 	if len(os.Args) < 2 || os.Args[1] != "companion" {
 		fmt.Fprintln(os.Stderr, "expected companion subcommand")
 		os.Exit(64)
@@ -27,7 +30,7 @@ func runCompanion(args []string) int {
 	flags.SetOutput(io.Discard)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
-	binary := flags.String("binary", "", "Codex executable")
+	binary := flags.String("binary", "", "execution service executable")
 	healthListen := flags.String("health-listen", "", "HTTP health endpoint")
 	if err := flags.Parse(args); err != nil {
 		return 64
