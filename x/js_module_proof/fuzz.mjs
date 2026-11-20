@@ -385,6 +385,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     proved: 0,
     unsafe: 0,
     unknown: 0,
+    unknownCases: [],
     unvalidated: 0,
     unexplainedDifferences: [],
   };
@@ -474,8 +475,14 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
             JSON.stringify(verdict.output) !== JSON.stringify({ events: after.events, exports: after.exports })
           )
             throw new Error("unsafe witness does not match Node");
-        } else if (verdict.result === "unknown") summary.unknown++;
-        else throw new Error(`unexpected validator result: ${verdict.result}`);
+        } else if (verdict.result === "unknown") {
+          summary.unknown++;
+          summary.unknownCases.push({
+            index,
+            reason: verdict.reason,
+            detail: String(verdict.detail ?? "").slice(0, 3000),
+          });
+        } else throw new Error(`unexpected validator result: ${verdict.result}`);
       } else summary.unvalidated++;
       keep = !equal && (verdictName === "unknown" || verdictName === "unvalidated");
       if (keep) summary.unexplainedDifferences.push({ index, mutated, verdict: verdictName, artifacts: root });
