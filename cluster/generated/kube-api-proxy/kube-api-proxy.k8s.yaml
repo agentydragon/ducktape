@@ -93,6 +93,20 @@ spec:
       labels:
         app: kubeapi-proxy
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: kubeapi-proxy
+                topologyKey: topology.kubernetes.io/zone
+              weight: 100
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: kubeapi-proxy
+              topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
         - image: nginxinc/nginx-unprivileged:1.31-alpine
