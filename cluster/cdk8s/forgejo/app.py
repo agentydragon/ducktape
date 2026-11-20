@@ -30,6 +30,7 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo import cache, db
+from cluster.cdk8s.forgejo.namespace import NAMESPACE
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
@@ -42,21 +43,20 @@ from cluster.cdk8s.volume_claim import volume_claim
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 _NAME = "forgejo"
-_NAMESPACE = "forgejo"
 HOSTNAME = "git.allegedly.works"
-_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
+_METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
 # The chart's HTTP and SSH Services.
 HTTP = ServiceRef(
     name="forgejo-http",
     port=Port(name="http", number=3000),
-    pods=Pods(namespace=_NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
 )
 _SSH = ServiceRef(name="forgejo-ssh", port=Port(name="ssh", number=2222), pods=HTTP.pods)
 _VALKEY = f"redis://{cache.MASTER.host}:{cache.MASTER.port.number}/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
-_SECRET_KEY = SecretRef(namespace=_NAMESPACE, name="forgejo-secret-key").key("replacement")
+_SECRET_KEY = SecretRef(namespace=NAMESPACE, name="forgejo-secret-key").key("replacement")
 _SECRET_KEY_MOUNT = {"name": "secret-key", "mountPath": "/etc/forgejo-key", "readOnly": True}
 
 
@@ -77,7 +77,7 @@ def _git_storage(scope: Construct) -> None:
         scope,
         "git-storage",
         name=_GIT_CLAIM,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         storage_class="seaweedfs-ovh-ssd",
         size="200Gi",
         access_mode="ReadWriteMany",
@@ -90,7 +90,7 @@ def _object_storage(scope: Construct) -> s3.PrivateBucket:
         scope,
         "object-storage",
         name=_NAME,
-        tenant=_NAMESPACE,
+        tenant=NAMESPACE,
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
@@ -326,8 +326,8 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     helm_release(
         scope,
         _NAME,
-        _NAMESPACE,
-        repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
+        NAMESPACE,
+        repository=oci_helm_repository(scope, _NAME, NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
         version="17.1.6",
         interval="15m",
@@ -356,7 +356,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         hostnames=[HOSTNAME],
         backend=HTTP,
         hsts=False,
@@ -371,7 +371,7 @@ def chart(app: App) -> Chart:
     k8s.KubePodDisruptionBudget(
         chart,
         "disruption-budget",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
         spec=k8s.PodDisruptionBudgetSpec(
             min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_RELEASE_LABELS)
         ),
@@ -379,7 +379,7 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         spec=HTTP.service_monitor_spec(
             Endpoint.bearer_token_secret(
                 port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
