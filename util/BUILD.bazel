@@ -79,7 +79,6 @@ py_package(
         ":otel",
         ":typer",
         ":urls",
-        "//devinfra/bazel:subprocess",
         "//devinfra/bazel:workspace",
         "//util/exec:models",
         "//util/exec:subprocess",
