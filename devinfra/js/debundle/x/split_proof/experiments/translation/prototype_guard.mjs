@@ -1,5 +1,5 @@
-// A diagnostic spike, not an input to the checker. It recognizes a closed, two-statement
-// module containing one local class and one construction. Unknown forms always fall back.
+// A diagnostic spike, not an input to the checker. It recognizes a closed module containing
+// a local class and either a direct construction or a helper that only forwards to it.
 import * as acorn from "acorn";
 
 const fail = (reason) => ({ candidate: false, reason });
@@ -11,6 +11,8 @@ const primitive = (node) =>
   !node.regex &&
   node.bigint === undefined &&
   (node.value === null || ["string", "number", "boolean"].includes(typeof node.value));
+// Creating an arrow does not evaluate its body or parameter defaults. Its body can run later.
+const argumentValue = (node) => primitive(node) || node?.type === "ArrowFunctionExpression";
 
 export function diagnose(source) {
   let statements;
@@ -19,9 +21,34 @@ export function diagnose(source) {
   } catch {
     return fail("parse");
   }
-  if (statements.length !== 2) return fail("closed-two-statement-module");
-  const [cls, declaration] = statements;
+  if (statements.length !== 2 && statements.length !== 3) return fail("closed-module");
+  const cls = statements[0];
+  const helper = statements.length === 3 ? statements[1] : null;
+  const declaration = statements.at(-1);
   if (cls.type !== "ClassDeclaration" || !name(cls.id) || cls.superClass) return fail("local-class");
+  if (helper) {
+    if (
+      helper.type !== "FunctionDeclaration" ||
+      !name(helper.id) ||
+      helper.async ||
+      helper.generator ||
+      helper.params.length !== 1 ||
+      !name(helper.params[0]) ||
+      name(helper.params[0]) === name(cls.id) ||
+      helper.body.body.length !== 1
+    )
+      return fail("helper-shape");
+    const ret = helper.body.body[0];
+    const call = ret.argument;
+    if (
+      ret.type !== "ReturnStatement" ||
+      call?.type !== "NewExpression" ||
+      name(call.callee) !== name(cls.id) ||
+      call.arguments.length !== 1 ||
+      name(call.arguments[0]) !== name(helper.params[0])
+    )
+      return fail("helper-forwarding");
+  }
   if (
     declaration.type !== "VariableDeclaration" ||
     declaration.kind !== "const" ||
@@ -32,8 +59,9 @@ export function diagnose(source) {
   const call = d.init;
   if (
     !name(d.id) ||
-    call?.type !== "NewExpression" ||
-    name(call.callee) !== name(cls.id) ||
+    call?.type !== (helper ? "CallExpression" : "NewExpression") ||
+    name(call.callee) !== name(helper?.id ?? cls.id) ||
+    call.optional ||
     call.arguments.length !== 1
   )
     return fail("known-constructor");
@@ -49,7 +77,7 @@ export function diagnose(source) {
       p.method ||
       !key ||
       key === "__proto__" ||
-      !primitive(p.value)
+      !argumentValue(p.value)
     )
       return fail("ordinary-own-data");
     keys.add(key);
