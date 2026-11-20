@@ -10,4 +10,4 @@ spec:
     runner:
       image:
         repository: ghcr.io/agentydragon/tf-runner
-        tag: devel-20261110192912-de33b2a
+        tag: devel-20261120070342-4f193ce
