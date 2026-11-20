@@ -45,9 +45,6 @@
       "test": "//cluster/proxies/loki_read_proxy/...",
       "registry": "forgejo"
     },
-    "tofu-controller": {
-      "target": "@ducktape_tofu_controller//:image"
-    },
     "platform-sessions-gateway": {
       "target": "//platform_sessions/management/gateway/cmd:image",
       "test": "//platform_sessions/management/gateway:gateway_test",

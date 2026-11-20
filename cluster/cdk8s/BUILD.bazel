@@ -1974,7 +1974,7 @@ py_library(
 py_library(
     name = "tofu_controller_release",
     srcs = ["tofu_controller_release.py"],
-    data = ["@ducktape_tofu_controller//:terraform_crd"],
+    data = ["@tofu_controller_crd//file"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":helm",

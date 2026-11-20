@@ -1,9 +1,4 @@
-"""Pins which class of the cdk8s-generated tofu-controller bindings is the v1alpha2 CR.
-
-The CRD serves v1alpha1 and v1alpha2 (storage); `cdk8s import` names the first listed
-version's class plainly (`Terraform` is v1alpha1) and suffixes the rest, so every
-generated CR goes through `TerraformV1Alpha2`.
-"""
+"""The upstream CRD imports Terraform as v1alpha2 and supports Flux sources."""
 
 import pytest_bazel
 from cdk8s import (
@@ -11,21 +6,21 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from tofu_controller.io.fluxcd.contrib.infra import (
-    TerraformV1Alpha2,
-    TerraformV1Alpha2Spec,
-    TerraformV1Alpha2SpecSourceRef,
-    TerraformV1Alpha2SpecSourceRefKind,
+    Terraform,
+    TerraformSpec,
+    TerraformSpecSourceRef,
+    TerraformSpecSourceRefKind,
 )
 
 
-def test_suffixed_class_renders_v1alpha2(scratch_chart: Chart) -> None:
-    TerraformV1Alpha2(
+def test_terraform_renders_v1alpha2(scratch_chart: Chart) -> None:
+    Terraform(
         scratch_chart,
         "terraform",
-        spec=TerraformV1Alpha2Spec(
+        spec=TerraformSpec(
             interval="15m",
-            source_ref=TerraformV1Alpha2SpecSourceRef(
-                kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY, name="repo"
+            source_ref=TerraformSpecSourceRef(
+                kind=TerraformSpecSourceRefKind.GIT_REPOSITORY, name="repo"
             ),
         ),
     )

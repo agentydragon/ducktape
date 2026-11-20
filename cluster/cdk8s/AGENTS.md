@@ -288,8 +288,8 @@ whose object is gone or now passes.
 - `Chart(namespace=...)` also injects the namespace into cluster-scoped objects
   (ClusterRole, Bundle) with no opt-out; usable only once those get their own chart.
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and suffixes
-  the rest, regardless of storage version: tofu-controller's `Terraform` is v1alpha1; the
-  cluster's CRs are `TerraformV1Alpha2`
+  the rest, regardless of storage version. Tofu-controller v0.17.0 only serves v1alpha2,
+  so its generated `Terraform` class renders v1alpha2
   (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import`).
 
 ## Typed constructs over raw dicts

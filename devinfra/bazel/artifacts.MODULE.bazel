@@ -992,3 +992,11 @@ http_archive(
     sha256 = "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz"],
 )
+
+# Terraform CRD from the same release as cluster/cdk8s/tofu_controller_release.py.
+http_file(
+    name = "tofu_controller_crd",
+    downloaded_file_path = "crds.yaml",
+    sha256 = "cfe13c818ad5a7c7a128560906093e982908583a77607884a40b02f7e3e167ff",
+    urls = ["https://raw.githubusercontent.com/flux-iac/tofu-controller/v0.17.0/charts/tofu-controller/crds/crds.yaml"],
+)
