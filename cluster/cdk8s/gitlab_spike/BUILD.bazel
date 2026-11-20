@@ -124,7 +124,9 @@ py_library(
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",

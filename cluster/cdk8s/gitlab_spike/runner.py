@@ -7,10 +7,19 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "gitlab-spike-runner"
 NAMESPACE = "gitlab-spike-ci"
+_CPU_REQUEST = "100m"
+_MEMORY_LIMIT = "512Mi"
 
 
 def chart(app: App) -> Chart:
@@ -56,6 +65,21 @@ def chart(app: App) -> Chart:
             "gitlabUrl": "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181",
             "concurrent": 2,
             "checkInterval": 5,
+            # Opt in the runner manager Deployment. Peak startup working set was 142Mi.
+            "deploymentAnnotations": {
+                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name=f"{NAME}-gitlab-runner",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("memory",),
+                        # Pin CPU while VPA can reuse a recommendation made in Off mode.
+                        min_allowed={"cpu": _CPU_REQUEST, "memory": "160Mi"},
+                        max_allowed={"cpu": _CPU_REQUEST, "memory": _MEMORY_LIMIT},
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
+            },
             "rbac": {"create": True, "clusterWideAccess": False},
             "serviceAccount": {"create": True, "name": NAME},
             "runners": {
@@ -65,7 +89,7 @@ def chart(app: App) -> Chart:
                 ).read_text(),
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
-            "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"memory": "512Mi"}},
+            "resources": {"requests": {"cpu": _CPU_REQUEST, "memory": "128Mi"}, "limits": {"memory": _MEMORY_LIMIT}},
             "securityContext": {
                 "allowPrivilegeEscalation": False,
                 "readOnlyRootFilesystem": False,

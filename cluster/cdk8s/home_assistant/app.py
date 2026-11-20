@@ -42,6 +42,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -49,6 +50,12 @@ from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -62,6 +69,11 @@ _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"
 _NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"
+_APP_CPU_REQUEST = "250m"
+_APP_MEMORY_REQUEST = "512Mi"
+_APP_MEMORY_LIMIT = "2Gi"
+_CADDY_CPU_REQUEST = "20m"
+_CADDY_MEMORY_LIMIT = "128Mi"
 # Caddy in the hostNetwork Pod answers on the node, so clients use an entity rule on `SERVICE.port`.
 SERVICE = HostNetworkServiceRef(
     name=_NAME,
@@ -176,7 +188,32 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
+        metadata=k8s.ObjectMeta(
+            name=_NAME,
+            namespace=_NAMESPACE,
+            labels=SERVICE.pods.selector,
+            annotations={
+                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    # Peak 30-day working sets were 475Mi and 35Mi. Pin CPU against stale Off-mode targets.
+                    ContainerPolicy(
+                        container_name=_NAME,
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("memory",),
+                        min_allowed={"cpu": _APP_CPU_REQUEST, "memory": _APP_MEMORY_REQUEST},
+                        max_allowed={"cpu": _APP_CPU_REQUEST, "memory": _APP_MEMORY_LIMIT},
+                    ),
+                    ContainerPolicy(
+                        container_name="caddy",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("memory",),
+                        min_allowed={"cpu": _CADDY_CPU_REQUEST, "memory": "40Mi"},
+                        max_allowed={"cpu": _CADDY_CPU_REQUEST, "memory": _CADDY_MEMORY_LIMIT},
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
+            },
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -220,7 +257,9 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                             ports=[_BACKEND.k8s_container_port()],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
-                            resources=container_resources(cpu="250m", memory="512Mi", memory_limit="2Gi"),
+                            resources=container_resources(
+                                cpu=_APP_CPU_REQUEST, memory=_APP_MEMORY_REQUEST, memory_limit=_APP_MEMORY_LIMIT
+                            ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
                                 k8s.VolumeMount(
@@ -242,7 +281,9 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                                 ),
                                 period_seconds=10,
                             ),
-                            resources=container_resources(cpu="20m", memory="32Mi", memory_limit="128Mi"),
+                            resources=container_resources(
+                                cpu=_CADDY_CPU_REQUEST, memory="32Mi", memory_limit=_CADDY_MEMORY_LIMIT
+                            ),
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="caddy-config",
