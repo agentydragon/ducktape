@@ -53,18 +53,20 @@ The ablation is in the model weights. The download includes the MTP weights and
 `ngram_embedding.safetensors`. Full-context serving and MTP throughput on the
 cluster image still need measurement.
 
-To stage the candidate, run from a Ducktape checkout on `wyrm2` with Python 3.11+
-and curl.
+To stage the candidate from a Ducktape checkout on `wyrm2`, use the Hugging
+Face CLI from the repository's Nixpkgs pin.
 
 ```sh
-ionice -c 3 nice -n 10 python3 cluster/cdk8s/ollama/stage_tabbyapi_checkpoint.py
+nixpkgs_revision=$(jq -er '.nodes.nixpkgs.locked.rev' flake.lock)
+nix shell "github:NixOS/nixpkgs/$nixpkgs_revision#python3Packages.huggingface-hub" \
+  --command ionice -c 3 nice -n 10 bash cluster/cdk8s/ollama/stage_tabbyapi_checkpoint.sh
 ```
 
-The script resumes partial downloads, checks each file against the pinned
-Hugging Face revision, and renames the staging directory only after verification.
-Rerunning it against the final directory verifies the existing files. To restore
-the serving checkpoint onto a replacement disk, stage its pinned snapshot with
-the n-gram table and verify its weight hashes before starting TabbyAPI.
+The wrapper uses `hf download` to resume partial downloads and `hf cache verify`
+to check the pinned snapshot before renaming the staging directory. Rerunning it
+verifies the existing checkpoint. To restore the serving checkpoint onto a replacement
+disk, stage its pinned snapshot with the n-gram table and verify its weight hashes
+before starting TabbyAPI.
 See [the declarative-staging TODO](TODO.md).
 
 ## Ollama provisioning

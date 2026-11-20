@@ -1,5 +1,6 @@
 # gazelle:ignore
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -13,10 +14,9 @@ py_binary(
     deps = [":patch_qwen38_template"],
 )
 
-py_binary(
+sh_binary(
     name = "stage_tabbyapi_checkpoint",
-    srcs = ["stage_tabbyapi_checkpoint.py"],
-    main_module = "cluster.cdk8s.ollama.stage_tabbyapi_checkpoint",
+    srcs = ["stage_tabbyapi_checkpoint.sh"],
 )
 
 py_test(
