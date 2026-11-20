@@ -9,6 +9,7 @@ if (process.env.ACORN_RLOCATION)
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
 const { execute } = await import("./fuzz.mjs");
+const { validateBindings } = await import("./bindings.mjs");
 const here = dirname(fileURLToPath(import.meta.url));
 const root = await mkdtemp(join(process.env.TEST_TMPDIR, "closure-proof-"));
 const source = join(root, "source.mjs");
@@ -234,6 +235,7 @@ export { read };
   await writeFile(scopeSpec, JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: scopeModules }));
   assert.equal(cli("generate", scopeSource, scopeSpec, scopeOut).result, "generated");
   assert.equal(cli("validate", scopeSource, scopeSpec, scopeOut).result, "unknown");
+  assert.equal((await validateBindings(scopeSource, scopeSpec, scopeOut)).result, "unknown");
   assert.deepEqual(execute(scopeSource, ["read"]).results, [{ value: 7 }]);
   assert.deepEqual(execute(join(scopeOut, "entry.mjs"), ["read"]), execute(scopeSource, ["read"]));
   assert.match(await readFile(join(scopeOut, "logic.mjs"), "utf8"), /import \{ seed \}/);

@@ -466,10 +466,8 @@ function execute(path, calls = []) {
 
 export async function validateBindings(sourcePath, specPath, out) {
   const { source, spec, names, text } = await load(sourcePath, specPath);
-  check(
-    !source.statements.some((item) => item.ast.kind === "scopedFunction"),
-    "scoped function execution is not modeled"
-  );
+  if (source.statements.some((item) => item.ast.kind === "scopedFunction"))
+    return { result: "unknown", reason: "scoped function execution is not modeled" };
   const files = await Promise.all(names.map((name) => readFile(resolve(out, name), "utf8")));
   const actual = files.map((text) => outputAst(text, names));
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
