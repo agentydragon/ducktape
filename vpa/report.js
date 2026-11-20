@@ -688,9 +688,10 @@ function Report() {
           ${" "}pinned the only served version, v1. Generation 2 was Ready and
           all 60 current store UIDs had fresh background pass results at
           20:16:00–01 UTC. The latest wildcard error was at 20:01, before the
-          fix. A separate native admission policy denied an unfenced store in a
-          server-side dry run; that does not establish which policy would deny
-          it independently. The obsolete retirement draft ${" "}<${Anchor}
+          fix. A valid store was accepted in a server-side dry run; a separate
+          native admission policy denied an unfenced store. That does not
+          establish which policy would deny it independently. The obsolete
+          retirement draft ${" "}<${Anchor}
             href=${secretStoreRecovery.closed_draft_pr}
             >#18172<//
           >${" "}was closed without merging. The next hourly scan remains to be
@@ -1477,7 +1478,9 @@ function Report() {
             no Pods. Verify resources and scheduling on actual replacements.
           <//>
           <${Text} component="p" mt="sm" mb=${0}>
-            <${Anchor} href=${stagingControllers.pr_url}>PR #18245<//>
+            At 20:17 UTC, ${" "}<${Anchor} href=${stagingControllers.pr_url}
+              >PR #18245<//
+            >
             ${" "}added environments and policy-controller to Initial
             memory-request sizing. Both Deployments remained 2/2 Ready, and both
             recommend 100 MiB. ReplicaSet-owner Pod CREATE dry runs admitted 10m
