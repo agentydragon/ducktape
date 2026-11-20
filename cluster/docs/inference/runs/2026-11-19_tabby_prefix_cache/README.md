@@ -5,7 +5,7 @@ On November 19 Pacific, stock Qwen3.8 Flash-Next EXL3 used the existing two
 budgets. The control used GPU caching. The trial enabled an 8 GiB RAM tier
 and a 16 GiB NVMe tier together on ExLlamaV3 1.6.7. See the
 [GitOps change](https://github.com/agentydragon/ducktape/pull/18022) and
-[experiment runbook](../../../cdk8s/ollama/prefix-cache-probe.md).
+[experiment runbook](../../../../cdk8s/ollama/prefix-cache-probe.md).
 
 The client streamed directly to TabbyAPI with usage enabled. It used a fixed
 synthetic inventory ledger with 211,024 rendered tokens and repeated the
