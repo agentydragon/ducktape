@@ -1,6 +1,44 @@
 # Shared CI report publishing contract
 
-Read this reference when authoring or publishing either CI report.
+Use this contract when planning a dashboard refresh and again before publishing.
+
+The reader uses these pages to judge how fast and reliable required PR CI is,
+decide which problems deserve attention, and choose what to try given the likely
+benefit and cost. Start each refresh by asking which decision the evidence can
+inform. Choose metrics and visuals for that decision. A trend answers whether
+conditions changed, a distribution shows who sees a long wait, and a breakdown
+can show where failures concentrate. Omit a chart if it adds no information.
+
+## Default reading order
+
+1. **How are PRs doing?** Open with the headline PR metrics and a graph showing
+   their distribution or trend. Put the observation window, population, sample size
+   and units beside them. Refresh the broad PR sample even when the newest work
+   concerns a single incident or rollout. If collection is incomplete, identify
+   the gap in the opening and date any retained baseline. A new experiment does
+   not refresh the baseline's date.
+2. **Where is the problem concentrated?** Compare PR classes, gates or failure
+   mechanisms as the evidence warrants. Show how often the driver occurs, which PRs
+   it affects and how much it costs them. Use a breakdown to establish its scale
+   before drilling into a representative run. Keep detailed traces and methods
+   one click away.
+3. **What should we try next?** Rank the open interventions. For each, name the
+   affected test, trigger or service, the proposed change, expected payoff for PRs, implementation cost,
+   evidence and uncertainty, and the smallest check that would support adopting it.
+   Express payoff in units the reader can use, such as minutes per affected head or
+   reruns avoided per week. If the evidence supports only a bound, give the bound.
+   If payoff is unknown, identify the measurement that would establish it. Check
+   each proposal against current source, routing and landed fixes.
+4. **What changed?** Put useful history last, collapsed by default. Keep a past
+   intervention when its measured effect, unresolved outcome or failed experiment
+   informs a decision today. Link to dated evidence for the rest. On each refresh,
+   edit the relevant sections in place and retire superseded advice.
+
+Review the rendered desktop and mobile pages from the top with disclosures closed.
+Can a reader see PR health and its graph on opening, then find the biggest evidenced
+driver and the next action by scrolling, without reading a rollout chronology?
+Keep important limits visible beside the numbers they qualify. Use semantic
+headings and accessible controls. Label chart series so color alone carries no meaning.
 
 ## Presentation
 
@@ -20,11 +58,6 @@ Author standalone HTML; do not wrap Markdown in a preformatted block.
 Verify actual CDN loading, desktop and mobile layouts, both
 initial color schemes and a live OS or browser preference change. Keep
 styling-only work distinct from measurement or source updates.
-
-Let the findings determine the report structure; keep conclusions and decisions
-easy to find, with semantic headings, accessible controls and useful tables or
-visualizations. Label units, populations and sample sizes, and place important
-limitations by the claims they qualify.
 
 ## Evidence and privacy
 
