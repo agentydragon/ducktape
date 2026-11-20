@@ -96,7 +96,8 @@ After step 5, the modem registers on Google Fi (5G NR, 92% signal observed).
 
 ### Remaining work
 
-Cold boot, suspend/resume and the libqmi 1.38 path are tracked in <modem.md>.
+Cold boot and the libqmi 1.38 path are tracked in <modem.md>. Suspend/resume
+remains under investigation; see <../../../../debug/rugged/suspend/README.md>.
 
 ### Google Fi APN
 

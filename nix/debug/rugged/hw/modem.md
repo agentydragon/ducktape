@@ -13,6 +13,10 @@ survived without a wedge (2026-05-18/19). The
 Modem re-enumerates on each resume (modem0 → modem1 → modem2) but
 connects to Google Fi reliably. No MHI/SBL wedge observed. See
 `suspend_research/README.md` for the full workaround history.
+**Suspend remains open (2026-11-08)**: a rapid re-suspend failed during
+modem reprobe with MHI `-EBUSY` and queued packets. The sequence supports,
+but does not prove, a sleep-inhibitor/low-power ordering hypothesis; see the
+[capture](../../../../debug/rugged/suspend/20261108T191127_0700/findings.md).
 **Runtime-PM wedge found (2026-06-08; recurred 2026-06-22)**: the
 system-suspend workaround left a gap — kernel _runtime-PM_ autosuspend
 (2s idle delay) was driving the modem into the same broken M3 path
@@ -99,17 +103,17 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   to have been the actual unlock path; it's defense-in-depth against
   MM giving up on a future transient FoxFlss failure (per upstream
   contract, MM doesn't retry the script after one failure).
-- **Suspend/resume wedge — workaround confirmed (2026-05-19)**:
+- **Suspend/resume — investigate the reprobe window**:
   Full mechanism trace in <suspend_research/README.md>. At least 2
   suspend/resume cycles survived without wedge (2026-05-18/19). The
-  `--test-low-power-suspend-resume` MM flag in `foxconn-wwan.nix` is
-  doing its job: MM puts the modem in LOW_POWER before suspend, modem
-  avoids the broken MHI M3 path, and re-enumerates cleanly on resume
+  With `--test-low-power-suspend-resume` in `foxconn-wwan.nix`, MM put the
+  modem in LOW_POWER before suspend; the modem avoided the broken MHI M3
+  path and re-enumerated on resume
   (modem0 → modem1 → modem2 per boot). **WwanAutoSense=Enabled
   hypothesis was disproved**: post-reboot `reset_method` is still `flr
 bus` (no `acpi`); see research doc for the DSDT/WWEN analysis.
-  Remaining: run formal E1/E2/E3 matrix (especially E2 — in-flight
-  traffic) to confirm behavior is deterministic.
+  Later failures during reprobe remain open; see the November capture above.
+  Run the formal E1/E2/E3 matrix (especially E2 — in-flight traffic).
 - **Default RAT**: at the one location tested (2026-05-02) LTE coverage was
   essentially absent (RSRP -156 dBm), so the auto-connect path, locked to the
   implicit 4g, got 9% signal against 92% observed manually; it was not a

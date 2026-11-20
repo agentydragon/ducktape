@@ -4,43 +4,398 @@ Date: 2026-04-25
 Host: `rugged`
 Hardware: Dell Pro Rugged 12 Tablet RA02260
 
-## First incident (2026-04-25): Mutter never claims the accelerometer
+## Symptom
 
-GNOME auto-rotate did not rotate the built-in display. Fixed upstream; see
-"Upstream fix and validation".
+GNOME auto-rotate is not rotating the built-in display, even though this machine is a tablet and auto-rotate reportedly worked at some point in the past.
 
-Signature, to tell it from the second incident's kernel-side wedge:
+## Findings So Far
 
-- Host config (`hardware.sensor.iio.enable`), `iio-sensor-proxy`
-  (`HasAccelerometer = true`) and the `Intel HID switches` tablet-mode switch
-  were healthy. `monitor-sensor` reported correct orientation changes once it
-  claimed the sensor.
-- `org.gnome.Mutter.DisplayConfig` had `PanelOrientationManaged = true`, but the
-  built-in transform stayed `0` and no `MonitorsChanged` fired. A direct
-  `ApplyMonitorsConfig` rotated `eDP-1` fine.
-- The system bus showed no `ClaimAccelerometer` or `ReleaseAccelerometer` from
-  the live session, and `strace` of `gnome-shell` showed no
-  `net.hadess.SensorProxy` traffic.
-- Restarting `iio-sensor-proxy`, unplugging the external monitor and disabling
-  all Shell extensions did not help. The `gsd-power` "Release of light sensors
-  failed" warning ("Sensor claim not allowed") was judged unlikely to be the
-  cause.
+### Host configuration is correct
 
-Root cause (Mutter 49.2). A `gcore` of the broken `gnome-shell`, read with
-matching debug outputs, showed `MetaOrientationManager` with `has_accel = 1`,
-`orientation_locked = 0`, `should_claim = 0`, `is_claimed = 0` and
-`inhibited_count = -1`, and `MetaMonitorManagerPrivate` with
-`initial_orient_change_done = 0`. `sync_accelerometer_claimed()` claims only at
-a count of 0, and `meta_orientation_manager_uninhibit_tracking()` has no
-lower-bound guard. The count most likely went `0 → -1` when `iio_proxy_ready()`
-→ `update_has_accel()` → `notify::has-accelerometer` →
-`update_panel_orientation_managed()` called `uninhibit_tracking()` before any
-matching inhibit. That chain was read from source, not traced live from a fresh
-login.
+- The `rugged` NixOS host configuration enables IIO sensor proxy:
+  - `nix/nixos/hosts/rugged/default.nix`
+  - `hardware.sensor.iio.enable = true;`
+- GNOME rotation lock is currently off:
+  - `org.gnome.settings-daemon.peripherals.touchscreen orientation-lock false`
 
-Retained generations `system-78`, `system-95` and `system-96` all used
-`mutter-49.2` and `gnome-settings-daemon-49.1`: a startup-order race, not a
-package regression.
+### Kernel/IIO sensor path works
+
+- `/sys/bus/iio/devices` contains the expected HID sensor devices:
+  - `als`
+  - `magn_3d`
+  - `accel_3d`
+  - `gyro_3d`
+  - `incli_3d`
+  - `dev_rotation`
+  - `relative_orientation`
+- `accel_3d` produces live raw values.
+- `iio-sensor-proxy.service` is active and running.
+- `busctl` reports:
+  - `HasAccelerometer = true`
+  - `HasAmbientLight = true`
+
+### Tablet-mode switch works
+
+- The kernel input device `Intel HID switches` is present.
+- Current `/proc/bus/input/devices` block:
+
+```text
+I: Bus=0019 Vendor=0000 Product=0000 Version=0000
+N: Name="Intel HID switches"
+S: Sysfs=/devices/platform/INTC107B:00/input/input13
+H: Handlers=event9
+B: EV=21
+B: SW=2
+```
+
+- `SW=2` means the device exposes only `SW_TABLET_MODE`.
+- Live switch-state read from `/dev/input/event9` returned:
+
+```text
+/dev/input/event9 0x2 [1]
+```
+
+- Interpretation:
+  - `SW_TABLET_MODE` is active right now.
+  - GNOME/Mutter is being told the machine is in tablet mode.
+
+### Sensor orientation events work when explicitly claimed
+
+- `monitor-sensor` initially appeared with orientation unset:
+
+```text
+=== Has accelerometer (orientation: undefined, tilt: undefined)
+```
+
+- After moving the device, `monitor-sensor` reported valid orientation transitions, including:
+  - `Accelerometer orientation changed: normal`
+  - `Accelerometer orientation changed: left-up`
+  - `Accelerometer orientation changed: right-up`
+
+- This proves:
+  - The accelerometer is not missing.
+  - The sensor proxy can derive orientation correctly.
+  - Physical rotation is reaching userspace correctly.
+
+## Suspicious Runtime Signals
+
+- In the user journal, GNOME logged:
+
+```text
+gsd-power: Release of light sensors failed: GDBus.Error:org.freedesktop.DBus.Error.AccessDenied: Not Authorized: Sensor claim not allowed
+```
+
+- A direct manual D-Bus claim against `net.hadess.SensorProxy` succeeded, so the sensor service is not globally broken.
+- This suggests a GNOME-side integration or policy/regression issue rather than missing hardware support.
+- The `gsd-power` light-sensor warning is likely not the root cause by itself; similar
+  warnings appear on otherwise-working GNOME systems and do not explain the missing
+  builtin-panel rotation.
+
+## Mutter / GNOME Boundary
+
+- `org.gnome.Mutter.DisplayConfig.GetCurrentState` shows the built-in display as `eDP-1`.
+- Direct D-Bus query now shows:
+  - `org.gnome.Mutter.DisplayConfig.PanelOrientationManaged = true`
+  - `HasExternalMonitor = true`
+- Live `GetCurrentState` continues to show the built-in logical monitor transform as `0` (normal), even after physical rotation events.
+- Mutter source references indicate orientation changes are applied through the monitor manager on `orientation-changed`.
+
+### Relevant Mutter source path
+
+From `/tmp/mutter-src` (commit `e14c662`):
+
+- `src/backends/meta-monitor-manager.c`
+  - `update_panel_orientation_managed()` sets panel orientation managed only when all are true:
+    - `clutter_seat_get_touch_mode(seat)`
+    - `meta_orientation_manager_has_accelerometer(...)`
+    - built-in monitor exists
+  - `orientation_changed()` returns early if `panel_orientation_managed` is false.
+  - `handle_orientation_change()` computes the requested transform from accelerometer orientation and applies a temporary monitor config.
+- `src/backends/meta-orientation-manager.c`
+  - Mutter only receives live `AccelerometerOrientation` property updates from `iio-sensor-proxy` when it has successfully claimed the accelerometer.
+- `src/tests/monitor-orientation-tests.c`
+  - Mutter’s own tests explicitly expect the built-in panel to continue rotating correctly even with an external monitor connected, as long as the lid is open.
+
+### Additional live checks
+
+- DRM/KMS connector `eDP-1` reports:
+
+```text
+panel orientation:
+  enums: Normal=0 Upside Down=1 Left Side Up=2 Right Side Up=3
+  value: 0
+```
+
+- This rules out a hidden panel-orientation correction causing the physical rotation to appear as a no-op.
+
+- While watching `org.gnome.Mutter.DisplayConfig` during tablet rotation:
+  - no `MonitorsChanged` signal was observed
+  - the built-in display transform remained unchanged in `GetCurrentState`
+
+### Manual Mutter rotate works
+
+- A direct D-Bus `ApplyMonitorsConfig` verify call succeeded for a temporary `90°`
+  transform on `eDP-1`.
+- A direct D-Bus `ApplyMonitorsConfig` temporary apply also succeeded.
+- `GetCurrentState` immediately reflected the built-in logical monitor transform
+  changing from `0` to `1` (`90°`), and a second temporary apply cleanly restored
+  it to `0`.
+
+This rules out:
+
+1. Broken monitor-config generation for rotated builtin layouts.
+2. Broken monitor-config apply for the current two-monitor session.
+3. External-monitor presence as a hard blocker for built-in panel rotation.
+
+This narrows the remaining fault to:
+
+1. Mutter is not actually receiving / processing the live `orientation-changed`
+   path despite sensor orientation changes existing in `iio-sensor-proxy`.
+2. Mutter is failing to claim or stay subscribed to the accelerometer, so it never
+   receives the live `AccelerometerOrientation` property updates needed to trigger
+   rotation.
+
+### Negative tests after narrowing
+
+- Disconnecting the external `DP-1` monitor did **not** restore auto-rotate.
+- Restarting `iio-sensor-proxy.service` did **not** restore auto-rotate.
+- Temporarily disabling the `display-scale-switcher` GNOME Shell extension did
+  **not** restore auto-rotate.
+- Temporarily disabling **all** user GNOME Shell extensions did **not** restore
+  auto-rotate.
+- Monitoring the system D-Bus traffic for `net.hadess.SensorProxy` while:
+  - toggling `orientation-lock` `true` -> `false`
+  - and physically rotating the tablet
+    showed **no** `ClaimAccelerometer` or `ReleaseAccelerometer` calls from the
+    live session.
+- A `strace` attached to the running `gnome-shell` process during the same test
+  also showed:
+  - `orientation-lock` dconf change notifications arriving on the session bus
+  - ordinary session D-Bus traffic continuing normally
+  - **no** traffic containing `net.hadess.SensorProxy`,
+    `ClaimAccelerometer`, `ReleaseAccelerometer`, or
+    `AccelerometerOrientation`
+
+These additional tests rule out:
+
+1. External-monitor presence as the practical blocker in the current setup.
+2. A stale `iio-sensor-proxy` process or a one-shot missed service startup.
+3. User-installed GNOME Shell extensions as the immediate cause.
+4. Live auto-rotate being merely "slow" or delayed behind the observed rotation.
+5. The possibility that Mutter is attempting sensor D-Bus calls that were simply
+   missed by higher-level monitoring.
+
+### Session / startup observations
+
+- The active graphical session is `loginctl` session `2` on `seat0`, `Type=wayland`,
+  `Active=yes`, `Service=gdm-password`.
+- GNOME Shell registered a polkit agent under one session identifier, then later
+  re-registered under `unix-session:2` after a compositor restart during login.
+- GNOME logs also included:
+
+```text
+Missing required core component Settings, expect trouble…
+```
+
+- `gnome-settings-daemon` components are running in the final session, so this
+  message does not mean the settings stack is absent, but it does suggest a noisy
+  or unstable startup sequence.
+
+Current working theory:
+
+1. The hardware path is healthy.
+2. The tablet-mode switch is healthy.
+3. Sensor orientation derivation is healthy.
+4. Manual display rotation inside Mutter works, so monitor-config generation/apply
+   is healthy.
+5. GNOME/Mutter is failing somewhere in the live sensor subscription or
+   `orientation-changed` path inside the compositor/session build.
+
+### Stronger Mutter-specific hypothesis
+
+The absence of any `ClaimAccelerometer` / `ReleaseAccelerometer` traffic during the
+live test suggests Mutter is not actively claiming the sensor anymore in the current
+session.
+
+Reading the source makes a startup race plausible:
+
+- `MetaOrientationManager` only receives live orientation property updates after a
+  successful `ClaimAccelerometer`.
+- `MetaMonitorManager::orientation_changed()` unconditionally calls
+  `meta_orientation_manager_inhibit_tracking()` on the first signal
+  (`initial_orient_change_done` path).
+- If startup ordering leaves the monitor manager in a state where that first signal
+  lands after panel orientation has already become managed, the inhibit count may
+  remain elevated in a way that suppresses future sensor claims for the rest of the
+  session.
+
+This matches the observed behavior well:
+
+1. Manual monitor rotation still works.
+2. Sensor-derived orientation exists when another client claims the sensor.
+3. The live GNOME session shows no sensor claim/release activity of its own.
+4. Service restart and settings toggles do not recover the session.
+
+### Core-dump proof from the live broken session
+
+A `gcore` dump of the running `gnome-shell` / Mutter process was inspected with
+the matching `gnome-shell` and `mutter` debug outputs.
+
+Recovered live Mutter state from the dump:
+
+- `MetaContextPrivate.backend` points to a valid backend object.
+- `MetaBackendPrivate.orientation_manager` points to a valid
+  `MetaOrientationManager`.
+- `MetaBackendPrivate.monitor_manager` points to a valid
+  `MetaMonitorManager`.
+
+The critical `MetaOrientationManager` fields in the broken session were:
+
+- `has_accel = 1`
+- `orientation_locked = 0`
+- `should_claim = 0`
+- `is_claimed = 0`
+- `orientation = META_ORIENTATION_UNDEFINED`
+- `inhibited_count = -1`
+
+The paired `MetaMonitorManagerPrivate` fields were:
+
+- `initial_orient_change_done = 0`
+- `power_save_mode = META_POWER_SAVE_ON`
+- `power_save_inhibit_orientation_tracking = 0`
+
+Interpretation:
+
+1. Mutter sees the accelerometer (`has_accel = 1`).
+2. Rotation lock is not blocking it (`orientation_locked = 0`).
+3. Power-save inhibition is not blocking it.
+4. Mutter has never processed its first orientation event in this session
+   (`initial_orient_change_done = 0`).
+5. Yet the orientation manager's internal inhibit counter is already negative
+   (`inhibited_count = -1`).
+
+That is a concrete broken internal state. It directly explains why Mutter never
+claims the accelerometer in this session:
+
+- `sync_accelerometer_claimed()` only sets `should_claim = true` when
+  `self->inhibited_count == 0`.
+- A value of `-1` therefore suppresses `ClaimAccelerometer` permanently.
+
+Relevant source lines:
+
+- `src/backends/meta-orientation-manager.c`
+  - `sync_accelerometer_claimed()` computes
+    `should_claim = self->iio_proxy && self->inhibited_count == 0`
+    (lines `287`-`326` in the inspected source tree).
+  - `meta_orientation_manager_uninhibit_tracking()` blindly decrements
+    `self->inhibited_count--` with no lower-bound guard
+    (lines `527`-`532`).
+- `src/backends/meta-monitor-manager.c`
+  - `update_panel_orientation_managed()` calls
+    `meta_orientation_manager_uninhibit_tracking()` immediately when panel
+    orientation becomes managed
+    (lines `1096`-`1131`).
+  - In the captured broken session, `panel_orientation_managed = true` while
+    `initial_orient_change_done = 0`, which means the negative counter was
+    reached before Mutter ever handled its first orientation event.
+
+This is substantially stronger than the earlier "maybe a startup race" theory:
+the live broken session contains the exact wedged state preventing sensor claims.
+
+### Refined startup-race interpretation
+
+The core data and source together point to a specific ordering bug rather than a
+generic random wedge.
+
+Relevant ordering:
+
+1. `MetaOrientationManager` starts with `inhibited_count = 0`.
+2. If `iio_proxy_ready()` runs while the count is still `0`, it calls
+   `sync_accelerometer_claimed()` and Mutter can claim the accelerometer.
+3. The monitor manager treats the first `sensor-active` / `orientation-changed`
+   signal specially and calls `meta_orientation_manager_inhibit_tracking()`,
+   incrementing the counter.
+4. Separately, when `update_panel_orientation_managed()` decides that tablet
+   auto-rotation should be active, it calls
+   `meta_orientation_manager_uninhibit_tracking()`, decrementing the counter.
+
+This only works if those steps happen in the "lucky" order:
+
+- first orientation signal increments to `1`
+- then panel-orientation management decrements back to `0`
+
+In the broken session, the opposite ordering happened:
+
+- panel-orientation management decremented from `0` to `-1`
+- no first orientation signal ever arrived afterward
+- `should_claim` stayed false forever because the counter never returned to `0`
+
+That ordering exactly matches the core:
+
+- `panel_orientation_managed = true`
+- `initial_orient_change_done = 0`
+- `inhibited_count = -1`
+- `iio_proxy != NULL`
+- `has_accel = 1`
+- `should_claim = 0`
+- `is_claimed = 0`
+
+So the most precise current diagnosis is:
+
+- Mutter's auto-rotate claim path is startup-order-dependent.
+- On this broken session, `update_panel_orientation_managed()` won the race
+  before the first sensor-active/orientation event.
+- That drove the inhibit counter negative and permanently suppressed
+  `ClaimAccelerometer` for the rest of the session.
+
+Most likely concrete callback chain:
+
+1. `MetaOrientationManager::iio_proxy_ready()` runs.
+2. It calls `update_has_accel()`.
+3. `update_has_accel()` sets `has_accel = true` and emits
+   `notify::has-accelerometer`.
+4. `MetaMonitorManager` is connected to that notify signal, so
+   `update_panel_orientation_managed()` runs immediately.
+5. Because touch mode, builtin panel, and accelerometer are all now true,
+   `update_panel_orientation_managed()` flips panel orientation to managed and
+   calls `meta_orientation_manager_uninhibit_tracking()`.
+6. At this point no prior matching inhibit has happened yet, so the counter goes
+   from `0` to `-1`.
+7. Control returns to `iio_proxy_ready()`, which only _then_ calls
+   `sync_accelerometer_claimed()`.
+8. `sync_accelerometer_claimed()` sees `inhibited_count == -1`, computes
+   `should_claim = false`, and never sends `ClaimAccelerometer`.
+
+That exact chain is not yet live-traced from a fresh login, but it is the best
+fit to both:
+
+- the source ordering in `iio_proxy_ready()`
+- and the captured broken-session core state
+
+## Package / Regression Notes
+
+The user reports this worked in the past, including within roughly the last
+three months.
+
+Older retained local generations (`system-78`, `system-95`) and the current one
+(`system-96`) all point at the same `mutter-49.2` store path:
+
+- `/nix/store/n6qcqizvig95j7839fh1s3qm71wgvjsx-mutter-49.2`
+
+They also point at the same `gnome-settings-daemon-49.1` build.
+
+This means the earlier "likely regression between `2026-04-18` and
+`2026-04-22`" theory is no longer supported by package evidence alone.
+
+Updated interpretation:
+
+1. The root cause is very likely a race/order bug already present in the
+   installed `mutter-49.2` build.
+2. If the user truly saw auto-rotate work on one of these retained generations,
+   that would fit an intermittent startup-order race rather than a clean package
+   upgrade regression.
+3. A boot test into an older generation is still useful as a behavioral check,
+   but not because those retained generations use a different Mutter build.
 
 ## Upstream provenance
 
