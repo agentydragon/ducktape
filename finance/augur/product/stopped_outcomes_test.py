@@ -19,14 +19,7 @@ from finance.augur.model.series import InflationKey
 from finance.augur.model.testing import ConstantFrameModel
 from finance.augur.product.metrics import OutcomeBasis
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import (
-    MetricName,
-    ProductProjectionRequest,
-    ProjectionSamplingRequest,
-    RolloutRequest,
-    ScenarioKey,
-    SpendIndex,
-)
+from finance.augur.product.wire import MetricName, ProductProjectionRequest, RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.ids import AgentId
 
 
@@ -53,15 +46,16 @@ def _product(*, future_cpi: float = 10) -> ProductService:
     )
 
 
-def _request(*, metric: MetricName, horizon: int, count: int) -> ProjectionSamplingRequest:
-    return ProjectionSamplingRequest(
+def _request(*, metric: MetricName, horizon: int, count: int) -> ProductProjectionRequest:
+    return ProductProjectionRequest(
         scenario=ScenarioKey(
             model_id="synthetic", horizon_months=horizon, monthly_spend=Decimal(500), spend_index=SpendIndex.INFLATION
         ),
         first_seed=0,
         rollout_count=count,
         metric=metric,
-        percentiles=(0, 50, 100),
+        fan_percentiles=(0, 50, 100),
+        terminal_percentiles=(0, 50, 100),
     )
 
 
@@ -71,21 +65,8 @@ def test_mixed_population_keeps_recorded_shortfall_but_not_stopped_terminal_weal
     product = _product()
     metrics: tuple[MetricName, ...] = ("net_worth", "shortfall")
     for metric in metrics:
-        request = _request(metric=metric, horizon=horizon, count=2)
-        fan = product.metric_fan(request)
-        terminal = product.terminal_distribution(request)
-        combined = product.projection_summary(
-            ProductProjectionRequest(
-                scenario=request.scenario,
-                first_seed=request.first_seed,
-                rollout_count=request.rollout_count,
-                metric=request.metric,
-                fan_percentiles=request.percentiles,
-                terminal_percentiles=request.percentiles,
-            )
-        )
-        assert combined.metric_fan == fan
-        assert combined.terminal_distribution == terminal
+        summary = product.projection_summary(_request(metric=metric, horizon=horizon, count=2))
+        fan, terminal = summary.metric_fan, summary.terminal_distribution
         assert fan.failed_count == terminal.failed_count == 1
         assert fan.completed_count == terminal.completed_count == 1
         assert terminal.terminal_metric_samples["seed"] == [0, 1]
@@ -121,23 +102,23 @@ def test_mixed_population_keeps_recorded_shortfall_but_not_stopped_terminal_weal
 def test_all_stopped_has_no_terminal_wealth_but_has_observed_unpaid_demands() -> None:
     product = _product()
     wealth_request = _request(metric="net_worth", horizon=3, count=1)
-    wealth = product.metric_fan(wealth_request)
-    assert wealth.observation_count == wealth.completed_count == 0
-    assert wealth.failed_count == 1
-    assert wealth.terminal_metric_percentiles["value_quanta"] == [None] * 3
-    assert wealth.monthly_metric_fan["observed_count"] == [1] * 6 + [0] * 6
-    assert wealth.monthly_metric_fan["value_quanta"] == ["200000"] * 3 + ["150000"] * 3 + [None] * 6
-    assert product.terminal_distribution(wealth_request).terminal_metric_samples["value_quanta"] == [None]
+    wealth = product.projection_summary(wealth_request)
+    assert wealth.metric_fan.observation_count == wealth.metric_fan.completed_count == 0
+    assert wealth.metric_fan.failed_count == 1
+    assert wealth.metric_fan.terminal_metric_percentiles["value_quanta"] == [None] * 3
+    assert wealth.metric_fan.monthly_metric_fan["observed_count"] == [1] * 6 + [0] * 6
+    assert wealth.metric_fan.monthly_metric_fan["value_quanta"] == ["200000"] * 3 + ["150000"] * 3 + [None] * 6
+    assert wealth.terminal_distribution.terminal_metric_samples["value_quanta"] == [None]
 
     shortfall_request = _request(metric="shortfall", horizon=3, count=1)
-    shortfall = product.metric_fan(shortfall_request)
-    assert shortfall.basis == OutcomeBasis.OBSERVED_THROUGH_STOP
-    assert shortfall.observation_count == shortfall.failed_count == 1
-    assert shortfall.completed_count == 0
-    assert shortfall.terminal_metric_percentiles["value_quanta"] == ["500000"] * 3
-    assert shortfall.monthly_metric_fan["observed_count"] == [1] * 9 + [0] * 3
-    assert shortfall.monthly_metric_fan["value_quanta"] == ["0"] * 6 + ["500000"] * 3 + [None] * 3
-    assert product.terminal_distribution(shortfall_request).terminal_metric_samples["value_quanta"] == ["500000"]
+    shortfall = product.projection_summary(shortfall_request)
+    assert shortfall.metric_fan.basis == OutcomeBasis.OBSERVED_THROUGH_STOP
+    assert shortfall.metric_fan.observation_count == shortfall.metric_fan.failed_count == 1
+    assert shortfall.metric_fan.completed_count == 0
+    assert shortfall.metric_fan.terminal_metric_percentiles["value_quanta"] == ["500000"] * 3
+    assert shortfall.metric_fan.monthly_metric_fan["observed_count"] == [1] * 9 + [0] * 3
+    assert shortfall.metric_fan.monthly_metric_fan["value_quanta"] == ["0"] * 6 + ["500000"] * 3 + [None] * 3
+    assert shortfall.terminal_distribution.terminal_metric_samples["value_quanta"] == ["500000"]
 
     selected = product.rollout(RolloutRequest(scenario=wealth_request.scenario, seed=0))
     assert selected.rollout.ending_metrics.snapshot_index == 2
@@ -147,8 +128,8 @@ def test_all_stopped_has_no_terminal_wealth_but_has_observed_unpaid_demands() ->
     assert selected.rollout.monthly_metrics["month_index"] == [0, 1, 2]
     different_future = _product(future_cpi=999)
     assert different_future.rollout(RolloutRequest(scenario=wealth_request.scenario, seed=0)) == selected
-    assert different_future.metric_fan(wealth_request) == wealth
-    assert different_future.metric_fan(shortfall_request) == shortfall
+    assert different_future.projection_summary(wealth_request) == wealth
+    assert different_future.projection_summary(shortfall_request) == shortfall
 
 
 if __name__ == "__main__":

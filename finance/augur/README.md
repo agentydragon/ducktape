@@ -155,14 +155,3 @@ macro models are chosen per preset in `Config.models` (e.g. `structural_macro`, 
 to the checked-in fit; `state_space` with an artifact path and grouped conditioning
 observations). A checked-in fit must pass `//finance/augur/x/models/calibrated:sanity_test`
 or be listed in its `QUARANTINED`, and then is not to be used.
-
-## Profiling
-
-```bash
-bazelisk run --config=nolint //finance/augur/api:profile_metric_fan_bin
-```
-
-Profiles one `ProductService.metric_fan` request (default 50 rollouts × 100 months, public
-fixture) into `/tmp/augur_metric_fan.prof`, printing top cumulative functions; bounded by
-`--max-seconds=60`. Reshape with `--rollout-count`, `--horizon-months`, `--metric`,
-`--percentiles`.
