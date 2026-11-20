@@ -407,22 +407,33 @@ function parameterCase(seed, index) {
   const rand = random(seed ^ 0x70617261, index);
   const initial = 1 + rand(8);
   const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
-  const multiply = Math.floor(index / 32) % 2 === 1;
-  const left = {
-    type: "BinaryExpression",
-    operator: multiply ? "*" : "+",
-    left: id(parameters[0]),
-    right: id(parameters[1]),
-  };
-  const value = call(id("helper"), [left]);
   const thrownValue = ["generated", false, null, 1 + rand(8)][Math.floor(index / 32) % 4];
   const firstArgument = 1 + rand(8),
     secondArgument = 1 + rand(8),
     condition = 1 + rand(8);
-  const observedThrow =
-    typeof thrownValue === "number"
-      ? (multiply ? secondArgument * condition : secondArgument + condition) + initial + condition
-      : thrownValue;
+  // Construct a bounded tree from currently visible numeric parameters and
+  // literals. The associated value only chooses a bounded expected throw for
+  // this test input; Node remains the differential oracle for both programs.
+  const tree = (depth) => {
+    if (depth === 0 || rand(4) === 0) {
+      const choice = rand(3);
+      if (choice === 0) return { ast: id(parameters[0]), value: secondArgument, depth: 0 };
+      if (choice === 1) return { ast: id(parameters[1]), value: condition, depth: 0 };
+      const value = rand(5);
+      return { ast: literal(value), value, depth: 0 };
+    }
+    const left = tree(depth - 1),
+      right = tree(depth - 1),
+      operator = rand(2) ? "+" : "*";
+    return {
+      ast: { type: "BinaryExpression", operator, left: left.ast, right: right.ast },
+      value: operator === "+" ? left.value + right.value : left.value * right.value,
+      depth: 1 + Math.max(left.depth, right.depth),
+    };
+  };
+  const generatedExpression = tree(2);
+  const value = call(id("helper"), [generatedExpression.ast]);
+  const observedThrow = typeof thrownValue === "number" ? generatedExpression.value + initial + condition : thrownValue;
   const expectedThrown =
     observedThrow === null ? { kind: "null" } : { kind: typeof observedThrow, value: observedThrow };
   const guard = parameters[0] === "x";
@@ -486,6 +497,7 @@ function parameterCase(seed, index) {
       { name: "calculate", args: [secondArgument, condition] },
     ],
     grammar: "parameter",
+    expressionDepth: generatedExpression.depth,
     expectThrow: true,
     thrownValue,
     expectedThrown,
@@ -973,6 +985,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     capturedProved: 0,
     capturedUnsafe: 0,
     parameterCases: 0,
+    parameterExpressionDepths: {},
     parameterCompared: 0,
     parameterProved: 0,
     modeledClosureCases: 0,
@@ -1070,7 +1083,11 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         summary.objectSourceExecuted++;
       }
       if (input.grammar === "captured") summary.capturedCases++;
-      if (input.grammar === "parameter") summary.parameterCases++;
+      if (input.grammar === "parameter") {
+        summary.parameterCases++;
+        summary.parameterExpressionDepths[input.expressionDepth] =
+          (summary.parameterExpressionDepths[input.expressionDepth] ?? 0) + 1;
+      }
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCases++;
         if (input.crossModuleCapture) summary.modeledClosureCrossModule++;

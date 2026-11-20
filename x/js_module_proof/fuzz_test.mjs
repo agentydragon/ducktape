@@ -95,6 +95,15 @@ const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST
 console.log(JSON.stringify(result));
 assert.equal(result.cases, 16 / shards);
 if (shards === 4 && shard === 0) {
+  const generatedExpressions = Array.from({ length: 128 }, (_, i) => makeCase(123, 12 + 32 * i));
+  assert.deepEqual(new Set(generatedExpressions.map((item) => item.expressionDepth)), new Set([0, 1, 2]));
+  for (const [index, item] of generatedExpressions.slice(0, 16).entries()) {
+    const path = join(process.env.TEST_TMPDIR, `parameter-source-${index}.mjs`);
+    await writeFile(path, item.source);
+    const observed = execute(path, item.calls);
+    assert.equal(observed.error?.index, 1);
+    assert.deepEqual(observed.error?.thrown, item.expectedThrown);
+  }
   assert.ok(result.proved > 0);
   assert.ok(result.constantCases > 0);
   assert.equal(result.parameterCases, 1);
