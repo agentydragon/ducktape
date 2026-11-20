@@ -4,11 +4,20 @@
   "window_end_utc": "2026-11-20T21:12:39Z",
   "published_at_utc": "2026-11-20T21:50:17Z",
   "attribution": "not collected",
-  "report_sha256": "42a24a1690b49b489016ccfd670b800e11f1a4cfed1f9248fbab9b7106ea83eb",
-  "evidence_sha256": "6319dd011142f35ead5e669e0a5235c722d1983053a42bee54d18404892b0a26",
+  "report_sha256": "bbcb44dfef01ff84ef91b63c27438d50692669e6f23de454b8a444d725de30ef",
+  "evidence_sha256": "dde2ba5875b250d0aebf5b67586f87d9be918dcbf0f23ebbea4b7a832a3bfb82",
   "previous_report_commit": "9641389cba5e284a416a940b3258c435002bc692",
   "feedback_clock": "Earliest observed PR CI workflow creation on the exact SHA to all three required check contexts accepted",
   "visual_validation": "visual-validation.json",
-  "visual_validation_sha256": "953a8c86619f1331612ccce679241871279a5686bfa4f837f753b28f333753d7",
-  "weekly_feedback_window_utc": ["2026-11-13T00:00:00Z", "2026-11-20T00:00:00Z"]
+  "visual_validation_sha256": "47f1079062c76d1ae0e98acad101eba1c6acc602c19e7af8ff6e75f71410436f",
+  "weekly_feedback_window_utc": [
+    "2026-11-13T00:00:00Z",
+    "2026-11-20T00:00:00Z"
+  ],
+  "managed_pod_followup": {
+    "evidence_key": "managed_pod_admission",
+    "source_devel_commit": "e83b7bf9737ec347d2fcdf6ae89171e8227a22f9",
+    "workflow_collection_end_utc": "2026-11-20T21:44:00Z",
+    "browser_invocation": "c06ece75-bb36-46f3-b56a-f016de1e786e"
+  }
 }
