@@ -411,6 +411,10 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     if example.live_preview:
         await expect(pending.get_by_text(example.live_preview[2], exact=False)).to_be_visible()
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    if example.key == "gmail.threads_modify_labels":
+        subject_link = pending.get_by_role("link", name="Deployment review", exact=True)
+        await expect(subject_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/thread-123")
+        await expect(subject_link).to_have_attribute("target", "_blank")
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
