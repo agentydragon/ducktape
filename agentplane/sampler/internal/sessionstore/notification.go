@@ -66,7 +66,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 		if err != nil {
 			return err
 		}
-		if drained, err = s.settleNotifications(ctx, tx, owner, conversation, session, true); err != nil {
+		if drained, err = s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}
 		return updateConversation(ctx, tx, conversation)
@@ -76,7 +76,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 
 // settleNotifications appends queued outputs to conversation (record) or discards them. Either way
 // it leaves evidence per notification; the caller persists conversation.
-func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session, record bool) (bool, error) {
+func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, record bool) (bool, error) {
 	rows, err := tx.QueryContext(ctx, `WITH drained AS (DELETE FROM sampler_notification WHERE conversation_id=$1
 		RETURNING sequence,call_id,cell_id,text) SELECT sequence,call_id,cell_id,text FROM drained ORDER BY sequence`, conversation.ID)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 	for _, notification := range notifications {
 		operationID := fmt.Sprintf("%s:notification:%d", conversation.ID, notification.sequence)
 		if !record {
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_DISCARDED,
+			if err := s.recordEvidence(ctx, tx, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_DISCARDED,
 				map[string]any{"call_id": notification.callID, "cell_id": notification.cellID}); err != nil {
 				return false, err
 			}
@@ -116,7 +116,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 			return false, err
 		}
 		output := []protocol.ContentPart{{Type: "input_text", Text: tooloutput.TruncateTextWithTokenBudget(notification.text, notificationTokenLimit)}}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_RECORDED,
+		if err := s.recordEvidence(ctx, tx, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_RECORDED,
 			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
 			return false, err
 		}

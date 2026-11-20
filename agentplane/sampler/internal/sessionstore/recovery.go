@@ -160,7 +160,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			if intent.Kind == IntentSampling && conversation.Pending != nil && intent.ID == conversation.Pending.ID {
 				linked = reconciliation
 			}
-			if err := s.abandonIntent(ctx, tx, owner, conversation, session, intent.ID, intent.Kind, linked, ProviderRetrySuppressionHostLoss); err != nil {
+			if err := s.abandonIntent(ctx, tx, conversation, session, intent.ID, intent.Kind, linked, ProviderRetrySuppressionHostLoss); err != nil {
 				return err
 			}
 			switch intent.Kind {
@@ -190,7 +190,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		}
 		cellRows.Close()
 		for _, id := range abandonedCells {
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_CELL, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{}); err != nil {
+			if err := s.recordEvidence(ctx, tx, conversation, session, id, eventpb.ExecutionProgress_KIND_CELL, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{}); err != nil {
 				return err
 			}
 		}
@@ -217,7 +217,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		}
 		processRows.Close()
 		for _, evidence := range abandonedProcesses {
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, evidence["process_id"].(string), eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, evidence); err != nil {
+			if err := s.recordEvidence(ctx, tx, conversation, session, evidence["process_id"].(string), eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, evidence); err != nil {
 				return err
 			}
 		}
@@ -276,7 +276,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET code_session_epoch=code_session_epoch+1,code_host_instance=NULL WHERE id=$1`, conversation.ID); err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_CODE_HOST_LOSS, eventpb.ExecutionProgress_PHASE_COMMITTED, map[string]any{
+			if err := s.recordEvidence(ctx, tx, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_CODE_HOST_LOSS, eventpb.ExecutionProgress_PHASE_COMMITTED, map[string]any{
 				"previous_instance": previous.String, "next_instance": instanceID, "host_lost": hostLost, "stale_generation_work": staleWork,
 				"javascript_state_reset": true, "automatic_replay": false, "remote_outcome": NestedUnknown,
 				"abandoned_intents": abandonedIntents, "abandoned_cells": abandonedCells, "abandoned_processes": abandonedProcesses,
@@ -308,7 +308,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 
 // abandonIntent settles one unresolved intent as an unknown remote outcome that is never replayed
 // and records the abandonment; a sampling reconciliation, when given, is appended linked to it.
-func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	intentID string, kind IntentKind, reconciliation *eventpb.Event, suppression ProviderRetrySuppression,
 ) error {
 	abandoned := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
@@ -334,7 +334,7 @@ func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if updated != 1 {
 		return protocol.ErrPrecondition
 	}
-	sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+	sources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
 	if err != nil {
 		return err
 	}
@@ -488,7 +488,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			if err := s.abandonIntent(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation, session, intent.id, intent.kind, reconciliation, ""); err != nil {
+			if err := s.abandonIntent(ctx, tx, conversation, session, intent.id, intent.kind, reconciliation, ""); err != nil {
 				return err
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)
@@ -576,7 +576,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 			recoveryEvidence["previous_incarnation_uid"] = previousIncarnationUID
 			recoveryEvidence["replacement_incarnation_uid"] = replacementIncarnationUID
 		}
-		if err := s.recordEvidence(ctx, tx, Owner{ConversationID: conversation.ID}, conversation, session,
+		if err := s.recordEvidence(ctx, tx, conversation, session,
 			uuid.NewString(), eventpb.ExecutionProgress_KIND_RECOVERY, eventpb.ExecutionProgress_PHASE_COMMITTED, recoveryEvidence); err != nil {
 			return err
 		}
@@ -612,7 +612,7 @@ func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sess
 		if err != nil {
 			return err
 		}
-		return s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, lostExecutorSessionNotice)
+		return s.retireExecutorSession(ctx, tx, conversation, session, notDispatchedProcessID, lostExecutorSessionNotice)
 	})
 }
 
@@ -661,14 +661,14 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 			return err
 		}
 		session.Configuration = wire
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_EXECUTOR, eventpb.ExecutionProgress_PHASE_INCARNATION_CHANGED, map[string]any{
+		if err := s.recordEvidence(ctx, tx, conversation, session, uuid.NewString(), eventpb.ExecutionProgress_KIND_EXECUTOR, eventpb.ExecutionProgress_PHASE_INCARNATION_CHANGED, map[string]any{
 			"sandbox_uid": sandboxUID, "previous_incarnation_uid": previousUID, "replacement_incarnation_uid": replacementUID,
 			"remote_outcome": NestedUnknown, "automatic_replay": false,
 		}); err != nil {
 			return err
 		}
 		notice := fmt.Sprintf("The execution Sandbox changed incarnation from %s to %s while retaining Sandbox UID %s (for example, after suspend and resume). A fresh execution session is being used. Old process and file handles cannot be reused; unfinished process outcomes remain unknown and no previous command was replayed. Persistent workspace files may remain, but verify any required process or temporary state before continuing.", previousUID, replacementUID, sandboxUID)
-		if err := s.retireExecutorSession(ctx, tx, owner, conversation, session, notDispatchedProcessID, notice); err != nil {
+		if err := s.retireExecutorSession(ctx, tx, conversation, session, notDispatchedProcessID, notice); err != nil {
 			return err
 		}
 		if replacementSessionID != "" {
@@ -680,7 +680,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 	})
 }
 
-func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session, notDispatchedProcessID, notice string) error {
+func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, notDispatchedProcessID, notice string) error {
 	sessionID := ""
 	if conversation.ExecutorSession != nil {
 		sessionID = *conversation.ExecutorSession
@@ -714,7 +714,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, process.ID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
+		if err := s.recordEvidence(ctx, tx, conversation, session, process.ID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
 			"remote_outcome": outcome, "automatic_replay": false, "executor_session_id": sessionID,
 			"previous_status": process.Status, "after_seq": process.AfterSequence, "exit_code": process.ExitCode,
 			"buffered_bytes": len(process.BufferedOutput), "omitted_bytes": process.OmittedBytes,

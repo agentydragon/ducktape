@@ -222,12 +222,9 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 		if err != nil {
 			return nil, providerio.ProviderTransportError(ctx, err)
 		}
-		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
-			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("Anthropic returned HTTP %d", response.StatusCode), RetryAfter: providerio.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
-		}
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
+		return nil, providerio.ProviderStatusError(response, "Anthropic", map[string]any{
 			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
-		}}
+		})
 	}
 	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
 	if err != nil {

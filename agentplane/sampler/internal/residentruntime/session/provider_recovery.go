@@ -224,7 +224,7 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	identity, err := executionIdentity(session)
+	identity, err := session.ExecutionIdentity()
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}

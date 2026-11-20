@@ -221,7 +221,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 				return nil, &toolcontract.Rejection{Message: "write_stdin failed: " + stdinClosedMessage}
 			}
 			if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
-				if err := e.dispatchInput(ctx, func() error {
+				if err := e.dispatchInput(func() error {
 					_, err := operationValue(e.transport.Signal(ctx, transport.SignalRequest{ProcessID: process.ID, Signal: "interrupt"}))
 					return err
 				}); err != nil {
@@ -230,7 +230,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 			}
 		} else if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
 			// A write to an exited terminal is moot; the poll below reports the exit.
-			if err := e.dispatchInput(ctx, func() error {
+			if err := e.dispatchInput(func() error {
 				result, err := operationValue(e.transport.Write(ctx, transport.WriteRequest{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()}))
 				if err != nil {
 					return err
@@ -257,7 +257,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	return observation.unifiedExecResult(process.ModelSessionID, plan.maxOutputTokens, newChunkID()), nil
 }
 
-func (e *Executor) dispatchInput(ctx context.Context, send func() error) error {
+func (e *Executor) dispatchInput(send func() error) error {
 	e.dispatchMu.Lock()
 	defer e.dispatchMu.Unlock()
 	if e.stopping {

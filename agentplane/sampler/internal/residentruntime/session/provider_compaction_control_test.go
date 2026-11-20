@@ -75,7 +75,7 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan, err := adapter.PrepareCompaction(conversation, session, &sessionstore.ExecutionState{}, protocol.SessionAttribution{}, "")
+			plan, err := adapter.PrepareCompaction(conversation, session, protocol.SessionAttribution{}, "")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -28,7 +28,7 @@ func (s *Store) ProtocolEvent(ctx context.Context, owner Owner, operationID stri
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, operationID, kind, phase, payload)
+		return s.recordEvidence(ctx, tx, conversation, session, operationID, kind, phase, payload)
 	})
 }
 
@@ -41,14 +41,14 @@ func sessionForConversation(ctx context.Context, tx *sql.Tx, conversationID stri
 	return session, err
 }
 
-func (s *Store) recordEvidence(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) recordEvidence(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	operationID string, kind eventpb.ExecutionProgress_Kind, phase eventpb.ExecutionProgress_Phase, payload any,
 ) error {
-	_, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, operationID, kind, phase, payload)
+	_, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, operationID, kind, phase, payload)
 	return err
 }
 
-func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	operationID string, kind eventpb.ExecutionProgress_Kind, phase eventpb.ExecutionProgress_Phase, payload any,
 ) ([]uint64, error) {
 	parent := ""

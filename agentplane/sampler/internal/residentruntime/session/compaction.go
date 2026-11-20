@@ -53,7 +53,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model st
 	if err != nil {
 		return err
 	}
-	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, environmentcontext.Update(nil, environment))
+	plan, err := adapter.PrepareCompaction(conversation, session, metadata, environmentcontext.Update(nil, environment))
 	if err != nil {
 		return err
 	}

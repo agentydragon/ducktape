@@ -27,11 +27,6 @@ type providerAttribution struct {
 	Identity  *identitypb.Identity
 }
 
-// executionIdentity is the exact Identity the Dispatcher recorded for the Session.
-func executionIdentity(session *sessionstore.Session) (*identitypb.Identity, error) {
-	return session.ExecutionIdentity()
-}
-
 // providerAuthorization is the Authorization value and the attribution headers of one provider
 // call. Agentplane's LLM ingress is called as a delegating actor for the Session's execution
 // Identity. A bearer connection is never delegated to.
@@ -85,7 +80,7 @@ type protocolAdapter interface {
 	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
 	AutoCompactTokens(*int, protocol.Context) *int
-	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
+	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
 
 type (
@@ -173,7 +168,7 @@ func (a anthropicAdapter) AutoCompactTokens(_ *int, _ protocol.Context) *int {
 	return a.config.AnthropicMessages.Compaction.AutoCompactTokens
 }
 
-func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, state *sessionstore.ExecutionState, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
 	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Attribution: attribution, Compaction: true,
@@ -182,7 +177,7 @@ func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	}}, nil
 }
 
-func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
+func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
 	effort := s.Effort
 	if a.config.AnthropicMessages.PerMessageEffort {
 		launch := &sessionconfig.Configuration{}
@@ -238,7 +233,7 @@ func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
 	return nil
 }
 
-func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
 	config := a.config.ChatCompaction
 	if config == nil {
 		return nil, protocol.ErrPrecondition
