@@ -119,7 +119,6 @@ in
       # downloading their build dependencies (including the Codex binary).
       check-claude-code-permissions = self.checks.${system}.claude-code-permissions;
       check-codex-execpolicy-evaluation = self.checks.${system}.codex-execpolicy-evaluation;
-      check-gemini-cli-integration = self.checks.${system}.gemini-cli-integration;
     };
 
   public = prefix "bootstrap" bootstrap;

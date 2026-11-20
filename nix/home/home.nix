@@ -77,16 +77,6 @@ in
     ./modules/solarized.nix
     ./terminals
     ./claude_code
-    # TODO(gemini-cli): Gemini CLI integration disabled (unused). home-manager
-    # 26.05 renamed `programs.gemini-cli` → `programs.antigravity-cli` (Google
-    # rebrand) via mkRenamedOptionModule, and `antigravity-cli` is only in
-    # nixpkgs-unstable, not the nixos-26.05 release wyrm2 pins — so setting
-    # programs.gemini-cli forces `pkgs.antigravity-cli` and fails eval. Never used
-    # it. Later: either migrate the custom module + personal integration to
-    # programs.antigravity-cli (once the package is in a release) or delete them.
-    # The generic module + personal integration files stay in the tree meanwhile.
-    # ./programs/gemini-cli.nix
-    # ./gemini_cli.nix
     ./shell/oh-my-posh.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/claude-gateway-wrappers.nix

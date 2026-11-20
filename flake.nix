@@ -472,10 +472,6 @@
           inherit pkgs;
           inherit (pkgsMaster) codex;
         };
-
-        gemini-cli-integration = import ./nix/home/tests/gemini-cli-integration.nix {
-          inherit pkgs;
-        };
       }
       // import ./nix/flake/artifact-checks.nix {
         inherit pkgs artifacts;

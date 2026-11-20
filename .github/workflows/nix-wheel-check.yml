@@ -166,8 +166,7 @@ jobs:
             run: |
               nix build --no-link --print-out-paths \
                 .#checks.x86_64-linux.claude-code-permissions \
-                .#checks.x86_64-linux.codex-execpolicy-evaluation \
-                .#checks.x86_64-linux.gemini-cli-integration
+                .#checks.x86_64-linux.codex-execpolicy-evaluation
 
           - name: Build artifacts from source
             uses: ./.github/actions/bb-remote
