@@ -134,13 +134,6 @@ The TabbyAPI pod was ready with zero restarts after the checks.
 
 ## Agentplane staging tool and compaction checks
 
-An early Codex turn ended after a prose preamble. The upstream TabbyAPI
-response reported `finish_reason: "stop"` with zero tool calls, and the
-Responses bridge emitted reasoning and prose. A preceding response in the
-same turn sent two tool calls through the bridge and Codex ran both.
-The rollout contained no compaction event at this stop. The trace did not
-capture the raw sampled stop token.
-
 On November 19 Pacific, a Chat Completions probe through staging LiteLLM
 used the abliterated checkpoint. It preserved the original messages,
 appended a user summary request, and set `tool_choice: "none"`. It reused
@@ -153,3 +146,28 @@ A Codex CLI tool round trip through the staging LiteLLM Responses bridge
 passed on the already-loaded abliterated checkpoint. Full live
 Agentplane Session verification of automatic compaction still requires an
 operator-authenticated staging runner. [Codex picker wiring](https://github.com/agentydragon/ducktape/pull/18002).
+
+## Early stops on stock Qwen in staging
+
+- **November 19 UTC, Codex via the LiteLLM Responses bridge.** An earlier
+  response in the turn sent two tool calls and Codex ran both. At about
+  139K input tokens, TabbyAPI returned a prose preamble, `finish_reason: "stop"`,
+  and zero tool calls. The bridge emitted reasoning, prose, and
+  `response.completed`. The Codex rollout contained no compaction event.
+- **November 20 at 08:12 UTC, Central sampler via Chat Completions.** The
+  first turn generated 897 tokens from 8,945 prompt tokens with a 253,198-token
+  output budget. TabbyAPI streamed one `exec` call and sent
+  `finish_reason: "tool_calls"` and `[DONE]`. The assembled arguments ended
+  inside the JSON `code` string. TabbyAPI logged that its end-of-stream parser
+  dropped a function block without a closing tag. The sampler rejected the
+  malformed call and ran no command.
+- **November 20 at 08:17 UTC, same Central sampler Session.** The user sent
+  `continue`. The reply began a novel and stopped mid-paragraph. TabbyAPI
+  sent `finish_reason: "stop"` and `[DONE]` with zero tool calls, so the
+  sampler marked the turn complete. It generated 392 tokens, including
+  174 text tokens, from 8,951 prompt tokens with a 253,192-token output budget.
+
+The Central sampler attempts never reached its 196,608-token compaction
+threshold and neither exhausted its output budget. The captured streams
+show the parsed finish reasons and tool deltas. They lack the raw last
+sampled token and the generator's internal stop condition.
