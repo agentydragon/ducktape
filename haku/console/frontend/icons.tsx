@@ -39,7 +39,7 @@ export function SettingsIcon(props: TablerIconProps): JSX.Element {
   return <IconSettings size={20} {...props} />;
 }
 
-/** Map pin — the shell's location-sharing control, and a preview's location field. */
+/** Map pin — the shell's location-sharing control. */
 export function MapPinIcon(props: TablerIconProps): JSX.Element {
   return <IconMapPin size={20} {...props} />;
 }
@@ -49,7 +49,7 @@ export function CameraIcon(props: TablerIconProps): JSX.Element {
   return <IconCamera size={20} {...props} />;
 }
 
-/** Clock — the shell's session-expiry control, and a calendar event's when/time field. */
+/** Clock — the shell's session-expiry control, and a pending tool call's status marker. */
 export function ClockIcon(props: TablerIconProps): JSX.Element {
   return <IconClock size={20} {...props} />;
 }
