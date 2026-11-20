@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-7ea3994b0a89/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "fqOZSwqJcNh7QM0kUQGFWViS4npXSe1aCeEB+x71TkY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-3269d79d559b/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "MmnXnVWbIsHksIr3xKxG2oMKQ/4H5KZpH1a/WZVn0Rg="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.500/bazel-5.0.500-linux-x86_64",
@@ -85,8 +85,8 @@
       "sha256": "qimnY10Aku0YYGC8RVroDJHJyeD0cYK0TZCr3Tzrlqw="
     },
     "skill-buildbuddy_api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-cad061b8f317/buildbuddy_api.skill",
-      "sha256": "ytBhuPMXhYqv7mmPRLnLseolnMR2jSAcvqm/I7pRs34="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-buildbuddy_api-60060c1fcd7d/buildbuddy_api.skill",
+      "sha256": "YAYMH819mPgnm0YQUoGP1LSHwfADOjzxiNLBuOKX/bU="
     },
     "skill-cihealth": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-d45692b86126/cihealth.skill",
@@ -149,8 +149,8 @@
       "sha256": "eOxRart95rENlSf89OWBHBiuRZi+Z95d98uog6Brn3g="
     },
     "skill-freecad": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-4a43915cc875/freecad.skill",
-      "sha256": "SkORXMh1jSAYjGtVm6QcOQnmUMP9zPywHF/daZVXtVQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-f74a9844f66d/freecad.skill",
+      "sha256": "90qYRPZto1jLJmF+tu5mC0uznRfHyfzhiZ8/1oWuTZ8="
     },
     "skill-google_photos_link": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-0fd36d8f127e/google_photos_link.skill",
@@ -197,8 +197,8 @@
       "sha256": "o1w3mTOEYFc+xtdcWTe6v9ueaq/QZvouxWYf6jihJvg="
     },
     "skill-session_logs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-a5937f0b728e/session_logs.skill",
-      "sha256": "pZN/C3KO6JWewhmjgeVL2lvZX8lNWpItl9ZOp2Gp6LA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-76b8faf38b12/session_logs.skill",
+      "sha256": "drj684sSCCSuOfN00kersomAEShBV2+aVLHHT2KvPBM="
     },
     "skill-superforecaster": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-superforecaster-e114b5e6dc93/superforecaster.skill",
