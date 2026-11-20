@@ -3,7 +3,7 @@
 Each `tool_rendering/<server>/BUILD.bazel` calls `preview_screenshots(name = "previews", ...)`
 to produce one `py_visual_test` that renders that server's tool-call preview cards to PNGs (one per
 fixture × variant × color scheme) plus a structured screenshot record. The shared harness — the card
-renderer, the mount, the mock — lives in `//haku/console/frontend/tool_rendering/screenshot`; this
+renderer, the mount — lives in `//haku/console/frontend/tool_rendering/screenshot`; this
 macro only bundles the server's entry (an IIFE that imports the shared mount + that server's
 fixtures), exports fixture identities, and runs the Python tests in preview_visual.py.
 
@@ -58,8 +58,6 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
     )
     py_visual_test(
         name = name,
-        # medium: the largest of these (grocy, 36 shots each on its own browser) measures 79s alone and up
-        # to 130s with all seven running at once. large gave a 900s budget to under two minutes of work.
         size = "medium",
         harness = ":%s_bundle" % name,
         assets = [":%s_fixtures" % name],
@@ -67,8 +65,6 @@ def preview_screenshots(name, entry, fixtures, deps, visibility = None):
         test_module = "haku.console.frontend.tool_rendering.screenshot.preview_visual",
         test_deps = ["//haku/console/frontend/tool_rendering/screenshot:preview_visual"],
         title = "Haku Console previews",
-        # The harness is inlined into a page of no origin, whose relative `/api/…` URLs the mock
-        # fetch parses and never sends: the base gives them something to resolve against.
         inline_page = True,
         stylesheets = ["//haku/console/frontend:preview_styles_css"],
         base_href = "https://haku-console.test/",

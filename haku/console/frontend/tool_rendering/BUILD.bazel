@@ -20,61 +20,18 @@ filegroup(
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
-# Shared leaves of the server-first tool-rendering tree plus the dispatch registry. Each
-# `<server>/` subpackage owns one server's widgets — `requests.tsx` exports the server id + a
-# { toolName -> {schema, render} } map for the call's arguments, `responses.tsx` the same for
-# its result (request-only servers have no responses module). `tool_rendering` (index.tsx)
-# dispatches to them via serverId registries, safeParsing once and handing each widget
-# already-typed data.
-
-# Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
-# Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
 ts_library(
     name = "vocabulary",
     srcs = ["vocabulary.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
 )
 
-# A request-side registry entry (the tool's zod arguments schema + a renderer over its parsed
-# value) plus the definePreview/renderPreview helpers. Leaf like :vocabulary, so index.tsx and
-# every widget import it without a cycle.
-# Leaf: no imports at all, so both the React widget registry and the React-free action registry
-# can key off the same server ids.
-ts_library(
-    name = "server_ids",
-    srcs = ["server_ids.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-)
-
-# Deliberately React-free. Depends only on the generated schema catalog and the server ids.
-ts_library(
-    name = "action_entry",
-    srcs = ["action_entry.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
-)
-
-# Composes the per-server action maps, mirroring how :tool_rendering composes the per-server
-# widget registries. React-free the whole way down.
 ts_library(
     name = "actions",
     srcs = ["actions.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [
-        ":action_entry",
-        ":server_ids",
-        "//haku/console/frontend/tool_rendering/grocy:actions",
-        "//haku/console/frontend/tool_rendering/haku_routine:actions",
-    ],
 )
 
 haku_vitest_test(
@@ -83,37 +40,7 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":actions",
-        ":server_ids",
         "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "entry",
-    srcs = ["entry.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":vocabulary",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:mcp_result",
-    ],
-)
-
-# The result-side counterpart of :entry (the tool's zod result schema + renderer) plus the
-# defineResultPreview/renderResultPreview helpers. Leaf too.
-ts_library(
-    name = "result_entry",
-    srcs = ["result_entry.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":vocabulary",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
     ],
 )
 
@@ -123,15 +50,9 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":entry",
-        ":result_entry",
-        ":server_ids",
         ":vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend/tool_rendering/grocy:requests",
-        "//haku/console/frontend/tool_rendering/grocy:responses",
         "//haku/console/frontend/tool_rendering/haku_routine:requests",
     ],
 )
@@ -142,7 +63,6 @@ ts_library(
 filegroup(
     name = "tailwind_srcs",
     srcs = glob(["*.tsx"]) + [
-        "//haku/console/frontend/tool_rendering/grocy:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
     ],
 )

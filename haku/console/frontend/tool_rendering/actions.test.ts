@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "./actions";
-import { HAKU_ROUTINE_SERVER_ID } from "./server_ids";
+import { isDestructiveToolCall } from "./actions";
 
-describe("toolActionDescription", () => {
-  it("describes a Haku routine launch", () => {
-    expect(toolActionDescription(HAKU_ROUTINE_SERVER_ID, "launch_routine", {})?.text).toBe("Haku: Start a new run");
+describe("isDestructiveToolCall", () => {
+  it("keeps the danger cue on historical destructive tools", () => {
+    expect(isDestructiveToolCall("tana", "trash_node")).toBe(true);
+    expect(isDestructiveToolCall("google_calendar", "delete_event")).toBe(true);
+    expect(isDestructiveToolCall("grocy-sf", "shopping_list_items_remove")).toBe(true);
   });
 
-  it("leaves retired Gmail and Tana calls on the generic path", () => {
-    expect(toolActionDescription("gmail", "threads_get", {})).toBeNull();
-    expect(toolActionDescription("tana", "trash_node", { nodeId: "n1" })?.destructive).toBe(true);
-    expect(toolActionDescription("google_calendar", "delete_event", {})?.destructive).toBe(true);
+  it("matches the stored server and tool exactly", () => {
+    expect(isDestructiveToolCall("tana", "delete_event")).toBe(false);
+    expect(isDestructiveToolCall("haku_routine", "launch_routine")).toBe(false);
   });
 });

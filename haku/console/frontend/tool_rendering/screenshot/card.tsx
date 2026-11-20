@@ -9,7 +9,7 @@ import type { ToolCallRecord } from "../../tool_call_record";
 import { ToolCallCard } from "../../tool_call_card";
 import type { PreviewVariant } from "../vocabulary";
 
-export type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
+type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
 
 export type PreviewFixture = {
   title: string;
@@ -26,7 +26,7 @@ export type PreviewFixture = {
 // block + structuredContent, wrapping a non-dict return (a list, a scalar) as `{"result": …}`
 // with the wrap flagged in `_meta`. Shared so each server's preview fixtures build finished-call
 // results the same way.
-export function callToolResult(value: unknown): StoredToolResult {
+function callToolResult(value: unknown): StoredToolResult {
   const wrap = typeof value !== "object" || value === null || Array.isArray(value);
   return {
     content: [{ type: "text", text: JSON.stringify(value) }],

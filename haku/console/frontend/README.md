@@ -26,14 +26,10 @@ route-specific cache headers.
   index is a generated file (`tailwind_content_index`) listing the shipped shell sources, since
   Bazel sandboxes inputs. Renderer-only styles and utility classes are added by
   `preview_styles.src.css` for the per-server preview targets.
-- `tool_call_card.tsx` + `tool_rendering/` — enriched Grocy and Haku Routine tool-call renderers. No shipped page mounts them since the tool-call service was retired;
-  their MCP lookup clients, schema exporters, and per-server preview targets remain buildable. The
-  production `:bundle` excludes this renderer subtree and its stylesheet inputs. Arguments/results
-  validate against the MCP schemas `//haku/console/mcp:export_tool_schemas_bin` exports; renderer
-  targets consume `ToolCallRecord` from the shared wire model via `:tool_call_record`.
-- `tool_arguments_field.tsx` / `tool_result_field.tsx` — argument / result rendering: per-server
-  widget (`tool_rendering/<server>/{requests,responses}.tsx`, result over the unwrapped
-  `CallToolResult`) else raw JSON (result: detailed only).
+- `tool_call_card.tsx` + `tool_rendering/` — development preview for historical calls. The sole
+  custom widget displays `haku_routine.launch_routine` instructions, validated against the schema
+  exported from the historical Python request model. Other arguments and completed results use
+  generic JSON views. The production `:bundle` excludes this subtree and its stylesheet inputs.
 - `icons.tsx` — shell icon defaults and renderer icon exports from **per-icon `@tabler` subpath
   imports, never the barrel** (OOMs esbuild on RBE at ~8.7 GB); ambient types in `tabler_icons.d.ts`.
 - `periodic_refresh.ts` — shared 30 s polling interval for Settings resources.
