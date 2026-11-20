@@ -22,7 +22,7 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
-from grocy_mcp.testing.helpers import unwrap_result
+from grocy_mcp.testing.results import unwrap_result
 
 BASE_URL = "https://grocy.example.com/api"
 # Not every test calls every route _setup_entity_routes registers.

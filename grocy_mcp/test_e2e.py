@@ -26,7 +26,8 @@ from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
-from grocy_mcp.testing.helpers import RefData, create_ref_data, unwrap_result
+from grocy_mcp.testing.ref_data import RefData, create_ref_data
+from grocy_mcp.testing.results import unwrap_result
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
