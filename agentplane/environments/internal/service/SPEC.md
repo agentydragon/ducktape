@@ -190,17 +190,8 @@ Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGU
 
 ## CLI
 
-- `agentplane environments list [--limit N] [--after TOKEN]`
-- `agentplane environments get NAMESPACE NAME UID`
-- `agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`
-
-Use `AGENTPLANE_ENVIRONMENTS_URL` and the optional `AGENTPLANE_ENVIRONMENTS_CREDENTIAL` when that URL
-is configured. Otherwise use the compatibility endpoint `AGENTPLANE_SESSIONS_URL` and its optional
-`AGENTPLANE_SESSIONS_CREDENTIAL`. Credentials are scoped to their matching endpoint, and setting an
-environments credential without its URL is a CLI usage error. Workload SVID routes need no bearer. A
-resume response is acceptance, not readiness, and an uncertain reply is never retried automatically.
-Reconcile current readiness and any uncertain effect before creating a new Session or submitting
-input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up work.
+`agentplane environments list`, `get` and `resume` are documented in the
+[Agent CLI](../../../docs/agent_cli.md#commands).
 
 ## Resume and ownership
 

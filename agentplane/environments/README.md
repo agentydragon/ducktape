@@ -1,32 +1,21 @@
 # Sandbox Controller
 
 Environments serves EnvironmentService on every replica at `environments:8082`, using the
-existing Sandbox Controller service SVID. Reconcilers and lifecycle-fact observation stay leader-only;
-the listener and its independent policy watches determine readiness on leaders and standbys. See
-[the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
+existing Sandbox Controller service SVID; reconcilers and lifecycle-fact observation stay leader-only.
+See [the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
-launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Sessions
-binary does not serve EnvironmentService; automatic wake stays with Sessions.
+launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route.
 Explicit resume is implemented in `internal/resume` without a wake-budget dependency. Dispatcher
 owns automatic wake execution and budgeting; the two owners share `environments/lifecycle` policy
 and guarded writes, with independent policy views and no Environments-to-Sessions call.
 Enabling `environment_service` requires the accepting Controller image to be pinned first; remove
 that configuration before rolling back to an image that cannot decode it.
 
-Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
-Executor on every replica at `environments:8082`, with independent routing watches and narrow
-service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
-binding observer certificate. Sessions delivery, central sampler Executor and Controller lifecycle
-calls use the proxy and pin its Sandbox Controller server identity. App diagnostics
-use `EnvironmentService.GetRuntimeDiagnostics` on the same listener; the App has no raw-proxy grant. The Sessions
-binary has no Runtime proxy or Executor receiver and starts no direct Runtime watches.
-Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
-See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
-
-EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview. Configure
-service SVID allowlists and typed service delegation. The staging render grants no TokenReview
-(`test_workload_trust.py`) and Sandbox Pods project no Dispatcher or History audience token
-(`test_egress.py`), so no projected-token cleanup remains here.
+`environment_service.runtime_proxy` enables the Runtime proxy and Executor on the same listener
+([receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver),
+[proxy contract](runtimeproxy/SPEC.md)). App diagnostics use `EnvironmentService.GetRuntimeDiagnostics`;
+the App has no raw-proxy grant. The Sessions binary serves neither EnvironmentService nor the proxy
+and Executor, and starts no direct Runtime watches.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
@@ -177,8 +166,6 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   fields, so the tests build it on a plain object tracker.
 
 EnvironmentService handlers, management and views live in [internal/service](internal/service/README.md).
-The shared lifecycle manager remains outside that internal boundary until the explicit/automatic
-split; automatic wake execution and budget ownership stay with Dispatcher.
 
 Runtime process, Session and lifecycle evidence is available through the App-only
 `EnvironmentService.GetRuntimeDiagnostics` RPC and the App's authenticated generated facade at
