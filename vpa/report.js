@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=cohort-20261120-0910")
+    fetch("./evidence.json?v=cohort-20261120-0921")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -244,7 +244,7 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. First-cohort rollout and admission checked 20 November 2026, 09:10 UTC. Inventory and charts remain historical.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. First- and second-cohort rollout and admission checked 20 November 2026, 09:10 and 09:21 UTC. Inventory and charts remain historical.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -739,9 +739,8 @@ function Report() {
         resizing wherever disruption is acceptable. Do not serialize the rollout
         one Deployment at a time: select cohorts by ownership and risk, use the
         shared profile once per namespace or chart, and review the effective
-        policies together. First-cohort rollout was checked at 09:10 UTC; the
-        next cohort is in progress and its live values must be checked again
-        before rollout.
+        policies together. First- and second-cohort rollouts were checked at
+        09:10 and 09:21 UTC; refresh values before subsequent changes.
       <//>
       <${Alert} color="orange" title="Reconciliation is a rollout gate" my="md">
         Goldilocks watches Pods and Namespaces, not Deployment metadata. CDviz’s
@@ -827,40 +826,37 @@ function Report() {
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="blue" variant="light">2 · next Initial cohort<//>
+          <${Badge} color="green" variant="light"
+            >2 · deployed Initial cohort<//
+          >
           <${Title} order=${3} size="h4" mt="xs">
-            Node Feature Discovery and Kyverno controllers
+            Node Feature Discovery and Kyverno: admission verified
           <//>
           <${Text} component="p" mb=${0}>
-            Prepare Node Feature Discovery’s two Deployments and its worker
-            DaemonSet, plus Kyverno’s four controller Deployments, as two
-            service-family changes. VPA handles DaemonSet selectors without a
-            scale subresource: a dry run against an already enabled monitoring
-            DaemonSet confirmed admission mutation. Verify the Node Feature
-            Discovery worker after rollout too. ${" "}
-            <${Anchor}
-              href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/fetcher.go#L111-L150"
-              >VPA selector handling<//
-            >
-            ${" "}Kyverno has an existing migration Job VPA and multiple
-            controllers sharing the container name <${Code}>controller<//>; keep
-            the namespace default Off and opt in the four Deployments separately
-            so the Job remains Off. Goldilocks does not watch Deployment
-            annotations: verify their VPA modes after Helm applies them and
-            trigger a namespace event if necessary. Review startup, HPA/PDB,
-            placement and combined request increases before rollout. ${" "}
-            <${Anchor} href=${data.second_cohort.node_feature_discovery_pr}
+            Both service-family PRs are merged: all seven VPAs are Initial and
+            all 17 replicas were ready at 09:21 UTC. Server-side CREATE dry runs
+            using the actual ReplicaSet or DaemonSet owners invoked VPA for each
+            workload; CPU requests and limits stayed unchanged. No pods were
+            created or evicted, and actual scheduling and startup remain to be
+            observed. The Kyverno migration Job VPA remains Off; Goldilocks
+            picked up the Deployment annotations without a manual trigger.
+            ${" "}<${Anchor}
+              href=${data.second_cohort.node_feature_discovery_pr}
               >Node Feature Discovery PR<//
             >
             ${" · "}<${Anchor} href=${data.second_cohort.kyverno_pr}
               >Kyverno PR<//
             >
+            ${" · "}<${Anchor}
+              href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/fetcher.go#L111-L150"
+              >DaemonSet selector handling<//
+            >
           <//>
           <${Table.ScrollContainer}
-            minWidth=${760}
+            minWidth=${1000}
             type="native"
             tabIndex=${0}
-            aria-label="Second cohort proposed VPA bounds"
+            aria-label="Second cohort VPA bounds and admission dry runs"
           >
             <${Table} striped withTableBorder verticalSpacing="sm">
               <${Table.Thead}
@@ -868,30 +864,44 @@ function Report() {
                   <${Table.Th}>Namespace / workload<//
                   ><${Table.Th}>Kind / replicas<//>
                   <${Table.Th}>Memory request floor–ceiling<//
-                  ><${Table.Th}>Existing CPU request<//>
+                  ><${Table.Th}>Running → dry run<//
+                  ><${Table.Th}>CPU request<//>
                 <//><//
               >
               <${Table.Tbody}>
-                ${data.second_cohort.workloads.map(
-                  (row) =>
-                    html`<${Table.Tr} key=${`${row.namespace}/${row.name}`}>
-                      <${Table.Td}>${`${row.namespace} / ${row.name}`}<//>
-                      <${Table.Td}>${`${row.kind} / ${row.replicas}`}<//>
-                      <${Table.Td}
-                        >${`${row.memory_floor}–${row.memory_ceiling}`}<//
-                      >
-                      <${Table.Td}>${row.cpu_request}<//>
-                    <//>`,
-                )}
+                ${data.second_cohort.workloads.map((row) => {
+                  const actual = data.second_cohort.rollout.cohort.find(
+                    (item) =>
+                      item.namespace === row.namespace &&
+                      item.workload === row.name,
+                  );
+                  const current = actual.current_pod_resources[0].requests;
+                  const admitted =
+                    actual.dry_run_admitted_resources[0].requests;
+                  return html`<${Table.Tr}
+                    key=${`${row.namespace}/${row.name}`}
+                  >
+                    <${Table.Td}>${`${row.namespace} / ${row.name}`}<//>
+                    <${Table.Td}
+                      >${`${row.kind} / ${actual.ready_replicas}/${actual.desired_replicas}`}<//
+                    >
+                    <${Table.Td}
+                      >${`${row.memory_floor}–${row.memory_ceiling}`}<//
+                    >
+                    <${Table.Td}
+                      >${`${quantityMiB(current.memory)} → ${quantityMiB(admitted.memory)}`}<//
+                    >
+                    <${Table.Td}>${`${current.cpu} → ${admitted.cpu}`}<//>
+                  <//>`;
+                })}
               <//>
             <//>
           <//>
           <${Text} size="sm" c="dimmed" mt="sm" mb=${0}>
-            Proposed PR bounds, not proof of deployment. CPU requests and
-            container limits stay as declared; Initial does not evict running
-            pods. Kyverno cleanup’s 30-day peak was 123 MiB against its existing
-            128 MiB limit, so the request adjustment does not fix its narrow
-            limit headroom.
+            Results are a 09:21 UTC sample; limits matched the running pods in
+            all dry runs. Initial does not evict running pods. Kyverno cleanup’s
+            30-day peak was 123 MiB against its existing 128 MiB limit, so the
+            request adjustment does not fix its narrow limit headroom.
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
