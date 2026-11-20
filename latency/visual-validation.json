@@ -1,11 +1,35 @@
 {
-  "verified_at_utc": "2026-11-20T21:52:26+00:00",
-  "scope": "Final served preview in Chrome with real CDN assets. Both light and dark at 1365x900 and 390x844. Inspected rendered chart screenshots. Verified daily chart marks, count-table disclosure, live theme changes and no uncaught page errors.",
+  "validated_at_utc": "2026-11-20T21:57:25.641356+00:00",
+  "validation_scope": "RBE Chromium preview of the exact report, evidence, shared assets and root navigation",
+  "invocation": "c06ece75-bb36-46f3-b56a-f016de1e786e",
+  "invocation_url": "https://app.buildbuddy.io/invocation/c06ece75-bb36-46f3-b56a-f016de1e786e",
+  "target": "//devinfra/ci/x/latency_report_preview:test_preview",
+  "cases": [
+    "test_preview[desktop-light]",
+    "test_preview[desktop-dark]",
+    "test_preview[mobile-light]",
+    "test_preview[mobile-dark]"
+  ],
+  "screenshots_digest_verified": 32,
+  "managed_pod_section_screenshot_sha256": {
+    "test_preview[desktop-dark]": "f1fcb36c31a525a0f0fcbd4a024223dd91646ea4b11afcc3ef5d454ed50b58d3",
+    "test_preview[desktop-light]": "23b8ff230043782ba310266de9ad012e31577f600b133e6587bdceaaa3cee1cb",
+    "test_preview[mobile-dark]": "abaa65939193cf3d46c913200f4e9a7771ee2c985ee7f8f1ceacbb51e0272e58",
+    "test_preview[mobile-light]": "a5035bb06bc6b3f0dd02eb60735b00b8ec87ae167be93622ff547e6b029d507e"
+  },
   "rendered_sha256": {
-    "latency/index.html": "42a24a1690b49b489016ccfd670b800e11f1a4cfed1f9248fbab9b7106ea83eb",
-    "latency/evidence.json": "6319dd011142f35ead5e669e0a5235c722d1983053a42bee54d18404892b0a26",
+    "index.html": "9c1cd4f73c44694f63abfab272d4d5f6cffba1afe09294099b7697c8b983bbbc",
+    "latency/index.html": "bbcb44dfef01ff84ef91b63c27438d50692669e6f23de454b8a444d725de30ef",
+    "latency/evidence.json": "dde2ba5875b250d0aebf5b67586f87d9be918dcbf0f23ebbea4b7a832a3bfb82",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
-  "prior_validation": "https://github.com/agentydragon/ducktape/blob/9641389cba/latency/visual-validation.json"
+  "checks": [
+    "Manifest hashes for the report and evidence",
+    "Real CDN charts rendered with populated bars and lines",
+    "Desktop and mobile under both initial color schemes",
+    "Live media preference change and disclosure controls",
+    "Page width and root navigation",
+    "Visual review of the Pod section and weekly trend"
+  ]
 }

@@ -63,10 +63,11 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=6319dd011142f35ead5e669e0a5235c722d1983053a42bee54d18404892b0a26",
+        "./evidence.json?v=dde2ba5875b250d0aebf5b67586f87d9be918dcbf0f23ebbea4b7a832a3bfb82",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
+      const podAdmission = evidence.managed_pod_admission;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -227,6 +228,66 @@
               <${Text} mt="sm">Keep measuring for seven days through 27 November, or until 50 fresh required VM executions if that takes longer. Count VM failures and VM-last heads on verified cutover ancestry, report warm and cold separately, and retain managed Pod and Firecracker competitors on the same heads. A PR and a devel run both hit the namespace guard when a recycled fixture needed a rebuild. Keep tracking fresh exposure after the rebuild path is repaired.<//>
               <${Text} size="sm" mt="sm">${pr(18046)} routing · ${pr(18079)} shadow retirement · ${link("../vm-pairs.json", "Paired data")} · ${link(`${prior}/index.html#vm-shadow`, "Previous review")}<//>
             </section>
+            <section id="managed-pod">
+              <${Title} order=${2}>Two PR heads had over a minute of Pod queue headroom<//>
+              <${Text} my="sm">Three of 24 physical Pod executions with valid queue clocks waited more than a minute on 20 November, all between 20:09 and 20:22 UTC. Eighteen started in under a second. The long waits were on two of the 12 successful first-attempt backend heads with physical test records and on one failed attempt whose Firecracker test finished later. One additional Pod execution had an unusable queue clock.<//>
+              <${Box} role="img" data-chart="managed-pod" aria-label="Observed Pod queue and maximum possible required-check time reduction for each PR" mb="sm">
+                <${BarChart}
+                  h=${220}
+                  data=${podAdmission.cases.map((c) => ({
+                    pr: `#${c.pr}`,
+                    wait: c.pod.queue,
+                    ceiling: c.conditional_headroom_s,
+                  }))}
+                  dataKey="pr" orientation="vertical"
+                  yAxisProps=${{ width: 62 }}
+                  xAxisLabel="Seconds"
+                  withLegend
+                  series=${[
+                    {
+                      name: "wait",
+                      label: "Observed queue",
+                      color: "orange.6",
+                    },
+                    {
+                      name: "ceiling",
+                      label: "Possible feedback reduction",
+                      color: "blue.6",
+                    },
+                  ]}
+                  valueFormatter=${seconds}
+                />
+              <//>
+              ${table(
+                [
+                  "PR",
+                  "Pod queue",
+                  "Next physical finisher",
+                  "Queue-only ceiling",
+                  "Bazel evidence",
+                ],
+                podAdmission.cases.map((c) => [
+                  pr(c.pr),
+                  seconds(c.pod.queue),
+                  short(c.competing_action_label),
+                  seconds(c.conditional_headroom_s),
+                  html`${build(c.invocation, "Inner")}${c.outer.invocation ? html` · ${build(c.outer.invocation, "Outer")}` : ""}
+                  · ${link(c.job, "GitHub job")}`,
+                ]),
+                715,
+              )}
+              <${Text} size="sm" mt="sm">The ceiling holds the remaining action and required-check clocks fixed. It averages 20.8s across the 12 sampled first-pass heads with physical test records. Cluster Firecracker would take over on #18244 and Gateway budget on #18255. Firecracker already finished last on failed attempt #18256. On #18271, Pod was critical with a 0.097s queue and a 391.3s process.<//>
+              <${Text} mt="sm">Worker admission for the outer Remote Bazel runners was 63ms on #18244 and 60ms on #18255. Their runner processes began 93s and 68s before the inner Bazel test invocations appeared. The long Pod waits happened after those invocations began and before a Pod worker started. In the fixture traces, the largest instrumented session admission was 0.83s and stack setup took 55–73s inside the process.<//>
+              <${Text} mt="sm">The two queued Pod actions on #18255 and #18256 started on different workers 33ms apart after overlapping for 92s. Dispatcher started in under 0.1s on both heads with the same platform properties. Pod on #18246 started in 0.071s while #18244 was queued. The decoded actions share the full managed Firecracker platform, including Firecracker isolation, the image and recycling key, 4 requested compute units and 50GB of scratch. A separate exact-action pair started in 3.035s on #18227 and 1.875s on devel while the first action was still running. The three slow Pod actions had different input roots. A standalone repeat would sample another load window with no eligible-capacity measurement.<//>
+              <${Text} size="sm" mt="sm">
+                ${build(podAdmission.exact_digest_pair[0].invocation, "Same action on #18227")} ·
+                ${build(podAdmission.exact_digest_pair[1].invocation, "Same action on devel")} ·
+                ${link(`${gh}/blob/${podAdmission.inspected_source_devel_commit}/agentplane/system_tests/suites/BUILD.bazel`, "Current target")} ·
+                ${link("https://www.buildbuddy.io/docs/rbe-platforms/", "Provider routing properties")}
+              <//>
+              <${Text} mt="sm">Keep the managed route while the admission cause is unknown. The BuildBuddy key received permission denials for executor inventory and account usage. Account throttling, a shortage of compatible workers and reservation terms remain unverified. Pursue a small reserved comparison only if provider telemetry identifies recurring, actionable contention and a candidate can serve the same Firecracker, snapshot and scratch requirements.<//>
+              <${Text} size="sm" c="dimmed" mt="sm">Queue sample 01:40–21:06 UTC on 20 November. The capped target-history extension added five originating actions to the retained PR sample and excluded two shared links. An independent workflow census from 21:12:39 to 21:44 UTC found 14 successful, one canceled and two in-progress CI runs at collection, including superseded heads. The exact-head distribution above retains its original window. Route reviewed at devel ${podAdmission.inspected_source_devel_commit}.<//>
+            </section>
             <section id="reruns">
               <${Title} order=${2}>Failure recovery drove the backend tail<//>
               <${Text} my="sm">The informational BuildBuddy status preceded final red by 4 seconds to 10m32s. For #18243, an early test failure was followed by 7m42s of ongoing CI before final red, then 11m03s until GitHub created the next job. Assignment on that retry took 2s. GitHub identifies the triggering account type as User on these five retries. The request source and reason for the interval are unobserved.<//>
@@ -235,7 +296,7 @@
             </section>
             <section id="cases">
               <${Title} order=${2}>What finished last on green heads<///>
-              <${Text} my="sm">All times in the middle columns are UTC. The GitHub Test + Build + lint step includes outer Remote Bazel allocation and setup, inner Bazel, any subsequent build and finalization. The phase data leave outer allocation unresolved.<///>
+              <${Text} my="sm">All times in the middle columns are UTC. The GitHub Test + Build + lint step includes outer Remote Bazel allocation and setup, inner Bazel, any subsequent build and finalization. The Pod follow-up includes two exact outer allocation clocks.<///>
               ${table(
                 [
                   "PR",
@@ -265,7 +326,7 @@
               <${SimpleGrid} cols=${{ base: 1, md: 2 }} mt="md">
                 <${Paper} withBorder p="md">
                   <${Title} order=${3}>Managed Pod admission<///>
-                  <${Text} mt="xs">#18244 spent 163.1s between managed RBE queue and worker start, then 299.7s in the process. Driver spans show 54.7s setup, a 179.8s envelope for the first through last case, and 32.5s stack cleanup. Removing the queue alone gives up to 116.4s before Firecracker becomes last. The equivalent gap on #18255 is 133.5s.<//>
+                  <${Text} mt="xs">On #18244, the 299.7s Pod process included 54.7s of fixture setup, 179.8s from the first to the last case and 32.5s of stack cleanup. ${link("#managed-pod", "Queue comparison")}<//>
                 <//>
                 <${Paper} withBorder p="md">
                   <${Title} order=${3}>Firecracker scenario and cleanup<///>
@@ -284,7 +345,7 @@
             <section id="capacity">
               <${Title} order=${2}>Runner and executor capacity<///>
               <${Text} my="sm">GitHub recorded 27.35 occupied runner-hours and a peak of 40 in the 19:42:40–21:12:40 UTC window, a lower bound based on completed assigned jobs. Among 69 assigned, completed PR Test & Build jobs, creation to start was 2s median, 3s p90 and 65s maximum. No measured PR Test & Build job was awaiting assignment at the cutoff. The longest waits across all job types occurred in dependent release and image steps. Default CodeQL setup is off.<///>
-              <${Text} my="sm">Decoded action properties on #18244 put VM and Firecracker on self-hosted Docker in <code>kvm-vm</code>, one concurrent task per worker. Pod used the managed Firecracker action lane. Outer Remote Bazel runner admission and provider-wide quotas are unobserved.<///>
+              <${Text} my="sm">Decoded action properties on #18244 put VM and Firecracker on self-hosted Docker in <code>kvm-vm</code>, one concurrent task per worker. Pod used the managed Firecracker action lane. The managed Pod follow-up measures the two corresponding outer runner admissions. Provider eligibility and capacity remain unobserved.<///>
               ${table(
                 [
                   "Physical TestRunner population",
@@ -342,8 +403,11 @@
                   ],
                   [
                     "2 · Managed Pod queue",
-                    "Scope a burst comparison to the same Pod actions and measure managed admission against a reserved compatible lane. Treat provider TSC snapshot-restore failures as a separate retry cause. Verify a retry receives a compatible or fresh snapshot before proposing any automatic retry.",
-                    "2m43s and 3m16s observed waits, with 1m56s and 2m14s conditional headroom on those heads. Needs confirmed routing, admission and capacity cost. KVM's current worker minimum does not serve managed Pod.",
+                    html`Track recurrence in required CI and obtain provider
+                    admission reasons and eligible capacity for an overlapping
+                    burst.
+                    ${link("#managed-pod", "Measured cases and follow-up")}`,
+                    "Two of 12 successful first-attempt backend heads with physical test records show minute-scale feedback headroom. Snapshot restore errors require their own recovery evidence.",
                   ],
                   [
                     "3 · Firecracker scenario overlap",
