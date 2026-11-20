@@ -114,12 +114,6 @@ MUTANTS = {
         "      kids := kids ++ AV.objs this",
         "a closure's state is written by a call and read by another",
     ),
-    "function mentions are not reachable": (
-        EFFECTS,
-        "          let ms := (mentionsPure s code).filterMap fun nm => s.mods[nm]?\n          memo := memo.insert h ms\n          pure ms\n      kids := kids ++ ms.toList\n    | .klass",
-        "          let ms := (mentionsPure s code).filterMap fun nm => s.mods[nm]?\n          memo := memo.insert h ms\n          pure ms\n    | .klass",
-        "a function stored in an object reads a variable that another unit writes",
-    ),
     "a world call keeps its arguments": (
         EFFECTS,
         "  for v in vals do escapeAV v\n  return AV.top",

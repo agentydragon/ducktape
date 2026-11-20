@@ -1627,54 +1627,22 @@ end
 
 /-! ## The whole bundle -/
 
-/-- `codeHash` and `codeInfo` for code the run has already seen, without the state to put new answers in. -/
-unsafe def codeHashPureImpl (s : St) (j : Json) : UInt64 :=
-  match s.codeHashes[ptrAddrUnsafe j]? with
-  | some h => h
-  | none => hash j
-
-@[implemented_by codeHashPureImpl] opaque codeHashPure (s : St) (j : Json) : UInt64
-
-unsafe def mentionsPureImpl (s : St) (j : Json) : Array String :=
-  match s.codeInfos[ptrAddrUnsafe j]? with
-  | some (m, _) => m
-  | none => mentions j
-
-@[implemented_by mentionsPureImpl] opaque mentionsPure (s : St) (j : Json) : Array String
-
-/-- The objects that hold each object: through contents, prototypes, the cells a function captured, and the
-module-scope cells it mentions. -/
+/-- The objects that hold each object: through contents, prototypes and the cells a function captured. A module-scope
+variable is a stop of `namesReaching`, so the functions that mention it are not parents of its cell. -/
 def parentsOf (s : St) : Array (Array Nat) := Id.run do
   let n := s.objs.size
   let mut par : Array (Array Nat) := Array.replicate n #[]
-  let mut memo : Std.HashMap UInt64 (Array Nat) := {}
   for o in [0:n] do
     let ob := s.objs[o]!
     let mut kids : List Nat := []
     for v in ob.props.values do kids := kids ++ AV.objs v
     kids := kids ++ AV.objs ob.any ++ AV.objs ob.proto
     match ob.kind with
-    | .func code scope this =>
+    | .func _ scope this =>
       kids := kids ++ AV.objs this
       for fr in scope do kids := kids ++ fr.values
-      let h := codeHashPure s code
-      let ms ← match memo[h]? with
-        | some ms => pure ms
-        | none =>
-          let ms := (mentionsPure s code).filterMap fun nm => s.mods[nm]?
-          memo := memo.insert h ms
-          pure ms
-      kids := kids ++ ms.toList
-    | .klass code scope =>
+    | .klass _ scope =>
       for fr in scope do kids := kids ++ fr.values
-      let h := codeHashPure s code
-      let ms ← match memo[h]? with
-        | some ms => pure ms
-        | none =>
-          let ms := (mentionsPure s code).filterMap fun nm => s.mods[nm]?
-          memo := memo.insert h ms
-          pure ms
-      kids := kids ++ ms.toList
     | .bound target this args =>
       kids := kids ++ AV.objs target ++ AV.objs this ++ (args.flatMap AV.objs)
     | _ => pure ()

@@ -74,6 +74,19 @@ console.log(seen);
     reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
   },
   {
+    name: "a function stored in an object and handed to the world: the dispatching unit and a read of its variable keep their order",
+    source: `
+let x = 0;
+const handlers = { set: () => { x = 1; } };
+const target = new EventTarget();
+target.addEventListener("go", handlers.set);
+target.dispatchEvent(new Event("go"));
+const seen = x;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 5, 4, 6], behavior: "differs" }],
+  },
+  {
     name: "a class: the constructor and a method write `this`",
     source: `
 class Box { n = 0; inc() { this.n++; return this.n; } }

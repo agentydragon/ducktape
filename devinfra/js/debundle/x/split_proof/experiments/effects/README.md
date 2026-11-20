@@ -51,11 +51,11 @@ On the large production bundle (private, 9,707 units): 114 s for the analysis, 3
 
 ## Tests
 
-- [`cases.mjs`](cases.mjs): 83 small bundles with the classification of every unit (`world`, `pure`, `writes a b`, `world writes a b`), each checked against what JavaScript does, and 65 reordered programs run in Node next to the original (64 print something else; `run.mjs` requires the checker to refuse those). `--permutations N` adds random permutations of every case's units. A `pure` where the code writes something is a bug; a `world` where the code is harmless is a loss of precision. CI runs them as `effects_cases_test` and `effects_permutations_test`.
+- [`cases.mjs`](cases.mjs): 85 small bundles with the classification of every unit (`world`, `pure`, `writes a b`, `world writes a b`), each checked against what JavaScript does, and 66 reordered programs run in Node next to the original (65 print something else; `run.mjs` requires the checker to refuse those). `--permutations N` adds random permutations of every case's units. A `pure` where the code writes something is a bug; a `world` where the code is harmless is a loss of precision. CI runs them as `effects_cases_test` and `effects_permutations_test`.
 - [`fuzz.mjs`](../translation/fuzz.mjs): random bundles and splits, Node as the oracle (`fuzz_test`, `fuzz_leaks_test`, the corpora of [the translation README](../translation/README.md#fuzzer)). Templates that need this analysis: aliases through a variable, a destructuring or a registry object, writes through a helper, closures with state, instances, decorators and getters.
 - [`lower_exports_test.mjs`](../translation/lower_exports_test.mjs): `lower` and `lowersplit` hold the names an ESTree dump exports for the world, and agree on how many units touch it.
 - The existing suites of the project run on it: the fixtures, the emission tests, the Shift grammar fuzzers (about 5,500 random programs in a larger run, none accepted wrongly) and [the real-bundle splits](../README.md#7-real-splits-halves-cuts-blocks-random-placements).
-- [`fuzz_mutate.py`](../translation/fuzz_mutate.py): 61 mutants, each removing one rule of the analysis (or of the model); `run.mjs` runs first, then the fuzzer. A mutant that neither catches is either harmless or a missing case.
+- [`fuzz_mutate.py`](../translation/fuzz_mutate.py): 60 mutants, each removing one rule of the analysis (or of the model); `run.mjs` runs first, then the fuzzer. A mutant that neither catches is either harmless or a missing case.
 
 ## Finding what blocks precision
 
