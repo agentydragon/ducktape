@@ -21,12 +21,12 @@ _LABEL = re.compile(r"//[^:\s]+:[^:\s]+\Z")
 _RBE_PIN_ERRORS = (OSError, ValueError, KeyError, TypeError)
 
 
-def effective_rbe_image(override: str, pins_path: Path = Path("devinfra/image_pins.json")) -> str | None:
+def effective_rbe_image(override: str) -> str | None:
     """Resolve the image the publication test step will use, or fail closed."""
     if override:
         return override
     try:
-        pins = json.loads(pins_path.read_text())
+        pins = json.loads(Path("devinfra/image_pins.json").read_text())
         image = pins["rbe_container"]["image"]
         digest = pins["rbe_container"]["digest"]
     except _RBE_PIN_ERRORS:

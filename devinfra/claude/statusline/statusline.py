@@ -138,11 +138,11 @@ def _format_daemon(healthy: bool) -> Text:
     return Text("daemon ✗", style="red")
 
 
-def _daemon_healthy(sock_path: Path, timeout: float = 0.5) -> bool:
+def _daemon_healthy(sock_path: Path) -> bool:
     """Check the Rust hook daemon health endpoint without importing daemon code."""
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
+            sock.settimeout(0.5)
             sock.connect(str(sock_path))
             sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
             status_line = sock.recv(128).split(b"\r\n", 1)[0]
