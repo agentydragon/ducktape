@@ -147,8 +147,7 @@ def _openclaw_container() -> k8s.Container:
             # A placeholder, not a credential. The real PAT lives in Agentplane egress, which swaps
             # this value into `Authorization` on the way out to GitHub -- in `Bearer <value>` and
             # inside base64 `Basic user:<value>` alike, so both the REST API and the git transport
-            # work. The agent cannot read the token from its environment or from /proc, which is
-            # what F7 previously left exposed.
+            # work. The agent cannot read the token from its environment or from /proc.
             #
             # The agent has to be told the contract, because egress only acts on requests
             # carrying the placeholder: authenticate to GitHub with $GH_PAT as if it were a real

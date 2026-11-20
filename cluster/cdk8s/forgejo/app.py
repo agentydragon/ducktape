@@ -116,10 +116,9 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
         # volume concurrently (RWX multi-mount; git ref locks do not hold across the two
-        # mounts, see _git_storage), so a rolling update is safe — the old RWO Recreate-only
-        # deadlock (RollingUpdate + RWO = stuck init container) no longer applies. Session
-        # and issue search live in Postgres, and cache/queue in the shared valkey
-        # (../cache), so neither replica holds per-instance state.
+        # mounts, see _git_storage), so a rolling update is safe. Session and issue search
+        # live in Postgres, and cache/queue in the shared valkey (../cache), so neither
+        # replica holds per-instance state.
         "replicaCount": 2,
         "strategy": {
             "type": "RollingUpdate",
