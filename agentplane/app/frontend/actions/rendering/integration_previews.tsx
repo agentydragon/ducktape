@@ -1,4 +1,4 @@
-import { Code } from "@mantine/core";
+import { Anchor, Code } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import type { JSX } from "react";
 
@@ -18,10 +18,16 @@ export function useIntegrationPreviewNames(
   return query.data;
 }
 
-export function LiveResourceName({ id, name }: { id: string; name?: string }): JSX.Element {
+export function LiveResourceLink({ id, name, href }: { id: string; name?: string; href: string }): JSX.Element {
   return (
     <>
-      {name && <>{name} </>}
+      {name && (
+        <>
+          <Anchor href={href} target="_blank" rel="noreferrer" inherit>
+            {name}
+          </Anchor>{" "}
+        </>
+      )}
       <Code>{id}</Code>
     </>
   );

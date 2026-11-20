@@ -415,6 +415,11 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
         subject_link = pending.get_by_role("link", name="Deployment review", exact=True)
         await expect(subject_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/thread-123")
         await expect(subject_link).to_have_attribute("target", "_blank")
+    elif example.key == "tana.move_node":
+        for name, node_id in (("Draft notes", "draft"), ("Website project", "website")):
+            node_link = pending.get_by_role("link", name=name, exact=True)
+            await expect(node_link).to_have_attribute("href", f"https://app.tana.inc?nodeid={node_id}")
+            await expect(node_link).to_have_attribute("target", "_blank")
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)

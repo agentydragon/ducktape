@@ -6,7 +6,7 @@ import { z } from "zod";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 
 import { moveNodeArguments } from "../schemas/integration_previews";
-import { LiveResourceName, useIntegrationPreviewNames } from "./integration_previews";
+import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
 
 const calendarNodeArguments = z.strictObject({
   workspaceId: z.string(),
@@ -72,7 +72,12 @@ const moveNode = definePreview(
         {rows.map(([label, id]) =>
           id === undefined ? null : (
             <Text key={label} size="sm" style={{ overflowWrap: "anywhere" }}>
-              {label} <LiveResourceName id={id} name={names?.get(id)} />
+              {label}{" "}
+              <LiveResourceLink
+                id={id}
+                name={names?.get(id)}
+                href={`https://app.tana.inc?nodeid=${encodeURIComponent(id)}`}
+              />
             </Text>
           )
         )}

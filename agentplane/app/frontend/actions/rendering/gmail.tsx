@@ -13,7 +13,7 @@ import {
   type PreviewProps,
 } from "./entry";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
-import { useIntegrationPreviewNames } from "./integration_previews";
+import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -322,21 +322,11 @@ const threadLabels = definePreview(
       <Stack gap={4}>
         {args.add?.length ? <Text size="sm">Add labels {args.add.join(", ")}</Text> : null}
         {args.remove?.length ? <Text size="sm">Remove labels {args.remove.join(", ")}</Text> : null}
-        {args.thread_ids.map((id, index) => {
-          const subject = names?.get(id);
-          return (
-            <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
-              {subject && (
-                <>
-                  <Anchor href={gmailThreadHref(id)} target="_blank" rel="noreferrer" inherit>
-                    {subject}
-                  </Anchor>{" "}
-                </>
-              )}
-              <Code>{id}</Code>
-            </Text>
-          );
-        })}
+        {args.thread_ids.map((id, index) => (
+          <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
+            <LiveResourceLink id={id} name={names?.get(id)} href={gmailThreadHref(id)} />
+          </Text>
+        ))}
       </Stack>
     );
   }
