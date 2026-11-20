@@ -457,10 +457,8 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("preserves recorded data for lookup-dependent Haku Actions that have no Agentplane preview", async () => {
-    const excluded = [
-      ["grocy_sf", "products_create"],
-    ] as const;
+  it("preserves recorded data for a newly discovered Action", async () => {
+    const excluded = [["new_provider", "new_tool"]] as const;
     const result = parseCallToolResult({
       content: [],
       structuredContent: { lookup_dependent_value: "preserve raw response" },

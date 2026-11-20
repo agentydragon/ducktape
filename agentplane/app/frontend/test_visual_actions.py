@@ -1647,6 +1647,70 @@ EXAMPLES = (
         "Created Farmers market",
     ),
     ActionExample(
+        "grocy_sf",
+        "products_create",
+        {
+            "items": [
+                {
+                    "name": "Kefir",
+                    "location": "Fridge",
+                    "stock_qu": "Bottle",
+                    "due_type": 2,
+                    "default_best_before_days": 7,
+                }
+            ]
+        },
+        [{"kind": "ok", "created_object_id": 21}],
+        "Created Kefir",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_delete",
+        {"product": "Old coffee"},
+        {"kind": "ok", "object_id": 31},
+        "Deleted Old coffee and its stock entries",
+    ),
+    ActionExample(
+        "grocy_sf", "products_merge", {"productIdToKeep": 16, "productIdToRemove": 15}, "null", "Products merged"
+    ),
+    ActionExample(
+        "grocy_sf",
+        "locations_create",
+        {"items": [{"name": "Chest freezer", "is_freezer": True}]},
+        [{"kind": "ok", "created_object_id": 4}],
+        "Created Chest freezer",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "locations_list",
+        {"detail": "full"},
+        [{"id": 4, "name": "Chest freezer", "is_freezer": "1"}],
+        "Chest freezer · Freezer",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_groups_create",
+        {"items": [{"name": "Breakfast", "description": "Morning staples"}]},
+        [{"kind": "ok", "created_object_id": 5}],
+        "Created Breakfast",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_groups_list",
+        {"detail": "full"},
+        [{"id": 5, "name": "Breakfast", "description": "Morning staples"}],
+        "Breakfast · Morning staples",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "quantity_units_create",
+        {"items": [{"name": "Bottle", "name_plural": "Bottles"}]},
+        [{"kind": "ok", "created_object_id": 6}],
+        "Created Bottle",
+    ),
+    ActionExample(
         "tana",
         "get_or_create_calendar_node",
         {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
