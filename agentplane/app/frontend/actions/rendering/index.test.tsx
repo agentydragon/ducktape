@@ -417,8 +417,8 @@ describe("Action presentation slots", () => {
     const details = await mount(
       renderDetailsArguments(action, { thread_ids: ["thread-1", "thread-2"], add: ["Reviewed"], remove: ["Inbox"] })
     );
-    expect(details.textContent).toContain("Add labels Reviewed");
-    expect(details.textContent).toContain("Remove labels Inbox");
+    expect(details.textContent).toContain("Add Reviewed");
+    expect(details.textContent).toContain("Remove Inbox");
     expect(details.textContent).toContain("thread-1");
     expect(details.textContent).toContain("thread-2");
   });
@@ -950,11 +950,11 @@ describe("card decision buttons capability", () => {
     }
   );
 
-  it("withholds card decision buttons from a Gmail search the card cannot fully show", () => {
+  it("offers card decisions when the Gmail search shows its scope", () => {
     const search = identity("gmail", "threads_list");
     expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
-    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(false);
-    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
+    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(true);
+    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(true);
   });
 
   it("offers card decisions for complete PR calls and rejects unknown actions", () => {
