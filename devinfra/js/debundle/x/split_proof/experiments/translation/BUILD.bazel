@@ -70,9 +70,9 @@ js_test(
 js_test(
     name = "inert_escape_test",
     data = _CHECKER_RUNFILES + [
+        "pair.mjs",
         "testdata/inert_escape/seed2026_round3.js.txt",
         "testdata/inert_escape/seed2026_round8.js.txt",
-        "pair.mjs",
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
