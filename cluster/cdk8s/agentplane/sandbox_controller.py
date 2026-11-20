@@ -23,6 +23,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
+from agentplane.crd_group import GROUP
 from agentplane.environments.settings import (
     EnvironmentService,
     RuntimeProxy,
@@ -66,7 +67,6 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
 NAME = environment_service.NAME
-_GROUP = "agentplane.allegedly.works"
 _METRICS_PORT = Port(name="metrics", number=8080)
 _HEALTH_PORT = 8081
 _ENVIRONMENT_SERVICE = "/agentplane.environments.v1.EnvironmentService/"
@@ -389,16 +389,16 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
             # Controller reconciliation and every-replica EnvironmentService management share
             # Sandbox writes; the latter only changes the live object through guarded patches.
             RolePolicyRule(
-                resources=[custom_resource(_GROUP, "sandboxes")],
+                resources=[custom_resource(GROUP, "sandboxes")],
                 verbs=["get", "list", "watch", "create", "update", "patch", "delete"],
             ),
             # The controller is the only writer of Sandbox status, which holds the runner
             # credential binding; Sandbox writers holding patch must not get this rule.
-            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/status")], verbs=["update"]),
+            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["update"]),
             # A Pod's controller owner reference sets blockOwnerDeletion, which admission allows
             # only to who may update the owner's finalizers.
-            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/finalizers")], verbs=["update"]),
-            RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
+            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/finalizers")], verbs=["update"]),
+            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
             RolePolicyRule(
                 resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "update", "delete"]
             ),
@@ -406,7 +406,7 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
             # Each Sandbox's request for its runner credential; the Policy Controller issues it
             # and alone writes its status.
             RolePolicyRule(
-                resources=[custom_resource(_GROUP, "workloadcredentials")],
+                resources=[custom_resource(GROUP, "workloadcredentials")],
                 verbs=["get", "list", "watch", "create", "update", "delete"],
             ),
             # Update adds and removes the Sandbox owner reference; patch backfills the durable
@@ -432,11 +432,11 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
             RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
             RolePolicyRule(
                 resources=[
-                    custom_resource(_GROUP, resource) for resource in ("identities", "policysets", "policybindings")
+                    custom_resource(GROUP, resource) for resource in ("identities", "policysets", "policybindings")
                 ],
                 verbs=["get", "list", "watch"],
             ),
-            RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
+            RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
             # Controller-runtime leader election reads, creates, and updates its coordination Lease.
             RolePolicyRule(
                 resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
