@@ -28,8 +28,9 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL, Vpa
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
+from cluster.cdk8s.vpa_policy import REQUESTS_ONLY, VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
@@ -296,10 +297,7 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
     rewrite loop.
 
     The +() anchor adds the annotation only when absent, so it never fights a namespace
-    that sets its own policy. No namespace currently sets one: a workload whose limit
-    comes from a chart preset should declare an explicit resources block instead of
-    opting back in to RequestsAndLimits, which only defers the collapse to whichever
-    dimension the preset is loosest on.
+    that sets its own policy, including one with explicit bounds.
 
     Admission-only (background: false), matching default-revision-history-limit:
     matching UPDATE means existing namespaces pick this up on their next Flux reconcile
@@ -341,10 +339,7 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
                             "metadata": {
                                 "annotations": {
                                     # Add-if-absent: never overwrites a namespace's own policy.
-                                    f"+({VPA_RESOURCE_POLICY_ANNOTATION})": (
-                                        '{"containerPolicies": [{"containerName": "*", '
-                                        '"controlledValues": "RequestsOnly"}]}'
-                                    )
+                                    f"+({VPA_RESOURCE_POLICY_ANNOTATION})": resource_policy_annotation(REQUESTS_ONLY)
                                 }
                             }
                         }

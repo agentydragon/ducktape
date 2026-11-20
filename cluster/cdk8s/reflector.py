@@ -9,7 +9,7 @@ from cdk8s import App, Chart
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
@@ -34,14 +34,8 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAMESPACE,
-        vpa=Vpa.AUTO,
-        annotations={
-            namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
-                '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
-            ),
-            # Allow the updater to restart Reflector's single replica when its recommendation changes.
-            "goldilocks.fairwinds.com/vpa-min-replicas": "1",
-        },
+        # Allow the updater to restart Reflector's single replica when its recommendation changes.
+        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
     )
     helm_release(
         chart,

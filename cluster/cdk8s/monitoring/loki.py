@@ -18,6 +18,12 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
@@ -120,9 +126,13 @@ def _loki_values() -> dict[str, object]:
             # cgroup limit aligned with GOMEMLIMIT and WAL replay while VPA sizes
             # requests for scheduling, including enough memory for recovery.
             "annotations": {
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{"containerPolicies":[{"containerName":"loki","controlledValues":"RequestsOnly",'
-                    '"minAllowed":{"memory":"1Gi"},"maxAllowed":{"memory":"2Gi"}}]}'
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name="loki",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        min_allowed={"memory": "1Gi"},
+                        max_allowed={"memory": "2Gi"},
+                    )
                 )
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,

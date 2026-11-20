@@ -37,6 +37,12 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, gr
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
@@ -258,9 +264,12 @@ def _facade(chart: Chart) -> None:
                 # controlledValues applies to every resource in the policy, so memory
                 # limits are NOT VPA-managed here either — the declared limit below is what
                 # applies.
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},'
-                    '"controlledValues":"RequestsOnly"}]}\n'
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name="server",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        min_allowed={"cpu": "25m"},
+                    )
                 ),
             },
         ),

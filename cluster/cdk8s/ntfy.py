@@ -39,7 +39,7 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
@@ -169,13 +169,8 @@ class Ntfy(Construct):
             name=NAMESPACE,
             # TODO: Revisit automatic VPA updates once ntfy supports multiple replicas:
             # https://github.com/agentydragon/ducktape/issues/17987
-            vpa=Vpa.INITIAL,
+            vpa=VpaProfile.requests_only(Vpa.INITIAL),
             labels={"app.kubernetes.io/name": NAMESPACE},
-            annotations={
-                namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
-                    '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
-                )
-            },
         )
         _secret_store(self)
         _database(self)

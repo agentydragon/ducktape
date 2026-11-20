@@ -26,7 +26,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -232,7 +232,7 @@ def namespace_chart(
     app: App,
     *,
     name: str,
-    vpa: Vpa,
+    vpa: Vpa | VpaProfile,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
 ) -> Chart:
