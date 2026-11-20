@@ -87,3 +87,61 @@ substantial unimplemented work; the ESMeta parse experiment does not establish
 their feasibility or cost. A restricted proof-assistant-native semantics is an
 alternative to investigate, with a separate burden of validating its relation
 to ECMAScript.
+
+## Extracted module algorithms and proof bridge
+
+To distinguish missing module semantics from the Script-only entry point, the
+spike also ran `esmeta compile -compile:log -silent` at the revisions above.
+It dumped 2,998 IR functions and a 644-line report of `yet` expressions. These
+are report entries, not a count of distinct missing algorithms; some are
+assertions and the same expression can be reported more than once. ESMeta's
+interpreter throws `NotSupported` when it evaluates a `yet` expression.
+
+Inspect the dumped functions from the ESMeta directory:
+
+```sh
+esmeta compile -compile:log -silent
+cat logs/compile/func/HostLoadImportedModule.ir
+cat logs/compile/func/CreateImportBinding.ir
+cat 'logs/compile/func/Record[ModuleEnvironmentRecord].GetBindingValue.ir'
+```
+
+The loader returns without loading anything. More specifically, even if a
+loader populated the module graph, `CreateImportBinding` contains a `yet`
+where it must create an indirect binding; `GetBindingValue` also contains
+`yet`s for recognizing and following that binding. These are relevant to the
+renderer output above, whose entry imports named bindings from `utils.mjs`.
+We did not dynamically reach them: execution stops earlier at the Script
+parser. Other `yet`s are assertions, such as linking invariants; they need
+proof or a justified treatment, and are not automatically the same as an
+unimplemented state update.
+
+A concrete proof path, after restricting the supported language and module
+features, would require these separate links:
+
+1. **Executable module semantics.** Replace the host loader with a deterministic
+   closed-graph loader, implement live indirect bindings and the required
+   module steps, and exercise TDZ, cycles, and linking errors against module
+   conformance tests. This is an ESMeta implementation task, not a theorem.
+2. **Proof-assistant semantics.** Give the relevant ESMeta IR and machine
+   states a Lean semantics, and establish a simulation between it and the
+   extracted functions. Alternatively, use a semantics already defined in a
+   proof assistant and justify its correspondence with ECMA-262. Translating
+   selected algorithms by hand without such a correspondence adds trusted
+   assumptions; running the Scala interpreter on examples does not prove it.
+3. **Connect the actual tool.** Prove that parsing and analysis safely
+   overapproximate reads, writes and effects, and that emitted module text
+   resolves to the checked units, bindings and order. Apply the theorem to the
+   real emitter and its accepted assignment, not a separate handwritten split.
+   Parsing and code generation may initially be explicit trusted assumptions,
+   but must appear in the theorem's statement.
+4. **State observations.** Model a restricted closed module graph with no
+   name reflection, dynamic import, top-level await or host calls. Relate its
+   termination, exceptions, externally visible state and later calls through
+   exported bindings. Expanding to browser behavior needs a host model.
+
+This is a proposed decomposition, not a demonstrated translation to Lean or
+an estimate of implementation effort. Extracting the IR provides a concrete
+input to a bridge, but this spike found no existing proof-assistant bridge and
+built none. In particular, the current `MiniJS` proof is a proof about a small
+separate language, not an ESMeta-to-ECMAScript correspondence.
