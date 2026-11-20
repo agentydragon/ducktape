@@ -467,7 +467,8 @@ def register_batch_tools(
             async def _do() -> dict[str, Any]:
                 r = await client.get(f"/objects/{entity_type}/{object_id}")
                 r.raise_for_status()
-                return r.json()
+                data: dict[str, Any] = r.json()
+                return data
 
             data = await _retry(_do)
             names = None
