@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sethvargo/go-retry"
 )
 
 func (e *Executor) GmailThreadSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
@@ -51,14 +52,22 @@ func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group,
 			if err != nil || !tool.matches(args) {
 				return
 			}
-			e.mu.Lock()
-			usable := e.current == s && !s.failed && !e.draining
-			e.mu.Unlock()
-			if !usable || ctx.Err() != nil {
-				return
-			}
-			result, err := s.client.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(args)})
-			if err == nil && !result.IsError {
+			// Retry an RPC failure once within the shared lookup deadline. A tool-level error
+			// already answered the read and does not warrant another call.
+			result, err := retry.DoValue(ctx, retry.WithMaxRetries(1, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) (*mcp.CallToolResult, error) {
+				e.mu.Lock()
+				usable := e.current == s && !s.failed && !e.draining
+				e.mu.Unlock()
+				if !usable {
+					return nil, nil
+				}
+				result, err := s.client.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(args)})
+				if err != nil {
+					return nil, retry.RetryableError(err)
+				}
+				return result, nil
+			})
+			if err == nil && result != nil && !result.IsError {
 				results[i] = summary(id, result)
 			}
 		})
