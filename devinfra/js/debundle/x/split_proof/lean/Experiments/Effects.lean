@@ -1128,6 +1128,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   for p in s.optionalIterates do let _ ← iterate (pos p) true
   for p in s.retains do escapeAV (pos p)
   for p in s.readsContents do let _ ← contentsOf (pos p)
+  for (p, m, as) in s.callsMethods do runProtocol (pos p) m (as.map pos) fr (mixHash site (hash m))
   for p in s.muts do
     noteChange (pos p) "mutation of"
     for c in pos p do
@@ -1218,6 +1219,11 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 83))
       joinAny o (← entryContents (pos p))
       return AV.ofObj o
+    | .iterResultOf p =>
+      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 91))
+      joinProp o "value" (← contentsOf (pos p))
+      joinProp o "done" AV.prim
+      return AV.ofObj o
     | .descriptorOf p =>
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 79))
       joinProp o "value" (← contentsOf (pos p))
@@ -1278,15 +1284,15 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
       else if c ≥ 2 then
         let ob ← getObj (c - 1)
         match ob.kind with
-        | .builtin _ | .coll => pure ()
-        | .array =>
-          -- `Array.prototype.toString` joins: the elements are converted. (`any` holds the elements, not methods.)
+        | .builtin _ => pure ()
+        | .array | .coll =>
+          -- `Array.prototype.toString` calls `join`, which converts the elements. (`any` holds the elements, not methods.)
           unless seen.contains c do
             seen := seen.insert c
-            for k in ["valueOf", "toString"] do
+            for k in ["valueOf", "toString", "join"] do
               let f := ob.props.getD k #[]
               unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
-            work := ob.any :: work
+            if ob.kind matches .array then work := ob.any :: work
         | _ =>
           if ← chainHasHook (c - 1) then
             for k in ["valueOf", "toString"] do
@@ -1315,6 +1321,14 @@ partial def hookFns (f : AV) : M AV := do
       | .func .. | .klass .. | .bound .. => r := r.join (AV.ofObj (d - 1))
       | _ => pure ()
   return r
+
+/-- A standard function calls a method of an object through its protocol (`test` calls `exec`, `replace` calls the
+`Symbol.replace` of its pattern): the functions the program defined under that name are called with `args`. -/
+partial def runProtocol (target : AV) (name : String) (args : List AV) (fr : Fr) (site : UInt64) : M Unit := do
+  for c in target do
+    if c ≥ 2 then
+      let fns ← hookFns (← getVal c (some name))
+      unless fns.isEmpty do let _ ← callAll fns (AV.ofObj (c - 1)) args false fr site
 
 /-- A thenable the program defined has its `then` called when a promise is resolved with it (`await`, the value an async
 function returns). -/
@@ -1393,7 +1407,10 @@ partial def iterate (v : AV) (optional : Bool := false) : M AV := do
     else
       let ob ← getObj (c - 1)
       match ob.kind with
-      | .array | .coll => r := r.join (← contentsOf (AV.ofObj (c - 1)))
+      | .array | .coll =>
+        -- unless the program stored a function under a key the analysis does not know: that may be a `Symbol.iterator`
+        if ob.hook then r := r.join (← worldCall [AV.ofObj (c - 1)])
+        else r := r.join (← contentsOf (AV.ofObj (c - 1)))
       | _ =>
         -- another object is iterable only through a `Symbol.iterator` the program defined, which is a computed key
         if optional && !(← mayHaveComputedKey (c - 1)) then r := r.join (← contentsOf (AV.ofObj (c - 1)))
@@ -1461,6 +1478,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     let b ← eval fr (fld j "right")
     let op := str (fld j "operator")
     if op == "in" then recBuiltinsRead b
+    if op == "instanceof" then runProtocol b "@@hasInstance" [a] fr (shallow j)
     if op == "===" || op == "!==" then pure () else convert [a, b] fr (shallow j)
     return AV.prim
   | "LogicalExpression" =>
@@ -1655,6 +1673,10 @@ partial def assignTo (fr : Fr) (t : Json) (v : AV) : M Unit := do
     if flag t "computed" then
       convert [← eval fr (fld t "property")] fr (shallow t)
     setAV o (memberKey t) v
+    -- a function under a key the analysis does not know may be a `Symbol.iterator` or a conversion hook
+    if (memberKey t).isNone && (← hasFunction v) then
+      for c in o do
+        if c ≥ 2 then modObj (c - 1) ({ · with hook := true })
   | _ => bindPattern fr t v
 
 /-- Bind a pattern (declaration, parameter, assignment target) to a value. -/

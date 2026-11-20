@@ -1,5 +1,5 @@
-// Runs every case of `cases.mjs`: front end, `lower`, and compares each unit's classification with the expectation.
-// A case may set its own `premises` (the file's apply otherwise) and list `reorders`: the same units in another order,
+// Runs every case of `cases.mjs` and `cases_general.mjs`: front end, `lower`, and compares each unit's classification with the expectation.
+// A case may set its own `premises` (those of its file otherwise) and list `reorders`: the same units in another order,
 // written as a one-module tree. Node runs both; the
 // order must change what Node prints (`differs`) or not (`same`), and `translate` must not accept a tree that
 // differs. A `same` reorder with `accepted: true` is a positive anchor: the analysis is precise enough to allow it.
@@ -14,8 +14,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// `CASES=path` runs another file of cases with the same shape: `node run.mjs` takes `cases.mjs` beside it.
-const { cases, premises } = await import(process.env.CASES ? path.resolve(process.env.CASES) : "./cases.mjs");
+// `CASES=path` runs another file of cases with the same shape; `node run.mjs` takes `cases.mjs` and `cases_general.mjs`
+// beside it. A case without `premises` of its own gets those of its file.
+const modules = await Promise.all(
+  (process.env.CASES ? [path.resolve(process.env.CASES)] : ["./cases.mjs", "./cases_general.mjs"]).map((f) => import(f))
+);
+const cases = modules.flatMap((m) =>
+  m.cases.map((c) => (c.premises === undefined ? { ...c, premises: m.premises } : c))
+);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lower = process.env.LOWER ?? path.join(here, "../../lean/.lake/build/bin/lower");
@@ -45,10 +51,7 @@ const shuffled = (n) => {
   return a;
 };
 const work = mkdtempSync(path.join(tmpdir(), "effects_"));
-const premisesFile = path.join(work, "premises.json");
-writeFileSync(premisesFile, JSON.stringify(premises));
 const premisesOf = (c, n) => {
-  if (c.premises === undefined) return premisesFile;
   const file = path.join(work, `premises_${n}.json`);
   writeFileSync(file, JSON.stringify(c.premises));
   return file;

@@ -80,6 +80,8 @@ inductive Ret where
   | flatLike (pos : Nat)
   /-- a new array of arrays holding what the objects at the position hold, and keys (`Object.entries`) -/
   | entriesOf (pos : Nat)
+  /-- a new object `{ value, done }` whose `value` holds what the objects at the position hold (what `next` returns) -/
+  | iterResultOf (pos : Nat)
   /-- a new array holding what the callbacks return and what those hold (`flatMap`) -/
   | freshOfCallsFlat
   deriving Inhabited
@@ -131,6 +133,9 @@ structure Summary where
   defineMap : Option Nat := none
   /-- `(first, to)`: the properties of the objects at every position from `first` on are copied into the objects at `to` -/
   copiesRest : Option (Nat × Nat) := none
+  /-- `(p, m, as)`: the method named `m` of the objects at `p`, if the program defined one, is called with the values at
+      the positions `as`, as the standard function does through its protocol (`RegExp.prototype.test` calls `exec`) -/
+  callsMethods : List (Nat × String × List Nat) := []
   deriving Inhabited
 
 /-- The iterator helpers (`map`, `filter`, …) of the iterator of a `Map` or a `Set`, which the collection stands for: they
@@ -167,7 +172,7 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Object.prototype.hasOwnProperty", {}),
   ("Object.prototype.isPrototypeOf", {}),
   ("Object.prototype.propertyIsEnumerable", {}),
-  ("Object.prototype.toString", { readsContents := [0] }), ("Object.prototype.toLocaleString", {}),
+  ("Object.prototype.toString", { readsContents := [0] }), ("Object.prototype.toLocaleString", { callsMethods := [(0, "toString", [])] }),
   ("Object.prototype.__defineGetter__", { muts := [0], accessors := [(0, 2)] }),
   ("Object.prototype.__defineSetter__", { muts := [0], accessors := [(0, 2)] }),
   ("Object.prototype.__lookupGetter__", { ret := contents 0 }), ("Object.prototype.__lookupSetter__", { ret := contents 0 }),
@@ -233,26 +238,31 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Map.prototype.forEach", { calls := [1] }),
   -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor
   ("Map.prototype.keys", { ret := thisV }), ("Map.prototype.values", { ret := thisV }),
-  ("Map.prototype.entries", { ret := thisV }), ("Map.prototype.next", { ret := freshOf 0, muts := [0] }),
+  ("Map.prototype.entries", { ret := thisV }), ("Map.prototype.next", { ret := iterResultOf 0, muts := [0] }),
   ("Set.prototype.add", { ret := thisV, muts := [0], storeArgs := true }),
   ("Set.prototype.has", {}), ("Set.prototype.delete", { muts := [0] }), ("Set.prototype.clear", { muts := [0] }),
   ("Set.prototype.forEach", { calls := [1] }),
   ("Set.prototype.keys", { ret := thisV }), ("Set.prototype.values", { ret := thisV }),
-  ("Set.prototype.entries", { ret := thisV }), ("Set.prototype.next", { ret := freshOf 0, muts := [0] }),
+  ("Set.prototype.entries", { ret := thisV }), ("Set.prototype.next", { ret := iterResultOf 0, muts := [0] }),
   -- errors, regular expressions
-  ("Error", { ret := inst "Error.prototype" }), ("TypeError", { ret := inst "Error.prototype" }),
-  ("RangeError", { ret := inst "Error.prototype" }), ("SyntaxError", { ret := inst "Error.prototype" }),
-  ("ReferenceError", { ret := inst "Error.prototype" }),
-  ("Error.prototype.toString", {}),
+  -- the options of an error constructor are read for `cause`
+  ("Error", { ret := inst "Error.prototype", readsContents := [2] }),
+  ("TypeError", { ret := inst "Error.prototype", readsContents := [2] }),
+  ("RangeError", { ret := inst "Error.prototype", readsContents := [2] }),
+  ("SyntaxError", { ret := inst "Error.prototype", readsContents := [2] }),
+  ("ReferenceError", { ret := inst "Error.prototype", readsContents := [2] }),
+  ("Error.prototype.toString", { readsContents := [0] }),
   ("RegExp", { ret := inst "RegExp.prototype" }),
-  ("RegExp.prototype.test", { muts := [0] }), ("RegExp.prototype.exec", { ret := freshPrims, muts := [0] }),
+  ("RegExp.prototype.test", { muts := [0], callsMethods := [(0, "exec", [1])] }),
+  ("RegExp.prototype.exec", { ret := freshPrims, muts := [0] }),
   -- web platform constructors that only allocate
   ("TextEncoder", { ret := inst "TextEncoder.prototype" }), ("TextDecoder", { ret := inst "TextDecoder.prototype" }),
   ("URLSearchParams", { ret := inst "URLSearchParams.prototype" }),
   ("DOMException", { ret := inst "Error.prototype" }),
-  ("Intl.DateTimeFormat", { ret := inst "Intl.DateTimeFormat.prototype" }),
-  ("Intl.NumberFormat", { ret := inst "Intl.NumberFormat.prototype" }),
-  ("Intl.Collator", { ret := inst "Intl.Collator.prototype" }),
+  -- the options of a formatter are read: a getter the program defined runs
+  ("Intl.DateTimeFormat", { ret := inst "Intl.DateTimeFormat.prototype", readsContents := [2] }),
+  ("Intl.NumberFormat", { ret := inst "Intl.NumberFormat.prototype", readsContents := [2] }),
+  ("Intl.Collator", { ret := inst "Intl.Collator.prototype", readsContents := [2] }),
   -- Promise: the executor runs now; the callbacks of `then` run after the program, and so does the `then` of a thenable
   -- that is resolved, in the order the promises were made: resolving one is an effect
   ("Promise", { ret := inst "Promise.prototype", callsWithWorld := [1] }),
@@ -288,10 +298,14 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("prim.codePointAt", {}), ("prim.at", {}), ("prim.indexOf", {}), ("prim.lastIndexOf", {}), ("prim.includes", {}),
   ("prim.startsWith", {}), ("prim.endsWith", {}), ("prim.padStart", {}), ("prim.padEnd", {}), ("prim.repeat", {}),
   ("prim.normalize", {}), ("prim.localeCompare", {}), ("prim.concat", {}), ("prim.toFixed", {}),
-  ("prim.toPrecision", {}), ("prim.search", { muts := [1] }), ("prim.description", {}),
-  ("prim.split", { ret := freshPrims, muts := [1] }), ("prim.match", { ret := freshPrims, muts := [1] }),
-  ("prim.matchAll", { ret := freshPrims, muts := [1] }),
-  ("prim.replace", { calls := [2], muts := [1] }), ("prim.replaceAll", { calls := [2], muts := [1] })
+  ("prim.toPrecision", {}), ("prim.description", {}),
+  -- a pattern that is an object with a `Symbol.search`, `split`, `match`, `matchAll` or `replace` method gets the string
+  ("prim.search", { muts := [1], callsMethods := [(1, "@@search", [0])] }),
+  ("prim.split", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@split", [0, 2])] }),
+  ("prim.match", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@match", [0])] }),
+  ("prim.matchAll", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@matchAll", [0])] }),
+  ("prim.replace", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] }),
+  ("prim.replaceAll", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] })
 ] : List (String × Summary)) ++ iteratorHelperRows)
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,

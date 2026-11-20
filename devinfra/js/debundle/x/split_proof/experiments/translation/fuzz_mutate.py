@@ -87,7 +87,7 @@ MUTANTS = {
     ),
     "parameters are not bound": (
         EFFECTS,
-        "    else bindPattern fr1 p (args[i]?.getD #[])",
+        "    else bindPattern fr1 p (args[i]?.getD past)",
         "    else pure ()",
         "a function writes its argument",
     ),
@@ -153,8 +153,8 @@ MUTANTS = {
     ),
     "iteration yields nothing": (
         EFFECTS,
-        "      | .array | .coll => r := r.join (← contentsOf (AV.ofObj (c - 1)))",
-        "      | .array | .coll => pure ()",
+        "        else r := r.join (← contentsOf (AV.ofObj (c - 1)))\n",
+        "        else pure ()\n",
         "an object reached by spreading an array",
     ),
     "object spread copies nothing": (
@@ -171,13 +171,13 @@ MUTANTS = {
     ),
     "defineProperty stores nothing": (
         EFFECTS,
-        "    setAV (pos 1) none (← contentsOf d)",
-        "    pure ()",
+        "  setAV target none (← contentsOf d)\n",
+        "  pure ()\n",
         "a value defined on an object, read through another name",
     ),
     "Map from entries holds the entries": (
         EFFECTS,
-        '    if proto == "Map.prototype" then joinAny o (← contentsOf (← contentsOf (pos 1)))',
+        '    if proto == "Map.prototype" then joinAny o (← entryContents (pos 1))',
         '    if proto == "Map.prototype" then joinAny o (AV.joinAll args)',
         "an object put in a Map by its constructor",
     ),
@@ -286,8 +286,8 @@ MUTANTS = {
     ),
     "getPrototypeOf returns nothing": (
         EFFECTS,
-        "        let ob ← getObj (c - 1)\n        r := r.join ob.proto\n        match ob.kind with",
-        "        let ob ← getObj (c - 1)\n        match ob.kind with",
+        "          let ob ← getObj (c - 1)\n          r := r.join ob.proto\n          match ob.kind with",
+        "          let ob ← getObj (c - 1)\n          match ob.kind with",
         "a class prototype patched through an instance",
     ),
     "standard functions do not convert": (
@@ -373,7 +373,7 @@ MUTANTS = {
     ),
     "JSON.parse calls no reviver": (
         "Experiments/Intrinsics.lean",
-        '("JSON.parse", { ret := fresh, calls := [2] })',
+        '("JSON.parse", { ret := fresh, calls := [2], returnsCalls := true })',
         '("JSON.parse", { ret := fresh })',
         "a reviver that writes an object",
     ),
