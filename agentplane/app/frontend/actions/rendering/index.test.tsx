@@ -933,6 +933,85 @@ describe("details result rendering", () => {
   });
 });
 
+describe("expanded Kubernetes Action coverage", () => {
+  it("distinguishes reading scale from requesting zero replicas, then shows desired and observed counts separately", async () => {
+    const action = identity("kubernetes_admin", "resources_scale");
+    const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
+    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Read scale for Deployment apps/web");
+    const write = { ...args, scale: 0 };
+    expect((await mount(renderActionLabel(action, write))).textContent).toContain("Set desired replicas");
+    expect((await mount(renderDetailsArguments(action, write))).textContent).toContain("Desired replicas · 0");
+    const text =
+      "# Current resource scale (YAML) is below\napiVersion: autoscaling/v1\nkind: Scale\n" +
+      "spec: {replicas: 0}\nstatus: {replicas: 2}";
+    const receipt = await mount(renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] }));
+    expect(receipt.textContent).toContain("Desired replicas · 0");
+    expect(receipt.textContent).toContain("Observed replicas · 2");
+    expect(receipt.textContent).not.toContain("Ready");
+  });
+
+  it("shows Pod run networking scope and waits for returned readiness evidence", async () => {
+    const action = identity("kubernetes_admin", "pods_run");
+    const details = await mount(renderDetailsArguments(action, { image: "web:v1", port: 8080 }));
+    expect(details.textContent).toContain("ClusterIP Service");
+    expect(details.textContent).toContain("OpenShift Route");
+    const result: CallToolResult = {
+      isError: false,
+      content: [
+        {
+          type: "text",
+          text:
+            "# The following resources (YAML) have been created or updated successfully\n" +
+            "- apiVersion: v1\n  kind: Pod\n  metadata: {name: generated-web}\n  status: {phase: Pending}",
+        },
+      ],
+    };
+    expect(renderActionOutcome(action, result)?.label).toBe("Pod applied");
+    const receipt = await mount(renderDetailsResult(action, result));
+    expect(receipt.textContent).toContain("Pending");
+    expect(receipt.textContent).not.toContain("Ready");
+  });
+
+  it("shows the effective metrics scope and keeps absent data distinct from zero", async () => {
+    const pod = identity("kubernetes_admin", "pods_top");
+    expect((await mount(renderActionLabel(pod, { namespace: "apps", all_namespaces: true }))).textContent).toContain(
+      "namespace apps"
+    );
+    expect((await mount(renderActionLabel(pod, {}))).textContent).toContain("all namespaces");
+    const receipt = await mount(
+      renderDetailsResult(identity("kubernetes_admin", "nodes_stats_summary"), {
+        isError: false,
+        content: [{ type: "text", text: '{"node":{"nodeName":"worker","cpu":{"usageNanoCores":0}}}' }],
+      })
+    );
+    expect(receipt.textContent).toContain("CPU · 0 cores");
+    expect(receipt.textContent).not.toContain("Memory");
+  });
+
+  it("keeps credentials and API endpoints out of the friendly configuration summary", async () => {
+    const text = [
+      "apiVersion: v1",
+      "kind: Config",
+      "current-context: staging",
+      "contexts:",
+      "- name: staging",
+      "  context: {cluster: staging-cluster, namespace: apps}",
+      "clusters: [{name: staging-cluster, cluster: {server: 'https://private.example.test'}}]",
+      "users: [{name: operator, user: {token: test-token}}]",
+    ].join("\n");
+    const receipt = await mount(
+      renderDetailsResult(identity("kubernetes_admin", "configuration_view"), {
+        isError: false,
+        content: [{ type: "text", text }],
+      })
+    );
+    expect(receipt.textContent).toContain("Current context · staging");
+    expect(receipt.textContent).toContain("staging-cluster");
+    expect(receipt.textContent).not.toContain("private.example.test");
+    expect(receipt.textContent).not.toContain("test-token");
+  });
+});
+
 const cardDecisionButtonCases: Array<{
   group: string;
   name: string;

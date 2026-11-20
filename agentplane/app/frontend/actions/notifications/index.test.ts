@@ -56,6 +56,21 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
     { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
     "View logs for Pod apps/api-0, container api, last 50 lines",
   ],
+  ["pods_list", {}, "List Pods across namespaces"],
+  ["namespaces_list", {}, "List Kubernetes namespaces"],
+  ["projects_list", {}, "List OpenShift projects"],
+  ["nodes_log", { name: "worker-1", query: "kubelet" }, "View Kubernetes Node logs"],
+  ["nodes_stats_summary", { name: "worker-1" }, "Read Kubernetes Node statistics"],
+  ["nodes_top", {}, "Read Kubernetes Node metrics"],
+  ["pods_top", {}, "Read Kubernetes Pod metrics"],
+  ["pods_run", { image: "private-registry.example.test/app" }, "Run Kubernetes Pod"],
+  ["resources_scale", { apiVersion: "apps/v1", kind: "Deployment", name: "web" }, "Review Kubernetes resource scale"],
+  [
+    "resources_scale",
+    { apiVersion: "apps/v1", kind: "Deployment", name: "web", scale: 0 },
+    "Set Kubernetes replica count",
+  ],
+  ["configuration_view", {}, "Read Kubernetes configuration"],
 ];
 
 const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue }][] = [

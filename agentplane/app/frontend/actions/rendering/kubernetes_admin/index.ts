@@ -1,4 +1,5 @@
 import type { ActionPresentation } from "../presentation";
+import { additionalKubernetesRenderers } from "./additional";
 import { podsInNamespacePresentation } from "./pods_list_in_namespace";
 import { resourcesApplyPresentation } from "./resources_apply";
 import { podsDeletePresentation, podsExecPresentation } from "./pods_exec";
@@ -33,6 +34,7 @@ const renderers: ReadonlyArray<readonly [string, ActionPresentation]> = [
   ["pods_get", podsGetPresentation],
   ["pods_log", podsLogPresentation],
   ["events_list", eventsListPresentation],
+  ...additionalKubernetesRenderers,
 ];
 
 export const kubernetesAdminRenderers: ReadonlyMap<string, ActionPresentation> = new Map(

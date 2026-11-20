@@ -218,6 +218,7 @@ ts_library(
 ts_library(
     name = "kubernetes_admin",
     srcs = [
+        "kubernetes_admin/additional.tsx",
         "kubernetes_admin/events_list.tsx",
         "kubernetes_admin/index.ts",
         "kubernetes_admin/list_result.tsx",

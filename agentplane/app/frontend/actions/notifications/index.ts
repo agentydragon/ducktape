@@ -46,6 +46,14 @@ function environmentTargetNotification(actionTitle: string): ActionNotificationF
   };
 }
 
+const resourceScaleNotification: ActionNotificationFormatter = (request) => {
+  const args = actionArguments(request);
+  const mutation = args !== null && typeof args === "object" && "scale" in args && Number.isSafeInteger(args.scale);
+  return fixedActionNotification(mutation ? "Set Kubernetes replica count" : "Review Kubernetes resource scale")(
+    request
+  );
+};
+
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
@@ -62,6 +70,16 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["pods_log", podsLogNotification],
       ["resources_list", resourcesListNotification],
       ["events_list", eventsListNotification],
+      ["pods_list", fixedActionNotification("List Pods across namespaces")],
+      ["namespaces_list", fixedActionNotification("List Kubernetes namespaces")],
+      ["projects_list", fixedActionNotification("List OpenShift projects")],
+      ["nodes_log", fixedActionNotification("View Kubernetes Node logs")],
+      ["nodes_stats_summary", fixedActionNotification("Read Kubernetes Node statistics")],
+      ["nodes_top", fixedActionNotification("Read Kubernetes Node metrics")],
+      ["pods_top", fixedActionNotification("Read Kubernetes Pod metrics")],
+      ["pods_run", fixedActionNotification("Run Kubernetes Pod")],
+      ["resources_scale", resourceScaleNotification],
+      ["configuration_view", fixedActionNotification("Read Kubernetes configuration")],
     ]),
   ],
   [
