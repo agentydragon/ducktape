@@ -91,7 +91,12 @@ async def test_archived_thread_delivery_diagnostic(
     await app.mount_thread(DELETED_SANDBOX_THREAD)
     page = view.page
     await expect(page.get_by_text("Thread archived. Showing retained thread history", exact=False)).to_be_visible()
-    await page.get_by_role("button", name="Notifications", exact=True).click()
+    notifications = page.get_by_role("button", name="Notifications", exact=True)
+    if await notifications.is_visible():
+        await notifications.click()
+    else:
+        await page.get_by_role("button", name="More", exact=True).click()
+        await page.get_by_role("menuitem", name="Notifications").click()
     await expect(page.get_by_text(f"Delivery: {error}", exact=True)).to_be_visible()
     explanation = page.get_by_text("This Session's required Environment was deleted.", exact=False)
     if show_explanation:
