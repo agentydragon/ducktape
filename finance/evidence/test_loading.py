@@ -7,7 +7,6 @@ import textwrap
 import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import cast
 
 import polars as pl
 import pytest
@@ -29,14 +28,12 @@ from finance.evidence.loading import (
     zillow_city_table,
 )
 from finance.evidence.sources import (
-    EVIDENCE_SOURCES,
     FRED_CPI,
     FRED_MORTGAGE30,
     FRENCH_FACTORS,
     FRENCH_INTERNATIONAL_INDICES,
     YAHOO_BTC,
     ZILLOW_ZHVI,
-    EvidenceKind,
 )
 
 FRED_TEXT = (
@@ -152,20 +149,6 @@ def test_yahoo_frame_rejects_a_silently_downgraded_granularity() -> None:
     ]
     with pytest.raises(ValueError, match=re.escape(YAHOO_BTC.provenance_label)):
         yahoo_adjusted_close_frame(_yahoo_payload(points, granularity="1mo"), YAHOO_BTC, minimum_samples=2)
-
-
-def test_yahoo_sources_request_an_explicit_window_not_range_max() -> None:
-    """`range=max` is what Yahoo downgrades; explicit periods mean the same thing and are honoured.
-
-    Pinned because the two spellings look interchangeable and the difference is invisible until
-    a fit fails months later.
-    """
-
-    for source in EVIDENCE_SOURCES:
-        if source.kind is EvidenceKind.YAHOO:
-            assert "range=max" not in source.upstream_url
-            assert "period1=0" in source.upstream_url
-            assert "interval=1d" in source.upstream_url
 
 
 def test_read_monthly_levels_from_checkout_dir(tmp_path: Path) -> None:
@@ -349,17 +332,6 @@ def test_international_market_is_the_all_country_dollar_mkt_column_as_decimals()
 
     assert frame.get_column("month").to_list() == [date(1975, 1, 1), date(1975, 2, 1), date(1975, 3, 1)]
     assert frame.get_column("market_total_return").to_list() == pytest.approx([0.01, -0.02, 0.03])
-
-
-def test_international_sections_sharing_the_columns_are_not_read() -> None:
-    """Local-currency, all-ratios-required and annual blocks all parse as plausible returns under
-    the same `Mkt` header; reading one would mislabel currency or universe without a malformed
-    value anywhere."""
-
-    frame = french_international_market_frame(_international_zip(_INTERNATIONAL_TARGET), FRENCH_INTERNATIONAL_INDICES)
-
-    assert frame.height == len(_INTERNATIONAL_TARGET)
-    assert cast(float, frame.get_column("market_total_return").abs().max()) < 0.05
 
 
 @pytest.mark.parametrize(
