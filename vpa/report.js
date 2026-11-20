@@ -224,6 +224,9 @@ function Report() {
       ><${Anchor} href="#sources">Sources<//><//
     >
     <section id="current-state">
+      <span id="coverage"></span><span id="adoption-progress"></span
+      ><span id="verified-rollouts"></span><span id="rollout-follow-up"></span
+      ><span id="rollout-wave"></span><span id="architecture"></span>
       <${Title} order=${2} mt="xl">Current state<//>
       <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="md">
         <${Stat}
@@ -366,6 +369,7 @@ function Report() {
       <//>
     </section>
     <section id="remaining-work">
+      <span id="batches"></span>
       <${Title} order=${2} mt="xl">Remaining work<//>
       <${Stack} gap="md" mt="md">
         <${Paper} withBorder p="md" radius="md"
