@@ -27,11 +27,13 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 _WORKLOADS = (
     ("actions", "actions", "128Mi", "160Mi"),
     ("app", "app", "128Mi", "160Mi"),
+    ("environments", "environments", "64Mi", "112Mi"),
     ("frontend", "frontend", "32Mi", "40Mi"),
     ("history-service", "history-service", "128Mi", "256Mi"),
     ("llm-ingress", "ingress", "128Mi", "160Mi"),
     ("mcp-edge", "mcp-edge", "128Mi", "160Mi"),
     ("notifications", "notifications", "128Mi", "160Mi"),
+    ("policy-controller", "policy-controller", "64Mi", "112Mi"),
     ("sessions", "sessions", "256Mi", "320Mi"),
 )
 
