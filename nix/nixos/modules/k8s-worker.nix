@@ -401,12 +401,14 @@ in
       10250 # kubelet API
     ];
     # Cilium routes pod-to-local-host traffic for hostNetwork services through
-    # cilium_net. Alloy's node-local scrape needs the host's node-exporter port;
-    # keep this scoped to that ingress interface and port.
-    networking.firewall.interfaces.cilium_net.allowedTCPPorts = [ 9100 ];
+    # cilium_net. Allow the local Hubble peer and node-exporter ports there.
+    networking.firewall.interfaces.cilium_net.allowedTCPPorts = [
+      4244 # Hubble peer
+      9100 # node-exporter
+    ];
     # Trust cluster-internal interfaces. Without this, the NixOS firewall
     # drops inter-node and pod-to-node traffic to ports not explicitly
-    # opened (hubble-peer 4244, cilium health 4240, etc.). Talos has no
+    # opened (cilium health 4240, etc.). Talos has no
     # host firewall. nebula1 carries all inter-node cluster traffic;
     # cilium_host and lxc* carry pod-to-node traffic (lxc* are Cilium's
     # per-pod veth interfaces on the host side).
