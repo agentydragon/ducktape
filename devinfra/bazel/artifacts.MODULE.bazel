@@ -639,6 +639,13 @@ http_file(
 )
 
 http_file(
+    name = "kyverno_validatingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_validatingpolicies.yaml",
+    sha256 = "87d8700778623b26ae2c9b2f512713e478714ddd0fbcb4e44574c76ae015f10f",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_validatingpolicies.yaml"],
+)
+
+http_file(
     name = "kyverno_cleanuppolicy_crd",
     downloaded_file_path = "kyverno.io_cleanuppolicies.yaml",
     sha256 = "84d8f500897ad14122177129adfeb3cbb0dac1d24796abf7cf22001c2ac9eb25",
