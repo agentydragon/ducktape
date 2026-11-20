@@ -251,7 +251,7 @@ describe("GitHub search_pull_requests", () => {
     for (const view of [collapsed, details]) {
       expect(shownText(view)).toContain("is:open label:bug");
       expect(shownText(view)).toContain("Repository test-owner/test-repo");
-      expect(shownText(view)).toContain("Up to 10 results per page");
+      expect(shownText(view)).not.toContain("results per page");
       expect(shownText(view)).not.toContain("Sort by");
       expect(shownText(view)).not.toContain("Fields:");
     }

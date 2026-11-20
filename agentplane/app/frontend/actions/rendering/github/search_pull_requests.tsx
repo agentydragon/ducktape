@@ -30,7 +30,6 @@ function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArg
           Repository <Code>{repository}</Code>
         </Text>
       )}
-      {args.perPage !== undefined && <Text size="sm">Up to {args.perPage} results per page</Text>}
     </Stack>
   );
 }
