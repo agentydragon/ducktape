@@ -12,7 +12,6 @@ import {
   toolValue,
 } from "./call_tool_result";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 afterEach(async () => {
   for (const { root, container } of mounted.splice(0)) {

@@ -11,8 +11,6 @@ import { testSandbox } from "../testing/sandbox";
 import { serveEventStreams, stubWatchFetch, type ServedWatch } from "../testing/watch";
 import { SandboxesLiveProvider, useEnvironmentWatch, useRequiredSandboxesLive } from "./live";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 const roots: Root[] = [];
 
 afterEach(async () => {

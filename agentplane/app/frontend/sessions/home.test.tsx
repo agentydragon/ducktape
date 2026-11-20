@@ -23,7 +23,6 @@ vi.mock("./client", async (importOriginal) => ({
   listThreadWindow: vi.fn(),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 afterEach(async () => {

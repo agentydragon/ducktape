@@ -15,7 +15,6 @@ vi.mock("../transport/watch_stream", () => ({
     };
   },
 }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 function Host() {
   const credentials = useCredentialMetadata();
   return (

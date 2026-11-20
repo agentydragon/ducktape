@@ -100,7 +100,6 @@ vi.mock("../sandboxes/client", async (importOriginal) => ({
   resumeSandbox: vi.fn(),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{
   root: ReturnType<typeof createRoot>;
   container: HTMLDivElement;

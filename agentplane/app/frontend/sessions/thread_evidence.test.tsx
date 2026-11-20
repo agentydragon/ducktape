@@ -14,8 +14,6 @@ import { ItemKind } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { deferred } from "../../../../util/frontend/testing/deferred";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 const mounted: { root: ReturnType<typeof createRoot>; container: HTMLElement }[] = [];
 const clients: ReturnType<typeof createAppQueryClient>[] = [];
 
