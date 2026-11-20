@@ -240,6 +240,10 @@ function Report() {
     "default-revision-history-limit":
       progress.retirement.revision_history.state,
   };
+  const policyDirection = {
+    [nativeGatewayPolicy]: "Native ValidatingAdmissionPolicy and Deny binding.",
+    "require-gitops": "Native Audit-only shadow alongside PolicyReports.",
+  };
   const latestTime = latest.observed_at_utc.slice(11, 16);
   const verifiedCount = latest.workloads.filter(
     (row) => row.dry_run_admitted_resources,
