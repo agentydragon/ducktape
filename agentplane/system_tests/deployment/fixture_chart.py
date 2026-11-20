@@ -751,7 +751,6 @@ def add_backend_services(
         env,
         database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
-        gateway_control_target=environment_service.environments_control_target(NAMESPACE),
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),
         callers=list(notification_callers),

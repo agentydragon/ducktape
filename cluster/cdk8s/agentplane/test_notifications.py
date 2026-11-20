@@ -6,13 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.net.peertls.config import (
-    ACTIONS_URI,
-    APP_URI,
-    NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
-)
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
 from cluster.cdk8s.testing.manifests import find_resource
 
@@ -114,12 +108,8 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
     assert "token_file" not in settings["session_dispatcher"]
-    assert settings["runner_gateway"]["control_target"] == "environments.{namespace}.svc:8082"
-    for client, server_uri in (
-        ("actions", ACTIONS_URI),
-        ("runner_gateway", SANDBOX_CONTROLLER_URI),
-        ("session_dispatcher", SESSION_DISPATCHER_URI),
-    ):
+    assert "runner_gateway" not in settings
+    for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
         tls = settings[client]["tls"]
         assert tls["server_uri"] == server_uri
         assert tls["client_uri"] == NOTIFICATIONS_URI
@@ -135,7 +125,7 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert {dispatcher.name, "environments"} <= egress_services
+    assert dispatcher.name in egress_services
     proxy_ingress = one(
         rule
         for rule in policy["ingress"]

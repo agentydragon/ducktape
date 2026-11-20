@@ -304,7 +304,6 @@ def environment_chart(
         env,
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
-        gateway_control_target=environment_service.environments_control_target(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         callers=[app_component.service(env.namespace).pods],

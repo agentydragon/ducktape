@@ -25,19 +25,17 @@ from agentplane.net.peertls.config import (
     APP_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.notification_service.settings import (
     ActionsSettings,
     GitHubSettings,
     HistoryServiceSettings,
-    RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
 )
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, environment_service, workload_tls
+from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -83,7 +81,6 @@ class Notifications(Construct):
         *,
         database_url: EnvValue,
         actions: ServiceRef,
-        gateway_control_target: str,
         history: ServiceRef,
         dispatcher: ServiceRef,
         callers: list[Pods],
@@ -93,7 +90,7 @@ class Notifications(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """Bearer-authenticated and Sandbox-SVID RPCs share the TLS gRPC listener."""
+        """Service SVIDs and Sandbox workload SVIDs share one TLS gRPC listener."""
         super().__init__(scope, id)
         self.env = env
         self.callers = callers
@@ -161,10 +158,6 @@ class Notifications(Construct):
             actions=ActionsSettings(
                 url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
                 tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
-            ),
-            runner_gateway=RunnerGatewaySettings(
-                control_target=gateway_control_target,
-                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             history_service=HistoryServiceSettings(
                 target=f"{history.fqdn}:{history.pod_port}",
@@ -244,7 +237,6 @@ class Notifications(Construct):
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.actions.egress(),
-                environment_service.environments_service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
                 database.egress(env.namespace),
