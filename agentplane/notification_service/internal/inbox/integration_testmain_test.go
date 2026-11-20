@@ -42,7 +42,6 @@ func defaultQuotas() Quotas {
 type fixture struct {
 	*Store
 	db         *sql.DB
-	owner      model.ServiceAccount
 	identity   model.Identity
 	sandboxUID string
 	sessionID  string
@@ -63,14 +62,10 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
 	return fixture{
-		Store: New(db, transaction.New(db), quotas), db: db, owner: newOwner(),
+		Store: New(db, transaction.New(db), quotas), db: db,
 		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
 		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
 	}
-}
-
-func newOwner() model.ServiceAccount {
-	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {

@@ -343,7 +343,7 @@ func TestUnreadProviderAndMessagePayloadsSurviveThirtyDayCleanup(t *testing.T) {
 	subscription := f.subscribe(t, creation)
 	event := actionsEvents(creation.Source.(sourceadapter.ActionsSource).RequestID, 1)[0]
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
-	f.send(t, f.message(newOwner(), "message", "Please keep this message."))
+	f.send(t, f.message(newSender(), "message", "Please keep this message."))
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 
 	f.cleanAll(t)
