@@ -34,7 +34,7 @@ def main() -> None:
         runner_pod=runner_pod,
         settings_config_map="unused-by-virtiofs-only-policy",
     )
-    policy = cast(dict[str, Any], Testing.synth(chart)[0])
+    policy = cast(dict[str, Any], next(doc for doc in Testing.synth(chart) if doc["kind"] == "ClusterPolicy"))
     rule = next(rule for rule in policy["spec"]["rules"] if rule["name"] == "keep-virtiofs-through-guest-shutdown")
     # The direct VMI has no VirtualMachine/Sandbox chain. Keep the production rule's exact
     # VMI lookup and mutation while excluding relay authentication/injection and unrelated rules.

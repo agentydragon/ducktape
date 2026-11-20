@@ -1,7 +1,12 @@
-"""The launcher relay policy in the real Kyverno CLI. The CLI loads no API reads, so the test supplies
-the VMI, VirtualMachine, Sandbox and WorkloadCredential the policy would read; the ownership checks still run."""
+"""The launcher relay policies in the real Kyverno CLI: the mutation, then the validation of the mutated Pod.
+The CLI loads no API reads and cannot map Agentplane's or KubeVirt's kinds for `resource.Get`, so the test
+supplies the VMI, VirtualMachine, Sandbox and WorkloadCredential the policies would read; the ownership
+checks still run. `kyverno apply` has no operation flag, so an UPDATE is validated as the CREATE
+`request.operation` check read with the operation replaced."""
 
+import json
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -59,17 +64,26 @@ def owner(api_version: str, kind: str, uid: str) -> dict:
     return {"apiVersion": api_version, "kind": kind, "name": "sandbox-a", "uid": uid, "controller": True}
 
 
+@dataclass(frozen=True)
+class Policies:
+    mutation: dict
+    validation: dict
+
+
 @pytest.fixture(scope="module")
-def policy() -> dict:
+def policy() -> Policies:
     chart = Chart(App(), "test")
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
-    rendered: dict = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
+    documents = Cdk8sTesting.synth(chart)
+    mutation: dict = one(doc for doc in documents if doc["kind"] == "ClusterPolicy")
+    validation: dict = one(doc for doc in documents if doc["kind"] == "ValidatingPolicy")
     # The CLI's policy validation needs a cluster to check match conditions against and panics
     # without one; they narrow which requests reach the policy, not what it decides.
-    del rendered["spec"]["webhookConfiguration"]
-    return rendered
+    del mutation["spec"]["webhookConfiguration"]
+    del validation["spec"]["matchConditions"]
+    return Policies(mutation=mutation, validation=validation)
 
 
 def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace() -> None:
@@ -96,9 +110,7 @@ def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_names
     ]
 
 
-def policy_file(
-    tmp_path: Path,
-    policy: dict,
+def reads(
     *,
     vm_uid: str,
     vm_owner_kind: str,
@@ -114,14 +126,13 @@ def policy_file(
     vm_vmi_uid: str = "vmi-uid",
     vmi_credential_id: str = RUNNER_CREDENTIAL_ID,
     sandbox_uid: str = "sb-uid",
-) -> Path:
-    policy = deepcopy(policy)
+) -> dict[str, dict]:
     vmi_spec: dict = {"domain": {"devices": {}}}
     if vmi_volumes is not None:
         vmi_spec["volumes"] = vmi_volumes
     if vmi_filesystems is not None:
         vmi_spec["domain"]["devices"]["filesystems"] = vmi_filesystems
-    reads = {
+    return {
         "vmi": {
             "metadata": {
                 "uid": "vmi-uid",
@@ -140,7 +151,7 @@ def policy_file(
                 "ownerReferences": [owner(f"{GROUP}/{VERSION}", vm_owner_kind, sandbox_uid)],
             }
         },
-        "sandboxLive": {
+        "sandbox": {
             "metadata": {"uid": sandbox_uid, "name": "sandbox-a"},
             "status": {"runnerCredential": {"kind": credential_kind, "lastVmiUid": last_vmi_uid}},
         },
@@ -160,14 +171,6 @@ def policy_file(
             },
         },
     }
-    for rule in policy["spec"]["rules"]:
-        for entry in rule.get("context", []):
-            if "apiCall" in entry:
-                del entry["apiCall"]
-                entry["variable"] = {"value": reads[entry["name"]]}
-    path = tmp_path / "policy.yaml"
-    path.write_text(yaml.safe_dump(policy))
-    return path
 
 
 def launcher() -> dict:
@@ -184,13 +187,56 @@ def launcher() -> dict:
     }
 
 
+@dataclass(frozen=True)
+class Admission:
+    """What the two webhooks decide for one Pod: the mutation, then validation of the mutated Pod."""
+
+    mutation: KyvernoApplyResult
+    validation: KyvernoApplyResult | None
+
+    @property
+    def ok(self) -> bool:
+        return self.mutation.ok and self.validation is not None and self.validation.ok
+
+    @property
+    def stdout(self) -> str:
+        return self.mutation.stdout + (self.validation.stdout if self.validation else "")
+
+    @property
+    def mutated_resources(self) -> list[dict]:
+        return self.mutation.mutated_resources
+
+
+def mutation_policy(policy: Policies, **supplied: dict) -> dict:
+    mutation = deepcopy(policy.mutation)
+    for rule in mutation["spec"]["rules"]:
+        for entry in rule.get("context", []):
+            if "apiCall" in entry:
+                del entry["apiCall"]
+                entry["variable"] = {"value": supplied[entry["name"]]}
+    return mutation
+
+
+def validation_policy(policy: Policies, operation: str, **supplied: dict) -> dict:
+    validation = deepcopy(policy.validation)
+    for variable in validation["spec"]["variables"]:
+        if variable["name"] in supplied:
+            # A CEL literal of mixed types does not type-check, so the object is parsed from JSON text.
+            variable["expression"] = f"json.unmarshal({json.dumps(json.dumps(supplied[variable['name']]))})"
+    for check in validation["spec"]["validations"]:
+        check["expression"] = check["expression"].replace("request.operation", f"'{operation}'")
+    return validation
+
+
 def apply(
     tmp_path: Path,
-    policy: dict,
+    policy: Policies,
     resource: dict,
     *,
     username: str = CONTROLLER_USERNAME,
     operation: str = "CREATE",
+    mutation: dict | None = None,
+    validation: dict | None = None,
     vm_uid: str = "vm-uid",
     vm_owner_kind: str = "Sandbox",
     vmi_volumes: tuple[dict, ...] | None = (),
@@ -205,34 +251,50 @@ def apply(
     vm_vmi_uid: str = "vmi-uid",
     vmi_credential_id: str = RUNNER_CREDENTIAL_ID,
     sandbox_uid: str = "sb-uid",
-) -> KyvernoApplyResult:
-    path = tmp_path / "pod.yaml"
-    path.write_text(yaml.safe_dump(resource))
-    return apply_policy(
-        policy_file(
-            tmp_path,
-            policy,
-            vm_uid=vm_uid,
-            vm_owner_kind=vm_owner_kind,
-            vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
-            vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
-            credential_kind=credential_kind,
-            record_credential_id=record_credential_id,
-            record_owner_uid=record_owner_uid,
-            binding_vmi_uid=binding_vmi_uid,
-            accepted_vmi_uid=accepted_vmi_uid,
-            last_vmi_uid=last_vmi_uid,
-            vm_credential_id=vm_credential_id,
-            vm_vmi_uid=vm_vmi_uid,
-            vmi_credential_id=vmi_credential_id,
-            sandbox_uid=sandbox_uid,
-        ),
-        path,
-        {"request.userInfo.username": username, "request.operation": operation},
+) -> Admission:
+    """Mutation rules match only launcher creates, so an UPDATE is validated as it stands."""
+    supplied = reads(
+        vm_uid=vm_uid,
+        vm_owner_kind=vm_owner_kind,
+        vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
+        vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
+        credential_kind=credential_kind,
+        record_credential_id=record_credential_id,
+        record_owner_uid=record_owner_uid,
+        binding_vmi_uid=binding_vmi_uid,
+        accepted_vmi_uid=accepted_vmi_uid,
+        last_vmi_uid=last_vmi_uid,
+        vm_credential_id=vm_credential_id,
+        vm_vmi_uid=vm_vmi_uid,
+        vmi_credential_id=vmi_credential_id,
+        sandbox_uid=sandbox_uid,
+    )
+    pod = tmp_path / "pod.yaml"
+    pod.write_text(yaml.safe_dump(resource))
+    mutated: KyvernoApplyResult | None = None
+    if operation == "CREATE":
+        mutation_path = tmp_path / "mutation.yaml"
+        mutation_path.write_text(
+            yaml.safe_dump(mutation if mutation is not None else mutation_policy(policy, **supplied))
+        )
+        mutated = apply_policy(mutation_path, pod)
+        if not mutated.ok:
+            return Admission(mutation=mutated, validation=None)
+        resource = one(r for r in mutated.mutated_resources if r["kind"] == "Pod")
+        pod.write_text(yaml.safe_dump(resource))
+    validation_path = tmp_path / "validation.yaml"
+    validation_path.write_text(
+        yaml.safe_dump(validation if validation is not None else validation_policy(policy, operation, **supplied))
+    )
+    userinfo = tmp_path / "userinfo.yaml"
+    userinfo.write_text(yaml.safe_dump({"userInfo": {"username": username}}))
+    return Admission(
+        mutation=mutated or KyvernoApplyResult(passed=0, failed=0, errored=0, stdout=""),
+        validation=apply_policy(validation_path, pod, userinfo_path=userinfo),
     )
 
 
-def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
+def test_injects_relay_idempotently(tmp_path: Path, policy: Policies) -> None:
     first = apply(tmp_path, policy, launcher())
     assert first.ok, first.stdout
     mutated = one(r for r in first.mutated_resources if r["kind"] == "Pod")
@@ -272,20 +334,17 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
 
 
 def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_it_later(
-    tmp_path: Path, policy: dict
+    tmp_path: Path, policy: Policies
 ) -> None:
-    policy = deepcopy(policy)
-    injection = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
-    credential_read = one(entry for entry in injection["context"] if entry["name"] == "credential")
-    del credential_read["apiCall"]
-    credential_read["variable"] = {"value": {"metadata": {"name": "sandbox-a"}, "spec": {}, "status": {}}}
+    supplied = reads(vm_uid="vm-uid", vm_owner_kind="Sandbox", vmi_volumes=[], vmi_filesystems=[])
+    supplied["credential"] = {"metadata": {"name": "sandbox-a"}, "spec": {}, "status": {}}
     # The mutation and validation webhooks read independently. A later issued
     # record must not admit a Pod mutated with a nonexistent Secret name.
-    result = apply(tmp_path, policy, launcher())
+    result = apply(tmp_path, policy, launcher(), mutation=mutation_policy(policy, **supplied))
     assert not result.ok, result.stdout
 
 
-def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, policy: dict) -> None:
+def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, policy: Policies) -> None:
     first = apply(tmp_path, policy, launcher())
     assert first.ok, first.stdout
     mutated = one(r for r in first.mutated_resources if r["kind"] == "Pod")
@@ -319,18 +378,20 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
         {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
     )
     update = apply(tmp_path, policy, workload_mount, operation="UPDATE")
-    assert update.failed > 0
+    assert not update.ok
 
     create_with_workload_mount = launcher()
     create_with_workload_mount["spec"]["containers"][0]["volumeMounts"] = [
         {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
     ]
     create = apply(tmp_path, policy, create_with_workload_mount)
-    assert create.failed > 0
+    assert not create.ok
 
 
 @pytest.mark.parametrize("with_existing_init", [False, True])
-def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: dict, with_existing_init: bool) -> None:
+def test_keeps_filesystem_daemons_until_compute_exits(
+    tmp_path: Path, policy: Policies, with_existing_init: bool
+) -> None:
     resource = launcher()
     daemons = [
         {
@@ -401,7 +462,7 @@ _STATE_DAEMON = {"name": "virtiofs-state", "image": "launcher:test", "command": 
 @pytest.mark.parametrize(
     "defect", ["ordinary-wrong-command", "native-wrong-command", "missing", "duplicate", "non-restartable"]
 )
-def test_fails_closed_for_eligible_daemon(tmp_path: Path, policy: dict, defect: str) -> None:
+def test_fails_closed_for_eligible_daemon(tmp_path: Path, policy: Policies, defect: str) -> None:
     resource = launcher()
     daemon = deepcopy(_STATE_DAEMON)
     if defect == "ordinary-wrong-command":
@@ -420,19 +481,32 @@ def test_fails_closed_for_eligible_daemon(tmp_path: Path, policy: dict, defect: 
     elif defect == "non-restartable":
         resource["spec"]["initContainers"] = [daemon]
     result = apply(tmp_path, policy, resource, vmi_volumes=(_STATE_VOLUME,), vmi_filesystems=(_STATE_FILESYSTEM,))
-    assert result.failed > 0, result.stdout
+    assert not result.ok, result.stdout
 
     # With just the new guard removed, the other real Kyverno rules admit this
     # launcher's unchanged daemon layout; the guard is what closes this gap.
-    old_policy = deepcopy(policy)
-    old_policy["spec"]["rules"] = [
-        rule for rule in old_policy["spec"]["rules"] if rule["name"] != "require-native-virtiofs-daemons"
+    without_guard = validation_policy(
+        policy,
+        "CREATE",
+        **reads(
+            vm_uid="vm-uid", vm_owner_kind="Sandbox", vmi_volumes=[_STATE_VOLUME], vmi_filesystems=[_STATE_FILESYSTEM]
+        ),
+    )
+    without_guard["spec"]["validations"] = [
+        check for check in without_guard["spec"]["validations"] if "eligibleVirtiofs" not in check["expression"]
     ]
-    prior = apply(tmp_path, old_policy, resource, vmi_volumes=(_STATE_VOLUME,), vmi_filesystems=(_STATE_FILESYSTEM,))
+    prior = apply(
+        tmp_path,
+        policy,
+        resource,
+        validation=without_guard,
+        vmi_volumes=(_STATE_VOLUME,),
+        vmi_filesystems=(_STATE_FILESYSTEM,),
+    )
     assert prior.ok, prior.stdout
 
 
-def test_rejects_missing_second_eligible_daemon(tmp_path: Path, policy: dict) -> None:
+def test_rejects_missing_second_eligible_daemon(tmp_path: Path, policy: Policies) -> None:
     resource = launcher()
     resource["spec"]["containers"].append(deepcopy(_STATE_DAEMON))
     result = apply(
@@ -442,7 +516,7 @@ def test_rejects_missing_second_eligible_daemon(tmp_path: Path, policy: dict) ->
         vmi_volumes=(_STATE_VOLUME, {"name": "trust", "configMap": {"name": "trust"}}),
         vmi_filesystems=(_STATE_FILESYSTEM, {"name": "trust", "virtiofs": {}}),
     )
-    assert result.failed > 0, result.stdout
+    assert not result.ok, result.stdout
 
 
 @pytest.mark.parametrize(
@@ -455,7 +529,7 @@ def test_rejects_missing_second_eligible_daemon(tmp_path: Path, policy: dict) ->
     ],
 )
 def test_leaves_noneligible_daemon_ordinary(
-    tmp_path: Path, policy: dict, volume: dict, filesystem: dict | None
+    tmp_path: Path, policy: Policies, volume: dict, filesystem: dict | None
 ) -> None:
     resource = launcher()
     daemon = {**_STATE_DAEMON, "name": "virtiofs-config"}
@@ -483,7 +557,7 @@ def test_leaves_noneligible_daemon_ordinary(
     ],
 )
 def test_omitted_vmi_arrays_have_no_eligible_daemon(
-    tmp_path: Path, policy: dict, volumes: tuple[dict, ...] | None, filesystems: tuple[dict, ...] | None
+    tmp_path: Path, policy: Policies, volumes: tuple[dict, ...] | None, filesystems: tuple[dict, ...] | None
 ) -> None:
     resource = launcher()
     resource["spec"]["containers"].append(deepcopy(_STATE_DAEMON))
@@ -505,8 +579,8 @@ def test_omitted_vmi_arrays_have_no_eligible_daemon(
         ),
     ],
 )
-def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) -> None:
-    assert apply(tmp_path, policy, launcher(), **forgery).failed > 0
+def test_rejects_unproven_launcher(tmp_path: Path, policy: Policies, forgery: dict) -> None:
+    assert not apply(tmp_path, policy, launcher(), **forgery).ok
 
 
 @pytest.mark.parametrize(
@@ -523,17 +597,19 @@ def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) 
         pytest.param({"sandbox_uid": "replacement-sandbox"}, id="sandbox-owner-mismatch"),
     ],
 )
-def test_mtls_rejects_launcher_without_current_credential_binding(tmp_path: Path, policy: dict, binding: dict) -> None:
-    assert apply(tmp_path, policy, launcher(), **binding).failed > 0
+def test_mtls_rejects_launcher_without_current_credential_binding(
+    tmp_path: Path, policy: Policies, binding: dict
+) -> None:
+    assert not apply(tmp_path, policy, launcher(), **binding).ok
 
 
-def test_rejects_stale_vmi(tmp_path: Path, policy: dict) -> None:
+def test_rejects_stale_vmi(tmp_path: Path, policy: Policies) -> None:
     resource = launcher()
     resource["metadata"]["ownerReferences"][0]["uid"] = "replaced-vmi"
-    assert apply(tmp_path, policy, resource).failed > 0
+    assert not apply(tmp_path, policy, resource).ok
 
 
-def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -> None:
+def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: Policies) -> None:
     resource = launcher()
     resource["spec"]["containers"].append(
         {
@@ -542,14 +618,14 @@ def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -
             "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/run/agentplane/workload-svid"}],
         }
     )
-    assert apply(tmp_path, policy, resource).failed > 0
+    assert not apply(tmp_path, policy, resource).ok
 
 
 @pytest.mark.parametrize(
     ("field", "operation"), [("containers", "CREATE"), ("initContainers", "CREATE"), ("ephemeralContainers", "UPDATE")]
 )
 def test_rejects_runner_credential_mount_outside_relay(
-    tmp_path: Path, policy: dict, field: str, operation: str
+    tmp_path: Path, policy: Policies, field: str, operation: str
 ) -> None:
     resource = launcher()
     resource["spec"].setdefault(field, []).append(
@@ -559,7 +635,7 @@ def test_rejects_runner_credential_mount_outside_relay(
             "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/t"}],
         }
     )
-    assert apply(tmp_path, policy, resource, operation=operation).failed > 0
+    assert not apply(tmp_path, policy, resource, operation=operation).ok
 
 
 if __name__ == "__main__":

@@ -5459,6 +5459,77 @@ data:
     readiness_listen_address: 0.0.0.0:3129
 immutable: false
 ---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: agentplane-staging-launcher-relay
+spec:
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.namespace == 'agentplane-staging'
+      name: in-namespace
+    - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls')))"
+      name: launcher-or-relay-credential-volume
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - pods
+          - pods/ephemeralcontainers
+  validationActions:
+    - Deny
+  validations:
+    - expression: "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) && c.volumeMounts.exists(m, m.name in ['agentplane-runner-relay-tls']))"
+      message: Only the launcher relay may mount the runner credential and trust files.
+    - expression: request.operation != 'CREATE' || request.userInfo.username == 'system:serviceaccount:kubevirt:kubevirt-controller'
+      message: A launcher must be created by KubeVirt's controller.
+    - expression: request.operation != 'CREATE' || (variables.vmiOwner.uid == variables.vmi.metadata.uid && variables.vmOwner.uid == variables.vm.metadata.uid && !variables.vmiVolumes.exists(v, has(v.serviceAccount)))
+      message: A launcher must be owned by a live VMI of a live VirtualMachine, and the guest gets no Kubernetes token.
+    - expression: request.operation != 'CREATE' || (variables.sandbox.metadata.uid == variables.sandboxOwner.uid && variables.sandbox.metadata.name == variables.sandboxOwner.name && variables.sandbox.status.runnerCredential.kind == 'VM' && variables.sandbox.status.runnerCredential.lastVmiUid == variables.vmi.metadata.uid && variables.credentialOwner.uid == variables.sandboxOwner.uid && variables.credential.spec.binding.vmiUID == variables.vmi.metadata.uid && variables.credential.status.acceptedBinding.vmiUID == variables.vmi.metadata.uid && variables.credential.status.credentialID == variables.vm.metadata.annotations['agentplane.allegedly.works/environment-runtime-credential'] && variables.vm.metadata.annotations['agentplane.allegedly.works/environment-runtime-credential-vmi-uid'] == variables.vmi.metadata.uid && variables.vmi.metadata.labels['agentplane.allegedly.works/environment-runtime-credential'] == variables.credential.status.credentialID)
+      message: The launcher's VirtualMachine must be controlled by a live Sandbox whose WorkloadCredential accepted its VMI.
+    - expression: request.operation != 'CREATE' || variables.eligibleVirtiofs.all(n, object.spec.containers.filter(c, c.name == 'virtiofs-' + n).size() == 0 && variables.initContainers.filter(c, c.name == 'virtiofs-' + n).size() == 1 && variables.initContainers.filter(c, c.name == 'virtiofs-' + n).filter(c, has(c.restartPolicy) && c.restartPolicy == 'Always').size() == 1 && variables.initContainers.filter(c, c.name == 'virtiofs-' + n).exists(c, has(c.command) && c.command.size() > 0 && c.command[0] == '/usr/libexec/virtiofsd'))
+      message: Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.
+    - expression: request.operation != 'CREATE' || (object.spec.serviceAccountName == 'default' && has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false && object.spec.containers.filter(c, c.name == 'egress-sidecar').size() == 0 && variables.initContainers.filter(c, c.name == 'egress-sidecar').size() == 1 && variables.initContainers.filter(c, c.name == 'egress-sidecar' && has(c.restartPolicy) && c.restartPolicy == 'Always').size() == 1)
+      message: The launcher must have exactly one native relay init sidecar.
+  variables:
+    - expression: object.metadata.ownerReferences.filter(r, r.kind == 'VirtualMachineInstance' && r.apiVersion == 'kubevirt.io/v1' && has(r.controller) && r.controller == true)[0]
+      name: vmiOwner
+    - expression: resource.Get('kubevirt.io/v1', 'virtualmachineinstances', request.namespace, variables.vmiOwner.name)
+      name: vmi
+    - expression: variables.vmi.metadata.ownerReferences.filter(r, r.kind == 'VirtualMachine' && r.apiVersion == 'kubevirt.io/v1' && has(r.controller) && r.controller == true)[0]
+      name: vmOwner
+    - expression: resource.Get('kubevirt.io/v1', 'virtualmachines', request.namespace, variables.vmOwner.name)
+      name: vm
+    - expression: variables.vm.metadata.ownerReferences.filter(r, r.kind == 'Sandbox' && r.apiVersion == 'agentplane.allegedly.works/v1alpha1' && has(r.controller) && r.controller == true)[0]
+      name: sandboxOwner
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'sandboxes', request.namespace, variables.sandboxOwner.name)
+      name: sandbox
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'workloadcredentials', request.namespace, variables.sandboxOwner.name)
+      name: credential
+    - expression: variables.credential.metadata.ownerReferences.filter(r, r.kind == 'Sandbox' && r.apiVersion == 'agentplane.allegedly.works/v1alpha1' && has(r.controller) && r.controller == true)[0]
+      name: credentialOwner
+    - expression: "(has(variables.vmi.spec.volumes) ? variables.vmi.spec.volumes : [])"
+      name: vmiVolumes
+    - expression: "(has(object.spec.initContainers) ? object.spec.initContainers : [])"
+      name: initContainers
+    - expression: "object.spec.containers.filter(c, c.name != 'egress-sidecar') + variables.initContainers.filter(c, c.name != 'egress-sidecar') + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])"
+      name: containersOutsideRelay
+    - expression: "(has(variables.vmi.spec.domain) && has(variables.vmi.spec.domain.devices) && has(variables.vmi.spec.domain.devices.filesystems) ? variables.vmi.spec.domain.devices.filesystems : []).filter(f, has(f.virtiofs)).map(f, f.name)"
+      name: virtiofsNames
+    - expression: variables.vmiVolumes.filter(v, (has(v.persistentVolumeClaim) || has(v.secret) || has(v.configMap)) && v.name in variables.virtiofsNames).map(v, v.name)
+      name: eligibleVirtiofs
+---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -5469,31 +5540,6 @@ spec:
   background: false
   failurePolicy: Fail
   rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-                - Pod/ephemeralcontainers
-              namespaces:
-                - agentplane-staging
-              operations:
-                - UPDATE
-      name: protect-relay-credentials-on-update
-      validate:
-        deny:
-          conditions:
-            any:
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-        message: Only the launcher relay may mount the runner credential and trust files.
     - context:
         - name: vmiOwner
           variable:
@@ -5514,113 +5560,8 @@ spec:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
         - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
-          name: sandboxLive
-        - apiCall:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
           name: credential
-        - name: credentialOwner
-          variable:
-            default: {}
-            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      name: authenticate-launcher
-      validate:
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.userInfo.username }}"
-                operator: NotEquals
-                value: system:serviceaccount:kubevirt:kubevirt-controller
-              - key: "{{ vmiOwner.uid }}"
-                operator: NotEquals
-                value: "{{vmi.metadata.uid}}"
-              - key: "{{ vmOwner.uid }}"
-                operator: NotEquals
-                value: "{{vm.metadata.uid}}"
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ sandboxLive.metadata.uid || '' }}"
-                operator: NotEquals
-                value: "{{sandbox.uid || 'none'}}"
-              - key: "{{ sandboxLive.metadata.name || '' }}"
-                operator: NotEquals
-                value: "{{sandbox.name || 'none'}}"
-              - key: "{{ sandboxLive.status.runnerCredential.kind || '' }}"
-                operator: NotEquals
-                value: VM
-              - key: "{{ sandboxLive.status.runnerCredential.lastVmiUid || '' }}"
-                operator: NotEquals
-                value: "{{vmi.metadata.uid || 'none'}}"
-              - key: "{{ credentialOwner.uid || '' }}"
-                operator: NotEquals
-                value: "{{sandbox.uid || 'none'}}"
-              - key: "{{ credential.spec.binding.vmiUID || '' }}"
-                operator: NotEquals
-                value: "{{vmi.metadata.uid || 'none'}}"
-              - key: "{{ credential.status.acceptedBinding.vmiUID || '' }}"
-                operator: NotEquals
-                value: "{{vmi.metadata.uid || 'none'}}"
-              - key: "{{ credential.status.credentialID || '' }}"
-                operator: NotEquals
-                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
-              - key: "{{ vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential-vmi-uid\" || '' }}"
-                operator: NotEquals
-                value: "{{vmi.metadata.uid || 'none'}}"
-              - key: "{{ vmi.metadata.labels.\"agentplane.allegedly.works/environment-runtime-credential\" || '' }}"
-                operator: NotEquals
-                value: "{{credential.status.credentialID || 'none'}}"
-              - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
-                operator: NotEquals
-                value: 0
-        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a live Sandbox whose WorkloadCredential accepted its VMI.
-    - context:
-        - name: vmiOwner
-          variable:
-            default: {}
-            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
-          name: vmi
-        - name: vmOwner
-          variable:
-            default: {}
-            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
-          name: vm
-        - name: sandbox
-          variable:
-            default: {}
-            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
-          name: sandboxLive
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
-          name: credential
-        - name: credentialOwner
-          variable:
-            default: {}
-            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
       match:
         any:
           - resources:
@@ -5756,15 +5697,8 @@ spec:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
         - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
-          name: sandboxLive
-        - apiCall:
             urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
           name: credential
-        - name: credentialOwner
-          variable:
-            default: {}
-            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
       match:
         any:
           - resources:
@@ -5796,158 +5730,10 @@ spec:
                   operator: Equals
                   value: true
       name: keep-virtiofs-through-guest-shutdown
-    - context:
-        - name: vmiOwner
-          variable:
-            default: {}
-            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
-          name: vmi
-        - name: vmOwner
-          variable:
-            default: {}
-            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
-          name: vm
-        - name: sandbox
-          variable:
-            default: {}
-            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
-          name: sandboxLive
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
-          name: credential
-        - name: credentialOwner
-          variable:
-            default: {}
-            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      name: require-native-virtiofs-daemons
-      validate:
-        foreach:
-          - context:
-              - name: daemonName
-                variable:
-                  jmesPath: join('', ['virtiofs-', element.name])
-              - name: ordinaryDaemons
-                variable:
-                  jmesPath: request.object.spec.containers[?name=='{{ daemonName }}']
-              - name: nativeDaemons
-                variable:
-                  jmesPath: request.object.spec.initContainers[?name=='{{ daemonName }}']
-            deny:
-              conditions:
-                any:
-                  - key: "{{ length(ordinaryDaemons || `[]`) }}"
-                    operator: NotEquals
-                    value: 0
-                  - key: "{{ length(nativeDaemons || `[]`) }}"
-                    operator: NotEquals
-                    value: 1
-                  - key: "{{ length(nativeDaemons[?restartPolicy=='Always'] || `[]`) }}"
-                    operator: NotEquals
-                    value: 1
-                  - key: "{{ nativeDaemons[0].command[0] || '' }}"
-                    operator: NotEquals
-                    value: /usr/libexec/virtiofsd
-            list: (vmi.spec.volumes[?persistentVolumeClaim || secret || configMap] || `[]`)
-            preconditions:
-              all:
-                - key: "{{ contains((vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`), element.name) }}"
-                  operator: Equals
-                  value: true
-        message: Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.
-    - context:
-        - name: vmiOwner
-          variable:
-            default: {}
-            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
-          name: vmi
-        - name: vmOwner
-          variable:
-            default: {}
-            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
-          name: vm
-        - name: sandbox
-          variable:
-            default: {}
-            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
-          name: sandboxLive
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
-          name: credential
-        - name: credentialOwner
-          variable:
-            default: {}
-            jmesPath: credential.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      name: validate-relay
-      validate:
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.object.spec.serviceAccountName }}"
-                operator: NotEquals
-                value: default
-              - key: "{{ request.object.spec.automountServiceAccountToken }}"
-                operator: NotEquals
-                value: false
-              - key: "{{ length(request.object.spec.containers[?name=='egress-sidecar']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length(request.object.spec.initContainers[?name=='egress-sidecar']) }}"
-                operator: NotEquals
-                value: 1
-              - key: "{{ length(request.object.spec.initContainers[?name=='egress-sidecar' && restartPolicy=='Always']) }}"
-                operator: NotEquals
-                value: 1
-              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
-                operator: NotEquals
-                value: 0
-        message: The launcher must have exactly one native relay init sidecar.
-  validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
-      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))))"
-        name: launcher-or-relay-credential-volume
+      - expression: request.namespace == 'agentplane-staging' && (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher')
+        name: launcher
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

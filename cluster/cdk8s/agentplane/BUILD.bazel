@@ -7,6 +7,7 @@
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
 # gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
+# gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
@@ -1653,6 +1654,7 @@ py_library(
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
+        "//cluster/cdk8s/providers/kyverno:validatingpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
