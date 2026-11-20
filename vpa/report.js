@@ -451,13 +451,14 @@ function Report() {
         group, kind, namespace and target name.<//
       >
       <${Text} component="p"
-        >Template values are authored controller values; admitted values include
-        API defaults and VPA mutation. Pod filters apply to actual
-        non-terminating Running or Pending Pods and regular containers; template
-        filters include inactive controllers. Current memory is from
-        metrics-server; seven-day working-set maxima are sampled by Mimir for
-        current Pod names, which may cover less than seven days or be reused.
-        Unknown means no sample, not zero.<//
+        >Template values come from stored controller templates, which may
+        themselves be defaulted or mutated; admitted Pod values also include Pod
+        admission and VPA mutation. Pod filters apply to actual non-terminating
+        Running or Pending Pods and regular containers; template filters include
+        inactive controllers. Current memory is from metrics-server; seven-day
+        working-set maxima are sampled by Mimir for current Pod names, which may
+        cover less than seven days or be reused. Unknown means no sample, not
+        zero.<//
       >
       <${Inventory} workloads=${current.workloads} />
     </section>
