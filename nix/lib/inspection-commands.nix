@@ -7,9 +7,9 @@
 #      the user) can run privileged read-only commands without typing a password.
 #      Consumer: nix/nixos/modules/system-inspection-sudo.nix
 #
-#   2. AI agent auto-approval — so Claude Code / Gemini CLI can execute these
-#      commands without prompting the user for confirmation.
-#      Consumers: nix/home/claude_code/default.nix, nix/home/gemini_cli.nix
+#   2. AI agent auto-approval — so Claude Code can execute these commands without
+#      prompting the user for confirmation.
+#      Consumer: nix/home/claude_code/default.nix
 #
 # Commands are split into two groups:
 #   - noSudoCommands: don't need root. Only role (2) applies.
@@ -441,7 +441,7 @@ in
     # Format: { type = "prefix"|"exact"; cmd; args = [ ... ]; }
     sudoDetailed = sudoCommands ++ logViewingCommands;
 
-    # For Claude Code/Gemini CLI: simple stringified format (excludes logViewingCommands)
+    # For Claude Code: simple stringified format (excludes logViewingCommands)
     # Format: { type = "prefix"|"exact"; cmd = "full command string"; }
     noSudo = map stringifyCommand noSudoCommands;
     sudo = map addSudoAndStringify sudoCommands;

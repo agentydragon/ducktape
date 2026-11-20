@@ -1,4 +1,4 @@
-# Shared skill deployment for AI agents (Claude Code, Codex, Gemini CLI, OpenCode, etc.)
+# Shared skill deployment for AI agents (Claude Code, Codex, OpenCode, etc.)
 #
 # Returns a function: { prefix, mode ? "recursive" } -> home.file entries that deploy skills to
 # ~/{prefix}/skills/.

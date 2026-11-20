@@ -136,7 +136,7 @@ in
       text = builtins.toJSON opencodeConfig;
     };
 
-    # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
+    # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code)
     home.file = mkSkills { prefix = ".config/opencode"; };
   };
 }

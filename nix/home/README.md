@@ -6,7 +6,6 @@ Home-manager user configurations for multiple machines.
 
 ```text
 nix/home/
-├── programs/              # Generic home-manager-style modules (could be upstreamed)
 ├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
@@ -16,49 +15,25 @@ nix/home/
 ├── codex/                 # Personal integration: Codex
 ├── opencode/              # Personal integration: OpenCode
 ├── crush/                 # Personal integration: Crush
-├── gemini_cli.nix         # Personal integration: Gemini CLI
 ├── config/, services/, shell/, terminals/   # Neovim config, user services, shell init, terminal setup
 ├── home.nix               # Main home-manager configuration
 └── hosts/*.nix            # Host-specific configurations
 ```
 
-## Architecture: Generic Modules vs Personal Integrations
+## Architecture: Personal Integrations
 
-This directory follows a pattern separating **generic modules** from **personal integrations**:
+Each agent harness has a **personal integration** (`claude_code/`, `codex/`, `opencode/`, `crush/`) that:
 
-### Generic Modules (`programs/`)
-
-See [`programs/README.md`](programs/README.md) for generic module design principles, current modules, and their usage.
-
-### Personal Integrations (root `*.nix` files)
-
-Files at the root level (`claude_code/`, `gemini_cli.nix`, etc.) are **personal integrations** that:
-
-- Transform shared data sources (like `allowed-commands.nix`) into module configurations
-- Wire up personal settings and preferences
-- Connect multiple generic modules together
-
-Example:
-
-```nix
-# gemini_cli.nix - personal integration (abridged)
-let
-  allowed = import ./allowed-commands.nix;
-in {
-  programs.gemini-cli = {
-    enable = true;
-    policies.allowed-commands = map (toGeminiRule 300) allowed.noSudo;
-  };
-}
-```
+- Transforms shared data sources (like `allowed-commands.nix`) into the harness's configuration
+- Wires up personal settings and preferences
 
 ### Single Source of Truth (SSOT) Files
 
-- **`allowed-commands.nix`**: Allowed bash commands for Claude Code, Gemini CLI, and Codex execpolicy
+- **`allowed-commands.nix`**: Allowed bash commands for Claude Code and Codex execpolicy
   - Shared between personal integrations
-  - Defines command permissions used by all three agent integrations
+  - Defines command permissions used by both agent integrations
 
-- **`skills.nix`**: Shared skill deployment helper for Claude Code, Codex, Gemini CLI, and OpenCode
+- **`skills.nix`**: Shared skill deployment helper for Claude Code, Codex, and OpenCode
   - Expands the CI-built `skills-tar` into each tool's config home under `skills/`
   - Codex uses directory symlinks for skills because its current loader skips symlinked `SKILL.md` files
 

@@ -3,7 +3,6 @@
 # Used by:
 #   - nix/home/claude_code/default.nix (Claude Code permissions)
 #   - nix/home/codex/execpolicy-rules.nix (Codex execpolicy)
-#   - nix/home/gemini_cli.nix (Gemini CLI policies)
 #
 # Commands listed here are safe for AI agents to execute without user approval.
 #

@@ -5,7 +5,6 @@
 #   - nix/home/claude_code/default.nix
 #   - nix/home/codex/default.nix
 #   - nix/home/opencode/default.nix
-#   - nix/home/gemini_cli.nix
 #
 # Each harness module maps this attrset into its own native mcpServers/mcp_servers
 # schema; this file only carries what's common to a plain-URL OAuth MCP server.
