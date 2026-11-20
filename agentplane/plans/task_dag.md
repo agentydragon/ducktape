@@ -2769,7 +2769,7 @@ and a shared Environment, including caller authority, failure/retry and migratio
 ### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
 
 **Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
-(central-session-design, 2026-11-10): [creation contract](central_session_contract.md#1-central_session_creation_contract-opening-with-zero-environments).**
+(central-session-design, 2026-11-10): [creation contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#1-central_session_creation_contract-opening-with-zero-environments).**
 Recommended there: a new `central_sampler {}` placement variant with the Identity named in
 `CreateSessionRequest`; `setup_script` and `cwd` rejected at creation and moved to attachments;
 `central_sampler_v1` retired in the same cutover, each executor becoming the Session's first
@@ -2792,7 +2792,7 @@ Environment exists, with exact acceptance and unknown-outcome boundaries.
 ### `SESSION_ATTACHMENT_CONTRACT` — Session-to-Environment relationships
 
 **Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
-(central-session-design, 2026-11-10): [attachment contract](central_session_contract.md#2-session_attachment_contract-environments-a-session-may-use).**
+(central-session-design, 2026-11-10): [attachment contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#2-session_attachment_contract-environments-a-session-may-use).**
 Recommended there: Dispatcher-owned desired attachments (`AttachEnvironment`/`DetachEnvironment` on
 SessionDispatcher, caller-chosen attachment ID, Session-local name, exact target UID, optional cwd,
 desired versus observed state, a per-Session revision and a `session_attachment_transition` table as
@@ -3053,7 +3053,7 @@ decision below retains its existing owner and gate.
 **Decision; Dispatcher row retention (#14314) and Notification's inbox retention after a missing or
 replaced Sandbox are implemented; the rest is drafted for review in
 [#15436](https://github.com/agentydragon/ducktape/pull/15436) (central-session-design, 2026-11-10):
-[lifetime contract](central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).**
+[lifetime contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).**
 Recommended there: retain inbox, subscriptions and Session row until an explicit `DeleteSession` on
 SessionDispatcher, scoped first to central Sessions and native Sessions whose required Environment is
 deleted (the sampler seals and exports before dropping; Notification retires the inbox on

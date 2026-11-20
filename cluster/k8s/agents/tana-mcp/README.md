@@ -162,8 +162,9 @@ into `~/.claude.json` / `~/.claude/.config.json` on the host. We don't use that
 path (the cluster proxies bearer-auth `/mcp` from a SOPS-managed PAT), so the
 toggle state does not matter for this deployment.
 
-See [`gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md`](../../../../../../gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md)
-for the desktop-side implementation.
+The desktop-side implementation is documented in the private `agentydragon/gaffer-private` repository,
+at `tana/re/desktop/local-mcp-v1.515.0.md`. `gaffer-private` is not published, so the path there is a
+pointer rather than a link.
 
 ### 5. Confirm MCP readiness
 
