@@ -10,7 +10,9 @@ import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
   renderActionLabel,
+  renderActionOutcome,
   renderDetailsArguments,
+  renderDetailsResult,
   renderPaneCollapsed,
   renderPaneOpened,
 } from "../index";
@@ -240,28 +242,19 @@ describe("GitHub search_pull_requests", () => {
     fields: ["number", "title", "state", "html_url"],
   };
 
-  it("shows only query and scope on the compact card, with options in details", async () => {
+  it("shows the search scope and result cap on both review surfaces", async () => {
     const label = await mount(renderActionLabel(SEARCH_PULL_REQUESTS, args));
     const collapsed = await mount(renderPaneCollapsed(SEARCH_PULL_REQUESTS, args));
-    const opened = await mount(renderPaneOpened(SEARCH_PULL_REQUESTS, args));
     const details = await mount(renderDetailsArguments(SEARCH_PULL_REQUESTS, args));
 
     expect(shownText(label)).toBe("Search GitHub pull requests");
-    expect(shownText(collapsed)).toContain("is:open label:bug");
-    expect(shownText(collapsed)).toContain("Owner filter: test-owner");
-    expect(shownText(collapsed)).toContain("Repository filter: test-repo");
-    for (const compact of [shownText(collapsed), shownText(opened)]) {
-      expect(compact).not.toContain("Page 2");
-      expect(compact).not.toContain("results per page");
-      expect(compact).not.toContain("Sort by");
-      expect(compact).not.toContain("Order:");
-      expect(compact).not.toContain("Fields:");
+    for (const view of [collapsed, details]) {
+      expect(shownText(view)).toContain("is:open label:bug");
+      expect(shownText(view)).toContain("Repository test-owner/test-repo");
+      expect(shownText(view)).not.toContain("results per page");
+      expect(shownText(view)).not.toContain("Sort by");
+      expect(shownText(view)).not.toContain("Fields:");
     }
-    expect(shownText(details)).toContain("Page 2");
-    expect(shownText(details)).toContain("10 results per page");
-    expect(shownText(details)).toContain("Sort by updated");
-    expect(shownText(details)).toContain("Order: desc");
-    expect(shownText(details)).toContain("Fields: number, title, state, html_url");
     expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, args)).toBe(false);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, args)).toBe(true);
   });
@@ -271,5 +264,64 @@ describe("GitHub search_pull_requests", () => {
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, page: 0 })).toBe(false);
     expect(actionOffersCardDecisionButtons(SEARCH_PULL_REQUESTS, { ...args, perPage: 101 })).toBe(false);
     expect(actionCompactCardExpands(SEARCH_PULL_REQUESTS, { ...args, repositoryId: 123 })).toBe(true);
+  });
+});
+
+describe("GitHub Action receipts", () => {
+  it("links the returned branch and commit using the recorded repository", async () => {
+    const commit = "0123456789abcdef0123456789abcdef01234567";
+    const result = {
+      content: [],
+      structuredContent: { ref: "refs/heads/docs/test-branch", object: { type: "commit", sha: commit } },
+      isError: false,
+    };
+    const receipt = await mount(
+      renderDetailsResult(CREATE_BRANCH, result, {
+        requestId: "test-request",
+        arguments: { ...REPOSITORY, branch: "docs/test-branch" },
+      })
+    );
+    const links = [...receipt.querySelectorAll("a")];
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "https://github.com/test-owner/test-repo/tree/docs/test-branch",
+      `https://github.com/test-owner/test-repo/commit/${commit}`,
+    ]);
+  });
+
+  it.each([
+    { content: [{ type: "text" as const, text: "Pull request branch update is in progress" }], isError: false },
+    {
+      content: [{ type: "text" as const, text: '{"message":"Updating pull request branch."}' }],
+      structuredContent: { message: "Updating pull request branch." },
+      isError: false,
+    },
+  ])("shows an accepted branch update as queued", async (result) => {
+    const action = create(ActionIdentitySchema, { group: "github", name: "update_pull_request_branch" });
+    expect(renderActionOutcome(action, result)).toEqual({ label: "Update queued", failed: false });
+    const receipt = await mount(renderDetailsResult(action, result));
+    expect(shownText(receipt)).toContain("GitHub accepted the update");
+  });
+
+  it("links matching PR titles and shows when the result is incomplete", async () => {
+    const result = {
+      content: [],
+      structuredContent: {
+        total_count: 2,
+        incomplete_results: true,
+        items: [
+          {
+            title: "Review staging changes",
+            state: "open",
+            html_url: "https://github.com/test-owner/test-repo/pull/5",
+          },
+          { title: "Unsafe URL", html_url: "javascript:alert(1)" },
+        ],
+      },
+      isError: false,
+    };
+    const receipt = await mount(renderDetailsResult(SEARCH_PULL_REQUESTS, result));
+    expect(shownText(receipt)).toContain("incomplete search results");
+    expect(shownText(receipt)).toContain("test-owner/test-repo · Open");
+    expect([...receipt.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["Review staging changes"]);
   });
 });

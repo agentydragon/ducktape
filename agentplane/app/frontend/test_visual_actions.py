@@ -630,7 +630,7 @@ EXAMPLES = (
             ],
         },
         {"ref": "refs/heads/docs", "object": {"sha": "0123456789abcdef0123456789abcdef01234567", "type": "commit"}},
-        "0123456789abcdef",
+        "Pushed to docs.",
     ),
     ActionExample(
         "github",
@@ -643,7 +643,7 @@ EXAMPLES = (
             "branch": "docs",
         },
         {"commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}, "content": None},
-        "0123456789abcdef",
+        "Deleted file.",
         compact_card_expands=False,
     ),
     ActionExample(
@@ -656,15 +656,15 @@ EXAMPLES = (
             "state": "closed",
             "body": "Closed in favor of a smaller change.\nThe readiness checks move to a follow-up.",
         },
-        {"id": "4200", "html_url": "https://github.com/example/service/pull/42"},
-        "pull/42",
+        {"id": "4200", "url": "https://github.com/example/service/pull/42"},
+        "Pull request updated.",
     ),
     ActionExample(
         "github",
         "update_pull_request_branch",
         {"owner": "example", "repo": "service", "pullNumber": 42, "expectedHeadSha": "0123456789abcdef"},
-        {"status": "updated"},
-        "updated",
+        "Pull request branch update is in progress",
+        "Update queued",
         compact_card_expands=False,
     ),
     ActionExample(
@@ -679,15 +679,26 @@ EXAMPLES = (
             "branch": "docs",
             "allow_symlink_write": False,
         },
-        {"commit": {"sha": "0123456789abcdef0123456789abcdef01234567"}},
-        "0123456789abcdef",
+        {
+            "commit": {
+                "sha": "0123456789abcdef0123456789abcdef01234567",
+                "html_url": "https://github.com/example/service/commit/0123456789abcdef0123456789abcdef01234567",
+            },
+            "content": {
+                "name": "deployment.md",
+                "path": "docs/deployment.md",
+                "sha": "abcdef0123456789abcdef0123456789abcdef01",
+                "html_url": "https://github.com/example/service/blob/docs/docs/deployment.md",
+            },
+        },
+        "Committed file changes.",
     ),
     ActionExample(
         "github",
         "create_branch",
         {"owner": "example", "repo": "service", "branch": "docs", "from_branch": "devel"},
         {"ref": "refs/heads/docs", "object": {"sha": "0123456789abcdef0123456789abcdef01234567", "type": "commit"}},
-        "refs/heads/docs",
+        "Created branch docs.",
         compact_card_expands=False,
     ),
     ActionExample(
@@ -704,8 +715,8 @@ EXAMPLES = (
             "maintainer_can_modify": False,
             "reviewers": ["reviewer"],
         },
-        {"number": 42, "html_url": "https://github.com/example/service/pull/42"},
-        "42",
+        {"id": "4200", "html_url": "https://github.com/example/service/pull/42"},
+        "Pull request created.",
     ),
     ActionExample(
         "github",
@@ -721,7 +732,8 @@ EXAMPLES = (
             "fields": ["number", "title", "state", "html_url"],
         },
         {
-            "total_count": 1,
+            "total_count": 11,
+            "incomplete_results": True,
             "items": [
                 {
                     "number": 42,

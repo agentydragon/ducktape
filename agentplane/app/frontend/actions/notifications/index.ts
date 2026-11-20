@@ -97,6 +97,10 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["update_pull_request", updatePullRequestNotification],
       ["create_branch", createBranchNotification],
       ["create_pull_request", createPullRequestNotification],
+      ["create_or_update_file", fixedActionNotification("Write GitHub file")],
+      ["delete_file", fixedActionNotification("Delete GitHub file")],
+      ["search_pull_requests", fixedActionNotification("Search GitHub pull requests")],
+      ["update_pull_request_branch", fixedActionNotification("Update GitHub pull request branch")],
     ]),
   ],
   [

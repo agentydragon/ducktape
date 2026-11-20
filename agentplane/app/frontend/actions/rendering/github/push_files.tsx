@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
+import { filesPushed } from "./receipts";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -105,6 +106,9 @@ function PushFiles({ args }: { args: PushFilesArguments }): JSX.Element {
   return (
     <Stack gap="xs">
       <TextBlock text={args.message} heading="Commit message" format="prose" clamp={false} />
+      <Text size="sm" c="dimmed">
+        Creates the branch from the default branch if needed.
+      </Text>
       {args.files.map((file, index) => (
         // A push may list the same path twice; position is its identity.
         <PushedFileBlock key={index} file={file} />
@@ -125,6 +129,6 @@ export const pushFilesPresentation: ActionPresentation = {
   fallbackLabel: "Push files to GitHub",
   label: pushFilesLabel,
   pane: { collapsed: pushFilesCollapsed, opened: pushFilesPane },
-  details: { arguments: pushFilesPane },
+  details: { arguments: pushFilesPane, result: filesPushed },
   offersCardDecisionButtons: offersCardDecisionButtonsPushFiles,
 };
