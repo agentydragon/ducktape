@@ -43,9 +43,11 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import initial_memory_request_annotations
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
@@ -75,6 +77,7 @@ _RECORD_BUNDLE = "platform-sessions-recorder-trust"
 _RECORD_CA_DIR = "/var/run/session-recorder-ca"
 _RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
 _RECORD_PORT = 18080
+_CPU_REQUEST = "50m"
 
 
 def _provider_name(instance: str) -> str:
@@ -187,7 +190,7 @@ def _container_security() -> k8s.SecurityContext:
 
 def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
     return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string(memory_request)},
+        requests={"cpu": k8s.Quantity.from_string(_CPU_REQUEST), "memory": k8s.Quantity.from_string(memory_request)},
         limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
     )
 
@@ -201,11 +204,16 @@ def _deployment(
     selector_name: str,
     node_selector: dict[str, str] | None = None,
     init_containers: list[k8s.Container] | None = None,
+    vpa_policy: ContainerPolicy | None = None,
 ) -> None:
     deployment = k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=name,
+            namespace=NAMESPACE,
+            annotations=initial_memory_request_annotations(vpa_policy) if vpa_policy is not None else None,
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -427,6 +435,24 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
+    # Reserve the sampled working-set peaks in the providers that fit at their ceilings.
+    # Recorder and other init-container resources are outside these policies.
+    vpa_policy: ContainerPolicy | None
+    match instance:
+        case "anthropic":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
+            )
+        case "blueshield":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="416Mi", memory_limit="512Mi"
+            )
+        case "quest-scheduler":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="576Mi", memory_limit="704Mi"
+            )
+        case _:
+            vpa_policy = None
     _deployment(
         chart,
         instance,
@@ -517,6 +543,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         selector_name=name,
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         init_containers=[*recorder_init, *recorder_sidecars],
+        vpa_policy=vpa_policy,
     )
     _service(
         chart,
@@ -622,6 +649,9 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
+        vpa_policy=ContainerPolicy.memory_requests_only(
+            "gateway", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit="96Mi"
+        ),
     )
     _service(
         chart,
