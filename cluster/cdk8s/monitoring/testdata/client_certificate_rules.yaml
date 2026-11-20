@@ -45,7 +45,7 @@ tests:
   - name: expiring client over one day away fires only warning
     interval: 1m
     input_series:
-      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="1800"}
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="1800.0"}
         values: 0+10x15
       - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="86400"}
         values: 0+10x15
