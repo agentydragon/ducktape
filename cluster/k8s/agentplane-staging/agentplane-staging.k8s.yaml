@@ -1295,6 +1295,17 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: llm-ingress
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - configMap:
             name: public-web-pki
@@ -4462,6 +4473,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - configMap:
             name: app-config
@@ -6383,6 +6405,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: environments
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: environments-client-workload-tls
           secret:
@@ -7100,6 +7133,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: actions
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: secret-haku-console-github-mcp-client-credentials
           secret:
@@ -8441,6 +8485,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mcp-edge
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: secret-agentplane-mcp-oauth
           secret:
@@ -11129,6 +11184,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: policy-controller
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - name: workload-tls
           secret:
