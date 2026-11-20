@@ -13,9 +13,6 @@ from collections.abc import Iterable
 
 from devinfra.buildbuddy.cli import CLIError, run
 
-DEFAULT_BASE_URL = "https://app.buildbuddy.io"
-DEFAULT_TIMEOUT_SECONDS = 120
-
 
 class BuildBuddyError(Exception):
     """The invocation could not be read. Callers decide what an absence means."""
@@ -81,34 +78,18 @@ class Invocation:
         return grouped
 
 
-def fetch_blob(
-    uri: str,
-    *,
-    invocation_id: str | None = None,
-    api_key: str | None = None,
-    base_url: str = DEFAULT_BASE_URL,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> bytes:
+def fetch_blob(uri: str) -> bytes:
     """Content of a `bytestream://` URI as the event stream reports it."""
-    args = ["blob", "cat", uri]
-    if invocation_id is not None:
-        args.extend(("--invocation", invocation_id))
     try:
-        return run(*args, timeout=timeout, api_key=api_key, base_url=base_url)
+        return run("blob", "cat", uri)
     except CLIError as e:
         raise BuildBuddyError(str(e)) from e
 
 
-def read(
-    invocation_id: str,
-    *,
-    api_key: str | None = None,
-    base_url: str = DEFAULT_BASE_URL,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> Invocation:
+def read(invocation_id: str) -> Invocation:
     """Read an invocation through bbapi's stable structured export."""
     try:
-        raw = run("invocation", "export", invocation_id, timeout=timeout, api_key=api_key, base_url=base_url)
+        raw = run("invocation", "export", invocation_id)
     except CLIError as e:
         raise BuildBuddyError(str(e)) from e
     try:
