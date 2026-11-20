@@ -61,6 +61,20 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: admission-controller
+              app.kubernetes.io/instance: "{{ .Release.Name }}"
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 0
     backgroundController:
       annotations:
         goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "208Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
