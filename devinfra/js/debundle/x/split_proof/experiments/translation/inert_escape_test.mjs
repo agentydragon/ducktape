@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { lowerDump } from "../lowering/dump_core.mjs";
@@ -325,4 +325,53 @@ for (const [name, code] of [
   const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /FAIL\s+OrderOk/);
+}
+
+// Identifier values can throw before the later literal initializes. A callback
+// that escaped earlier distinguishes the original from the forced bad split,
+// even though no code reenters while the object initializer itself runs.
+{
+  const code = `globalThis.saved = () => x;\nconst x = 1;\nconst obj = { value: later };\nconst later = 2;`;
+  const dir = path.join(temp, "record_tdz_observer");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "record_tdz_observer.mjs");
+  const input = path.join(temp, "record_tdz_observer-ast.json");
+  const spec = path.join(temp, "record_tdz_observer-spec.json");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#1", "#3"], "side.mjs": ["#0", "#2"] } })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  const forced = run(process.env.LOWERSPLIT, [input, spec, dir, "--force"]);
+  assert.equal(forced.status, 1, `${forced.stdout}\n${forced.stderr}`);
+  const observe = (file) =>
+    run(process.execPath, [
+      "--input-type=module",
+      "-e",
+      `try { await import(${JSON.stringify(pathToFileURL(file).href)}); } catch (_) { try { console.log(globalThis.saved()); } catch (error) { console.log(error.name); } }`,
+    ]);
+  const original = observe(source);
+  const split = observe(path.join(dir, "entry.mjs"));
+  assert.equal(original.status, 0, original.stderr);
+  assert.equal(split.status, 0, split.stderr);
+  assert.equal(original.stdout, "1\n");
+  assert.equal(split.stdout, "ReferenceError\n");
+  const bundle = path.join(temp, "record_tdz_observer-bundle.json");
+  const tree = path.join(temp, "record_tdz_observer-tree.json");
+  const cert = path.join(temp, "record_tdz_observer-cert.json");
+  for (const args of [
+    [frontend, "bundle", source, "--out", bundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
+    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
+  ]) {
+    const result = run(process.execPath, args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+  assert.equal(checked.status, 4, `${checked.stdout}\n${checked.stderr}`);
+  assert.match(checked.stdout, /FAIL\s+OrderOk/);
 }

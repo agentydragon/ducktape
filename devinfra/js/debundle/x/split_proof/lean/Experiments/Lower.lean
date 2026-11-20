@@ -538,7 +538,12 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     let observedInert := t.inert && !t.hoisted && !unobserved
     let observedInit := observedInert && primitiveConstant t.source
     let nonReentrant := directArrowConstant t.source
-    let effect := !(t.inert || identityInert || factoryInert) || (observedInert && !observedInit) || t.rawEager.any (!declared.contains ·)
+    -- Even a syntactically inert eager identifier read can throw (for
+    -- example by reading a lexical binding in its temporal dead zone). If it
+    -- throws, an escaped observer may see which earlier bindings initialized.
+    -- Keep the read ordered against observed initializers and other effects.
+    let mayThrowRead := t.inert && !t.hoisted && !t.rawEager.isEmpty
+    let effect := !(t.inert || identityInert || factoryInert) || (observedInert && !observedInit) || mayThrowRead || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
