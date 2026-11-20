@@ -1,4 +1,4 @@
-import { PI } from "./consts.mjs";
+import { PI } from "./entry.js";
 
 const scale = [1, 2].map((x) => x * PI);
 

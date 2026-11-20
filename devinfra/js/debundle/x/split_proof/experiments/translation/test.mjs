@@ -57,6 +57,13 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
   const baseExpect = existsSync(expectFile)
     ? JSON.parse(readFileSync(expectFile, "utf8"))
     : { code: 0, contains: "PLAN SOUND" };
+  if (baseExpect.node_error) {
+    const original = run(process.execPath, [path.join(fixture, "bundle.js")]);
+    if (original.status !== 0) throw new Error(`${name}: original bundle failed: ${original.stderr}`);
+    const emitted = run(process.execPath, [path.join(baseOut, "entry.js")]);
+    if (emitted.status === 0 || !emitted.stderr.includes(baseExpect.node_error))
+      throw new Error(`${name}: expected Node ${baseExpect.node_error}, got ${emitted.stderr}`);
+  }
   const cases = [{ name: "(unchanged)", expect: baseExpect, run: () => base }];
   const variantsFile = path.join(fixture, "variants.json");
   for (const variant of existsSync(variantsFile) ? JSON.parse(readFileSync(variantsFile, "utf8")) : []) {

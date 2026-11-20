@@ -12,10 +12,6 @@ root = "Main"
 name = "Experiments"
 
 [[lean_exe]]
-name = "check"
-root = "Experiments.Check"
-
-[[lean_exe]]
 name = "lower"
 root = "Experiments.LowerMain"
 

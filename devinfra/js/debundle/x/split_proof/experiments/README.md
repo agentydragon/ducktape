@@ -3,46 +3,16 @@
 Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts.
 Line counts are Lean code lines (no comments, no blank lines).
 
-## 1. Check someone else's output: input + output → confirmation
+## 1. Sound plans without a spec
 
-No spec and no splitter. `extract/extract_output.mjs` reads from each output file only its `import`s,
-its `export { … }`, and the verbatim text of every other statement.
-[`CheckOutput.lean`](../lean/Experiments/CheckOutput.lean) (56 lines) matches those texts against the bundle's
-statements, recovers the plan, and runs the same checks. So "same code, just moved" is checked in Lean, not by the parser.
+[`EsmSplit/Correct.lean`](../lean/EsmSplit/Correct.lean) defines `Sound` and proves `sound_correct`:
+if a recovered plan passes the structural and ordering checks, it satisfies `Correct`. The translation
+validator (§ 12) uses those checks on a plan recovered from a bundle and an output tree. Its pairing,
+renaming and JavaScript front end are not covered by that theorem.
 
-`./run.sh --experiments` prints, for the splitter's output, an independently written reshuffle
-([`external_ok/`](check_output/external_ok)), and tampered copies:
-
-| Case                                    | Checker                 | Node                    |
-| --------------------------------------- | ----------------------- | ----------------------- |
-| splitter output                         | accept                  | same output             |
-| hand-written reshuffle (`external_ok/`) | accept                  | same output             |
-| swap two registrations                  | `OrderOk`               | output differs          |
-| forget an import                        | `Hygienic`              | `ReferenceError`        |
-| add a `console.log`                     | statement not in bundle | extra line              |
-| edit a constant                         | statement not in bundle | output differs          |
-| forget an export                        | `Linkable`              | `SyntaxError` at link   |
-| forget `import "./plugins.mjs"`         | `Permutes`              | registrations never run |
-| move `label` into `main.mjs` (cycle)    | `OrderOk`               | `ReferenceError` (TDZ)  |
-
-The literal "input + output + proof" file is [`ExternalOk.lean`](../lean/Experiments/ExternalOk.lean) (generated):
-
-```lean
-theorem output_ok : checkOutput bundle "main.mjs" outs = true := by decide +kernel
-theorem output_correct : ∃ P, Matches bundle "main.mjs" outs P ∧ Correct bundle P := checkOutput_correct output_ok
-```
-
-A tampered output makes `decide` fail with "proved that the proposition is false". No certificate exists for it.
-
-### A soundness hole this found in my front end
-
-While writing the real semantics (section 2) I noticed the front end called a callback's reads _lazy_:
-in `[1, 2].map((x) => x * PI)` the arrow runs while the statement runs. A split that put `PI` in a module
-evaluated later was **accepted** and throws `ReferenceError: Cannot access 'PI' before initialization`.
-The Lean proofs were not wrong. They are relative to footprints, and the footprint was unsound.
-Fixed in [`extract.mjs`](../extract/extract.mjs): a statement with effects counts everything it mentions as eager.
-Regression: [`callback_bug/`](check_output/callback_bug), run by `check_all.py`.
-The fuzzer did not find it: the example bundle has no callbacks.
+An earlier verbatim-output checker exposed a callback/TDZ bug in the extractor: it treated a callback's
+read as lazy even when the callback ran during initialization. The regression now checks the extractor's
+eager read and the translation validator's verdict, and runs the unsafe output in Node.
 
 ## 2. A real semantics for a small JS-like language
 
@@ -182,7 +152,7 @@ The semantic theorem does not depend on bundle size.
 ## 6. Lower the AST into Lean
 
 The idea: acorn's ESTree goes into Lean as data, and Lean computes the footprints. Then the thing analyzed and the thing emitted are the
-same nodes, and the analysis that was my weakest trusted part (section 1's soundness hole lived there) becomes Lean code that can be tested,
+same nodes, and the analysis that was my weakest trusted part (including the callback soundness hole in § 1) becomes Lean code that can be tested,
 and later proved.
 
 [`dump.mjs`](lowering/dump.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.

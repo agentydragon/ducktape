@@ -44,3 +44,8 @@ js_test(
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
     tags = ["manual"],
 )
+
+exports_files(
+    ["fixtures/callback/bundle.js"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)
