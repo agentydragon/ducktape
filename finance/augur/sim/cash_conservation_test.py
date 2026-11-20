@@ -56,7 +56,6 @@ from finance.augur.sim.property import (
     ScheduledPurchase,
     ScheduledSale,
 )
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
@@ -66,7 +65,7 @@ from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR
+from finance.augur.sim.testing.situs import property_tax
 from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
@@ -319,18 +318,7 @@ def property_sale_world() -> World:
                 ),
             ),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=PropertyId("house"),
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(PropertyId("house"), COUNTY),),
     )
     return world
 

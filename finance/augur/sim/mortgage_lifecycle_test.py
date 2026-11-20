@@ -26,7 +26,7 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.series import level_series
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
@@ -223,18 +223,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
                 ),
             )
         ),
-        tax_policies=(
-            PropertyTaxPolicy(
-                property_id=PropertyId(f"{ALICE}-home"),
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=AgentId("county"),
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        tax_policies=(property_tax(PropertyId(f"{ALICE}-home"), AgentId("county")),),
     )
     recorded = run(world)
 

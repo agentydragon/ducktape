@@ -59,13 +59,13 @@ from finance.augur.sim.property import (
     ScheduledPurchase,
     ScheduledSale,
 )
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import SaltDeduction
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import property_tax
 from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
@@ -224,18 +224,7 @@ def compose(case: Expected) -> World:
             residence_events=(PrimaryResidenceEvent(month=LET, agent_id=OWNER, property_id=None),),
             rented_fraction_events=(RentedFraction(month=LET, property_id=HOME, rented_fraction_ppb=rate_to_ppb(1)),),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=HOME,
-                owner_agent_id=OWNER,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=2024,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(HOME, COUNTY, owner=OWNER),),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=HORIZON - 1),

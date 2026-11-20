@@ -26,14 +26,13 @@ from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, Parcel, PrimaryResidence, ScheduledPurchase
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import SaltCap, SaltDeduction
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
@@ -100,18 +99,7 @@ def run(cap: int) -> Rollout:
             ),
             initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=HOME),),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=HOME,
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(HOME, COUNTY, owner=ALICE),),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=11),

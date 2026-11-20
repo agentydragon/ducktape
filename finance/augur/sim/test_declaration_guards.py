@@ -53,7 +53,7 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import MortgageInterestDeduction
-from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, property_tax
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -519,16 +519,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         composed().declare_housing(housing, ())
 
 
-PROPERTY_TAX = PropertyTaxPolicy(
-    property_id=PURCHASE.property_id,
-    owner_agent_id=HOLDER,
-    from_account_id=CHECKING,
-    tax_authority_agent_id=COUNTERPARTY,
-    tax_authority_account_id=CHECKING,
-    start_year=START_YEAR,
-    start_month=0,
-    end_month=None,
-)
+PROPERTY_TAX = property_tax(PURCHASE.property_id, COUNTERPARTY, owner=HOLDER)
 
 
 @pytest.mark.parametrize(

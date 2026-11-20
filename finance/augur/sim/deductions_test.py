@@ -30,13 +30,12 @@ from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
@@ -221,18 +220,7 @@ def compose(case: Situation) -> World:
                 *case.extra_purchases,
             )
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=PropertyId("sf_home"),
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COLLECTOR,
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(PropertyId("sf_home"), COLLECTOR),),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
