@@ -22,9 +22,7 @@ class KyvernoApplyResult:
 
     passed: int
     failed: int
-    warned: int
     errored: int
-    skipped: int
     stdout: str
     mutated_resources: list[dict] = field(default_factory=list)
 
@@ -33,7 +31,7 @@ class KyvernoApplyResult:
         return self.failed == 0 and self.errored == 0
 
 
-_SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*(\d+),\s*error:\s*(\d+),\s*skip:\s*(\d+)")
+_SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*\d+,\s*error:\s*(\d+),\s*skip:\s*\d+")
 
 
 def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None) -> KyvernoApplyResult:
@@ -70,9 +68,7 @@ def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str
         return KyvernoApplyResult(
             passed=int(match.group(1)),
             failed=int(match.group(2)),
-            warned=int(match.group(3)),
-            errored=int(match.group(4)),
-            skipped=int(match.group(5)),
+            errored=int(match.group(3)),
             stdout=stdout,
             mutated_resources=mutated,
         )
