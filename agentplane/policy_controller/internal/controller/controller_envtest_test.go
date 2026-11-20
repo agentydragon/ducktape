@@ -321,15 +321,7 @@ func startPolicyAPIServer(t *testing.T, controller bool) (client.Client, client.
 // whom admission sees by name; "" keeps the envtest administrator.
 func startPolicyAPIServerAs(t *testing.T, controller bool, user string) (client.Client, client.Client, *Reconciler) {
 	t.Helper()
-	kube, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t)
 	config := kube.Config
 
 	scheme := runtime.NewScheme()

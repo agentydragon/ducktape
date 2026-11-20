@@ -90,15 +90,7 @@ type replica struct {
 }
 
 func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
-	kube, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t)
 	if _, err := kube.Clientset.CoreV1().Namespaces().Create(t.Context(), &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: servingTestNamespace},
 	}, metav1.CreateOptions{}); err != nil {

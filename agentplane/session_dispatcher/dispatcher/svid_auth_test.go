@@ -70,15 +70,7 @@ func (p *svidAdmissionProbe) WatchDispatches(
 }
 
 func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
@@ -165,15 +157,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 }
 
 func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
