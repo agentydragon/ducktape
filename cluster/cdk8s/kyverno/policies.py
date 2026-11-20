@@ -21,16 +21,13 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExcludeAnySubjects,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
-    ClusterPolicySpecRulesMatchAnyResourcesSelector,
     ClusterPolicySpecRulesMutate,
     ClusterPolicySpecValidationFailureAction,
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
-from cluster.cdk8s.vpa_policy import REQUESTS_ONLY, VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
@@ -265,91 +262,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
     )
 
 
-def default_vpa_requests_only_chart(app: App) -> Chart:
-    """Defaults goldilocks' VPA resource policy to controlledValues: RequestsOnly on
-    every auto-mode namespace.
-
-    VPA scales a container's limits *in proportion to its requests*. A workload whose
-    steady-state usage is far below its cold-start need therefore gets its limit dragged
-    down with its request, and CFS quota is a hard rate limiter regardless of node load
-    — so the container is throttled even on an idle node. On 2026-08-09 that admitted
-    both LiteLLM replicas at a 150m CPU limit against a declared 1. Cold start (imports,
-    model registration, a Prisma migration) could not finish inside the startup probe
-    budget, the probe killed every attempt, and the loop fed itself: a container stuck
-    in startup burns no CPU, so the recommendation never recovered. Both replicas
-    crashlooped for six hours, the Service lost all backends, and every in-cluster model
-    call failed with an immediate EPERM. An audit afterwards found 15 containers running
-    a collapsed CPU limit, one of them (paperless) also behind a startup probe.
-
-    RequestsOnly keeps VPA doing the part it is good at — right-sizing requests from
-    observed usage — and leaves every limit exactly as the manifest declares.
-
-    Defaulted here rather than per-namespace because goldilocks has no cluster-level
-    setting for it: its precedence is workload annotation -> namespace annotation -> a
-    hardcoded UpdateModeOff, and its only global flags are
-    OnByDefault/DryRun/Include/ExcludeNamespaces/IgnoreControllerKind. Without this
-    policy the annotation has to be repeated in every namespace, and a namespace added
-    later silently gets the collapsing behaviour — which is exactly how the 15 above
-    accumulated.
-
-    Mutating the namespace (goldilocks' *input*) rather than the VPA object it writes:
-    goldilocks stays the only writer of the VPA, so there is no controller-versus-webhook
-    rewrite loop.
-
-    The +() anchor adds the annotation only when absent, so it never fights a namespace
-    that sets its own policy, including one with explicit bounds.
-
-    Admission-only (background: false), matching default-revision-history-limit:
-    matching UPDATE means existing namespaces pick this up on their next Flux reconcile
-    (an SSA apply is an UPDATE admission), after which goldilocks rebuilds each VPA with
-    the new resourcePolicy.
-    """
-    return _cluster_policy_chart(
-        app,
-        "default-vpa-requests-only",
-        annotations=_annotations(
-            title="Default VPA to RequestsOnly",
-            category="Best Practices",
-            severity="high",
-            subject="Namespace",
-            description=(
-                "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to "
-                "namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down "
-                "in proportion to its requests. Only applied when the namespace does not already declare its "
-                "own policy."
-            ),
-        ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-vpa-requests-only",
-                    match=match_resources(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Namespace"],
-                            operations=[_CREATE, _UPDATE],
-                            selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(
-                                match_labels={VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
-                            ),
-                        )
-                    ),
-                    mutate=ClusterPolicySpecRulesMutate(
-                        patch_strategic_merge={
-                            "metadata": {
-                                "annotations": {
-                                    # Add-if-absent: never overwrites a namespace's own policy.
-                                    f"+({VPA_RESOURCE_POLICY_ANNOTATION})": resource_policy_annotation(REQUESTS_ONLY)
-                                }
-                            }
-                        }
-                    ),
-                )
-            ],
-        ),
-    )
-
-
 def restrict_agent_gateway_routes_chart(app: App) -> Chart:
     return _cluster_policy_chart(
         app,
@@ -532,7 +444,6 @@ CHARTS = (
     require_gitops_chart,
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
-    default_vpa_requests_only_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
     cleanup_controller_jobs_chart,

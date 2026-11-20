@@ -104,13 +104,12 @@ Goldilocks VPA was moved to `controlledValues: RequestsOnly` after the
 2026-08-09 LiteLLM outage (VPA scales limits in proportion to requests, which
 collapsed the CPU limit to 150m and made cold start impossible). Limits are now
 whatever the manifest declares. Goldilocks has no cluster-level setting for
-this, so the `default-vpa-requests-only` Kyverno policy defaults the annotation
-on every namespace labelled `vpa-update-mode: auto`.
+this, so the cdk8s Namespace helper defaults auto-mode namespaces to a
+`RequestsOnly` resource policy at generation time. Hand-written parked
+namespaces declare the same policy explicitly.
 
-Gotcha: that policy adds the annotation only when it is **absent**, so a
-namespace declaring any policy of its own — even a partial one that sets only
-`minAllowed` — opts out of the default entirely and must spell out
-`controlledValues` itself (`airlock`, `langfuse`).
+A namespace declaring any policy of its own opts out of that default and must
+specify `controlledValues` for its container policies (`airlock`, `langfuse`).
 
 That exposed a second problem: **14 containers declared a memory limit below
 what they actually use**, and only VPA silently raising the ceiling kept them
