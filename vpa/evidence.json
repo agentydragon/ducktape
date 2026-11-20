@@ -20030,9 +20030,17 @@
     "controlled_values": "RequestsOnly",
     "min_memory": "448Mi",
     "max_memory": "576Mi",
-    "recommendation_available": false,
+    "recommendation_available": true,
     "existing_pod_ready": true,
-    "note": "The Deployment remains a singleton; Goldilocks is disabled in the namespace."
+    "note": "The Deployment remains a singleton; Goldilocks is disabled in the namespace.",
+    "recommendation_observed_at_utc": "2026-11-20T22:00:00Z",
+    "target_memory": "448Mi",
+    "dry_run_requests": {
+      "cpu": "100m",
+      "memory": "448Mi"
+    },
+    "dry_run_memory_limit": "1Gi",
+    "inventory_observed_at_utc": "2026-11-20T22:00:59Z"
   },
   "cainjector_recreate": {
     "observed_at_utc": "2026-11-20T21:56:14Z",

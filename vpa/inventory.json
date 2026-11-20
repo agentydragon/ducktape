@@ -1,7 +1,7 @@
 {
-  "collection_started_utc": "2026-11-20T21:56:01Z",
-  "collection_finished_utc": "2026-11-20T21:56:14Z",
-  "history_end_utc": "2026-11-20T21:56:14Z",
+  "collection_started_utc": "2026-11-20T22:00:47Z",
+  "collection_finished_utc": "2026-11-20T22:00:59Z",
+  "history_end_utc": "2026-11-20T22:00:59Z",
   "history_query": "max by (namespace,pod,container) (max_over_time(container_memory_working_set_bytes{container!=\"\",container!=\"POD\",pod!=\"\"}[7d]))",
   "counts": {
     "active_controllers": 233,
@@ -49,7 +49,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 3031.2,
+          "currentMemoryMaxMiB": 3072.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 6309.6,
           "peakSampledPods": 1
@@ -95,7 +95,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 74.2,
+          "currentMemoryMaxMiB": 73.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 101.1,
           "peakSampledPods": 1
@@ -134,7 +134,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7458.6,
+          "currentMemoryMaxMiB": 6863.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8419.0,
           "peakSampledPods": 1
@@ -180,7 +180,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 79.9,
+          "currentMemoryMaxMiB": 80.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 116.1,
           "peakSampledPods": 1
@@ -219,7 +219,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 4992.9,
+          "currentMemoryMaxMiB": 5214.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 7407.9,
           "peakSampledPods": 1
@@ -242,7 +242,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 446.0,
+          "currentMemoryMaxMiB": 445.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 446.0,
           "peakSampledPods": 1
@@ -265,7 +265,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 86.1,
+          "currentMemoryMaxMiB": 85.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 152.3,
           "peakSampledPods": 1
@@ -499,7 +499,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 111.2,
+          "currentMemoryMaxMiB": 111.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 134.7,
           "peakSampledPods": 1
@@ -810,7 +810,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 699.6,
+          "currentMemoryMaxMiB": 701.8,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 706.0,
           "peakSampledPods": 9
@@ -835,7 +835,7 @@
               },
               "upperBound": {
                 "cpu": "203m",
-                "memory": "869809843"
+                "memory": "869809663"
               },
               "uncappedTarget": {
                 "cpu": "182m",
@@ -1003,7 +1003,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 190.1,
+          "currentMemoryMaxMiB": 178.5,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 297.8,
           "peakSampledPods": 9
@@ -1027,8 +1027,8 @@
                 "memory": "203697479"
               },
               "upperBound": {
-                "cpu": "78m",
-                "memory": "273278075"
+                "cpu": "93m",
+                "memory": "273278018"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -1170,7 +1170,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 225.7,
+          "currentMemoryMaxMiB": 193.7,
           "sampledPods": 8,
           "peak7dCurrentPodMiB": 259.7,
           "peakSampledPods": 8
@@ -1270,7 +1270,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 32.6,
+          "currentMemoryMaxMiB": 35.9,
           "sampledPods": 5,
           "peak7dCurrentPodMiB": 50.6,
           "peakSampledPods": 5
@@ -1359,7 +1359,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 50.8,
+          "currentMemoryMaxMiB": 50.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 148.6,
           "peakSampledPods": 2
@@ -1425,11 +1425,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "63287057"
+                "memory": "63287781"
               },
               "upperBound": {
                 "cpu": "33m",
-                "memory": "333166786"
+                "memory": "332537626"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -1448,7 +1448,7 @@
               },
               "upperBound": {
                 "cpu": "33m",
-                "memory": "71524146"
+                "memory": "71389078"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -1603,7 +1603,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 991.7,
+          "currentMemoryMaxMiB": 1039.8,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 1279.8,
           "peakSampledPods": 9
@@ -1760,11 +1760,11 @@
               },
               "lowerBound": {
                 "cpu": "62m",
-                "memory": "813673443"
+                "memory": "813673465"
               },
               "upperBound": {
                 "cpu": "114m",
-                "memory": "1538488125"
+                "memory": "1538468281"
               },
               "uncappedTarget": {
                 "cpu": "93m",
@@ -1899,7 +1899,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 33.8,
+          "currentMemoryMaxMiB": 35.0,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 37.3,
           "peakSampledPods": 6
@@ -2079,7 +2079,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.4,
+          "currentMemoryMaxMiB": 28.9,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 31.3,
           "peakSampledPods": 9
@@ -2618,7 +2618,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 46.0,
+          "currentMemoryMaxMiB": 45.7,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 86.8,
           "peakSampledPods": 9
@@ -2798,7 +2798,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.6,
+          "currentMemoryMaxMiB": 25.7,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 29.1,
           "peakSampledPods": 9
@@ -2934,7 +2934,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.2,
+          "currentMemoryMaxMiB": 27.6,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 28.6,
           "peakSampledPods": 9
@@ -3070,7 +3070,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.6,
+          "currentMemoryMaxMiB": 48.4,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 77.4,
           "peakSampledPods": 9
@@ -3095,7 +3095,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "39005745"
+                "memory": "39004440"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -3114,7 +3114,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "39005745"
+                "memory": "39004440"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -3133,7 +3133,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "68368398"
+                "memory": "68366110"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -3256,11 +3256,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "379780693"
+                "memory": "379780902"
               },
               "upperBound": {
                 "cpu": "102m",
-                "memory": "721258150"
+                "memory": "721136610"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -3383,11 +3383,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "475951881"
+                "memory": "475952062"
               },
               "upperBound": {
                 "cpu": "118m",
-                "memory": "779755931"
+                "memory": "779658518"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -3510,11 +3510,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "442253592"
+                "memory": "442253835"
               },
               "upperBound": {
                 "cpu": "127m",
-                "memory": "776052500"
+                "memory": "775921727"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -3637,11 +3637,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "475931712"
+                "memory": "475931908"
               },
               "upperBound": {
                 "cpu": "120m",
-                "memory": "847900892"
+                "memory": "847787791"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -3764,11 +3764,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "442318552"
+                "memory": "442318741"
               },
               "upperBound": {
                 "cpu": "144m",
-                "memory": "741043084"
+                "memory": "740941082"
               },
               "uncappedTarget": {
                 "cpu": "78m",
@@ -3891,11 +3891,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "475850777"
+                "memory": "475851039"
               },
               "upperBound": {
                 "cpu": "127m",
-                "memory": "834149670"
+                "memory": "834008709"
               },
               "uncappedTarget": {
                 "cpu": "78m",
@@ -3946,7 +3946,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 5.3,
+          "currentMemoryMaxMiB": 5.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.8,
           "peakSampledPods": 1
@@ -4018,11 +4018,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "475938678"
+                "memory": "475938868"
               },
               "upperBound": {
                 "cpu": "119m",
-                "memory": "786858129"
+                "memory": "786755485"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -4105,7 +4105,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 239.4,
+          "currentMemoryMaxMiB": 239.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 289.1,
           "peakSampledPods": 1
@@ -4125,12 +4125,12 @@
                 "memory": "50Mi"
               },
               "lowerBound": {
-                "cpu": "7m",
+                "cpu": "8m",
                 "memory": "50Mi"
               },
               "upperBound": {
-                "cpu": "1991m",
-                "memory": "2081500000"
+                "cpu": "1771m",
+                "memory": "1851500000"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -4144,12 +4144,12 @@
                 "memory": "297164212"
               },
               "lowerBound": {
-                "cpu": "7m",
-                "memory": "213418710"
+                "cpu": "8m",
+                "memory": "220841417"
               },
               "upperBound": {
-                "cpu": "8869m",
-                "memory": "53786722372"
+                "cpu": "7889m",
+                "memory": "47843438132"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -4200,7 +4200,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2.3,
+          "currentMemoryMaxMiB": 2.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.6,
           "peakSampledPods": 1
@@ -4232,7 +4232,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 362.0,
+          "currentMemoryMaxMiB": 349.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 442.7,
           "peakSampledPods": 1
@@ -4272,11 +4272,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "442247457"
+                "memory": "442247705"
               },
               "upperBound": {
                 "cpu": "103m",
-                "memory": "897806782"
+                "memory": "897652790"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -4431,7 +4431,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 160.3,
+          "currentMemoryMaxMiB": 160.6,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 270.7,
           "peakSampledPods": 9
@@ -4456,7 +4456,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "217351307"
+                "memory": "217345591"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -4583,7 +4583,7 @@
               },
               "upperBound": {
                 "cpu": "16m",
-                "memory": "55244434"
+                "memory": "55237528"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -4666,7 +4666,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.4,
+          "currentMemoryMaxMiB": 10.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 11.1,
           "peakSampledPods": 1
@@ -4761,7 +4761,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2.0,
+          "currentMemoryMaxMiB": 2.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.6,
           "peakSampledPods": 1
@@ -5091,7 +5091,7 @@
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "56386951"
+                "memory": "56379190"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -5472,7 +5472,7 @@
               },
               "upperBound": {
                 "cpu": "34m",
-                "memory": "73352119"
+                "memory": "73279239"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -5555,7 +5555,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.6,
+          "currentMemoryMaxMiB": 16.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 16.7,
           "peakSampledPods": 1
@@ -5682,7 +5682,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 6.6,
+          "currentMemoryMaxMiB": 6.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 13.6,
           "peakSampledPods": 1
@@ -5842,7 +5842,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 247.7,
+          "currentMemoryMaxMiB": 246.4,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 1087.8,
           "peakSampledPods": 6
@@ -5867,7 +5867,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "929359544"
+                "memory": "929358705"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -5983,7 +5983,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.0,
+          "currentMemoryMaxMiB": 16.1,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 17.2,
           "peakSampledPods": 6
@@ -6221,7 +6221,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "78954844"
+                "memory": "78954772"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -6369,7 +6369,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 69.2,
+          "currentMemoryMaxMiB": 68.1,
           "sampledPods": 7,
           "peak7dCurrentPodMiB": 255.5,
           "peakSampledPods": 7
@@ -6417,7 +6417,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.4,
+          "currentMemoryMaxMiB": 10.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 35.8,
           "peakSampledPods": 1
@@ -6449,7 +6449,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 26.5,
+          "currentMemoryMaxMiB": 26.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 27.5,
           "peakSampledPods": 1
@@ -6511,7 +6511,7 @@
               },
               "upperBound": {
                 "cpu": "24m",
-                "memory": "52063747"
+                "memory": "52063660"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -6530,7 +6530,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "38092743"
+                "memory": "38092678"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -6549,7 +6549,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "52063660"
+                "memory": "52063573"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -6680,7 +6680,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 76.2,
+          "currentMemoryMaxMiB": 76.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 83.8,
           "peakSampledPods": 2
@@ -6781,7 +6781,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 53.9,
+          "currentMemoryMaxMiB": 52.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 56.5,
           "peakSampledPods": 2
@@ -6819,7 +6819,7 @@
                 "memory": "128Mi"
               },
               "upperBound": {
-                "memory": "148054405"
+                "memory": "147967926"
               },
               "uncappedTarget": {
                 "memory": "100Mi"
@@ -6956,7 +6956,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 37.1,
+          "currentMemoryMaxMiB": 31.0,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 71.8,
           "peakSampledPods": 3
@@ -7004,7 +7004,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 305.9,
+          "currentMemoryMaxMiB": 306.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 438.6,
           "peakSampledPods": 1
@@ -7032,7 +7032,23 @@
               "mode": "Off"
             }
           ],
-          "recommendations": []
+          "recommendations": [
+            {
+              "containerName": "electric",
+              "target": {
+                "memory": "448Mi"
+              },
+              "lowerBound": {
+                "memory": "448Mi"
+              },
+              "upperBound": {
+                "memory": "576Mi"
+              },
+              "uncappedTarget": {
+                "memory": "410771395"
+              }
+            }
+          ]
         }
       ],
       "hpas": [],
@@ -7089,7 +7105,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 78.4,
+          "currentMemoryMaxMiB": 78.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 83.8,
           "peakSampledPods": 2
@@ -7291,7 +7307,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 53.6,
+          "currentMemoryMaxMiB": 52.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 64.2,
           "peakSampledPods": 2
@@ -7329,7 +7345,7 @@
                 "memory": "128Mi"
               },
               "upperBound": {
-                "memory": "179567868"
+                "memory": "179458467"
               },
               "uncappedTarget": {
                 "memory": "100Mi"
@@ -7493,7 +7509,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 43.3,
+          "currentMemoryMaxMiB": 40.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 47.1,
           "peakSampledPods": 2
@@ -7531,7 +7547,7 @@
                 "memory": "128Mi"
               },
               "upperBound": {
-                "memory": "148054405"
+                "memory": "147967926"
               },
               "uncappedTarget": {
                 "memory": "100Mi"
@@ -7594,9 +7610,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 54.1,
+          "currentMemoryMaxMiB": 54.0,
           "sampledPods": 2,
-          "peak7dCurrentPodMiB": 55.2,
+          "peak7dCurrentPodMiB": 55.3,
           "peakSampledPods": 2
         }
       ],
@@ -7632,7 +7648,7 @@
                 "memory": "128Mi"
               },
               "upperBound": {
-                "memory": "150196230"
+                "memory": "150104368"
               },
               "uncappedTarget": {
                 "memory": "100Mi"
@@ -7695,7 +7711,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 58.4,
+          "currentMemoryMaxMiB": 58.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 59.6,
           "peakSampledPods": 2
@@ -7796,7 +7812,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 47.4,
+          "currentMemoryMaxMiB": 47.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 52.2,
           "peakSampledPods": 2
@@ -7918,7 +7934,7 @@
               },
               "upperBound": {
                 "cpu": "100m",
-                "memory": "253384876"
+                "memory": "253384800"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -8050,7 +8066,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 744.3,
+          "currentMemoryMaxMiB": 737.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1078.7,
           "peakSampledPods": 1
@@ -8071,7 +8087,7 @@
             {
               "containerName": "server",
               "target": {
-                "cpu": "143m",
+                "cpu": "163m",
                 "memory": "1312092764"
               },
               "lowerBound": {
@@ -8080,10 +8096,10 @@
               },
               "upperBound": {
                 "cpu": "300m",
-                "memory": "1329833236"
+                "memory": "1329833070"
               },
               "uncappedTarget": {
-                "cpu": "143m",
+                "cpu": "163m",
                 "memory": "1312092764"
               }
             }
@@ -8157,11 +8173,11 @@
               },
               "lowerBound": {
                 "cpu": "108m",
-                "memory": "351189061"
+                "memory": "351189062"
               },
               "upperBound": {
                 "cpu": "205m",
-                "memory": "416316739"
+                "memory": "416316687"
               },
               "uncappedTarget": {
                 "cpu": "182m",
@@ -8274,7 +8290,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.4,
+          "currentMemoryMaxMiB": 26.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 38.9,
           "peakSampledPods": 1
@@ -8322,9 +8338,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 211.6,
+          "currentMemoryMaxMiB": 201.8,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 211.6,
+          "peak7dCurrentPodMiB": 212.1,
           "peakSampledPods": 1
         }
       ],
@@ -8370,7 +8386,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 185.2,
+          "currentMemoryMaxMiB": 202.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 260.6,
           "peakSampledPods": 1
@@ -8418,7 +8434,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 19.4,
+          "currentMemoryMaxMiB": 19.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 63.7,
           "peakSampledPods": 1
@@ -8466,7 +8482,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 221.7,
+          "currentMemoryMaxMiB": 221.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 226.5,
           "peakSampledPods": 1
@@ -8496,10 +8512,10 @@
                 "memory": "297164212"
               },
               "lowerBound": {
-                "memory": "296538218"
+                "memory": "296538676"
               },
               "upperBound": {
-                "memory": "610656127"
+                "memory": "610426631"
               },
               "uncappedTarget": {
                 "memory": "297164212"
@@ -8562,7 +8578,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 36.2,
+          "currentMemoryMaxMiB": 37.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 44.2,
           "peakSampledPods": 2
@@ -8629,7 +8645,7 @@
                 "memory": "112Mi"
               },
               "upperBound": {
-                "memory": "128783326"
+                "memory": "128783283"
               },
               "uncappedTarget": {
                 "memory": "126805489"
@@ -8835,7 +8851,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 61.1,
+          "currentMemoryMaxMiB": 61.0,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 63.7,
           "peakSampledPods": 3
@@ -8965,7 +8981,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 41.9,
+          "currentMemoryMaxMiB": 32.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 57.0,
           "peakSampledPods": 2
@@ -9121,9 +9137,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 202.2,
+          "currentMemoryMaxMiB": 203.6,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 202.6,
+          "peak7dCurrentPodMiB": 204.0,
           "peakSampledPods": 1
         }
       ],
@@ -9169,7 +9185,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 139.3,
+          "currentMemoryMaxMiB": 139.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 164.2,
           "peakSampledPods": 1
@@ -9195,11 +9211,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "183033471"
+                "memory": "183033472"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "211201463"
+                "memory": "211201271"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -9250,7 +9266,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 66.9,
+          "currentMemoryMaxMiB": 65.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 76.2,
           "peakSampledPods": 1
@@ -9280,7 +9296,7 @@
               },
               "upperBound": {
                 "cpu": "23m",
-                "memory": "131380322"
+                "memory": "131380207"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -9331,7 +9347,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 34.0,
+          "currentMemoryMaxMiB": 35.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 73.4,
           "peakSampledPods": 1
@@ -9363,7 +9379,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 26.7,
+          "currentMemoryMaxMiB": 25.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 59.0,
           "peakSampledPods": 1
@@ -9467,7 +9483,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 148.3,
+          "currentMemoryMaxMiB": 153.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 217.3,
           "peakSampledPods": 1
@@ -9492,7 +9508,7 @@
               },
               "upperBound": {
                 "cpu": "23m",
-                "memory": "251715704"
+                "memory": "251715669"
               },
               "uncappedTarget": {
                 "cpu": "23m",
@@ -9543,7 +9559,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.4,
+          "currentMemoryMaxMiB": 27.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 55.8,
           "peakSampledPods": 1
@@ -9693,7 +9709,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 310.6,
+          "currentMemoryMaxMiB": 295.4,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 403.5,
           "peakSampledPods": 3
@@ -9743,10 +9759,10 @@
                 "memory": "628694953"
               },
               "lowerBound": {
-                "memory": "379831708"
+                "memory": "379832206"
               },
               "upperBound": {
-                "memory": "1048832029"
+                "memory": "1048391200"
               },
               "uncappedTarget": {
                 "memory": "628694953"
@@ -9955,7 +9971,7 @@
               },
               "upperBound": {
                 "cpu": "34m",
-                "memory": "246090366"
+                "memory": "245840562"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -10006,7 +10022,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 116.0,
+          "currentMemoryMaxMiB": 111.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 528.5,
           "peakSampledPods": 1
@@ -10058,7 +10074,7 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "540635682"
+                "memory": "540678267"
               },
               "upperBound": {
                 "cpu": "500m",
@@ -10113,7 +10129,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 184.2,
+          "currentMemoryMaxMiB": 183.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 703.2,
           "peakSampledPods": 1
@@ -10165,11 +10181,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "475878045"
+                "memory": "475878283"
               },
               "upperBound": {
                 "cpu": "325m",
-                "memory": "1147635656"
+                "memory": "1147455805"
               },
               "uncappedTarget": {
                 "cpu": "143m",
@@ -10364,7 +10380,7 @@
                 "memory": "100Mi"
               },
               "upperBound": {
-                "memory": "167848398"
+                "memory": "167839175"
               },
               "uncappedTarget": {
                 "memory": "126805489"
@@ -10427,7 +10443,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 76.3,
+          "currentMemoryMaxMiB": 80.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 159.5,
           "peakSampledPods": 2
@@ -10544,7 +10560,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 52.2,
+          "currentMemoryMaxMiB": 50.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 57.0,
           "peakSampledPods": 2
@@ -10652,7 +10668,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 124.4,
+          "currentMemoryMaxMiB": 138.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 259.2,
           "peakSampledPods": 1
@@ -10700,7 +10716,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 70.6,
+          "currentMemoryMaxMiB": 257.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 902.1,
           "peakSampledPods": 1
@@ -10748,7 +10764,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 161.1,
+          "currentMemoryMaxMiB": 157.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 304.2,
           "peakSampledPods": 1
@@ -10796,7 +10812,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 257.3,
+          "currentMemoryMaxMiB": 252.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 426.2,
           "peakSampledPods": 1
@@ -10844,7 +10860,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 50.3,
+          "currentMemoryMaxMiB": 47.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 77.0,
           "peakSampledPods": 1
@@ -10892,7 +10908,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 90.7,
+          "currentMemoryMaxMiB": 97.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 873.3,
           "peakSampledPods": 1
@@ -10940,7 +10956,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.6,
+          "currentMemoryMaxMiB": 46.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 76.8,
           "peakSampledPods": 1
@@ -10988,7 +11004,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 104.3,
+          "currentMemoryMaxMiB": 100.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 138.8,
           "peakSampledPods": 1
@@ -11049,7 +11065,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 291.7,
+          "currentMemoryMaxMiB": 291.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 947.1,
           "peakSampledPods": 2
@@ -11079,7 +11095,7 @@
               },
               "upperBound": {
                 "cpu": "557m",
-                "memory": "2200024694"
+                "memory": "2200023780"
               },
               "uncappedTarget": {
                 "cpu": "379m",
@@ -11130,7 +11146,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 22.4,
+          "currentMemoryMaxMiB": 21.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 23.3,
           "peakSampledPods": 1
@@ -11211,7 +11227,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.5,
+          "currentMemoryMaxMiB": 25.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 31.4,
           "peakSampledPods": 1
@@ -11289,6 +11305,19 @@
           },
           "admitted": [
             {
+              "pod": "gitlab-spike-gitlab-shell-5cb64b479b-jfxvw",
+              "phase": "Running",
+              "node": "ovh-ns103711",
+              "requests": {
+                "cpu": "23m",
+                "memory": "126805489"
+              },
+              "limits": {
+                "cpu": null,
+                "memory": null
+              }
+            },
+            {
               "pod": "gitlab-spike-gitlab-shell-5cb64b479b-rxpnq",
               "phase": "Running",
               "node": "ovh-ns102453",
@@ -11300,24 +11329,11 @@
                 "cpu": null,
                 "memory": null
               }
-            },
-            {
-              "pod": "gitlab-spike-gitlab-shell-5cb64b479b-wv545",
-              "phase": "Running",
-              "node": "ovh-ns103656",
-              "requests": {
-                "cpu": "23m",
-                "memory": "100Mi"
-              },
-              "limits": {
-                "cpu": null,
-                "memory": null
-              }
             }
           ],
-          "currentMemoryMaxMiB": 14.5,
+          "currentMemoryMaxMiB": 106.3,
           "sampledPods": 2,
-          "peak7dCurrentPodMiB": 106.5,
+          "peak7dCurrentPodMiB": 106.7,
           "peakSampledPods": 2
         }
       ],
@@ -11427,7 +11443,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 22.9,
+          "currentMemoryMaxMiB": 23.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 68.1,
           "peakSampledPods": 2
@@ -11617,7 +11633,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 23.4,
+          "currentMemoryMaxMiB": 23.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 30.0,
           "peakSampledPods": 1
@@ -11706,7 +11722,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 44.6,
+          "currentMemoryMaxMiB": 45.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 78.8,
           "peakSampledPods": 2
@@ -11751,7 +11767,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2619.6,
+          "currentMemoryMaxMiB": 2619.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 2658.2,
           "peakSampledPods": 2
@@ -11772,11 +11788,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "63509001"
+                "memory": "63509015"
               },
               "upperBound": {
                 "cpu": "29m",
-                "memory": "119987994"
+                "memory": "119977695"
               },
               "uncappedTarget": {
                 "cpu": "23m",
@@ -11791,11 +11807,11 @@
               },
               "lowerBound": {
                 "cpu": "22m",
-                "memory": "3134430366"
+                "memory": "3134431055"
               },
               "upperBound": {
                 "cpu": "62m",
-                "memory": "4234623513"
+                "memory": "4234260043"
               },
               "uncappedTarget": {
                 "cpu": "35m",
@@ -11850,7 +11866,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.5,
+          "currentMemoryMaxMiB": 27.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 110.3,
           "peakSampledPods": 1
@@ -11891,7 +11907,7 @@
                 "memory": "160Mi"
               },
               "upperBound": {
-                "memory": "171779187"
+                "memory": "171754916"
               },
               "uncappedTarget": {
                 "memory": "109814751"
@@ -11941,7 +11957,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 5.7,
+          "currentMemoryMaxMiB": 5.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 11.8,
           "peakSampledPods": 1
@@ -12022,7 +12038,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 56.6,
+          "currentMemoryMaxMiB": 71.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 82.0,
           "peakSampledPods": 1
@@ -12184,7 +12200,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 116.7,
+          "currentMemoryMaxMiB": 113.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 138.1,
           "peakSampledPods": 1
@@ -12225,7 +12241,7 @@
                 "memory": "224Mi"
               },
               "upperBound": {
-                "memory": "464357107"
+                "memory": "464057203"
               },
               "uncappedTarget": {
                 "memory": "183046954"
@@ -12386,7 +12402,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "304566074"
+                "memory": "304565946"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -12437,7 +12453,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 31.6,
+          "currentMemoryMaxMiB": 31.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 87.4,
           "peakSampledPods": 1
@@ -12548,7 +12564,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "187606898"
+                "memory": "187606819"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -12672,7 +12688,7 @@
                 "memory": "256Mi"
               },
               "upperBound": {
-                "memory": "413925860"
+                "memory": "413659320"
               },
               "uncappedTarget": {
                 "memory": "163378051"
@@ -12748,9 +12764,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.3,
+          "currentMemoryMaxMiB": 24.7,
           "sampledPods": 3,
-          "peak7dCurrentPodMiB": 25.3,
+          "peak7dCurrentPodMiB": 25.5,
           "peakSampledPods": 3
         }
       ],
@@ -12858,7 +12874,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "253298853"
+                "memory": "253298704"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -12941,7 +12957,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.5,
+          "currentMemoryMaxMiB": 27.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 33.1,
           "peakSampledPods": 2
@@ -13022,7 +13038,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.0,
+          "currentMemoryMaxMiB": 48.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 132.8,
           "peakSampledPods": 1
@@ -13052,7 +13068,7 @@
               },
               "upperBound": {
                 "cpu": "23m",
-                "memory": "131242479"
+                "memory": "131242371"
               },
               "uncappedTarget": {
                 "cpu": "23m",
@@ -13135,7 +13151,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 11.7,
+          "currentMemoryMaxMiB": 11.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.7,
           "peakSampledPods": 1
@@ -13161,11 +13177,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "272039112"
+                "memory": "272039113"
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "309202597"
+                "memory": "309202259"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13184,7 +13200,7 @@
               },
               "upperBound": {
                 "cpu": "21m",
-                "memory": "71743480"
+                "memory": "71719371"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13328,8 +13344,8 @@
                 "memory": "34952533"
               },
               "upperBound": {
-                "cpu": "29m",
-                "memory": "95578062"
+                "cpu": "28m",
+                "memory": "95510725"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13348,7 +13364,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "209992657"
+                "memory": "209992522"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13367,7 +13383,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "130723017"
+                "memory": "130722933"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13480,7 +13496,7 @@
               },
               "upperBound": {
                 "cpu": "13m",
-                "memory": "60132782"
+                "memory": "60131218"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13495,11 +13511,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "93593188"
+                "memory": "93593194"
               },
               "upperBound": {
                 "cpu": "13m",
-                "memory": "113593371"
+                "memory": "113590416"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -13582,7 +13598,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 379.7,
+          "currentMemoryMaxMiB": 379.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 390.4,
           "peakSampledPods": 1
@@ -13651,7 +13667,7 @@
                 "memory": "512Mi"
               },
               "upperBound": {
-                "memory": "588960903"
+                "memory": "588942456"
               },
               "uncappedTarget": {
                 "memory": "476450463"
@@ -13831,7 +13847,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 86.5,
+          "currentMemoryMaxMiB": 86.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 196.0,
           "peakSampledPods": 1
@@ -13898,7 +13914,7 @@
                 "memory": "128Mi"
               },
               "upperBound": {
-                "memory": "253991145"
+                "memory": "253991050"
               },
               "uncappedTarget": {
                 "memory": "248153480"
@@ -14091,7 +14107,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 174.3,
+          "currentMemoryMaxMiB": 139.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 236.1,
           "peakSampledPods": 2
@@ -14116,7 +14132,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "226894539"
+                "memory": "226894525"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14180,7 +14196,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 38.1,
+          "currentMemoryMaxMiB": 38.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 40.1,
           "peakSampledPods": 2
@@ -14472,7 +14488,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 57.2,
+          "currentMemoryMaxMiB": 57.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 77.0,
           "peakSampledPods": 2
@@ -14497,7 +14513,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "129776815"
+                "memory": "129776718"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14548,7 +14564,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 110.5,
+          "currentMemoryMaxMiB": 101.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 263.3,
           "peakSampledPods": 1
@@ -14569,11 +14585,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "183032179"
+                "memory": "183032180"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "190434499"
+                "memory": "190434292"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14637,7 +14653,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 22.9,
+          "currentMemoryMaxMiB": 22.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 55.6,
           "peakSampledPods": 2
@@ -14713,9 +14729,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 22.7,
+          "currentMemoryMaxMiB": 24.1,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 22.6,
+          "peak7dCurrentPodMiB": 24.1,
           "peakSampledPods": 1
         }
       ],
@@ -14738,7 +14754,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "111751685"
+                "memory": "111751661"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14802,7 +14818,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 51.3,
+          "currentMemoryMaxMiB": 57.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 64.8,
           "peakSampledPods": 2
@@ -14827,7 +14843,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "113830323"
+                "memory": "113830119"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14878,7 +14894,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 127.7,
+          "currentMemoryMaxMiB": 131.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 157.3,
           "peakSampledPods": 1
@@ -14903,7 +14919,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "187338374"
+                "memory": "187338304"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -14954,7 +14970,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 94.6,
+          "currentMemoryMaxMiB": 93.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 122.1,
           "peakSampledPods": 1
@@ -14975,11 +14991,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "126799431"
+                "memory": "126799432"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "129834131"
+                "memory": "129834081"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -15030,7 +15046,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.0,
+          "currentMemoryMaxMiB": 30.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 78.8,
           "peakSampledPods": 1
@@ -15071,7 +15087,7 @@
                 "memory": "192Mi"
               },
               "upperBound": {
-                "memory": "273853383"
+                "memory": "273683394"
               },
               "uncappedTarget": {
                 "memory": "109814751"
@@ -15134,7 +15150,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 280.4,
+          "currentMemoryMaxMiB": 272.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 340.2,
           "peakSampledPods": 2
@@ -15195,7 +15211,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 176.7,
+          "currentMemoryMaxMiB": 175.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 331.9,
           "peakSampledPods": 2
@@ -15256,7 +15272,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 350.3,
+          "currentMemoryMaxMiB": 342.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 358.1,
           "peakSampledPods": 2
@@ -15330,7 +15346,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 165.5,
+          "currentMemoryMaxMiB": 169.2,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 180.0,
           "peakSampledPods": 3
@@ -15525,7 +15541,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 90.7,
+          "currentMemoryMaxMiB": 92.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 108.9,
           "peakSampledPods": 2
@@ -15616,7 +15632,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 104.5,
+          "currentMemoryMaxMiB": 103.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 161.5,
           "peakSampledPods": 1
@@ -15733,11 +15749,11 @@
               },
               "lowerBound": {
                 "cpu": "22m",
-                "memory": "920670733"
+                "memory": "920670735"
               },
               "upperBound": {
                 "cpu": "36m",
-                "memory": "1139603822"
+                "memory": "1139602937"
               },
               "uncappedTarget": {
                 "cpu": "23m",
@@ -15788,7 +15804,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 471.7,
+          "currentMemoryMaxMiB": 473.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 579.3,
           "peakSampledPods": 1
@@ -15814,11 +15830,11 @@
               },
               "lowerBound": {
                 "cpu": "48m",
-                "memory": "587764813"
+                "memory": "587764814"
               },
               "upperBound": {
                 "cpu": "80m",
-                "memory": "694427937"
+                "memory": "694427399"
               },
               "uncappedTarget": {
                 "cpu": "78m",
@@ -15908,11 +15924,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "813469054"
+                "memory": "813469121"
               },
               "upperBound": {
                 "cpu": "109m",
-                "memory": "1291797345"
+                "memory": "1291752016"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -15995,7 +16011,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.3,
+          "currentMemoryMaxMiB": 13.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 15.1,
           "peakSampledPods": 1
@@ -16103,7 +16119,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 139.7,
+          "currentMemoryMaxMiB": 140.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 359.8,
           "peakSampledPods": 2
@@ -16128,7 +16144,7 @@
               },
               "upperBound": {
                 "cpu": "64m",
-                "memory": "386636641"
+                "memory": "386636492"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -16381,7 +16397,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "167620029"
+                "memory": "167619953"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -16513,7 +16529,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1736.8,
+          "currentMemoryMaxMiB": 1817.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2086.4,
           "peakSampledPods": 1
@@ -16570,7 +16586,7 @@
               },
               "upperBound": {
                 "cpu": "128m",
-                "memory": "2581543825"
+                "memory": "2581543339"
               },
               "uncappedTarget": {
                 "cpu": "109m",
@@ -16640,7 +16656,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 43.5,
+          "currentMemoryMaxMiB": 44.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 45.6,
           "peakSampledPods": 1
@@ -16693,11 +16709,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "63496675"
+                "memory": "63496688"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "87599555"
+                "memory": "87593234"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -16807,11 +16823,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "109734605"
+                "memory": "109734625"
               },
               "upperBound": {
                 "cpu": "31m",
-                "memory": "173103639"
+                "memory": "173091903"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -16862,7 +16878,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 11.4,
+          "currentMemoryMaxMiB": 10.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 12.1,
           "peakSampledPods": 1
@@ -16938,7 +16954,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 17.1,
+          "currentMemoryMaxMiB": 16.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 20.6,
           "peakSampledPods": 1
@@ -17166,7 +17182,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 222.8,
+          "currentMemoryMaxMiB": 222.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 407.0,
           "peakSampledPods": 1
@@ -17191,7 +17207,7 @@
               },
               "upperBound": {
                 "cpu": "64m",
-                "memory": "417905939"
+                "memory": "417905853"
               },
               "uncappedTarget": {
                 "cpu": "63m",
@@ -17242,7 +17258,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 36.4,
+          "currentMemoryMaxMiB": 25.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 52.8,
           "peakSampledPods": 1
@@ -17318,7 +17334,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.2,
+          "currentMemoryMaxMiB": 21.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 27.7,
           "peakSampledPods": 1
@@ -17394,7 +17410,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 34.3,
+          "currentMemoryMaxMiB": 35.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 46.3,
           "peakSampledPods": 1
@@ -17470,7 +17486,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 183.9,
+          "currentMemoryMaxMiB": 193.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 429.7,
           "peakSampledPods": 1
@@ -17491,11 +17507,11 @@
               },
               "lowerBound": {
                 "cpu": "22m",
-                "memory": "248145031"
+                "memory": "323511407"
               },
               "upperBound": {
                 "cpu": "49m",
-                "memory": "520484942"
+                "memory": "520484839"
               },
               "uncappedTarget": {
                 "cpu": "35m",
@@ -17546,7 +17562,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 95.4,
+          "currentMemoryMaxMiB": 90.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 266.5,
           "peakSampledPods": 1
@@ -17567,11 +17583,11 @@
               },
               "lowerBound": {
                 "cpu": "125m",
-                "memory": "126801176"
+                "memory": "126801177"
               },
               "upperBound": {
                 "cpu": "165m",
-                "memory": "166155965"
+                "memory": "166155933"
               },
               "uncappedTarget": {
                 "cpu": "163m",
@@ -17698,7 +17714,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 85.4,
+          "currentMemoryMaxMiB": 90.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 159.9,
           "peakSampledPods": 1
@@ -17719,11 +17735,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "126801118"
+                "memory": "144640777"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "166193734"
+                "memory": "166193700"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -17774,7 +17790,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 72.2,
+          "currentMemoryMaxMiB": 74.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 133.5,
           "peakSampledPods": 1
@@ -17799,7 +17815,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "111657130"
+                "memory": "111657108"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -17850,7 +17866,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.2,
+          "currentMemoryMaxMiB": 24.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 41.5,
           "peakSampledPods": 1
@@ -17947,11 +17963,11 @@
               },
               "lowerBound": {
                 "cpu": "48m",
-                "memory": "1312047539"
+                "memory": "1312047540"
               },
               "upperBound": {
                 "cpu": "79m",
-                "memory": "1334705576"
+                "memory": "1334705306"
               },
               "uncappedTarget": {
                 "cpu": "78m",
@@ -18078,7 +18094,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 42.8,
+          "currentMemoryMaxMiB": 42.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 79.3,
           "peakSampledPods": 1
@@ -18103,7 +18119,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "111543814"
+                "memory": "111543795"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -18154,7 +18170,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.5,
+          "currentMemoryMaxMiB": 11.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 12.7,
           "peakSampledPods": 1
@@ -18230,7 +18246,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.2,
+          "currentMemoryMaxMiB": 16.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.0,
           "peakSampledPods": 1
@@ -18306,7 +18322,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 6188.8,
+          "currentMemoryMaxMiB": 6188.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 7651.4,
           "peakSampledPods": 1
@@ -18332,11 +18348,11 @@
               },
               "lowerBound": {
                 "cpu": "22m",
-                "memory": "7473517345"
+                "memory": "7473523870"
               },
               "upperBound": {
                 "cpu": "1052m",
-                "memory": "16406085304"
+                "memory": "16402088612"
               },
               "uncappedTarget": {
                 "cpu": "410m",
@@ -18387,7 +18403,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 19.5,
+          "currentMemoryMaxMiB": 20.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 40.7,
           "peakSampledPods": 1
@@ -18504,7 +18520,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 30.2,
+          "currentMemoryMaxMiB": 25.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 36.2,
           "peakSampledPods": 1
@@ -18621,7 +18637,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 20.5,
+          "currentMemoryMaxMiB": 20.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 30.2,
           "peakSampledPods": 1
@@ -18734,7 +18750,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 373.6,
+          "currentMemoryMaxMiB": 372.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 402.7,
           "peakSampledPods": 1
@@ -18779,11 +18795,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "476415041"
+                "memory": "476415042"
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "530798004"
+                "memory": "530797512"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -18954,11 +18970,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "10486035804"
+                "memory": "10486675869"
               },
               "upperBound": {
-                "cpu": "9491m",
-                "memory": "163029845312"
+                "cpu": "9453m",
+                "memory": "162376549999"
               },
               "uncappedTarget": {
                 "cpu": "1238m",
@@ -19009,7 +19025,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 17.4,
+          "currentMemoryMaxMiB": 17.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 25.6,
           "peakSampledPods": 1
@@ -19085,7 +19101,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 924.6,
+          "currentMemoryMaxMiB": 925.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1064.2,
           "peakSampledPods": 1
@@ -19106,11 +19122,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "1310443456"
+                "memory": "1310444176"
               },
               "upperBound": {
                 "cpu": "265m",
-                "memory": "2263135480"
+                "memory": "2262753848"
               },
               "uncappedTarget": {
                 "cpu": "143m",
@@ -19161,7 +19177,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.3,
+          "currentMemoryMaxMiB": 16.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 18.4,
           "peakSampledPods": 1
@@ -19225,7 +19241,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.7,
+          "currentMemoryMaxMiB": 29.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 39.3,
           "peakSampledPods": 1
@@ -19257,7 +19273,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.8,
+          "currentMemoryMaxMiB": 16.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 21.1,
           "peakSampledPods": 1
@@ -19321,7 +19337,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 18.3,
+          "currentMemoryMaxMiB": 17.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.6,
           "peakSampledPods": 1
@@ -19342,11 +19358,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "23545377"
+                "memory": "23545389"
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "38399450"
+                "memory": "38392980"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19365,7 +19381,7 @@
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "38399450"
+                "memory": "38392980"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19380,11 +19396,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "49504130"
+                "memory": "49504157"
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "80748466"
+                "memory": "80734849"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19399,11 +19415,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "23545377"
+                "memory": "23545389"
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "59050864"
+                "memory": "59040913"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19418,11 +19434,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "23545364"
+                "memory": "23545377"
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "38405927"
+                "memory": "38399450"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19437,11 +19453,11 @@
               },
               "lowerBound": {
                 "cpu": "10m",
-                "memory": "23545377"
+                "memory": "23545389"
               },
               "upperBound": {
                 "cpu": "17m",
-                "memory": "59050864"
+                "memory": "59040913"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -19492,7 +19508,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 68.2,
+          "currentMemoryMaxMiB": 65.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 135.0,
           "peakSampledPods": 1
@@ -19517,7 +19533,7 @@
               },
               "upperBound": {
                 "cpu": "360m",
-                "memory": "238255324"
+                "memory": "238231501"
               },
               "uncappedTarget": {
                 "cpu": "182m",
@@ -19589,11 +19605,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "322370926"
+                "memory": "322372348"
               },
               "upperBound": {
                 "cpu": "30m",
-                "memory": "900811502"
+                "memory": "900097035"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -19685,7 +19701,7 @@
                 "memory": "100Mi"
               },
               "upperBound": {
-                "memory": "123607585"
+                "memory": "123530858"
               },
               "uncappedTarget": {
                 "memory": "100Mi"
@@ -20046,7 +20062,7 @@
                 "memory": "144645763"
               },
               "lowerBound": {
-                "memory": "144110423"
+                "memory": "144111111"
               },
               "upperBound": {
                 "memory": "192Mi"
@@ -20190,7 +20206,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 482.5,
+          "currentMemoryMaxMiB": 482.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 514.5,
           "peakSampledPods": 1
@@ -20211,11 +20227,11 @@
               },
               "lowerBound": {
                 "cpu": "34m",
-                "memory": "625968743"
+                "memory": "625972842"
               },
               "upperBound": {
                 "cpu": "111m",
-                "memory": "2426021540"
+                "memory": "2423514791"
               },
               "uncappedTarget": {
                 "cpu": "35m",
@@ -20266,7 +20282,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 526.6,
+          "currentMemoryMaxMiB": 526.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 598.4,
           "peakSampledPods": 1
@@ -20287,11 +20303,11 @@
               },
               "lowerBound": {
                 "cpu": "34m",
-                "memory": "708525465"
+                "memory": "708557799"
               },
               "upperBound": {
-                "cpu": "331m",
-                "memory": "11749857245"
+                "cpu": "330m",
+                "memory": "11709969944"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -20380,7 +20396,7 @@
                 "memory": "163378051"
               },
               "lowerBound": {
-                "memory": "144110423"
+                "memory": "144111111"
               },
               "upperBound": {
                 "memory": "192Mi"
@@ -20433,7 +20449,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 238.6,
+          "currentMemoryMaxMiB": 246.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 471.3,
           "peakSampledPods": 1
@@ -20524,7 +20540,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 111.6,
+          "currentMemoryMaxMiB": 111.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 435.0,
           "peakSampledPods": 1
@@ -20545,11 +20561,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "509871565"
+                "memory": "509874015"
               },
               "upperBound": {
                 "cpu": "31m",
-                "memory": "1571320569"
+                "memory": "1569999563"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -20600,7 +20616,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.5,
+          "currentMemoryMaxMiB": 24.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 25.5,
           "peakSampledPods": 1
@@ -20899,7 +20915,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 315.5,
+          "currentMemoryMaxMiB": 310.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 506.9,
           "peakSampledPods": 1
@@ -20929,7 +20945,7 @@
               },
               "upperBound": {
                 "cpu": "23m",
-                "memory": "643722020"
+                "memory": "643721771"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -20980,7 +20996,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.0,
+          "currentMemoryMaxMiB": 27.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 44.5,
           "peakSampledPods": 1
@@ -21084,7 +21100,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 47.6,
+          "currentMemoryMaxMiB": 54.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 89.6,
           "peakSampledPods": 2
@@ -21132,7 +21148,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 169.1,
+          "currentMemoryMaxMiB": 182.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 218.3,
           "peakSampledPods": 1
@@ -21193,7 +21209,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 239.4,
+          "currentMemoryMaxMiB": 213.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 965.2,
           "peakSampledPods": 2
@@ -21241,7 +21257,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.0,
+          "currentMemoryMaxMiB": 13.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 20.4,
           "peakSampledPods": 1
@@ -21273,7 +21289,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 5.9,
+          "currentMemoryMaxMiB": 5.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 7.0,
           "peakSampledPods": 1
@@ -21305,7 +21321,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 26.8,
+          "currentMemoryMaxMiB": 25.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 32.2,
           "peakSampledPods": 1
@@ -21337,7 +21353,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 44.8,
+          "currentMemoryMaxMiB": 44.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 56.4,
           "peakSampledPods": 1
@@ -21394,7 +21410,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "37103555"
+                "memory": "37103542"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -21432,7 +21448,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "50728300"
+                "memory": "50728281"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -21451,7 +21467,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "65034306"
+                "memory": "65034282"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -21470,7 +21486,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "24127608"
+                "memory": "24127599"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -21582,7 +21598,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.6,
+          "currentMemoryMaxMiB": 25.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 27.6,
           "peakSampledPods": 1
@@ -21671,7 +21687,7 @@
                 "memory": "144Mi"
               },
               "upperBound": {
-                "memory": "365995283"
+                "memory": "365760305"
               },
               "uncappedTarget": {
                 "memory": "144645763"
@@ -21838,11 +21854,11 @@
               },
               "lowerBound": {
                 "cpu": "25m",
-                "memory": "163261645"
+                "memory": "163261674"
               },
               "upperBound": {
                 "cpu": "25m",
-                "memory": "369033446"
+                "memory": "369009449"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -21957,7 +21973,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 665.1,
+          "currentMemoryMaxMiB": 665.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 750.2,
           "peakSampledPods": 1
@@ -21987,7 +22003,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "131367407"
+                "memory": "131367293"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -22025,7 +22041,7 @@
               },
               "upperBound": {
                 "cpu": "49m",
-                "memory": "881751324"
+                "memory": "881751123"
               },
               "uncappedTarget": {
                 "cpu": "35m",
@@ -22095,7 +22111,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 30.0,
+          "currentMemoryMaxMiB": 33.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 52.1,
           "peakSampledPods": 1
@@ -22171,7 +22187,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 140.4,
+          "currentMemoryMaxMiB": 135.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 235.2,
           "peakSampledPods": 1
@@ -22192,11 +22208,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "163370375"
+                "memory": "163370376"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "208484095"
+                "memory": "208484017"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -22260,7 +22276,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.9,
+          "currentMemoryMaxMiB": 14.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 14.7,
           "peakSampledPods": 2
@@ -22360,7 +22376,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 471.0,
+          "currentMemoryMaxMiB": 467.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2360.9,
           "peakSampledPods": 1
@@ -22381,11 +22397,11 @@
               },
               "lowerBound": {
                 "cpu": "62m",
-                "memory": "587168813"
+                "memory": "587169052"
               },
               "upperBound": {
                 "cpu": "143m",
-                "memory": "3914077404"
+                "memory": "3913560794"
               },
               "uncappedTarget": {
                 "cpu": "78m",
@@ -22436,7 +22452,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 501.2,
+          "currentMemoryMaxMiB": 503.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2374.2,
           "peakSampledPods": 1
@@ -22457,11 +22473,11 @@
               },
               "lowerBound": {
                 "cpu": "77m",
-                "memory": "627729874"
+                "memory": "627730388"
               },
               "upperBound": {
                 "cpu": "192m",
-                "memory": "3823818435"
+                "memory": "3822932287"
               },
               "uncappedTarget": {
                 "cpu": "93m",
@@ -22533,11 +22549,11 @@
               },
               "lowerBound": {
                 "cpu": "48m",
-                "memory": "323129638"
+                "memory": "323129804"
               },
               "upperBound": {
                 "cpu": "78m",
-                "memory": "564585001"
+                "memory": "564495002"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -22588,7 +22604,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 338.9,
+          "currentMemoryMaxMiB": 339.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 339.9,
           "peakSampledPods": 1
@@ -22609,11 +22625,11 @@
               },
               "lowerBound": {
                 "cpu": "34m",
-                "memory": "410271630"
+                "memory": "410271841"
               },
               "upperBound": {
                 "cpu": "78m",
-                "memory": "660881673"
+                "memory": "660775963"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -22685,11 +22701,11 @@
               },
               "lowerBound": {
                 "cpu": "34m",
-                "memory": "323129638"
+                "memory": "323129804"
               },
               "upperBound": {
                 "cpu": "78m",
-                "memory": "611301594"
+                "memory": "611204148"
               },
               "uncappedTarget": {
                 "cpu": "49m",
@@ -22753,7 +22769,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 62.7,
+          "currentMemoryMaxMiB": 63.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 78.6,
           "peakSampledPods": 2
@@ -22860,7 +22876,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 229.3,
+          "currentMemoryMaxMiB": 230.4,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 304.6,
           "peakSampledPods": 3
@@ -22881,11 +22897,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "225299638"
+                "memory": "225299671"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "417151322"
+                "memory": "417125529"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -22962,7 +22978,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 99.6,
+          "currentMemoryMaxMiB": 99.8,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 121.3,
           "peakSampledPods": 3
@@ -22983,11 +22999,11 @@
               },
               "lowerBound": {
                 "cpu": "15m",
-                "memory": "126757875"
+                "memory": "126757894"
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "171809286"
+                "memory": "171798663"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -23215,7 +23231,7 @@
               },
               "upperBound": {
                 "cpu": "16m",
-                "memory": "93428641"
+                "memory": "93409135"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -23234,7 +23250,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "417243350"
+                "memory": "417243208"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -23298,7 +23314,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.5,
+          "currentMemoryMaxMiB": 25.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 37.9,
           "peakSampledPods": 2
@@ -23392,7 +23408,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 69.6,
+          "currentMemoryMaxMiB": 70.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 178.9,
           "peakSampledPods": 2
@@ -23462,7 +23478,7 @@
               },
               "upperBound": {
                 "cpu": "23m",
-                "memory": "166119868"
+                "memory": "166119804"
               },
               "uncappedTarget": {
                 "cpu": "23m",
@@ -23481,7 +23497,7 @@
               },
               "upperBound": {
                 "cpu": "11m",
-                "memory": "111657860"
+                "memory": "111657817"
               },
               "uncappedTarget": {
                 "cpu": "11m",
@@ -23545,7 +23561,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 373.7,
+          "currentMemoryMaxMiB": 384.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 870.8,
           "peakSampledPods": 2
@@ -23645,7 +23661,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 28.0,
+          "currentMemoryMaxMiB": 28.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 41.6,
           "peakSampledPods": 2
@@ -23690,7 +23706,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 15.1,
+          "currentMemoryMaxMiB": 13.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 30.1,
           "peakSampledPods": 2
@@ -23746,7 +23762,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 50.0,
+          "currentMemoryMaxMiB": 54.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1554.7,
           "peakSampledPods": 1
@@ -23771,7 +23787,7 @@
               },
               "upperBound": {
                 "cpu": "15m",
-                "memory": "166201167"
+                "memory": "166201133"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -23835,7 +23851,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2708.7,
+          "currentMemoryMaxMiB": 2719.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 3597.3,
           "peakSampledPods": 2
@@ -23856,11 +23872,11 @@
               },
               "lowerBound": {
                 "cpu": "142m",
-                "memory": "3861540389"
+                "memory": "3861540391"
               },
               "upperBound": {
                 "cpu": "274m",
-                "memory": "4331357942"
+                "memory": "4331357120"
               },
               "uncappedTarget": {
                 "cpu": "224m",
@@ -23911,7 +23927,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1104.5,
+          "currentMemoryMaxMiB": 1104.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1131.1,
           "peakSampledPods": 1
@@ -23931,12 +23947,12 @@
                 "memory": "1389197403"
               },
               "lowerBound": {
-                "cpu": "4064m",
-                "memory": "1389149401"
+                "cpu": "4279m",
+                "memory": "1389149402"
               },
               "upperBound": {
                 "cpu": "4353m",
-                "memory": "1413198797"
+                "memory": "1413198509"
               },
               "uncappedTarget": {
                 "cpu": "4280m",
@@ -23987,7 +24003,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 638.2,
+          "currentMemoryMaxMiB": 641.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 3296.4,
           "peakSampledPods": 1
@@ -24012,7 +24028,7 @@
               },
               "upperBound": {
                 "cpu": "35m",
-                "memory": "1870276201"
+                "memory": "1870275771"
               },
               "uncappedTarget": {
                 "cpu": "35m",
@@ -24076,7 +24092,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 323.3,
+          "currentMemoryMaxMiB": 287.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 421.3,
           "peakSampledPods": 2
@@ -24150,7 +24166,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 50.2,
+          "currentMemoryMaxMiB": 51.1,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 89.0,
           "peakSampledPods": 3
@@ -24198,7 +24214,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 145.5,
+          "currentMemoryMaxMiB": 167.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 923.9,
           "peakSampledPods": 1
@@ -24246,7 +24262,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 180.6,
+          "currentMemoryMaxMiB": 196.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 979.1,
           "peakSampledPods": 1
@@ -24294,7 +24310,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 131.9,
+          "currentMemoryMaxMiB": 118.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 312.6,
           "peakSampledPods": 1
@@ -24342,7 +24358,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 123.0,
+          "currentMemoryMaxMiB": 122.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 390.8,
           "peakSampledPods": 1
@@ -24390,7 +24406,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 125.6,
+          "currentMemoryMaxMiB": 125.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 336.1,
           "peakSampledPods": 1
@@ -24438,7 +24454,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 80.0,
+          "currentMemoryMaxMiB": 79.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 285.2,
           "peakSampledPods": 1
@@ -25415,8 +25431,8 @@
                 "memory": "100Mi"
               },
               "upperBound": {
-                "cpu": "1142m",
-                "memory": "1194357142"
+                "cpu": "1067m",
+                "memory": "1115500000"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -25487,8 +25503,8 @@
                 "memory": "100Mi"
               },
               "upperBound": {
-                "cpu": "1142m",
-                "memory": "1194357142"
+                "cpu": "1067m",
+                "memory": "1115500000"
               },
               "uncappedTarget": {
                 "cpu": "15m",
@@ -25530,7 +25546,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7394.4,
+          "currentMemoryMaxMiB": 7396.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8327.9,
           "peakSampledPods": 1
@@ -25553,7 +25569,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 0.3,
+          "currentMemoryMaxMiB": 0.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 0.5,
           "peakSampledPods": 1
@@ -25592,9 +25608,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 4995.1,
+          "currentMemoryMaxMiB": 4995.8,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 4994.6,
+          "peak7dCurrentPodMiB": 4996.0,
           "peakSampledPods": 1
         },
         {
@@ -25654,7 +25670,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 8326.9,
+          "currentMemoryMaxMiB": 7336.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8329.1,
           "peakSampledPods": 1
@@ -25716,7 +25732,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7698.9,
+          "currentMemoryMaxMiB": 7700.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8327.1,
           "peakSampledPods": 1
@@ -25739,7 +25755,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 0.5,
+          "currentMemoryMaxMiB": 0.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 0.5,
           "peakSampledPods": 1
@@ -25778,7 +25794,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 8309.3,
+          "currentMemoryMaxMiB": 7646.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8315.6,
           "peakSampledPods": 1
@@ -25840,7 +25856,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 4959.9,
+          "currentMemoryMaxMiB": 4959.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 4960.0,
           "peakSampledPods": 1
@@ -25863,7 +25879,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 0.3,
+          "currentMemoryMaxMiB": 0.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 0.3,
           "peakSampledPods": 1
@@ -25902,9 +25918,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 8317.0,
+          "currentMemoryMaxMiB": 7944.0,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 8327.6,
+          "peak7dCurrentPodMiB": 8329.0,
           "peakSampledPods": 1
         },
         {
@@ -25925,7 +25941,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 0.5,
+          "currentMemoryMaxMiB": 0.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 0.5,
           "peakSampledPods": 1
@@ -25964,7 +25980,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 584.1,
+          "currentMemoryMaxMiB": 583.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 611.8,
           "peakSampledPods": 1
@@ -26039,7 +26055,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 539.8,
+          "currentMemoryMaxMiB": 570.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 3639.6,
           "peakSampledPods": 2
@@ -26091,7 +26107,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 81.9,
+          "currentMemoryMaxMiB": 82.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 103.1,
           "peakSampledPods": 2
@@ -26143,7 +26159,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 249.6,
+          "currentMemoryMaxMiB": 249.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 598.1,
           "peakSampledPods": 2
@@ -26195,7 +26211,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 318.5,
+          "currentMemoryMaxMiB": 317.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 366.4,
           "peakSampledPods": 2
@@ -26247,7 +26263,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 281.1,
+          "currentMemoryMaxMiB": 284.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 529.5,
           "peakSampledPods": 2
@@ -26299,7 +26315,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 221.4,
+          "currentMemoryMaxMiB": 220.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 291.9,
           "peakSampledPods": 2
@@ -26351,7 +26367,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 82.1,
+          "currentMemoryMaxMiB": 83.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 105.1,
           "peakSampledPods": 2
@@ -26403,7 +26419,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 188.4,
+          "currentMemoryMaxMiB": 194.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 483.3,
           "peakSampledPods": 2
@@ -26455,7 +26471,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 90.8,
+          "currentMemoryMaxMiB": 89.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 120.8,
           "peakSampledPods": 2
@@ -26507,7 +26523,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 122.9,
+          "currentMemoryMaxMiB": 123.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 155.7,
           "peakSampledPods": 2
@@ -26546,7 +26562,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 97.8,
+          "currentMemoryMaxMiB": 98.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 111.5,
           "peakSampledPods": 1
@@ -26598,7 +26614,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 89.2,
+          "currentMemoryMaxMiB": 90.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 118.4,
           "peakSampledPods": 2
@@ -26650,7 +26666,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 88.1,
+          "currentMemoryMaxMiB": 87.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 356.1,
           "peakSampledPods": 2
@@ -26702,7 +26718,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 121.7,
+          "currentMemoryMaxMiB": 121.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 161.5,
           "peakSampledPods": 2
@@ -26754,7 +26770,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 81.4,
+          "currentMemoryMaxMiB": 81.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 108.5,
           "peakSampledPods": 2
@@ -26806,7 +26822,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 210.9,
+          "currentMemoryMaxMiB": 212.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 232.2,
           "peakSampledPods": 2
@@ -26858,7 +26874,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 287.4,
+          "currentMemoryMaxMiB": 279.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 850.1,
           "peakSampledPods": 2
@@ -26910,7 +26926,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 82.3,
+          "currentMemoryMaxMiB": 83.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 107.3,
           "peakSampledPods": 2
@@ -26962,7 +26978,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 138.6,
+          "currentMemoryMaxMiB": 139.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 162.3,
           "peakSampledPods": 2
@@ -27014,7 +27030,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 289.0,
+          "currentMemoryMaxMiB": 288.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 385.3,
           "peakSampledPods": 2
@@ -27053,7 +27069,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 319.2,
+          "currentMemoryMaxMiB": 338.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 437.0,
           "peakSampledPods": 1
@@ -27105,7 +27121,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 84.9,
+          "currentMemoryMaxMiB": 85.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 115.6,
           "peakSampledPods": 2
@@ -27157,7 +27173,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 69.0,
+          "currentMemoryMaxMiB": 66.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 171.9,
           "peakSampledPods": 2

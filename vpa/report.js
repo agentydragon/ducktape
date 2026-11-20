@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/028c3835a75e180bda6ba47090cc529194e25680/";
+const currentSource = github + "blob/f516472325720af27470446b25c6592055ced178/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2156`).then((r) => {
+        fetch(`${url}?v=20261120-2200`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -254,7 +254,7 @@ function Report() {
         <${Stat}
           value="11"
           label="Staging service VPAs"
-          detail="Initial, memory requests only; Electric awaits its first recommendation."
+          detail="Initial, memory requests only; each has a recommendation."
         />
       <//>
       <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
@@ -491,8 +491,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        21:56 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at 028c3835a7<//
+        22:00 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at f516472325<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
