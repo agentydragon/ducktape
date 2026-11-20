@@ -44,6 +44,7 @@ type Config struct {
 	Listen       string
 	Binary       string
 	HealthListen string
+	LimitsFile   string
 }
 
 // Run must own PID 1 in a private container PID namespace. Returning exits that
@@ -59,7 +60,7 @@ func Run(config Config) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	return serve(ctx, config.Socket, config.Binary, config.Listen, config.HealthListen, supervisor)
+	return serveWithLimits(ctx, config.Socket, config.Binary, config.Listen, config.HealthListen, config.LimitsFile, supervisor)
 }
 
 func healthHandler(socket string) http.Handler {
@@ -84,6 +85,10 @@ func healthHandler(socket string) http.Handler {
 }
 
 func serve(ctx context.Context, socket, binary, listen, healthListen string, supervisor *supervision.Supervisor) error {
+	return serveWithLimits(ctx, socket, binary, listen, healthListen, "", supervisor)
+}
+
+func serveWithLimits(ctx context.Context, socket, binary, listen, healthListen, limitsFile string, supervisor *supervision.Supervisor) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -112,7 +117,7 @@ func serve(ctx context.Context, socket, binary, listen, healthListen string, sup
 	go state.fenceLoop(lifetime, cancel, supervisor)
 	controlServer := grpc.NewServer(grpc.MaxRecvMsgSize(1 << 20))
 	controlpb.RegisterCompanionControlServer(controlServer, &companionControl{
-		lifetime: lifetime, cancel: cancel, state: state, binary: binary, listen: listen, supervisor: supervisor,
+		lifetime: lifetime, cancel: cancel, state: state, binary: binary, listen: listen, limitsFile: limitsFile, supervisor: supervisor,
 	})
 	healthServerGRPC := health.NewServer()
 	healthServerGRPC.SetServingStatus(controlpb.CompanionControl_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
@@ -157,6 +162,7 @@ type companionControl struct {
 	state      *companionOwnership
 	binary     string
 	listen     string
+	limitsFile string
 	supervisor *supervision.Supervisor
 }
 
@@ -181,8 +187,12 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 		s.cancel()
 		return status.Error(codes.Aborted, "executor companion already owned or fencing")
 	}
+	command := []string{s.binary, "serve", "--listen", s.listen}
+	if s.limitsFile != "" {
+		command = append(command, "--limits-file", s.limitsFile)
+	}
 	process, err := s.supervisor.NewProcess(supervision.ProcessConfig{
-		Command:   []string{s.binary, "serve", "--listen", s.listen},
+		Command:   command,
 		Env:       request.GetEnvironment(),
 		StopGrace: 5 * time.Second,
 	})

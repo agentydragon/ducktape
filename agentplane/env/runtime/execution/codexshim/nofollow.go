@@ -1,9 +1,7 @@
 package codexshim
 
 import (
-	"encoding/base64"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +21,7 @@ func filesystemNoFollow(method, path string, p params) (any, error) {
 	var writeData []byte
 	if method == "fs/writeFile" {
 		var err error
-		writeData, err = base64.StdEncoding.DecodeString(p.DataBase64)
+		writeData, err = decodeFileContents(p.DataBase64)
 		if err != nil {
 			return nil, err
 		}
@@ -56,21 +54,18 @@ func filesystemNoFollow(method, path string, p params) (any, error) {
 	}
 	switch method {
 	case "fs/getMetadata":
-		var stat unix.Statx_t
-		created := int64(0)
-		if unix.Statx(fd, "", unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, unix.STATX_BTIME, &stat) == nil && stat.Mask&unix.STATX_BTIME != 0 {
-			created = stat.Btime.Sec*1000 + int64(stat.Btime.Nsec)/1e6
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, rpcError{-32600, "path contains a symbolic link"}
 		}
-		return map[string]any{"isDirectory": info.IsDir(), "isFile": info.Mode().IsRegular(), "isSymlink": info.Mode()&os.ModeSymlink != 0, "size": info.Size(), "createdAtMs": created, "modifiedAtMs": info.ModTime().UnixMilli()}, nil
+		return metadataResult(info, false, fd, "", unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW), nil
 	case "fs/readFile":
 		if !info.Mode().IsRegular() {
-			return nil, errors.New("not a regular file")
+			return nil, rpcError{-32600, "path is not a regular file"}
 		}
-		data, err := io.ReadAll(file)
-		return map[string]any{"dataBase64": base64.StdEncoding.EncodeToString(data)}, err
+		return readFileResult(file, info.Size(), p.maxReadFileBytes)
 	case "fs/writeFile":
 		if !info.Mode().IsRegular() {
-			return nil, errors.New("not a regular file")
+			return nil, rpcError{-32600, "path is not a regular file"}
 		}
 		if err = file.Truncate(0); err != nil {
 			return nil, err
@@ -82,8 +77,11 @@ func filesystemNoFollow(method, path string, p params) (any, error) {
 }
 
 func noFollowParent(path string) (int, string, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
-		return -1, "", errors.New("expected normalized non-root path")
+	if path == "/" {
+		return -1, "", rpcError{-32600, "path must name an entry"}
+	}
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return -1, "", rpcError{-32600, "no-follow filesystem operations require a normalized path"}
 	}
 	parent, leaf := filepath.Dir(path), filepath.Base(path)
 	fd, err := unix.Openat2(unix.AT_FDCWD, parent, &unix.OpenHow{Flags: unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC, Resolve: unix.RESOLVE_NO_SYMLINKS})
@@ -92,9 +90,12 @@ func noFollowParent(path string) (int, string, error) {
 
 func createNoFollow(path string, p params) (any, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		return nil, errors.New("expected normalized absolute path")
+		return nil, rpcError{-32600, "no-follow filesystem operations require a normalized path"}
 	}
 	if p.Recursive != nil && !*p.Recursive {
+		if path == "/" {
+			return nil, rpcError{-32603, "directory already exists"}
+		}
 		fd, leaf, err := noFollowParent(path)
 		if err != nil {
 			return nil, err
@@ -126,50 +127,31 @@ func createNoFollow(path string, p params) (any, error) {
 }
 
 func removeNoFollow(path string, p params) (any, error) {
+	if p.Recursive == nil || *p.Recursive {
+		return nil, rpcError{-32603, "recursive no-follow removal is unsupported"}
+	}
+	force := p.Force == nil || *p.Force
 	fd, leaf, err := noFollowParent(path)
 	if err != nil {
-		if p.Force != nil && *p.Force && errors.Is(err, unix.ENOENT) {
+		if force && errors.Is(err, unix.ENOENT) {
 			return map[string]any{}, nil
 		}
 		return nil, err
 	}
 	defer unix.Close(fd)
-	err = removeAt(fd, leaf, p.Recursive != nil && *p.Recursive)
-	if p.Force != nil && *p.Force && errors.Is(err, unix.ENOENT) {
-		err = nil
-	}
-	return map[string]any{}, err
-}
-
-func removeAt(parent int, name string, recursive bool) error {
 	var st unix.Stat_t
-	if err := unix.Fstatat(parent, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return err
-	}
-	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return unix.Unlinkat(parent, name, 0)
-	}
-	if !recursive {
-		return unix.Unlinkat(parent, name, unix.AT_REMOVEDIR)
-	}
-	fd, err := unix.Openat(parent, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return err
-	}
-	f := os.NewFile(uintptr(fd), name)
-	names, err := f.Readdirnames(-1)
-	if err != nil {
-		_ = f.Close()
-		return err
-	}
-	for _, child := range names {
-		if err = removeAt(fd, child, true); err != nil {
-			_ = f.Close()
-			return err
+	if err := unix.Fstatat(fd, leaf, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if force && errors.Is(err, unix.ENOENT) {
+			return map[string]any{}, nil
 		}
+		return nil, err
 	}
-	if err = f.Close(); err != nil {
-		return err
+	var flags int
+	switch st.Mode & unix.S_IFMT {
+	case unix.S_IFLNK:
+		return nil, rpcError{-32600, "path contains a symbolic link"}
+	case unix.S_IFDIR:
+		flags = unix.AT_REMOVEDIR
 	}
-	return unix.Unlinkat(parent, name, unix.AT_REMOVEDIR)
+	return map[string]any{}, unix.Unlinkat(fd, leaf, flags)
 }

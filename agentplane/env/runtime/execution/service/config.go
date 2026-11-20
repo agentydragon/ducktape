@@ -22,6 +22,7 @@ type Config struct {
 	Binary           string
 	ContainerSocket  string
 	ExecutorURL      string
+	LimitsFile       string
 	Environment      map[string]string
 	Backend          string
 	Readiness        codexexecserver.Readiness
@@ -56,6 +57,9 @@ func (c Config) validate() error {
 	}
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
+	}
+	if c.LimitsFile != "" && (!filepath.IsAbs(c.LimitsFile) || c.Backend == "companion") {
+		return errors.New("execution limits file requires an absolute path and systemd backend")
 	}
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err

@@ -276,7 +276,7 @@ func TestWriteIDAccountingAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
-		status, err := session.Write("cat", "same", []byte("hello"))
+		status, err := session.WriteContext(context.Background(), "cat", "same", []byte("hello"))
 		if err != nil || status != "accepted" {
 			t.Fatalf("write: %s %v", status, err)
 		}
@@ -342,6 +342,7 @@ func TestCloseConcurrentWithExpiration(t *testing.T) {
 
 func TestFullGlobalBufferReusesOwnRetainedBytes(t *testing.T) {
 	server := New()
+	globalOutput := int64(server.limits.MaxOutputBytes)
 	server.outputBytes.Store(globalOutput)
 	p := &process{server: server, changed: make(chan struct{}), chunks: []Chunk{{Seq: 1, Stream: "stdout", Data: []byte("old")}}, bytes: 3, next: 2}
 	var wg sync.WaitGroup

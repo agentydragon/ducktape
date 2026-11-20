@@ -30,16 +30,54 @@ func (e rpcError) Error() string { return e.message }
 
 type Handler struct {
 	Server  *native.Server
+	Limits  Limits
 	observe func(string)
 }
+
+// Limits bounds resources consumed by each Codex connection.
+type Limits struct {
+	MaxMessageBytes         int64 `json:"max_message_bytes"`
+	MaxConcurrentRequests   int   `json:"max_concurrent_requests"`
+	MaxOpenFiles            int   `json:"max_open_files"`
+	MaxBufferedHTTPBytes    int64 `json:"max_buffered_http_bytes"`
+	MaxWalkDepth            int   `json:"max_walk_depth"`
+	MaxWalkDirectories      int   `json:"max_walk_directories"`
+	MaxWalkEntries          int   `json:"max_walk_entries"`
+	MaxWalkResponseBytes    int   `json:"max_walk_response_bytes"`
+	MaxDiscoveryRoots       int   `json:"max_discovery_roots"`
+	MaxDiscoveryDepth       int   `json:"max_discovery_depth"`
+	MaxDiscoveryDirectories int   `json:"max_discovery_directories"`
+	MaxDiscoveryEntries     int   `json:"max_discovery_entries"`
+	MaxDiscoveryFileBytes   int   `json:"max_discovery_file_bytes"`
+	MaxDiscoveryBundleBytes int   `json:"max_discovery_bundle_bytes"`
+	MaxReadFileBytes        int64 `json:"max_read_file_bytes"`
+	MaxReadDirectoryEntries int   `json:"max_read_directory_entries"`
+}
+
+func DefaultLimits() Limits {
+	return Limits{MaxMessageBytes: 16 << 20, MaxConcurrentRequests: 64, MaxOpenFiles: 128, MaxBufferedHTTPBytes: 8 << 20, MaxWalkDepth: 64, MaxWalkDirectories: 10000, MaxWalkEntries: 50000, MaxWalkResponseBytes: 4 << 20, MaxDiscoveryRoots: 128, MaxDiscoveryDepth: 6, MaxDiscoveryDirectories: 2000, MaxDiscoveryEntries: 20000, MaxDiscoveryFileBytes: 1 << 20, MaxDiscoveryBundleBytes: 16 << 20, MaxReadFileBytes: 512 << 20, MaxReadDirectoryEntries: 50000}
+}
+
+func (l Limits) Validate() error {
+	if l.MaxMessageBytes <= 0 || l.MaxMessageBytes == int64(^uint64(0)>>1) || l.MaxConcurrentRequests <= 0 || l.MaxOpenFiles <= 0 || l.MaxBufferedHTTPBytes <= 0 || l.MaxBufferedHTTPBytes == int64(^uint64(0)>>1) || l.MaxWalkDepth <= 0 || l.MaxWalkDirectories <= 0 || l.MaxWalkEntries <= 0 || l.MaxWalkResponseBytes < minWalkResponseBytes || l.MaxDiscoveryRoots <= 0 || l.MaxDiscoveryDepth <= 0 || l.MaxDiscoveryDirectories <= 0 || l.MaxDiscoveryEntries <= 0 || l.MaxDiscoveryFileBytes <= 0 || l.MaxDiscoveryBundleBytes <= 0 || l.MaxReadFileBytes <= 0 || l.MaxReadFileBytes == int64(^uint64(0)>>1) || l.MaxReadDirectoryEntries <= 0 {
+		return errors.New("all Codex protocol limits must be positive")
+	}
+	return nil
+}
+
 type request struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
 }
 type params struct {
-	ResumeSessionID string `json:"resumeSessionId"`
-	Roots           []struct {
+	maxBufferedHTTPBytes                                                                                                               int64
+	maxWalkDepth, maxWalkDirectories, maxWalkEntries, maxWalkResponseBytes                                                             int
+	maxDiscoveryRoots, maxDiscoveryDepth, maxDiscoveryDirectories, maxDiscoveryEntries, maxDiscoveryFileBytes, maxDiscoveryBundleBytes int
+	maxReadFileBytes                                                                                                                   int64
+	maxReadDirectoryEntries                                                                                                            int
+	ResumeSessionID                                                                                                                    string `json:"resumeSessionId"`
+	Roots                                                                                                                              []struct {
 		ID      string          `json:"id"`
 		Path    string          `json:"path"`
 		Sandbox json.RawMessage `json:"sandbox"`
@@ -103,11 +141,22 @@ type params struct {
 
 func nonnull(v json.RawMessage) bool { return len(v) > 0 && string(v) != "null" }
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	limits := h.Limits
+	if limits == (Limits{}) {
+		limits = DefaultLimits()
+	}
+	if limits.Validate() != nil {
+		http.Error(w, "invalid executor limits", http.StatusInternalServerError)
+		return
+	}
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer ws.CloseNow()
+	ws.SetReadLimit(limits.MaxMessageBytes)
+	requests := make(chan struct{}, limits.MaxConcurrentRequests)
+	control := make(chan struct{}, limits.MaxConcurrentRequests)
 	ctx, cancel := context.WithCancel(r.Context())
 	var wg sync.WaitGroup
 	var handleMu sync.Mutex
@@ -163,6 +212,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(ctx, ws, q.ID, nil, err)
 			continue
 		}
+		if q.Method == "fs/writeFile" {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(q.Params, &fields) != nil || !nonnull(fields["dataBase64"]) {
+				reply(ctx, ws, q.ID, nil, rpcError{-32602, "dataBase64 is required"})
+				continue
+			}
+		}
 		if q.Method == "initialize" {
 			if session != nil {
 				reply(ctx, ws, q.ID, nil, errors.New("already initialized"))
@@ -186,9 +242,25 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(ctx, ws, q.ID, nil, errors.New("not initialized"))
 			continue
 		}
+		p.maxBufferedHTTPBytes = limits.MaxBufferedHTTPBytes
+		p.maxWalkDepth, p.maxWalkDirectories, p.maxWalkEntries, p.maxWalkResponseBytes = limits.MaxWalkDepth, limits.MaxWalkDirectories, limits.MaxWalkEntries, limits.MaxWalkResponseBytes
+		p.maxDiscoveryRoots, p.maxDiscoveryDepth, p.maxDiscoveryDirectories, p.maxDiscoveryEntries, p.maxDiscoveryFileBytes, p.maxDiscoveryBundleBytes = limits.MaxDiscoveryRoots, limits.MaxDiscoveryDepth, limits.MaxDiscoveryDirectories, limits.MaxDiscoveryEntries, limits.MaxDiscoveryFileBytes, limits.MaxDiscoveryBundleBytes
+		p.maxReadFileBytes, p.maxReadDirectoryEntries = limits.MaxReadFileBytes, limits.MaxReadDirectoryEntries
+		lane := requests
+		switch q.Method {
+		case "environment/info", "environment/status", "process/signal", "process/terminate", "fs/close":
+			lane = control
+		}
+		select {
+		case lane <- struct{}{}:
+		default:
+			reply(ctx, ws, q.ID, nil, rpcError{-32603, "too many concurrent requests"})
+			continue
+		}
 		wg.Add(1)
 		go func(q request, p params, s *native.Session) {
 			defer wg.Done()
+			defer func() { <-lane }()
 			if q.Method == "http/request" && p.StreamResponse {
 				if p.HTTPRequestID == "" {
 					reply(ctx, ws, q.ID, nil, errors.New("stream request ID required"))
@@ -212,16 +284,24 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				handleMu.Lock()
 				defer handleMu.Unlock()
 				p.HandleID = prefix + p.HandleID
-				if originalHandle == "" {
-					reply(ctx, ws, q.ID, nil, errors.New("handle required"))
+				if originalHandle == "" || len(originalHandle) > 32 {
+					reply(ctx, ws, q.ID, nil, rpcError{-32600, "file handle ID must be nonempty and at most 32 bytes"})
 					return
 				}
 				if q.Method == "fs/open" && handles[p.HandleID] {
-					reply(ctx, ws, q.ID, nil, errors.New("handle already exists"))
+					reply(ctx, ws, q.ID, nil, rpcError{-32600, "handle already exists"})
+					return
+				}
+				if q.Method == "fs/open" && len(handles) >= limits.MaxOpenFiles {
+					reply(ctx, ws, q.ID, nil, rpcError{-32600, "file handle limit reached"})
 					return
 				}
 				if q.Method != "fs/open" && !handles[p.HandleID] {
-					reply(ctx, ws, q.ID, nil, errors.New("unknown handle"))
+					if q.Method == "fs/close" {
+						reply(ctx, ws, q.ID, map[string]any{}, nil)
+						return
+					}
+					reply(ctx, ws, q.ID, nil, rpcError{-32004, "unknown handle"})
 					return
 				}
 			}
@@ -271,6 +351,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if err == nil && q.Method == "fs/close" {
 				delete(handles, p.HandleID)
+			}
+			if err != nil && strings.HasPrefix(q.Method, "fs/") {
+				err = filesystemRPCError(err)
 			}
 			reply(ctx, ws, q.ID, result, err)
 			if err == nil && q.Method == "process/start" {
@@ -324,16 +407,25 @@ func dispatch(ctx context.Context, s *native.Session, method string, p params) (
 			return nil, err
 		}
 		err = s.Start(native.StartRequest{ProcessID: p.ProcessID, Argv: p.Argv, Cwd: p.Cwd, Environment: env, TTY: p.TTY, PipeStdin: p.PipeStdin, Arg0: p.Arg0})
+		if errors.Is(err, native.ErrProcessExists) || errors.Is(err, native.ErrInvalidRequest) {
+			return nil, rpcError{-32600, err.Error()}
+		}
+		if err != nil {
+			return nil, rpcError{-32603, err.Error()}
+		}
 		return map[string]any{"processId": p.ProcessID}, err
 	case "process/read":
 		v, err := s.Read(ctx, p.ProcessID, p.AfterSeq, p.MaxBytes, time.Duration(p.WaitMS)*time.Millisecond)
+		if errors.Is(err, native.ErrUnknownProcess) {
+			return nil, rpcError{-32600, "unknown process id " + p.ProcessID}
+		}
 		chunks := make([]map[string]any, 0, len(v.Chunks))
 		for _, c := range v.Chunks {
 			chunks = append(chunks, map[string]any{"seq": c.Seq, "stream": c.Stream, "chunk": c.Data})
 		}
 		return map[string]any{"chunks": chunks, "nextSeq": v.NextSeq, "exited": v.Exited, "exitCode": v.ExitCode, "closed": v.Closed, "failure": v.Failure}, err
 	case "process/write":
-		v, err := s.Write(p.ProcessID, p.WriteID, p.Chunk)
+		v, err := s.WriteContext(ctx, p.ProcessID, p.WriteID, p.Chunk)
 		return map[string]any{"status": v}, err
 	case "process/signal":
 		if p.Signal != "interrupt" {
@@ -350,6 +442,9 @@ func dispatch(ctx context.Context, s *native.Session, method string, p params) (
 	case "fs/open":
 		if p.Mode != "" && p.Mode != "read" {
 			return nil, errors.New("unsupported open mode")
+		}
+		if _, err := localPath(p.Path); err != nil {
+			return nil, err
 		}
 		err := s.OpenFile(p.HandleID, p.Path)
 		return map[string]any{"handleId": p.HandleID}, err

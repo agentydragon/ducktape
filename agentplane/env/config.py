@@ -216,6 +216,15 @@ class ContainerExecutor(Executor):
 class VMExecutor(Executor):
     """Loopback exec-server endpoint supervised by the guest systemd manager."""
 
+    limits_file: str | None = None
+
+    @field_validator("limits_file")
+    @classmethod
+    def absolute_limits_file(cls, value: str | None) -> str | None:
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError("execution limits file must be absolute")
+        return value
+
 
 class PodEnvironment(_RuntimeConfigModel):
     kind: Literal["pod"] = "pod"

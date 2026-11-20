@@ -36,6 +36,23 @@ and 90-second backend fence before replacement. A failed cleanup is never an exe
 
 The companion and VM supervisor launch `agentplane-execution-service serve`; no harness configuration or provider credentials are required.
 
+The `serve` and `companion` commands accept an optional `--limits-file` pointing to an absolute
+path to a JSON file. A companion passes it to the supervised backend; on VMs set
+`environment.executor.limits_file` in the Runtime configuration. Mount the file into the execution
+container when setting the companion option. For example:
+
+```json
+{
+  "native": { "max_sessions": 128, "max_output_bytes": 67108864 },
+  "codex": { "max_message_bytes": 16777216, "max_concurrent_requests": 64 }
+}
+```
+
+Unspecified fields use `native.DefaultLimits` and `codexshim.DefaultLimits`; unknown fields and
+nonpositive values are rejected. Values are counts or bytes, except the native retention settings,
+which are seconds. A new configuration takes effect when the backend is restarted; restarting
+abandons its live process handles and never replays uncertain work.
+
 Runtime publishes the proxy after bounded typed and Codex protocol readiness probes. The service
 probes native dispatch every five seconds with a three-second deadline; three consecutive failures
 end the service lifetime and fence the backend. Shutdown closes held sessions, joins direct calls and stops

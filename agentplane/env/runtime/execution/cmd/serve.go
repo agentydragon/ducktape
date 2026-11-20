@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -26,6 +28,44 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// limitsFile contains optional overrides; omitted fields use the defaults.
+type limitsFile struct {
+	Native native.Limits    `json:"native"`
+	Codex  codexshim.Limits `json:"codex"`
+}
+
+func readLimits(path string) (limitsFile, error) {
+	limits := limitsFile{Native: native.DefaultLimits(), Codex: codexshim.DefaultLimits()}
+	if path != "" {
+		if !filepath.IsAbs(path) {
+			return limitsFile{}, errors.New("limits file path must be absolute")
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return limitsFile{}, err
+		}
+		defer f.Close()
+		decoder := json.NewDecoder(io.LimitReader(f, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&limits); err != nil {
+			return limitsFile{}, err
+		}
+		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return limitsFile{}, errors.New("limits file must contain one JSON object")
+			}
+			return limitsFile{}, err
+		}
+	}
+	if err := limits.Native.Validate(); err != nil {
+		return limitsFile{}, err
+	}
+	if err := limits.Codex.Validate(); err != nil {
+		return limitsFile{}, err
+	}
+	return limits, nil
+}
+
 // runServer hosts both APIs in one supervised execution process and session registry.
 func runServer(args []string) int {
 	if os.Getpid() == 1 {
@@ -35,6 +75,7 @@ func runServer(args []string) int {
 	flags := flag.NewFlagSet("agentplane-execution-service serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	ws := flags.String("listen", "", "Codex WebSocket URL")
+	limitsPath := flags.String("limits-file", "", "absolute path to execution limits JSON")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 64
 	}
@@ -42,6 +83,17 @@ func runServer(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
+	limits, err := readLimits(*limitsPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "execution limits:", err)
+		return 64
+	}
+	core, err := native.NewWithLimits(limits.Native)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "execution limits:", err)
+		return 64
+	}
+	defer core.Close()
 	endpoint, _ := url.Parse(*ws)
 	listener, err := net.Listen("tcp", endpoint.Host)
 	if err != nil {
@@ -49,14 +101,12 @@ func runServer(args []string) int {
 		return 1
 	}
 	defer listener.Close()
-	core := native.New()
-	defer core.Close()
 	rpc := grpc.NewServer()
 	pb.RegisterExecutorServer(rpc, typedbackend.New(core))
 	healthService := health.NewServer()
 	healthService.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(rpc, healthService)
-	shim := codexshim.Handler{Server: core}
+	shim := codexshim.Handler{Server: core, Limits: limits.Codex}
 	web := &http.Server{Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
 			rpc.ServeHTTP(w, r)

@@ -132,7 +132,7 @@ func (s *Server) WriteProcess(ctx context.Context, r *pb.WriteProcessRequest) (*
 	if err != nil {
 		return &pb.WriteProcessResponse{Status: rejected(err)}, nil
 	}
-	v, err := sess.Write(r.ProcessId, r.WriteId, r.Data)
+	v, err := sess.WriteContext(ctx, r.ProcessId, r.WriteId, r.Data)
 	return &pb.WriteProcessResponse{Status: uncertain(err), WriteStatus: v}, nil
 }
 

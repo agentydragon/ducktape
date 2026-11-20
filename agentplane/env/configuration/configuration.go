@@ -198,7 +198,8 @@ type PodEnvironmentConfiguration struct {
 }
 
 type VMExecutorConfiguration struct {
-	URL string `json:"url"`
+	URL        string  `json:"url"`
+	LimitsFile *string `json:"limits_file"`
 }
 
 type VMEnvironmentConfiguration struct {
@@ -268,6 +269,12 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		}
 		if vm.Executor != nil {
 			executor = &codexexecserver.Config{URL: vm.Executor.URL, Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
+			if vm.Executor.LimitsFile != nil {
+				if !filepath.IsAbs(*vm.Executor.LimitsFile) {
+					return nil, nil, nil, false, "", errors.New("execution limits file must be absolute")
+				}
+				executor.LimitsFile = *vm.Executor.LimitsFile
+			}
 		}
 	default:
 		return nil, nil, nil, false, "", fmt.Errorf("unknown environment kind %q", tag.Kind)

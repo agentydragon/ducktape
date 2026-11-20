@@ -92,12 +92,16 @@ func httpRequest(ctx context.Context, p params) (any, error) {
 	}
 	defer cancel()
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20+1))
+	limit := p.maxBufferedHTTPBytes
+	if limit == 0 {
+		limit = DefaultLimits().MaxBufferedHTTPBytes
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > 8<<20 {
-		return nil, fmt.Errorf("HTTP response exceeds 8 MiB")
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("HTTP response exceeds %d bytes", limit)
 	}
 	return map[string]any{"status": resp.StatusCode, "headers": responseHeaders(resp), "bodyBase64": body}, nil
 }

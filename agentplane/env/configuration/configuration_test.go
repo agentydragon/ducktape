@@ -428,3 +428,26 @@ func TestConfigurationLogLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestVMExecutionLimitsFile(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	value, path, launch := configurationFixture(t)
+	env := configurationVMEnvironment()
+	configurationVMExecutor(env)
+	executor := env["executor"].(map[string]any)
+	executor["limits_file"] = "/etc/agentplane/execution-limits.json"
+	value["environment"] = env
+	writeJSONFixture(t, path, value)
+	config, _, _, err := load(path, launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.CodexExecServer.LimitsFile != executor["limits_file"] {
+		t.Fatalf("limits file = %q", config.CodexExecServer.LimitsFile)
+	}
+	executor["limits_file"] = "relative.json"
+	writeJSONFixture(t, path, value)
+	if _, _, _, err := load(path, launch); err == nil {
+		t.Fatal("accepted relative limits file")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -28,15 +29,81 @@ import (
 var (
 	ErrUnknownSession  = errors.New("session not found")
 	ErrSessionAttached = errors.New("session already attached")
+	ErrUnknownProcess  = errors.New("process not found")
+	ErrProcessExists   = errors.New("process ID already exists")
+	ErrInvalidRequest  = errors.New("invalid request")
 )
 
-const (
-	maxOutput       = 1 << 20
-	globalOutput    = 128 << 20
-	globalProcesses = 1024
-	globalWrites    = 65536
-	maxRead         = 1 << 20
-)
+// Limits bounds native execution resources and retention within one server.
+type Limits struct {
+	MaxSessions                   int `json:"max_sessions"`
+	MaxProcessesPerSession        int `json:"max_processes_per_session"`
+	MaxFilesPerSession            int `json:"max_files_per_session"`
+	MaxWritesPerProcess           int `json:"max_writes_per_process"`
+	MaxProcesses                  int `json:"max_processes"`
+	MaxOutputBytesPerProcess      int `json:"max_output_bytes_per_process"`
+	MaxOutputBytes                int `json:"max_output_bytes"`
+	MaxWrites                     int `json:"max_writes"`
+	MaxReadBytes                  int `json:"max_read_bytes"`
+	MaxStdinQueueBytesPerProcess  int `json:"max_stdin_queue_bytes_per_process"`
+	MaxStdinQueueBytes            int `json:"max_stdin_queue_bytes"`
+	MaxStdinQueueChunksPerProcess int `json:"max_stdin_queue_chunks_per_process"`
+	SessionRetentionSeconds       int `json:"session_retention_seconds"`
+	ProcessRetentionSeconds       int `json:"process_retention_seconds"`
+}
+
+// DefaultLimits returns the limits used by New.
+func DefaultLimits() Limits {
+	return Limits{
+		MaxSessions:                   256,
+		MaxProcessesPerSession:        512,
+		MaxFilesPerSession:            128,
+		MaxWritesPerProcess:           4096,
+		MaxProcesses:                  1024,
+		MaxOutputBytesPerProcess:      1 << 20,
+		MaxOutputBytes:                128 << 20,
+		MaxWrites:                     65536,
+		MaxReadBytes:                  1 << 20,
+		MaxStdinQueueBytesPerProcess:  4 << 20,
+		MaxStdinQueueBytes:            64 << 20,
+		MaxStdinQueueChunksPerProcess: 128,
+		SessionRetentionSeconds:       3600,
+		ProcessRetentionSeconds:       30,
+	}
+}
+
+// Validate checks that every limit is positive and retention fits a duration.
+func (l Limits) Validate() error {
+	bounds := []struct {
+		name  string
+		value int
+	}{
+		{"max sessions", l.MaxSessions},
+		{"max processes per session", l.MaxProcessesPerSession},
+		{"max files per session", l.MaxFilesPerSession},
+		{"max retained writes per process", l.MaxWritesPerProcess},
+		{"max processes", l.MaxProcesses},
+		{"max output bytes per process", l.MaxOutputBytesPerProcess},
+		{"max output bytes", l.MaxOutputBytes},
+		{"max retained writes", l.MaxWrites},
+		{"max read bytes", l.MaxReadBytes},
+		{"max stdin queue bytes per process", l.MaxStdinQueueBytesPerProcess},
+		{"max stdin queue bytes", l.MaxStdinQueueBytes},
+		{"max stdin queue chunks per process", l.MaxStdinQueueChunksPerProcess},
+		{"session retention", l.SessionRetentionSeconds},
+		{"process retention", l.ProcessRetentionSeconds},
+	}
+	for _, bound := range bounds {
+		if bound.value <= 0 {
+			return fmt.Errorf("%s must be positive", bound.name)
+		}
+	}
+	const maxRetentionSeconds = math.MaxInt64 / int64(time.Second)
+	if int64(l.SessionRetentionSeconds) > maxRetentionSeconds || int64(l.ProcessRetentionSeconds) > maxRetentionSeconds {
+		return errors.New("retention seconds exceed the supported duration")
+	}
+	return nil
+}
 
 // EnvPolicy describes the native execution environment policy.
 type EnvPolicy struct {
@@ -154,11 +221,13 @@ type FileMetadata struct {
 
 type Server struct {
 	mu           sync.Mutex
+	limits       Limits
 	sessions     map[string]*Session
 	closed       bool
 	outputBytes  atomic.Int64
 	processCount atomic.Int64
 	writeCount   atomic.Int64
+	stdinBytes   atomic.Int64
 	fatal        chan error
 	fatalOnce    sync.Once
 	waitChild    func(int, *childSiginfo) error
@@ -178,13 +247,10 @@ type Session struct {
 }
 type process struct {
 	mu                 sync.Mutex
-	writeMu            sync.Mutex
-	writesDisposed     bool
 	reapRequested      bool
 	reaped             bool
 	ownershipLost      bool
 	cmd                *exec.Cmd
-	stdin              io.WriteCloser
 	chunks             []Chunk
 	bytes              int
 	next               uint64
@@ -199,11 +265,29 @@ type process struct {
 	id                 string
 	readers            []*os.File
 	failure            *string
-	writes             map[string]string
+
+	writeMu      sync.Mutex
+	writes       map[string]struct{}
+	stdin        *os.File
+	stdinClosed  bool
+	stdinQueue   [][]byte
+	stdinBytes   int
+	stdinChanged chan struct{}
+	stdinDone    chan struct{}
 }
 
-func New() *Server {
-	return &Server{sessions: make(map[string]*Session), fatal: make(chan error, 1), waitChild: waitChild}
+func New() *Server { return newServer(DefaultLimits()) }
+
+// NewWithLimits validates limits before using them for new sessions.
+func NewWithLimits(limits Limits) (*Server, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
+	return newServer(limits), nil
+}
+
+func newServer(limits Limits) *Server {
+	return &Server{limits: limits, sessions: make(map[string]*Session), fatal: make(chan error, 1), waitChild: waitChild}
 }
 
 // Fatal reports lost ownership of a child. The embedding owner must fence the
@@ -232,7 +316,7 @@ func (s *Server) OpenSession(resume string) (*Session, error) {
 		session.attachments++
 		return session, nil
 	}
-	if len(s.sessions) >= 256 {
+	if len(s.sessions) >= s.limits.MaxSessions {
 		return nil, errors.New("session limit reached")
 	}
 	idb := make([]byte, 16)
@@ -245,7 +329,7 @@ func (s *Server) OpenSession(resume string) (*Session, error) {
 	return session, nil
 }
 
-// Detach preserves a session for an hour of disconnection, then reclaims it.
+// Detach preserves a disconnected session for the configured retention period.
 // Each successful OpenSession must have a matching Detach.
 func (s *Server) Detach(id string) {
 	s.mu.Lock()
@@ -260,7 +344,7 @@ func (s *Server) Detach(id string) {
 	}
 	session.expiryGeneration++
 	generation := session.expiryGeneration
-	session.expiry = time.AfterFunc(time.Hour, func() { s.expire(id, session, generation) })
+	session.expiry = time.AfterFunc(time.Duration(s.limits.SessionRetentionSeconds)*time.Second, func() { s.expire(id, session, generation) })
 }
 
 func (s *Server) expire(id string, session *Session, generation uint64) {
@@ -385,9 +469,6 @@ func (s *Session) close() {
 			_ = reader.Close()
 		}
 		p.requestReapLocked()
-		if p.stdin != nil {
-			_ = p.stdin.Close()
-		}
 		p.mu.Unlock()
 		p.disposeWrites()
 	}
@@ -399,14 +480,16 @@ func (s *Session) close() {
 func filePath(value string) (string, error) {
 	u, err := url.Parse(value)
 	if err != nil || u.Scheme != "file" || (u.Host != "" && u.Host != "localhost") || !filepath.IsAbs(u.Path) || u.RawQuery != "" || u.Fragment != "" {
-		return "", errors.New("expected absolute file URI")
+		return "", fmt.Errorf("%w: expected absolute file URI", ErrInvalidRequest)
 	}
 	return u.Path, nil
 }
 
 // openPTY allocates and unlocks a Linux pseudoterminal pair.
 func openPTY() (*os.File, *os.File, error) {
-	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	// Explicit nonblocking mode keeps Fd from switching the master to blocking
+	// mode for the ioctl calls. Closing it must interrupt blocked reads and writes.
+	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -433,7 +516,7 @@ func (s *Session) Start(r StartRequest) error {
 		return errors.New("child wait ownership requires linux amd64 or arm64")
 	}
 	if r.ProcessID == "" || len(r.Argv) == 0 || r.Argv[0] == "" {
-		return errors.New("process ID and argv required")
+		return fmt.Errorf("%w: process ID and argv required", ErrInvalidRequest)
 	}
 	dir, err := filePath(r.Cwd)
 	if err != nil {
@@ -444,18 +527,18 @@ func (s *Session) Start(r StartRequest) error {
 	if s.closed {
 		return errors.New("session closed")
 	}
-	if len(s.processes) >= 512 {
+	if len(s.processes) >= s.server.limits.MaxProcessesPerSession {
 		return errors.New("process limit reached")
 	}
 	if _, ok := s.processes[r.ProcessID]; ok {
-		return errors.New("process ID already exists")
+		return ErrProcessExists
 	}
 	if len(r.ProcessID) > 256 {
-		return errors.New("process ID too long")
+		return fmt.Errorf("%w: process ID too long", ErrInvalidRequest)
 	}
 	for {
 		n := s.server.processCount.Load()
-		if n >= globalProcesses {
+		if n >= int64(s.server.limits.MaxProcesses) {
 			return errors.New("global process limit reached")
 		}
 		if s.server.processCount.CompareAndSwap(n, n+1) {
@@ -510,7 +593,7 @@ func (s *Session) Start(r StartRequest) error {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	var stdout, stderr, stdoutWrite, stderrWrite *os.File
-	var stdin io.WriteCloser
+	var stdin *os.File
 	stream := "stdout"
 	if r.TTY {
 		stdout, stdoutWrite, err = openPTY()
@@ -547,7 +630,15 @@ func (s *Session) Start(r StartRequest) error {
 			defer read.Close()
 		}
 	}
-	if err = cmd.Start(); err != nil {
+	if stdin != nil {
+		// Go may fall back to blocking I/O when registering a file with its
+		// poller fails. The writer must be interruptible when we close stdin.
+		err = stdin.SetWriteDeadline(time.Time{})
+	}
+	if err == nil {
+		err = cmd.Start()
+	}
+	if err != nil {
 		stdout.Close()
 		stdoutWrite.Close()
 		if stderr != nil {
@@ -563,7 +654,13 @@ func (s *Session) Start(r StartRequest) error {
 	if stderrWrite != nil {
 		stderrWrite.Close()
 	}
-	p := &process{cmd: cmd, stdin: stdin, changed: make(chan struct{}), writes: make(map[string]string), next: 1, server: s.server, session: s, id: r.ProcessID}
+	p := &process{cmd: cmd, stdin: stdin, changed: make(chan struct{}), next: 1, server: s.server, session: s, id: r.ProcessID}
+	if stdin != nil {
+		p.writes = make(map[string]struct{})
+		p.stdinChanged = make(chan struct{})
+		p.stdinDone = make(chan struct{})
+		go p.writeStdin()
+	}
 	p.readers = []*os.File{stdout}
 	if stderr != nil {
 		p.readers = append(p.readers, stderr)
@@ -696,11 +793,11 @@ func (p *process) maybeClose() {
 		seq := p.next
 		p.next++
 		p.closedSeq = &seq
-		time.AfterFunc(30*time.Second, func() { p.session.reclaim(p.id, p) })
+		time.AfterFunc(time.Duration(p.server.limits.ProcessRetentionSeconds)*time.Second, func() { p.session.reclaim(p.id, p) })
 	}
 }
 
-// reclaim follows the native server's 30-second closed-process retention.
+// reclaim releases a closed process after its retention period.
 func (s *Session) reclaim(id string, p *process) {
 	s.mu.Lock()
 	if s.closed || s.processes[id] != p {
@@ -725,14 +822,72 @@ func (s *Session) reclaim(id string, p *process) {
 }
 
 func (p *process) disposeWrites() {
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
-	if p.writesDisposed {
+	if p.stdin == nil {
 		return
 	}
-	p.writesDisposed = true
+	p.writeMu.Lock()
 	p.server.writeCount.Add(-int64(len(p.writes)))
 	p.writes = nil
+	p.closeStdinQueueLocked()
+	p.writeMu.Unlock()
+	_ = p.stdin.Close()
+	<-p.stdinDone
+}
+
+func (p *process) signalStdinChangeLocked() {
+	close(p.stdinChanged)
+	p.stdinChanged = make(chan struct{})
+}
+
+func (p *process) closeStdinQueueLocked() {
+	if p.stdinClosed {
+		return
+	}
+	p.stdinClosed = true
+	pendingBytes := 0
+	for _, data := range p.stdinQueue {
+		pendingBytes += len(data)
+	}
+	p.stdinBytes -= pendingBytes
+	p.server.stdinBytes.Add(-int64(pendingBytes))
+	p.stdinQueue = nil
+	p.signalStdinChangeLocked()
+}
+
+// writeStdin is owned by the process. An attachment can disappear after
+// admission while this worker is blocked in the kernel delivering its input.
+func (p *process) writeStdin() {
+	defer close(p.stdinDone)
+	for {
+		p.writeMu.Lock()
+		if p.stdinClosed {
+			p.writeMu.Unlock()
+			return
+		}
+		if len(p.stdinQueue) == 0 {
+			changed := p.stdinChanged
+			p.writeMu.Unlock()
+			<-changed
+			continue
+		}
+		data := p.stdinQueue[0]
+		p.stdinQueue[0] = nil
+		p.stdinQueue = p.stdinQueue[1:]
+		p.signalStdinChangeLocked()
+		p.writeMu.Unlock()
+
+		_, err := p.stdin.Write(data)
+
+		p.writeMu.Lock()
+		p.stdinBytes -= len(data)
+		p.server.stdinBytes.Add(-int64(len(data)))
+		if err != nil {
+			p.closeStdinQueueLocked()
+		} else {
+			p.signalStdinChangeLocked()
+		}
+		p.writeMu.Unlock()
+	}
 }
 
 func (p *process) notify() {
@@ -745,7 +900,8 @@ func (p *process) notify() {
 
 func (p *process) readPipe(stream string, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
-	b := make([]byte, 16384)
+	limits := p.server.limits
+	b := make([]byte, min(16384, limits.MaxOutputBytesPerProcess, limits.MaxOutputBytes, limits.MaxReadBytes))
 	for {
 		n, err := r.Read(b)
 		if n > 0 {
@@ -765,12 +921,12 @@ func (p *process) readPipe(stream string, r io.Reader, wg *sync.WaitGroup) {
 				p.server.outputBytes.Add(-int64(size))
 				return true
 			}
-			for p.bytes+n > maxOutput && evict() {
+			for p.bytes > limits.MaxOutputBytesPerProcess-n && evict() {
 			}
 			reserved := false
 			for {
 				total := p.server.outputBytes.Load()
-				if total+int64(n) > globalOutput {
+				if int64(n) > int64(limits.MaxOutputBytes)-total {
 					if evict() {
 						continue
 					}
@@ -806,8 +962,8 @@ func (s *Session) get(id string) (*process, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.processes[id]
-	if p == nil {
-		return nil, errors.New("process not found")
+	if s.closed || p == nil {
+		return nil, ErrUnknownProcess
 	}
 	return p, nil
 }
@@ -817,8 +973,8 @@ func (s *Session) Read(ctx context.Context, id string, after *uint64, maxBytes i
 	if err != nil {
 		return ReadResult{}, err
 	}
-	if maxBytes <= 0 || maxBytes > maxRead {
-		maxBytes = maxRead
+	if maxBytes <= 0 || maxBytes > s.server.limits.MaxReadBytes {
+		maxBytes = s.server.limits.MaxReadBytes
 	}
 	if wait < 0 {
 		wait = 0
@@ -833,7 +989,7 @@ func (s *Session) Read(ctx context.Context, id string, after *uint64, maxBytes i
 			if after != nil && c.Seq <= *after {
 				continue
 			}
-			if size > 0 && size+len(c.Data) > maxBytes {
+			if size > 0 && len(c.Data) > maxBytes-size {
 				break
 			}
 			data := append([]byte(nil), c.Data...)
@@ -858,55 +1014,98 @@ func (s *Session) Read(ctx context.Context, id string, after *uint64, maxBytes i
 	}
 }
 
-func (s *Session) Write(id, writeID string, data []byte) (string, error) {
+// WriteContext accepts stdin into a bounded process-owned queue. A retry with
+// the same ID acknowledges a prior admission without delivering its data again.
+func (s *Session) WriteContext(ctx context.Context, id, writeID string, data []byte) (string, error) {
+	if writeID == "" || len(writeID) > 256 {
+		return "", fmt.Errorf("%w: write ID must have 1 to 256 bytes", ErrInvalidRequest)
+	}
 	p, err := s.get(id)
 	if err != nil {
 		return "unknownProcess", nil
-	}
-	if writeID == "" || len(writeID) > 256 {
-		return "", errors.New("write ID required")
-	}
-	p.writeMu.Lock()
-	defer p.writeMu.Unlock()
-	if p.writesDisposed {
-		return "stdinClosed", nil
-	}
-	if status, ok := p.writes[writeID]; ok {
-		return status, nil
-	}
-	if len(p.writes) >= 4096 {
-		return "", errors.New("write limit reached")
 	}
 	if p.stdin == nil {
 		return "stdinClosed", nil
 	}
 	for {
+		p.writeMu.Lock()
+		if _, ok := p.writes[writeID]; ok {
+			p.writeMu.Unlock()
+			return "accepted", nil
+		}
+		if p.stdinClosed {
+			p.writeMu.Unlock()
+			return "stdinClosed", nil
+		}
+		if err := ctx.Err(); err != nil {
+			p.writeMu.Unlock()
+			return "", err
+		}
+		limits := p.server.limits
+		if len(p.writes) >= limits.MaxWritesPerProcess {
+			p.writeMu.Unlock()
+			return "", errors.New("write limit reached")
+		}
+		if len(data) > limits.MaxStdinQueueBytesPerProcess || len(data) > limits.MaxStdinQueueBytes {
+			p.writeMu.Unlock()
+			return "", fmt.Errorf("%w: stdin write exceeds queue byte limit", ErrInvalidRequest)
+		}
+		if len(p.stdinQueue) < limits.MaxStdinQueueChunksPerProcess && len(data) <= limits.MaxStdinQueueBytesPerProcess-p.stdinBytes {
+			err := p.enqueueStdinLocked(writeID, data)
+			p.writeMu.Unlock()
+			if err != nil {
+				return "", err
+			}
+			return "accepted", nil
+		}
+		changed := p.stdinChanged
+		p.writeMu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+}
+
+// enqueueStdinLocked records admission and queues the data as one operation.
+func (p *process) enqueueStdinLocked(writeID string, data []byte) error {
+	limits := p.server.limits
+	for {
 		n := p.server.writeCount.Load()
-		if n >= globalWrites {
-			return "", errors.New("global write ID limit reached")
+		if n >= int64(limits.MaxWrites) {
+			return errors.New("global write ID limit reached")
 		}
 		if p.server.writeCount.CompareAndSwap(n, n+1) {
 			break
 		}
 	}
-	_, err = p.stdin.Write(data)
-	if err != nil {
-		p.server.writeCount.Add(-1)
-		return "", err
+	for {
+		n := p.server.stdinBytes.Load()
+		if int64(len(data)) > int64(limits.MaxStdinQueueBytes)-n {
+			p.server.writeCount.Add(-1)
+			return errors.New("global stdin queue byte limit reached")
+		}
+		if p.server.stdinBytes.CompareAndSwap(n, n+int64(len(data))) {
+			break
+		}
 	}
-	p.writes[writeID] = "accepted"
-	return "accepted", nil
+	p.writes[writeID] = struct{}{}
+	p.stdinQueue = append(p.stdinQueue, append([]byte(nil), data...))
+	p.stdinBytes += len(data)
+	p.signalStdinChangeLocked()
+	return nil
 }
 
 func (s *Session) Signal(id string) error {
 	p, err := s.get(id)
 	if err != nil {
-		return err
+		return nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.exited || p.reaped || p.reapRequested || p.ownershipLost {
-		return errors.New("process exited")
+		return nil
 	}
 	return syscall.Kill(-p.cmd.Process.Pid, syscall.SIGINT)
 }
@@ -914,7 +1113,7 @@ func (s *Session) Signal(id string) error {
 func (s *Session) Terminate(id string) (bool, error) {
 	p, err := s.get(id)
 	if err != nil {
-		return false, err
+		return false, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -949,7 +1148,7 @@ func (s *Session) OpenFile(id, path string) error {
 	if s.closed {
 		return errors.New("session closed")
 	}
-	if len(s.files) >= 128 {
+	if len(s.files) >= s.server.limits.MaxFilesPerSession {
 		return errors.New("file handle limit reached")
 	}
 	if s.files[id] != nil {
@@ -964,8 +1163,8 @@ func (s *Session) OpenFile(id, path string) error {
 }
 
 func (s *Session) ReadFile(id string, offset int64, length int) ([]byte, bool, error) {
-	if offset < 0 || length < 0 || length > maxRead {
-		return nil, false, errors.New("invalid file range")
+	if offset < 0 || length < 0 || length > s.server.limits.MaxReadBytes {
+		return nil, false, fmt.Errorf("%w: invalid file range", ErrInvalidRequest)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

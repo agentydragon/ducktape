@@ -79,6 +79,7 @@ var ErrContainerOwnershipLost = errors.New("executor container ownership connect
 // Config selects local systemd supervision or ownership of the Pod executor container.
 type Config struct {
 	URL             string
+	LimitsFile      string
 	ContainerSocket string
 	Launcher        *supervision.SystemdLauncher
 	Readiness       Readiness
@@ -150,8 +151,12 @@ func NativeStart(config NativeConfig) Start {
 		if config.Supervisor == nil && config.LaunchProcess == nil {
 			return nil, errors.New("execution backend supervisor is not configured")
 		}
+		command := []string{config.Binary, "serve", "--listen", config.Config.URL}
+		if config.Config.LimitsFile != "" {
+			command = append(command, "--limits-file", config.Config.LimitsFile)
+		}
 		processConfig := supervision.ProcessConfig{
-			Command:      []string{config.Binary, "serve", "--listen", config.Config.URL},
+			Command:      command,
 			Dir:          config.StateDir,
 			Env:          env,
 			StopGrace:    executorStopGrace,

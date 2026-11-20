@@ -9,6 +9,9 @@ import (
 )
 
 func copyRequest(p params) (any, error) {
+	if p.Recursive == nil {
+		return nil, rpcError{-32602, "missing field `recursive`"}
+	}
 	src, err := localPath(p.SourcePath)
 	if err != nil {
 		return nil, err
@@ -22,8 +25,8 @@ func copyRequest(p params) (any, error) {
 		return nil, err
 	}
 	if info.IsDir() {
-		if p.Recursive == nil || !*p.Recursive {
-			return nil, errors.New("directory copy requires recursive")
+		if !*p.Recursive {
+			return nil, rpcError{-32600, "fs/copy requires recursive: true when sourcePath is a directory"}
 		}
 		source, err := filepath.EvalSymlinks(src)
 		if err != nil {
@@ -39,7 +42,7 @@ func copyRequest(p params) (any, error) {
 			return nil, err
 		}
 		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))) {
-			return nil, errors.New("destination is within source")
+			return nil, rpcError{-32600, "fs/copy cannot copy a directory to itself or one of its descendants"}
 		}
 	}
 	return map[string]any{}, copyEntry(src, dst)
@@ -85,6 +88,6 @@ func copyEntry(src, dst string) error {
 		closeErr := output.Close()
 		return errors.Join(copyErr, closeErr)
 	default:
-		return errors.New("unsupported source type")
+		return rpcError{-32600, "fs/copy only supports regular files, directories, and symlinks"}
 	}
 }

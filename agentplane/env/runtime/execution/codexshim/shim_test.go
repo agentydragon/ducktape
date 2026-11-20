@@ -441,8 +441,10 @@ func TestNoFollowDirectoryAndRemoval(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "f"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := filesystem("fs/remove", params{Path: uri(filepath.Join(root, "a")), FollowSymlinks: &no, Recursive: &yes}); err != nil {
-		t.Fatal(err)
+	for _, path := range []string{filepath.Join(path, "f"), path, filepath.Join(root, "a")} {
+		if _, err := filesystem("fs/remove", params{Path: uri(path), FollowSymlinks: &no, Recursive: &no}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "a")); !os.IsNotExist(err) {
 		t.Fatalf("directory remained: %v", err)

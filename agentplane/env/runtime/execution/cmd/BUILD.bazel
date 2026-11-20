@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -9,6 +9,28 @@ go_binary(
         "serve.go",
     ],
     pure = "on",
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/codexshim",
+        "//agentplane/env/runtime/execution/companion:executor",
+        "//agentplane/env/runtime/execution/native",
+        "//agentplane/env/runtime/execution/typedbackend",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_x_net//http2",
+        "@org_golang_x_net//http2/h2c",
+    ],
+)
+
+go_test(
+    name = "limits_test",
+    srcs = [
+        "limits_test.go",
+        "main.go",
+        "serve.go",
+    ],
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/env/runtime/execution/codexexecserver",

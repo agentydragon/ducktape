@@ -61,7 +61,7 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 		}
 	}
 	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
-		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
+		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket, LimitsFile: config.LimitsFile}, Binary: config.Binary,
 		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, LaunchProcess: launchProcess,
 	}), ready)
 }

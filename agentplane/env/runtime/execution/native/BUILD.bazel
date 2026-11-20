@@ -11,7 +11,10 @@ go_library(
 
 go_test(
     name = "native_test",
-    srcs = ["native_test.go"],
+    srcs = [
+        "native_stdin_test.go",
+        "native_test.go",
+    ],
     embed = [":native"],
     race = "on",
 )

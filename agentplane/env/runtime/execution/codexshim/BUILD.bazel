@@ -24,6 +24,9 @@ go_test(
     name = "codexshim_test",
     srcs = [
         "cli_test.go",
+        "discovery_test.go",
+        "filesystem_test.go",
+        "limits_test.go",
         "shim_test.go",
     ],
     data = [
