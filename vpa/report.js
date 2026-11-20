@@ -78,15 +78,15 @@ const cutoverProof = {
   "default-vpa-requests-only":
     "Cover externally authored namespaces and workload overrides; compare effective policies before retiring the admission fallback.",
   "default-revision-history-limit":
-    "Compare chart and operator output, API defaulting and admitted values; preserve rollback history and cleanup behavior.",
+    "Post-prune dry runs confirmed the default of 10, rejection of negative Deployment and DaemonSet input, and unchanged negative StatefulSet input.",
   "default-disable-service-links":
-    "Account for every operator-created Pod, not only cdk8s templates; test explicit and absent fields.",
+    "Preserve the Pod CREATE behavior for raw and operator-created Pods, including explicit true and excluded namespaces.",
   "require-gitops":
-    "It is audit-only today. Decide whether to retain its signals and verify subject and operator exemptions.",
+    "Prove accessible native events and suitable retention before retiring the PolicyReport pipeline.",
   "restrict-agent-gateway-routes":
-    "Preserve enforced namespace, route-kind and API-version coverage, including direct API writes.",
+    "After pruning Kyverno, native admission denied all 20 sandbox dry runs and allowed all 10 operator creates and the operator update.",
   "require-secret-store-conditions":
-    "Preserve enforced admission for private and public sources and separately replace the existing-object background scan.",
+    "Keep enforcement for private and public sources and scanning of stored objects until a supported replacement covers both.",
   "agentplane-staging-launcher-relay":
     "Preserve fail-closed owner and credential checks, mutation, protected mounts, VM lifecycle and ephemeral-container update protection.",
 };
@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=rollout-20261120-1038")
+    fetch("./evidence.json?v=retirement-20261120-1134")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -227,6 +227,39 @@ function Report() {
   const followupTime = followup.observed_at_utc.slice(11, 16);
   const wave = data.latest_rollout_wave;
   const waveTime = wave.observed_at_utc.slice(11, 16);
+  const progress = data.retirement_progress;
+  const progressTime = progress.observed_at_utc.slice(11, 16);
+  const cutover = data.gateway_cutover;
+  const cutoverTime = cutover.observed_at_utc.slice(11, 16);
+  const nativeGatewayPolicy = "restrict-agent-gateway-routes";
+  const remainingPolicies = data.remaining_policy_review;
+  const remainingPoliciesTime = remainingPolicies.reviewed_at_utc.slice(11, 16);
+  const secretStoreDecision = data.secret_store_retirement_decision;
+  const secretStoreDecisionTime = secretStoreDecision.decided_at_utc.slice(
+    11,
+    16,
+  );
+  const certManagerHA = data.cert_manager_ha;
+  const certManagerTime = certManagerHA.observed_at_utc.slice(11, 16);
+  const revisionHistoryCutover = data.revision_history_cutover;
+  const revisionHistoryTime = revisionHistoryCutover.observed_at_utc.slice(
+    11,
+    16,
+  );
+  const policyState = {
+    [nativeGatewayPolicy]: "Retired",
+    "require-gitops": "Audit delivery gate",
+    "require-secret-store-conditions": "Retain Kyverno",
+    "default-revision-history-limit": "Retired",
+  };
+  const policyDirection = {
+    [nativeGatewayPolicy]: "Native ValidatingAdmissionPolicy and Deny binding.",
+    "require-gitops": "Native Audit-only shadow alongside PolicyReports.",
+    "default-revision-history-limit":
+      "Kubernetes built-in defaults and validation.",
+    "require-secret-store-conditions":
+      "Keep Kyverno admission and background scanning. Supported replacement undecided.",
+  };
   const latestTime = latest.observed_at_utc.slice(11, 16);
   const verifiedCount = latest.workloads.filter(
     (row) => row.dry_run_admitted_resources,
@@ -258,12 +291,13 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime} and ${waveTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime}, ${waveTime}, ${progressTime}, ${cutoverTime} and ${revisionHistoryTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
         ><${Anchor} href="#architecture">Policy refactor<//
+        ><${Anchor} href="#kyverno-retirement">Kyverno retirement<//
         ><${Anchor} href="#remaining-work">Remaining work<//
         ><${Anchor} href="#batches">Rollout evidence<//
         ><${Anchor} href="#inventory">Search inventory<//><//
@@ -463,9 +497,9 @@ function Report() {
               ><${Table.Td}>2 · In progress: adoption<//
               ><${Table.Td}
                 >Initial cohorts and post-recommendation admission checks are
-                recorded below. GitLab Shell and the External Secrets controller
-                are in Recreate. Review remaining candidates against the rollout
-                gates.<//
+                recorded below. GitLab Shell, the External Secrets controller
+                and Kyverno admission are in Recreate. Review remaining
+                candidates against the rollout gates.<//
               ><${Table.Td}
                 >Check admission, HPA, node fit, bounds and disruption; compare
                 actual pod resources after a normal creation.<//
@@ -483,7 +517,7 @@ function Report() {
               ><//
             >
             <${Table.Tr}
-              ><${Table.Td}>4 · Open: Kyverno retirement<//
+              ><${Table.Td}>4 · In progress: Kyverno retirement<//
               ><${Table.Td}
                 >Migrate its remaining defaults, security enforcement, dynamic
                 injection and cleanup separately.<//
@@ -496,13 +530,16 @@ function Report() {
           <//>
         <//>
       <//>
-      <${Title} order=${3} size="h4" mt="lg">What Kyverno still owns<//>
+      <${Title} id="kyverno-retirement" order=${3} size="h4" mt="lg"
+        >Kyverno retirement status<//
+      >
       <${Text} component="p">
         The 03:36 UTC inventory found seven ClusterPolicies and two namespaced
-        CleanupPolicies. The 10:37 UTC inventory still shows six ClusterPolicies
-        and two CleanupPolicies after removal of the VPA default. The table
-        covers the production cluster. Operator-created Pods need coverage from
-        their owner or admission.
+        CleanupPolicies. Removing the VPA default left six ClusterPolicies at
+        11:00 UTC. The Gateway cutover left five at ${cutoverTime} UTC. After
+        revision-history retirement, four ClusterPolicies and two
+        CleanupPolicies were live at ${revisionHistoryTime} UTC.
+        Operator-created Pods still need coverage from their owner or admission.
       <//>
       <${Table.ScrollContainer}
         minWidth=${980}
@@ -513,10 +550,10 @@ function Report() {
         <${Table} striped withTableBorder verticalSpacing="sm">
           <${Table.Thead}
             ><${Table.Tr}
-              ><${Table.Th}>Live policy<//><${Table.Th}>State<//
+              ><${Table.Th}>Policy<//><${Table.Th} miw=${105}>State<//
               ><${Table.Th}>Current responsibility<//
               ><${Table.Th}>Candidate direction<//
-              ><${Table.Th}>Before removal<//><//
+              ><${Table.Th}>Proof or remaining gate<//><//
             ><//
           >
           <${Table.Tbody}>
@@ -526,8 +563,9 @@ function Report() {
                 (p) =>
                   html`<${Table.Tr} key=${p.name}>
                     <${Table.Td}><${Code}>${p.name}<//><//
-                    ><${Table.Td}>Open<//><${Table.Td}>${p.role}<//
-                    ><${Table.Td}>${p.direction}<//
+                    ><${Table.Td}>${policyState[p.name] ?? "Open"}<//
+                    ><${Table.Td}>${p.role}<//
+                    ><${Table.Td}>${policyDirection[p.name] ?? p.direction}<//
                     ><${Table.Td}>${cutoverProof[p.name]}<//>
                   <//>`,
               )}
@@ -537,34 +575,76 @@ function Report() {
               >
               <${Table.Td}>Open<//>
               <${Table.Td}
-                >Scheduled cleanup in claude-sandbox and thrive-scraper.<//
+                >claude-sandbox reaps six resource kinds older than seven days
+                hourly. thrive-scraper reaps active Jobs older than six hours
+                every 30 minutes.<//
               >
               <${Table.Td}
-                >Use an appropriately scoped janitor or native TTL where it
-                actually applies.<//
+                >Keep the current policies until a supported replacement covers
+                both.<//
               >
               <${Table.Td}
-                >Preserve age, selection, permissions and schedule; Job TTL only
-                handles finished Jobs, not wedged active Jobs or other resource
-                kinds.<//
+                >Preserve the schedules, kinds, age thresholds, predicates and
+                delete permissions. Job TTL only handles finished Jobs.<//
               >
             <//>
           <//>
         <//>
       <//>
       <${Text} component="p">
-        Test a native replacement for the enforced agent-gateway route rule
-        first. Evaluate the audit-only GitOps rule’s consumers and the two
-        defaults separately. Keep the SecretStore background checks, launcher
-        relay and both cleanup policies until their replacements pass the full
-        behavior listed above.
+        The Gateway cutover completed at ${cutoverTime} UTC. Flux pruned the
+        Kyverno rule and the native Deny binding covered all ten served
+        kind/version pairs in both sandbox namespaces. Operator creates and an
+        update dry run passed. Both sandboxes held zero matching objects.
+        ${" "}<${Anchor} href=${progress.prs[18153].html_url}
+          >Native Gateway policy<//
+        >
+        ${" · "}<${Anchor} href=${progress.prs[18156].html_url}
+          >Kyverno removal<//
+        >
       <//>
       <${Text} component="p">
-        The existing revision-history policy intends to default to 3, but 224 of
-        237 live long-running controllers had 10 at this later observation. That
-        count does not tell us whether charts, API defaulting or policy matching
-        supplied each value; investigate before assuming the policy can simply
-        be deleted.
+        Flux pruned the Kyverno revision-history rule. Post-prune dry runs at
+        ${revisionHistoryTime} UTC confirmed that omitted values still become 10
+        on create and update for Deployments, DaemonSets and StatefulSets.
+        Kubernetes now rejects an explicit −1 for Deployments and DaemonSets. It
+        accepts −1 for StatefulSets, whose controller retains unlimited history
+        with a negative limit. The removed rule had rewritten −1 to 3 for all
+        three kinds. ${" "}<${Anchor} href=${revisionHistoryCutover.html_url}
+          >Revision-history retirement<//
+        >
+        ${" · "}<${Anchor}
+          href=${revisionHistoryCutover.statefulset_negative_history_source}
+          >StatefulSet behavior<//
+        >
+      <//>
+      <${Text} component="p">
+        At ${remainingPoliciesTime} UTC the remaining-policy review confirmed
+        that Service links are forced off on Pod CREATE in the default namespace
+        even when the caller explicitly requests true. In the excluded
+        kube-system namespace the default is true and explicit values survive.
+        Chart defaults cover their own Pod templates. Dynamic Pods still need
+        admission coverage.
+      <//>
+      <${Text} component="p">
+        The native GitOps Audit draft keeps Kyverno reporting and the existing
+        exemptions. It waits for an accessible API audit consumer that can
+        retrieve workload CREATE and UPDATE events. The three API servers have
+        bounded local logs, while Kyverno currently records 120 failed results
+        in 304 namespaced PolicyReports. The launcher relay and both cleanup
+        policies still need parity. ${" "}<${Anchor}
+          href=${remainingPolicies.native_gitops_audit.html_url}
+          >Gated native GitOps audit<//
+        >
+      <//>
+      <${Text} component="p">
+        The separate ClusterSecretStore audit proposal closed at
+        ${secretStoreDecisionTime} UTC. Kyverno still enforces the existing
+        admission rule and scans stored objects in the background. Both stay in
+        place until there is a supported solution or a decision to keep Kyverno
+        for this policy. ${" "}<${Anchor} href=${secretStoreDecision.html_url}
+          >Closed audit proposal<//
+        >
       <//>
       <${Text} component="p">
         The API server is v1.35.1 and already advertises native
@@ -1175,6 +1255,84 @@ function Report() {
             >
           <//>
         <//>
+        <${Paper} id="adoption-progress" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4"
+            >Kyverno, KEDA and VPA webhook follow-up<//
+          >
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${progressTime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>Kyverno admission.</strong>${" "} VPA is Recreate. The three
+            existing Pods stayed Ready on separate control-plane nodes through
+            the mode change, with three Ready endpoints and one disruption
+            allowed. ${" "}<${Anchor} href=${progress.prs[18147].html_url}
+              >PR #18147<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>KEDA admission.</strong>${" "} Two Ready webhook endpoints
+            serve from separate nodes, with one disruption allowed. Direct TLS
+            checks verified both endpoints, and an invalid ScaledObject dry run
+            was denied. VPA stays Initial. ${" "}<${Anchor}
+              href=${progress.prs[18148].html_url}
+              >PR #18148<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>KEDA external metrics.</strong>${" "} Two Ready endpoints
+            serve from separate nodes, with one disruption allowed. Both passed
+            TLS readiness with the APIService’s CA and DNS identity, and a live
+            autoscaler metric query succeeded. VPA stays Initial.
+            ${" "}<${Anchor} href=${progress.prs[18152].html_url}>PR #18152<//>
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>VPA webhook.</strong>${" "} The two replacements were Ready
+            on separate nodes, each passed direct TLS verification, and the
+            budget allowed one disruption. ${" "}<${Anchor}
+              href=${progress.prs[18149].html_url}
+              >PR #18149<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <strong>VPA owner-cache race.</strong>${" "} At 10:56:16 UTC the old
+            webhook could not find the first new Pod’s ReplicaSet in its
+            informer cache and reported no matching VPA. The Pod retained its
+            declared 25m CPU and 128 MiB memory requests. At 10:56:27 UTC the
+            same webhook applied 15m CPU and about 105 MiB memory to the second
+            Pod. API server fail-open counters stayed at zero. Check actual
+            requests on the first Pods from a new ReplicaSet, even when an
+            existing owner passed admission dry runs. Upstream investigation
+            remains open on how admission should handle an owner absent from the
+            cache. ${" "}<${Anchor}
+              href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.source}
+              >VPA owner lookup<//
+            >
+            ${" · "}<${Anchor}
+              href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.matcher_source}
+              >Admission matcher<//
+            >
+          <//>
+        <//>
+        <${Paper} id="cert-manager-ha" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4"
+            >cert-manager controller and CA injector<//
+          >
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${certManagerTime} UTC
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            Both Deployments had two Ready replicas on separate hosts. Their
+            disruption budgets each permitted one disruption and both VPAs
+            stayed Initial. Observed leader lease transition gaps were about 6.8
+            seconds and 5.5 seconds. All 59 Certificates were Ready. The three
+            existing webhook endpoints and six CA digests were unchanged, and
+            Certificate and Bundle server dry runs passed. ${" "}<${Anchor}
+              href=${certManagerHA.html_url}
+              >PR #18177<//
+            >
+          <//>
+        <//>
       <//>
       <${Title} id="remaining-work" order=${3} mt="xl">Remaining work<//>
       <${Stack} gap="sm" mt="sm">
@@ -1204,13 +1362,17 @@ function Report() {
             >Promote replicated workloads to Recreate in groups<//
           >
           <${Text} component="p" mb=${0}>
-            GitLab Shell and the External Secrets controller are already
-            Recreate. kubeapi-proxy, CoreDNS, Cilium operator and the
-            certificate and External Secrets webhooks have disruption budgets
-            and remain Initial. Evaluate eviction on each dependency
-            independently, including replacement placement, endpoint readiness,
-            client behavior and failure recovery. Kyverno admission also remains
-            Initial. CDviz and ntfy stay non-evicting pending delivery and
+            GitLab Shell, the External Secrets controller and Kyverno admission
+            are in Recreate. The proxy, CoreDNS, Cilium operator and the
+            certificate, External Secrets and KEDA webhooks have disruption
+            budgets and remain Initial. Evaluate eviction for each dependency
+            independently, including placement, endpoint readiness, client
+            behavior and failure recovery. Crossplane core replication waits for
+            scheduling capacity alongside the existing GitLab Sidekiq surge.
+            ${" "}<${Anchor} href=${progress.prs[18145].html_url}
+              >Capacity-gated Crossplane draft<//
+            >
+            ${" "}CDviz and ntfy stay non-evicting pending delivery and
             availability proof. Review every VPA in a namespace before lowering
             its minimum replica count.
           <//>

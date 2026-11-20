@@ -19039,5 +19039,498 @@
       }
     },
     "workloads_observed_at_utc": "2026-11-20T10:32:57+00:00"
+  },
+  "retirement_progress": {
+    "observed_at_utc": "2026-11-20T11:00:13Z",
+    "source_devel_commit": "11255152640ec562060e995b13e269718d7b5603",
+    "prs": {
+      "18145": {
+        "draft": true,
+        "head_sha": "a27990300204fadce68ab5493a02a849ed9c9f21",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18145",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18145,
+        "state": "open",
+        "title": "[capacity gate] Replicate Crossplane core admission across nodes"
+      },
+      "18147": {
+        "draft": false,
+        "head_sha": "7892d2cb5cd3bd16b035ff014b055e0a620ac675",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18147",
+        "merge_commit_sha": "47a36f6232d5e95f1005411069036854d05f09a4",
+        "merged_at": "2026-11-20T10:46:02Z",
+        "number": 18147,
+        "state": "closed",
+        "title": "Allow VPA to resize Kyverno admission requests"
+      },
+      "18148": {
+        "draft": false,
+        "head_sha": "f05d741d7f7149c24c10e237d15a30f8751bb818",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18148",
+        "merge_commit_sha": "68e444e414aae87d1cc47affbe77adb09cd21cd2",
+        "merged_at": "2026-11-20T10:45:32Z",
+        "number": 18148,
+        "state": "closed",
+        "title": "Spread KEDA admission webhooks across worker nodes"
+      },
+      "18152": {
+        "draft": false,
+        "head_sha": "16e37a7c9c57c1ed70cbb5bb14e09b5a1ecc6e6c",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18152",
+        "merge_commit_sha": "679e908a4d7d325c7e47f21d583a9da99f33a612",
+        "merged_at": "2026-11-20T10:54:19Z",
+        "number": 18152,
+        "state": "closed",
+        "title": "Replicate the KEDA external metrics API across workers"
+      },
+      "18153": {
+        "draft": false,
+        "head_sha": "203641700415f58d5134b91754d3a689484403a3",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18153",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18153,
+        "state": "open",
+        "title": "Add native admission for agent sandbox Gateway API writes"
+      },
+      "18156": {
+        "draft": true,
+        "head_sha": "674b3f5a0d3f6638fd5862a60f4f312af68c6ade",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18156",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18156,
+        "state": "open",
+        "title": "[Native admission rollout gate] Retire the Kyverno Gateway route rule"
+      },
+      "18158": {
+        "draft": true,
+        "head_sha": "6beda43f602722b0cef2b64da6ac8594d25829e8",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18158",
+        "merge_commit_sha": null,
+        "merged_at": null,
+        "number": 18158,
+        "state": "open",
+        "title": "[Explicit -1 contract gate] Retire the Kyverno revision-history default"
+      },
+      "18149": {
+        "number": 18149,
+        "title": "Spread VPA admission controllers across nodes",
+        "state": "closed",
+        "draft": false,
+        "merged_at": "2026-11-20T10:54:58Z",
+        "merge_commit_sha": "11255152640ec562060e995b13e269718d7b5603",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18149",
+        "head_sha": "dd68e6ec8293354de55e93df81d264322dcc8a2e"
+      }
+    },
+    "rollouts": {
+      "kyverno-admission-controller": {
+        "pr": 18147,
+        "ready": 3,
+        "ready_endpoints": 3,
+        "distinct_ready_endpoint_nodes": 3,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 2,
+        "vpa_mode": "Recreate",
+        "pod_identities_preserved_at_promotion": 3
+      },
+      "keda-admission-webhooks": {
+        "pr": 18148,
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 1,
+        "vpa_mode": "Initial",
+        "tls_verified_on_both_endpoints": true,
+        "invalid_scaled_object_dry_run_denied": true
+      },
+      "keda-operator-metrics-apiserver": {
+        "pr": 18152,
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "disruption_budget_minimum": 1,
+        "vpa_mode": "Initial",
+        "api_service_tls_readiness_verified_on_both_endpoints": true,
+        "existing_autoscaler_metric_query_succeeded": true,
+        "checks_observed_at_utc": "2026-11-20T10:55:30Z"
+      },
+      "vpa-admission-controller": {
+        "pr": 18149,
+        "version": "1.7.1",
+        "helm_ready_at_utc": "2026-11-20T10:57Z",
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "tls_verified_on_both_endpoints": true,
+        "owner_cache_race": {
+          "first_pod_at_utc": "2026-11-20T10:56:16.141901Z",
+          "first_pod_webhook_outcome": "ReplicaSet absent from informer store; no matching VPA",
+          "first_pod_requests": {
+            "cpu": "25m",
+            "memory": "128Mi"
+          },
+          "first_pod_limits": {
+            "cpu": "200m",
+            "memory": "256Mi"
+          },
+          "second_pod_at_utc": "2026-11-20T10:56:27.538645Z",
+          "second_pod_webhook_outcome": "same webhook updated resource requirements",
+          "second_pod_requests": {
+            "cpu": "15m",
+            "memory": "109814751"
+          },
+          "second_pod_limits": {
+            "cpu": "120m",
+            "memory": "219629502"
+          },
+          "apiserver_fail_open_counters_increased": false,
+          "per_request_apiserver_audit_available": false,
+          "source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/controller_fetcher/controller_fetcher.go#L163-L198",
+          "matcher_source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/admission-controller/resource/vpa/matcher.go#L54-L62",
+          "upstream_followup": "Determine whether the admission matcher can recover when a just-created owner is missing from its informer cache."
+        }
+      }
+    },
+    "retirement": {
+      "live_cluster_policies": 6,
+      "live_cleanup_policies": 2,
+      "gateway": {
+        "native_pr": 18153,
+        "legacy_removal_pr": 18156,
+        "native_stack": 18157,
+        "state": "Awaiting native rollout proof",
+        "initial_probe_at_utc": "2026-11-20T10:50:31Z",
+        "sandbox_existing_matching_objects": 0,
+        "kyverno_denied": 20,
+        "operator_admitted": 10,
+        "production_api_accepted_policy_and_binding_dry_run": true
+      },
+      "revision_history": {
+        "pr": 18158,
+        "state": "Explicit −1 gate",
+        "probe_at_utc": "2026-11-20T10:53:54Z",
+        "create_update_omitted_admitted": 10,
+        "valid_explicit_create_values_preserved": [0, 3, 10],
+        "negative_probe_at_utc": "2026-11-20T10:58:15Z",
+        "kyverno_mutates_explicit_negative_one_to": 3,
+        "native_statefulset_negative_retains_unlimited_revisions": true,
+        "live_writes_performed": false
+      }
+    }
+  },
+  "gateway_cutover": {
+    "observed_at_utc": "2026-11-20T11:15:36.941613+00:00",
+    "source_devel_commit": "81d951883be6e596018a9f890d2393a0eb23238d",
+    "native_pr_merged_at_utc": "2026-11-20T11:10:27Z",
+    "kyverno_removal_pr_merged_at_utc": "2026-11-20T11:13:59Z",
+    "native_policy_status": "Ready; observed generation 1 with no type-check warnings",
+    "native_binding_action": "Deny",
+    "kyverno_policies_flux_ready": true,
+    "kyverno_policies_flux_digest": "7d6a2f748057f287aab276396f88f0b3f75ecd5315e508d820712fcade7be796",
+    "pruned_policy": "restrict-agent-gateway-routes",
+    "native_denials_after_prune": 20,
+    "allowed_operator_creates_after_prune": 10,
+    "allowed_operator_update_after_prune": true,
+    "stored_sandbox_objects": {
+      "claude-sandbox": 0,
+      "haku-sandbox": 0
+    },
+    "other_live_cluster_policies": [
+      "agentplane-staging-launcher-relay",
+      "default-disable-service-links",
+      "default-revision-history-limit",
+      "require-gitops",
+      "require-secret-store-conditions"
+    ],
+    "live_cleanup_policies": [
+      "claude-sandbox/sandbox-janitor",
+      "thrive-scraper/reap-wedged-jobs"
+    ]
+  },
+  "remaining_policy_review": {
+    "reviewed_at_utc": "2026-11-20T11:24:35Z",
+    "native_gitops_audit": {
+      "pr": 18174,
+      "html_url": "https://github.com/agentydragon/ducktape/pull/18174",
+      "head_sha": "9709eefc72b82843e86b318a293c4e46566a147c",
+      "state": "draft",
+      "kyverno_policy_reports": 304,
+      "kyverno_failed_results": 120,
+      "api_servers_with_local_audit_sink": 3,
+      "configured_local_audit_max_age_days": 30,
+      "current_daemonset_logs_collected": ["journal", "Pod logs"],
+      "verified_apps_metadata_event_consumer": false,
+      "before_removal": "Prove native audit annotation and suitable retention while Kyverno reports are still available."
+    },
+    "service_links_server_create_dry_runs": {
+      "default": {
+        "omitted": false,
+        "true": false,
+        "false": false
+      },
+      "kube-system": {
+        "omitted": true,
+        "true": true,
+        "false": false
+      }
+    },
+    "cleanup_policy_contracts": {
+      "claude-sandbox/sandbox-janitor": {
+        "schedule": "20 * * * *",
+        "age_strictly_greater_than_hours": 168,
+        "kinds": [
+          "Pod",
+          "Deployment",
+          "StatefulSet",
+          "Job",
+          "CronJob",
+          "Service"
+        ]
+      },
+      "thrive-scraper/reap-wedged-jobs": {
+        "schedule": "*/30 * * * *",
+        "age_strictly_greater_than_hours": 6,
+        "active_jobs_only": true
+      }
+    }
+  },
+  "secret_store_retirement_decision": {
+    "proposal_pr": 18176,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18176",
+    "proposal_state": "closed without merge",
+    "decided_at_utc": "2026-11-20T11:29:26Z",
+    "current_kyverno_admission": "Enforce",
+    "current_kyverno_background": true,
+    "replacement_status": "No supported replacement selected"
+  },
+  "revision_history_cutover": {
+    "observed_at_utc": "2026-11-20T11:34:50.260438+00:00",
+    "pr": 18158,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18158",
+    "merged_at_utc": "2026-11-20T11:17:22Z",
+    "source_devel_commit": "32d10c616e18f4573698f86e26a69d325c5abcb2",
+    "kyverno_policies_flux_ready": true,
+    "kyverno_policies_flux_digest": "e223f729e0a7d61cadb7a9436644bfee5af1a3c6168f9c62669d5438c88f07f8",
+    "pruned_policy": "default-revision-history-limit",
+    "live_cluster_policies": [
+      "agentplane-staging-launcher-relay",
+      "default-disable-service-links",
+      "require-gitops",
+      "require-secret-store-conditions"
+    ],
+    "live_cleanup_policies": [
+      "claude-sandbox/sandbox-janitor",
+      "thrive-scraper/reap-wedged-jobs"
+    ],
+    "ordinary_create_and_update_dry_runs": {
+      "observed_at_utc": "2026-11-20T11:34:50.260438+00:00",
+      "outcomes": [
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": null,
+          "admitted": 10
+        }
+      ]
+    },
+    "negative_create_and_update_dry_runs": {
+      "observed_at_utc": "2026-11-20T11:34:49.029911+00:00",
+      "outcomes": [
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": -1,
+          "admitted": -1
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": -2,
+          "admitted": -2
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": -1,
+          "admitted": -1
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": -2,
+          "admitted": -2
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": -2,
+          "admitted": "rejected"
+        }
+      ]
+    },
+    "live_writes_performed": false,
+    "statefulset_negative_history_source": "https://github.com/kubernetes/kubernetes/blob/v1.35.1/pkg/controller/statefulset/stateful_set_control.go#L185-L194"
+  },
+  "cert_manager_ha": {
+    "observed_at_utc": "2026-11-20T11:34:26Z",
+    "pr": 18177,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18177",
+    "merged_at_utc": "2026-11-20T11:32:52Z",
+    "source_devel_commit": "5e0bc267763d4c9adc0ef0492de91761decf8398",
+    "workloads": {
+      "cert-manager": {
+        "ready": 2,
+        "distinct_ready_nodes": 2,
+        "disruptions_allowed": 1,
+        "vpa_mode": "Initial",
+        "lease_transition_gap_seconds_approx": 6.8
+      },
+      "cert-manager-cainjector": {
+        "ready": 2,
+        "distinct_ready_nodes": 2,
+        "disruptions_allowed": 1,
+        "vpa_mode": "Initial",
+        "lease_transition_gap_seconds_approx": 5.5
+      }
+    },
+    "unchanged_ready_webhook_endpoint_uids": 3,
+    "unchanged_ca_digests": 6,
+    "certificates": {
+      "ready": 59,
+      "total": 59
+    },
+    "certificate_and_bundle_server_dry_runs_passed": true
   }
 }
