@@ -29,6 +29,7 @@ class ActionExample:
     compact_card_expands: bool = True
     live_preview: tuple[str, dict[str, object], str] | None = None
     mcp_text: str | None = None
+    wire_result: dict[str, object] | None = None
 
     @property
     def key(self) -> str:
@@ -291,6 +292,220 @@ HA_FAN = {"entity_id": "fan.greenhouse", "friendly_name": "Greenhouse fan", "sta
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
+    ActionExample(
+        "home_assistant",
+        "ha_get_history",
+        {"entity_ids": ["sensor.study_temperature"], "start_time": "2026-10-12T00:00:00Z"},
+        {
+            "success": True,
+            "source": "history",
+            "entities": [
+                {
+                    "entity_id": "sensor.study_temperature",
+                    "states": [{"state": "21.5", "last_changed": "2026-10-12T07:05:00Z"}],
+                }
+            ],
+        },
+        "21.5",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_logs",
+        {"source": "error_log", "level": "warning", "search": "retry", "limit": 10},
+        {
+            "success": True,
+            "source": "error_log",
+            "log": "2026-10-12T07:05:00Z WARNING Sensor refresh will retry",
+            "returned_lines": 1,
+            "total_lines": 1,
+        },
+        "Sensor refresh will retry",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_automation_traces",
+        {"automation_id": "automation.evening_lighting", "limit": 2},
+        {
+            "success": True,
+            "automation_id": "automation.evening_lighting",
+            "trace_count": 1,
+            "total_available": 1,
+            "has_more": False,
+            "traces": [
+                {
+                    "run_id": "trace-afac",
+                    "state": "stopped",
+                    "timestamp": {"start": "2026-10-12T07:05:00Z"},
+                    "trigger": "Time trigger",
+                }
+            ],
+        },
+        "Time trigger",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_camera_image",
+        {"entity_id": "camera.entry_preview", "width": 64},
+        None,
+        "Camera snapshot",
+        wire_result={
+            "content": [
+                {
+                    "type": "image",
+                    "mimeType": "image/png",
+                    "data": (
+                        "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAkCAAAAAAcZ2NOAAAAt0lEQVR4nIXBAUYDAACG0e9ASTKZ"
+                        "ZCZJJpPMzCTJZJKkI2SSJJMkM5OZSZJJkiTJTMfqBt//HnPJmWM+6TgWknPHYnLhKCSXjqXkylFM"
+                        "rh3LSdexktw4Ssmto5zcOVaTe8da0nOsJ33HRjJwVJIHx2YydFSTkWMrGTu2k0dHLXly1JNnRyN5"
+                        "cTSTiWMneXXsJm+OveTdsZ98OFrJp+Mg+XK0k2/HYfLjOEp+HcfJ1HGSzBynyZ/7B5uCPiWcEdBM"
+                        "AAAAAElFTkSuQmCC"
+                    ),
+                }
+            ]
+        },
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_system_health",
+        {"include": ["config_check"]},
+        {
+            "success": True,
+            "component_count": 1,
+            "health_info": {"homeassistant": {"version": "2026.10.1"}},
+            "config_check": {"result": "valid"},
+        },
+        "2026.10.1",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_operation_status",
+        {"operation_id": "operation-review", "timeout_seconds": 0},
+        {
+            "operation_id": "operation-review",
+            "status": "pending",
+            "entity_id": "light.study",
+            "action": "off",
+            "time_remaining_ms": 800,
+            "expected_state": "off",
+        },
+        "Pending",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_entity_exposure",
+        {"entity_id": "light.study"},
+        {
+            "success": True,
+            "entity_id": "light.study",
+            "exposed_to": {"conversation": True, "google_assistant": False},
+            "has_custom_settings": True,
+            "is_exposed_anywhere": True,
+        },
+        "conversation",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_integration",
+        {"query": "weather", "limit": 10},
+        {
+            "success": True,
+            "entries": [
+                {"entry_id": "sample-weather", "title": "Weather station", "domain": "weather", "state": "loaded"}
+            ],
+            "state_summary": {"loaded": 1},
+        },
+        "Weather station",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_todo",
+        {"entity_id": "todo.maintenance", "status": "needs_action"},
+        {
+            "success": True,
+            "entity_id": "todo.maintenance",
+            "count": 1,
+            "status_filter": "needs_action",
+            "items": [{"uid": "item-1", "summary": "Replace filter", "status": "needs_action", "due": "2026-10-15"}],
+        },
+        "Replace filter",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_set_todo_item",
+        {"entity_id": "todo.maintenance", "item": "Replace filter", "status": "completed"},
+        {
+            "success": True,
+            "entity_id": "todo.maintenance",
+            "item": "Replace filter",
+            "updates": {"status": "completed"},
+            "message": "Successfully updated 'Replace filter' in todo.maintenance",
+        },
+        "completed",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_remove_todo_item",
+        {"entity_id": "todo.maintenance", "item": "Replace filter"},
+        {"success": True, "entity_id": "todo.maintenance", "item": "Replace filter"},
+        "Item removed",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_config_get_calendar_events",
+        {"entity_id": "calendar.maintenance", "start": "2026-10-12", "end": "2026-10-14"},
+        {
+            "success": True,
+            "entity_id": "calendar.maintenance",
+            "events": [
+                {"summary": "Service appointment", "start": {"date": "2026-10-13"}, "end": {"date": "2026-10-14"}}
+            ],
+            "count": 1,
+            "total_available": 1,
+        },
+        "Service appointment",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_config_set_calendar_event",
+        {
+            "entity_id": "calendar.maintenance",
+            "summary": "Replace filter",
+            "start": "2026-10-13",
+            "end": "2026-10-14",
+            "rrule": "FREQ=MONTHLY;COUNT=3",
+        },
+        {
+            "success": True,
+            "entity_id": "calendar.maintenance",
+            "event": {
+                "summary": "Replace filter",
+                "start": "2026-10-13",
+                "end": "2026-10-14",
+                "rrule": "FREQ=MONTHLY;COUNT=3",
+            },
+        },
+        "Event created",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_config_remove_calendar_event",
+        {
+            "entity_id": "calendar.maintenance",
+            "uid": "event-maintenance",
+            "recurrence_id": "2026-10-13",
+            "recurrence_range": "THIS_AND_FUTURE",
+        },
+        {
+            "success": True,
+            "entity_id": "calendar.maintenance",
+            "uid": "event-maintenance",
+            "recurrence_id": "2026-10-13",
+            "recurrence_range": "THIS_AND_FUTURE",
+        },
+        "Deletion confirmed",
+    ),
     ActionExample(
         "home_assistant",
         "ha_call_service",
@@ -2297,6 +2512,8 @@ async def test_action_presentations(
     result = (
         example.result
         if not mcp
+        else example.wire_result
+        if example.wire_result is not None
         else {"content": [], "structuredContent": {"result": None}, "_meta": {"fastmcp": {"wrap_result": True}}}
         if example.result is None
         else {

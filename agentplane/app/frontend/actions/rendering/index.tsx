@@ -14,6 +14,7 @@ import type { ActionOutcome, ActionPresentation } from "./presentation";
 import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
+import { homeAssistantHistoryRenderers } from "./home_assistant/history";
 import { gmailRenderers } from "./gmail";
 import { googleCalendarRenderers } from "./google_calendar";
 import { homeAssistantRenderers } from "./home_assistant";
@@ -30,7 +31,7 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["github", githubRenderers],
   ["gmail", gmailRenderers],
   ["google_calendar", googleCalendarRenderers],
-  ["home_assistant", homeAssistantRenderers],
+  ["home_assistant", new Map([...homeAssistantRenderers, ...homeAssistantHistoryRenderers])],
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],
