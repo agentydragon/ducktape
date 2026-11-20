@@ -18,18 +18,16 @@ function SearchPullRequestsLabel(): JSX.Element {
 }
 
 function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+  const repository =
+    args.owner && args.repo && !/(^|\W)repo:\S+/.test(args.query) ? `${args.owner}/${args.repo}` : undefined;
   return (
     <Stack gap={2}>
       <Text size="sm" style={{ overflowWrap: "anywhere" }}>
         Query <Code style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{args.query}</Code>
       </Text>
-      {args.owner !== undefined && (
+      {repository && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          {args.repo === undefined ? "Owner" : "Repository"}{" "}
-          <Code>
-            {args.owner}
-            {args.repo === undefined ? "" : `/${args.repo}`}
-          </Code>
+          Repository <Code>{repository}</Code>
         </Text>
       )}
       {args.perPage !== undefined && <Text size="sm">Up to {args.perPage} results per page</Text>}

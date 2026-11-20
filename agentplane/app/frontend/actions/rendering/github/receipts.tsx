@@ -47,7 +47,10 @@ export function pullRequestLink(args: Repository & { pullNumber: number }): stri
 
 const sha = z.string().regex(/^[a-f0-9]{7,64}$/i);
 const referenceResult = z.object({
-  ref: z.string().regex(/^refs\/heads\/.+/),
+  ref: z
+    .string()
+    .regex(/^refs\/heads\/.+/)
+    .refine((ref) => ref.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")),
   object: z.object({ sha, type: z.literal("commit") }),
   url: z.string().optional(),
 });
@@ -196,7 +199,12 @@ export const pullRequestCreated: ResultPreview = pullRequestWriteReceipt(true);
 export const pullRequestUpdated: ResultPreview = pullRequestWriteReceipt(false);
 
 const inProgress = "Pull request branch update is in progress";
-const branchUpdate = z.union([z.literal(inProgress), z.object({ message: z.string().min(1) }), z.null()]);
+const branchUpdate = z.union([
+  z.literal(inProgress),
+  z.object({ message: z.string().min(1) }),
+  z.strictObject({}),
+  z.null(),
+]);
 
 export function githubBranchUpdateOutcome(value: unknown): { label: string; failed: boolean } | undefined {
   return branchUpdate.safeParse(value).success ? { label: "Update queued", failed: false } : undefined;
