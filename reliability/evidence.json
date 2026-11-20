@@ -2,43 +2,57 @@
   "vm_shadow_review": {
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "merged_at_utc": "2026-11-20T00:16:49Z",
-    "cutoff_utc": "2026-11-20T00:20:41Z",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
-    "observation": "The first devel push archived a cached managed VM pass. The collector correctly skipped the cluster KVM run, leaving zero fresh pairs at this review. Future uncached managed results trigger the same suite on cluster KVM at the same commit.",
-    "complete_fresh_pairs": 0,
+    "cutoff_utc": "2026-11-20T02:47:00Z",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
+    "paired_evidence": "../vm-pairs.json",
+    "complete_fresh_pairs": 3,
+    "workflow_attempts_reviewed": 35,
     "selections": {
-      "cached": 1
+      "cached": 17,
+      "no-invocation": 15,
+      "fresh": 3
     },
-    "workflow_attempts": [
+    "manual": {
+      "source_sha": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+      "pairs": 12,
+      "complete_bazel_pairs": 11,
+      "both_passed_first": 9,
+      "managed_only_failed_first": 2,
+      "kvm_only_failed_first": 0,
+      "both_failed_first": 0,
+      "missing_managed_verdicts": 1,
+      "managed_retry_recoveries": 0,
+      "managed_test_retries": 2,
+      "managed_final_test_failures": 2,
+      "kvm_final_test_failures": 0,
+      "managed_median_first_seconds": 570.487,
+      "kvm_median_first_seconds": 226.803,
+      "median_within_pair_seconds_saved": 341.5,
+      "kvm_shorter_pairs": 11,
+      "kvm_fixture": {
+        "cold": 5,
+        "warm": 7
+      }
+    },
+    "sections": [
       {
-        "run_id": 44644577743,
-        "attempt": 1,
-        "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
-        "collector_status": "completed",
-        "collector_conclusion": "success",
-        "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743/job/135983790115",
-        "artifact_id": 14587774242,
-        "pair": {
-          "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-          "run_id": "44644577743",
-          "run_attempt": "1",
-          "managed": "e6746ad0-ca61-54fa-af91-a009f69d5456",
-          "shadow": "41d9737f-82b5-5ee2-8bc9-043cd3924147",
-          "managed_label": "//agentplane/system_tests/suites:test_vm",
-          "shadow_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
-          "selection": "cached"
-        },
-        "collection_errors": false,
-        "routes": {},
-        "managed_result": {
-          "status": "PASSED",
-          "cachedLocally": true,
-          "invocation_url": "https://app.buildbuddy.io/invocation/e6746ad0-ca61-54fa-af91-a009f69d5456"
-        }
+        "heading": "Which executor failed first?",
+        "text": "In the manual batch, managed TCG failed 2 of 11 reported first attempts. Cluster KVM passed all 12, including 5 cold fixtures and 7 warm ones. Among the 11 complete Bazel pairs, both routes passed 9 times and only managed failed twice. In the remaining pair, Bazel lost the managed verdict and worker JUnit confirmed that both scenarios passed."
+      },
+      {
+        "heading": "What did the retries show?",
+        "text": "Neither managed retry recovered. Both initial failures hit the Claude VM’s 300-second readiness deadline and logged repeated guest-kernel RCU stalls. Pair 6 repeated the stall on retry. Pair 12 reached teardown and then failed guest shutdown. A separate managed run passed its first Bazel attempt after the executor retried a Firecracker pause failure."
+      },
+      {
+        "heading": "What did ordinary devel pushes see?",
+        "text": "All three fresh pairs passed both Claude and Codex on the first Bazel attempt on both routes. One managed run needed an executor retry after a Firecracker pause failure. Those retries appear in remote execution records even when Bazel reports a first-attempt pass."
+      },
+      {
+        "heading": "Routing recommendation",
+        "text": "Keep the cluster KVM shadow collecting across devel commits. The batch reproduced the guest stall on managed TCG and gives KVM the stronger result on this commit. Three passing push pairs give little leverage on the fleet failure rate. Keep the first-attempt comparison and the final verdict visible at the next review."
       }
     ],
-    "recommendation": "Keep the required suite on its current route while outcomes accumulate. At each review, count pairs where only managed TCG failed and where only cluster KVM failed on attempt one. Compare recovery among retries and final failures, and inspect pairs that failed on both routes before attributing a difference to the executor. Check coverage at 50 fresh pairs and reassess routing at 200."
+    "selection_note": "Of 35 devel push attempts, 17 reused a cached managed result and 15 cancelled runs had no managed invocation. The remaining 3 produced fresh, complete pairs. Review selection at 50 fresh push pairs and reassess routing at 200."
   },
   "schema_version": 1,
   "repository": "https://github.com/agentydragon/ducktape",
