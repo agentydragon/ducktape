@@ -389,8 +389,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	if principalSession == nil {
 		return nil
 	}
-	if head != nil && principalSession.Placement.RequiresReadyExecutor() &&
-		(principalSession.State == store.SessionFailedState || principalSession.State == store.SessionUnknownState) {
+	if head != nil && (principalSession.State == store.SessionFailedState || principalSession.State == store.SessionUnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
 	identity, found, err := w.executionIdentity(ctx, sandbox)
@@ -509,16 +508,15 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 	return store.FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
 }
 
-// Runtime validates arguments before reservation and reports AlreadyExists for a
-// conflicting retained request. Other terminal codes do not prove native rejection.
+// The central sampler may validate mutable configuration before checking an earlier reservation.
+// A later validation failure therefore cannot prove that an earlier timed-out attempt did not commit.
 func (w *DeliveryWorker) sessionFailure(session *store.Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
 	key := "session:" + session.SessionID
-	if session.Placement == placement.CentralSampler {
-		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
-		return sessionMaterializationFromDelivery(state), reason, nil
-	}
 	switch status.Code(err) {
 	case codes.InvalidArgument, codes.AlreadyExists:
+		if session.Placement == placement.CentralSampler {
+			return store.SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
+		}
 		rejection := status.Convert(err)
 		return store.SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
 	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:

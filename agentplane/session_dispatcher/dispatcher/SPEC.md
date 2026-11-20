@@ -238,13 +238,13 @@ removes it and closes admission permanently. During a rolling upgrade, the fence
 all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not
 fence old writers.
 
-## Native opening outcomes and dependent commands
+## Opening outcomes and dependent commands
 
-The Dispatcher retains logical existence and the immutable creation request after a native owner
+The Dispatcher retains logical existence and the immutable creation request after its placement owner
 rejects materialization. An exact opening retry reads that receipt; changing configuration requires
-a new Session UUID. Runtime admission reserves a Session, not a running native harness.
+a new Session UUID. Placement-owner admission reserves a Session, not a running harness.
 
-A native owner `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
+A native Runtime `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
 `SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
 `session_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
@@ -254,15 +254,17 @@ A command admitted first is included; a later new queued command is refused with
 original receipt after ordinary caller authorization.
 
 `ABORTED`, `UNAVAILABLE` and deadline responses keep the existing same-ID reservation reconciliation
-and backoff. Runtime recovers the durable reservation before native preparation; these retries are
-not permission to replay uncertain native harness effects. Other native opening errors, including
+and backoff. The placement owner recovers its durable reservation before preparation; these retries do
+not authorize replay of uncertain effects. Other opening errors, including
 `INTERNAL`, `UNKNOWN`, `RESOURCE_EXHAUSTED` and unproven preconditions, become `UNKNOWN`. Their
 pending commands remain queued with `session_unconfirmed`; they do not wake the environment
-or reach Runtime. New queued commands are refused as above. Older `FAILED` openings lack proof of
+or reach the placement owner. New queued commands are refused as above. Older `FAILED` openings lack proof of
 rejection and receive the same hold without rewriting their stored outcome. Held commands remain
 cancellable. Automatic resolution of those held openings is not provided.
 
-These rules apply to native openings after all Dispatcher replicas run this protocol.
+For central openings, `INVALID_ARGUMENT` and `ALREADY_EXISTS` are also unconfirmed: the sampler
+may validate current configuration before checking a reservation from an earlier timed-out attempt.
+The command hold rules apply to both placements after all Dispatcher replicas run this protocol.
 
 ## Possible command forwarding and deletion outcomes
 

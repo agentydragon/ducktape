@@ -1884,6 +1884,36 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     break
                 await asyncio.sleep(0.2)
 
+        # Central session admission must not require or wake an executor incarnation.
+        suspended_session_id = str(uuid4())
+        await _create_exact_codex_session(
+            deployed,
+            suspended_session_id,
+            cwd=cwd,
+            model_name=MODEL,
+            setup_script="",
+            expected_sandbox_uid=deployed.sandbox_uid,
+            timeout_s=15,
+        )
+        async with asyncio.timeout(30):
+            while True:
+                opening = await deployed.dispatcher.GetSession(
+                    session_dispatcher_pb2.GetSessionRequest(session_id=suspended_session_id),
+                    metadata=deployed.metadata,
+                    timeout=10,
+                )
+                materialization = opening.session.status.materialization
+                assert materialization not in (
+                    session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_FAILED,
+                    session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_UNKNOWN,
+                ), opening.session.status
+                if materialization == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED:
+                    break
+                await asyncio.sleep(0.2)
+        still_suspended = await environments.get_environment(target)
+        assert still_suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+        assert not still_suspended.kubernetes_diagnostics.HasField("pod")
+
         await environments.resume_environment(target)
         resumed = await wait_until_running(environments, target)
         assert resumed.target.uid == deployed.sandbox_uid

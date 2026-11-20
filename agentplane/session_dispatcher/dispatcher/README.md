@@ -69,7 +69,7 @@ The manual queue, replica and wake probes are documented in the
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as failed Session materialization.
   Native creation rejection and unconfirmed owner outcomes fence dependent queued commands; see
-  [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
+  [the outcome contract](SPEC.md#opening-outcomes-and-dependent-commands).
   Session records follow the deletion and retention rules below.
 - **Discovering Sessions**: `ListSessions` returns one bounded
   page of current Session records, including waiting and failed materialization before
