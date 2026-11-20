@@ -151,8 +151,8 @@ JWT-based, passed via `Proxy-Authorization: Basic` header.
 
 The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
 `Proxy-Authenticate`), which breaks Java's `Authenticator` class. The local proxy workaround
-for this was removed with the rest of the explicit-proxy subsystem; see
-<../../archive/2026_06_12_gvisor_era_networking.md>.
+for this lived in `devinfra/claude/auth_proxy/`, removed with the rest of the explicit-proxy
+subsystem; restore it from git history if explicit proxy environment variables return.
 
 | Interface | IP Address   |
 | --------- | ------------ |
