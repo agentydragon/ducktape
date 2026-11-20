@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/c90701225707181bef7125180acb74874f516a10/";
+const currentSource = github + "blob/3e5c6e345ed85521e7f1ea0c20cf1c616080b526/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2123`).then((r) => {
+        fetch(`${url}?v=20261120-2131`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -227,7 +227,7 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; policy and Study Casino were checked at 21:16 and 21:20 UTC, respectively. This is a snapshot, not a live dashboard.`}<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; policy and Study Casino were checked at 21:16 and 21:31 UTC, respectively. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
@@ -327,11 +327,23 @@ function Report() {
             and CDviz also need a non-evicting approach while singletons.<//
           >
           <${Text} component="p" mb=${0}
-            >At 21:20 UTC, ${" "}<${Anchor} href=${github + "pull/18274"}
+            >At 21:31 UTC, ${" "}<${Anchor} href=${github + "pull/18274"}
               >Study Casino<//
-            >${" "} had an Initial memory-request VPA with 224–240 MiB bounds;
-            its recommendation was pending and the existing singleton remained
-            Ready. The recommender interval is 15 minutes.<//
+            >${" "} had an Initial memory-request VPA bounded to 224–240 MiB.
+            Its target was 224 MiB; an owner-matched admission dry run applied
+            25m CPU and 224 MiB memory while preserving the 256 MiB limit. Its
+            existing singleton remained Ready.<//
+          >
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Title} order=${4}>Platform Sessions providers<//>
+          <${Text} component="p" mb=${0}
+            >${" "}<${Anchor} href=${github + "pull/18282"}
+              >ChatGPT and OpenAI providers<//
+            >${" "} each have an Initial, memory-request-only VPA bounded to
+            128–192 MiB. Owner-matched admission dry runs preserved the 50m CPU
+            request and 1 GiB limit; the existing singleton Pods remained Ready
+            and were not replaced.<//
           >
         <//>
         <${Paper}
@@ -462,8 +474,8 @@ function Report() {
       <${Title} order=${2} mt="xl">Sources and limits<//>
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
-        was observed at 20:28–20:30 UTC. The Flux source at 21:23 UTC was
-        ${" "}<${Anchor} href=${currentSource}>devel at c907012257<//>${" "};
+        was observed at 20:28–20:30 UTC. The Flux source at 21:31 UTC was
+        ${" "}<${Anchor} href=${currentSource}>devel at 3e5c6e345e<//>${" "};
         Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}

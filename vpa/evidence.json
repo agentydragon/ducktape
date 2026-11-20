@@ -19963,11 +19963,39 @@
     "controlled_values": "RequestsOnly",
     "min_memory": "224Mi",
     "max_memory": "240Mi",
-    "recommendation_available": false,
+    "recommendation_available": true,
     "existing_pod_ready": true,
     "existing_pod_created_at_utc": "2026-11-19T21:01:55Z",
     "inventory_precedes_vpa": false,
     "recommender_interval": "15m",
-    "inventory_observed_at_utc": "2026-11-20T21:23:07Z"
+    "inventory_observed_at_utc": "2026-11-20T21:31:31Z",
+    "recommendation_observed_at_utc": "2026-11-20T21:31:31Z",
+    "target_memory": "224Mi",
+    "dry_run_requests": {
+      "cpu": "25m",
+      "memory": "224Mi"
+    },
+    "dry_run_memory_limit": "256Mi"
+  },
+  "platform_sessions_provider_initial": {
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18282",
+    "observed_at_utc": "2026-11-20T21:30:27Z",
+    "namespace": "platform-sessions",
+    "targets": ["chatgpt", "openai"],
+    "mode": "Initial",
+    "container": "provider",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "128Mi",
+    "max_memory": "192Mi",
+    "dry_run_cpu_request": "50m",
+    "dry_run_memory_limit": "1Gi",
+    "dry_run_provider_memory_requests_bytes": {
+      "chatgpt": 144645763,
+      "openai": 163378051
+    },
+    "existing_pods_ready": true,
+    "existing_pods_replaced": false,
+    "dry_run_scope": "owner-backed server-side Pod dry runs; init and recorder resources unchanged"
   }
 }
