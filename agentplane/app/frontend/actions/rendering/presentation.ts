@@ -26,6 +26,8 @@ export interface ActionPresentation {
   details?: {
     arguments?: ArgumentsPreview | null;
     result?: ResultPreview | null;
+    /** A successful MCP call whose provider returns no content. */
+    emptyResult?: ReactNode;
     nativeResult?: ResultPreview | null;
   };
   /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per

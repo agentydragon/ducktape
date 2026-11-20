@@ -17,14 +17,14 @@ export type ArgumentsPreview<S extends z.ZodType = z.ZodType> = {
 export type CallPreview<ArgsSchema extends z.ZodType = z.ZodType, ResultSchema extends z.ZodType = z.ZodType> = {
   argumentSchema: ArgsSchema;
   resultSchema: ResultSchema;
-  render: (args: never, result: never | undefined) => ReactNode;
+  render: (args: never, result: never | undefined, requestId?: string) => ReactNode;
 };
 
 /** The props every arguments widget takes: the Action's parsed arguments. */
 export type PreviewProps<Args> = { args: Args; requestId?: string };
 
 /** The props a combined call widget takes. `result` is absent while the call is pending or failed. */
-export type CallPreviewProps<Args, Result> = { args: Args; result: Result | undefined };
+export type CallPreviewProps<Args, Result> = { args: Args; result: Result | undefined; requestId?: string };
 
 /** Bind an Action's argument schema to the widget that draws it. Pass the component itself: this
  * builds a `<Widget/>` element, a real child component, so the widget's own hooks work. */
@@ -42,9 +42,11 @@ export function defineCallPreview<ArgsSchema extends z.ZodType, ResultSchema ext
   resultSchema: ResultSchema,
   Widget: (props: CallPreviewProps<z.infer<ArgsSchema>, z.infer<ResultSchema>>) => ReactNode
 ): CallPreview<ArgsSchema, ResultSchema> {
-  const render = (args: z.infer<ArgsSchema>, result: z.infer<ResultSchema> | undefined): ReactNode => (
-    <Widget args={args} result={result} />
-  );
+  const render = (
+    args: z.infer<ArgsSchema>,
+    result: z.infer<ResultSchema> | undefined,
+    requestId?: string
+  ): ReactNode => <Widget args={args} result={result} requestId={requestId} />;
   return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
 }
 

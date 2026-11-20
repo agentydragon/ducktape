@@ -201,8 +201,8 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { q: "from:deployments@example.com", maxResults: 5 },
         title: "search deployment mail",
       },
-      visible: ["from:deployments@example.com", '"maxResults": 5'],
-      expands: true,
+      visible: ["from:deployments@example.com", "Up to 5 threads"],
+      expands: false,
     },
   ];
   await send(reads.map(({ request: row }) => row));

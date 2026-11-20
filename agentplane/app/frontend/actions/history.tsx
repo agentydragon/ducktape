@@ -152,11 +152,11 @@ export function ActionHistoryCard({
   const prettyResult = mcp
     ? call === null
       ? undefined
-      : renderDetailsResult(action, call)
+      : renderDetailsResult(action, call, { requestId: request.id, arguments: args })
     : hasResult
       ? renderNativeDetailsResult(action, result)
       : undefined;
-  const combinedCall = renderActionCall(action, args, call ?? undefined);
+  const combinedCall = renderActionCall(action, args, call ?? undefined, request.id);
   const actionOutcome = call === null ? undefined : renderActionOutcome(action, call);
   const toolError = request.state === ActionState.SUCCEEDED && call?.isError === true;
   const decisionLabel =

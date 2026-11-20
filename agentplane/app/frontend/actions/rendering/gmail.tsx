@@ -1,352 +1,313 @@
-import type { ActionPresentation } from "./presentation";
-import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
-import type { JSX } from "react";
+import { Anchor, Code, Stack, Text } from "@mantine/core";
+import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
-import { JsonBlock, TextBlock } from "../../ui/text_block";
-import {
-  defineCallPreview,
-  definePreview,
-  type ArgumentsPreview,
-  type CallPreview,
-  type CallPreviewProps,
-  type PreviewProps,
-} from "./entry";
+import { TextBlock } from "../../ui/text_block";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
-import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
-import { defineResultPreview, type ResultPreview } from "./result_entry";
+import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "./entry";
+import { useIntegrationPreviewNames } from "./integration_previews";
+import { expandsForRejectedArguments, type ActionPresentation } from "./presentation";
+import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
+
+const gmail = "https://mail.google.com/mail/u/0/";
+const threadHref = (id: string) => `${gmail}#all/${encodeURIComponent(id)}`;
+const draftHref = (id: string) => `${gmail}#drafts?compose=${encodeURIComponent(id)}`;
+const wrap = { overflowWrap: "anywhere" } as const;
+
+function GmailLink({ href, children }: { href: string; children: ReactNode }): JSX.Element {
+  return (
+    <Anchor href={href} target="_blank" rel="noreferrer" inherit style={wrap}>
+      {children}
+    </Anchor>
+  );
+}
+
+function ThreadTarget({ id, subject }: { id: string; subject?: string | null }): JSX.Element {
+  return <GmailLink href={threadHref(id)}>{subject || <Code>{id}</Code>}</GmailLink>;
+}
+
+const systemLabels: ReadonlyMap<string, string> = new Map([
+  ["INBOX", "Inbox"],
+  ["SPAM", "Spam"],
+  ["TRASH", "Trash"],
+  ["UNREAD", "Unread"],
+  ["STARRED", "Starred"],
+  ["IMPORTANT", "Important"],
+  ["SENT", "Sent"],
+  ["DRAFT", "Drafts"],
+  ["CATEGORY_PERSONAL", "Primary"],
+  ["CATEGORY_SOCIAL", "Social"],
+  ["CATEGORY_PROMOTIONS", "Promotions"],
+  ["CATEGORY_UPDATES", "Updates"],
+  ["CATEGORY_FORUMS", "Forums"],
+]);
+
+function EmailField({ name, value }: { name: string; value?: string | null }): JSX.Element | null {
+  return value ? (
+    <Text size="sm" style={wrap}>
+      <Text component="span" fw={600} inherit>
+        {name}
+      </Text>{" "}
+      {value}
+    </Text>
+  ) : null;
+}
 
 const draftArguments = z.strictObject({
   to: z.array(z.string()).min(1),
   subject: z.string(),
   body: z.string(),
-  cc: z.array(z.string()).nullable().optional(),
-  bcc: z.array(z.string()).nullable().optional(),
-  thread_id: z.string().nullable().optional(),
+  cc: z.array(z.string()).nullish(),
+  bcc: z.array(z.string()).nullish(),
+  thread_id: z.string().nullish(),
 });
 
 type DraftArguments = z.infer<typeof draftArguments>;
 
-export function offersCardDecisionButtonsDraftsCreate(args: unknown): boolean {
-  return draftArguments.safeParse(args).success;
+const headers = z.array(z.object({ name: z.string(), value: z.string() }));
+const messageSummary = z.object({
+  snippet: z.string().nullish(),
+  payload: z.object({ headers: headers.nullish() }).nullish(),
+});
+const draftResult = z.object({ id: z.string().min(1), message: messageSummary.nullish() });
+
+function header(message: z.infer<typeof messageSummary> | null | undefined, name: string): string | undefined {
+  return message?.payload?.headers?.find((item) => item.name.toLowerCase() === name)?.value;
 }
 
-function recipients(args: DraftArguments): string {
-  return args.to.join(", ");
-}
-
-function DraftLabel(): JSX.Element {
-  return <Text fw={600}>Gmail: Draft email</Text>;
-}
-
-function DraftCollapsed({ args }: { args: DraftArguments }): JSX.Element {
+function DraftFields({
+  args,
+  short = false,
+  clamp = false,
+}: {
+  args: DraftArguments;
+  short?: boolean;
+  clamp?: boolean;
+}): JSX.Element {
   return (
-    <Stack gap="xs">
-      <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
-        To {recipients(args)}
-      </Text>
-      {args.cc && args.cc.length > 0 && (
-        <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
-          Cc {args.cc.join(", ")}
+    <>
+      <EmailField name="To" value={args.to.join(", ")} />
+      <EmailField name="Cc" value={args.cc?.join(", ")} />
+      <EmailField name="Bcc" value={args.bcc?.join(", ")} />
+      {short ? (
+        <Text size="sm" lineClamp={3} style={{ ...wrap, whiteSpace: "pre-wrap" }}>
+          {args.body || "(empty body)"}
         </Text>
+      ) : (
+        <TextBlock text={args.body || "(empty body)"} heading="Message body" format="prose" clamp={clamp} />
       )}
-      {args.bcc && args.bcc.length > 0 && (
-        <Text size="sm" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
-          Bcc {args.bcc.join(", ")}
-        </Text>
-      )}
-      <Text size="sm" fw={600} lineClamp={2} style={{ overflowWrap: "anywhere" }}>
+    </>
+  );
+}
+
+function DraftCollapsed({ args }: PreviewProps<DraftArguments>): JSX.Element {
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={600} style={wrap}>
         {args.subject || "(no subject)"}
       </Text>
-      <Text size="sm" lineClamp={3} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-        {args.body || "(empty body)"}
-      </Text>
-      {args.thread_id && (
-        <Text size="xs" c="dimmed" lineClamp={1} style={{ overflowWrap: "anywhere" }}>
-          Replying to thread {args.thread_id}
-        </Text>
-      )}
+      <DraftFields args={args} short />
     </Stack>
   );
 }
 
-function DraftOpened({ args }: { args: DraftArguments }): JSX.Element {
+function DraftReply({ id, requestId }: { id: string; requestId?: string }): JSX.Element {
+  const names = useIntegrationPreviewNames("gmail", requestId);
+  return (
+    <Text size="sm">
+      Reply in thread <ThreadTarget id={id} subject={names?.get(id)} />
+    </Text>
+  );
+}
+
+function DraftCall({
+  args,
+  result,
+  requestId,
+}: CallPreviewProps<DraftArguments, z.infer<typeof draftResult>>): JSX.Element {
+  const subject = header(result?.message, "subject") || args.subject || "(no subject)";
   return (
     <Stack gap="xs">
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        To {recipients(args)}
+      <Text size="sm" fw={600} style={wrap}>
+        {result ? <GmailLink href={draftHref(result.id)}>{subject}</GmailLink> : subject}
       </Text>
-      {args.cc && args.cc.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Cc {args.cc.join(", ")}
-        </Text>
-      )}
-      {args.bcc && args.bcc.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Bcc {args.bcc.join(", ")}
-        </Text>
-      )}
-      {args.thread_id && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Replying to thread {args.thread_id}
-        </Text>
-      )}
-      <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
-        {args.subject || "(no subject)"}
+      <Text size="sm" c="dimmed">
+        {result ? "Saved as an unsent draft." : "Creates an unsent draft."}
       </Text>
-      <TextBlock text={args.body} heading="Message body" format="prose" clamp={false} />
+      {args.thread_id && <DraftReply id={args.thread_id} requestId={requestId} />}
+      <DraftFields args={args} clamp={result !== undefined} />
     </Stack>
   );
 }
 
-export const gmailDraftLabel: ArgumentsPreview = definePreview(draftArguments, DraftLabel);
-export const gmailDraftCollapsed: ArgumentsPreview = definePreview(draftArguments, DraftCollapsed);
-export const gmailDraftOpened: ArgumentsPreview = definePreview(draftArguments, DraftOpened);
+const draftPreview = definePreview(draftArguments, DraftCallArguments);
+function DraftCallArguments({ args, requestId }: PreviewProps<DraftArguments>): JSX.Element {
+  return <DraftCall args={args} requestId={requestId} result={undefined} />;
+}
 
-const threadSearchArguments = z.strictObject({
-  q: z.string().nullable().optional(),
-  maxResults: z.int().positive().nullable().optional(),
-  pageToken: z.string().nullable().optional(),
-  includeSpamTrash: z.boolean().nullable().optional(),
+const draftPresentation: ActionPresentation = {
+  fallbackLabel: "Gmail: Draft email",
+  call: defineCallPreview(draftArguments, draftResult, DraftCall),
+  pane: { collapsed: definePreview(draftArguments, DraftCollapsed), opened: draftPreview },
+  details: {
+    arguments: draftPreview,
+    result: defineResultPreview(draftResult, ({ result }) => (
+      <Text size="sm">
+        Saved as an unsent draft.{" "}
+        <GmailLink href={draftHref(result.id)}>{header(result.message, "subject") || "Open draft in Gmail"}</GmailLink>
+      </Text>
+    )),
+  },
+  offersCardDecisionButtons: (args) => {
+    const parsed = draftArguments.safeParse(args);
+    return parsed.success && !parsed.data.thread_id;
+  },
+};
+
+const searchArguments = z.strictObject({
+  q: z.string().nullish(),
+  labelIds: z.array(z.string()).nullish(),
+  maxResults: z.int().nonnegative().nullish(),
+  pageToken: z.string().nullish(),
+  includeSpamTrash: z.boolean().nullish(),
 });
 
-type ThreadSearchArguments = z.infer<typeof threadSearchArguments>;
-
-/** The compact card shows only the query, so a page token or spam/trash search needs the full card. */
-export function offersCardDecisionButtonsThreadSearch(args: unknown): boolean {
-  const parsed = threadSearchArguments.safeParse(args);
-  return parsed.success && !parsed.data.pageToken && !parsed.data.includeSpamTrash;
-}
-
-function ThreadSearchLabel({ args }: { args: ThreadSearchArguments }): JSX.Element {
-  void args;
-  return <Text fw={600}>Gmail: Search threads</Text>;
-}
-
-function ThreadSearchCollapsed({ args }: { args: ThreadSearchArguments }): JSX.Element {
+function SearchScope({ args }: PreviewProps<z.infer<typeof searchArguments>>): JSX.Element {
   return (
-    <Stack gap="xs">
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        {args.q ? (
-          <>
-            Search for <Code>{args.q}</Code>
-          </>
-        ) : (
-          "Search all threads"
-        )}
-        {args.pageToken ? " · continuation page" : ""}
-      </Text>
-      {args.includeSpamTrash === true && (
-        <Text size="sm" c="dimmed">
-          Including spam and trash
-        </Text>
-      )}
+    <Stack gap={4}>
+      {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All threads</Text>}
+      <EmailField name="All labels" value={args.labelIds?.map((id) => systemLabels.get(id) ?? id).join(", ")} />
+      {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
+      {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
+      {args.pageToken && <Text size="sm">Continues a previous search</Text>}
     </Stack>
   );
 }
 
-function ThreadSearchOpened({ args }: { args: ThreadSearchArguments }): JSX.Element {
-  return <JsonBlock value={args} clamp={false} />;
-}
-
-export const gmailThreadSearchLabel: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchLabel);
-export const gmailThreadSearchCollapsed: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchCollapsed);
-export const gmailThreadSearchOpened: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchOpened);
-
-const draftResult = z
-  .object({
-    id: z.string().nullable().optional(),
-    message: z
-      .object({
-        payload: z
-          .object({
-            headers: z
-              .array(
-                z
-                  .object({
-                    name: z.string().nullable().optional(),
-                    value: z.string().nullable().optional(),
-                  })
-                  .passthrough()
-              )
-              .nullable()
-              .optional(),
-          })
-          .passthrough()
-          .nullable()
-          .optional(),
-      })
-      .passthrough()
-      .nullable()
-      .optional(),
-  })
-  .passthrough();
-
-type DraftCallResult = z.infer<typeof draftResult>;
-
-function draftSubject(result: DraftCallResult): string | null {
-  return result.message?.payload?.headers?.find((header) => header.name?.toLowerCase() === "subject")?.value ?? null;
-}
-
-function gmailThreadHref(id: string): string {
-  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(id)}`;
-}
-
-function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallResult>): JSX.Element {
-  const subject = result ? (draftSubject(result) ?? args.subject) : args.subject;
-  const draftHref = result?.id
-    ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(result.id)}`
-    : null;
-  const threadHref = args.thread_id ? gmailThreadHref(args.thread_id) : null;
-
-  return (
-    <Stack gap="xs">
-      {draftHref ? (
-        <Anchor href={draftHref} target="_blank" rel="noreferrer" fw={600}>
-          {subject}
-        </Anchor>
-      ) : (
-        <Text fw={600}>{subject}</Text>
-      )}
-      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        To {recipients(args)}
-      </Text>
-      {args.cc && args.cc.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Cc {args.cc.join(", ")}
-        </Text>
-      )}
-      {args.bcc && args.bcc.length > 0 && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Bcc {args.bcc.join(", ")}
-        </Text>
-      )}
-      <TextBlock text={args.body} heading="Message body" format="prose" />
-      {threadHref && (
-        <Anchor href={threadHref} target="_blank" rel="noreferrer">
-          Reply in Gmail thread
-        </Anchor>
-      )}
-      {result?.id && <Code>draft {result.id}</Code>}
-    </Stack>
-  );
-}
-
-export const gmailDraftCall: CallPreview = defineCallPreview(draftArguments, draftResult, DraftCall);
-
-function DraftResult({ result }: { result: z.infer<typeof draftResult> }): JSX.Element {
-  const href = result.id
-    ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(result.id)}`
-    : undefined;
-  return (
-    <Group gap="xs">
-      <Text size="sm">Draft created.</Text>
-      {href && (
-        <Anchor href={href} target="_blank" rel="noreferrer">
-          Open in Gmail
-        </Anchor>
-      )}
-      {result.id && <Code>draft {result.id}</Code>}
-    </Group>
-  );
-}
-
-export const gmailDraftResult: ResultPreview = defineResultPreview(draftResult, DraftResult);
-
-const gmailThreadsResultSchema = z
+const searchPreview = definePreview(searchArguments, SearchScope);
+const searchResult = z
   .object({
     threads: z
       .array(
-        z.object({ id: z.string().nullable().optional(), snippet: z.string().nullable().optional() }).passthrough()
+        z.object({
+          id: z.string().min(1),
+          snippet: z.string().nullish(),
+          messages: z.array(messageSummary).nullish(),
+        })
       )
-      .nullable()
-      .optional(),
-    nextPageToken: z.string().nullable().optional(),
+      .nullish(),
+    nextPageToken: z.string().nullish(),
+    resultSizeEstimate: z.int().nonnegative().nullish(),
   })
-  .passthrough();
+  .refine((result) => result.threads != null || result.resultSizeEstimate != null);
 
-function GmailThreadsResult({ result }: { result: z.infer<typeof gmailThreadsResultSchema> }): JSX.Element {
+function ThreadResults({ result, context }: ResultPreviewProps<z.infer<typeof searchResult>>): JSX.Element {
   const threads = result.threads ?? [];
+  const names = useIntegrationPreviewNames(
+    "gmail",
+    threads.some((thread) => !header(thread.messages?.[0], "subject")) ? context?.requestId : undefined
+  );
   return (
     <Stack gap="xs">
-      {threads.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          No threads found.
-        </Text>
-      ) : (
-        threads.map((thread, index) => {
-          const text = thread.snippet || thread.id || `Thread ${index + 1}`;
-          const href = thread.id ? gmailThreadHref(thread.id) : undefined;
-          return href ? (
-            <Anchor key={thread.id} href={href} target="_blank" rel="noreferrer">
-              {text}
-            </Anchor>
-          ) : (
-            <Text key={index} size="sm">
-              {text}
+      <Text size="sm" c="dimmed">
+        {threads.length === 0
+          ? "No threads returned."
+          : `${threads.length} ${threads.length === 1 ? "thread" : "threads"} returned`}
+      </Text>
+      {threads.map((thread) => {
+        const message = thread.messages?.[0];
+        const snippet = thread.snippet || message?.snippet;
+        const title = header(message, "subject") || names?.get(thread.id) || snippet;
+        return (
+          <Stack key={thread.id} gap={2}>
+            <Text size="sm" fw={600}>
+              <ThreadTarget id={thread.id} subject={title} />
             </Text>
-          );
-        })
-      )}
-      {result.nextPageToken && (
-        <Text size="xs" c="dimmed">
-          More threads available.
-        </Text>
-      )}
+            <EmailField name="From" value={header(message, "from")} />
+            <EmailField name="Date" value={header(message, "date")} />
+            {snippet && title !== snippet && (
+              <Text size="sm" c="dimmed" style={wrap}>
+                {snippet}
+              </Text>
+            )}
+          </Stack>
+        );
+      })}
+      {result.nextPageToken && <Text size="sm">More threads available.</Text>}
     </Stack>
   );
 }
 
-export const gmailThreadsResult: ResultPreview = defineResultPreview(gmailThreadsResultSchema, GmailThreadsResult);
-
-export const gmailDraftPresentation: ActionPresentation = {
-  label: gmailDraftLabel,
-  call: gmailDraftCall,
-  pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
-  details: { arguments: gmailDraftOpened, result: gmailDraftResult },
-  offersCardDecisionButtons: offersCardDecisionButtonsDraftsCreate,
+const searchPresentation: ActionPresentation = {
+  fallbackLabel: "Gmail: Search threads",
+  pane: { collapsed: searchPreview },
+  details: { arguments: searchPreview, result: defineResultPreview(searchResult, ThreadResults) },
+  compactCardExpands: expandsForRejectedArguments(searchArguments),
+  offersCardDecisionButtons: (args) => searchArguments.safeParse(args).success,
 };
 
-export const gmailThreadSearchPresentation: ActionPresentation = {
-  label: gmailThreadSearchLabel,
-  pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
-  details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
-  offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
-};
+function LabelChanges({ add, remove }: { add?: string[] | null; remove?: string[] | null }): JSX.Element {
+  return (
+    <>
+      <EmailField name="Add" value={add?.join(", ")} />
+      <EmailField name="Remove" value={remove?.join(", ")} />
+    </>
+  );
+}
 
-const threadLabels = definePreview(
-  modifyThreadLabelsArguments,
-  function ThreadLabels({ args, requestId }: PreviewProps<z.infer<typeof modifyThreadLabelsArguments>>): JSX.Element {
-    const names = useIntegrationPreviewNames("gmail", requestId);
-    return (
-      <Stack gap={4}>
-        {args.add?.length ? <Text size="sm">Add labels {args.add.join(", ")}</Text> : null}
-        {args.remove?.length ? <Text size="sm">Remove labels {args.remove.join(", ")}</Text> : null}
-        {args.thread_ids.map((id, index) => (
-          <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
-            <LiveResourceLink id={id} name={names?.get(id)} href={gmailThreadHref(id)} showResolvedId />
-          </Text>
-        ))}
-      </Stack>
-    );
-  }
-);
+function ThreadsRelabel({ args, requestId }: PreviewProps<z.infer<typeof modifyThreadLabelsArguments>>): JSX.Element {
+  const names = useIntegrationPreviewNames("gmail", requestId);
+  return (
+    <Stack gap={4}>
+      <LabelChanges add={args.add} remove={args.remove} />
+      {args.add?.length ? (
+        <Text size="sm" c="dimmed">
+          Creates any missing labels in Add.
+        </Text>
+      ) : null}
+      {!args.add?.length && !args.remove?.length && <Text size="sm">No label changes specified.</Text>}
+      {args.thread_ids.map((id, index) => (
+        <Text size="sm" key={index}>
+          <ThreadTarget id={id} subject={names?.get(id)} />
+        </Text>
+      ))}
+    </Stack>
+  );
+}
 
-const threadLabelsPresentation: ActionPresentation = {
+const labelRef = z.object({ id: z.string(), name: z.string() });
+const relabelResult = z.object({
+  thread_count: z.int().nonnegative(),
+  added: z.array(labelRef),
+  removed: z.array(labelRef),
+});
+const relabelPreview = definePreview(modifyThreadLabelsArguments, ThreadsRelabel);
+const relabelPresentation: ActionPresentation = {
   fallbackLabel: "Change Gmail thread labels",
   pane: {
     collapsed: definePreview(modifyThreadLabelsArguments, ({ args }) => (
       <Text size="sm">
-        {args.thread_ids.length} Gmail {args.thread_ids.length === 1 ? "thread" : "threads"}
+        {args.thread_ids.length} {args.thread_ids.length === 1 ? "thread" : "threads"}
       </Text>
     )),
-    opened: threadLabels,
+    opened: relabelPreview,
   },
-  details: { arguments: threadLabels },
+  details: {
+    arguments: relabelPreview,
+    result: defineResultPreview(relabelResult, ({ result }) => (
+      <Stack gap={4}>
+        <Text size="sm">
+          Updated labels on {result.thread_count} {result.thread_count === 1 ? "thread" : "threads"}.
+        </Text>
+        <EmailField name="Added" value={result.added.map(({ name }) => name).join(", ")} />
+        <EmailField name="Removed" value={result.removed.map(({ name }) => name).join(", ")} />
+      </Stack>
+    )),
+  },
 };
 
 export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
-  ["drafts_create", gmailDraftPresentation],
-  ["threads_list", gmailThreadSearchPresentation],
-  ["threads_modify_labels", threadLabelsPresentation],
+  ["drafts_create", draftPresentation],
+  ["threads_list", searchPresentation],
+  ["threads_modify_labels", relabelPresentation],
 ]);
