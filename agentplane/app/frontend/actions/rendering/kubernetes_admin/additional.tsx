@@ -1,5 +1,5 @@
 import { Code, Paper, Stack, Text } from "@mantine/core";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 
@@ -51,10 +51,18 @@ function selectors(label?: string, field?: string): JSX.Element | null {
 const allPodsFilters = definePreview(podSelectors, ({ args }) => selectors(args.labelSelector, args.fieldSelector));
 const namespaceFilters = definePreview(namespaces, ({ args }) => selectors(undefined, args.fieldSelector));
 
+function Label({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+      {children}
+    </Text>
+  );
+}
+
 const nodeLogLabel = definePreview(nodeLogs, ({ args }) => (
-  <>
+  <Label>
     View logs for Node <Code>{args.name}</Code>
-  </>
+  </Label>
 ));
 const nodeLogArguments = definePreview(nodeLogs, ({ args }) => (
   <Text size="sm" style={{ overflowWrap: "anywhere" }}>
@@ -66,9 +74,9 @@ const nodeLogArguments = definePreview(nodeLogs, ({ args }) => (
 ));
 
 const nodeStatsLabel = definePreview(node, ({ args }) => (
-  <>
+  <Label>
     Read resource usage for Node <Code>{args.name}</Code>
-  </>
+  </Label>
 ));
 const statsSchema = z.object({
   node: z.object({
@@ -116,9 +124,9 @@ const nodeStatsResult = defineResultPreview(statsSchema, ({ result: { node: valu
 
 const nodesTopLabel = definePreview(nodesTop, ({ args }) =>
   args.name ? (
-    <>
+    <Label>
       Read resource usage for Node <Code>{args.name}</Code>
-    </>
+    </Label>
   ) : (
     "Read resource usage across nodes"
   )
@@ -143,7 +151,7 @@ const podsTopLabel = definePreview(podsTop, ({ args }) => {
     "all namespaces"
   );
   return (
-    <>
+    <Label>
       Read resource usage for{" "}
       {args.name ? (
         <>
@@ -154,7 +162,7 @@ const podsTopLabel = definePreview(podsTop, ({ args }) => {
       )}
       {" in "}
       {scope}
-    </>
+    </Label>
   );
 });
 const podsTopFilters = definePreview(podsTop, ({ args }) =>
@@ -259,9 +267,9 @@ const configResult = defineResultPreview(z.string(), ({ result }) => {
 });
 
 const runLabel = definePreview(podRun, ({ args }) => (
-  <>
+  <Label>
     Run {args.name ? <Code>{kubernetesTarget("Pod", args.name, args.namespace)}</Code> : "a Pod with a generated name"}
-  </>
+  </Label>
 ));
 const runArguments = definePreview(podRun, ({ args }) => (
   <Stack gap={4}>
@@ -284,10 +292,10 @@ const runArguments = definePreview(podRun, ({ args }) => (
   </Stack>
 ));
 const scaleLabel = definePreview(scale, ({ args }) => (
-  <>
+  <Label>
     {args.scale === undefined ? "Read scale for" : "Set desired replicas for"}{" "}
     <Code>{kubernetesTarget(args.kind, args.name, args.namespace)}</Code>
-  </>
+  </Label>
 ));
 const scaleArguments = definePreview(scale, ({ args }) => (
   <Stack gap={4}>
