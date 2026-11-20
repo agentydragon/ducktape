@@ -333,7 +333,8 @@ function Report() {
               >Study Casino<//
             >${" "} had an Initial memory-request VPA with 224–240 MiB bounds;
             its recommendation was pending and the existing singleton remained
-            Ready. This VPA postdates the inventory below.<//
+            Ready. The recommender interval is 15 minutes. This VPA postdates
+            the inventory below.<//
           >
         <//>
         <${Paper}

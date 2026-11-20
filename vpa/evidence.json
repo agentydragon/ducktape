@@ -19966,6 +19966,7 @@
     "recommendation_available": false,
     "existing_pod_ready": true,
     "existing_pod_created_at_utc": "2026-11-19T21:01:55Z",
-    "inventory_precedes_vpa": true
+    "inventory_precedes_vpa": true,
+    "recommender_interval": "15m"
   }
 }
