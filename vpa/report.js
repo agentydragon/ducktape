@@ -281,7 +281,8 @@ function Report() {
       <//>
       <${Title} order=${3} mt="xl">Availability and policy guardrails<//>
       <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md" mt="md">
-        <${Paper} withBorder p="md" radius="md"
+        <${Paper} id="controller-ha" withBorder p="md" radius="md"
+          ><span id="web-frontend-ha"></span
           ><${Title} order=${4}>Replicas and placement<//>
           <${Text} component="p"
             >Crossplane has three Ready webhook endpoints, one each in home-lan,
@@ -296,7 +297,7 @@ function Report() {
             are not fault injection or a capacity guarantee.<//
           >
         <//>
-        <${Paper} withBorder p="md" radius="md"
+        <${Paper} id="agentplane-staging-initial" withBorder p="md" radius="md"
           ><${Title} order=${4}>Singletons and staging<//>
           <${Text} component="p"
             >Staging has ten explicitly targeted Initial VPAs while
@@ -313,7 +314,12 @@ function Report() {
             and CDviz also need a non-evicting approach while singletons.<//
           >
         <//>
-        <${Paper} withBorder p="md" radius="md"
+        <${Paper}
+          id="secret-store-background-recovery"
+          withBorder
+          p="md"
+          radius="md"
+          ><span id="kyverno-retirement"></span
           ><${Title} order=${4}>Policy reporting<//>
           <${Text} component="p" mb=${0}
             >Kyverno remains in use where it is the simpler owner. Its
@@ -324,14 +330,38 @@ function Report() {
             rejection.<//
           >
         <//>
+        <${Paper}
+          id="clickhouse-exporter-initial"
+          withBorder
+          p="md"
+          radius="md"
+        >
+          <${Title} order=${4}>ClickHouse operator<//>
+          <${Text} component="p" mb=${0}
+            >The operator exporter has an Initial VPA for memory requests,
+            bounded to 96–128 MiB. The operator container is Off with request
+            pins to protect against stale recommendations; the ClickHouse and
+            Keeper StatefulSet VPAs remain Off. A server-side admission dry run
+            verified the pins and limits, but no replacement Pod has proved
+            natural scheduling.<//
+          >
+        <//>
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${4}>Resource evidence<//>
           <${Text} component="p" mb=${0}
-            >At 02:58 UTC, 135 of 557 active Pod containers lacked a memory
-            request; 254 lacked a memory limit. These are historical
-            observations, not current counts, and absent fields do not establish
-            usage or an OOM cause. The inventory below keeps the original
-            resource and seven-day peak evidence for investigation.<//
+            >At 20:34 UTC, 132 of 578 regular containers in Running or Pending,
+            non-terminating Pods lacked both CPU and memory requests; 375 lacked
+            CPU limits and 254 lacked memory limits. These are admitted Pod
+            specs, including defaults and mutations, and exclude init and
+            ephemeral containers. Missing fields alone do not show usage or an
+            OOM cause.<//
+          >
+          >
+          <${Text} component="p" mb=${0}
+            >The largest request gaps are Piraeus (63 containers) and SeaweedFS
+            CSI (16); another 42 PostgreSQL containers belong to 21 CNPG
+            clusters. Work through those with their operator owners. The earlier
+            02:58 inventory remains available below as historical evidence.<//
           >
         <//>
       <//>

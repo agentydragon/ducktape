@@ -19904,6 +19904,37 @@
       "https://github.com/agentydragon/ducktape/pull/18253",
       "https://github.com/agentydragon/ducktape/pull/18264"
     ],
-    "loki_proxy_admission_dry_run": "ReplicaSet-owner server-side dry run admitted 50m/128Mi requests and unchanged 200m/256Mi limits"
+    "loki_proxy_admission_dry_run": "ReplicaSet-owner server-side dry run admitted 50m/128Mi requests and unchanged 200m/256Mi limits",
+    "pod_resources": {
+      "observed_at_utc": "2026-11-20T20:34:45Z",
+      "collection_completed_at_utc": "2026-11-20T20:35:05Z",
+      "scope": "all namespaces; non-terminating Pods in Running or Pending phase; spec.containers only; absent or numeric-zero resource quantities count as missing",
+      "pods": 472,
+      "pods_running": 470,
+      "pods_pending": 2,
+      "regular_containers": 578,
+      "missing_cpu_request": 132,
+      "missing_memory_request": 132,
+      "missing_cpu_limit": 375,
+      "missing_memory_limit": 254,
+      "all_missing_quantities_absent_not_zero": true,
+      "missing_request_sets_identical": true,
+      "missing_memory_requests_by_namespace_top": {
+        "piraeus-datastore": 63,
+        "seaweedfs-csi-system": 16,
+        "monitoring": 5,
+        "crossplane-system": 3,
+        "kube-system": 3
+      },
+      "missing_memory_requests_by_direct_owner_kind": {
+        "DaemonSet": 69,
+        "Cluster": 42,
+        "Deployment": 19,
+        "StatefulSet": 2
+      },
+      "cnpg_postgres_containers_without_requests": 42,
+      "cnpg_clusters": 21,
+      "notes": "Admitted Pod specs reflect defaults and VPA mutation; direct Pod owner resolved through ReplicaSet to Deployment. Init, restartable init and ephemeral containers excluded."
+    }
   }
 }
