@@ -203,13 +203,14 @@
               )}
               <${Text} size="sm" mt="sm">${e.vm_shadow_review.selection_note}<//>
               <${Text} size="sm" mt="xs">
-                ${link(e.vm_shadow_review.run_url, "Fresh push pair")}${" · "}
+                ${link(e.vm_shadow_review.run_url, "Fresh pre-cutover pair")}${" · "}
                 ${link(e.vm_shadow_review.paired_evidence, "Per-pair measurements")}${" · "}
                 ${link(e.vm_shadow_review.routing_url, "Merged routing change")}${" · "}
                 ${link(e.vm_shadow_review.required_pr_invocation_url, "Required PR VM execution")}${" · "}
                 ${link(e.vm_shadow_review.post_cutover_url, "First post-cutover run")}${" · "}
+                ${link(e.vm_shadow_review.fresh_post_cutover_artifact_url, "Fresh post-cutover archive")}${" · "}
                 ${link("https://app.buildbuddy.io/invocation/2de8e501-a373-4c7c-908b-cabd1681e04a", "Manual pair 64")}${" · "}
-                ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "Review procedure")}
+                ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "Archive reference")}
               <//>
             </section>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
