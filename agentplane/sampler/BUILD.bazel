@@ -25,6 +25,7 @@ py_library(
         "//agentplane/proto:session_pb2",
         "//agentplane/sampler/api:sampler_admin_pb2",
         "//agentplane/sampler/api:sampler_admin_pb2_grpc",
+        "//agentplane/sampler/api:sampler_pb2",
         "//agentplane/testing:go_process",
         "//agentplane/testing:tls",
         "//util:net",
@@ -32,6 +33,7 @@ py_library(
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )

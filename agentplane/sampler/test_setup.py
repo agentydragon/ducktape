@@ -20,6 +20,7 @@ from agentplane.sampler.testing import (
     Request,
     SamplerTestClient,
     create_request,
+    follow_until,
     service,
     settings,
     submit_input,
@@ -41,17 +42,7 @@ class SetupEndpoint(Endpoint):
 
 
 async def through_event(stub: SamplerTestClient, session_id: str, kind: str) -> list[event_pb2.Event]:
-    stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
-    events = []
-    try:
-        async with asyncio.timeout(15):
-            async for frame in stream:
-                events.append(frame.entry.event)
-                if frame.entry.event.HasField(kind):
-                    return events
-    finally:
-        stream.cancel()
-    raise AssertionError(f"event stream ended before {kind}")
+    return await follow_until(stub, session_id, lambda event: event.HasField(kind), timeout_s=15)
 
 
 async def recorded_events(stub: SamplerTestClient, session_id: str) -> list[event_pb2.Event]:

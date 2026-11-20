@@ -37,7 +37,7 @@ from agentplane.native.codex.testing.responses_sse import CustomToolCall, Messag
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
-from agentplane.sampler.testing import Endpoint, create_request, go_sampler, settings
+from agentplane.sampler.testing import Endpoint, SamplerTestClient, create_request, go_sampler, settings, turn_completed
 from agentplane.sampler.testing_store import Store
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.session_dispatcher.testing.gateway_process import run_gateway
@@ -197,10 +197,12 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint,
                     capture_sampler_failure(store, session_id),
                 ):
-                    stub = harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel)
-                    admin = sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel)
+                    stub = SamplerTestClient(
+                        harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel),
+                        sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel),
+                    )
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
-                        await admin.GetSession(
+                        await stub.admin.GetSession(
                             sampler_admin_pb2.GetSessionRequest(session_id=session_id),
                             metadata=(("authorization", "Bearer ignored"),),
                             timeout=10,
@@ -208,7 +210,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
                     assert not await store.events(session_id, 0, limit=1000)
                     with pytest.raises(grpc.aio.AioRpcError) as absent_session:
-                        await admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10)
+                        await stub.admin.GetSession(
+                            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
+                        )
                     assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
                     await stub.CreateSession(request, timeout=10)
                     await stub.SubmitInput(
@@ -252,19 +256,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         await exchange.send(
                             *response_stream([Message("Patched artifact: after")], model="test-model").events
                         )
-                    event_stream = admin.FollowEvents(
-                        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True)
-                    )
-                    try:
-                        async with asyncio.timeout(20):
-                            async for frame in event_stream:
-                                if frame.entry.event.HasField("turn_completed"):
-                                    assert frame.entry.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-                                    break
-                            else:
-                                pytest.fail("sampler stream ended before the turn completed")
-                    finally:
-                        event_stream.cancel()
+                    assert (
+                        await turn_completed(stub, session_id, "shell-and-patch", timeout_s=20)
+                    ).status == event_pb2.TURN_STATUS_COMPLETED
                     async with dial(
                         gateway.environment_service.target,
                         channel_credentials=gateway.environment_service.channel_credentials(CENTRAL_SAMPLER_URI),
@@ -302,25 +296,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     )
                     outage_request = await endpoint.next()
 
-                    async def wait_for_turn_completion(after_cursor: int, turn_id: str) -> None:
-                        event_stream = admin.FollowEvents(
-                            sampler_admin_pb2.FollowEventsRequest(
-                                session_id=session_id, after_cursor=after_cursor, follow=True
-                            )
-                        )
-                        try:
-                            async with asyncio.timeout(20):
-                                async for frame in event_stream:
-                                    if frame.entry.event.HasField("turn_completed"):
-                                        assert frame.entry.event.turn_completed.turn_id == turn_id
-                                        assert (
-                                            frame.entry.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-                                        )
-                                        return
-                                pytest.fail("sampler stream ended before the turn completed")
-                        finally:
-                            event_stream.cancel()
-
                     outage_reader = history.reader.new_client()
                     outage_reader.request_timeout_s = 0.5
                     async with outage_reader:
@@ -335,7 +310,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                                         model="test-model",
                                     ).events
                                 )
-                            await wait_for_turn_completion(prefix[-1].cursor, outage_command_id)
+                            assert (
+                                await turn_completed(stub, session_id, outage_command_id, timeout_s=20)
+                            ).status == event_pb2.TURN_STATUS_COMPLETED
                             outage_snapshot = await store.get_session(session_id)
                             outage_suffix = await store.events(session_id, prefix[-1].cursor, limit=1000)
                             assert outage_suffix
@@ -374,7 +351,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                                 [Message("The fresh input completed after History recovery.")], model="test-model"
                             ).events
                         )
-                    await wait_for_turn_completion(outage_cursor, next_command_id)
+                    assert (
+                        await turn_completed(stub, session_id, next_command_id, timeout_s=20)
+                    ).status == event_pb2.TURN_STATUS_COMPLETED
                     recovered_snapshot = await store.get_session(session_id)
                     await history.folded(UUID(session_id), recovered_snapshot.cursor)
                     final_page = await history.reader.read_session_events(session_id, limit=1000)

@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,12 +14,13 @@ import grpc
 from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_URI, ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
-from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
+from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2
 from agentplane.sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.testing.go_process import go_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca
@@ -233,20 +234,59 @@ async def service(config: Settings) -> AsyncIterator[SamplerTestClient]:
         )
 
 
-async def turn_completed(
-    stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float = 15
-) -> event_pb2.TurnCompleted:
-    """Follow the Session's events until `turn_id` completes."""
+async def follow_until(
+    stub: SamplerTestClient, session_id: str, matches: Callable[[event_pb2.Event], bool], *, timeout_s: float
+) -> list[event_pb2.Event]:
+    """Follow the Session's events through the first one `matches` accepts; return every event seen."""
+    events: list[event_pb2.Event] = []
     stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
-                event = frame.entry.event
-                if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
-                    return event.turn_completed
+                events.append(frame.entry.event)
+                if matches(frame.entry.event):
+                    return events
     finally:
         stream.cancel()
-    raise AssertionError(f"event stream ended before {turn_id=} completed")
+    raise AssertionError("event stream ended before a matching event")
+
+
+async def turn_completed(
+    stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float = 15
+) -> event_pb2.TurnCompleted:
+    """Follow the Session's events until `turn_id` completes."""
+    events = await follow_until(
+        stub,
+        session_id,
+        lambda event: event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id,
+        timeout_s=timeout_s,
+    )
+    return events[-1].turn_completed
+
+
+async def wait_for_command(
+    stub: SamplerTestClient,
+    session_id: str,
+    command_id: str,
+    outcome: sampler_pb2.CommandOutcome,
+    *,
+    timeout_s: float = 10,
+) -> sampler_admin_pb2.GetCommandResponse:
+    """Poll the command until it records `outcome`."""
+
+    async def read_command() -> sampler_admin_pb2.GetCommandResponse:
+        command = await stub.admin.GetCommand(
+            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id), timeout=10
+        )
+        assert command.outcome == outcome, f"{command_id=} {outcome=} {command=}"
+        return command
+
+    return await AsyncRetrying(
+        stop=stop_after_delay(timeout_s),
+        wait=wait_fixed(0.05),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    )(read_command)
 
 
 @dataclass

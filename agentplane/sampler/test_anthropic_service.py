@@ -30,6 +30,7 @@ from agentplane.sampler.testing import (
     settings,
     submit_input,
     turn_completed,
+    wait_for_command,
 )
 from agentplane.sampler.testing_store import Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -94,19 +95,6 @@ def end_turn_events(message_id: str) -> tuple[SseEvent, ...]:
         ),
         anthropic_event("message_stop"),
     )
-
-
-async def wait_command_outcome(stub: Any, command_id: str, expected: int) -> Any:
-    deadline = asyncio.get_running_loop().time() + 10
-    while True:
-        result = await stub.admin.GetCommand(
-            sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id=command_id), timeout=10
-        )
-        if result.outcome == expected:
-            return result
-        if asyncio.get_running_loop().time() >= deadline:
-            raise AssertionError(f"command {command_id!r} did not reach outcome {expected}: {result}")
-        await asyncio.sleep(0.05)
 
 
 async def provider_attempts(engine: Any, command_id: str) -> list[dict[str, Any]]:
@@ -226,8 +214,8 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                         )
                         await exchange.close()
                 assert compact_request is not None
-                command = await wait_command_outcome(
-                    stub, "anthropic-compact-failed", sampler_pb2.COMMAND_OUTCOME_FAILED
+                command = await wait_for_command(
+                    stub, SESSION_ID, "anthropic-compact-failed", sampler_pb2.COMMAND_OUTCOME_FAILED
                 )
                 assert command.failure_reason
                 assert await store.transcript_items(SESSION_ID) == transcript_before, (
@@ -272,7 +260,9 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 assert (
                     await turn_completed(stub, SESSION_ID, "input-after-failed-compaction", timeout_s=TIMEOUT_SECONDS)
                 ).status == event_pb2.TURN_STATUS_COMPLETED
-                await wait_command_outcome(stub, "input-after-failed-compaction", sampler_pb2.COMMAND_OUTCOME_APPLIED)
+                await wait_for_command(
+                    stub, SESSION_ID, "input-after-failed-compaction", sampler_pb2.COMMAND_OUTCOME_APPLIED
+                )
             else:
                 await submit_input(
                     stub,
@@ -323,7 +313,7 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 assert body is not None
                 terminal = await turn_completed(stub, SESSION_ID, TURN_ID, timeout_s=TIMEOUT_SECONDS)
                 assert terminal.status == event_pb2.TURN_STATUS_FAILED
-                command = await wait_command_outcome(stub, TURN_ID, sampler_pb2.COMMAND_OUTCOME_FAILED)
+                command = await wait_for_command(stub, SESSION_ID, TURN_ID, sampler_pb2.COMMAND_OUTCOME_FAILED)
                 assert command.failure_reason
                 assert not (await store.get_session(SESSION_ID)).blocked
                 attempts = await provider_attempts(engine, TURN_ID)
@@ -364,7 +354,9 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 assert (
                     await turn_completed(stub, SESSION_ID, "input-after-truncated-sampling", timeout_s=TIMEOUT_SECONDS)
                 ).status == event_pb2.TURN_STATUS_COMPLETED
-                await wait_command_outcome(stub, "input-after-truncated-sampling", sampler_pb2.COMMAND_OUTCOME_APPLIED)
+                await wait_for_command(
+                    stub, SESSION_ID, "input-after-truncated-sampling", sampler_pb2.COMMAND_OUTCOME_APPLIED
+                )
 
 
 # gazelle:include_dep @pypi//grpcio

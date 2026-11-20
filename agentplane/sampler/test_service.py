@@ -33,10 +33,12 @@ from agentplane.sampler.testing import (
     SESSION_ID,
     Endpoint,
     create_request,
+    follow_until,
     service,
     settings,
     submit_input,
     turn_completed,
+    wait_for_command,
 )
 from agentplane.sampler.testing_store import Store
 from agentplane.testing.codex_fixtures import ExecutorServer
@@ -330,19 +332,16 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 )
                 for payload in payloads:
                     await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
-            stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True))
-            try:
-                async with asyncio.timeout(10):
-                    async for frame in stream:
-                        if (
-                            frame.entry.event.HasField("execution_progress")
-                            and frame.entry.event.execution_progress.operation_id == "compact"
-                            and frame.entry.event.execution_progress.phase
-                            == event_pb2.ExecutionProgress.PHASE_COMPLETED
-                        ):
-                            break
-            finally:
-                stream.cancel()
+            await follow_until(
+                stub,
+                SESSION_ID,
+                lambda event: (
+                    event.HasField("execution_progress")
+                    and event.execution_progress.operation_id == "compact"
+                    and event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_COMPLETED
+                ),
+                timeout_s=10,
+            )
         # Independent runtime instance resumes canonical context and idempotent receipts.
         async with service(config) as stub:
             assert await stub.SubmitInput(request, timeout=10) == first
@@ -387,17 +386,8 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
             async with await endpoint.next() as exchange:
                 payload = {"type": "response.output_text.delta", "item_id": "partial", "delta": "partial output"}
                 await exchange.send(SseEvent(payload["type"], ("data: " + json.dumps(payload) + "\n\n").encode()))
-                stream = stub.admin.FollowEvents(
-                    sampler_admin_pb2.FollowEventsRequest(session_id=SESSION_ID, follow=True)
-                )
-                try:
-                    async with asyncio.timeout(10):
-                        async for frame in stream:
-                            if frame.entry.event.HasField("text_delta"):
-                                assert frame.entry.event.source_sequences
-                                break
-                finally:
-                    stream.cancel()
+                events = await follow_until(stub, SESSION_ID, lambda event: event.HasField("text_delta"), timeout_s=10)
+                assert events[-1].source_sequences
                 interrupt = harness_host_pb2.InterruptTurnRequest(
                     session_id=SESSION_ID, command_id="interrupt", turn_id="active"
                 )
@@ -619,20 +609,15 @@ async def test_restart_settles_live_javascript_and_continues(
         async with service(config) as stub:
             # The new host cannot reconstruct the cell; the resident driver that picks the Session
             # up abandons it with a recorded loss and the Session stays usable.
-            stream = stub.admin.FollowEvents(
-                sampler_admin_pb2.FollowEventsRequest(session_id=request.session_id, follow=True)
+            await follow_until(
+                stub,
+                request.session_id,
+                lambda event: (
+                    event.execution_progress.kind == event_pb2.ExecutionProgress.KIND_CODE_HOST_LOSS
+                    and event.execution_progress.phase == event_pb2.ExecutionProgress.PHASE_COMMITTED
+                ),
+                timeout_s=10,
             )
-            try:
-                async with asyncio.timeout(10):
-                    async for frame in stream:
-                        progress = frame.entry.event.execution_progress
-                        if (
-                            progress.kind == event_pb2.ExecutionProgress.KIND_CODE_HOST_LOSS
-                            and progress.phase == event_pb2.ExecutionProgress.PHASE_COMMITTED
-                        ):
-                            break
-            finally:
-                stream.cancel()
             session = await stub.admin.GetSession(
                 sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), timeout=10
             )
@@ -1240,13 +1225,7 @@ async def test_chat_completions_compaction(
                     assert exchange.request.body == frozen
                     await exchange.send(*completion("retained summary"))
             else:
-                async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
-                    with attempt:
-                        receipt = await stub.admin.GetCommand(
-                            sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="compact"),
-                            timeout=10,
-                        )
-                        assert receipt.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+                await wait_for_command(stub, request.session_id, "compact", sampler_pb2.COMMAND_OUTCOME_APPLIED)
                 await submit_input(stub, session_id=request.session_id, command_id="after", text="Go on.", timeout_s=10)
 
             async with await endpoint.next() as exchange:
