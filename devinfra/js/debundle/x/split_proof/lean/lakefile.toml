@@ -29,4 +29,4 @@ root = "Experiments.EvalOrder"
 
 [[lean_exe]]
 name = "translate"
-root = "Experiments.Translate"
+root = "Experiments.TranslateMain"

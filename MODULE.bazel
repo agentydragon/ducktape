@@ -3,6 +3,23 @@ module(
     version = "0.1.0",
 )
 
+# Lean rules are not yet published to the Bazel Central Registry.
+bazel_dep(name = "rules_lean", version = "0.7.2")
+archive_override(
+    module_name = "rules_lean",
+    integrity = "sha256-WlWwUULPEqpQgwPCxWr/GRZ/qVu1IFUSaqqdeAMIPgc=",
+    patch_strip = 1,
+    patches = ["//patches:rules_lean_4_35.patch"],
+    strip_prefix = "rules_lean-97c226a720ebd23675b2825088c6b32a3fc61989",
+    urls = ["https://github.com/tomato-bazel/rules_lean/archive/97c226a720ebd23675b2825088c6b32a3fc61989.tar.gz"],
+)
+
+lean = use_extension("//devinfra/js/debundle/x/split_proof/lean:toolchain.bzl", "lean")
+lean.toolchain(version_file = "//devinfra/js/debundle/x/split_proof/lean:lean-toolchain")
+use_repo(lean, "lean_dist")
+
+register_toolchains("@lean_dist//:lean_toolchain_def")
+
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.5.0-rc4")
@@ -280,8 +297,7 @@ pnpm.pnpm(
 )
 use_repo(pnpm, "pnpm")
 
-# Workspace-level npm packages (pnpm workspace)
-# All JS/TS projects share a single lockfile and node_modules
+# Root JS/TS workspace packages share a lockfile and node_modules.
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm_ducktape",
@@ -329,6 +345,14 @@ npm.npm_translate_lock(
     use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )
 use_repo(npm, "npm_ducktape")
+
+# Keep the translation experiment's parser pins separate from the JS workspace.
+translation_npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+translation_npm.npm_translate_lock(
+    name = "npm_split_proof_translation",
+    pnpm_lock = "//devinfra/js/debundle/x/split_proof/experiments/translation:pnpm-lock.yaml",
+)
+use_repo(translation_npm, "npm_split_proof_translation")
 
 # Custom multitool lockfile with newer ruff (0.17.4 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")

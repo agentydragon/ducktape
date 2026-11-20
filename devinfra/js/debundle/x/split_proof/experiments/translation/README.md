@@ -116,3 +116,19 @@ The catalog is the list of ways a move can go wrong that somebody wrote down. A 
 `meta_absolute` accepts `new URL("/static/…", import.meta.url)` in another module and rejects it when the path turns relative; `meta_relative`, `eval_direct` and `top_level_await` hold a bundle that the checker refuses (an `expect.json` names the verdict); `async_function` has an `await` inside a function, which is accepted. `node test.mjs` runs them all.
 
 [`mutate.mjs`](mutate.mjs) tampers with an accepted output (a literal, an operator, a reference, a local reference, a dropped statement, swapped arguments) and checks that `translate` rejects every mutant.
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:fixtures_test
+```
+
+Bazel runs the same fixture driver as `./run.sh --translation`. The driver uses Node to parse and pair each fixture and checks the Lean checker's verdict for each base case, output variant and generated mutation. The fixture suite checks verdicts. The differential fuzzer described above runs accepted trees in Node and compares their behavior with their bundles.
+
+The package-local `pnpm-lock.yaml` gives Bazel the same parser versions and integrity hashes as the standalone `package-lock.json`. Refresh it with `pnpm import` in a scratch directory containing `package-lock.json` and a copy of `package.json.in` named `package.json`.
+
+Run a seeded sample of the differential fuzzer on demand:
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:fuzz_test
+```
+
+The target generates 16 bundles with four split attempts each at seed 1. It runs each valid bundle and tree in Node and compares exit status, stdout and error class. The test requires a matching acceptance and fails if the checker accepts a tree with different behavior. The sample uses the ordinary templates. Standalone `./run.sh --translation-fuzz` runs the larger default sample.

@@ -10,15 +10,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const translate = path.join(here, "../../lean/.lake/build/bin/translate");
+const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
 const run = (command, args) => spawnSync(command, args, { encoding: "utf8", maxBuffer: 1 << 28 });
 
 let failures = 0;
 for (const name of readdirSync(path.join(here, "fixtures"))) {
   const fixture = path.join(here, "fixtures", name);
-  const work = mkdtempSync(path.join(tmpdir(), "translation_"));
+  const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "translation_"));
   const bundleJson = path.join(work, "bundle.json");
-  const front = run("node", [
+  const front = run(process.execPath, [
     path.join(here, "frontend.mjs"),
     "bundle",
     path.join(fixture, "bundle.js"),
@@ -28,7 +28,7 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
   if (front.status !== 0) throw new Error(front.stderr);
   const check = (outDir, certMode, baseCert) => {
     const outputJson = path.join(work, "output.json");
-    const tree = run("node", [
+    const tree = run(process.execPath, [
       path.join(here, "frontend.mjs"),
       "tree",
       outDir,
@@ -39,7 +39,10 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
     ]);
     if (tree.status !== 0) return { code: -1, text: tree.stderr };
     const cert = certMode === "base" ? baseCert : path.join(work, "cert.json");
-    if (certMode !== "base") run("node", [path.join(here, "pair.mjs"), bundleJson, outputJson, "--out", cert]);
+    if (certMode !== "base") {
+      const pairing = run(process.execPath, [path.join(here, "pair.mjs"), bundleJson, outputJson, "--out", cert]);
+      if (pairing.status !== 0) throw new Error(pairing.stderr);
+    }
     const result = run(translate, [bundleJson, outputJson, cert]);
     return { code: result.status, text: result.stdout + result.stderr };
   };
@@ -93,7 +96,14 @@ for (const name of readdirSync(path.join(here, "fixtures"))) {
     continue;
   }
   // every mutant of the accepted output must be rejected
-  const mutants = run("node", [path.join(here, "mutate.mjs"), bundleJson, baseOutput, baseCert, "--count", "24"]);
+  const mutants = run(process.execPath, [
+    path.join(here, "mutate.mjs"),
+    bundleJson,
+    baseOutput,
+    baseCert,
+    "--count",
+    "24",
+  ]);
   const survivors = mutants.stdout.split("\n").filter((l) => l.startsWith("SURVIVED"));
   if (mutants.status !== 0 && survivors.length === 0) throw new Error(mutants.stderr);
   failures += survivors.length;

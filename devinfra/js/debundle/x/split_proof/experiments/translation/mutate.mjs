@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const translate = path.join(here, "../../lean/.lake/build/bin/translate");
+const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
 const [bundlePath, outputPath, certPath, ...rest] = process.argv.slice(2);
 const option = (name, fallback) =>
   rest.includes(`--${name}`) ? Number(rest[rest.indexOf(`--${name}`) + 1]) : fallback;
@@ -68,7 +68,7 @@ output.modules.forEach((module, m) => {
   }
 });
 
-const work = mkdtempSync(path.join(tmpdir(), "mutate_"));
+const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? tmpdir(), "mutate_"));
 const kinds = Object.keys(candidates);
 let survived = 0;
 for (let n = 0; n < count; n++) {
@@ -117,8 +117,10 @@ for (let n = 0; n < count; n++) {
   writeFileSync(file, JSON.stringify(output));
   undo();
   const result = spawnSync(translate, [bundlePath, file, certPath], { encoding: "utf8", maxBuffer: 1 << 28 });
-  const verdict = result.stdout.split("\n").find((l) => /^TRANSLATION/.test(l)) ?? result.stderr.slice(0, 120);
-  const rejected = result.status === 1;
+  if (result.error) throw result.error;
+  const rejection = result.stdout.split("\n").find((l) => /^(TRANSLATION REJECT|PLAN NOT SOUND):/.test(l));
+  const verdict = rejection ?? result.stdout.split("\n").find((l) => /^TRANSLATION/.test(l)) ?? result.stderr;
+  const rejected = result.status === 1 && rejection !== undefined;
   if (!rejected) survived++;
   console.log(`${rejected ? "rejected" : "SURVIVED"}  ${kind}: ${what}  ->  ${verdict.slice(0, 120)}`);
 }
