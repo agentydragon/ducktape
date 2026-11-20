@@ -301,7 +301,7 @@ def _mutations(*, relay_name: str, settings_config_map: str, tls_secret: str) ->
     )
     expressions = [
         pod_fields,
-        _append_named("volumes", settings_volume["name"], _constant(settings_volume)),
+        _append_named("volumes", sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME, _constant(settings_volume)),
         _append_named("volumes", RUNNER_TLS_VOLUME_NAME, _constant(tls_volume), then=f"[{tls_secret_name}]"),
         relay,
         daemons,
