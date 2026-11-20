@@ -169,8 +169,6 @@ func TestActionsReadyIsAppliedOnlyOnThePolicyNamespacesBindings(t *testing.T) {
 	f.Create(f.policyBinding(f.elsewhere, "test-ready", subject, "test-auto"))
 	f.start()
 
-	// The reason and field manager are the Python service's (policy_informer.py, policies/resources.py): while one
-	// service replaces the other, both apply this condition and must own it as one writer.
 	ready := f.eventuallyActionsReady("test-ready", func(*metav1.Condition) bool { return true })
 	if ready.Status != metav1.ConditionTrue || ready.Reason != "Applied" {
 		t.Errorf("a binding whose sets all parse: %+v", ready)

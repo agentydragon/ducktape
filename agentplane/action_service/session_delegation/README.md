@@ -44,18 +44,18 @@ task separately with `sessions__submit_input`.
 one exact incarnation. It has no wait fields and never resumes a target. `environments__resume` sends
 one explicit request using the exact target and opaque token from a fresh get; its result is
 acceptance, not readiness. The receiving backend enforces the effective Identity's current policy.
-`sessions__get` returns `session_client.GetSession`'s independently sourced retained
+`sessions__get` returns `sessionclient.GetSession`'s independently sourced retained
 Dispatcher Session and History summary. The Session part is the minimal authorized projection; it
 omits the creation spec and instructions and does not look up a live environment. Each source keeps
 its observed, missing or unavailable state and sanitized error; an interrupted composite read adds
 an aggregate `read_error` while preserving facts already read. `sessions__read_turns` returns
-`session_client.ReadTurns`' compact retained turns, cursor coverage, gaps, continuation cursor and
+`sessionclient.ReadTurns`' compact retained turns, cursor coverage, gaps, continuation cursor and
 sanitized History error. Incomplete turns remain unfinished when a read stops early. These cursors
 are continuation hints scoped to a Session and carry no authority.
 
 Create returns the minimal Dispatcher Session in a `session` result envelope; submit and cancel wrap
 the owning Dispatcher’s ProtoJSON Dispatch receipt, and interrupt returns its typed ProtoJSON
-response. Observation returns `session_client.ObserveInput`'s typed source
+response. Observation returns `sessionclient.ObserveInput`'s typed source
 projections, retaining Dispatcher and History facts, gaps, resume token and sanitized source errors
 separately. Protobuf enum strings keep their generated domain names. All successful values are
 stored and returned by MCP Edge as structured JSON with the same JSON text fallback.
