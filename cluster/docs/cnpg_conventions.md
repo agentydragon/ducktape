@@ -47,8 +47,8 @@ before changing a profile's tolerance, check where its PV lives and rebuild the
 instance on a schedulable node if needed.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
-app on Proxmox. Relies on ZFS for local reliability; off-site backups via
-pg_dump CronJobs (see backup strategy in <plan.md>).
+app on Proxmox. Relies on ZFS for local reliability; no off-site
+backup exists yet; a `pg_dump` CronJob pattern is a backlog item in <plan.md>.
 
 **Optiplex-single** (`cnpg.OPTIPLEX_PIRAEUS_SSD`): for a database whose app is
 pinned to the OptiPlex at home (Home Assistant's recorder), so writes stay
@@ -131,7 +131,7 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
   (<decisions.md> § "Parked application manifests").
-- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
+- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`parked/{firecrawl,inventree,tandoor}/db`). Their
   manifests still name the retired `local-path` StorageClass — re-point to
   `piraeus-ssd-local` when reviving.
 - `wayback-archive-db` (<../../x/loom/wayback/deploy/>): OVH-HA shape,
