@@ -173,8 +173,8 @@
       "sha256": "vExAUODlKJx0xUEvF4HxjsztXpy0Nj5Maq3sNrEMt64="
     },
     "skill-later": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-later-24534ad3ef79/later.skill",
-      "sha256": "JFNK0+95q6W4JkOHwxqmdaKPJYKqMF1BaLDMJTsliAE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-later-544e8ab49025/later.skill",
+      "sha256": "VE6KtJAltw6aSMyfagK4G6+KPn7RKGZGJbTmpnGgTMs="
     },
     "skill-lint_audit": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-lint_audit-b3739f88ef00/lint_audit.skill",
