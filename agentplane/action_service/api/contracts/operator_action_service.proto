@@ -44,7 +44,7 @@ service OperatorActionService {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
   }
 
-  // Live subjects of threads named by a recorded Gmail threads_modify_labels request.
+  // Live subjects of threads named by a recorded Gmail relabel or draft reply request, or returned by a thread search.
   // An unavailable thread or backend is omitted. The receipt's arguments remain authoritative.
   rpc GetGmailThreadSummaries(GetGmailThreadSummariesRequest) returns (GetGmailThreadSummariesResponse) {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-thread-summaries"};

@@ -11,7 +11,7 @@ import type { ActionIdentity } from "../../../../action_service/api/contracts/ac
 import { JsonBlock } from "../../ui/text_block";
 import { renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
-import { renderResultPreview } from "./result_entry";
+import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
 import { gmailRenderers } from "./gmail";
@@ -98,7 +98,8 @@ export interface RenderedActionCall {
 export function renderActionCall(
   action: ActionIdentity,
   args: unknown,
-  result?: CallToolResult
+  result?: CallToolResult,
+  requestId?: string
 ): RenderedActionCall | null | undefined {
   const preview = presentation(action)?.call;
   if (!preview) return undefined;
@@ -106,7 +107,7 @@ export function renderActionCall(
   if (!parsedArgs.success) return undefined;
 
   if (result === undefined || result.isError) {
-    return { content: preview.render(parsedArgs.data as never, undefined), includesResult: false };
+    return { content: preview.render(parsedArgs.data as never, undefined, requestId), includesResult: false };
   }
 
   const value = toolValue(result);
@@ -114,19 +115,27 @@ export function renderActionCall(
   const parsedResult = preview.resultSchema.safeParse(value);
   if (!parsedResult.success) return undefined;
   return {
-    content: preview.render(parsedArgs.data as never, parsedResult.data as never),
+    content: preview.render(parsedArgs.data as never, parsedResult.data as never, requestId),
     includesResult: true,
   };
 }
 
 /** An MCP result's action-specific view; `undefined` asks the host to render the whole MCP envelope. */
-export function renderDetailsResult(action: ActionIdentity, result: CallToolResult): ReactNode | null | undefined {
+export function renderDetailsResult(
+  action: ActionIdentity,
+  result: CallToolResult,
+  context?: ResultPreviewContext
+): ReactNode | null | undefined {
   if (result.isError) return undefined;
-  const preview = presentation(action)?.details?.result;
-  if (preview === undefined || preview === null) return preview;
+  const details = presentation(action)?.details;
   const value = toolValue(result);
+  if (result.content.length === 0 && value == null && details?.emptyResult !== undefined) {
+    return details.emptyResult;
+  }
+  const preview = details?.result;
+  if (preview === undefined || preview === null) return preview;
   if (value === undefined || !toolContentRestatesValue(result, value)) return undefined;
-  return renderResultPreview(preview, value);
+  return renderResultPreview(preview, value, context);
 }
 
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */

@@ -233,7 +233,7 @@ describe("Action presentation slots", () => {
     const result = parseCallToolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
     if (result === null) throw new Error("the fixture is not a CallToolResult");
     const renderedResult = await mount(renderDetailsResult(action, result));
-    expect(renderedResult.textContent).toContain("Draft created");
+    expect(renderedResult.textContent).toContain("Saved as an unsent draft");
     expect(
       renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
     ).not.toBeNull();
@@ -273,7 +273,8 @@ describe("Action presentation slots", () => {
     expect(completedView.textContent).toContain("Release notes saved");
     expect(completedView.textContent).toContain("reader@example.com");
     expect(completedView.textContent).toContain("The release is ready.");
-    expect(completedView.textContent).toContain("draft draft-123");
+    expect(completedView.textContent).toContain("Saved as an unsent draft");
+    expect(completedView.textContent).not.toContain("draft-123");
     expect(
       completedView.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
     ).not.toBeNull();
@@ -288,29 +289,30 @@ describe("Action presentation slots", () => {
     expect(renderActionCall(action, args, unexpectedResult)).toBeUndefined();
   });
 
-  it("renders Gmail search arguments and results without fetching subjects", async () => {
+  it("shows Gmail search scope and continuation without exposing the cursor", async () => {
     const action = identity("gmail", "threads_list");
-    const args = { q: "from:alerts@example.com", maxResults: 5, includeSpamTrash: false };
+    const args = { q: "from:alerts@example.com", labelIds: ["INBOX"], maxResults: 5, includeSpamTrash: false };
     const label = await mount(renderActionLabel(action, args));
     const collapsed = await mount(renderPaneCollapsed(action, args));
-    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
 
     expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
-    expect(collapsed.textContent).not.toContain("maxResults");
-    expect(collapsed.textContent).not.toContain("Including spam and trash");
-    expect(opened.textContent).toContain('"maxResults": 5');
-    expect(opened.textContent).toContain('"includeSpamTrash": false');
+    expect(collapsed.textContent).toContain("Up to 5 threads");
+    expect(collapsed.textContent).toContain("Inbox");
+    expect(collapsed.textContent).not.toContain("Includes spam and trash");
+    expect(details.textContent).toContain("Up to 5 threads");
+    expect(details.textContent).toContain("Inbox");
+    expect(actionCompactCardExpands(action, args)).toBe(false);
 
     const includingSpamAndTrash = await mount(
       renderPaneCollapsed(action, { q: "from:alerts@example.com", includeSpamTrash: true })
     );
-    expect(includingSpamAndTrash.textContent).toContain("Including spam and trash");
-    expect(includingSpamAndTrash.textContent).toContain("Search for");
+    expect(includingSpamAndTrash.textContent).toContain("Includes spam and trash");
     const continuationPage = await mount(
       renderPaneCollapsed(action, { q: "from:alerts@example.com", pageToken: "secret-token" })
     );
-    expect(continuationPage.textContent).toContain("continuation page");
+    expect(continuationPage.textContent).toContain("Continues a previous search");
     expect(continuationPage.textContent).not.toContain("secret-token");
 
     const result = parseCallToolResult({
@@ -324,6 +326,7 @@ describe("Action presentation slots", () => {
     if (result === null) throw new Error("the fixture is not a CallToolResult");
     const renderedResult = await mount(renderDetailsResult(action, result));
     expect(renderedResult.textContent).toContain("Your build completed.");
+    expect(renderedResult.textContent).toContain("1 thread returned");
     expect(renderedResult.textContent).toContain("More threads available");
     expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
   });
@@ -811,7 +814,7 @@ const cardDecisionButtonCases: Array<{
     group: "gmail",
     name: "threads_list",
     args: { q: "from:deployments@example.com", maxResults: 5 },
-    visible: ["from:deployments@example.com", '"maxResults": 5'],
+    visible: ["from:deployments@example.com", "Up to 5 threads"],
   },
   {
     group: "github",

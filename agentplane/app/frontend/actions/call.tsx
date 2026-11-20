@@ -123,7 +123,8 @@ export function ActionCall({
   const args = actionArguments(request);
   const actionLabel = renderActionLabel(action, args);
   const prettyArguments = renderDetailsArguments(action, args, request.id);
-  const combinedCall = providedCombinedCall === undefined ? renderActionCall(action, args) : providedCombinedCall;
+  const combinedCall =
+    providedCombinedCall === undefined ? renderActionCall(action, args, undefined, request.id) : providedCombinedCall;
   const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
   return (
     <Stack className="agentplane-action-operation-host" data-operation-density="detail" gap="sm">

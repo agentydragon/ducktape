@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
@@ -101,5 +103,61 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 		if err != nil || found.Version != tc.receipt.Version || found.Execution != nil || found.Decision != nil {
 			t.Errorf("lookup changed %s receipt to %+v, %v", tc.receipt.Action.Group, found, err)
 		}
+	}
+}
+
+func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
+	var lookedUp []string
+	var mu sync.Mutex
+	previews := IntegrationPreviews{
+		Gmail: gmailSummariesFunc(func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
+			mu.Lock()
+			defer mu.Unlock()
+			lookedUp = append(lookedUp, ids...)
+			return nil
+		}),
+	}
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
+	submit := func(name, args string) store.ActionRequest {
+		t.Helper()
+		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+			IdempotencyKey: name, Action: store.ActionIdentity{Group: "gmail", Name: name},
+			Arguments: json.RawMessage(args), Title: name,
+		}, store.Admission{RequestID: uuid.New()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	lookup := func(request store.ActionRequest) {
+		t.Helper()
+		_, err := s.operators.GetGmailThreadSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGmailThreadSummariesRequest{RequestId: request.ID.String()})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	lookup(submit("drafts_create", `{"thread_id":"reply-thread","thread_ids":["unrelated-thread"]}`))
+	search := submit("threads_list", `{"thread_id":"unrelated-thread","q":"test"}`)
+	lookup(search)
+	s.decide(t, search, store.VerdictAllow)
+	claim, err := s.store.ClaimExecution(t.Context(), search.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %v, %v", claim, err)
+	}
+	if _, err := s.store.MarkRunning(t.Context(), search.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.FinishExecution(t.Context(), search.ID, claim.Lease, store.ExecutionOutcome{
+		State:  store.ExecutionSucceeded,
+		Result: json.RawMessage(`{"content":[],"structuredContent":{"threads":[{"id":"returned-thread"},{"id":"returned-thread"},{"id":"../invalid"}]}}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lookup(search)
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"reply-thread", "returned-thread"}; !slices.Equal(lookedUp, want) {
+		t.Errorf("looked up %q; want %q", lookedUp, want)
 	}
 }

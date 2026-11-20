@@ -96,10 +96,10 @@ single-use state itself and the client metadata document is public. A new RPC st
 is assigned an explicit boundary.
 
 Operator integration summaries resolve live display metadata from the MCP groups configured as
-`gmail` and `tana`. `GetGmailThreadSummaries` reads subjects for a recorded Gmail
-`threads_modify_labels` request. `GetTanaNodeSummaries` reads names for a recorded Tana
-`move_node` request. Both take only the saved request UUID and derive resource IDs from its
-arguments. The service calls the fixed read tools `threads_get` in metadata format and
+`gmail` and `tana`. `GetGmailThreadSummaries` reads subjects for a recorded Gmail relabel or
+draft reply, or threads returned by a recorded search. `GetTanaNodeSummaries` reads names for
+a recorded Tana `move_node` request. Both take only the saved request UUID and derive resource
+IDs from its arguments or successful result. The service calls the fixed read tools `threads_get` in metadata format and
 `read_node` at depth zero. It tries up to eight distinct IDs per call within a shared two-second
 lookup budget and omits unavailable results. The reads create no Action request, Decision or
 Execution. Names and subjects reflect current provider data and can change after the request

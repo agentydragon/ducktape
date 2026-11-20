@@ -29,6 +29,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 # Actions whose closed compact card already shows every argument of the calls below, so it has no expanded version.
 CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
     {
+        ("gmail", "threads_list"),
         ("kubernetes_admin", "pods_list_in_namespace"),
         ("kubernetes_admin", "pods_get"),
         ("kubernetes_admin", "pods_log"),
@@ -208,7 +209,7 @@ ARGUMENT_LAYOUTS = [
         "gmail",
         "threads_list",
         {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
-        ['"maxResults": 23', "from:deployments@example.com"],
+        ["Up to 23 threads", "from:deployments@example.com"],
         "from:deployments@example.com",
         id="gmail-query-limit",
     ),
@@ -505,9 +506,6 @@ async def test_compact_action_summaries(
     if group == "gmail" and name == "drafts_create":
         await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
         await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
-        await expect(
-            collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
-        ).to_be_visible()
         await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
@@ -524,9 +522,7 @@ async def test_compact_action_summaries(
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
     if group == "gmail" and name == "threads_list":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
-        await expect(
-            section.locator(".agentplane-actions-sidebar-preview").get_by_text('"maxResults": 5', exact=False)
-        ).to_be_visible()
+        await expect(collapsed_summary.get_by_text("Up to 5 threads", exact=True)).to_be_visible()
     if group == "grocy_sf":
         expected_label = {
             "products_list": "List Grocy products",
