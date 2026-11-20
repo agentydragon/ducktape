@@ -203,6 +203,7 @@ class ModelConfig(BaseModel):
 
     connection: str
     provider_model: str
+    response_header_timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS)
     api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
@@ -375,6 +376,13 @@ class Settings(BaseModel):
         if any(not name for name in self.connections):
             raise ValueError("connection name must not be empty")
         for model, config in self.models.items():
+            header = config.response_header_timeout_seconds
+            if (
+                header is not None
+                and header + (self.provider_idle_timeout_seconds or 600) + 3 * self.rpc_timeout_seconds
+                > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+            ):
+                raise ValueError("model response-header, idle, and RPC budgets must fit together in time.Duration")
             if not model:
                 raise ValueError("model route must not be empty")
             connection = self.connections.get(config.connection)

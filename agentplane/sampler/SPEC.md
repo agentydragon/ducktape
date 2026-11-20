@@ -152,7 +152,9 @@ reconciliation described below; an in-flight provider request may be interrupted
 
 Provider requests have independent `provider_response_header_timeout_seconds` and
 `provider_idle_timeout_seconds` budgets, defaulting to 120 and 600 seconds. The header budget
-covers request transmission through response headers while preserving the connection's configured
+covers request transmission through response headers; each model route may override this budget with
+`response_header_timeout_seconds`. The selected budget also extends that attempt's initial lease. The
+header budget preserves the connection's configured
 transport and TLS behavior. The semantic-idle budget starts after the response head is durably
 recorded. Only a validated semantic event that is durably recorded resets it: nonempty content,
 function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a

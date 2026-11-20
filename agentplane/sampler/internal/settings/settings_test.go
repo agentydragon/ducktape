@@ -179,7 +179,7 @@ func TestShutdownDrainTimeoutIsBoundedAndConfigurable(t *testing.T) {
 
 func TestProviderLeasesCoverConfiguredPhasesAndDatabaseSlack(t *testing.T) {
 	settings := fixtureSettings()
-	if got, want := settings.ProviderAttemptLease(), 750*time.Second; got != want {
+	if got, want := settings.ProviderAttemptLease(ModelConfig{}), 750*time.Second; got != want {
 		t.Fatalf("initial provider attempt lease=%s, want header + idle + three RPC intervals %s", got, want)
 	}
 	if got, want := settings.ProviderProgressLease(), 620*time.Second; got != want {
@@ -264,7 +264,7 @@ func TestExecutorReconnectTimeoutDefaultsIndependentlyAndCanBeConfigured(t *test
 
 func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *testing.T) {
 	settings := fixtureSettings()
-	if got := settings.ProviderResponseHeaderTimeout(); got != 120*time.Second {
+	if got := settings.ProviderResponseHeaderTimeout(ModelConfig{}); got != 120*time.Second {
 		t.Fatalf("default provider response-header timeout=%s, want 120s", got)
 	}
 	if got := settings.ProviderIdleTimeout(); got != 600*time.Second {
@@ -280,7 +280,7 @@ func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *test
 	if err := settings.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if settings.ProviderResponseHeaderTimeout() != 45*time.Second || settings.ProviderIdleTimeout() != 180*time.Second {
+	if settings.ProviderResponseHeaderTimeout(ModelConfig{}) != 45*time.Second || settings.ProviderIdleTimeout() != 180*time.Second {
 		t.Fatal("configured provider phase budgets were not applied independently")
 	}
 
@@ -298,6 +298,43 @@ func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *test
 				}
 			}
 		})
+	}
+}
+
+func TestModelResponseHeaderBudgetControlsAttemptLease(t *testing.T) {
+	settings := fixtureSettings()
+	global := 45
+	settings.ProviderResponseHeaderTimeoutSeconds = &global
+	extended := 360
+	selected := settings.Models["test-model"]
+	selected.ResponseHeaderTimeoutSeconds = &extended
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := settings.ProviderResponseHeaderTimeout(selected); got != 360*time.Second {
+		t.Fatalf("model header budget=%s", got)
+	}
+	if got := settings.ProviderAttemptLease(selected); got != 990*time.Second {
+		t.Fatalf("model attempt lease=%s", got)
+	}
+	if got := settings.ProviderResponseHeaderTimeout(ModelConfig{}); got != 45*time.Second {
+		t.Fatalf("other route header budget=%s", got)
+	}
+	if got := settings.ProviderAttemptLease(ModelConfig{}); got != 675*time.Second {
+		t.Fatalf("other route attempt lease=%s", got)
+	}
+	zero := 0
+	selected.ResponseHeaderTimeoutSeconds = &zero
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted zero model header budget")
+	}
+	nearMax := int(maxExecutorInitializeTimeoutSeconds)
+	selected.ResponseHeaderTimeoutSeconds = &nearMax
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted model budget that overflows attempt lease")
 	}
 }
 
