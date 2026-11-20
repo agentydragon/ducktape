@@ -102,3 +102,38 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-cluster-secret-store-namespaces
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: "!('system:nodes' in request.userInfo.groups)"
+      name: exclude-kubelets
+  matchConstraints:
+    matchPolicy: Equivalent
+    resourceRules:
+      - apiGroups:
+          - external-secrets.io
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - clustersecretstores
+        scope: Cluster
+  validations:
+    - expression: object.spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0) || (request.operation == 'UPDATE' && !oldObject.spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0))
+      message: ClusterSecretStore must name at least one allowed namespace in spec.conditions[].namespaces.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-cluster-secret-store-namespaces
+spec:
+  policyName: require-cluster-secret-store-namespaces
+  validationActions:
+    - Deny

@@ -9,6 +9,7 @@ repository.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
 
 from cluster.cdk8s import namespaces, node_scheduling
@@ -22,6 +23,7 @@ NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
 _CONTROLLER_CPU_REQUEST = "100m"
+_SECRET_STORE_ADMISSION = "require-cluster-secret-store-namespaces"
 
 
 def _values(webhook_issuer: str) -> dict[str, object]:
@@ -156,6 +158,50 @@ def chart(app: App) -> Chart:
         interval="15m",
         install=RETRY_FAILED_INSTALL,
         values=_values(webhook_issuer.name),
+    )
+    # ESO can read secrets across namespaces. Require ClusterSecretStores to
+    # explicitly name their consumer namespaces, as the existing Kyverno rule does.
+    has_namespaces = ".spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0)"
+    k8s.KubeValidatingAdmissionPolicy(
+        chart,
+        "cluster-secret-store-admission",
+        metadata=k8s.ObjectMeta(name=_SECRET_STORE_ADMISSION),
+        spec=k8s.ValidatingAdmissionPolicySpec(
+            failure_policy="Fail",
+            match_constraints=k8s.MatchResources(
+                match_policy="Equivalent",
+                resource_rules=[
+                    k8s.NamedRuleWithOperations(
+                        api_groups=["external-secrets.io"],
+                        api_versions=["v1"],
+                        operations=["CREATE", "UPDATE"],
+                        resources=["clustersecretstores"],
+                        scope="Cluster",
+                    )
+                ],
+            ),
+            # Keep Kyverno's current node-group exclusion; RBAC does not authorize
+            # node identities to write ClusterSecretStores.
+            match_conditions=[
+                k8s.MatchCondition(name="exclude-kubelets", expression="!('system:nodes' in request.userInfo.groups)")
+            ],
+            validations=[
+                k8s.Validation(
+                    # Mirror Kyverno's allowExistingViolations. Once a store has a list,
+                    # it cannot lose it, and new stores cannot omit it.
+                    expression=(
+                        f"object{has_namespaces} || (request.operation == 'UPDATE' && !oldObject{has_namespaces})"
+                    ),
+                    message="ClusterSecretStore must name at least one allowed namespace in spec.conditions[].namespaces.",
+                )
+            ],
+        ),
+    )
+    k8s.KubeValidatingAdmissionPolicyBinding(
+        chart,
+        "cluster-secret-store-admission-binding",
+        metadata=k8s.ObjectMeta(name=_SECRET_STORE_ADMISSION),
+        spec=k8s.ValidatingAdmissionPolicyBindingSpec(policy_name=_SECRET_STORE_ADMISSION, validation_actions=["Deny"]),
     )
     return chart
 

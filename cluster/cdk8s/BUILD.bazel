@@ -234,6 +234,34 @@ py_library(
 )
 
 py_test(
+    name = "test_cluster_secret_store_admission",
+    size = "medium",
+    srcs = ["test_cluster_secret_store_admission.py"],
+    data = [
+        "@external_secrets_crds_bundle//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "ESO_CRDS": "$(rlocationpath @external_secrets_crds_bundle//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s/external_secrets:operator",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
     name = "test_secret_ref",
     srcs = ["test_secret_ref.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
