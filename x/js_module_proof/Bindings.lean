@@ -115,6 +115,44 @@ def visible (modules : List BindingModule) (index : Nat) (name : String) : Bool 
   | some module => localDefinition module name || module.imports.any (fun i =>
       i.locals.contains name && ownsExport modules i.dependency name)
 
+/- Lexical scopes are ordered from innermost to outermost. A declaration's
+   identity is independent of its spelling; an uninitialized nearest binding
+   blocks lookup instead of falling through to an outer declaration. -/
+structure LexicalBinding where
+  name : String
+  identity : Nat
+  initialized : Bool
+  deriving DecidableEq, Repr
+
+inductive LexicalResolution where
+  | binding (identity : Nat)
+  | temporalDeadZone (identity : Nat)
+  | unbound
+  deriving DecidableEq, Repr
+
+def resolveLexical : List (List LexicalBinding) → String → LexicalResolution
+  | [], _ => .unbound
+  | frame :: rest, name =>
+    match frame.find? (fun binding => binding.name == name) with
+    | none => resolveLexical rest name
+    | some binding =>
+      if binding.initialized then .binding binding.identity
+      else .temporalDeadZone binding.identity
+
+/- The declaration in a factory's initializer is in scope but uninitialized;
+   its source must resolve to the outer declaration, not that TDZ binding. -/
+def factoryInitializerResolves (localName sourceName : String) : Bool :=
+  decide (resolveLexical [[⟨localName, 0, false⟩], [⟨sourceName, 1, true⟩]] sourceName = .binding 1)
+
+theorem lexical_nearest_binding (name : String) (identity : Nat) (ready : Bool)
+    (tail : List LexicalBinding) (outer : List (List LexicalBinding))
+    (self : (name == name) = true) :
+    resolveLexical ((⟨name, identity, ready⟩ :: tail) :: outer) name =
+      (if ready then .binding identity else .temporalDeadZone identity) := by
+  unfold resolveLexical
+  unfold List.find?
+  rw [self]
+
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
   | .variable _ _ => true
@@ -123,7 +161,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
   | .reader _ sourceName => isVariable source sourceName && visible modules index sourceName
-  | .factory _ localName sourceName => !(localName == sourceName) && isVariable source sourceName && visible modules index sourceName
+  | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isVariable source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
   | .wrapper _ target => isClosure source target && visible modules index target
   | .recordCall name => isFunction source name && visible modules index name

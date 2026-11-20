@@ -96,8 +96,10 @@ single `target += source` or `return binding` statement, calls to those function
 `function make() { let local = seed; return () => ++local; }`, a top-level
 `let` or `const` initialized by `make()`, and a no-argument wrapper returning a
 call to that closure. Initialization may call the wrapper or record its return.
-The captured variable must have a different name from `seed`, and other closure
-shapes remain unsupported. Public exports must be functions. Imports and
+The captured variable must have a different name from `seed`: the shared Lean
+lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone
+reference rather than falling through to an outer one. Other closure shapes
+remain unsupported. Public exports must be functions. Imports and
 exports use unaliased names, source declarations have unique names, function
 writes must target a local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized

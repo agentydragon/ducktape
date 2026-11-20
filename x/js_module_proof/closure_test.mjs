@@ -57,9 +57,17 @@ const models = (
 ).join("\n");
 const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
   encoding: "utf8",
-  input: models + result.certificate,
+  input:
+    models +
+    result.certificate +
+    `
+example : resolveLexical [[⟨"x", 7, false⟩], [⟨"x", 8, true⟩]] "x" = .temporalDeadZone 7 := by decide
+example : resolveLexical [[⟨"y", 7, false⟩], [⟨"x", 8, true⟩]] "x" = .binding 8 := by decide
+#print axioms lexical_nearest_binding
+`,
 });
 assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+assert.match(replay.stdout, /'lexical_nearest_binding' does not depend on any axioms/);
 assert.match(
   replay.stdout,
   unsafe ? /'binding_difference' does not depend on any axioms/ : /'binding_future_calls' does not depend on any axioms/
