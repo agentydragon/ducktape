@@ -16,8 +16,15 @@ from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "gitlab-spike"
 NAMESPACE = NAME
@@ -65,6 +72,28 @@ SSH = ServiceRef(
     port=Port(name="ssh", number=2223),
     pods=Pods(namespace=NAMESPACE, labels=(("app", "gitlab-shell"), ("release", NAME))),
 )
+
+
+def _initial_vpa_annotations(*policies: ContainerPolicy) -> dict[str, str]:
+    return {
+        VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+            *policies, ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"), compact=True
+        ),
+    }
+
+
+def _memory_request_policy(
+    container: str, *, cpu_request: str, memory_floor: str, memory_ceiling: str
+) -> ContainerPolicy:
+    # VPA 1.7.1 admission can still use the old CPU recommendation before the recommender refreshes.
+    return ContainerPolicy(
+        container_name=container,
+        controlled_values=ControlledValues.REQUESTS_ONLY,
+        controlled_resources=("memory",),
+        min_allowed={"cpu": cpu_request, "memory": memory_floor},
+        max_allowed={"cpu": cpu_request, "memory": memory_ceiling},
+    )
 
 
 def _values() -> dict[str, object]:
@@ -136,8 +165,40 @@ def _values() -> dict[str, object]:
         "installCertmanager": False,
         "prometheus": {"install": False},
         "gitlab-runner": {"install": False},
-        "registry": {"storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"}},
+        "registry": {
+            "storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"},
+            "deployment": {
+                "annotations": _initial_vpa_annotations(
+                    # Registry's HPA uses CPU utilization, which depends on the request.
+                    _memory_request_policy("registry", cpu_request="50m", memory_floor="96Mi", memory_ceiling="128Mi")
+                )
+            },
+        },
         "gitlab": {
+            "gitlab-exporter": {
+                "deployment": {
+                    "annotations": _initial_vpa_annotations(
+                        _memory_request_policy(
+                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_ceiling="128Mi"
+                        )
+                    )
+                }
+            },
+            "gitlab-shell": {
+                "deployment": {
+                    "annotations": _initial_vpa_annotations(
+                        # Shell declares zero CPU and its HPA uses absolute CPU. Keep the maximum at
+                        # the existing effective Pod request, supplied by its init containers.
+                        ContainerPolicy(
+                            container_name="gitlab-shell",
+                            controlled_values=ControlledValues.REQUESTS_ONLY,
+                            controlled_resources=("cpu", "memory"),
+                            min_allowed={"cpu": "20m", "memory": "96Mi"},
+                            max_allowed={"cpu": "50m", "memory": "128Mi"},
+                        )
+                    )
+                }
+            },
             "gitaly": {
                 "persistence": {
                     "enabled": True,
@@ -169,7 +230,16 @@ def _values() -> dict[str, object]:
                     }
                 },
             },
-            "sidekiq": {"maxReplicas": 2, "concurrency": 10, "livenessProbe": {"initialDelaySeconds": 300}},
+            "sidekiq": {
+                "maxReplicas": 2,
+                "concurrency": 10,
+                "livenessProbe": {"initialDelaySeconds": 300},
+                "deployment": {
+                    "annotations": _initial_vpa_annotations(
+                        _memory_request_policy("sidekiq", cpu_request="900m", memory_floor="3Gi", memory_ceiling="4Gi")
+                    )
+                },
+            },
             "toolbox": {
                 "backups": {
                     "objectStorage": {"backend": "s3", "config": {"secret": BACKUP_S3CFG_SECRET, "key": "config"}}
