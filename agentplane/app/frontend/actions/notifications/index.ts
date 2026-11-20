@@ -1,5 +1,5 @@
 import type { ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
-import { actionIdentity } from "../presentation";
+import { actionArguments, actionIdentity } from "../presentation";
 import { tanaTitles } from "../schemas/tana_titles";
 import { createBranchNotification } from "./github/create_branch";
 import { createPullRequestNotification } from "./github/create_pull_request";
@@ -36,6 +36,14 @@ function fixedActionNotification(actionTitle: string): ActionNotificationFormatt
     actionTitle,
     text: request.description ?? "Action requires approval",
   });
+}
+
+function environmentTargetNotification(actionTitle: string): ActionNotificationFormatter {
+  return (request) => {
+    const target = actionArguments(request).target;
+    const name = target !== null && typeof target === "object" && !Array.isArray(target) ? target.name : undefined;
+    return fixedActionNotification(typeof name === "string" && name ? `${actionTitle} ${name}` : actionTitle)(request);
+  };
 }
 
 // This registry intentionally stays parallel to the React presentation registry. The service
@@ -79,6 +87,26 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["drafts_create", fixedActionNotification("Gmail: Draft email")],
       ["threads_list", fixedActionNotification("Gmail: Search threads")],
       ["threads_modify_labels", gmailThreadLabelsNotification],
+    ]),
+  ],
+  [
+    "environments",
+    new Map([
+      ["list", fixedActionNotification("List environments")],
+      ["get", environmentTargetNotification("Inspect environment")],
+      ["resume", environmentTargetNotification("Resume environment")],
+    ]),
+  ],
+  [
+    "sessions",
+    new Map([
+      ["create", fixedActionNotification("Create Session")],
+      ["get", fixedActionNotification("Inspect Session")],
+      ["submit_input", fixedActionNotification("Submit Session input")],
+      ["observe_input", fixedActionNotification("Observe Session input")],
+      ["cancel_input", fixedActionNotification("Cancel Session input")],
+      ["interrupt_turn", fixedActionNotification("Interrupt Session turn")],
+      ["read_turns", fixedActionNotification("Read Session turns")],
     ]),
   ],
   ["sandbox", new Map([["exec", sandboxExecNotification]])],

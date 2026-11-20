@@ -19,6 +19,7 @@ import { googleCalendarRenderers } from "./google_calendar";
 import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
+import { environmentRenderers, sessionRenderers } from "./session_delegation";
 import { sshRenderers } from "./ssh/index";
 
 // Maps avoid prototype-key lookups for group and Action names.
@@ -30,6 +31,8 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],
+  ["environments", environmentRenderers],
+  ["sessions", sessionRenderers],
   ["ssh", sshRenderers],
 ]);
 
