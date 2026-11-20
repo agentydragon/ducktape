@@ -124,6 +124,32 @@ lean_axiom_test(
 )
 
 lean_axiom_test(
+    name = "property_read_axioms_test",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Semantics.lean",
+        "Experiments/LocalCall.lean",
+        "Experiments/MiniJS.lean",
+        "Experiments/PropertyRead.lean",
+    ],
+    imports = ["Experiments.PropertyRead"],
+    theorems = [
+        "PropertyRead.read_no_accessor_preserves_trace",
+        "PropertyRead.own_data_read_ignores_prototype",
+        "PropertyRead.own_data_write_preserves_trace",
+        "PropertyRead.initialize_preserves_trace",
+        "PropertyRead.local_call_then_initialize_preserves_trace",
+        "PropertyRead.own_data_positive",
+        "PropertyRead.missing_argument_invokes_getter",
+        "PropertyRead.fresh_receiver_invokes_setter",
+        "PropertyRead.inherited_getter_rejected",
+        "PropertyRead.inherited_setter_rejected",
+        "PropertyRead.missing_read_depends_on_prototype",
+        "PropertyRead.prototype_mutation_invalidates_guard",
+    ],
+)
+
+lean_axiom_test(
     name = "proof_fixture_axioms_test",
     srcs = _PROOF_FIXTURE_SOURCES,
     imports = ["Experiments.ProofFixture"],
