@@ -97,6 +97,18 @@ func (s *served) claim(t *testing.T, request store.ActionRequest) *store.Executi
 	return claim
 }
 
+// execute runs the allowed request's Execution to the outcome, as an executor would.
+func (s *served) execute(t *testing.T, request store.ActionRequest, outcome store.ExecutionOutcome) {
+	t.Helper()
+	claim := s.claim(t, request)
+	if _, err := s.store.MarkRunning(t.Context(), request.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.FinishExecution(t.Context(), request.ID, claim.Lease, outcome); err != nil {
+		t.Fatal(err)
+	}
+}
+
 const pending = action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
 
 func TestASetWatchSendsTheFilteredSetInBoundedChunksThenEachChange(t *testing.T) {
@@ -265,14 +277,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 	executed := s.submit(t, s.caller, "test-terminal")
 	terminal := watch(executed, action_servicepb.WatchUntil_WATCH_UNTIL_UNSPECIFIED)
 	last := receive(terminal)
-	allowed := s.decide(t, executed, store.VerdictAllow)
-	claim := s.claim(t, allowed)
-	if _, err := s.store.MarkRunning(t.Context(), executed.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.FinishExecution(t.Context(), executed.ID, claim.Lease, store.ExecutionOutcome{State: store.ExecutionSucceeded}); err != nil {
-		t.Fatal(err)
-	}
+	s.execute(t, s.decide(t, executed, store.VerdictAllow), store.ExecutionOutcome{State: store.ExecutionSucceeded})
 	// Changes in quick succession may arrive as one frame; each frame is newer than the last.
 	for last.GetState() != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 		next := receive(terminal)

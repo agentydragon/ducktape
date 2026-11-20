@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc/codes"
@@ -50,9 +49,9 @@ func exactActions(group string, names ...string) policyapi.Rule {
 	return actionPolicy(policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{group: names}})
 }
 
-// bind grants the account the rules through one PolicySet and one PolicyBinding in the served API's policy namespace,
+// bind grants the caller the rules through one PolicySet and one PolicyBinding in the served API's policy namespace,
 // and returns once the policy index resolves the binding.
-func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rule) {
+func (s *served) bind(t *testing.T, rules ...policyapi.Rule) {
 	t.Helper()
 	if err := policyObjects.Create(t.Context(), &policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "test-set"}, Spec: policyapi.PolicySetSpec{Rules: rules},
@@ -111,7 +110,7 @@ func TestASubmissionNoPolicyDecidesWaitsForAnOperator(t *testing.T) {
 
 func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 
 	got, err := s.submitAs(t, callerCertificate, envelope(t, "test-allowed", "test-group", "test-action", map[string]any{}))
 	if err != nil {
@@ -159,7 +158,7 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 
 func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, actionPolicy(policyapi.ActionPolicy{
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
 		Type: "github_public_repository", Actions: map[string]policyapi.ActionNames{"test-github": {"get_file_contents"}},
 	}))
 	submit := func(key, owner, repository string) *action_servicepb.ActionRequest {
@@ -188,7 +187,7 @@ func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T)
 
 func TestADecidedOnlySubmissionNoPolicyDecidesIsRefusedAndStoresNothing(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 	undecided := envelope(t, "test-undecided", "test-group", "test-other-action", map[string]any{})
 	undecided.DecidedOnly = true
 	_, err := s.submitAs(t, callerCertificate, undecided)
@@ -305,7 +304,7 @@ func TestAnIdempotencyKeyIsAcceptedOncePerAccountAndRecoversTheRequest(t *testin
 func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testing.T) {
 	s := serve(t)
 	s.runWorker(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 	ran, err := s.submitAs(t, callerCertificate, envelope(t, "test-runs", "test-group", "test-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
@@ -349,33 +348,13 @@ func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testin
 
 func TestTheHTTPFacadeSubmits(t *testing.T) {
 	s := serve(t)
-	post := func(token, body string) (int, []byte) {
-		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.facadeURL(token)+"/v1/action-requests", strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasPrefix(token, certificatePrefix) {
-			call.Header.Set("Authorization", "Bearer "+token)
-		}
-		response, err := http.DefaultClient.Do(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		answer, err := io.ReadAll(response.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.StatusCode, answer
-	}
 	// body submits test-action under key with the target, a JSON value.
 	body := func(key, target string) string {
 		return `{"idempotency_key": "` + key + `", "action": {"group": "test-group", "name": "test-action"},
 			"arguments": {"target": ` + target + `}, "title": "test title"}`
 	}
 
-	code, answer := post(callerCertificate, body("test-http", `"test-target"`))
+	code, answer := s.post(t, "/v1/action-requests", callerCertificate, body("test-http", `"test-target"`))
 	submitted := &action_servicepb.SubmitActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, submitted) != nil || submitted.GetActionRequest().GetState() != pending {
 		t.Fatalf("submission: %d %s", code, answer)
@@ -394,7 +373,7 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 		"an account without the label":    {unlabeledToken, body("test-http-unlabeled", `"test-target"`), http.StatusUnauthorized},
 		"a body that is not a submission": {callerCertificate, `[]`, http.StatusBadRequest},
 	} {
-		if code, answer := post(tc.token, tc.body); code != tc.code {
+		if code, answer := s.post(t, "/v1/action-requests", tc.token, tc.body); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, answer, tc.code)
 		}
 	}
