@@ -87,8 +87,8 @@ func (input Input[T]) Name() string { return input.name }
 // Definition returns this input's read-only Action definition.
 func (input Input[T]) Definition() ActionDefinition { return input.definition }
 
-// Decode validates and decodes arguments into T. All malformed or rejected arguments have the
-// same ErrInvalidArguments result as the existing Action decoder.
+// Decode validates and decodes arguments into T. Malformed and mismatched arguments return ErrInvalidArguments;
+// pattern evaluation failures return ErrPatternEvaluation.
 func (input Input[T]) Decode(arguments json.RawMessage) (T, error) {
 	var value T
 	if err := DecodeArguments(input.validator, arguments, &value); err != nil {

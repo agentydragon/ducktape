@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // schemaURL names a schema while it compiles. It is one document: nothing else resolves.
@@ -29,12 +28,11 @@ var annotatedFormats = []string{
 	"period", "relative-json-pointer", "semver", "time", "uri", "uri-reference", "uri-template", "uuid",
 }
 
-// ErrPatternEvaluation means a fallback regular expression exceeded its budget or failed. The result is not a
+// ErrPatternEvaluation means a regular expression exceeded its budget or failed. The result is not a
 // mismatch: a mismatch may be negated by `not`, select a branch, or ignore a patternProperties entry.
 var ErrPatternEvaluation = errors.New("argument schema regular expression could not be evaluated")
 
-// patternBudget sets a shared approximate deadline for backtracking matches during one validation.
-// RE2 remains the default for every pattern it accepts. Backtracking is needed for standard lookahead and backreferences.
+// patternBudget covers waiting for the schema and evaluating its regex matches.
 const patternBudget = 250 * time.Millisecond
 
 type patternState struct {
@@ -44,7 +42,7 @@ type patternState struct {
 
 // CompiledSchema keeps regexp evaluation errors associated with the right validation. jsonschema's Regexp interface
 // exposes only a bool, so schemas with backtracking patterns serialize their validations while the adapter records any
-// match error. RE2-only schemas need no shared state and can validate concurrently.
+// match error. Schemas without patterns validate concurrently.
 type CompiledSchema struct {
 	schema *jsonschema.Schema
 	state  *patternState
@@ -52,8 +50,8 @@ type CompiledSchema struct {
 }
 
 // Validate rejects the whole validation when a regexp evaluation fails, even if `not`, `anyOf`, `if`, or
-// patternProperties would otherwise turn that match failure into acceptance. Waiting for a shared fallback matcher
-// and evaluating fallback matches share the budget; callers that wait too long fail closed.
+// patternProperties would otherwise turn that match failure into acceptance. Waiting for the schema
+// and evaluating its matches share the budget; callers that wait too long fail closed.
 func (s *CompiledSchema) Validate(value any) error {
 	if s.gate == nil {
 		return s.schema.Validate(value)
@@ -86,6 +84,9 @@ type boundedRegexp struct {
 
 func (r boundedRegexp) String() string { return r.re.String() }
 func (r boundedRegexp) MatchString(value string) bool {
+	if r.state.failed {
+		return false
+	}
 	remaining := time.Until(r.state.deadline)
 	if remaining <= 0 {
 		r.state.failed = true
@@ -93,42 +94,31 @@ func (r boundedRegexp) MatchString(value string) bool {
 	}
 	r.re.MatchTimeout = remaining
 	matched, err := r.re.MatchString(value)
-	if err != nil {
+	if err != nil || time.Until(r.state.deadline) <= 0 {
 		r.state.failed = true
 		return false
 	}
 	return matched
 }
 
-func patternEngine(state *patternState, fallback func()) func(string) (jsonschema.Regexp, error) {
-	return func(expr string) (jsonschema.Regexp, error) {
-		if re, err := regexp.Compile(expr); err == nil {
-			return re, nil
-		}
-		re, err := regexp2.Compile(expr, regexp2.ECMAScript)
+// CompileSchema compiles document, a JSON Schema of an Action's arguments decoded as jsonschema.UnmarshalJSON decodes
+// JSON. Patterns use Unicode-aware ECMAScript mode. A schema without `$schema` uses draft 2020-12. Only this
+// document and the drafts' built-in metaschemas can be resolved.
+func CompileSchema(document any) (*CompiledSchema, error) {
+	state := &patternState{}
+	// The engine also compiles `format: regex` values during validation. Those matchers are never used.
+	compiling, hasPattern := true, false
+	compiler := jsonschema.NewCompiler()
+	compiler.UseRegexpEngine(func(expr string) (jsonschema.Regexp, error) {
+		re, err := regexp2.Compile(expr, regexp2.ECMAScript|regexp2.Unicode)
 		if err != nil {
 			return nil, err
 		}
-		fallback()
-		return boundedRegexp{re: re, state: state}, nil
-	}
-}
-
-// CompileSchema compiles document, a JSON Schema of an Action's arguments decoded as jsonschema.UnmarshalJSON decodes
-// JSON, checking it against its draft's metaschema, so that it validates as Python's jsonschema.validate does. A
-// schema without `$schema` is read as draft 2020-12, and one that refers to any document but itself and the drafts'
-// metaschemas is not valid.
-func CompileSchema(document any) (*CompiledSchema, error) {
-	state := &patternState{}
-	// format:regex can call the engine at validation time, but only to compile an expression; the returned matcher is
-	// discarded. Only fallback matchers produced during compilation become part of the compiled schema.
-	compiling, hasFallback := true, false
-	compiler := jsonschema.NewCompiler()
-	compiler.UseRegexpEngine(patternEngine(state, func() {
 		if compiling {
-			hasFallback = true
+			hasPattern = true
 		}
-	}))
+		return boundedRegexp{re: re, state: state}, nil
+	})
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noDocuments{})
 	for _, name := range annotatedFormats {
@@ -147,7 +137,7 @@ func CompileSchema(document any) (*CompiledSchema, error) {
 		return nil, err
 	}
 	var gate chan struct{}
-	if hasFallback {
+	if hasPattern {
 		gate = make(chan struct{}, 1)
 	}
 	return &CompiledSchema{schema: schema, state: state, gate: gate}, nil
@@ -161,8 +151,8 @@ func (noDocuments) Load(url string) (any, error) {
 }
 
 // CheckArguments checks arguments, decoded as jsonschema.UnmarshalJSON decodes JSON, against the Action's input
-// schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, and another error when the
-// schema is not one CompileSchema compiles.
+// schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, ErrPatternEvaluation when a
+// pattern cannot be evaluated, and another error when the schema is not one CompileSchema compiles.
 func (a ActionDefinition) CheckArguments(arguments any) error {
 	if a.InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		return nil
@@ -175,7 +165,10 @@ func (a ActionDefinition) CheckArguments(arguments any) error {
 	if err != nil {
 		return fmt.Errorf("input schema: %w", err)
 	}
-	if schema.Validate(arguments) != nil {
+	if err := schema.Validate(arguments); err != nil {
+		if errors.Is(err, ErrPatternEvaluation) {
+			return err
+		}
 		return ErrInvalidArguments
 	}
 	return nil
@@ -193,8 +186,8 @@ func InspectSchema(raw json.RawMessage) *action_servicepb.InputSchemaValidation 
 	return &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}
 }
 
-// DecodeArguments reads arguments into args once they satisfy schema, a schema CompileSchema compiled; it returns
-// ErrInvalidArguments when they do not.
+// DecodeArguments reads arguments into args once they satisfy schema. It returns ErrInvalidArguments for malformed
+// or mismatched arguments and ErrPatternEvaluation when a pattern cannot be evaluated.
 func DecodeArguments(schema *CompiledSchema, arguments json.RawMessage, args any) error {
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
 	if err == nil {
@@ -202,6 +195,9 @@ func DecodeArguments(schema *CompiledSchema, arguments json.RawMessage, args any
 	}
 	if err == nil {
 		err = json.Unmarshal(arguments, args)
+	}
+	if errors.Is(err, ErrPatternEvaluation) {
+		return err
 	}
 	if err != nil {
 		return ErrInvalidArguments

@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,9 +10,6 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
-
-// The email pattern comes from Tana search_nodes' published tool input schema, not user data.
-const tanaSchema = `{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"query":{"type":"object","properties":{"edited":{"type":"object","properties":{"by":{"type":"string","pattern":"^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"}}}}}}}`
 
 func compileTestSchema(t *testing.T, text string) *CompiledSchema {
 	t.Helper()
@@ -26,43 +24,29 @@ func compileTestSchema(t *testing.T, text string) *CompiledSchema {
 	return compiled
 }
 
-func TestTanaSearchPatternAndExistingGoPatterns(t *testing.T) {
-	schema := compileTestSchema(t, tanaSchema)
+func TestPatternsUseECMAScriptUnicode(t *testing.T) {
 	for _, tc := range []struct {
-		email string
-		valid bool
+		pattern, matching, rejected string
 	}{
-		{"r@example.com", true},
-		{"first.last+tag@sub.example.org", true},
-		{".first@example.com", false},
-		{"first..last@example.com", false},
-		{"first'@example.com", false},
-		{"not-an-email", false},
+		{`^\s$`, "\u00a0", "\u0085"},
+		{`^.$`, "😀", "\u2028"},
+		{`^(?=\p{Emoji}$)\u{1F600}$`, "😀", "😃"},
+		{`^(?<first>a)(b)\1$`, "aba", "abb"},
 	} {
-		value := map[string]any{"query": map[string]any{"edited": map[string]any{"by": tc.email}}}
-		if got := schema.Validate(value) == nil; got != tc.valid {
-			t.Errorf("%q: valid=%v, want %v", tc.email, got, tc.valid)
-		}
-	}
-	// A Go-style named group compiled before this change and must still compile and retain its meaning.
-	existing := compileTestSchema(t, `{"type":"string","pattern":"^(?P<name>[a-z]+)$"}`)
-	if err := existing.Validate("abc"); err != nil {
-		t.Fatalf("existing RE2 syntax: %v", err)
-	}
-	if err := existing.Validate("ABC"); err == nil {
-		t.Fatal("RE2 pattern unexpectedly matched")
-	}
-	bad, err := jsonschema.UnmarshalJSON(strings.NewReader(`{"pattern":"("}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CompileSchema(bad); err == nil {
-		t.Fatal("invalid regex compiled")
+		t.Run(tc.pattern, func(t *testing.T) {
+			schema := compileTestSchema(t, fmt.Sprintf(`{"type":"string","pattern":%q}`, tc.pattern))
+			if err := schema.Validate(tc.matching); err != nil {
+				t.Errorf("%q does not match: %v", tc.matching, err)
+			}
+			if err := schema.Validate(tc.rejected); err == nil {
+				t.Errorf("%q unexpectedly matches", tc.rejected)
+			}
+		})
 	}
 }
 
 func TestPatternTimeoutRejectsWholeValidation(t *testing.T) {
-	const pattern = `^(?=a)(a+)+$`
+	const pattern = `^(a+)+$`
 	slow := strings.Repeat("a", 96) + "!"
 	cases := []struct {
 		name, schema string
@@ -107,11 +91,11 @@ func TestConcurrentValidationsKeepPatternErrorsSeparate(t *testing.T) {
 }
 
 // The regex format compiles its value at validation time, but never matches against it. It must not introduce
-// shared fallback state into an otherwise RE2-only schema, even when validations run concurrently.
+// shared match state into a schema without patterns.
 func TestRegexFormatCanCompileConcurrently(t *testing.T) {
 	schema := compileTestSchema(t, `{"$schema":"http://json-schema.org/draft-07/schema#","type":"string","format":"regex"}`)
 	if schema.gate != nil {
-		t.Fatal("format-only schema unexpectedly requires fallback matcher gate")
+		t.Fatal("format-only schema unexpectedly requires matcher gate")
 	}
 	var wg sync.WaitGroup
 	for range 20 {
@@ -127,7 +111,7 @@ func TestRegexFormatCanCompileConcurrently(t *testing.T) {
 func TestSaturatedPatternGateFailsClosed(t *testing.T) {
 	schema := compileTestSchema(t, `{"not":{"pattern":"^(?=a)(a+)+$"}}`)
 	if schema.gate == nil {
-		t.Fatal("fallback matcher has no gate")
+		t.Fatal("pattern schema has no gate")
 	}
 	// Hold the slot deterministically so the request exercises waiting, not a slow match.
 	schema.gate <- struct{}{}
@@ -137,5 +121,23 @@ func TestSaturatedPatternGateFailsClosed(t *testing.T) {
 	<-schema.gate
 	if err := schema.Validate("safe"); err != nil {
 		t.Fatalf("validation remained poisoned after saturation: %v", err)
+	}
+}
+
+func TestPatternFailureSurvivesArgumentChecking(t *testing.T) {
+	const schema = `{"type":"object","properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}`
+	definition := ActionDefinition{InputSchema: json.RawMessage(schema)}
+	value := map[string]any{"value": strings.Repeat("a", 96) + "!"}
+	if err := definition.CheckArguments(value); !errors.Is(err, ErrPatternEvaluation) {
+		t.Fatalf("CheckArguments returned %v; want pattern failure", err)
+	}
+	compiled := compileTestSchema(t, schema)
+	wire, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := DecodeArguments(compiled, wire, &decoded); !errors.Is(err, ErrPatternEvaluation) {
+		t.Fatalf("DecodeArguments returned %v; want pattern failure", err)
 	}
 }

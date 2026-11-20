@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -70,25 +69,13 @@ func TestAToolTheCatalogCannotHoldDoesNotTakeTheOthersWithIt(t *testing.T) {
 }
 
 func TestAListOfOnlyToolsWithUnusableSchemasIsOffered(t *testing.T) {
-	bad := json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`)
+	bad := json.RawMessage(`{"type":"object","properties":{"test":{"pattern":"["}}}`)
 	if tools, _, err := mirror([]*mcp.Tool{{Name: "test_bad", InputSchema: bad}}); err != nil || tools["test_bad"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		t.Errorf("schema fallback = %v, %v", tools, err)
 	}
 }
 
-func TestUnsupportedLookaheadRemainsDiscoverable(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"email":{"type":"string","pattern":"^(?!\\\\.)"}}}`)
-	tools, _, err := mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: schema}})
-	if err != nil || tools["search_nodes"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
-		t.Fatalf("lookahead fallback = %v, %v", tools, err)
-	}
-	tools, _, err = mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: json.RawMessage(`{"type":"object"}`)}})
-	if err != nil || tools["search_nodes"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED || tools["search_nodes"].arguments == nil {
-		t.Fatalf("corrected schema still has a warning = %v, %v", tools, err)
-	}
-}
-
-// A Tana-style search schema with a lookahead must be discoverable and checked the same way at admission and execution.
+// The pattern is from Tana search_nodes' published schema. Addresses here are synthetic.
 func TestSearchNodesPatternIsOfferedAndChecked(t *testing.T) {
 	const schema = `{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"query":{"type":"object","properties":{"edited":{"type":"object","properties":{"by":{"type":"string","pattern":"^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"}}}}}}}`
 	tools, skipped, err := mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: json.RawMessage(schema)}})
@@ -99,18 +86,27 @@ func TestSearchNodesPatternIsOfferedAndChecked(t *testing.T) {
 		t.Fatalf("tools %v skipped %v", tools, skipped)
 	}
 	tool := tools["search_nodes"]
-	for raw, want := range map[string]bool{
-		`{"query":{"edited":{"by":"first.last@example.org"}}}`:  true,
-		`{"query":{"edited":{"by":"first..last@example.org"}}}`: false,
+	if status := tool.definition.InputSchemaValidation.GetStatus(); status != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED {
+		t.Fatalf("search_nodes validation status = %v, want enforced", status)
+	}
+	for email, want := range map[string]bool{
+		"r@example.org":              true,
+		"first.last+tag@example.org": true,
+		".first@example.org":         false,
+		"first..last@example.org":    false,
+		"first'@example.org":         false,
+		"not-an-email":               false,
+		"first@example.org\n":        false,
 	} {
-		value, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(raw)))
+		value := map[string]any{"query": map[string]any{"edited": map[string]any{"by": email}}}
+		raw, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
 		}
 		admitted := tool.definition.CheckArguments(value) == nil
-		executed := tool.matches(json.RawMessage(raw))
+		executed := tool.matches(raw)
 		if admitted != want || executed != want {
-			t.Errorf("%s admitted=%v executed=%v want=%v", raw, admitted, executed, want)
+			t.Errorf("%q admitted=%v executed=%v want=%v", email, admitted, executed, want)
 		}
 	}
 }

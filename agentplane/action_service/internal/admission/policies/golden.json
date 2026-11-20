@@ -4155,8 +4155,8 @@
     "type": "action_auto_approve"
    }
   },
-  "argument schema, a named group pattern": {
-   "outcome": "accepted",
+  "argument schema, a Go-style named group pattern": {
+   "outcome": "refused",
    "rule": {
     "policy": {
      "actions": {
