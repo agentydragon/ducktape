@@ -474,23 +474,19 @@ MUTANTS = {
         "      return AV.ofObj inst\n",
         "a class constructor that returns another object",
     ),
-    "a deep prototype chain reads nothing": (
+    "the depth cutoffs find nothing": (
         EFFECTS,
-        "  if seen.length > 10 then return AV.top\n",
-        "  if seen.length > 10 then return #[]\n",
-        "a method found 11 prototypes up",
-    ),
-    "a deep prototype chain has no hooks": (
-        EFFECTS,
-        "  if seen.length > 10 then return true\n",
-        "  if seen.length > 10 then return false\n",
-        "a getter or a method found 11 prototypes up",
-    ),
-    "a deep prototype chain has no accessors": (
-        EFFECTS,
-        "  if seen.length > 10 then return (true, AV.top)\n",
-        "  if seen.length > 10 then return (false, #[])\n",
-        "a getter found 11 prototypes up",
+        (
+            "  if seen.length > 10 then return AV.top\n",
+            "  if seen.length > 10 then return (true, AV.top)\n",
+            "  if seen.length > 10 then return true\n",
+        ),
+        (
+            "  if seen.length > 10 then return #[]\n",
+            "  if seen.length > 10 then return (false, #[])\n",
+            "  if seen.length > 10 then return false\n",
+        ),
+        "a method or a getter found 11 prototypes up (each cutoff alone is covered by the others)",
     ),
     "callbacks get only their own arguments": (
         EFFECTS,
@@ -726,8 +722,14 @@ def main():
                 continue
             path = lean / file
             original = path.read_text()
-            assert old in original, f"mutation site not found: {name}"
-            path.write_text(original.replace(old, new))
+            mutated = original
+            # a mutant may change several sites at once: `old` and `new` are then tuples of the same length
+            for site_old, site_new in zip(
+                old if isinstance(old, tuple) else (old,), new if isinstance(new, tuple) else (new,), strict=True
+            ):
+                assert site_old in mutated, f"mutation site not found: {name}"
+                mutated = mutated.replace(site_old, site_new)
+            path.write_text(mutated)
             # proofs about a mutated definition may no longer hold; only the executable matters here
             sem = lean / "EsmSplit/Semantics.lean"
             sem_original = sem.read_text()
