@@ -1,4 +1,4 @@
-"""Golden-file test: cube with hole -> FCStd -> render PNG via FreeCAD AppImage."""
+"""Golden-file test: cube with hole -> FCStd -> render PNG."""
 
 import shutil
 from pathlib import Path

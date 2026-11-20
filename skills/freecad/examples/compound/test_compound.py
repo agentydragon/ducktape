@@ -1,4 +1,4 @@
-"""Golden-file test: build.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
+"""Golden-file test: build.py -> export_page.py -> DXF/SVG/PDF."""
 
 from pathlib import Path
 

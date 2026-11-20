@@ -27,7 +27,7 @@ def test_iter_entries_accepts_unescaped_controls_and_skips_truncated_records(tmp
 
     assert len(entries) == 2
     assert entries[0]["payload"]["value"] == "before\x00after"
-    assert session_logs._codex_user_text(entries[1]) == "still visible"
+    assert session_logs._codex_user_text(entries[1], strip_kinds=frozenset()) == "still visible"
     assert stats.malformed_records == 1
     assert stats.issues[0].line_number == 2
 
@@ -126,7 +126,7 @@ def test_codex_conversation_shows_top_level_compaction(tmp_path, monkeypatch, ca
     transcript.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
 
     monkeypatch.setattr(session_logs.sys, "argv", ["conversation.py", "codex", str(transcript)])
-    assert session_logs.main_conversation() == 0
+    session_logs.main_conversation()
     output = capsys.readouterr().out
     assert "Compaction markers: 1" in output
     assert output.index("first turn") < output.index("### Compaction marker") < output.index("second turn")

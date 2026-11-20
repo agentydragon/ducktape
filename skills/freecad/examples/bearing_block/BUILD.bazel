@@ -2,15 +2,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
-        "back_left.png",
         "build.py",
         "build_techdraw.py",
-        "debug_edges.png",
-        "debug_faces.png",
-        "drawing.dxf",
-        "drawing.pdf",
-        "drawing.svg",
-        "front_right.png",
     ],
     visibility = ["//skills/freecad:__subpackages__"],
 )
