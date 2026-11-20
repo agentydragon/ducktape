@@ -283,6 +283,10 @@
     "skill-trimcode": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-trimcode-11c9acbda712/trimcode.skill",
       "sha256": "EcmsvacSjD7Bj4Yaal/mrG/GpmDtYMB+JEvoE9NsjS8="
+    },
+    "skill-action_report": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-action_report-7862b055f8d9/action_report.skill",
+      "sha256": "eGKwVfjZOAM6R1Mcjtabs1/V7DTU8QKfkK6APKKlk8A="
     }
   }
 }
