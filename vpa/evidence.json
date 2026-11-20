@@ -19951,5 +19951,21 @@
     "configured_background_scan_interval": "1h",
     "prior_recovery_scan_at_utc": "2026-11-20T20:16:01Z",
     "scope": "Current ClusterSecretStore UIDs joined to ClusterPolicyReport scope UIDs; passes must match the policy, source, background process and result."
+  },
+  "study_casino_initial": {
+    "observed_at_utc": "2026-11-20T21:20:49Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18274",
+    "flux_ready": true,
+    "target": "study-casino/study-casino",
+    "update_mode": "Initial",
+    "container": "app",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "224Mi",
+    "max_memory": "240Mi",
+    "recommendation_available": false,
+    "existing_pod_ready": true,
+    "existing_pod_created_at_utc": "2026-11-19T21:01:55Z",
+    "inventory_precedes_vpa": true
   }
 }

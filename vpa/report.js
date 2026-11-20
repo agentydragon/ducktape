@@ -227,7 +227,7 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; the policy scan was checked at 21:16 UTC. This is a snapshot, not a live dashboard.`}<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; policy and Study Casino were checked at 21:16 and 21:20 UTC, respectively. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
@@ -327,6 +327,11 @@ function Report() {
             dry run applied 50m/128 MiB and preserved the 200m/256 MiB limits.
             Its existing singleton remains Ready and has not been replaced. Ntfy
             and CDviz also need a non-evicting approach while singletons.<//
+          >
+          <${Text} component="p" mb=${0}
+            >At 21:20 UTC, Study Casino had an Initial memory-request VPA with
+            224–240 MiB bounds; its recommendation was pending and the existing
+            singleton remained Ready. This VPA postdates the inventory below.<//
           >
         <//>
         <${Paper}
@@ -439,7 +444,8 @@ function Report() {
         attribution follows Pod → ReplicaSet → Deployment by UID; CronJobs
         follow Pod → Job → CronJob by UID. Custom-owner rows show admitted Pods
         only and do not imply that the owner supports VPA. VPA matching uses API
-        group, kind, namespace and target name.<//
+        group, kind, namespace and target name. The 21:05 inventory predates the
+        Study Casino VPA noted above.<//
       >
       <${Text} component="p"
         >Template values come from stored controller templates, which may
