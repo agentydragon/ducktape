@@ -21,7 +21,7 @@ const generated = cli("generate", original, assignment, dir);
 assert.equal(generated.status, 0, generated.stderr);
 assert.equal(JSON.parse(generated.stdout).result, "generated");
 const accepted = cli("validate", original, assignment, dir);
-assert.equal(accepted.status, 0, accepted.stderr);
+assert.equal(accepted.status, 0, accepted.stderr || accepted.stdout);
 const result = JSON.parse(accepted.stdout);
 assert.equal(result.result, "proved under assumptions", JSON.stringify(result));
 assert.match(result.certificate, /theorem extracted_counter_certificate/);
