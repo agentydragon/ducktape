@@ -157,6 +157,8 @@ function emptyCoverage() {
         emitterRejected: 0,
         acceptedSame: 0,
         acceptedSameOk: 0,
+        acceptedSameReordered: 0,
+        acceptedSameOkReordered: 0,
         acceptedSameInSide: 0,
         acceptedSameOkInSide: 0,
       },
@@ -336,9 +338,11 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   if (baseline.status === "ok") stats.acceptedOk++;
   collect(parsed, acceptedSyntax);
   const match = emitter.stdout.match(/statement order\s+\[([^\]]*)\]/);
+  let reordered = false;
   if (match) {
     const order = match[1].split(",").map((x) => Number(x.trim()));
-    if (order.some((item, i) => item !== i)) {
+    reordered = order.some((item, i) => item !== i);
+    if (reordered) {
       stats.reordered++;
       if (baseline.status === "ok") stats.reorderedOk++;
     }
@@ -357,11 +361,13 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     );
   }
   record("acceptedSame");
+  if (reordered) record("acceptedSameReordered");
   const sideFeatures = new Set();
   for (const index of side) syntaxFeatures(parsed.body[index], sideFeatures);
   record("acceptedSameInSide", sideFeatures);
   if (baseline.status === "ok") {
     record("acceptedSameOk");
+    if (reordered) record("acceptedSameOkReordered");
     record("acceptedSameOkInSide", sideFeatures);
   }
 }
@@ -377,6 +383,7 @@ for (const row of Object.values(coverage)) {
       row.acceptedSame
   );
   assert(row.acceptedSameOkInSide <= row.acceptedSameInSide && row.acceptedSameInSide <= row.acceptedSame);
+  assert(row.acceptedSameOkReordered <= row.acceptedSameReordered && row.acceptedSameReordered <= row.acceptedSame);
 }
 if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
   writeFileSync(
