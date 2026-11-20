@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "harness",
     srcs = ["harness.py"],
+    data = ["//skills/info_gathering:SKILL.md"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//openai_utils:client_factory",

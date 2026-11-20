@@ -25,10 +25,7 @@ py_library(
 py_library(
     name = "prompts",
     srcs = ["prompts.py"],
-    data = [
-        "first_user_message.txt",
-        "//skills/info_gathering:SKILL.md",
-    ],
+    data = ["first_user_message.txt"],
     deps = [
         ":functions",
         "//skills/eval_infra:eval_prompt",

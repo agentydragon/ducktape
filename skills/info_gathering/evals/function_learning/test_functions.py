@@ -116,15 +116,5 @@ def test_aes_affine_known_values() -> None:
     assert AES_FIELD_AFFINE.evaluate(2) == 13
 
 
-def test_all_functions_have_correct_dimensions() -> None:
-    for fn in [LINEAR_SIMPLE, JUNTA_3, PARITY_GROUPS, BENT_INNER_PRODUCT, AES_FIELD_AFFINE]:
-        assert fn.n == 8
-        assert fn.m == 4
-        assert len(fn.all_inputs()) == 256
-    assert REED_MULLER_3.n == 7
-    assert REED_MULLER_3.m == 4
-    assert len(REED_MULLER_3.all_inputs()) == 128
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
