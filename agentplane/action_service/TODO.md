@@ -2,6 +2,13 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
+## Provider metadata in historical Action views
+
+Decide what point in time a historical Action should represent. Live provider lookups can return
+names or values that changed after submission. Compare rendering only the recorded arguments and
+result with snapshotting display metadata before the Action enters history, for example when it is
+approved or denied. Decide how to handle automatically decided Actions and missing metadata.
+
 ## Dynamic Client Registration for MCP OAuth linkage
 
 `linkage.Server` requires either a registered `client_id` or the shared Client ID Metadata
