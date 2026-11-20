@@ -36,8 +36,6 @@ LICENSE*
 *.html
 *.css
 
-# Python version files
-
 # Shell scripts (many are standalone utilities)
 *.sh
 

@@ -123,7 +123,7 @@ oci.pull(
     tag = "pg18",
 )
 
-# Test infrastructure: Grocy for MCP e2e tests (match cluster/k8s/grocy/deployment.yaml)
+# Test infrastructure: Grocy for MCP e2e tests (match `_IMAGE` in cluster/cdk8s/grocy/app.py)
 oci.pull(
     name = "grocy",
     digest = "sha256:01036076182f2191e8ac42a3876548bfd3a139a2ada8705212e83806865c1f58",
