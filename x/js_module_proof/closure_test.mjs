@@ -973,3 +973,141 @@ export { first };
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
 }
+
+if (shard === 14) {
+  await writeFile(
+    source,
+    `function maybe(value) { if (value) throw 7; return value; }
+function select(x, y) { if (x < y && y === 4) return 9; return 1; }
+function short(x) { if (x === 0 || maybe(x)) return 3; return 4; }
+function invert(x) { if (!x) return 8; return 2; }
+function conjunction(x) { if (x && maybe(1)) return 1; return 2; }
+export { select, short, invert, conjunction };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "select", args: [2, 4] },
+    { name: "select", args: [5, 4] },
+    { name: "select", args: [2, 3] },
+    { name: "invert", args: [0] },
+    { name: "invert", args: [2] },
+    { name: "short", args: [0] },
+    { name: "short", args: [1] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 9 }, { value: 1 }, { value: 1 }, { value: 8 }, { value: 2 }, { value: 3 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 6, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const conjunctionCalls = [
+    { name: "conjunction", args: [0] },
+    { name: "conjunction", args: [1] },
+  ];
+  const conjunctionTrace = execute(source, conjunctionCalls);
+  assert.deepEqual(conjunctionTrace.results, [{ value: 2 }]);
+  assert.deepEqual(conjunctionTrace.error, {
+    name: null,
+    phase: "call",
+    index: 1,
+    thrown: { kind: "number", value: 7 },
+  });
+  assert.deepEqual(execute(join(out, "entry.mjs"), conjunctionCalls), conjunctionTrace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const logic = join(out, "logic.mjs");
+  await writeFile(logic, (await readFile(logic, "utf8")).replace("x < y", "x === y"));
+  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const booleanSource = join(root, "boolean-return.mjs");
+  const booleanSpec = join(root, "boolean-return.json");
+  await writeFile(booleanSource, "function compare(x) { return x === 1; } export { compare };\n");
+  await writeFile(
+    booleanSpec,
+    JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: { "entry.mjs": { imports: [], statements: [0] } } })
+  );
+  const booleanOut = join(root, "boolean-return-out");
+  assert.equal(cli("generate", booleanSource, booleanSpec, booleanOut).result, "generated");
+  assert.equal(cli("validate", booleanSource, booleanSpec, booleanOut).result, "unknown");
+  assert.deepEqual(execute(booleanSource, [{ name: "compare", args: [1] }]).results, [{ value: true }]);
+  const tdzSource = join(root, "comparison-tdz.mjs");
+  const tdzSpec = join(root, "comparison-tdz.json");
+  const tdzOut = join(root, "comparison-tdz-out");
+  await writeFile(
+    tdzSource,
+    `let value = 2;
+function broken(flag) { if (value < flag) return 1; let value = 3; return value; }
+export { broken };
+`
+  );
+  await writeFile(
+    tdzSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", tdzSource, tdzSpec, tdzOut).result, "generated");
+  assert.equal(cli("validate", tdzSource, tdzSpec, tdzOut).result, "unknown");
+  assert.equal(execute(tdzSource, [{ name: "broken", args: [1] }]).error.name, "ReferenceError");
+}
+
+if (shard === 15) {
+  await writeFile(
+    source,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make(start) { let value = start * seed; return (step) => { if (step < value) return value; return step; }; }
+bump();
+const first = make(2);
+export { first };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "closures.mjs": { imports: ["state.mjs"], statements: [5] },
+        "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const witness = cli("validate", source, spec, out);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
+  assert.deepEqual(execute(source, witness.calls).results, [{ value: 4 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+}

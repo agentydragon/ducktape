@@ -20,6 +20,8 @@ inductive NumericExpr where
   | name (name : String)
   | add (left right : NumericExpr)
   | multiply (left right : NumericExpr)
+  | equal (left right : NumericExpr)
+  | less (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
   | guard (test consequent continuation : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
@@ -97,6 +99,24 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue + rightValue)⟩
+  | .equal left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue => pure ⟨rightResult.locals, .ok (if leftValue == rightValue then 1 else 0)⟩
+  | .less left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue => pure ⟨rightResult.locals, .ok (if leftValue < rightValue then 1 else 0)⟩
   | .multiply left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -168,6 +188,8 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .name _ => none
   | .add _ _ => none
   | .multiply _ _ => none
+  | .equal _ _ => none
+  | .less _ _ => none
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
   | .local _ _ _ _ => none

@@ -54,6 +54,7 @@ function print(node) {
     case "AssignmentExpression":
       return `${print(node.left)} ${node.operator} ${print(node.right)}`;
     case "BinaryExpression":
+    case "LogicalExpression":
       return `(${print(node.left)} ${node.operator} ${print(node.right)})`;
     case "CallExpression":
       return `${print(node.callee)}(${node.arguments.map(print).join(", ")})`;
@@ -434,7 +435,14 @@ function parameterCase(seed, index) {
       functionNode("calculate", parameters, [
         {
           type: "IfStatement",
-          test: id("y"),
+          test: guard
+            ? {
+                type: "LogicalExpression",
+                operator: "&&",
+                left: { type: "BinaryExpression", operator: "<", left: literal(0), right: id("y") },
+                right: literal(true),
+              }
+            : id("y"),
           consequent: {
             type: "BlockStatement",
             body: [

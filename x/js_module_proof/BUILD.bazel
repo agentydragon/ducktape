@@ -230,5 +230,5 @@ js_test(
         "@lean_dist//:lean_bin",
         "@lean_dist//:runtime",
     ],
-    shard_count = 14,
+    shard_count = 16,
 )

@@ -180,11 +180,40 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (node?.type === "ConditionalExpression")
       return {
         kind: "conditional",
-        test: expression(node.test),
+        test: condition(node.test),
         consequent: expression(node.consequent),
         alternative: expression(node.alternate),
       };
     check(false, "unsupported numeric expression");
+  };
+  // Comparisons and logical operators are accepted only in a condition. The
+  // Lean expression yields 0 or 1 for truthiness; JavaScript boolean values
+  // are never exposed as numeric function results by this lowering.
+  const condition = (node) => {
+    check(--budget.remaining >= 0, "expression expansion limit exceeded");
+    if (node?.type === "Literal" && typeof node.value === "boolean")
+      return { kind: "literal", value: node.value ? 1 : 0 };
+    if (node?.type === "BinaryExpression" && ["===", "<"].includes(node.operator))
+      return {
+        kind: node.operator === "===" ? "equal" : "less",
+        left: expression(node.left),
+        right: expression(node.right),
+      };
+    if (node?.type === "UnaryExpression" && node.operator === "!")
+      return {
+        kind: "conditional",
+        test: condition(node.argument),
+        consequent: { kind: "literal", value: 0 },
+        alternative: { kind: "literal", value: 1 },
+      };
+    if (node?.type === "LogicalExpression" && ["&&", "||"].includes(node.operator))
+      return {
+        kind: "conditional",
+        test: condition(node.left),
+        consequent: node.operator === "&&" ? condition(node.right) : { kind: "literal", value: 1 },
+        alternative: node.operator === "&&" ? { kind: "literal", value: 0 } : condition(node.right),
+      };
+    return expression(node);
   };
   const sequence = (statements) => {
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
@@ -228,7 +257,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (first.type === "IfStatement" && !first.alternate && rest.length > 0)
       return {
         kind: "guard",
-        test: expression(first.test),
+        test: condition(first.test),
         consequent: returning(first.consequent),
         alternative: sequence(rest),
       };
@@ -259,7 +288,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (statement?.type === "IfStatement" && statement.alternate)
       return {
         kind: "conditional",
-        test: expression(statement.test),
+        test: condition(statement.test),
         consequent: returning(statement.consequent),
         alternative: returning(statement.alternate),
       };
@@ -275,6 +304,8 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         return bound.includes(item.name) ? [] : [item.name];
       case "add":
       case "multiply":
+      case "equal":
+      case "less":
         return [...free(item.left, bound), ...free(item.right, bound)];
       case "conditional":
       case "guard":
@@ -749,6 +780,8 @@ function leanExpression(expression) {
       return `.name ${str(expression.name)}`;
     case "add":
     case "multiply":
+    case "equal":
+    case "less":
       return `.${expression.kind} (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
     case "conditional":
     case "guard":
@@ -1052,6 +1085,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     if (expression.kind === "name") return bound;
     if (expression.kind === "add")
       return expressionBound(expression.left, bound) + expressionBound(expression.right, bound);
+    if (expression.kind === "equal" || expression.kind === "less") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return [1n, left, right].reduce((a, b) => (a > b ? a : b));
+    }
     if (expression.kind === "multiply") {
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
