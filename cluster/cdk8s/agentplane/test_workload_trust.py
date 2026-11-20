@@ -161,7 +161,6 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
     )
     for peer, server_uri in {
         "actions": ACTIONS_URI,
-        "runner_gateway": SANDBOX_CONTROLLER_URI,
         "history_service": HISTORY_SERVICE_URI,
         "session_dispatcher": SESSION_DISPATCHER_URI,
     }.items():

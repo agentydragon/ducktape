@@ -9321,15 +9321,6 @@ data:
         client_uri: spiffe://agentplane/notifications
       url: https://actions.agentplane-staging.svc.cluster.local:8080/
       request_timeout_s: 5
-    runner_gateway:
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/sandbox-controller
-        cert_file: /run/agentplane/workload-tls/tls.crt
-        key_file: /run/agentplane/workload-tls/tls.key
-        client_uri: spiffe://agentplane/notifications
-      control_target: environments.{namespace}.svc:8082
-      request_timeout_s: 5
     session_dispatcher:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
@@ -9490,14 +9481,6 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: environments
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8082"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
