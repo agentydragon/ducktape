@@ -13,6 +13,11 @@ The expanded Actions pane and receipt details show live Gmail subjects beside re
 for label changes, and live Tana names beside recorded node IDs for node moves. Lookup is optional.
 The view can render the saved arguments immediately and keep showing them if the lookup fails.
 The page and Web Push worker both use the operator-authenticated Action Service facade.
+
+Calendar approvals can resolve an event or series title, schedule, scope and Google Calendar link
+through the operator facade. A missing preview leaves the request's calendar and event IDs
+visible. Calendar receipts use recorded results, with the complete request and response available
+from Raw.
 [Notification settings](actions/push/README.md) control whether a browser can show these names
 in a notification.
 

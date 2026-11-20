@@ -25,6 +25,8 @@ export interface ActionPresentation {
   };
   details?: {
     arguments?: ArgumentsPreview | null;
+    /** Live argument enrichment is available while the operator reviews the pending call. */
+    pendingPreviewOnly?: boolean;
     result?: ResultPreview | null;
     /** A successful MCP call whose provider returns no content. */
     emptyResult?: ReactNode;

@@ -7,7 +7,7 @@ import { TimeAgo } from "../ui/time_ago";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../ui/text_block";
 import { RawSwitch } from "../ui/raw_switch";
-import type { ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
+import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
 import {
   renderActionCall,
@@ -122,7 +122,12 @@ export function ActionCall({
   const action = actionIdentity(request);
   const args = actionArguments(request);
   const actionLabel = renderActionLabel(action, args);
-  const prettyArguments = renderDetailsArguments(action, args, request.id);
+  const prettyArguments = renderDetailsArguments(
+    action,
+    args,
+    request.id,
+    request.state === ActionState.DECISION_PENDING
+  );
   const combinedCall =
     providedCombinedCall === undefined ? renderActionCall(action, args, undefined, request.id) : providedCombinedCall;
   const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;

@@ -42,6 +42,56 @@ CONFIG_MAP = {
 POD = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "web-0", "namespace": "apps"}}
 SANDBOX = {"name": "review-sandbox", "template": "python", "phase": "Running", "conditions": []}
 
+CALENDAR_ID = "facilities@example.test"
+CALENDAR_START = {"date_time": "2026-11-23T09:00:00-08:00", "time_zone": "America/Los_Angeles"}
+CALENDAR_END = {"date_time": "2026-11-23T09:30:00-08:00", "time_zone": "America/Los_Angeles"}
+CALENDAR_SERIES = {
+    "event_id": "facilities-series",
+    "summary": "Facilities coordination",
+    "html_link": "https://calendar.google.com/calendar/event?eid=facilities-series",
+    "status": "confirmed",
+    "start": CALENDAR_START,
+    "end": CALENDAR_END,
+    "location": "Meeting room 2",
+    "recurrence": ["RRULE:FREQ=WEEKLY;COUNT=4"],
+    "attendees": [
+        {"email": "coordinator@example.test", "display_name": "Facilities coordinator", "response_status": "accepted"}
+    ],
+}
+CALENDAR_ALL_DAY = {
+    "event_id": "office-closure",
+    "summary": "Office closure",
+    "html_link": "https://calendar.google.com/calendar/event?eid=office-closure",
+    "start": {"date": "2026-11-26"},
+    "end": {"date": "2026-11-28"},
+}
+CALENDAR_OCCURRENCE = {
+    "event_id": "facilities-series_20261130T170000Z",
+    "status": "cancelled",
+    "recurring_event_id": "facilities-series",
+    "original_start_time": {"date_time": "2026-11-30T09:00:00-08:00", "time_zone": "America/Los_Angeles"},
+}
+CALENDAR_WINDOW = {"time_min": "2026-11-23T00:00:00-08:00", "time_max": "2026-12-01T00:00:00-08:00"}
+
+
+def calendar_preview(
+    event_id: str, summary: str, scope: str, start: dict[str, str], end: dict[str, str]
+) -> tuple[str, dict[str, object], str]:
+    return (
+        "google-calendar-event-preview",
+        {
+            "event": {
+                "eventId": event_id,
+                "summary": summary,
+                "htmlLink": f"https://calendar.google.com/calendar/event?eid={event_id}",
+                "start": start,
+                "end": end,
+                "scope": f"GOOGLE_CALENDAR_EVENT_SCOPE_{scope}",
+            }
+        },
+        summary,
+    )
+
 
 def _tana_example(
     name: str,
@@ -538,6 +588,103 @@ EXAMPLES = (
         "ready for review",
     ),
     ActionExample(
+        "google_calendar",
+        "create_event",
+        {
+            "summary": CALENDAR_SERIES["summary"],
+            "calendar_id": CALENDAR_ID,
+            "start": CALENDAR_START,
+            "end": CALENDAR_END,
+            "location": "Meeting room 2",
+            "attendees": ["coordinator@example.test"],
+            "reminders": [{"method": "email", "minutes_before_start": 15}],
+            "recurrence": ["RRULE:FREQ=WEEKLY;COUNT=4"],
+        },
+        CALENDAR_SERIES,
+        "Facilities coordination",
+    ),
+    ActionExample(
+        "google_calendar",
+        "update_event",
+        {
+            "event_id": "facilities-series",
+            "calendar_id": CALENDAR_ID,
+            "summary": "Facilities coordination (rescheduled)",
+            "location": "",
+            "attendees": [],
+            "reminders": [],
+        },
+        {**CALENDAR_SERIES, "summary": "Facilities coordination (rescheduled)", "location": None, "attendees": []},
+        "Facilities coordination (rescheduled)",
+        live_preview=calendar_preview(
+            "facilities-series",
+            "Facilities coordination",
+            "SERIES",
+            {"dateTime": "2026-11-23T09:00:00-08:00", "timeZone": "America/Los_Angeles"},
+            {"dateTime": "2026-11-23T09:30:00-08:00", "timeZone": "America/Los_Angeles"},
+        ),
+    ),
+    ActionExample(
+        "google_calendar",
+        "delete_event",
+        {"event_id": "facilities-series_20261130T170000Z", "calendar_id": CALENDAR_ID},
+        None,
+        "Deletion confirmed.",
+        live_preview=calendar_preview(
+            "facilities-series_20261130T170000Z",
+            "Facilities coordination",
+            "OCCURRENCE",
+            {"dateTime": "2026-11-30T09:00:00-08:00", "timeZone": "America/Los_Angeles"},
+            {"dateTime": "2026-11-30T09:30:00-08:00", "timeZone": "America/Los_Angeles"},
+        ),
+    ),
+    ActionExample(
+        "google_calendar",
+        "get_event",
+        {"event_id": "office-closure", "calendar_id": CALENDAR_ID},
+        CALENDAR_ALL_DAY,
+        "All day",
+        live_preview=calendar_preview(
+            "office-closure", "Office closure", "SINGLE_EVENT", {"date": "2026-11-26"}, {"date": "2026-11-28"}
+        ),
+    ),
+    ActionExample(
+        "google_calendar",
+        "list_events",
+        {"calendar_id": CALENDAR_ID, **CALENDAR_WINDOW, "query": "facilities"},
+        {
+            "events": [CALENDAR_SERIES, CALENDAR_ALL_DAY],
+            "summary": "Facilities calendar",
+            "next_page_token": "next-page",
+        },
+        "More events are available.",
+    ),
+    ActionExample(
+        "google_calendar",
+        "list_event_instances",
+        {"calendar_id": CALENDAR_ID, "recurring_event_id": "facilities-series", **CALENDAR_WINDOW},
+        {
+            "events": [
+                {
+                    **CALENDAR_SERIES,
+                    "event_id": "facilities-series_20261123T170000Z",
+                    "recurrence": [],
+                    "html_link": "https://calendar.google.com/calendar/event?eid=facilities-series_20261123T170000Z",
+                    "recurring_event_id": "facilities-series",
+                },
+                CALENDAR_OCCURRENCE,
+            ]
+        },
+        "Cancelled",
+        live_preview=calendar_preview(
+            "facilities-series",
+            "Facilities coordination",
+            "SERIES",
+            {"dateTime": "2026-11-23T09:00:00-08:00", "timeZone": "America/Los_Angeles"},
+            {"dateTime": "2026-11-23T09:30:00-08:00", "timeZone": "America/Los_Angeles"},
+        ),
+    ),
+    ActionExample(
         "sandbox",
         "create",
         {"name": "review-sandbox", "template": "python"},
@@ -606,6 +753,8 @@ async def test_action_presentations(
     result = (
         example.result
         if example.group == "sandbox"
+        else {"content": [], "structuredContent": {"result": None}, "_meta": {"fastmcp": {"wrap_result": True}}}
+        if example.result is None
         else {
             "content": [
                 {
@@ -665,6 +814,16 @@ async def test_action_presentations(
             await expect(node_link).to_have_attribute("href", f"https://app.tana.inc?nodeid={node_id}")
             await expect(node_link).to_have_attribute("target", "_blank")
             await expect(pending.get_by_text(node_id, exact=True)).to_have_count(0)
+    if example.key == "google_calendar.delete_event":
+        await expect(pending).to_contain_text("Only this occurrence")
+        event_link = pending.get_by_role("link", name="Facilities coordination", exact=True)
+        await expect(event_link).to_have_attribute(
+            "href", "https://calendar.google.com/calendar/event?eid=facilities-series_20261130T170000Z"
+        )
+    elif example.key == "google_calendar.update_event":
+        await expect(pending).to_contain_text("Entire recurring series")
+        await expect(pending).to_contain_text("Remove all attendees")
+
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
@@ -674,7 +833,8 @@ async def test_action_presentations(
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
-    await _expect_live_preview(receipt, example)
+    if example.group != "google_calendar":
+        await _expect_live_preview(receipt, example)
     if example.key == "tana.get_or_create_calendar_node":
         node_link = receipt.get_by_role("link", name=example.result_text)
         await expect(node_link).to_have_attribute("href", "https://app.tana.inc?nodeid=calendar-week-42")
@@ -702,10 +862,18 @@ async def test_action_presentations(
     await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
-    await _expect_live_preview(history, example)
+    if example.group != "google_calendar":
+        await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await capture("history-expanded", history)
+
+    if example.key == "google_calendar.delete_event":
+        await expect(receipt.get_by_role("link", name="Facilities coordination", exact=True)).to_have_count(0)
+        await receipt.get_by_role("switch", name="Raw", exact=True).check()
+        await expect(receipt).to_contain_text('"event_id": "facilities-series_20261130T170000Z"')
+        await expect(receipt).to_contain_text('"content": []')
+        await expect(receipt).to_contain_text('"result": null')
 
 
 if __name__ == "__main__":

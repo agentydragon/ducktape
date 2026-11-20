@@ -29,6 +29,7 @@ ts_library(
         ":entry",
         ":github",
         ":gmail",
+        ":google_calendar",
         ":grocy",
         ":kubernetes_admin",
         ":presentation",
@@ -102,6 +103,28 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend/actions:integration_preview_schemas",
         "//agentplane/app/frontend/ui:text_block",
+    ],
+)
+
+ts_library(
+    name = "google_calendar",
+    srcs = [
+        "google_calendar.tsx",
+        "google_calendar_time.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rrule",
+        "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 
@@ -288,5 +311,18 @@ ts_library(
         ":entry",
         ":result_entry",
         "//:node_modules/zod",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "google_calendar_test",
+    srcs = ["google_calendar.test.tsx"],
+    deps = [
+        ":index",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )

@@ -24,6 +24,8 @@ import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
   GetGmailThreadSummariesResponseSchema,
+  GetGoogleCalendarEventPreviewResponseSchema,
+  type GoogleCalendarEventPreview,
   GetTanaNodeSummariesResponseSchema,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
 
@@ -147,6 +149,22 @@ export async function getIntegrationPreviewNames(
   const names = new Map(nodes.map(({ nodeId, name }) => [nodeId, name]));
   if (workspace !== undefined) names.set(workspace.workspaceId, workspace.name);
   return names;
+}
+
+export async function getGoogleCalendarEventPreview(
+  requestId: string,
+  signal: AbortSignal
+): Promise<GoogleCalendarEventPreview | undefined> {
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  const response = fromJsonString(
+    GetGoogleCalendarEventPreviewResponseSchema,
+    await fetchText(
+      `${path}/google-calendar-event-preview`,
+      { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" },
+      fetch
+    )
+  );
+  return response.event;
 }
 
 export async function actionHistory(

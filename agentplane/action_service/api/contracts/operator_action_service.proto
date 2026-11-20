@@ -56,6 +56,12 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/tana-node-summaries"};
   }
 
+  // Live event metadata for a pending Calendar request that names an event or series.
+  // The request supplies the calendar and event IDs. An unavailable event or backend is omitted.
+  rpc GetGoogleCalendarEventPreview(GetGoogleCalendarEventPreviewRequest) returns (GetGoogleCalendarEventPreviewResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/google-calendar-event-preview"};
+  }
+
   // The linkage of every configured MCP server, then each one again whenever it changes, including when its token
   // expires.
   rpc WatchMcpServers(WatchMcpServersRequest) returns (stream WatchMcpServersResponse) {
@@ -122,6 +128,38 @@ message TanaNodeSummary {
 message TanaWorkspaceSummary {
   string workspace_id = 1;
   string name = 2;
+}
+
+message GetGoogleCalendarEventPreviewRequest {
+  string request_id = 1;
+}
+
+message GetGoogleCalendarEventPreviewResponse {
+  GoogleCalendarEventPreview event = 1;
+}
+
+message GoogleCalendarEventPreview {
+  string event_id = 1;
+  string summary = 2;
+  string html_link = 3;
+  GoogleCalendarEventTime start = 4;
+  GoogleCalendarEventTime end = 5;
+  GoogleCalendarEventTime original_start_time = 6;
+  GoogleCalendarEventScope scope = 7;
+}
+
+message GoogleCalendarEventTime {
+  // Exactly one of date or date_time is set. The end date of an all-day event is exclusive.
+  string date = 1;
+  string date_time = 2;
+  string time_zone = 3;
+}
+
+enum GoogleCalendarEventScope {
+  GOOGLE_CALENDAR_EVENT_SCOPE_UNSPECIFIED = 0;
+  GOOGLE_CALENDAR_EVENT_SCOPE_SINGLE_EVENT = 1;
+  GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE = 2;
+  GOOGLE_CALENDAR_EVENT_SCOPE_SERIES = 3;
 }
 
 message WatchMcpServersRequest {}

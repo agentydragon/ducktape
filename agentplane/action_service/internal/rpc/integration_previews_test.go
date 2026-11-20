@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/google/uuid"
@@ -194,5 +195,80 @@ func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
 	defer mu.Unlock()
 	if want := []string{"reply-thread", "returned-thread"}; !slices.Equal(lookedUp, want) {
 		t.Errorf("looked up %q; want %q", lookedUp, want)
+	}
+}
+
+type calendarPreviewFunc func(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
+
+func (f calendarPreviewFunc) GoogleCalendarEventPreview(ctx context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
+	return f(ctx, calendarID, eventID)
+}
+
+func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) {
+	lookups := make(chan [2]string, 4)
+	previews := IntegrationPreviews{GoogleCalendar: calendarPreviewFunc(func(_ context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
+		lookups <- [2]string{calendarID, eventID}
+		return &operator_action_servicepb.GoogleCalendarEventPreview{EventId: eventID, Summary: "Facilities coordination"}
+	})}
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
+
+	submit := func(name, args string) store.ActionRequest {
+		t.Helper()
+		id := uuid.New()
+		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+			IdempotencyKey: id.String(), Action: store.ActionIdentity{Group: "google_calendar", Name: name},
+			Arguments: json.RawMessage(args), Title: name,
+		}, store.Admission{RequestID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	receipt := submit("delete_event", `{"calendar_id":"facilities@example.test","event_id":"occurrence-1","recurring_event_id":"other-series"}`)
+	request := &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: receipt.ID.String()}
+	_, err := s.operators.GetGoogleCalendarEventPreview(as(t, callerCertificate), request)
+	wantCode(t, "workload cannot read Calendar previews", err, codes.Unauthenticated)
+
+	code, body := s.get(t, "/v1/operator/action-requests/"+receipt.ID.String()+"/google-calendar-event-preview", s.operatorToken)
+	var response operator_action_servicepb.GetGoogleCalendarEventPreviewResponse
+	if code != http.StatusOK || protojson.Unmarshal(body, &response) != nil || response.GetEvent().GetSummary() != "Facilities coordination" {
+		t.Fatalf("Calendar preview response %d %s", code, body)
+	}
+
+	instances := submit("list_event_instances", `{"recurring_event_id":"series-2","event_id":"other-event"}`)
+	_, err = s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: instances.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][2]string{{"facilities@example.test", "occurrence-1"}, {"primary", "series-2"}} {
+		select {
+		case got := <-lookups:
+			if got != want {
+				t.Errorf("looked up %q; want %q", got, want)
+			}
+		default:
+			t.Errorf("no lookup for %q", want)
+		}
+	}
+
+	for _, invalid := range []store.ActionRequest{
+		submit("list_events", `{"calendar_id":"primary","event_id":"other-event"}`),
+		submit("update_event", `{"calendar_id":null,"event_id":"other-event"}`),
+	} {
+		_, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: invalid.ID.String()})
+		wantCode(t, "no preview target", err, codes.InvalidArgument)
+	}
+	if _, err := s.decideAs(t, s.operatorToken, decision(receipt, action_servicepb.Verdict_VERDICT_DENY)); err != nil {
+		t.Fatal(err)
+	}
+	afterDecision, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), request)
+	if err != nil || afterDecision.GetEvent() != nil {
+		t.Fatalf("preview after decision = %v, %v", afterDecision, err)
+	}
+	select {
+	case got := <-lookups:
+		t.Errorf("unexpected lookup %q", got)
+	default:
 	}
 }
