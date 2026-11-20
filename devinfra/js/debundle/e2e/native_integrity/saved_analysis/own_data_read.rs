@@ -1,7 +1,9 @@
 //! Automatic Object own-data reads preserve getter-free lookup and later call effects.
 
 use debundle_e2e_graph_support::FixtureGraphExt;
-use debundle_e2e_support::saved_analysis::{assert_ok, assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{
+    assert_ok, assert_same_invocation_trees, graph_node_for_binding, path, staged,
+};
 use debundle_e2e_support::*;
 use serde_json::Value;
 
@@ -15,19 +17,6 @@ fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
         audited_source_sha256: source_sha256(source),
         note: Some("Only this direct Symbol call is audited.".to_owned()),
     }
-}
-
-fn node<'a>(graph: &'a Value, name: &str) -> &'a Value {
-    graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .is_some_and(|bindings| bindings.iter().any(|binding| binding["binding"] == name))
-        })
-        .unwrap()
 }
 
 fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
@@ -206,8 +195,8 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
 
     let source_graph = serde_json::to_value(source_match.dependency_graph()).unwrap();
     let member_graph = serde_json::to_value(resolved_member.dependency_graph()).unwrap();
-    let source_alias = node(&source_graph, "alias");
-    let member_alias = node(&member_graph, "alias");
+    let source_alias = graph_node_for_binding(&source_graph, "alias");
+    let member_alias = graph_node_for_binding(&member_graph, "alias");
     let source_use = &source_alias["synchronous_execution"]["native_operation_input_uses"][0];
     let member_use = &member_alias["synchronous_execution"]["native_operation_input_uses"][0];
     for field in ["reference", "audited_source_sha256"] {
@@ -258,8 +247,8 @@ fn resolved_member_selects_only_the_selected_symbol_site() {
         ),
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let selected = node(&graph, "first");
-    let sibling = node(&graph, "second");
+    let selected = graph_node_for_binding(&graph, "first");
+    let sibling = graph_node_for_binding(&graph, "second");
     let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
     assert_eq!(evidence["reference"]["defining_chunk"], "static/app");
     assert_eq!(evidence["reference"]["input_index"], 0);
@@ -299,7 +288,7 @@ fn native_own_data_read_composes_exact_root_effect_coverage() {
     ));
     assert_preserved_entry_output(&fixture, "1 function\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let execution = &node(&graph, "alias")["synchronous_execution"];
+    let execution = &graph_node_for_binding(&graph, "alias")["synchronous_execution"];
     assert_eq!(execution["complete"], true, "{execution:#}");
     assert_eq!(
         execution["binding_effect_authority"]["authority"], "operation_receipt",
@@ -463,7 +452,7 @@ fn intact_object_read_has_an_independent_source_certificate() {
         &[],
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let alias = node(&graph, "alias");
+    let alias = graph_node_for_binding(&graph, "alias");
     assert_eq!(
         alias["synchronous_execution"]["inference_uses"][0]["conclusion"],
         "native_own_data_read"
@@ -478,5 +467,8 @@ fn invoking_an_automatically_recognized_alias_keeps_call_heap_effects() {
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert_preserved_entry_output(&fixture, "2\n");
-    assert_ne!(node(&graph, "after")["purity"]["kind"], "pure");
+    assert_ne!(
+        graph_node_for_binding(&graph, "after")["purity"]["kind"],
+        "pure"
+    );
 }

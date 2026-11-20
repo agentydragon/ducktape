@@ -323,24 +323,9 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
     assert_eq!(read_tree(&fixture.modules), before);
     let config_path = fixture.root().join("spec_config.yaml");
     let config_before = fs::read(&config_path).unwrap();
+    let stale_args = apply_args_with_order(&fixture, Path::new(&path), Path::new(stale_order));
     fixture.assert_rejected_unchanged(
-        &[
-            "modules",
-            "apply",
-            "--assignments",
-            &fixture
-                .write_physical_assignment_batch(
-                    "stale-assignments.json",
-                    &serde_json::from_slice(&fs::read(&path).unwrap()).unwrap(),
-                )
-                .to_string_lossy(),
-            "--modules",
-            fixture.root().join("modules").to_str().unwrap(),
-            "--import-order",
-            stale_order,
-            "--tree-config",
-            config_path.to_str().unwrap(),
-        ],
+        &stale_args.iter().map(String::as_str).collect::<Vec<_>>(),
         &["import priority must contain every emitted nonentry module exactly once"],
     );
     assert_eq!(fs::read(config_path).unwrap(), config_before);
