@@ -114,6 +114,3 @@ class EvidenceMarketReader:
         if not path.exists():
             raise MarketNotMirroredError(f"no mirrored snapshot at {path}")
         return _PARSERS[self.platform](market_id, path.read_bytes())
-
-    async def aclose(self) -> None:
-        """No-op: the reader holds no connections."""

@@ -328,17 +328,9 @@ def _distribution(
     holding_account_id: AccountId,
     payout_account_id: AccountId,
 ) -> Distribution:
-    """One pool's payout. The split must allocate the whole payout; shares of one character add, and the wire's float
-    fractions round onto the ppb grid."""
+    """One pool's payout. `SecurityDistributionConfig` guarantees the split allocates the whole payout; shares of one
+    character add, and the wire's float fractions round onto the ppb grid."""
 
-    total = sum(share.fraction for share in declaration.tax_character)
-    # Exactly 1, not "at most 1": a short split would silently pay out less than the fund
-    # distributes, which reads as a lower yield rather than as the misconfiguration it is.
-    if abs(total - 1.0) > 1e-9:
-        raise ValueError(
-            f"security distribution on {asset.wire_id!r} allocates {total} of its payout; "
-            "the tax-character fractions must sum to 1"
-        )
     fractions: dict[InterestCharacter, float] = {}
     for share in declaration.tax_character:
         fractions[share.character] = fractions.get(share.character, 0.0) + share.fraction
