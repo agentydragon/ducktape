@@ -152,7 +152,9 @@ py_test(
 
 py_test(
     name = "test_proxy_runtime",
-    # Full LiteLLM/SDK imports, both HTTP protocols, and pytest GC approach the small budget.
+    # Full LiteLLM/SDK imports, both HTTP protocols, and pytest GC approach the small budget: on RBE,
+    # 14.6-23.0 s before pytest plus 19.7-30.5 s of test work. The original timeout stack was never
+    # captured, so this is a budget change, not a repaired shutdown leak.
     size = "medium",
     srcs = ["test_proxy_runtime.py"],
     data = [
