@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,9 +17,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/coder/websocket"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -315,6 +321,55 @@ func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
 		defer r.mu.Unlock()
 		return r.activeAdmissions == 0 && r.activeExecutionCalls == 0
 	}, "direct unary admission release")
+}
+
+type failingAdmissionCountState struct {
+	state.State
+	failNext atomic.Bool
+	failure  error
+}
+
+func (s *failingAdmissionCountState) UpdateWithConflicts(ctx context.Context, pointer resource.Pointer, update state.UpdaterFunc, options ...state.UpdateOption) (resource.Resource, error) {
+	if pointer.Type() == lifecycle.AdmissionCountType && s.failNext.Swap(false) {
+		return nil, s.failure
+	}
+	return s.State.UpdateWithConflicts(ctx, pointer, update, options...)
+}
+
+func TestDirectUnaryExecutionAdmissionFailureLeavesNoCall(t *testing.T) {
+	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	close(executor.release)
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.expectCloseError = true
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+	}
+	store := &failingAdmissionCountState{
+		State:   state.WrapCore(namespaced.NewState(inmem.Build)),
+		failure: status.Error(codes.Internal, "injected admission count write failure"),
+	}
+	r := newLifecycleRuntimeWithState(t, config, store)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+	request := &executorpb.StartProcessRequest{Scope: client.scope("unary-session")}
+	store.failNext.Store(true)
+
+	if _, err := client.executor.StartProcess(client.callCtx, request); status.Code(err) != codes.Internal || store.failNext.Load() {
+		t.Fatalf("StartProcess with failed admission count write = %v, want injected failure", err)
+	}
+	if _, err := client.executor.StartProcess(client.callCtx, request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("StartProcess after failed admission count write = %v, want Unavailable", err)
+	}
+	select {
+	case <-executor.started:
+		t.Fatal("failed admission dispatched an execution call")
+	default:
+	}
+	r.mu.Lock()
+	admissions, calls, registered := r.activeAdmissions, r.activeExecutionCalls, len(r.execCalls)
+	r.mu.Unlock()
+	if admissions != 0 || calls != 0 || registered != 0 {
+		t.Fatalf("failed admission retained work: active admissions=%d, active execution calls=%d, registered calls=%d", admissions, calls, registered)
+	}
 }
 
 func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {

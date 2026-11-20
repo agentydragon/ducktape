@@ -96,10 +96,6 @@ durable user data and uncertain-effect handling in any accepted change.
   but needs data-preserving migration and rollback; bounded diagnostics would discard future output.
   The [storage comparison](runtime/debug/2026_11_04_bootstrap_event_storage_comparison.md) has synthetic
   measurements, not production output distributions. Preserve existing evidence and one-shot outcomes.
-- **Possible admission cleanup defect:** In [Execution admission](runtime/internal/coordinator/forward.go),
-  `execCalls` is populated before admission-count publication; on publication failure the error path
-  appears to leave the entry and cancel function until teardown. Confirm with fault injection before
-  fixing. No native call is dispatched on this path; Runtime fails closed.
 
 Moving native protocol translation out of Runtime is a cross-service tradeoff, not established net
 savings; see the existing [native interface proposal](../plans/native_harness_interfaces.md).
