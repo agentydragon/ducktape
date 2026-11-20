@@ -154,6 +154,22 @@ def Permutes (B : Bundle) (P : Plan) : Prop :=
 def OrderOk (B : Bundle) (P : Plan) : Prop :=
   P.execOrder.Pairwise fun a b => a < b ∨ B.conflict a b = false
 
+/-- An inverted conflict in the executable check's bundle order witnesses rejection.
+This does not say that the conflicting JavaScript statements actually fail to commute. -/
+theorem inverted_conflict_rejected (B : Bundle) (P : Plan) (earlier later : Nat)
+    (horder : earlier < later) (hpositions : [later, earlier].Sublist P.execOrder)
+    (hconflict : Bundle.conflictT B.toArray B.readsTab earlier later = true) : ¬ OrderOk B P := by
+  intro hok
+  have hrel : later < earlier ∨ B.conflict later earlier = false := by
+    exact (List.pairwise_cons.mp (hok.sublist hpositions)).1 earlier (by simp)
+  have hc : B.conflict later earlier = true := by
+    rw [Bundle.conflict_symm, ← Bundle.conflictT_eq]
+    exact hconflict
+  rcases hrel with hlt | hfalse
+  · omega
+  · rw [hc] at hfalse
+    contradiction
+
 def Valid (B : Bundle) (S : Spec) (P : Plan) : Prop :=
   UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ Hygienic B P ∧ AssignsHome B P
     ∧ Permutes B P ∧ OrderOk B P

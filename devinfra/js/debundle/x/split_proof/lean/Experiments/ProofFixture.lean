@@ -40,6 +40,32 @@ theorem reads_closed : ReadsClosed (toBundle program) := by decide +kernel
 
 theorem execution_order : Example.plan.execOrder = [1, 0, 2] := by decide +kernel
 
+/-- The independent declarations are inverted but do not conflict. -/
+theorem safe_inversion : [1, 0].Sublist Example.plan.execOrder ∧
+    Bundle.conflictT Example.bundle.toArray Example.bundle.readsTab 0 1 = false := by decide +kernel
+
+/-- A hoisted binding may be read early, but a write to that binding still conflicts.
+Exercise the executable table lookup in both argument orders. -/
+def hoistedControl : Bundle := [
+  { src := "", defs := ["fn"], hoisted := true },
+  { src := "", eager := ["fn"] },
+  { src := "", writes := ["fn"] }
+]
+
+theorem hoisted_read_both_directions :
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 0 1 = false ∧
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 1 0 = false := by decide +kernel
+
+theorem hoisted_write_both_directions :
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 0 2 = true ∧
+    Bundle.conflictT hoistedControl.toArray hoistedControl.readsTab 2 0 = true := by decide +kernel
+
+/-- The unsafe generated control moves `copy` before its declaration of `one`.
+Use the same original-order conflict query as the translation diagnostic. -/
+theorem unsafe_inversion_rejected : ¬ OrderOk Example.bundle (mkPlan Example.bundle Example.control_bad) := by
+  apply inverted_conflict_rejected Example.bundle (mkPlan Example.bundle Example.control_bad) 1 2
+  all_goals decide +kernel
+
 theorem preserves_model (fuel : Nat) :
     Example.plan.execOrder.foldl (fun s j => cstep program fuel j s) (G0 program, []) =
       (List.range program.length).foldl (fun s j => cstep program fuel j s) (G0 program, []) := by

@@ -311,6 +311,14 @@ def Bundle.conflict (B : Bundle) (i j : Nat) : Bool :=
     || (!a.hoisted && a.binds.any (B.readsOf j).contains)
     || a.binds.any b.binds.contains
 
+/-- Conflict is independent of argument order, including for hoisted declarations. -/
+theorem Bundle.conflict_symm (B : Bundle) (i j : Nat) : B.conflict i j = B.conflict j i := by
+  have overlap_symm (xs ys : List Name) : xs.any ys.contains = ys.any xs.contains := by
+    apply Bool.eq_iff_iff.mpr
+    simp only [List.any_eq_true, List.contains_iff_mem]
+    constructor <;> rintro ⟨x, hx, hy⟩ <;> exact ⟨x, hy, hx⟩
+  simp only [Bundle.conflict, overlap_symm, Bool.and_comm, Bool.or_comm, Bool.or_left_comm, Bool.or_assoc]
+
 /-- Statements and read sets of all statements, as arrays, for the checks that look them up many times. -/
 def Bundle.readsTab (B : Bundle) : Array NameSet :=
   let arr := B.toArray
