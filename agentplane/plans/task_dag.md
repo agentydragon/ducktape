@@ -1748,6 +1748,9 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
+    CENTRAL_EXECUTOR_LIFECYCLE_DESIGN[Decision: central Session execution and Sandbox lifecycle]
+    RUNNER_BUSY_TRACKING -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
+    AGENT_RESUME_NOTICE -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend modes, section 4] -. multi-mode notice .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
@@ -2057,6 +2060,16 @@ console do not have a general busy-lifetime contract. Decide which surviving bac
 attached terminals should block idle suspension and who reports them.
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
+
+### `CENTRAL_EXECUTOR_LIFECYCLE_DESIGN` — central Session execution and Sandbox lifecycle
+
+**Decision; unscheduled.** Decide how a central-sampler Session and model interact with a suspended
+executor Sandbox and how execution affects idleness ([issue #18311](https://github.com/agentydragon/ducktape/issues/18311)).
+Options include automatic wake and an activity hold, informing the model and providing explicit
+resume/lifecycle controls, or a combination; no approach is selected. Map existing wake, busy and
+authorization ownership before choosing. The selected design must honor wake policy and Sandbox UID
+and incarnation fences, preserve uncertain outcomes without replay, and cover suspended requests,
+long-running processes, disconnect/recovery and eventual idleness.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
