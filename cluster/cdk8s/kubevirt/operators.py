@@ -25,7 +25,6 @@ KUBEVIRT_NAMESPACE = "kubevirt"
 _CDI_NAMESPACE = "cdi"
 
 
-# TODO(https://github.com/agentydragon/ducktape/issues/18159): Simplify the placement and availability patches below.
 def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
     """Schedules an operator Deployment in the `hil` region only. JSON6902 `add` replaces the
     upstream `kubernetes.io/os: linux` nodeSelector, which a strategic merge would keep."""
@@ -45,6 +44,7 @@ def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
 
 VIRT_OPERATOR_ON_HIL = _on_hil("virt-operator", KUBEVIRT_NAMESPACE)
 CDI_OPERATOR_ON_HIL = _on_hil("cdi-operator", _CDI_NAMESPACE)
+# TODO(https://github.com/agentydragon/ducktape/issues/18159): Simplify these availability and placement patches.
 VIRT_OPERATOR_AVAILABILITY = Json6902Patch(
     patch=Yaml.stringify(
         [
