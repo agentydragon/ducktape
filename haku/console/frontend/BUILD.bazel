@@ -29,7 +29,6 @@ filegroup(
         allow_empty = True,
     ) + [
         "//haku/console/frontend/tool_rendering:typed_lint_srcs",
-        "//haku/console/frontend/tool_rendering/google_calendar:typed_lint_srcs",
         "//haku/console/frontend/tool_rendering/grocy:typed_lint_srcs",
         "//haku/console/frontend/tool_rendering/haku_routine:typed_lint_srcs",
         "//haku/console/frontend/tool_rendering/screenshot:typed_lint_srcs",
@@ -169,17 +168,6 @@ ts_library(
         ":mcp_result",
         ":operator_login",
         "//:node_modules/@modelcontextprotocol/sdk",
-    ],
-)
-
-ts_library(
-    name = "calendar_client",
-    srcs = ["calendar_client.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mcp_client",
-        ":mcp_tool_result_schema",
     ],
 )
 
@@ -616,7 +604,6 @@ filegroup(
 filegroup(
     name = "renderer_tailwind_content_srcs",
     srcs = [
-        "calendar_client.ts",
         "grocy_client.ts",
         "tool_arguments_field.tsx",
         "tool_call_card.tsx",
@@ -850,16 +837,6 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         "//:node_modules/@haku/console-bridge",
-        "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "calendar_client_test",
-    srcs = ["calendar_client.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":calendar_client",
         "//:node_modules/vitest",
     ],
 )

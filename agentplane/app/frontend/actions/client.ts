@@ -27,7 +27,7 @@ import {
   type GetGmailResourceSummariesResponse,
   GetGmailThreadSummariesResponseSchema,
   GetGoogleCalendarEventPreviewResponseSchema,
-  type GoogleCalendarEventPreview,
+  type GetGoogleCalendarEventPreviewResponse,
   GetGrocyReferenceSummariesResponseSchema,
   GetTanaNodeSummariesResponseSchema,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
@@ -154,12 +154,12 @@ export async function getIntegrationPreviewNames(
   return names;
 }
 
-export async function getGoogleCalendarEventPreview(
+export async function getGoogleCalendarPreview(
   requestId: string,
   signal: AbortSignal
-): Promise<GoogleCalendarEventPreview | undefined> {
+): Promise<GetGoogleCalendarEventPreviewResponse> {
   const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
-  const response = fromJsonString(
+  return fromJsonString(
     GetGoogleCalendarEventPreviewResponseSchema,
     await fetchText(
       `${path}/google-calendar-event-preview`,
@@ -167,7 +167,6 @@ export async function getGoogleCalendarEventPreview(
       fetch
     )
   );
-  return response.event;
 }
 
 export async function getGmailResourceSummaries(

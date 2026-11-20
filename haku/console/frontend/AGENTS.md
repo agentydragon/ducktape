@@ -27,12 +27,6 @@ card toggles **compact** / **detailed**. Arguments: `tool_rendering/<server>/req
 raw-JSON `tool_arguments_field.tsx`; results: `responses.tsx` or `tool_result_field.tsx` (raw result
 is detailed-only, so compact shows a result only via a widget).
 
-**Combined widget** (`tool_rendering/<server>/calls.tsx`, `defineCallPreview` in
-`call_entry.tsx`, dispatched via `toolCallPreview`) only when the result mostly restates the
-arguments (e.g. `google_calendar/create_event`). It gets `{ args, result, variant }`, `result`
-`undefined` while pending, on failure, or on result-schema mismatch; the card already shows the
-error line, so handle pending and finished only. A tool uses exactly one of the two systems.
-
 - **Compact**: action, primary target(s), just enough payload to recognize (first few items then
   `… +N more`, first lines of a body). No provenance, secondary attributes, or raw JSON.
 - **Detailed**: every argument, ranked by importance. Raw JSON behind **`Raw arguments`** /

@@ -50,6 +50,17 @@ export function defineCallPreview<ArgsSchema extends z.ZodType, ResultSchema ext
   return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
 }
 
+/** A combined receipt that replaces the separate arguments and result only after both sides parse. */
+export function defineReceiptPreview<ArgsSchema extends z.ZodType, ResultSchema extends z.ZodType>(
+  argumentSchema: ArgsSchema,
+  resultSchema: ResultSchema,
+  Widget: (props: { args: z.infer<ArgsSchema>; result: z.infer<ResultSchema> }) => ReactNode
+): CallPreview<ArgsSchema, ResultSchema> {
+  const render = (args: z.infer<ArgsSchema>, result: z.infer<ResultSchema> | undefined): ReactNode =>
+    result === undefined ? null : <Widget args={args} result={result} />;
+  return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
+}
+
 /** Parse `args` with the entry's schema and render; `undefined` on a mismatch, so the caller uses
  * its host fallback. `null` from a matching renderer intentionally suppresses the slot. Arguments
  * are not checked against the tool until it runs, so a pending call's may not fit. */

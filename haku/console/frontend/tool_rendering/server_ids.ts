@@ -4,6 +4,5 @@
 //
 // A tool call's `server_id` is compared against these constants verbatim.
 
-export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 export const GROCY_SERVER_ID = "grocy-sf";
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";

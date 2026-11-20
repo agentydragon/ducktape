@@ -9,13 +9,12 @@
 // cannot phrase the same call differently.
 
 import type { ActionEntry, ToolAction } from "./action_entry";
-import { googleCalendarActions } from "./google_calendar/actions";
 import { grocyActions } from "./grocy/actions";
 import { hakuRoutineActions } from "./haku_routine/actions";
-import { GOOGLE_CALENDAR_SERVER_ID, GROCY_SERVER_ID, HAKU_ROUTINE_SERVER_ID } from "./server_ids";
+
+import { GROCY_SERVER_ID, HAKU_ROUTINE_SERVER_ID } from "./server_ids";
 
 const ACTIONS: Record<string, Record<string, ActionEntry>> = {
-  [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarActions,
   [GROCY_SERVER_ID]: grocyActions,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
 };
@@ -29,6 +28,9 @@ export function toolActionDescription(
   args: Record<string, unknown>
 ): ToolAction | null {
   if (serverId === "tana" && toolName === "trash_node") return { text: "Tana: Trash node", destructive: true };
+  if (serverId === "google_calendar" && toolName === "delete_event") {
+    return { text: "Google Calendar: Delete event", destructive: true };
+  }
   const entry = ACTIONS[serverId]?.[toolName];
   if (!entry) return null;
   if (!entry.schema) return entry.describe(undefined as never);

@@ -7,8 +7,8 @@ import {
   GoogleCalendarEventScope,
   type GoogleCalendarEventTime,
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
-import { getGoogleCalendarEventPreview } from "../client";
-import { definePreview, type PreviewProps } from "./entry";
+import { getGoogleCalendarPreview } from "../client";
+import { definePreview, defineReceiptPreview, type PreviewProps } from "./entry";
 import {
   eventTime,
   formatDateBound,
@@ -103,8 +103,46 @@ function Field({ label, children }: { label: string; children: ReactNode }): JSX
   );
 }
 
-function Calendar({ id }: { id?: string }): JSX.Element {
-  return <Field label="Calendar">{!id || id === "primary" ? "Primary calendar" : <Code>{id}</Code>}</Field>;
+function CalendarName({ id, name }: { id?: string; name?: string | null }): JSX.Element {
+  if (!id || id === "primary") return <>{name?.trim() ? name : "Primary calendar"}</>;
+  if (!name?.trim()) return <Code>{id}</Code>;
+  // Match the service's 1024-byte calendar ID limit even for links built from recorded results.
+  if (id.length > 1024) return <>{name}</>;
+  const bytes = new TextEncoder().encode(id);
+  if (bytes.length > 1024) return <>{name}</>;
+  // The calendar target is explicit. Let Google select the browser's account rather than pinning
+  // an account slot, which need not match the credential used by the integration.
+  const url = new URL("https://calendar.google.com/calendar");
+  url.searchParams.set("cid", btoa(String.fromCharCode(...bytes)).replace(/=+$/, ""));
+  return (
+    <Anchor href={url.href} target="_blank" rel="noreferrer" inherit>
+      {name}
+    </Anchor>
+  );
+}
+
+function useCalendarPreview(requestId?: string) {
+  const { data } = useQuery({
+    queryKey: ["action-google-calendar-preview", requestId],
+    queryFn: ({ signal }) => (requestId === undefined ? null : getGoogleCalendarPreview(requestId, signal)),
+    enabled: requestId !== undefined,
+    retry: false,
+    staleTime: 30_000,
+  });
+  return data;
+}
+
+function CalendarTarget({ id, requestId }: { id?: string; requestId?: string }): JSX.Element {
+  const calendar = useCalendarPreview(id && id !== "primary" ? requestId : undefined)?.calendar;
+  return <CalendarField id={id} name={calendar?.calendarId === id ? calendar?.summary : undefined} />;
+}
+
+function CalendarField({ id, name }: { id?: string; name?: string | null }): JSX.Element {
+  return (
+    <Field label="Calendar">
+      <CalendarName id={id} name={name} />
+    </Field>
+  );
 }
 
 function calendarEventUrl(link?: string | null): string | undefined {
@@ -164,23 +202,21 @@ function scopeLabel(scope?: GoogleCalendarEventScope): string | undefined {
 function Target({
   id,
   calendarId,
+  recordedCalendarName,
   requestId,
   kind,
+  showEvent = true,
 }: {
   id: string;
   calendarId?: string;
+  recordedCalendarName?: string | null;
   requestId?: string;
   kind: "read" | "change" | "series";
+  showEvent?: boolean;
 }): JSX.Element {
-  const { data } = useQuery({
-    queryKey: ["action-google-calendar-event-preview", requestId],
-    queryFn: async ({ signal }) =>
-      requestId ? ((await getGoogleCalendarEventPreview(requestId, signal)) ?? null) : null,
-    enabled: Boolean(requestId),
-    retry: false,
-    staleTime: 30_000,
-  });
-  const preview = data?.eventId === id ? data : undefined;
+  const data = useCalendarPreview(requestId);
+  const preview = data?.event?.eventId === id ? data.event : undefined;
+  const calendar = data?.calendar;
   const schedule = preview && formatEventRange(previewTime(preview.start), previewTime(preview.end));
   const original = previewTime(preview?.originalStartTime);
   const scope =
@@ -190,10 +226,15 @@ function Target({
       : undefined;
   return (
     <Stack gap={4}>
-      <Field label={kind === "series" ? "Series" : "Event"}>
-        <EventName id={id} name={preview?.summary} link={preview?.htmlLink} />
-      </Field>
-      <Calendar id={calendarId} />
+      {showEvent && (
+        <Field label={kind === "series" ? "Series" : "Event"}>
+          <EventName id={id} name={preview?.summary} link={preview?.htmlLink} />
+        </Field>
+      )}
+      <CalendarField
+        id={calendarId}
+        name={recordedCalendarName ?? (calendar?.calendarId === calendarId ? calendar?.summary : undefined)}
+      />
       {schedule && <Field label="Current time">{schedule}</Field>}
       {original && <Field label="Original occurrence">{formatEventTime(original)}</Field>}
       {scope && <Field label="Scope">{scope}</Field>}
@@ -226,13 +267,13 @@ const createSummary = definePreview(createArguments, ({ args }) => (
     <Text size="xs">{formatEventRange(args.start, args.end)}</Text>
   </Stack>
 ));
-const createDetails = definePreview(createArguments, ({ args }) => (
+const createDetails = definePreview(createArguments, ({ args, requestId }) => (
   <Stack gap={4}>
     <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
       {args.summary || "Untitled event"}
     </Text>
     <Field label="When">{formatEventRange(args.start, args.end)}</Field>
-    <Calendar id={args.calendar_id} />
+    <CalendarTarget id={args.calendar_id} requestId={requestId} />
     {args.location && <Field label="Location">{args.location}</Field>}
     {args.attendees && args.attendees.length > 0 && <Field label="Attendees">{args.attendees.join(", ")}</Field>}
     <Field label="Reminders">{remindersText(args.reminders ?? [])}</Field>
@@ -241,7 +282,11 @@ const createDetails = definePreview(createArguments, ({ args }) => (
   </Stack>
 ));
 
-function Update({ args, requestId }: PreviewProps<z.infer<typeof updateArguments>>): JSX.Element {
+function Update({
+  args,
+  requestId,
+  showEvent,
+}: PreviewProps<z.infer<typeof updateArguments>> & { showEvent?: boolean }): JSX.Element {
   const changes = [
     args.summary != null && (
       <Field key="title" label="Title">
@@ -277,7 +322,13 @@ function Update({ args, requestId }: PreviewProps<z.infer<typeof updateArguments
   ].filter(Boolean);
   return (
     <Stack gap="xs">
-      <Target id={args.event_id} calendarId={args.calendar_id} requestId={requestId} kind="change" />
+      <Target
+        id={args.event_id}
+        calendarId={args.calendar_id}
+        requestId={requestId}
+        kind="change"
+        showEvent={showEvent}
+      />
       <Stack gap={4}>
         <Text size="sm" fw={600}>
           {changes.length === 0 ? "No field changes requested" : "Requested changes"}
@@ -311,22 +362,45 @@ function dateWindow(args: z.infer<typeof listArguments>): JSX.Element {
   );
 }
 
-const listDetails = definePreview(listArguments, ({ args }) => (
-  <Stack gap={4}>
-    <Calendar id={args.calendar_id} />
-    {args.query && <Field label="Search">{args.query}</Field>}
-    {dateWindow(args)}
-    <Field label="Recurring events">
-      {args.expand_recurring ? "Expand into occurrences" : "Include series and exceptions"}
-    </Field>
-  </Stack>
-));
-const instanceDetails = definePreview(instanceArguments, ({ args, requestId }) => (
-  <Stack gap={4}>
-    <Target id={args.recurring_event_id} calendarId={args.calendar_id} requestId={requestId} kind="series" />
-    {dateWindow(args)}
-  </Stack>
-));
+function ListDetails({
+  args,
+  requestId,
+  recordedCalendarName,
+}: PreviewProps<z.infer<typeof listArguments>> & { recordedCalendarName?: string | null }): JSX.Element {
+  return (
+    <Stack gap={4}>
+      {recordedCalendarName ? (
+        <CalendarField id={args.calendar_id} name={recordedCalendarName} />
+      ) : (
+        <CalendarTarget id={args.calendar_id} requestId={requestId} />
+      )}
+      {args.query && <Field label="Search">{args.query}</Field>}
+      {dateWindow(args)}
+      <Field label="Recurring events">
+        {args.expand_recurring ? "Expand into occurrences" : "Include series and exceptions"}
+      </Field>
+    </Stack>
+  );
+}
+
+function InstanceDetails({
+  args,
+  requestId,
+  recordedCalendarName,
+}: PreviewProps<z.infer<typeof instanceArguments>> & { recordedCalendarName?: string | null }): JSX.Element {
+  return (
+    <Stack gap={4}>
+      <Target
+        id={args.recurring_event_id}
+        calendarId={args.calendar_id}
+        requestId={requestId}
+        recordedCalendarName={recordedCalendarName}
+        kind="series"
+      />
+      {dateWindow(args)}
+    </Stack>
+  );
+}
 
 function eventStatus(value?: string | null): string | undefined {
   switch (value) {
@@ -425,32 +499,98 @@ function EventCard({ value, agenda = false }: { value: z.infer<typeof event>; ag
 
 const eventResult = defineResultPreview(event, ({ result }) => <EventCard value={result} />);
 
-const agendaResult = defineResultPreview(eventPage, ({ result }) => (
-  <Stack gap="xs">
-    {result.summary && (
-      <Text size="sm" fw={600}>
-        {result.summary}
-      </Text>
-    )}
-    {result.events.length === 0 && (
-      <Text size="sm" c="dimmed">
-        No events on this page.
-      </Text>
-    )}
-    {result.events.map((item) => (
-      <EventCard key={item.event_id} value={item} agenda />
-    ))}
-    {result.next_page_token && (
-      <Text size="sm" c="dimmed">
-        More events are available.
-      </Text>
-    )}
-  </Stack>
+function Agenda({ result }: { result: z.infer<typeof eventPage> }): JSX.Element {
+  return (
+    <Stack gap="xs">
+      {result.events.length === 0 && (
+        <Text size="sm" c="dimmed">
+          No events on this page.
+        </Text>
+      )}
+      {result.events.map((item) => (
+        <EventCard key={item.event_id} value={item} agenda />
+      ))}
+      {result.next_page_token && (
+        <Text size="sm" c="dimmed">
+          More events are available.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+const agendaArguments = z.union([listArguments, instanceArguments]);
+const agendaResult = defineResultPreview(eventPage, ({ result, context }) => {
+  const args = agendaArguments.safeParse(context?.arguments);
+  return (
+    <Stack gap="xs">
+      {result.summary?.trim() && (
+        <Text size="sm" fw={600}>
+          <CalendarName id={args.data?.calendar_id} name={result.summary} />
+        </Text>
+      )}
+      <Agenda result={result} />
+    </Stack>
+  );
+});
+
+function CalendarReceipt({ review, children }: { review: ReactNode; children: ReactNode }): JSX.Element {
+  return (
+    <Stack gap="sm">
+      {review}
+      <Stack gap={4}>
+        <Text size="sm" fw={600}>
+          Result
+        </Text>
+        {children}
+      </Stack>
+    </Stack>
+  );
+}
+
+function namesEvent(id: string, result: z.infer<typeof event>): boolean {
+  return result.event_id === id && Boolean(result.summary?.trim());
+}
+
+const getEventCall = defineReceiptPreview(eventTarget, event, ({ args, result }) => (
+  <CalendarReceipt
+    review={
+      <Target
+        id={args.event_id}
+        calendarId={args.calendar_id}
+        kind="read"
+        showEvent={!namesEvent(args.event_id, result)}
+      />
+    }
+  >
+    <EventCard value={result} />
+  </CalendarReceipt>
+));
+
+const updateEventCall = defineReceiptPreview(updateArguments, event, ({ args, result }) => (
+  <CalendarReceipt review={<Update args={args} showEvent={!namesEvent(args.event_id, result)} />}>
+    <EventCard value={result} />
+  </CalendarReceipt>
+));
+
+const namedEventPage = eventPage.refine((page) => Boolean(page.summary?.trim()));
+const listEventsCall = defineReceiptPreview(listArguments, namedEventPage, ({ args, result }) => (
+  <CalendarReceipt review={<ListDetails args={args} recordedCalendarName={result.summary} />}>
+    <Agenda result={result} />
+  </CalendarReceipt>
+));
+
+const listInstancesCall = defineReceiptPreview(instanceArguments, namedEventPage, ({ args, result }) => (
+  <CalendarReceipt review={<InstanceDetails args={args} recordedCalendarName={result.summary} />}>
+    <Agenda result={result} />
+  </CalendarReceipt>
 ));
 
 const updateDetails = definePreview(updateArguments, Update);
 const eventDetails = definePreview(eventTarget, EventTarget);
 const deleteDetails = definePreview(eventTarget, Delete);
+const listDetails = definePreview(listArguments, ListDetails);
+const instanceDetails = definePreview(instanceArguments, InstanceDetails);
 
 export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
@@ -459,13 +599,14 @@ export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = 
       fallbackLabel: "Schedule Calendar event",
       label: createLabel,
       pane: { collapsed: createSummary, opened: createDetails },
-      details: { arguments: createDetails, result: eventResult },
+      details: { arguments: createDetails, result: eventResult, pendingPreviewOnly: true },
     },
   ],
   [
     "update_event",
     {
       fallbackLabel: "Update Calendar event",
+      call: updateEventCall,
       pane: { opened: updateDetails },
       details: { arguments: updateDetails, result: eventResult, pendingPreviewOnly: true },
     },
@@ -486,6 +627,7 @@ export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = 
     "get_event",
     {
       fallbackLabel: "Get Calendar event",
+      call: getEventCall,
       pane: { opened: eventDetails },
       details: { arguments: eventDetails, result: eventResult, pendingPreviewOnly: true },
     },
@@ -494,14 +636,16 @@ export const googleCalendarRenderers: ReadonlyMap<string, ActionPresentation> = 
     "list_events",
     {
       fallbackLabel: "List Calendar events",
+      call: listEventsCall,
       pane: { opened: listDetails },
-      details: { arguments: listDetails, result: agendaResult },
+      details: { arguments: listDetails, result: agendaResult, pendingPreviewOnly: true },
     },
   ],
   [
     "list_event_instances",
     {
       fallbackLabel: "List Calendar series occurrences",
+      call: listInstancesCall,
       pane: { opened: instanceDetails },
       details: { arguments: instanceDetails, result: agendaResult, pendingPreviewOnly: true },
     },
