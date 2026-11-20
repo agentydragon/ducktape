@@ -32,7 +32,10 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["github", githubRenderers],
   ["gmail", gmailRenderers],
   ["google_calendar", googleCalendarRenderers],
-  ["home_assistant", new Map([...homeAssistantRenderers, ...homeAssistantHistoryRenderers, ...homeAssistantOrganizationRenderers])],
+  [
+    "home_assistant",
+    new Map([...homeAssistantRenderers, ...homeAssistantHistoryRenderers, ...homeAssistantOrganizationRenderers]),
+  ],
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],
