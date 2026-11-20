@@ -440,19 +440,11 @@ pub struct TaskCompletedInput {
     pub team_name: Option<String>,
 }
 
+/// Only the output fields the daemon sets. Claude Code's full output contract is modeled in
+/// `devinfra/claude/claude_api/hooks/output.py`.
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HookOutput {
-    #[serde(rename = "continue", skip_serializing_if = "Option::is_none")]
-    pub continue_: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub suppress_output: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -463,35 +455,11 @@ pub struct HookOutput {
 #[serde(tag = "hookEventName")]
 pub enum AnyHookSpecificOutput {
     SessionStart(SessionStartSpecificOutput),
-    PreToolUse(PreToolUseSpecificOutput),
-    PostToolUse(PostToolUseSpecificOutput),
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStartSpecificOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_context: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub initial_user_message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub watch_paths: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PreToolUseSpecificOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub permission_decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub permission_decision_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_context: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PostToolUseSpecificOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_context: Option<String>,
 }
@@ -611,7 +579,6 @@ mod tests {
             hook_specific_output: Some(AnyHookSpecificOutput::SessionStart(
                 SessionStartSpecificOutput {
                     additional_context: Some("hello".into()),
-                    ..Default::default()
                 },
             )),
             ..Default::default()
@@ -620,9 +587,6 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
         assert_eq!(v["hookSpecificOutput"]["additionalContext"], "hello");
-        // None fields must not appear
-        assert!(v.get("continue").is_none());
-        assert!(v.get("decision").is_none());
     }
 
     #[test]
