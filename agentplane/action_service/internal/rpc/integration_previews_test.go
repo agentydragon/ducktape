@@ -203,18 +203,32 @@ func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
 	}
 }
 
-type calendarPreviewFunc func(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
+type calendarPreviewFuncs struct {
+	event   func(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
+	summary func(context.Context, string) *operator_action_servicepb.GoogleCalendarSummary
+}
 
-func (f calendarPreviewFunc) GoogleCalendarEventPreview(ctx context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
-	return f(ctx, calendarID, eventID)
+func (f calendarPreviewFuncs) GoogleCalendarEventPreview(ctx context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
+	return f.event(ctx, calendarID, eventID)
+}
+
+func (f calendarPreviewFuncs) GoogleCalendarSummary(ctx context.Context, calendarID string) *operator_action_servicepb.GoogleCalendarSummary {
+	return f.summary(ctx, calendarID)
 }
 
 func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) {
-	lookups := make(chan [2]string, 4)
-	previews := IntegrationPreviews{GoogleCalendar: calendarPreviewFunc(func(_ context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
-		lookups <- [2]string{calendarID, eventID}
-		return &operator_action_servicepb.GoogleCalendarEventPreview{EventId: eventID, Summary: "Facilities coordination"}
-	})}
+	eventLookups := make(chan [2]string, 4)
+	calendarLookups := make(chan string, 4)
+	previews := IntegrationPreviews{GoogleCalendar: calendarPreviewFuncs{
+		event: func(_ context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
+			eventLookups <- [2]string{calendarID, eventID}
+			return &operator_action_servicepb.GoogleCalendarEventPreview{EventId: eventID, Summary: "Facilities coordination"}
+		},
+		summary: func(_ context.Context, calendarID string) *operator_action_servicepb.GoogleCalendarSummary {
+			calendarLookups <- calendarID
+			return &operator_action_servicepb.GoogleCalendarSummary{CalendarId: calendarID, Summary: "Facilities calendar"}
+		},
+	}}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
 
@@ -237,7 +251,9 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 
 	code, body := s.get(t, "/v1/operator/action-requests/"+receipt.ID.String()+"/google-calendar-event-preview", s.operatorToken)
 	var response operator_action_servicepb.GetGoogleCalendarEventPreviewResponse
-	if code != http.StatusOK || protojson.Unmarshal(body, &response) != nil || response.GetEvent().GetSummary() != "Facilities coordination" {
+	if code != http.StatusOK || protojson.Unmarshal(body, &response) != nil ||
+		response.GetEvent().GetSummary() != "Facilities coordination" ||
+		response.GetCalendar().GetSummary() != "Facilities calendar" {
 		t.Fatalf("Calendar preview response %d %s", code, body)
 	}
 
@@ -248,7 +264,7 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 	}
 	for _, want := range [][2]string{{"facilities@example.test", "occurrence-1"}, {"primary", "series-2"}} {
 		select {
-		case got := <-lookups:
+		case got := <-eventLookups:
 			if got != want {
 				t.Errorf("looked up %q; want %q", got, want)
 			}
@@ -257,8 +273,30 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 		}
 	}
 
+	for _, tc := range []struct{ action, args, calendarID string }{
+		{"create_event", `{"calendar_id":"team@example.test","event_id":"unrelated"}`, "team@example.test"},
+		{"list_events", `{"calendar_id":"shifts@example.test","event_id":"unrelated"}`, "shifts@example.test"},
+		{"list_events", `{"calendar_id":"primary","event_id":"unrelated"}`, ""},
+	} {
+		recorded := submit(tc.action, tc.args)
+		got, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: recorded.ID.String()})
+		if err != nil || got.GetEvent() != nil || got.GetCalendar().GetCalendarId() != tc.calendarID {
+			t.Fatalf("%s preview = %v, %v", tc.action, got, err)
+		}
+	}
+	for _, want := range []string{"facilities@example.test", "team@example.test", "shifts@example.test"} {
+		select {
+		case got := <-calendarLookups:
+			if got != want {
+				t.Errorf("looked up calendar %q; want %q", got, want)
+			}
+		default:
+			t.Errorf("no calendar lookup for %q", want)
+		}
+	}
+
 	for _, invalid := range []store.ActionRequest{
-		submit("list_events", `{"calendar_id":"primary","event_id":"other-event"}`),
+		submit("unknown", `{"calendar_id":"unrelated@example.test","event_id":"other-event"}`),
 		submit("update_event", `{"calendar_id":null,"event_id":"other-event"}`),
 	} {
 		_, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: invalid.ID.String()})
@@ -268,12 +306,14 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 		t.Fatal(err)
 	}
 	afterDecision, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), request)
-	if err != nil || afterDecision.GetEvent() != nil {
+	if err != nil || afterDecision.GetEvent() != nil || afterDecision.GetCalendar() != nil {
 		t.Fatalf("preview after decision = %v, %v", afterDecision, err)
 	}
 	select {
-	case got := <-lookups:
-		t.Errorf("unexpected lookup %q", got)
+	case got := <-eventLookups:
+		t.Errorf("unexpected event lookup %q", got)
+	case got := <-calendarLookups:
+		t.Errorf("unexpected calendar lookup %q", got)
 	default:
 	}
 }

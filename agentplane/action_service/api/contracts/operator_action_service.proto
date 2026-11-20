@@ -61,8 +61,8 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/tana-node-summaries"};
   }
 
-  // Live event metadata for a pending Calendar request that names an event or series.
-  // The request supplies the calendar and event IDs. An unavailable event or backend is omitted.
+  // Live display metadata for a pending Calendar request. The saved arguments supply the
+  // calendar and optional event or series ID. Unavailable metadata is omitted.
   rpc GetGoogleCalendarEventPreview(GetGoogleCalendarEventPreviewRequest) returns (GetGoogleCalendarEventPreviewResponse) {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/google-calendar-event-preview"};
   }
@@ -186,6 +186,13 @@ message GetGoogleCalendarEventPreviewRequest {
 
 message GetGoogleCalendarEventPreviewResponse {
   GoogleCalendarEventPreview event = 1;
+  GoogleCalendarSummary calendar = 2;
+}
+
+message GoogleCalendarSummary {
+  // Exact calendar ID in the request. The "primary" alias is not resolved.
+  string calendar_id = 1;
+  string summary = 2;
 }
 
 message GoogleCalendarEventPreview {

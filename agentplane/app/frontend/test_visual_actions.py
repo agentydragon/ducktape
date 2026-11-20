@@ -79,6 +79,8 @@ EVENTS_YAML = """# The following events (YAML format) were found:
 SANDBOX = {"name": "review-sandbox", "template": "python", "phase": "Running", "conditions": []}
 
 CALENDAR_ID = "facilities@example.test"
+CALENDAR_NAME = "Facilities calendar"
+CALENDAR_URL = "https://calendar.google.com/calendar/r?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q"
 CALENDAR_START = {"date_time": "2026-11-23T09:00:00-08:00", "time_zone": "America/Los_Angeles"}
 CALENDAR_END = {"date_time": "2026-11-23T09:30:00-08:00", "time_zone": "America/Los_Angeles"}
 CALENDAR_SERIES = {
@@ -110,22 +112,25 @@ CALENDAR_OCCURRENCE = {
 CALENDAR_WINDOW = {"time_min": "2026-11-23T00:00:00-08:00", "time_max": "2026-12-01T00:00:00-08:00"}
 
 
-def calendar_preview(
+def calendar_preview(event: dict[str, object] | None = None) -> tuple[str, dict[str, object], str]:
+    payload: dict[str, object] = {"calendar": {"calendarId": CALENDAR_ID, "summary": CALENDAR_NAME}}
+    if event is not None:
+        payload["event"] = event
+    return ("google-calendar-event-preview", payload, CALENDAR_NAME)
+
+
+def calendar_event_preview(
     event_id: str, summary: str, scope: str, start: dict[str, str], end: dict[str, str]
 ) -> tuple[str, dict[str, object], str]:
-    return (
-        "google-calendar-event-preview",
+    return calendar_preview(
         {
-            "event": {
-                "eventId": event_id,
-                "summary": summary,
-                "htmlLink": f"https://calendar.google.com/calendar/event?eid={event_id}",
-                "start": start,
-                "end": end,
-                "scope": f"GOOGLE_CALENDAR_EVENT_SCOPE_{scope}",
-            }
-        },
-        summary,
+            "eventId": event_id,
+            "summary": summary,
+            "htmlLink": f"https://calendar.google.com/calendar/event?eid={event_id}",
+            "start": start,
+            "end": end,
+            "scope": f"GOOGLE_CALENDAR_EVENT_SCOPE_{scope}",
+        }
     )
 
 
@@ -2979,6 +2984,7 @@ EXAMPLES = (
         },
         CALENDAR_SERIES,
         "Facilities coordination",
+        live_preview=calendar_preview(),
     ),
     ActionExample(
         "google_calendar",
@@ -2993,7 +2999,7 @@ EXAMPLES = (
         },
         {**CALENDAR_SERIES, "summary": "Facilities coordination (rescheduled)", "location": None, "attendees": []},
         "Facilities coordination (rescheduled)",
-        live_preview=calendar_preview(
+        live_preview=calendar_event_preview(
             "facilities-series",
             "Facilities coordination",
             "SERIES",
@@ -3007,7 +3013,7 @@ EXAMPLES = (
         {"event_id": "facilities-series_20261130T170000Z", "calendar_id": CALENDAR_ID},
         None,
         "Deletion confirmed.",
-        live_preview=calendar_preview(
+        live_preview=calendar_event_preview(
             "facilities-series_20261130T170000Z",
             "Facilities coordination",
             "OCCURRENCE",
@@ -3021,7 +3027,7 @@ EXAMPLES = (
         {"event_id": "office-closure", "calendar_id": CALENDAR_ID},
         CALENDAR_ALL_DAY,
         "All day",
-        live_preview=calendar_preview(
+        live_preview=calendar_event_preview(
             "office-closure", "Office closure", "SINGLE_EVENT", {"date": "2026-11-26"}, {"date": "2026-11-28"}
         ),
     ),
@@ -3029,12 +3035,9 @@ EXAMPLES = (
         "google_calendar",
         "list_events",
         {"calendar_id": CALENDAR_ID, **CALENDAR_WINDOW, "query": "facilities"},
-        {
-            "events": [CALENDAR_SERIES, CALENDAR_ALL_DAY],
-            "summary": "Facilities calendar",
-            "next_page_token": "next-page",
-        },
+        {"events": [CALENDAR_SERIES, CALENDAR_ALL_DAY], "summary": CALENDAR_NAME, "next_page_token": "next-page"},
         "More events are available.",
+        live_preview=calendar_preview(),
     ),
     ActionExample(
         "google_calendar",
@@ -3053,7 +3056,7 @@ EXAMPLES = (
             ]
         },
         "Cancelled",
-        live_preview=calendar_preview(
+        live_preview=calendar_event_preview(
             "facilities-series",
             "Facilities coordination",
             "SERIES",
@@ -3133,7 +3136,11 @@ async def _expect_live_preview(surface: Locator, example: ActionExample) -> None
     if "workspace" in payload and "nodes" not in payload:
         await expect(surface.get_by_text(label).first).to_be_visible()
     else:
-        await expect(surface.get_by_role("link", name=label, exact=True).first).to_be_visible()
+        link = surface.get_by_role("link", name=label, exact=True).first
+        await expect(link).to_be_visible()
+        if example.group == "google_calendar":
+            await expect(link).to_have_attribute("href", CALENDAR_URL)
+            await expect(surface.get_by_text(CALENDAR_ID, exact=True)).to_have_count(0)
 
 
 @DESKTOP_AND_MOBILE
@@ -3271,6 +3278,10 @@ async def test_action_presentations(
         await expect(receipt.get_by_text("fan.greenhouse", exact=True)).to_have_count(0)
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
+    if example.key == "google_calendar.list_events":
+        await expect(receipt.get_by_role("link", name=CALENDAR_NAME, exact=True)).to_have_attribute(
+            "href", CALENDAR_URL
+        )
     if example.key == "tana.get_or_create_calendar_node":
         node_link = receipt.get_by_role("link", name=example.result_text)
         await expect(node_link).to_have_attribute("href", "https://app.tana.inc?nodeid=calendar-week-42")
@@ -3322,6 +3333,7 @@ async def test_action_presentations(
         await raw_switch.press("Space")
         await expect(raw_switch).to_be_checked()
         await expect(receipt).to_contain_text('"event_id": "facilities-series_20261130T170000Z"')
+        await expect(receipt).to_contain_text(f'"calendar_id": "{CALENDAR_ID}"')
         await expect(receipt).to_contain_text('"content": []')
         await expect(receipt).to_contain_text('"result": null')
 

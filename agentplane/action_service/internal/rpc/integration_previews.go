@@ -27,6 +27,7 @@ type gmailPreviewProvider interface {
 type IntegrationPreviews struct {
 	GoogleCalendar interface {
 		GoogleCalendarEventPreview(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
+		GoogleCalendarSummary(context.Context, string) *operator_action_servicepb.GoogleCalendarSummary
 	}
 	Gmail gmailPreviewProvider
 	Tana  interface {
@@ -293,11 +294,14 @@ func (s *OperatorService) GetGoogleCalendarEventPreview(ctx context.Context, inp
 		return nil, invalidRequest("request has no matching Calendar preview")
 	}
 	var eventID string
+	hasEvent := true
 	switch request.Action.Name {
 	case "get_event", "update_event", "delete_event":
 		eventID = args.EventID
 	case "list_event_instances":
 		eventID = args.RecurringEventID
+	case "create_event", "list_events":
+		hasEvent = false
 	default:
 		return nil, invalidRequest("request has no matching Calendar preview")
 	}
@@ -310,12 +314,27 @@ func (s *OperatorService) GetGoogleCalendarEventPreview(ctx context.Context, inp
 		calendarID = *explicit
 	}
 	response := &operator_action_servicepb.GetGoogleCalendarEventPreviewResponse{}
-	if !previewID.MatchString(eventID) || strings.TrimSpace(calendarID) == "" || len(calendarID) > 1024 {
+	if (hasEvent && !previewID.MatchString(eventID)) || strings.TrimSpace(calendarID) == "" || len(calendarID) > 1024 {
 		return nil, invalidRequest("request has no valid calendar or event ID")
 	}
-	if request.State == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING && s.previews.GoogleCalendar != nil {
-		response.Event = s.previews.GoogleCalendar.GoogleCalendarEventPreview(ctx, calendarID, eventID)
+	if request.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || s.previews.GoogleCalendar == nil {
+		return response, nil
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var lookups sync.WaitGroup
+	if calendarID != "primary" {
+		lookups.Go(func() {
+			response.Calendar = s.previews.GoogleCalendar.GoogleCalendarSummary(ctx, calendarID)
+		})
+	}
+	if hasEvent {
+		lookups.Go(func() {
+			response.Event = s.previews.GoogleCalendar.GoogleCalendarEventPreview(ctx, calendarID, eventID)
+		})
+	}
+	lookups.Wait()
 	return response, nil
 }
 

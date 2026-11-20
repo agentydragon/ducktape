@@ -11,6 +11,7 @@ import { renderDetailsArguments, renderDetailsResult } from "./index";
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
 const target = { event_id: "occurrence-1", calendar_id: "facilities@example.test" };
 const link = "https://calendar.google.com/calendar/event?eid=occurrence-1";
+const calendarLink = "https://calendar.google.com/calendar/r?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q";
 
 function success(value: unknown) {
   const envelope = parseCallToolResult({
@@ -52,21 +53,61 @@ describe("Calendar Action review", () => {
               htmlLink: link,
               scope: "GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE",
             },
+            calendar: { calendarId: target.calendar_id, summary: "Facilities calendar" },
           }
         : undefined
     );
     const action = identity("delete_event");
     const review = await mount(renderDetailsArguments(action, target, "request-1", true));
-    await vi.waitFor(() => expect(review.querySelector("a")?.href).toBe(link));
+    await vi.waitFor(() =>
+      expect([...review.querySelectorAll("a")].map((anchor) => anchor.href)).toEqual([link, calendarLink])
+    );
     expect(review.textContent).toContain("Only this occurrence");
     expect(review.textContent).not.toContain(target.event_id);
+    expect(review.textContent).not.toContain(target.calendar_id);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.query.size).toBe(0);
 
     const receipt = await mount(renderDetailsArguments(action, target, "request-1"));
     expect(receipt.textContent).toContain(target.event_id);
+    expect(receipt.textContent).toContain(target.calendar_id);
     expect(receipt.textContent).not.toContain("Facilities coordination");
     expect(sent).toHaveLength(1);
+  });
+
+  it.each([
+    ["create_event", { summary: "Office closure", start: { date: "2026-11-26" }, end: { date: "2026-11-27" } }],
+    ["list_events", { query: "Office closure" }],
+  ])("resolves the explicit pending calendar without an event ID for %s", async (name, fields) => {
+    const args = { ...fields, calendar_id: target.calendar_id };
+    const sent = answerApi(({ path }) =>
+      path.endsWith("/request-1/google-calendar-event-preview")
+        ? { calendar: { calendarId: target.calendar_id, summary: "Facilities calendar" } }
+        : undefined
+    );
+    const review = await mount(renderDetailsArguments(identity(name), args, "request-1", true));
+    await vi.waitFor(() => expect(review.querySelector("a")?.href).toBe(calendarLink));
+    expect(review.textContent).toContain("Calendar · Facilities calendar");
+    expect(review.textContent).not.toContain(target.calendar_id);
+
+    const receipt = await mount(renderDetailsArguments(identity(name), args, "request-1"));
+    expect(receipt.textContent).toContain(target.calendar_id);
+    expect(receipt.querySelector("a")).toBeNull();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("keeps the primary alias and does not use a summary for another calendar", async () => {
+    const sent = answerApi(() => ({ calendar: { calendarId: "other@example.test", summary: "Unrelated calendar" } }));
+    const action = identity("list_events");
+    const primary = await mount(renderDetailsArguments(action, {}, "primary-request", true));
+    expect(primary.textContent).toContain("Primary calendar");
+    expect(primary.querySelector("a")).toBeNull();
+
+    const review = await mount(renderDetailsArguments(action, { calendar_id: target.calendar_id }, "request-1", true));
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(review.textContent).toContain(target.calendar_id);
+    expect(review.textContent).not.toContain("Unrelated calendar");
+    expect(review.querySelector("a")).toBeNull();
   });
 
   it("retains the IDs and unresolved scope when lookup fails", async () => {
@@ -87,6 +128,24 @@ describe("Calendar Action review", () => {
 });
 
 describe("Calendar Action results", () => {
+  it("links a recorded calendar title using the exact non-primary ID in the saved list arguments", async () => {
+    const action = identity("list_events");
+    const result = success({ summary: "Recorded Facilities calendar", events: [] });
+    const sent = answerApi(() => {
+      throw new Error("Calendar receipt should not look up data");
+    });
+    const receipt = await mount(
+      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: target.calendar_id } })
+    );
+    expect(receipt.querySelector("a")?.textContent).toBe("Recorded Facilities calendar");
+    expect(receipt.querySelector("a")?.href).toBe(calendarLink);
+
+    const primary = await mount(renderDetailsResult(action, result, { arguments: { calendar_id: "primary" } }));
+    expect(primary.textContent).toContain("Recorded Facilities calendar");
+    expect(primary.querySelector("a")).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
   it("renders linked all-day events and cancelled occurrences without leaking page tokens", async () => {
     const agenda = await mount(
       renderDetailsResult(

@@ -107,11 +107,13 @@ request. The service uses fixed read tools and tries up to eight distinct IDs wi
 two-second lookup budget. It omits unavailable results. These reads create no Action request,
 Decision or Execution. Provider metadata can change later. The original IDs stay on the receipt.
 
-`GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar event get, update, delete,
-or list-instances request. It sends at most one `get_event` to the configured Calendar MCP group
-within the same two-second budget. The calendar and event or series IDs come from the stored
-arguments. The response projects only identity, title, provider link, time and scope. An unavailable
-preview leaves the IDs visible. Receipts draw their event details from the recorded result.
+`GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar Action. For an explicit
+calendar ID it requests `list_events` with a one-event limit and returns only the page's calendar
+title and requested ID. A get, update, delete or list-instances request also looks up its event or
+series with one `get_event`, projecting identity, title, provider link, time and scope. Both reads
+use the execution credential and share a two-second budget. IDs come from the stored arguments.
+An unavailable preview leaves the recorded ID visible. Receipts use recorded data, including the
+calendar title that `list_events` returns.
 
 `GetGrocyReferenceSummaries` resolves exact numeric references from pending Grocy SF requests.
 It reads only the types and fields defined for each supported tool, using `entities_get` and

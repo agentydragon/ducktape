@@ -186,6 +186,25 @@ func (e *Executor) GoogleCalendarEventPreview(ctx context.Context, calendarID, e
 	return results[0]
 }
 
+func (e *Executor) GoogleCalendarSummary(ctx context.Context, calendarID string) *operator_action_servicepb.GoogleCalendarSummary {
+	// events.list includes the calendar title under the execution credential's calendar.events scope.
+	results := readSummaries(ctx, e, []string{calendarID}, "google_calendar", "list_events", func(id string) map[string]any {
+		return map[string]any{"calendar_id": id, "max_results": 1}
+	}, func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GoogleCalendarSummary {
+		var page struct {
+			Summary string `json:"summary"`
+		}
+		if !parsePreviewObject(result, &page) || strings.TrimSpace(page.Summary) == "" {
+			return nil
+		}
+		return &operator_action_servicepb.GoogleCalendarSummary{CalendarId: id, Summary: page.Summary}
+	})
+	if len(results) == 0 {
+		return nil
+	}
+	return results[0]
+}
+
 type calendarEventTime struct {
 	Date     string `json:"date"`
 	DateTime string `json:"date_time"`

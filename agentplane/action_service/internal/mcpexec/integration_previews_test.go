@@ -118,6 +118,51 @@ func TestCalendarEventPreviewProjectsOccurrenceMetadata(t *testing.T) {
 	}
 }
 
+func TestGoogleCalendarSummaryReadsOnePageFromTheExactCalendar(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "calendar-preview-test"}, nil)
+	server.AddTool(&mcp.Tool{Name: "list_events", InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {"calendar_id": {"type": "string"}, "max_results": {"const": 1}},
+		"required": ["calendar_id", "max_results"],
+		"additionalProperties": false
+	}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			CalendarID string `json:"calendar_id"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		var result string
+		switch args.CalendarID {
+		case "facilities@example.test":
+			result = `{"summary":"Facilities calendar","events":[{"event_id":"evt1","summary":"Private event"}],"next_page_token":"unused"}`
+		case "unnamed@example.test":
+			result = `{"summary":null,"events":[]}`
+		default:
+			return &mcp.CallToolResult{IsError: true}, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil
+	})
+	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	defer upstream.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
+	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connected.Close()
+	executor := &Executor{key: "google_calendar", available: true, current: &session{client: connected}}
+	got := executor.GoogleCalendarSummary(t.Context(), "facilities@example.test")
+	if got.GetCalendarId() != "facilities@example.test" || got.GetSummary() != "Facilities calendar" {
+		t.Errorf("calendar summary = %v", got)
+	}
+	for _, id := range []string{"unnamed@example.test", "missing@example.test"} {
+		if got := executor.GoogleCalendarSummary(t.Context(), id); got != nil {
+			t.Errorf("calendar %q should have no summary, got %v", id, got)
+		}
+	}
+}
+
 func TestGrocySummariesMatchExactTypedReferences(t *testing.T) {
 	result := &mcp.CallToolResult{StructuredContent: map[string]any{
 		"result": []map[string]any{{"kind": "ok", "entity_type": "locations", "object_id": 7, "data": map[string]any{"name": "Pantry", "description": "internal"}}},
