@@ -176,8 +176,6 @@ class Settings(BaseModel):
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     history_service_token_file: Path | None = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
     log_levels: LogLevels = Field(default_factory=dict)
     listen_address: str = Field(
