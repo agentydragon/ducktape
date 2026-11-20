@@ -50,7 +50,7 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-thread-summaries"};
   }
 
-  // Live names of nodes named by a recorded Tana move_node request.
+  // Live names of nodes or a workspace named by a supported recorded Tana request.
   // An unavailable node or backend is omitted. The receipt's arguments remain authoritative.
   rpc GetTanaNodeSummaries(GetTanaNodeSummariesRequest) returns (GetTanaNodeSummariesResponse) {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/tana-node-summaries"};
@@ -111,10 +111,16 @@ message GetTanaNodeSummariesRequest {
 
 message GetTanaNodeSummariesResponse {
   repeated TanaNodeSummary nodes = 1;
+  TanaWorkspaceSummary workspace = 2;
 }
 
 message TanaNodeSummary {
   string node_id = 1;
+  string name = 2;
+}
+
+message TanaWorkspaceSummary {
+  string workspace_id = 1;
   string name = 2;
 }
 

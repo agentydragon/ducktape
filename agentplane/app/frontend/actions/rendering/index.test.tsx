@@ -168,7 +168,7 @@ describe("Action presentation slots", () => {
         date: "2026-10-12",
       })
     );
-    expect(calendar.textContent).toContain("week calendar node");
+    expect(calendar.textContent).toContain("week containing");
     expect(calendar.textContent).toContain("2026-10-12");
     expect(calendar.textContent).toContain("workspace-123");
 
@@ -351,7 +351,7 @@ describe("Action presentation slots", () => {
     expect(systemInfoLabel.textContent).toContain("Show Grocy system information");
   });
 
-  it("renders Tana calendar arguments from submitted data without resolving the workspace", async () => {
+  it("falls back to the recorded Tana workspace ID when a name is unavailable", async () => {
     const action = identity("tana", "get_or_create_calendar_node");
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
     const collapsed = await mount(renderPaneCollapsed(action, args));
@@ -438,6 +438,46 @@ describe("Action presentation slots", () => {
     expect(details.textContent).toContain(
       "Move draft from inbox after checklist in project, keeping the source reference."
     );
+  });
+
+  it("renders confirmed Tana move links from recorded text without printing IDs twice", async () => {
+    const action = identity("tana", "move_node");
+    const text =
+      'Moved "Draft notes" from "Inbox" to "Website project" (start)\n\n' +
+      "Node ID: draft-123\nPrevious parent: Inbox (inbox-456)\nNew parent: Website project (project-789)\nPosition: start";
+    const content = [{ type: "text", text }] as const;
+    const result = await drawDetailsResult(action, { content: [...content], isError: false });
+    expect(result.textContent).toContain("Moved Draft notes from Inbox to Website project (start).");
+    expect(result.textContent).not.toContain("project-789");
+    expect(result.querySelector('a[href="https://app.tana.inc?nodeid=draft-123"]')?.textContent).toBe("Draft notes");
+    expect(result.querySelector('a[href="https://app.tana.inc?nodeid=inbox-456"]')?.textContent).toBe("Inbox");
+    expect(result.querySelector('a[href="https://app.tana.inc?nodeid=project-789"]')?.textContent).toBe(
+      "Website project"
+    );
+
+    expect(
+      renderDetailsResult(action, { content: [...content, { type: "text", text: "Extra output" }], isError: false })
+    ).toBeUndefined();
+    expect(renderDetailsResult(action, { content: [...content], isError: true })).toBeUndefined();
+    expect(
+      renderDetailsResult(action, { content: [{ type: "text", text: "New receipt format" }], isError: false })
+    ).toBeUndefined();
+  });
+
+  it("links the returned Tana calendar node without claiming it was created", async () => {
+    const action = identity("tana", "get_or_create_calendar_node");
+    const result: CallToolResult = {
+      content: [{ type: "text", text: '{"nodeId":"calendar-week-42"}' }],
+      isError: false,
+    };
+    const receipt = await mount(
+      renderDetailsResult(action, result, {
+        requestId: "70000000-0000-4000-8000-000000000007",
+        arguments: { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" },
+      })
+    );
+    expect(receipt.querySelector("a")?.textContent).toBe("Calendar node for week containing 2026-10-12");
+    expect(receipt.querySelector("a")?.getAttribute("href")).toBe("https://app.tana.inc?nodeid=calendar-week-42");
   });
 
   it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {

@@ -17,6 +17,7 @@ type IntegrationPreviews struct {
 	}
 	Tana interface {
 		TanaNodeSummaries(context.Context, []string) []*operator_action_servicepb.TanaNodeSummary
+		TanaWorkspaceSummary(context.Context, string) *operator_action_servicepb.TanaWorkspaceSummary
 	}
 }
 
@@ -63,31 +64,42 @@ func (s *OperatorService) GetGmailThreadSummaries(ctx context.Context, request *
 }
 
 func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *operator_action_servicepb.GetTanaNodeSummariesRequest) (*operator_action_servicepb.GetTanaNodeSummariesResponse, error) {
-	var args struct {
-		NodeID          string `json:"nodeId"`
-		TargetNodeID    string `json:"targetNodeId"`
-		SourceParentID  string `json:"sourceParentId"`
-		ReferenceNodeID string `json:"referenceNodeId"`
-	}
-	if err := s.previewArguments(ctx, request.GetRequestId(), store.ActionIdentity{Group: "tana", Name: "move_node"}, &args); err != nil {
+	recorded, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
 		return nil, err
 	}
+	if recorded.Action.Group != "tana" {
+		return nil, invalidRequest("request has no matching integration preview")
+	}
 	response := &operator_action_servicepb.GetTanaNodeSummariesResponse{}
-	if s.previews.Tana != nil {
-		response.Nodes = s.previews.Tana.TanaNodeSummaries(ctx, previewIDs([]string{args.NodeID, args.TargetNodeID, args.SourceParentID, args.ReferenceNodeID}))
+	switch recorded.Action.Name {
+	case "move_node":
+		var args struct {
+			NodeID          string `json:"nodeId"`
+			TargetNodeID    string `json:"targetNodeId"`
+			SourceParentID  string `json:"sourceParentId"`
+			ReferenceNodeID string `json:"referenceNodeId"`
+		}
+		if json.Unmarshal(recorded.Arguments, &args) != nil {
+			return nil, invalidRequest("request has invalid integration preview arguments")
+		}
+		if s.previews.Tana != nil {
+			response.Nodes = s.previews.Tana.TanaNodeSummaries(ctx, previewIDs([]string{args.NodeID, args.TargetNodeID, args.SourceParentID, args.ReferenceNodeID}))
+		}
+	case "get_or_create_calendar_node":
+		var args struct {
+			WorkspaceID string `json:"workspaceId"`
+		}
+		if json.Unmarshal(recorded.Arguments, &args) != nil {
+			return nil, invalidRequest("request has invalid integration preview arguments")
+		}
+		if s.previews.Tana != nil && previewID.MatchString(args.WorkspaceID) {
+			response.Workspace = s.previews.Tana.TanaWorkspaceSummary(ctx, args.WorkspaceID)
+		}
+	default:
+		return nil, invalidRequest("request has no matching integration preview")
 	}
 	return response, nil
-}
-
-func (s *OperatorService) previewArguments(ctx context.Context, requestID string, action store.ActionIdentity, args any) error {
-	request, err := s.previewRequest(ctx, requestID)
-	if err != nil {
-		return err
-	}
-	if request.Action != action || json.Unmarshal(request.Arguments, args) != nil {
-		return invalidRequest("request has no matching integration preview")
-	}
-	return nil
 }
 
 func (s *OperatorService) previewRequest(ctx context.Context, requestID string) (store.ActionRequest, error) {

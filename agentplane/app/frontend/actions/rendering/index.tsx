@@ -53,9 +53,13 @@ export function renderActionLabel(action: ActionIdentity, args: unknown): ReactN
 }
 
 /** An Action's collapsed-pane summary; `undefined` uses the host fallback and `null` suppresses it. */
-export function renderPaneCollapsed(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderPaneCollapsed(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const preview = presentation(action)?.pane?.collapsed;
-  return preview === undefined || preview === null ? preview : renderPreview(preview, args);
+  return preview === undefined || preview === null ? preview : renderPreview(preview, args, requestId);
 }
 
 /** An Action's opened-pane view; `undefined` uses the generic argument view and `null` suppresses it. */

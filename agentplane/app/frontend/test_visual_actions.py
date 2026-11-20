@@ -310,16 +310,25 @@ EXAMPLES = (
         "tana",
         "get_or_create_calendar_node",
         {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-        {"nodeId": "calendar-week-42"},
-        "calendar-week-42",
+        '{"nodeId":"calendar-week-42"}',
+        "Calendar node for week containing 2026-10-12",
         compact_card_expands=False,
+        live_preview=(
+            "tana-node-summaries",
+            {"workspace": {"workspaceId": "workspace-123", "name": "Product workspace"}},
+            "Product workspace",
+        ),
     ),
     ActionExample(
         "tana",
         "move_node",
         {"nodeId": "draft", "targetNodeId": "website", "position": "start", "keepSourceReference": True},
-        {"moved": True, "nodeId": "draft"},
-        "moved",
+        'Moved "Draft notes" from "Planning inbox" to "Website project" (start)\n\n'
+        "Node ID: draft\n"
+        "Previous parent: Planning inbox (inbox)\n"
+        "New parent: Website project (website)\n"
+        "Position: start",
+        "Moved Draft notes from Planning inbox to Website project (start).",
         live_preview=(
             "tana-node-summaries",
             {"nodes": [{"nodeId": "draft", "name": "Draft notes"}, {"nodeId": "website", "name": "Website project"}]},
@@ -381,8 +390,13 @@ EXAMPLES = (
 
 
 async def _expect_live_preview(surface: Locator, example: ActionExample) -> None:
-    if example.live_preview is not None:
-        await expect(surface.get_by_role("link", name=example.live_preview[2], exact=True)).to_be_visible()
+    if example.live_preview is None:
+        return
+    _, payload, label = example.live_preview
+    if "workspace" in payload and "nodes" not in payload:
+        await expect(surface.get_by_text(label).first).to_be_visible()
+    else:
+        await expect(surface.get_by_role("link", name=label, exact=True).first).to_be_visible()
 
 
 @DESKTOP_AND_MOBILE
@@ -477,6 +491,16 @@ async def test_action_presentations(
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
     await _expect_live_preview(receipt, example)
+    if example.key == "tana.get_or_create_calendar_node":
+        node_link = receipt.get_by_role("link", name=example.result_text)
+        await expect(node_link).to_have_attribute("href", "https://app.tana.inc?nodeid=calendar-week-42")
+        await expect(receipt.get_by_text("calendar-week-42", exact=True)).to_have_count(0)
+    elif example.key == "tana.move_node":
+        result = receipt.get_by_test_id("action-execution-outcome")
+        node_link = result.get_by_role("link", name="Planning inbox")
+        await expect(node_link).to_have_attribute("href", "https://app.tana.inc?nodeid=inbox")
+        await expect(result.get_by_text("website", exact=True)).to_have_count(0)
+
     await expect(receipt.locator(".ui-code-block-placeholder")).to_have_count(0)
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
