@@ -620,13 +620,7 @@ in
       { package = pkgs.gnomeExtensions.gsconnect; }
       { package = pkgsUnstable.gnomeExtensions.just-perfection; }
       { package = pkgs.gnomeExtensions.user-themes; }
-    ]
-    # display-scale-switcher was removed from nixpkgs after 25.11 (absent in
-    # 26.05 and unstable). Keep it only where it still exists (25.11 hosts); it
-    # drops out on 26.05. TODO(nixpkgs-bump): revisit at the wholesale bump.
-    ++ lib.optional (pkgs.gnomeExtensions ? display-scale-switcher) {
-      package = pkgs.gnomeExtensions.display-scale-switcher;
-    };
+    ];
   };
 
   home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" { };
