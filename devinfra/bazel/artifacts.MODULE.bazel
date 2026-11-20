@@ -640,13 +640,6 @@ http_file(
 
 # Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/cdk8s/kyverno/app.py.
 http_file(
-    name = "kyverno_clusterpolicy_crd",
-    downloaded_file_path = "kyverno.io_clusterpolicies.yaml",
-    sha256 = "8b567653a33c7db9843ec2d2c2f4845625bed6d4b005dbb5485e6646b9376703",
-    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_clusterpolicies.yaml"],
-)
-
-http_file(
     name = "kyverno_mutatingpolicy_crd",
     downloaded_file_path = "policies.kyverno.io_mutatingpolicies.yaml",
     sha256 = "7a71c76ed2ae76bedfa1e285fa919a2e8bb0bc7ea7a2122bebc6d9c183659688",

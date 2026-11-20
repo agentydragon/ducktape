@@ -85,14 +85,14 @@ Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions
 `context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`).
 Moved: `require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`,
 the janitor, and `agentplane-staging-launcher-relay` (`ValidatingPolicy` plus a `MutatingPolicy`, both
-with `resource.Get` variables). Left: downstream `CleanupPolicy` users (props reaper, gaffer-private Job
-reaper), and dropping the unused `ClusterPolicy` CRD pin and `providers/kyverno/cluster_policy.py`.
+with `resource.Get` variables), and the props finished-pod reaper (`NamespacedDeletingPolicy`). Left:
+gaffer-private's thrive-scraper Job reaper (agentydragon/gaffer-private#1467), then the chart bump below.
 
 Offline `kyverno apply` evaluates `resource.Get` only for kinds it can map (core kinds with
 `--context-file`); for KubeVirt and Agentplane kinds the tests substitute `json.unmarshal`
 variables, so the live lookups run only in the cluster.
 
-Done: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
+Done when: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
 CRD pins in `devinfra/bazel/artifacts.MODULE.bazel` and the `kyverno` CLI pin match 1.20; the
 Renovate hold is removed.
 
