@@ -79,20 +79,6 @@ _RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
 _RECORD_PORT = 18080
 _CPU_REQUEST = "50m"
 
-# Reserve the sampled working-set peaks while keeping the larger browser workloads on
-# recommendations. Recorder and other init-container resources are outside these policies.
-_PROVIDER_VPA_POLICIES = {
-    "anthropic": ContainerPolicy.memory_requests_only(
-        "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
-    ),
-    "blueshield": ContainerPolicy.memory_requests_only(
-        "provider", cpu_request=_CPU_REQUEST, memory_floor="416Mi", memory_limit="512Mi"
-    ),
-    "quest-scheduler": ContainerPolicy.memory_requests_only(
-        "provider", cpu_request=_CPU_REQUEST, memory_floor="576Mi", memory_limit="704Mi"
-    ),
-}
-
 
 def _provider_name(instance: str) -> str:
     return f"platform-sessions-{instance}"
@@ -449,6 +435,24 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
+    # Reserve the sampled working-set peaks in the providers that fit at their ceilings.
+    # Recorder and other init-container resources are outside these policies.
+    vpa_policy: ContainerPolicy | None
+    match instance:
+        case "anthropic":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
+            )
+        case "blueshield":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="416Mi", memory_limit="512Mi"
+            )
+        case "quest-scheduler":
+            vpa_policy = ContainerPolicy.memory_requests_only(
+                "provider", cpu_request=_CPU_REQUEST, memory_floor="576Mi", memory_limit="704Mi"
+            )
+        case _:
+            vpa_policy = None
     _deployment(
         chart,
         instance,
@@ -539,7 +543,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         selector_name=name,
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         init_containers=[*recorder_init, *recorder_sidecars],
-        vpa_policy=_PROVIDER_VPA_POLICIES.get(instance),
+        vpa_policy=vpa_policy,
     )
     _service(
         chart,
