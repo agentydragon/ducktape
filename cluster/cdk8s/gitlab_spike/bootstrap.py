@@ -32,10 +32,24 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/bootstrap"
 
 def namespace_chart(app: App) -> Chart:
     chart = Chart(app, "gitlab-spike-namespace", disable_resource_name_hashes=True)
-    for name in (NAMESPACE, "gitlab-spike-ci", "gitlab-spike-demo"):
+    for name in (NAMESPACE, "gitlab-spike-ci"):
         namespaces.namespace(
             chart, name, name=name, vpa=Vpa.RECOMMEND, labels={"pod-security.kubernetes.io/enforce": "baseline"}
         )
+    namespaces.namespace(
+        chart,
+        "gitlab-spike-demo",
+        name="gitlab-spike-demo",
+        vpa=Vpa.AUTO,
+        labels={"pod-security.kubernetes.io/enforce": "baseline"},
+        annotations={
+            namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
+                '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+            ),
+            # Let VPA update the disposable single-replica demo without waiting for another rollout.
+            "goldilocks.fairwinds.com/vpa-min-replicas": "1",
+        },
+    )
     for name, key in (("gitlab-root-password", "password"), ("gitlab-bootstrap-token", "token")):
         mint_bearer_secret(chart, name, name=name, namespace=NAMESPACE, key=key)
     bootstrap_script = (

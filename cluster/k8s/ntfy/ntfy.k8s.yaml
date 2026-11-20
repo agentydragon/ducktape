@@ -1,9 +1,12 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-min-replicas: "1"
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
     app.kubernetes.io/name: ntfy
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
   name: ntfy
 spec: {}
 ---
