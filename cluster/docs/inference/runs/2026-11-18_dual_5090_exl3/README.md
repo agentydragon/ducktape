@@ -171,3 +171,26 @@ The Central sampler attempts never reached its 196,608-token compaction
 threshold and neither exhausted its output budget. The captured streams
 show the parsed finish reasons and tool deltas. They lack the raw last
 sampled token and the generator's internal stop condition.
+
+### Direct tool-stream replays
+
+On November 20 at 08:47–08:49 UTC, replayed both Central sampler requests
+directly against the loaded stock checkpoint. The replays used the recorded
+messages, tool schema and low effort, the native TabbyAPI model ID, and a
+1,536-token output cap. None of the returned calls were executed.
+
+| Replay             | Input tokens | Output tokens | Engine termination | Stream finish | Tool arguments      |
+| ------------------ | -----------: | ------------: | ------------------ | ------------- | ------------------- |
+| First turn         |        8,951 |         1,536 | Output cap (log)   | `tool_calls`  | Unterminated string |
+| Continue           |        8,957 |         1,008 | Unavailable        | `tool_calls`  | Valid JSON object   |
+| Continue, no usage |        8,957 |         1,445 | `stop_token`       | `tool_calls`  | Unterminated string |
+
+The direct replays reproduce the incomplete-call behavior without the
+LiteLLM bridge or Central sampler. Both incomplete runs reached `[DONE]`
+after TabbyAPI's end-of-stream parser logged a mismatch. The usage chunk
+serializer carries the finish reason but omits `eos_reason`. A GPU-free
+reproduction fed synthetic open and closed tool blocks into the pinned
+parser and serializer, with usage enabled and disabled. All four incomplete
+cases reported `tool_calls`, and both complete controls returned valid JSON.
+The stop reason of the original prose-only response is still unknown.
+[Ducktape issue and reproduction](https://github.com/agentydragon/ducktape/issues/18107).
