@@ -235,7 +235,24 @@ function editChanges(
   ];
 }
 
-function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }): JSX.Element {
+const editProductResult = z.array(
+  z.union([z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
+);
+
+function recordedRename(
+  item: z.infer<typeof editProduct> | undefined,
+  row: z.infer<typeof editProductResult>[number] | undefined
+): string | undefined {
+  return row?.kind === "ok" && item?.product === row.object_id && item.name?.trim() ? item.name : undefined;
+}
+
+function ProductChanges({
+  args,
+  result,
+}: {
+  args: z.infer<typeof editProductArguments>;
+  result?: z.infer<typeof editProductResult>;
+}): JSX.Element {
   const refs = useGrocyReferences();
   return (
     <Stack gap="sm">
@@ -243,12 +260,13 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
       {args.items.map((item, index) => {
         const summary = typeof item.product === "number" ? refs?.get(`product_edits/${item.product}`) : undefined;
         const changes = editChanges(item, summary);
+        const title = summary?.name || recordedRename(item, result?.[index]);
         return (
           <Stack gap={2} key={index}>
             <Line>
               <strong>
-                {typeof item.product === "number" && summary?.name
-                  ? objectLink("product", item.product, summary.name)
+                {typeof item.product === "number" && title
+                  ? objectLink("product", item.product, title)
                   : displayRef(item.product, "products")}
               </strong>
             </Line>
@@ -265,10 +283,6 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
     </Stack>
   );
 }
-
-const editProductResult = z.array(
-  z.union([z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
-);
 
 function editedProductsLabel(rows: z.infer<typeof editProductResult>): string {
   const count = rows.filter((row) => row.kind === "ok").length;
@@ -291,13 +305,14 @@ const editProductCall = defineCallPreview(editProductArguments, editProductResul
   const sameItems = result.length === args.items.length;
   return (
     <Stack gap="sm">
-      <ProductChanges args={args} />
+      <ProductChanges args={args} result={sameItems ? result : undefined} />
       <Stack gap={4}>
         <Line>
           <strong>{editedProductsLabel(result)}</strong>
         </Line>
         {result.map((row, index) => {
           const item = sameItems ? args.items[index] : undefined;
+          if (recordedRename(item, row)) return null;
           const name = typeof item?.product === "string" ? item.product : undefined;
           return (
             <Line key={index}>

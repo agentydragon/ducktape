@@ -3308,6 +3308,16 @@ async def test_action_presentations(
     if gmail_labeled_read:
         await expect(receipt).to_contain_text("Inbox, Deployments/Reviewed, Label_99")
         await expect(receipt).not_to_contain_text("Label_19")
+    if example.key == "grocy_sf.products_edit":
+        await expect(receipt.get_by_role("link", name="Rolled oats", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/product/2"
+        )
+        await expect(receipt.get_by_text("Product #2", exact=True)).to_have_count(0)
+    elif example.key == "grocy_sf.shopping_list_item_edit":
+        await expect(receipt.get_by_role("link", name="Kefir", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/shoppinglistitem/52"
+        )
+        await expect(receipt.get_by_text("Shopping item #52", exact=True)).to_have_count(0)
     if example.key == "home_assistant.ha_get_state":
         await expect(receipt.get_by_role("link", name="Greenhouse temperature", exact=True)).to_be_visible()
         await expect(receipt.get_by_text("sensor.greenhouse_temperature", exact=True)).to_have_count(0)
