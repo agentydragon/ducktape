@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -423,11 +422,7 @@ func (s admissionContextHealth) Check(ctx context.Context, _ *healthpb.HealthChe
 // directAdmissionContext captures a context from an RPC held behind the real shared auth middleware.
 func directAdmissionContext(t *testing.T) (context.Context, storage.Identity, storage.Sandbox) {
 	t.Helper()
-	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "follow-lease-"+uuid.NewString()[:8], "test-history-policies")
-	resolver, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "follow-lease-"+uuid.NewString()[:8], testPolicyNamespace)
 	ca := transporttesting.NewCA(t)
 	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
 	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
@@ -440,7 +435,7 @@ func directAdmissionContext(t *testing.T) (context.Context, storage.Identity, st
 	}
 	service := admissionContextHealth{captured: make(chan context.Context, 1), release: make(chan struct{})}
 	server := grpc.NewServer(append(auth.Methods{
-		healthpb.Health_Check_FullMethodName: auth.AnySubject(resolver),
+		healthpb.Health_Check_FullMethodName: auth.AnySubject(newSVIDResolver(t)),
 	}.ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	healthpb.RegisterHealthServer(server, service)
 	go func() { _ = server.Serve(listener) }()
