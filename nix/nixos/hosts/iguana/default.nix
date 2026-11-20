@@ -19,7 +19,6 @@
 {
   config,
   pkgs,
-  lib,
   username,
   ...
 }:

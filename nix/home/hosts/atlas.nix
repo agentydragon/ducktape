@@ -3,12 +3,7 @@
 #
 # To apply: home-manager switch --flake ~/code/ducktape#atlas --impure
 # (--impure needed for nixGL on non-NixOS systems)
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
+_:
 let
   keys = import ../../ssh-keys.nix;
 in

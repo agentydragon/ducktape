@@ -8,7 +8,6 @@
 # currently have zero visibility. See debug/atlas/gpu_lockup_20260417/README.md.
 {
   config,
-  pkgs,
   lib,
   ...
 }:
