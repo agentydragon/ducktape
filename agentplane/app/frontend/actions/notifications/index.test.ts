@@ -91,6 +91,26 @@ const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue 
 
 describe("action notification formatting", () => {
   it.each([
+    ["google_calendar", "create_event", "Create Google Calendar event"],
+    ["google_calendar", "list_event_instances", "List Google Calendar event occurrences"],
+    ["home_assistant", "ha_manage_backup", "Manage Home Assistant backup"],
+    ["orchestration_v1", "change_model", "Change Sandbox Session model"],
+    ["sandbox", "get_template", "Inspect Sandbox template"],
+    ["ssh", "list_targets", "List SSH targets"],
+  ])("uses specific copy for %s / %s without including arbitrary arguments", (group, name, title) => {
+    expect(
+      formatActionNotification(
+        actionRequest({
+          action: { group, name },
+          arguments: { name: "private-resource-name" },
+          title: "",
+          description: "Check the reviewed request.",
+        })
+      )
+    ).toEqual({ title, text: "Check the reviewed request." });
+  });
+
+  it.each([
     ["environments", "list", "List environments"],
     ["environments", "get", "Inspect environment review-box"],
     ["environments", "resume", "Resume environment review-box"],

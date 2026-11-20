@@ -10,8 +10,10 @@ import {
 } from "../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { ACTION_NOTIFICATION_FORMATTERS } from "../notifications";
 import { executionResult } from "../presentation";
 import {
+  ACTION_RENDERERS,
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
   renderActionCall,
@@ -44,6 +46,16 @@ function stored(returned: Record<string, unknown> = {}): CallToolResult {
 }
 
 describe("Action presentation slots", () => {
+  it("gives every custom browser Action a push notification format", () => {
+    for (const [group, renderers] of ACTION_RENDERERS) {
+      const formatters = ACTION_NOTIFICATION_FORMATTERS.get(group);
+      expect(
+        [...renderers.keys()].filter((name) => !formatters?.has(name)),
+        group
+      ).toEqual([]);
+    }
+  });
+
   it("uses a distinct collapsed-pane view from the details view", async () => {
     const args = {
       namespace: "prod",

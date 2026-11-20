@@ -465,6 +465,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions:notifications",
         "//agentplane/app/frontend/actions:presentation",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
