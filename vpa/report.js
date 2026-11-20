@@ -86,7 +86,7 @@ const cutoverProof = {
   "restrict-agent-gateway-routes":
     "After pruning Kyverno, native admission denied all 20 sandbox dry runs and allowed all 10 operator creates and the operator update.",
   "require-secret-store-conditions":
-    "Preserve enforced admission for private and public sources and separately replace the existing-object background scan.",
+    "Keep enforcement for private and public sources and scanning of stored objects until a supported replacement covers both.",
   "agentplane-staging-launcher-relay":
     "Preserve fail-closed owner and credential checks, mutation, protected mounts, VM lifecycle and ephemeral-container update protection.",
 };
@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=retirement-20261120-1124")
+    fetch("./evidence.json?v=retirement-20261120-1129")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -234,15 +234,23 @@ function Report() {
   const nativeGatewayPolicy = "restrict-agent-gateway-routes";
   const remainingPolicies = data.remaining_policy_review;
   const remainingPoliciesTime = remainingPolicies.reviewed_at_utc.slice(11, 16);
+  const secretStoreDecision = data.secret_store_retirement_decision;
+  const secretStoreDecisionTime = secretStoreDecision.decided_at_utc.slice(
+    11,
+    16,
+  );
   const policyState = {
     [nativeGatewayPolicy]: "Retired",
     "require-gitops": "Audit delivery gate",
+    "require-secret-store-conditions": "Retain Kyverno",
     "default-revision-history-limit":
       progress.retirement.revision_history.state,
   };
   const policyDirection = {
     [nativeGatewayPolicy]: "Native ValidatingAdmissionPolicy and Deny binding.",
     "require-gitops": "Native Audit-only shadow alongside PolicyReports.",
+    "require-secret-store-conditions":
+      "Keep Kyverno admission and background scanning. Supported replacement undecided.",
   };
   const latestTime = latest.observed_at_utc.slice(11, 16);
   const verifiedCount = latest.workloads.filter(
@@ -563,7 +571,8 @@ function Report() {
                 every 30 minutes.<//
               >
               <${Table.Td}
-                >Use a janitor scoped to the affected namespace and kinds.<//
+                >Keep the current policies until a supported replacement covers
+                both.<//
               >
               <${Table.Td}
                 >Preserve the schedules, kinds, age thresholds, predicates and
@@ -609,10 +618,19 @@ function Report() {
         exemptions. It waits for an accessible API audit consumer that can
         retrieve workload CREATE and UPDATE events. The three API servers have
         bounded local logs, while Kyverno currently records 120 failed results
-        in 304 namespaced PolicyReports. The SecretStore background checks,
-        launcher relay and both cleanup policies still need parity.
-        ${" "}<${Anchor} href=${remainingPolicies.native_gitops_audit.html_url}
+        in 304 namespaced PolicyReports. The launcher relay and both cleanup
+        policies still need parity. ${" "}<${Anchor}
+          href=${remainingPolicies.native_gitops_audit.html_url}
           >Gated native GitOps audit<//
+        >
+      <//>
+      <${Text} component="p">
+        The separate ClusterSecretStore audit proposal closed at
+        ${secretStoreDecisionTime} UTC. Kyverno still enforces the existing
+        admission rule and scans stored objects in the background. Both stay in
+        place until there is a supported solution or a decision to keep Kyverno
+        for this policy. ${" "}<${Anchor} href=${secretStoreDecision.html_url}
+          >Closed audit proposal<//
         >
       <//>
       <${Text} component="p">

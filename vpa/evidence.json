@@ -19299,5 +19299,14 @@
         "active_jobs_only": true
       }
     }
+  },
+  "secret_store_retirement_decision": {
+    "proposal_pr": 18176,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18176",
+    "proposal_state": "closed without merge",
+    "decided_at_utc": "2026-11-20T11:29:26Z",
+    "current_kyverno_admission": "Enforce",
+    "current_kyverno_background": true,
+    "replacement_status": "No supported replacement selected"
   }
 }
