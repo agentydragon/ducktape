@@ -20,10 +20,10 @@ def get_system_prompt_text(req: ResponsesRequest) -> str:
 
 
 class SubprocessExecMock(DecoratorMock):
-    """Mock for in-container subprocess exec (DirectToolProvider).
+    """Mock for the in-container subprocess `exec` tool (`make_exec_tool` in `props/agents/af/exec_tool.py`).
 
-    Uses plain tool name ``exec`` matching DirectToolProvider registration
-    in in-container agent loops (critic, grader, critic-dev).
+    Uses the plain tool name `exec` that `make_exec_tool` registers in the in-container
+    agent loops (critic, grader, critic-dev).
     """
 
     def exec_roundtrip(

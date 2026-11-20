@@ -22,10 +22,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
-    select,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from openai_utils.api_shape import LLMApiShape
@@ -195,13 +194,6 @@ class Snapshot(Base):
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
 
-    @classmethod
-    def get(cls, slug: SnapshotSlug) -> Snapshot | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
-
 
 class TruePositive(Base):
     """Expected finding; critic_scopes_expected_to_recall supplies its recall scopes."""
@@ -225,15 +217,6 @@ class TruePositive(Base):
     occurrences: Mapped[list[TruePositiveOccurrenceORM]] = relationship(
         back_populates="true_positive", cascade="all, delete-orphan"
     )
-
-    @classmethod
-    def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)
-        ).scalar_one_or_none()
 
 
 class FalsePositive(Base):
@@ -259,15 +242,6 @@ class FalsePositive(Base):
     occurrences: Mapped[list[FalsePositiveOccurrenceORM]] = relationship(
         back_populates="false_positive", cascade="all, delete-orphan"
     )
-
-    @classmethod
-    def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
-        ).scalar_one_or_none()
 
 
 class TruePositiveOccurrenceORM(Base):

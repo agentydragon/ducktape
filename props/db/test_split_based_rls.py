@@ -14,17 +14,11 @@ and llm_requests tables.
 This is distinct from run-based isolation (see props/agents/critic/test_critic_sql_integration.py),
 which isolates concurrent runs within the same split.
 
-These tests use per-test isolated databases and require:
-- postgres container running (managed by devenv)
-
-Each test gets its own database (created and destroyed by db fixture).
+Each test gets its own database, created and destroyed by the db fixture inside the session-scoped
+Testcontainers PostgreSQL container (`props/testing/fixtures/db.py`).
 For RLS testing, tests use:
 - admin_user (via db.session()) to write test data
 - critic_dev_optimize / grader temporary users to verify split-based RLS policies
-
-Note: These tests share a module-scoped fixture and work correctly with pytest-xdist
-because the project uses --dist=loadscope by default, which ensures all tests in
-this module run in the same worker process.
 """
 
 from __future__ import annotations

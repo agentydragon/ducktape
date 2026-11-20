@@ -205,17 +205,18 @@ proxy behavior.
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
 - `backend` (8000:8000) - serves dashboard/control APIs in local dev
+- `llm-proxy` - on `props-internal` + `props-agents`; agents reach the LLM through it
 
 **Network topology:**
 
-- `props-internal` (internal: true) - postgres, registry, backend
-- `props-agents` - postgres, backend (agent containers join this)
+- `props-internal` (internal: true) - postgres, registry, backend, llm-proxy
+- `props-agents` - postgres, backend, llm-proxy (agent containers join this)
 
 ## Historical Notes
 
 Previous iterations used HTTP MCP servers (`CriticSubmitServer`,
 `GraderSubmitServer`, `PromptEvalServer`), an `events` table, host-side agent
 loops, backend-hosted LLM/registry routes, and DB-persisted container stdout /
-stderr. These were replaced by in-container `DirectToolProvider` tools, the
-standalone LLM and registry proxies, `llm_requests`, and Loki-backed container
-logs.
+stderr. These were replaced by in-container function tools (`direct_tools` and
+`make_exec_tool` in `props/agents/af/`), the standalone LLM and registry
+proxies, `llm_requests`, and Loki-backed container logs.

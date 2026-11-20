@@ -1,26 +1,7 @@
 # Agent Infrastructure
 
 This document covers the agent runtime, OCI image, and data-plane architecture.
-For the in-container agent loop, see <agent_loop_inside_container.md>.
-
-## Directory Structure
-
-```text
-props/
-├── critic/                 # Critic agent (main.py entry point, DirectToolProvider)
-├── grader/                 # Grader agent (loop.py, main.py)
-├── critic_dev/             # Critic-dev agents
-│   ├── optimize/           # Critic developer (optimizer) agent
-│   └── improve/            # Critic developer (improver) agent
-├── orchestration/          # Host scaffold (agent_registry)
-├── backend/                # Dashboard and eval API
-├── llm_proxy/              # LLM data plane
-├── registry_proxy/         # OCI registry data plane
-├── db/                     # Database layer (ORM, migrations)
-├── cli/                    # CLI commands
-├── testing/                # Test fixtures and mocks
-└── docs/                   # Documentation
-```
+For the in-container agent loop, see <agent_loop_inside_container.md>. Package layout: [Props README § Layout](../README.md#layout).
 
 ## Deployed Runtime
 
@@ -104,24 +85,8 @@ the public pull host is `props-registry.allegedly.works`. Kubelet pull
 credentials come from the `props-registry-pull` imagePullSecret rendered from
 the CNPG `props-db-app` credentials.
 
-Local Docker fixtures keep a separate Docker-network topology for development
-and E2E tests:
-
-### Docker Networks
-
-Two Docker networks provide isolation:
-
-**`props-internal`** — Contains: registry, proxy, postgres
-
-- Registry (:5000) only reachable from this network (and host via port mapping)
-- Agents cannot access this network
-
-**`props-agents`** — Contains: proxy, postgres, agent containers
-
-- Agents can reach proxy (`registry-proxy:5050`) and postgres (`props-postgres:5432`)
-- Agents cannot reach registry directly
-
-The proxy container is attached to both networks, bridging them.
+Local Docker compose and E2E fixtures use a separate topology
+([runtime topologies](agent_loop_inside_container.md#runtime-topologies)).
 
 ### Registry Proxy
 
