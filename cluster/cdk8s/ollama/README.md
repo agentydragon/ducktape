@@ -20,15 +20,10 @@ The LiteLLM compatibility IDs
 deployment and share its server-side context. Gatus probes the private
 `/v1/models` endpoint. LiteLLM handles client authentication.
 
-The static local volume mounts the existing
-`/games/llm-models/qwen38-exl3-268` directory on the wyrm2 NVMe read-only.
-For a disk replacement, stage the complete checkpoint, including
-`ngram_embedding.safetensors`, from
-[turboderp revision d660113](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/d660113325e1eba20e760a9063580139bdbdfc22)
-and verify the published weight hashes. The ConfigMap overlays the chat
-template at runtime, so it leaves the checkpoint directory intact. The
-overlay supports mid-conversation system messages and maps the established
-`high` effort to Qwen's `xhigh`.
+The static local volume mounts the [staged checkpoint](#tabbyapi-checkpoint-staging)
+on the wyrm2 NVMe read-only. The ConfigMap overlays a chat template that supports
+mid-conversation system messages and maps the established `high` effort to
+Qwen's `xhigh`.
 
 The initial deployment took 55 seconds to load the model. The first
 authenticated request took 37 seconds while the engine compiled kernels.
@@ -43,6 +38,39 @@ are offline. To restore Ollama through GitOps, first revert the TabbyAPI
 deployment and LiteLLM bindings and wait for the TabbyAPI Pod to stop.
 Then restore the Ollama Deployment to one replica. Its existing claims,
 registry, and completed setup Job support that rollback.
+
+### TabbyAPI checkpoint staging
+
+Checkpoint files live under `/games/llm-models/` on `wyrm2`.
+
+| Directory                     | Use                                                   | Source                                                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qwen38-exl3-268`             | Serving, 2.68 bpw self-calibrated, 8-bit n-gram table | [turboderp revision `d660113`](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/d660113325e1eba20e760a9063580139bdbdfc22)                           |
+| `qwen38-exl3-250-abliterated` | Candidate, 2.50 bpw, 3-bit n-gram table               | [ghost-actual revision `1354024`](https://huggingface.co/ghost-actual/Qwen3.8-Flash-Next-Abliterated-EXL3-2.50bpw/tree/135402464a8d351ca6ecb6969f2a6f4061681a24) |
+
+The candidate quantizes [OrcaRouter's abliterated BF16 checkpoint](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored).
+The ablation is in the model weights. The download includes the MTP weights and
+`ngram_embedding.safetensors`. Full-context serving and MTP throughput on the
+cluster image still need measurement.
+
+To stage the candidate from a Ducktape checkout on `wyrm2`, use the Hugging
+Face CLI from the repository's Nixpkgs pin.
+
+```sh
+nixpkgs_revision=$(jq -er '.nodes.nixpkgs.locked.rev' flake.lock)
+nix shell "github:NixOS/nixpkgs/$nixpkgs_revision#python3Packages.huggingface-hub" \
+  --command ionice -c 3 nice -n 10 bash cluster/cdk8s/ollama/stage_tabbyapi_checkpoint.sh
+```
+
+The wrapper uses `hf download` to resume partial downloads and `hf cache verify`
+to check the pinned snapshot before renaming the staging directory. Hugging Face
+locks individual files. The wrapper holds a separate lock through the rename so
+overlapping runs can safely share the staging directory. Rerunning the wrapper
+verifies the existing checkpoint. The pinned CLI reports its own `.cache/huggingface/`
+resume metadata as extra files. To restore the serving checkpoint onto a replacement
+disk, stage its pinned snapshot with the n-gram table and verify its weight hashes
+before starting TabbyAPI.
+See [the declarative-staging TODO](TODO.md).
 
 ## Ollama provisioning
 
