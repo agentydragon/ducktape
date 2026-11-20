@@ -304,6 +304,26 @@ def directArrowConstant (s : Json) : Bool :=
     typ (fld d "id") == "Identifier" && typ init == "ArrowFunctionExpression" &&
     (items (fld init "params")).all fun p => typ p == "Identifier"
 
+/-- A static object literal with primitive literal values. It has no computed
+keys, spreads, accessors, identifier reads, or special prototype setter. The
+normal-completion claim excludes resource exhaustion and trusts the frontend. -/
+def literalRecordConstant (s : Json) : Bool :=
+  let ds := items (fld s "declarations")
+  let d := ds[0]?.getD Json.null
+  let init := fld d "init"
+  typ s == "VariableDeclaration" && str (fld s "kind") == "const" && ds.size == 1 &&
+    typ (fld d "id") == "Identifier" && typ init == "ObjectExpression" &&
+    (items (fld init "properties")).all fun p =>
+      let key := fld p "key"
+      let keyLit := str (fld key "lit")
+      let validName := (typ key == "Identifier" || typ key == "Name") && str (fld key "name") != "__proto__"
+      let validLiteral := typ key == "Literal" && keyLit != "s:__proto__" && (keyLit.startsWith "s:" || keyLit.startsWith "n:")
+      let value := fld p "value"
+      let lit := str (fld value "lit")
+      typ p == "Property" && !flag p "computed" && !flag p "method" && !flag p "shorthand" && str (fld p "kind") == "init" &&
+        (validName || validLiteral) && typ value == "Literal" &&
+        (lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:")
+
 /-! ## Top-level statements -/
 
 partial def topDefs (s : Json) : List String :=
@@ -549,7 +569,7 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     -- that escaped earlier and runs indirectly before this binding initializes.
     let observedInert := t.inert && !t.hoisted && !unobserved
     let observedInit := observedInert && primitiveConstant t.source
-    let nonReentrant := directArrowConstant t.source
+    let nonReentrant := directArrowConstant t.source || literalRecordConstant t.source
     -- Even a syntactically inert eager identifier read can throw (for
     -- example by reading a lexical binding in its temporal dead zone). If it
     -- throws, an escaped observer may see which earlier bindings initialized.
