@@ -63,7 +63,7 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
    table: <../../docs/security.md> § _Browser-side exfiltration_.
 3. **The agent cannot create public routes.** Haku's `haku-sandbox-admin` Role omits
    `httproutes`/`gateways` (do not add them), and the `restrict-agent-gateway-routes`
-   Kyverno ClusterPolicy denies route/Gateway creation in agent namespaces even if RBAC
+   ValidatingAdmissionPolicy denies route and Gateway writes in agent namespaces even if RBAC
    drifted. Remaining belt-and-suspenders (listener `allowedRoutes` selector) is deferred —
    `cluster/k8s/TODO.md`.
 4. **Worst case is bounded.** A hostile iframe can render misleading UI and read/write
