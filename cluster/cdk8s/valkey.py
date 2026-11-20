@@ -63,6 +63,8 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
         values={
             "redisOperator": {"imageTag": _OPERATOR_TAG, "initContainerImageTag": _OPERATOR_TAG},
+            # `additionalRedisConfig` reaches our `valkey/valkey:8-alpine` pods only when the init
+            # container generates `/etc/redis/redis.conf`, which this gate turns on.
             "featureGates": {"GenerateConfigInInitContainer": True},
         },
     )
