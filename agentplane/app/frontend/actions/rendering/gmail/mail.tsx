@@ -42,8 +42,7 @@ const part: z.ZodType<MessagePart> = z.object({
   },
 });
 
-interface Message {
-  id: string;
+interface MessageDetailsFields {
   threadId?: string | null;
   snippet?: string | null;
   internalDate?: string | null;
@@ -52,8 +51,7 @@ interface Message {
   raw?: string | null;
 }
 
-const messageResult: z.ZodType<Message> = z.object({
-  id: z.string().min(1),
+const messageDetails = z.object({
   threadId: z.string().nullish(),
   snippet: z.string().nullish(),
   internalDate: z.string().nullish(),
@@ -61,9 +59,12 @@ const messageResult: z.ZodType<Message> = z.object({
   payload: part.nullish(),
   raw: z.string().nullish(),
 });
-export const draftResult: z.ZodType<{ id: string; message?: Message | null }> = z.object({
+type Message = MessageDetailsFields & { id: string };
+const messageResult: z.ZodType<Message> = messageDetails.extend({ id: z.string().min(1) });
+
+export const draftResult: z.ZodType<{ id: string; message?: MessageDetailsFields | null }> = z.object({
   id: z.string().min(1),
-  message: messageResult.nullish(),
+  message: messageDetails.nullish(),
 });
 const threadResult = z.object({
   id: z.string().min(1),
@@ -119,7 +120,7 @@ function messageText(payload: MessagePart | null | undefined): string | undefine
   return plain.length ? plain.join("\n\n") : html.map(readableHtml).join("\n\n") || undefined;
 }
 
-function messageDate(message: Message): string | undefined {
+function messageDate(message: MessageDetailsFields): string | undefined {
   const headerDate = messageHeader(message, "date");
   if (headerDate) return headerDate;
   if (!message.internalDate) return undefined;
@@ -132,7 +133,7 @@ function messageDate(message: Message): string | undefined {
     : undefined;
 }
 
-function MessageDetails({ message }: { message: Message }): JSX.Element {
+function MessageDetails({ message }: { message: MessageDetailsFields }): JSX.Element {
   const raw = message.raw ? decodeBase64Url(message.raw) : undefined;
   const body = raw ?? messageText(message.payload) ?? message.snippet;
   return (

@@ -150,7 +150,7 @@ export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
     {
       fallbackLabel: "List Gmail filters",
       pane: { collapsed: null },
-      details: { arguments: definePreview(emptyArguments, () => null), result: filtersView },
+      details: { arguments: { schema: emptyArguments, render: () => null }, result: filtersView },
       compactCardExpands: expandsForRejectedArguments(emptyArguments),
       offersCardDecisionButtons: (args) => emptyArguments.safeParse(args).success,
     },

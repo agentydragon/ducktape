@@ -194,7 +194,7 @@ export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     {
       fallbackLabel: "List Gmail labels",
       pane: { collapsed: null },
-      details: { arguments: definePreview(emptyArguments, () => null), result: labelsView },
+      details: { arguments: { schema: emptyArguments, render: () => null }, result: labelsView },
       compactCardExpands: expandsForRejectedArguments(emptyArguments),
       offersCardDecisionButtons: (args) => emptyArguments.safeParse(args).success,
     },
