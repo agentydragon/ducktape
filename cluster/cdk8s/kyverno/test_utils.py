@@ -13,9 +13,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s.kyverno import policies
 
-_POLICY_BUILDERS = {
-    "default-disable-service-links": policies.default_disable_service_links_chart,
-}
+_POLICY_BUILDERS = {"default-disable-service-links": policies.default_disable_service_links_chart}
 
 
 def manifest(name: str) -> Path:
