@@ -101,8 +101,9 @@ integer are also supported after successful initialization. A throw terminates
 the observed call sequence, and the certificate proves matching thrown values.
 Top-level calls to such functions remain unsupported. Exported functions may
 also take numeric parameters and return expressions composed of those
-parameters, readable module bindings, nonnegative integer literals and `+`.
-For these functions the certificate covers finite sequences of calls with
+parameters, readable module bindings, nonnegative integer literals, `+`, and
+numeric conditionals. A function body may also use `if`/`else` when both
+branches consist of a supported return (possibly in a block). For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of
 nonnegative safe-integer arguments; intermediate results must stay in range.
 

@@ -137,7 +137,7 @@ function expressionFunction(node) {
   const parameters = node.params.map(identifier);
   check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
   check(new Set(parameters).size === parameters.length, "duplicate parameters");
-  check(node.body.body.length === 1 && node.body.body[0].type === "ReturnStatement", "expected expression return");
+  check(node.body.body.length === 1, "expected one returning statement");
   const refs = new Set();
   const expression = (node) => {
     if (node?.type === "Literal") {
@@ -152,13 +152,32 @@ function expressionFunction(node) {
     }
     if (node?.type === "BinaryExpression" && node.operator === "+")
       return { kind: "add", left: expression(node.left), right: expression(node.right) };
+    if (node?.type === "ConditionalExpression")
+      return {
+        kind: "conditional",
+        test: expression(node.test),
+        consequent: expression(node.consequent),
+        alternative: expression(node.alternate),
+      };
     check(false, "unsupported numeric expression");
+  };
+  const returning = (statement) => {
+    if (statement?.type === "ReturnStatement") return expression(statement.argument);
+    if (statement?.type === "BlockStatement" && statement.body.length === 1) return returning(statement.body[0]);
+    if (statement?.type === "IfStatement" && statement.alternate)
+      return {
+        kind: "conditional",
+        test: expression(statement.test),
+        consequent: returning(statement.consequent),
+        alternative: returning(statement.alternate),
+      };
+    check(false, "unsupported function body");
   };
   return {
     kind: "expressionFunction",
     name,
     parameters,
-    expression: expression(node.body.body[0].argument),
+    expression: returning(node.body.body[0]),
     references: [...refs],
   };
 }
@@ -464,6 +483,8 @@ function leanExpression(expression) {
       return `.name ${str(expression.name)}`;
     case "add":
       return `.add (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
+    case "conditional":
+      return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
   }
   throw new Error("unknown expression");
 }

@@ -209,6 +209,7 @@ def expressionNames : NumericExpr → List String
   | .literal _ => []
   | .name name => [name]
   | .add left right => expressionNames left ++ expressionNames right
+  | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
   (expressionNames expression).filter (fun name => !parameters.contains name)

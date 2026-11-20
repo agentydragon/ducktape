@@ -11,6 +11,7 @@ inductive NumericExpr where
   | literal (value : Nat)
   | name (name : String)
   | add (left right : NumericExpr)
+  | conditional (test consequent alternative : NumericExpr)
   deriving DecidableEq, Repr
 
 inductive Operation where
@@ -56,6 +57,10 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
     let leftValue ← evaluateExpression locals globals left
     let rightValue ← evaluateExpression locals globals right
     pure (leftValue + rightValue)
+  | .conditional test consequent alternative => do
+    let condition ← evaluateExpression locals globals test
+    if condition == 0 then evaluateExpression locals globals alternative
+    else evaluateExpression locals globals consequent
 
 def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
   | [], _, _ => none

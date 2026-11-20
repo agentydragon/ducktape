@@ -383,7 +383,14 @@ function parameterCase(seed, index) {
     sourceType: "module",
     body: [
       variable("base", initial),
-      functionNode("calculate", parameters, [returnNode(value)]),
+      functionNode("calculate", parameters, [
+        {
+          type: "IfStatement",
+          test: id("y"),
+          consequent: { type: "BlockStatement", body: [returnNode(value)] },
+          alternate: { type: "BlockStatement", body: [returnNode(left)] },
+        },
+      ]),
       {
         type: "ExportNamedDeclaration",
         specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
@@ -399,7 +406,10 @@ function parameterCase(seed, index) {
     ast,
     source: print(ast),
     spec: { kind: "bindings", entry: "entry.mjs", modules },
-    calls: Array.from({ length: 2 + rand(4) }, () => ({ name: "calculate", args: [1 + rand(8), 1 + rand(8)] })),
+    calls: [
+      { name: "calculate", args: [1 + rand(8), 0] },
+      { name: "calculate", args: [1 + rand(8), 1 + rand(8)] },
+    ],
     grammar: "parameter",
     unsupported: false,
     cyclic: false,

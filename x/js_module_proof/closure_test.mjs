@@ -256,7 +256,8 @@ if (!unsafe) {
     `let seed = 4;
 function shadow(seed, delta) { return seed + delta; }
 function add(a, b) { return (a + b) + seed; }
-export { shadow, add };
+function choose(flag, value) { if (flag) { return value + seed; } else { return value + 1; } }
+export { shadow, add, choose };
 `
   );
   await writeFile(
@@ -266,7 +267,7 @@ export { shadow, add };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -278,9 +279,11 @@ export { shadow, add };
     { name: "shadow", args: [8, 2] },
     { name: "add", args: [1, 3] },
     { name: "add", args: [4, 5] },
+    { name: "choose", args: [0, 5] },
+    { name: "choose", args: [1, 5] },
   ];
   const sourceTrace = execute(parameterSource, calls);
-  assert.deepEqual(sourceTrace.results, [{ value: 10 }, { value: 8 }, { value: 13 }]);
+  assert.deepEqual(sourceTrace.results, [{ value: 10 }, { value: 8 }, { value: 13 }, { value: 6 }, { value: 9 }]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
