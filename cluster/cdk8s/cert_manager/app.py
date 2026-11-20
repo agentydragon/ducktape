@@ -214,6 +214,23 @@ def chart(app: App) -> Chart:
                         _readiness_patch(
                             f"{NAME}-cainjector", f"{NAME}-cainjector", {"tcpSocket": {"port": "http-metrics"}}
                         ),
+                        # Keep the namespace's existing request policy; allow PDB-limited updates.
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                kind="Deployment", name=f"{NAME}-cainjector", namespace=NAMESPACE
+                            ),
+                            patch=Yaml.stringify(
+                                {
+                                    "apiVersion": "apps/v1",
+                                    "kind": "Deployment",
+                                    "metadata": {
+                                        "name": f"{NAME}-cainjector",
+                                        "namespace": NAMESPACE,
+                                        "annotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
+                                    },
+                                }
+                            ),
+                        ),
                     ]
                 )
             )

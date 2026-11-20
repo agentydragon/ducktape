@@ -77,6 +77,18 @@ spec:
               kind: Deployment
               name: cert-manager-cainjector
               namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager-cainjector
+                namespace: cert-manager
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: cert-manager-cainjector
+              namespace: cert-manager
   values:
     affinity:
       podAntiAffinity:
