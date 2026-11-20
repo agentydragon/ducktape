@@ -15,12 +15,12 @@ const sessionId = z.object({ session_id: name });
 const sessionCommand = sessionId.extend({ command_id: name });
 const sourceError = z.object({ message: z.string() });
 
-function sentence(value: string): string {
+export function sentence(value: string): string {
   const words = value.toLowerCase().replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function SessionLink({ id }: { id: string }): ReactNode {
+export function SessionLink({ id }: { id: string }): ReactNode {
   return (
     <Anchor component={Link} to={`/threads/${encodeURIComponent(id)}`} size="sm">
       Open Session
@@ -154,12 +154,21 @@ const deliveryLabels: Readonly<Record<string, string>> = {
 };
 
 const dispatch = z.object({ session_id: name, state: z.string().optional(), reason: z.string().optional() });
+export function DispatchDetails({
+  value,
+}: {
+  value: { session_id: string; state?: string; reason?: string };
+}): ReactNode {
+  return (
+    <Stack gap={4}>
+      <Text size="sm">{deliveryLabels[value.state ?? ""] ?? "Delivery state unavailable"}</Text>
+      {value.reason && <Text size="sm">{value.reason}</Text>}
+      <SessionLink id={value.session_id} />
+    </Stack>
+  );
+}
 const dispatchResult = defineResultPreview(z.object({ dispatch }), ({ result }) => (
-  <Stack gap={4}>
-    <Text size="sm">{deliveryLabels[result.dispatch.state ?? ""] ?? "Delivery state unavailable"}</Text>
-    {result.dispatch.reason && <Text size="sm">{result.dispatch.reason}</Text>}
-    <SessionLink id={result.dispatch.session_id} />
-  </Stack>
+  <DispatchDetails value={result.dispatch} />
 ));
 
 const sessionSpec = z.strictObject({ harness: name, model: name, cwd: name, reasoning_effort: name.optional() });
@@ -248,29 +257,44 @@ const turn = z.object({
   tool_calls: z.array(z.object({ name })).nullish(),
   final_assistant_message: z.string().optional(),
 });
+type SessionTurn = {
+  turn_id: string;
+  input?: { text: string }[] | null;
+  tool_calls?: { name: string }[] | null;
+  status?: string;
+  error?: string;
+  final_assistant_message?: string;
+};
+
+export const sessionTurn: z.ZodType<SessionTurn> = turn;
+
+export function TurnDetails({ item }: { item: SessionTurn }): ReactNode {
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={600}>
+        {item.status ? sentence(item.status.replace(/^TURN_STATUS_/, "")) : "Unfinished turn"}
+      </Text>
+      {item.input?.map((input, index) => (
+        <TextBlock key={index} heading="User" format="prose" text={input.text} />
+      ))}
+      {Boolean(item.tool_calls?.length) && (
+        <Text size="sm">Tools · {item.tool_calls?.map((call) => call.name).join(", ")}</Text>
+      )}
+      {item.final_assistant_message && (
+        <TextBlock heading="Assistant" format="prose" text={item.final_assistant_message} />
+      )}
+      {item.error && <Text size="sm">{item.error}</Text>}
+    </Stack>
+  );
+}
+
 const turns = defineResultPreview(
   sessionId.extend(coverage.shape).extend({ turns: z.array(turn).nullable(), next_cursor: z.string().optional() }),
   ({ result }) => (
     <Stack gap="sm">
       <SessionLink id={result.session_id} />
       {result.turns?.length ? (
-        result.turns.map((item) => (
-          <Stack key={item.turn_id} gap={4}>
-            <Text size="sm" fw={600}>
-              {item.status ? sentence(item.status.replace(/^TURN_STATUS_/, "")) : "Unfinished turn"}
-            </Text>
-            {item.input?.map((input, index) => (
-              <TextBlock key={index} heading="User" format="prose" text={input.text} />
-            ))}
-            {Boolean(item.tool_calls?.length) && (
-              <Text size="sm">Tools · {item.tool_calls?.map((call) => call.name).join(", ")}</Text>
-            )}
-            {item.final_assistant_message && (
-              <TextBlock heading="Assistant" format="prose" text={item.final_assistant_message} />
-            )}
-            {item.error && <Text size="sm">{item.error}</Text>}
-          </Stack>
-        ))
+        result.turns.map((item) => <TurnDetails item={item} key={item.turn_id} />)
       ) : (
         <Text size="sm">No turns returned.</Text>
       )}

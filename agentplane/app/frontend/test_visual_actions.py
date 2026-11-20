@@ -130,6 +130,12 @@ _ACTIVE = ("option-2", "Active")
 EXAMPLE_ENVIRONMENT = {"name": "review-box", "namespace": "agentplane", "uid": "environment-1"}
 EXAMPLE_SESSION = "81000000-0000-4000-8000-000000000001"
 EXAMPLE_COMMAND = "81000000-0000-4000-8000-000000000002"
+ORCHESTRATION_SANDBOX = {"name": "review-box", "uid": "81000000-0000-4000-8000-000000000003"}
+ORCHESTRATION_SESSION = {"sandbox": ORCHESTRATION_SANDBOX, "session_id": EXAMPLE_SESSION}
+ORCHESTRATION_COMMAND = {**ORCHESTRATION_SESSION, "command_id": EXAMPLE_COMMAND}
+QUEUED = {"session_id": EXAMPLE_SESSION, "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER"}
+ORCHESTRATION_SPEC = {"harness": "HARNESS_CODEX", "model": "gpt-5.4", "cwd": "/workspace"}
+
 ENVIRONMENT_VIEW = {
     "target": EXAMPLE_ENVIRONMENT,
     "configuration": {"template": "python"},
@@ -140,6 +146,124 @@ ENVIRONMENT_VIEW = {
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
+    ActionExample(
+        "orchestration_v1",
+        "launch_sandbox",
+        {
+            "name": "review-box",
+            "template": "python",
+            "launcher_grants": ["send_message"],
+            "policy_sets": ["docs-read"],
+            "wake_on_send": True,
+            "idle_suspend_after_seconds": 1200,
+        },
+        {"sandbox": ORCHESTRATION_SANDBOX, "launcher_grants": ["send_message"]},
+        "Send inbox messages",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "list_launch_presets",
+        {},
+        {
+            "presets": {
+                "docs": {
+                    "title": "Documentation reviewer",
+                    "launch": {"template": "python"},
+                    "create_session": {"spec": ORCHESTRATION_SPEC},
+                }
+            }
+        },
+        "Documentation reviewer",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "create_session",
+        {**ORCHESTRATION_SESSION, "spec": {**ORCHESTRATION_SPEC, "instructions": "Check the changelog."}},
+        {"session_id": EXAMPLE_SESSION, "status": {"materialization": "SESSION_MATERIALIZATION_WAITING"}},
+        "Session created · Waiting",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "get_session",
+        ORCHESTRATION_SESSION,
+        {
+            "sandbox_ready": {"status": "True", "reason": "PodReady"},
+            "session": {
+                "session_id": EXAMPLE_SESSION,
+                "runner": {"harness": "HARNESS_CODEX", "active_turn_id": "turn-5"},
+            },
+            "dispatches": [],
+        },
+        "Turn active",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "list_sessions",
+        {"sandbox": ORCHESTRATION_SANDBOX},
+        {
+            "sessions": [
+                {
+                    "session_id": EXAMPLE_SESSION,
+                    "runner": {"harness": "HARNESS_CODEX"},
+                    "last_turn_status": "TURN_STATUS_SUCCEEDED",
+                }
+            ]
+        },
+        "Last turn · Succeeded",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "change_model",
+        {**ORCHESTRATION_COMMAND, "model": "gpt-5.4-mini"},
+        QUEUED,
+        "Queued for delivery",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "change_reasoning_effort",
+        {**ORCHESTRATION_COMMAND, "effort": "high"},
+        QUEUED,
+        "Queued for delivery",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "submit_input",
+        {**ORCHESTRATION_COMMAND, "text": "Review the deployment notes."},
+        QUEUED,
+        "Queued for delivery",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "interrupt_turn",
+        {**ORCHESTRATION_COMMAND, "turn_id": "turn-5"},
+        QUEUED,
+        "Queued for delivery",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "read_turns",
+        {**ORCHESTRATION_SESSION, "count": 5},
+        {
+            "turns": [
+                {
+                    "turn_id": "turn-5",
+                    "input": [{"text": "Check the deployment notes."}],
+                    "tool_calls": [],
+                    "final_assistant_message": "Checked the deployment notes.",
+                }
+            ],
+            "resume_token": "recorded-token",
+        },
+        "Checked the deployment notes.",
+    ),
+    ActionExample(
+        "orchestration_v1",
+        "wait_for_turn",
+        {**ORCHESTRATION_SESSION, "resume_token": "recorded-token", "wait_seconds": 20},
+        {"completed": False, "resume_token": "next-token"},
+        "No completion observed before the wait ended",
+    ),
     ActionExample("environments", "list", {"limit": 12}, {"items": [ENVIRONMENT_VIEW]}, "Template python"),
     ActionExample("environments", "get", {"target": EXAMPLE_ENVIRONMENT}, ENVIRONMENT_VIEW, "Template python"),
     ActionExample(
@@ -884,7 +1008,7 @@ async def test_action_presentations(
         {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
     )
     # Native results are stored directly. MCP results use the actual wire envelope.
-    mcp = example.group not in {"environments", "sandbox", "sessions"}
+    mcp = example.group not in {"environments", "orchestration_v1", "sandbox", "sessions"}
     result = (
         example.result
         if not mcp
