@@ -2369,6 +2369,7 @@ py_test(
         "//agentplane/action_service/policies:resources",
         "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/haku:namespace",
         "//cluster/cdk8s/haku:rbac",
         "//cluster/cdk8s/haku:ui_egress",
         "@pypi//cdk8s",

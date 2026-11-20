@@ -943,6 +943,7 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/haku:namespace",
         "//cluster/cdk8s/haku:ui_egress",
         "//cluster/cdk8s/haku_ci:egress_gateway",
         "//cluster/cdk8s/haku_ci:runner",
