@@ -155,6 +155,7 @@ describe("service worker notifications", () => {
   it("keeps Gmail subjects out of notifications until the browser opts in", async () => {
     const pending = actionRequest({
       action: { group: "gmail", name: "threads_modify_labels" },
+      title: "Mark deployment review as read",
       arguments: { thread_ids: ["thread-1", "thread-2"], add: ["Reviewed"] },
     });
     const lookup = async () => Response.json({ threads: [{ threadId: "thread-1", subject: "Deployment review" }] });
@@ -172,6 +173,7 @@ describe("service worker notifications", () => {
   it("shows Tana names when available and falls back if the lookup fails", async () => {
     const pending = actionRequest({
       action: { group: "tana", name: "move_node" },
+      title: "Organize draft",
       description: "Move the draft into the project.",
       arguments: { nodeId: "draft", targetNodeId: "project" },
     });
@@ -207,6 +209,7 @@ describe("service worker notifications", () => {
     worker.setPending([
       actionRequest({
         action: { group: "gmail", name: "threads_modify_labels" },
+        title: "Relabel archived thread",
         arguments: { thread_ids: ["stale"] },
       }),
     ]);

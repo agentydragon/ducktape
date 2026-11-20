@@ -57,7 +57,7 @@ func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group,
 			if !usable || ctx.Err() != nil {
 				return
 			}
-			result, err := s.client.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+			result, err := s.client.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(args)})
 			if err == nil && !result.IsError {
 				results[i] = summary(id, result)
 			}
