@@ -98,17 +98,12 @@ def _make_template_context(helpers: dict[str, Any] | None = None) -> dict[str, A
 
     ctx["source_inspection"] = _source_inspection
 
-    def _include(source: str, content: str, *, raw: bool) -> str:
-        if raw:
-            return f'<doc source="{source}">\n{content}\n</doc>'
-        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
-        return f'<doc source="{source}">\n{rendered}\n</doc>'
-
-    def include_doc(pkg_path: str, *, raw: bool = False) -> str:
+    def include_doc(pkg_path: str) -> str:
         """Include doc from package resources, rendering Mako syntax."""
         pkg, _, p = pkg_path.partition("/")
         content = (importlib.resources.files(pkg) / p).read_text()
-        return _include(pkg_path, content, raw=raw)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
+        return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
 
     ctx["include_doc"] = include_doc
 
