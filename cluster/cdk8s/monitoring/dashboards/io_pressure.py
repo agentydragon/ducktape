@@ -17,10 +17,10 @@ _DISK_MEDIA = 'label_replace(label_replace(max by (namespace, pod, device, rotat
 _EXPORTER_NODES = 'max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+",node=~"$node"})'
 
 
-def _io_fields(unit: str = "short", min_val: float = 0, max_val: float | None = None) -> dashboard.FieldConfigSource:
+def _io_fields(unit: str = "short", max_val: float | None = None) -> dashboard.FieldConfigSource:
     return dashboard.FieldConfigSource(
         defaults=dashboard.FieldConfig(
-            unit=unit, min_val=min_val, max_val=max_val, custom=common.GraphFieldConfig(fill_opacity=10)
+            unit=unit, min_val=0, max_val=max_val, custom=common.GraphFieldConfig(fill_opacity=10)
         )
     )
 

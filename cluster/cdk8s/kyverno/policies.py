@@ -56,11 +56,8 @@ def _chart(app: App, name: str) -> Chart:
     return Chart(app, name, disable_resource_name_hashes=True)
 
 
-def _annotations(
-    *, title: str, category: str, severity: str, subject: str, description: str, autogen: bool = True
-) -> dict[str, str]:
+def _annotations(*, title: str, category: str, severity: str, subject: str, description: str) -> dict[str, str]:
     return {
-        **({} if autogen else {"pod-policies.kyverno.io/autogen-controllers": "none"}),
         "policies.kyverno.io/title": title,
         "policies.kyverno.io/category": category,
         "policies.kyverno.io/severity": severity,

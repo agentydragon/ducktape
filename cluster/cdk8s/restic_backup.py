@@ -115,8 +115,8 @@ class ResticBackup(Construct):
     Secret `repository`, which VolSync reads.
 
     Our policy: keep 7 daily, 4 weekly and 6 monthly snapshots and prune weekly; the mover runs
-    as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. `mover_affinity=None`
-    sets none: the Direct mover mounts the source PVC, so a node-local volume already places it.
+    as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. It sets no affinity: the
+    Direct mover mounts the source PVC, so a node-local volume already places it.
     `paused=True` stops new syncs and the running mover; the repository and cache stay.
     """
 
@@ -133,7 +133,6 @@ class ResticBackup(Construct):
         s3_credentials: str,
         schedule: str,
         cache_storage_class_name: str,
-        mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
         paused: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -219,6 +218,5 @@ class ResticBackup(Construct):
                         type="RuntimeDefault"
                     ),
                 ),
-                mover_affinity=mover_affinity,
             ),
         )
