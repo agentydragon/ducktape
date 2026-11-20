@@ -56,6 +56,9 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
     { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
     "View logs for Pod apps/api-0, container api, last 50 lines",
   ],
+];
+
+const fixedKubernetesNotificationCases: [string, { [key: string]: JsonValue }, string][] = [
   ["pods_list", {}, "List Pods across namespaces"],
   ["namespaces_list", {}, "List Kubernetes namespaces"],
   ["projects_list", {}, "List OpenShift projects"],
@@ -324,6 +327,18 @@ describe("action notification formatting", () => {
       });
     }
   );
+
+  it.each(fixedKubernetesNotificationCases)("formats the Kubernetes operation title for %s", (name, args, title) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+    });
+    expect(formatActionNotification(request)).toEqual({
+      title: `Review the cluster operation · ${title}`,
+      text: "Action requires approval",
+    });
+  });
 
   it.each(kubernetesNotificationCases)("falls back for %s when arguments contain an unknown field", (name, args) => {
     const request = actionRequest({
