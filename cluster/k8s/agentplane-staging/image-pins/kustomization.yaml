@@ -15,11 +15,11 @@ images:
     newTag: devel-20261119002825-7656132 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   # CI publishes the first sampler image after merge; Flux selects its devel tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
-    newTag: devel-20261120070009-414a230 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
+    newTag: devel-20261120205053-9d4387b # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
     newTag: devel-20261120203043-270ff4c # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261120204031-3a4cafa # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
+    newTag: devel-20261120205049-9d4387b # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261120115719-d2717cf # {"$imagepolicy": "flux-system:environment-tools:tag"}
@@ -43,6 +43,6 @@ images:
     newTag: devel-20261120073544-9b5dc15 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261120022638-cfd1c8c # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261120205130-9d4387b # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
