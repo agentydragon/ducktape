@@ -97,6 +97,18 @@ assert.equal(result.cases, 16 / shards);
 if (shards === 4 && shard === 0) {
   const generatedExpressions = Array.from({ length: 128 }, (_, i) => makeCase(123, 12 + 32 * i));
   assert.deepEqual(new Set(generatedExpressions.map((item) => item.expressionDepth)), new Set([0, 1, 2]));
+  assert.deepEqual(
+    new Set(generatedExpressions.map((item) => item.spec.modules["state.mjs"].statements.includes(1))),
+    new Set([false, true])
+  );
+  for (const helperInState of [false, true]) {
+    const index = Array.from({ length: 128 }, (_, i) => 12 + 32 * i).find(
+      (candidate) => makeCase(123, candidate).spec.modules["state.mjs"].statements.includes(1) === helperInState
+    );
+    const checked = await runFuzz({ seed: 123, start: index, cases: 1, outputDir: process.env.TEST_TMPDIR });
+    assert.equal(checked.parameterCompared, 1);
+    assert.equal(checked.parameterProved, 1);
+  }
   for (const [index, item] of generatedExpressions.slice(0, 16).entries()) {
     const path = join(process.env.TEST_TMPDIR, `parameter-source-${index}.mjs`);
     await writeFile(path, item.source);

@@ -483,9 +483,10 @@ function parameterCase(seed, index) {
       },
     ],
   };
+  const helperInState = rand(2) === 0;
   const modules = {
-    "state.mjs": { imports: [], statements: [0, 1] },
-    "logic.mjs": { imports: ["state.mjs"], statements: [2] },
+    "state.mjs": { imports: [], statements: helperInState ? [0, 1] : [0] },
+    "logic.mjs": { imports: ["state.mjs"], statements: helperInState ? [2] : [1, 2] },
     "entry.mjs": { imports: ["logic.mjs"], statements: [] },
   };
   return {
