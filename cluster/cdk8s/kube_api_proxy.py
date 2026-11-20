@@ -89,6 +89,11 @@ def _deployment(chart: Chart) -> None:
                             name="nginx",
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_SERVICE.pod_port)],
+                            # Mark the Pod ready after nginx starts accepting connections.
+                            readiness_probe=k8s.Probe(
+                                tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
+                                period_seconds=5,
+                            ),
                             volume_mounts=[
                                 # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
                                 # rolls the pods when the config changes.
@@ -172,6 +177,15 @@ def chart(app: App) -> Chart:
         data={"nginx.conf": _NGINX_CONF},
     )
     _deployment(chart)
+    k8s.KubePodDisruptionBudget(
+        chart,
+        "disruption-budget",
+        metadata=k8s.ObjectMeta(name=_PROXY, namespace=NAMESPACE),
+        spec=k8s.PodDisruptionBudgetSpec(
+            min_available=k8s.IntOrString.from_number(1),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+        ),
+    )
     k8s.KubeService(
         chart,
         "service",
