@@ -12,7 +12,7 @@ assert(temp);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const frontend = path.join(here, "frontend.mjs");
-const fixture = (name) => readFileSync(path.join(here, "fixtures/inert_escape", name), "utf8");
+const fixture = (name) => readFileSync(path.join(here, "testdata/inert_escape", name), "utf8");
 const tests = [
   [
     "direct",
