@@ -1,37 +1,13 @@
 """HTTP observations and mutations of real Go app Threads."""
 
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadMetadata
-from agentplane.proto import event_log_pb2, event_pb2, session_pb2
-
-SPEC = session_pb2.SessionSpec(
-    placement=session_pb2.SessionPlacement(
-        environment_hosted=session_pb2.EnvironmentHostedPlacement(
-            environment=session_pb2.ExactEnvironment(name="test-sandbox", uid="test-sandbox-uid"),
-            harness=session_pb2.HARNESS_CLAUDE,
-        )
-    ),
-    cwd="/state/work",
-    model="test-model",
-    reasoning_effort="low",
-)
-
-
-def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
-    at = Timestamp()
-    at.FromDatetime(datetime(2026, 9, 2, 12, 0, tzinfo=UTC) + timedelta(seconds=cursor))
-    event = event_pb2.Event(at=at, **observation)  # type: ignore[arg-type]
-    return event_log_pb2.EventEntry(
-        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor), event=event
-    )
 
 
 class ThreadHTTP:

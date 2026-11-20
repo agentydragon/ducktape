@@ -98,7 +98,7 @@ async def app_config(
 
 @pytest.fixture
 async def gateway_service(
-    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
+    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str
 ) -> AsyncIterator[GatewayProcess]:
     async with run_gateway(
         api_server.kubeconfig,
