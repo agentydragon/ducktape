@@ -1,0 +1,139 @@
+diff --git a/agentplane/system_tests/firecracker/defs.bzl b/agentplane/system_tests/firecracker/defs.bzl
+index d7f8a60a13..191288e1fc 100644
+--- a/agentplane/system_tests/firecracker/defs.bzl
++++ b/agentplane/system_tests/firecracker/defs.bzl
+@@ -42,7 +42,7 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
+         } | KVM_EXEC_PROPERTIES | {
+             "test.Pool": pool,
+             "test.recycle-runner": "true" if recycle else "false",
+-            "test.runner-recycling-key": "firecracker-ext4-v1-" + k3s_recycling_key(vm = False),
++            "test.runner-recycling-key": "firecracker-overlap-research-20261120-" + k3s_recycling_key(vm = False),
+             "test.runner-recycling-max-wait": "5s",
+             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
+         },
+@@ -50,17 +50,19 @@ def firecracker_test(name, recycle, pool = "kvm-vm", tags = []):
+         deps = [
+             "//:conftest",
+             "//agentplane/system_tests/k3s:recycling_probe",
+-            "//agentplane/app/testing:client",
+-            "//agentplane/session_dispatcher/dispatcher:testing_client",
+-            "//agentplane/system_tests:app_fixtures",
+             "//agentplane/system_tests:conftest",
+             "//agentplane/system_tests/deployment:pytest_plugin",
++            "//agentplane/system_tests/driver:case_batch",
+             "//agentplane/system_tests/driver:cluster",
+-            "//agentplane/system_tests/driver:sandbox",
++            "//agentplane/system_tests/driver:dispatcher_transport",
++            "//agentplane/system_tests/driver:scenario",
+             "//agentplane/system_tests/driver:scripted_upstream",
++            "//agentplane/system_tests/driver:tracing",
+             "//agentplane/system_tests/scenarios:firecracker",
+             "//agentplane/system_tests/scenarios:workload_trust",
++            "//util:net",
+             "@pypi//pytest",
++            "@pypi//pytest_asyncio",
+             "@pypi//pytest_bazel",
+         ],
+     )
+diff --git a/agentplane/system_tests/suites/test_firecracker.py b/agentplane/system_tests/suites/test_firecracker.py
+index 872b7d688f..cf94090732 100644
+--- a/agentplane/system_tests/suites/test_firecracker.py
++++ b/agentplane/system_tests/suites/test_firecracker.py
+@@ -1,41 +1,79 @@
+-"""Hardware-backed Firecracker acceptance on the dedicated BuildBuddy KVM worker."""
++"""Measure serial and overlapping execution of the same Firecracker acceptance cases."""
+
++import os
++from collections.abc import AsyncIterator
++from contextlib import nullcontext
+ from uuid import uuid4
+
+ import pytest
++import pytest_asyncio
+ import pytest_bazel
+
+-from agentplane.app.testing.client import Client
+-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
++from agentplane.system_tests.driver import scenario
++from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_items
+ from agentplane.system_tests.driver.cluster import Cluster
+-from agentplane.system_tests.driver.sandbox import Sandboxes
++from agentplane.system_tests.driver.dispatcher_transport import native_client
+ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
++from agentplane.system_tests.driver.tracing import tracer
+ from agentplane.system_tests.scenarios import workload_trust
+ from agentplane.system_tests.scenarios.firecracker import preserves_live_guest
++from util.net import Listener
+
+-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+-# gazelle:include_dep //agentplane/system_tests:app_fixtures
+-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
++pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
++pytestmark = [pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
++
++
++@pytest_asyncio.fixture(scope="module", loop_scope="module")
++async def firecracker_cases(
++    request: pytest.FixtureRequest,
++    cluster: Cluster,
++    base_url: str,
++    token: str,
++    scripted_listener: Listener,
++) -> AsyncIterator[CaseBatch]:
++    scripted = ScriptedUpstream()
++
++    async def live_guest(_worker: None) -> None:
++        async with (
++            scripted.case_scope(),
++            scenario.open_resources(cluster, base_url, token, tracer, native_diagnostics=False) as (client, sandbox),
++            native_client(cluster) as dispatcher,
++        ):
++            await preserves_live_guest(cluster, client, dispatcher, sandbox, scripted)
++
++    async def proxy_trust(_worker: None) -> None:
++        async with scenario.open_resources(
++            cluster, base_url, token, tracer, native_diagnostics=False
++        ) as (_, sandbox):
++            view = await sandbox(f"systest-firecracker-trust-{uuid4().hex[:8]}", template="environment-firecracker")
++            await workload_trust.a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
++                cluster, view, route=workload_trust.RunnerControlRoute.POD_IP
++            )
++
++    scenarios = {
++        "test_firecracker_preserves_live_guest": live_guest,
++        "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner": proxy_trust,
++    }
++    cases = {item.nodeid: Case.for_item(item, scenarios[item.name]) for item in selected_items(request)}
++    limit = int(os.environ["DUCKTAPE_FIRECRACKER_CASE_LIMIT"])
++    async with (
++        scripted.serving(listener=scripted_listener.socket),
++        CaseBatch.running(cases, limit=limit, worker_scope=nullcontext) as batch,
++    ):
++        yield batch
+
+
+ @pytest.mark.scripted_model
+ async def test_firecracker_preserves_live_guest(
+-    cluster: Cluster,
+-    client: Client,
+-    dispatcher: SessionDispatcherClient,
+-    sandbox: Sandboxes,
+-    scripted: ScriptedUpstream,
++    firecracker_cases: CaseBatch, request: pytest.FixtureRequest
+ ) -> None:
+-    await preserves_live_guest(cluster, client, dispatcher, sandbox, scripted)
++    await firecracker_cases.report(request)
+
+
+ async def test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner(
+-    cluster: Cluster, sandbox: Sandboxes
++    firecracker_cases: CaseBatch, request: pytest.FixtureRequest
+ ) -> None:
+-    view = await sandbox(f"systest-firecracker-trust-{uuid4().hex[:8]}", template="environment-firecracker")
+-    await workload_trust.a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
+-        cluster, view, route=workload_trust.RunnerControlRoute.POD_IP
+-    )
++    await firecracker_cases.report(request)
+
+
+ if __name__ == "__main__":

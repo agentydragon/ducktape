@@ -23062,5 +23062,761 @@
     },
     "new_test_submissions": 0,
     "counterfactual": "Fixed observed enqueue, preparation, process, upload, other actions, other gates and post-test work. Removing this queue can advance the observed path at most to the latest unchanged physical completion or next required gate. Applies only where the Pod critical path was verified. This is a queue-only ceiling, not measured savings or a population estimate."
-  }
+  },
+  "cas_followup": {
+    "pr_invocation": "3a0fd467-3e5f-5d50-b572-cf88338b1a09",
+    "cold_invocation": "03f68bb6-38ed-47be-b373-f1d7692d2d99",
+    "incident_utc": "2026-11-20",
+    "distinct_pr_workers": 2,
+    "executions": [
+      {
+        "label": "PR #18106 \u00b7 Firecracker",
+        "input_s": 581.93,
+        "bytes": 65573777,
+        "files": 4,
+        "recovered_read_stalls": 10,
+        "input_start_utc": "2026-11-20T08:56:01.116889976Z",
+        "input_end_utc": "2026-11-20T09:05:43.046433481Z"
+      },
+      {
+        "label": "PR #18106 \u00b7 VM",
+        "input_s": 581.086,
+        "bytes": 65573777,
+        "files": 4,
+        "recovered_read_stalls": 1,
+        "input_start_utc": "2026-11-20T08:56:02.646141506Z",
+        "input_end_utc": "2026-11-20T09:05:43.731744464Z"
+      },
+      {
+        "label": "Cold Firecracker \u00b7 failed attempt 1",
+        "input_s": 172.888,
+        "bytes": null,
+        "files": null,
+        "recovered_read_stalls": 15,
+        "input_start_utc": "2026-11-20T08:27:36.746244972Z",
+        "input_end_utc": "2026-11-20T08:30:29.634700960Z"
+      },
+      {
+        "label": "Cold Firecracker \u00b7 failed attempt 2",
+        "input_s": 529.935,
+        "bytes": null,
+        "files": null,
+        "recovered_read_stalls": 4,
+        "input_start_utc": "2026-11-20T08:34:48.402143867Z",
+        "input_end_utc": "2026-11-20T08:43:38.336665272Z"
+      },
+      {
+        "label": "Cold Firecracker \u00b7 recovered attempt",
+        "input_s": 212.941,
+        "bytes": 56690,
+        "files": 4,
+        "recovered_read_stalls": 0,
+        "input_start_utc": "2026-11-20T08:43:44.632793725Z",
+        "input_end_utc": "2026-11-20T08:47:17.573729030Z"
+      }
+    ],
+    "shared_pr_input_sizes_bytes": [292, 3240, 3525, 65566720],
+    "largest_path": "agentplane/action_service/service_binary_layer.tar",
+    "worker_signals": {
+      "counter_method": "Maximum fleet-wide two-minute increase sampled at one minute. Prometheus extrapolates counts. Canceled RPCs can result from client cancellation. Use logs and native execution records for exact per-action evidence.",
+      "windows_max_2m_increase": {
+        "before-Read": {
+          "OK": 196.0
+        },
+        "before-BatchReadBlobs": {
+          "OK": 2.0
+        },
+        "before-GetTree": {
+          "OK": 2.0
+        },
+        "before-scrapes": {
+          "scrapes": 5.0
+        },
+        "cold-Read": {
+          "Canceled": 499.05666666666673,
+          "OK": 50.0,
+          "Unavailable": 89.33666666666666
+        },
+        "cold-BatchReadBlobs": {
+          "Canceled": 0.0,
+          "DeadlineExceeded": 2.0,
+          "OK": 2.0,
+          "Unavailable": 0.0
+        },
+        "cold-GetTree": {
+          "OK": 2.0,
+          "Unavailable": 2.0
+        },
+        "cold-scrapes": {
+          "scrapes": 4.0
+        },
+        "pr-Read": {
+          "Canceled": 574.0,
+          "OK": 2112.3959333333332,
+          "Unavailable": 256.0
+        },
+        "pr-BatchReadBlobs": {
+          "OK": 84.97659999999999,
+          "Unavailable": 0.0
+        },
+        "pr-GetTree": {
+          "OK": 2.0,
+          "Unavailable": 0.0
+        },
+        "pr-scrapes": {
+          "scrapes": 8.0
+        }
+      },
+      "daily_sample": {
+        "window": {
+          "start": "2026-11-19T22:40:00Z",
+          "end": "2026-11-20T22:40:00Z",
+          "step": "300s"
+        },
+        "series": {
+          "read-status": {
+            "Canceled": {
+              "nonzero": 8,
+              "samples": 20,
+              "min": 0.0,
+              "top": [
+                ["2026-11-20T09:10:00+00:00", 370.62],
+                ["2026-11-20T09:15:00+00:00", 100.25],
+                ["2026-11-20T08:40:00+00:00", 51.25],
+                ["2026-11-20T09:00:00+00:00", 45.81]
+              ]
+            },
+            "OK": {
+              "nonzero": 82,
+              "samples": 263,
+              "min": 0.0,
+              "top": [
+                ["2026-11-20T17:30:00+00:00", 6153.39],
+                ["2026-11-20T03:55:00+00:00", 3030.0],
+                ["2026-11-20T20:50:00+00:00", 2396.18],
+                ["2026-11-20T19:55:00+00:00", 2361.32]
+              ]
+            },
+            "Unavailable": {
+              "nonzero": 6,
+              "samples": 20,
+              "min": 0.0,
+              "top": [
+                ["2026-11-20T09:10:00+00:00", 262.06],
+                ["2026-11-20T08:30:00+00:00", 108.93],
+                ["2026-11-20T09:00:00+00:00", 31.25],
+                ["2026-11-20T08:35:00+00:00", 27.5]
+              ]
+            }
+          },
+          "scrapes": {
+            "scrapes": {
+              "nonzero": 289,
+              "samples": 289,
+              "min": 2.0,
+              "top": [
+                ["2026-11-20T00:30:00+00:00", 8.0],
+                ["2026-11-20T00:35:00+00:00", 8.0],
+                ["2026-11-20T00:40:00+00:00", 8.0],
+                ["2026-11-20T01:45:00+00:00", 8.0]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "file_mapping": "Decode downloadedFileIndicesBitmap on completed TestRunners against CAS Action input Directory tree in executor traversal order. One blob may serve multiple paths. Counts and bytes reconcile against native IO receipts.",
+      "retry_logs": "Exact execution ID in retained worker console logs. Deduplicate same normalized message and timestamp. Retry messages lack blob IDs."
+    },
+    "replay": [
+      {
+        "label": "Hosted control A",
+        "large_seconds": [0.5265],
+        "verified_reads": 4,
+        "upstream_reads": null,
+        "client_batch_wall_s": 0.5337
+      },
+      {
+        "label": "Empty proxy",
+        "large_seconds": [1.0588],
+        "verified_reads": 4,
+        "upstream_reads": 53,
+        "client_batch_wall_s": 1.0638
+      },
+      {
+        "label": "Warm proxy, two clients",
+        "large_seconds": [0.3781, 0.3854],
+        "verified_reads": 8,
+        "upstream_reads": 0,
+        "client_batch_wall_s": 0.5328
+      },
+      {
+        "label": "Hosted control B",
+        "large_seconds": [0.5134],
+        "verified_reads": 4,
+        "upstream_reads": null,
+        "client_batch_wall_s": 0.5206
+      },
+      {
+        "label": "Warm proxy, after restart",
+        "large_seconds": [0.4231],
+        "verified_reads": 4,
+        "upstream_reads": 0,
+        "client_batch_wall_s": 0.4298
+      }
+    ],
+    "proxy_version": "enterprise-v2.323.0",
+    "proxy_image_digest": "sha256:d527deb6f72c6bc95b0377d6ff0ae8754bc47012e1b2baa16ab838b6e879bea5",
+    "replay_method": "Loopback proxy with empty Pebble store, live BuildBuddy Cloud upstream and bb download using the same four exact PR digests. SHA-256 and length verified for all successful reads. Metrics sampled before initial fill and after warm repetition. CLI call wall includes verification.",
+    "replay_scope": "Single developer host. Two independent read sets in the warm phase. Desktop-route upstream was healthy. Production KVM canary and account pricing or support entitlement are unmeasured.",
+    "proxy_docs": "https://www.buildbuddy.io/docs/enterprise-proxy/",
+    "executor_config": "https://github.com/agentydragon/ducktape/blob/2657cde824fb66cbe78c9d5c5cff01b72f8d1ad2/devinfra/buildbuddy/kvm/worker/executor.yaml"
+  },
+  "firecracker_overlap": {
+    "rows": [
+      {
+        "invocation": "da032f80-4269-4034-8238-3d3779e037f3",
+        "outcome": "warm",
+        "prior_arm": "seed",
+        "same_worker_as_prior": true,
+        "same_runner_as_prior": true,
+        "same_mount_as_prior": true,
+        "exit_status": 0,
+        "discard_requested": false,
+        "peak_cgroup_bytes": 6528389120,
+        "cumulative_oom_kills": 0,
+        "case_envelope_s": 203.791,
+        "case_overlap_s": 0,
+        "cases": [
+          {
+            "start": "2026-11-20T22:33:16.245108Z",
+            "end": "2026-11-20T22:36:00.483435Z",
+            "seconds": 164.238,
+            "test": "test_firecracker_preserves_live_guest"
+          },
+          {
+            "start": "2026-11-20T22:36:00.483792Z",
+            "end": "2026-11-20T22:36:40.035876Z",
+            "seconds": 39.552,
+            "test": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner"
+          }
+        ],
+        "fixture_configuration": [
+          {
+            "start": "2026-11-20T22:32:43.611318Z",
+            "end": "2026-11-20T22:32:43.617175Z",
+            "seconds": 0.006
+          }
+        ],
+        "stack_cleanup": [
+          {
+            "start": "2026-11-20T22:36:41.846359Z",
+            "end": "2026-11-20T22:37:17.520511Z",
+            "seconds": 35.674
+          }
+        ],
+        "native_process_s": 288.58,
+        "native_input_s": 0.558,
+        "native_upload_s": 0.765,
+        "oom_kills_since_prior_case": 0,
+        "label": "First serial control, warm",
+        "completed_utc": "2026-11-20T22:37:19.237145590Z",
+        "junit": {
+          "test_firecracker_preserves_live_guest": true,
+          "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner": true
+        },
+        "live_case_s": 164.238,
+        "refusal_case_s": 39.552
+      },
+      {
+        "invocation": "bcad8737-db08-4b4b-b860-a82eafaa68c2",
+        "outcome": "cold",
+        "prior_arm": null,
+        "same_worker_as_prior": false,
+        "same_runner_as_prior": false,
+        "same_mount_as_prior": false,
+        "exit_status": 0,
+        "discard_requested": false,
+        "peak_cgroup_bytes": 4491886592,
+        "cumulative_oom_kills": 0,
+        "case_envelope_s": 223.425,
+        "case_overlap_s": 53.081,
+        "cases": [
+          {
+            "start": "2026-11-20T22:41:00.883501Z",
+            "end": "2026-11-20T22:41:53.964367Z",
+            "seconds": 53.081,
+            "test": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner"
+          },
+          {
+            "start": "2026-11-20T22:41:00.882834Z",
+            "end": "2026-11-20T22:44:44.307603Z",
+            "seconds": 223.425,
+            "test": "test_firecracker_preserves_live_guest"
+          }
+        ],
+        "fixture_configuration": [
+          {
+            "start": "2026-11-20T22:39:12.002053Z",
+            "end": "2026-11-20T22:39:12.007961Z",
+            "seconds": 0.006
+          }
+        ],
+        "stack_cleanup": [
+          {
+            "start": "2026-11-20T22:44:46.941666Z",
+            "end": "2026-11-20T22:45:27.431830Z",
+            "seconds": 40.49
+          }
+        ],
+        "native_process_s": 403.842,
+        "native_input_s": 0.593,
+        "native_upload_s": 0.789,
+        "label": "Unpinned concurrent run, cold",
+        "completed_utc": "2026-11-20T22:45:29.346725699Z",
+        "junit": {
+          "test_firecracker_preserves_live_guest": true,
+          "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner": true
+        },
+        "live_case_s": 223.425,
+        "refusal_case_s": 53.081
+      },
+      {
+        "invocation": "c60ea8ec-5daf-497c-ae82-121b54f5dcc9",
+        "outcome": "warm",
+        "prior_arm": "overlap",
+        "same_worker_as_prior": true,
+        "same_runner_as_prior": true,
+        "same_mount_as_prior": true,
+        "exit_status": 0,
+        "discard_requested": false,
+        "peak_cgroup_bytes": 5257609216,
+        "cumulative_oom_kills": 0,
+        "case_envelope_s": 285.091,
+        "case_overlap_s": 0,
+        "cases": [
+          {
+            "start": "2026-11-20T22:47:37.944182Z",
+            "end": "2026-11-20T22:51:13.825556Z",
+            "seconds": 215.881,
+            "test": "test_firecracker_preserves_live_guest"
+          },
+          {
+            "start": "2026-11-20T22:51:13.827242Z",
+            "end": "2026-11-20T22:52:23.035116Z",
+            "seconds": 69.208,
+            "test": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner"
+          }
+        ],
+        "fixture_configuration": [
+          {
+            "start": "2026-11-20T22:46:58.456426Z",
+            "end": "2026-11-20T22:46:58.463021Z",
+            "seconds": 0.007
+          }
+        ],
+        "stack_cleanup": [
+          {
+            "start": "2026-11-20T22:52:26.058289Z",
+            "end": "2026-11-20T22:53:08.118333Z",
+            "seconds": 42.06
+          }
+        ],
+        "native_process_s": 388.363,
+        "native_input_s": 0.757,
+        "native_upload_s": 0.847,
+        "oom_kills_since_prior_case": 0,
+        "label": "Serial, one case at a time",
+        "completed_utc": "2026-11-20T22:53:10.258951076Z",
+        "junit": {
+          "test_firecracker_preserves_live_guest": true,
+          "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner": true
+        },
+        "live_case_s": 215.881,
+        "refusal_case_s": 69.208
+      },
+      {
+        "invocation": "1f636e8c-8059-4149-9d72-5e7c04209d77",
+        "outcome": "warm",
+        "prior_arm": "serial-repeat",
+        "same_worker_as_prior": true,
+        "same_runner_as_prior": true,
+        "same_mount_as_prior": true,
+        "exit_status": 0,
+        "discard_requested": false,
+        "peak_cgroup_bytes": 5332291584,
+        "cumulative_oom_kills": 0,
+        "case_envelope_s": 218.813,
+        "case_overlap_s": 53.687,
+        "cases": [
+          {
+            "start": "2026-11-20T22:54:50.199029Z",
+            "end": "2026-11-20T22:55:43.885878Z",
+            "seconds": 53.687,
+            "test": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner"
+          },
+          {
+            "start": "2026-11-20T22:54:50.197999Z",
+            "end": "2026-11-20T22:58:29.011075Z",
+            "seconds": 218.813,
+            "test": "test_firecracker_preserves_live_guest"
+          }
+        ],
+        "fixture_configuration": [
+          {
+            "start": "2026-11-20T22:54:12.742120Z",
+            "end": "2026-11-20T22:54:12.746813Z",
+            "seconds": 0.005
+          }
+        ],
+        "stack_cleanup": [
+          {
+            "start": "2026-11-20T22:58:31.719410Z",
+            "end": "2026-11-20T22:59:11.719591Z",
+            "seconds": 40.0
+          }
+        ],
+        "native_process_s": 318.547,
+        "native_input_s": 0.42,
+        "native_upload_s": 0.904,
+        "oom_kills_since_prior_case": 0,
+        "label": "Concurrent, two cases",
+        "completed_utc": "2026-11-20T22:59:13.837922021Z",
+        "junit": {
+          "test_firecracker_preserves_live_guest": true,
+          "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner": true
+        },
+        "live_case_s": 218.813,
+        "refusal_case_s": 53.687
+      }
+    ],
+    "seed": {
+      "invocation": "18cc036e-72a9-444c-8459-9b1724d01e49",
+      "outcome": "cold",
+      "prior_arm": null,
+      "same_worker_as_prior": false,
+      "same_runner_as_prior": false,
+      "same_mount_as_prior": false,
+      "exit_status": 0,
+      "discard_requested": false,
+      "peak_cgroup_bytes": 6528389120,
+      "cumulative_oom_kills": 0,
+      "case_envelope_s": 38.935,
+      "case_overlap_s": null,
+      "cases": [
+        {
+          "start": "2026-11-20T22:28:15.017581Z",
+          "end": "2026-11-20T22:28:53.952141Z",
+          "seconds": 38.935,
+          "test": "test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner"
+        }
+      ],
+      "fixture_configuration": [
+        {
+          "start": "2026-11-20T22:24:13.038438Z",
+          "end": "2026-11-20T22:24:13.043217Z",
+          "seconds": 0.005
+        }
+      ],
+      "stack_cleanup": [
+        {
+          "start": "2026-11-20T22:28:55.983455Z",
+          "end": "2026-11-20T22:29:31.355467Z",
+          "seconds": 35.372
+        }
+      ],
+      "native_process_s": 341.261,
+      "native_input_s": 1.468,
+      "native_upload_s": 0.719,
+      "completed_utc": "2026-11-20T22:29:32.859411191Z"
+    },
+    "discard": {
+      "invocation": "e29d4e4f-8fd7-4c04-9f99-dc61175b09da",
+      "outcome": null,
+      "prior_arm": "overlap-warm",
+      "same_worker_as_prior": true,
+      "same_runner_as_prior": true,
+      "same_mount_as_prior": true,
+      "exit_status": 0,
+      "discard_requested": true,
+      "peak_cgroup_bytes": 5332291584,
+      "cumulative_oom_kills": 0,
+      "case_envelope_s": null,
+      "case_overlap_s": null,
+      "cases": [],
+      "fixture_configuration": [],
+      "stack_cleanup": [],
+      "native_process_s": 20.853,
+      "native_input_s": 0.649,
+      "native_upload_s": 0.238,
+      "oom_kills_since_prior_case": 0,
+      "completed_utc": "2026-11-20T23:01:01.357572231Z"
+    },
+    "initial_discard": {
+      "observed_at_utc": "2026-11-20T22:50:02.920963+00:00",
+      "old_pod_exists": false,
+      "replacement_times_utc": {
+        "VirtualMachine": "2026-11-20T22:45:02Z",
+        "VirtualMachineInstance": "2026-11-20T22:45:02Z",
+        "DataVolume": "2026-11-20T22:45:02Z",
+        "PersistentVolumeClaim": "2026-11-20T22:45:02Z"
+      },
+      "discard_attempt_invocation": "d2dd7e7d-051e-47eb-bb63-d89a696fc165",
+      "discard_attempt_cause": "BuildBuddy scheduler could not find the requested executor. Kubernetes had replaced the original worker and its current VM, VMI and blank work disk are newer than the serial run."
+    },
+    "finding": "The matched warm pair ran both cases and they passed. The case lifetimes overlapped for 53.7s. The concurrent TestRunner process was 69.8s faster than the serial process. The interval covering both cases was 66.3s shorter.",
+    "method": "The last two timed rows reused one warm worker, Docker runner and K3s data mount. The concurrent action was sent to that executor with a scheduler override. All four action input roots agree. The only TestRunner command change was the case limit. Both original case implementations and their own cleanup ran on one stack. The spike omitted supplemental native diagnostics on scenario failures.",
+    "limit": "The initial concurrent attempt landed on a different worker and started cold. Its process time cannot estimate the concurrency effect. The cgroup memory peak spans the runner lifetime and only detects a new high water mark. GitHub feedback is unmeasured.",
+    "decision": "The warm pair supports a coverage-preserving implementation experiment. Run a matched cold comparison and repeat across workers before estimating the effect on required CI.",
+    "action": "Validate the overlap implementation on cold fixtures and more KVM workers.",
+    "common_input_root": {
+      "hash": "a3b302d4ab5a4fef9dcf18ea956e8c65399da27fcf9b3de155f32c38b7695060",
+      "sizeBytes": "165"
+    },
+    "patch_sha256": "53384f6ffa95cc5bc66a78c19152bdf7361a6de6069b6dd5466fe56f81cdb28e",
+    "serial_minus_concurrent_process_s": 69.816,
+    "serial_minus_concurrent_case_envelope_s": 66.278
+  },
+  "current_pr_census": {
+    "window_utc": ["2026-11-20T21:12:39Z", "2026-11-20T22:35:50Z"],
+    "observed_at_utc": "2026-11-20T22:35:53+00:00",
+    "workflow_runs": 42,
+    "same_repository_run_heads": 42,
+    "eligible_prs": 15,
+    "ambiguous_head_associations": 1,
+    "gates": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "overall": {
+      "outcomes": {
+        "green": 15
+      },
+      "n": 15,
+      "median_s": 223.0,
+      "p90_s": 578.0
+    },
+    "groups": {
+      "Agentplane backend": {
+        "outcomes": {
+          "green": 1
+        },
+        "n": 1,
+        "median_s": 578.0,
+        "p90_s": 578.0
+      },
+      "Documentation": {
+        "outcomes": {
+          "green": 3
+        },
+        "n": 3,
+        "median_s": 138.0,
+        "p90_s": 152.0
+      },
+      "Frontend": {
+        "outcomes": {
+          "green": 2
+        },
+        "n": 2,
+        "median_s": 182.0,
+        "p90_s": 230.0
+      },
+      "Large diff / unclassified": {
+        "outcomes": {
+          "green": 1
+        },
+        "n": 1,
+        "median_s": 268.0,
+        "p90_s": 268.0
+      },
+      "Other code / tooling": {
+        "outcomes": {
+          "green": 2
+        },
+        "n": 2,
+        "median_s": 157.0,
+        "p90_s": 168.0
+      },
+      "cdk8s infrastructure": {
+        "outcomes": {
+          "green": 6
+        },
+        "n": 6,
+        "median_s": 242.0,
+        "p90_s": 679.0
+      }
+    },
+    "rows": [
+      {
+        "pr": 18109,
+        "head": "1b10d1d47677b64d48a569b3f0ddb1d8e5429a9a",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T21:40:51Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 168.0,
+        "outcome": "green",
+        "run_ids": [44822455361],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18222,
+        "head": "3ab91fe5609da31415dadf080403f372d34a744b",
+        "group": "Large diff / unclassified",
+        "start": "2026-11-20T22:20:04Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 268.0,
+        "outcome": "green",
+        "run_ids": [44828074685],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18287,
+        "head": "1657291d58ee75b48882ad51bc68b650b5a8db70",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:17:53Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 679.0,
+        "outcome": "green",
+        "run_ids": [44827763181],
+        "run_attempts": [2]
+      },
+      {
+        "pr": 18296,
+        "head": "dcd3dc3355f7d320410f44029f2e65d485e20561",
+        "group": "Documentation",
+        "start": "2026-11-20T21:50:47Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 152.0,
+        "outcome": "green",
+        "run_ids": [44823884220],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18297,
+        "head": "22e5e223c5b6a15459dc13605bc01985e001e810",
+        "group": "Agentplane backend",
+        "start": "2026-11-20T21:51:32Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 578.0,
+        "outcome": "green",
+        "run_ids": [44823991147],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18300,
+        "head": "010edb8970ec282800732d6d5409a9df2cbbec50",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T21:55:58Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 223.0,
+        "outcome": "green",
+        "run_ids": [44824621919],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18301,
+        "head": "800add090bad914b66223f4e6fd2d33c409afe5c",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T21:56:39Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 257.0,
+        "outcome": "green",
+        "run_ids": [44824716864],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18302,
+        "head": "14d934cf261e9ff92cb10bb94a7ace6fed0f4e17",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:28:49Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 245.0,
+        "outcome": "green",
+        "run_ids": [44829283201],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18305,
+        "head": "56d5b3bf83aeec7e6ddd6806c9be65c32e8b176d",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:01:23Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 239.0,
+        "outcome": "green",
+        "run_ids": [44825380039],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18306,
+        "head": "4313d23e9cb600d76979aadc173ace9d9231fa41",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:18:25Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 221.0,
+        "outcome": "green",
+        "run_ids": [44827840742],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18307,
+        "head": "13a46dadf71593965e909087e3ed5f73a4bfa7a7",
+        "group": "Frontend",
+        "start": "2026-11-20T22:25:39Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 230.0,
+        "outcome": "green",
+        "run_ids": [44828860498],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18308,
+        "head": "c7fd85c496bc5a20021df1ee25aa7acf8b2ca0c0",
+        "group": "Frontend",
+        "start": "2026-11-20T22:26:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 134.0,
+        "outcome": "green",
+        "run_ids": [44828991297],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18309,
+        "head": "142732d4d27ae2ab10c1bd0a21c851b6be6c2f43",
+        "group": "Documentation",
+        "start": "2026-11-20T22:27:09Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 138.0,
+        "outcome": "green",
+        "run_ids": [44829061155],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18310,
+        "head": "b2e2a14450ef0a39185400b114f92cbe4870a2ad",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T22:27:44Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 146.0,
+        "outcome": "green",
+        "run_ids": [44829137344],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18313,
+        "head": "531adcf4b9643d81c836f8c4451c6271d206e7b2",
+        "group": "Documentation",
+        "start": "2026-11-20T22:30:12Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 125.0,
+        "outcome": "green",
+        "run_ids": [44829468959],
+        "run_attempts": [1]
+      }
+    ],
+    "method": "Same-repository current PR heads targeting devel, joined from CI workflow runs created in this window to exact-head GitHub check-run IDs. Excludes superseded heads, forks and runs without an unambiguous PR match. From first observed workflow creation in this window through the last of the three current required statuses; times conditional on green. In-progress and very recent heads are right-censored."
+  },
+  "research_source_devel_commit": "2657cde824fb66cbe78c9d5c5cff01b72f8d1ad2",
+  "retained_baseline_snapshot": "c4f08c7721f603950152a3b0862475de201b7c1f"
 }

@@ -63,11 +63,14 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=dde2ba5875b250d0aebf5b67586f87d9be918dcbf0f23ebbea4b7a832a3bfb82",
+        "./evidence.json?v=7eed3e7223bd7658bb5d96aba4b34b8b789426b8975fba957f9d36092ef40a0a",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const podAdmission = evidence.managed_pod_admission;
+      const cas = evidence.cas_followup;
+      const overlap = evidence.firecracker_overlap;
+      const census = evidence.current_pr_census;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -144,6 +147,8 @@
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
               <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · Backend cutover follow-up updated 20 November · Inspected devel ${evidence.source_devel_commit}<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
+              <${Text} mt="sm">In the 21:12–22:35 UTC refresh on 20 November, all ${census.eligible_prs} current exact heads with an unambiguous CI-to-PR match were green at observation. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)}. The workflow frame contained ${census.workflow_runs} runs. Includes one Agentplane backend head. ${pr(18297)}<//>
+              <${Text} c="dimmed" size="sm">The refresh excludes superseded and unmatched heads. The weekly graph retains its seven complete UTC days and original population.<//>
             </header>
             <section id="weekly-trend">
               <${Title} order=${2}>Daily time to green · 13–19 November<//>
@@ -288,6 +293,72 @@
               <${Text} mt="sm">Keep the managed route while the admission cause is unknown. The BuildBuddy key received permission denials for executor inventory and account usage. Account throttling, a shortage of compatible workers and reservation terms remain unverified. Pursue a small reserved comparison only if provider telemetry identifies recurring, actionable contention and a candidate can serve the same Firecracker, snapshot and scratch requirements.<//>
               <${Text} size="sm" c="dimmed" mt="sm">Queue sample 01:40–21:06 UTC on 20 November. The capped target-history extension added five originating actions to the retained PR sample and excluded two shared links. An independent workflow census from 21:12:39 to 21:44 UTC found 14 successful, one canceled and two in-progress CI runs at collection, including superseded heads. The exact-head distribution above retains its original window. Route reviewed at devel ${podAdmission.inspected_source_devel_commit}.<//>
             </section>
+            <section id="kvm-cas">
+              <${Title} order=${2}>A shared KVM cache can serve repeated CAS reads<///>
+              <${Text} my="sm">On #18106, VM and Firecracker each spent about 9m42s fetching inputs on different workers. Their download bitmaps resolve to the same four unique blobs. The 62.5 MiB Action Service layer accounted for 99.989% of the bytes. Both actions passed. A Gateway crash test caused the rerun. ${pr(18106)} · ${build(cas.pr_invocation, "First Bazel attempt")}<//>
+              ${table(
+                [
+                  "Execution",
+                  "Input fetch",
+                  "Unique files / bytes",
+                  "Read timeouts followed by successful retry",
+                ],
+                cas.executions.map((r) => [
+                  r.label,
+                  seconds(r.input_s),
+                  r.bytes == null
+                    ? "Unknown"
+                    : `${r.files} / ${r.bytes.toLocaleString("en-US")}`,
+                  r.recovered_read_stalls,
+                ]),
+                655,
+              )}
+              <${Text} size="sm" mt="sm">The execution receipts identify the whole set of downloads. The retry logs lack blob digests and the two terminal cold attempts lack bitmaps. The recovered cold attempt fetched just 55 KiB in 3m33s, so byte volume alone cannot explain the long waits. Worker-side gRPC counters also recorded Unavailable and Canceled responses during both incident windows. The four largest five-minute Unavailable bursts in the 24-hour sample were between 08:25 and 09:10 UTC. The counters establish the timing of a shared path problem. Responsibility and per-blob timings remain unknown. ${build(cas.cold_invocation, "Cold execution and attempts")}<//>
+              <${Title} order=${3} mt="md">Loopback replay of the four PR blobs<///>
+              ${table(
+                [
+                  "Route",
+                  "62.5 MiB layer read",
+                  "Verified client reads",
+                  "Proxy upstream ByteStream reads",
+                ],
+                cas.replay.map((r) => [
+                  r.label,
+                  r.large_seconds.map(seconds).join(" / "),
+                  r.verified_reads,
+                  r.upstream_reads ?? "Direct",
+                ]),
+                625,
+              )}
+              <${Text} size="sm" mt="sm">BuildBuddy Enterprise Cache Proxy v2.323.0 filled an empty Pebble store, then served all eight repeat reads locally with zero additional upstream ByteStream calls. The cold fill made 53 upstream ByteStream RPCs for four client requests, including chunk reads. After a proxy restart with the same disk, four more reads hit locally. The restarted process contacted hosted authentication. Both direct controls were healthy. The proxy and clients ran on the same developer host, so these timings establish cache behavior and give no cluster or PR latency estimate.<//>
+              <${Text} my="sm">Pilot one internal SSD-backed proxy near the KVM workers. Use an isolated two-worker pool. Fill on one worker, then execute the same inputs on a second with an empty worker file cache. Compare direct, proxy miss and proxy hit phases with native input-fetch clocks, hit ratio and upstream retries. Capture BatchReadBlobs and GetTree alongside ByteStream. The replay exercised ByteStream only. Point only the pilot workers’ <code>executor.cache_target</code> at the proxy. Keep BuildBuddy Cloud as the authoritative cache and scheduler. The existing worker egress policy needs an explicit route to the internal service. ${link(cas.proxy_docs, "BuildBuddy Cache Proxy")} · ${link(cas.executor_config, "Worker configuration")}<//>
+            </section>
+            <section id="firecracker-overlap">
+              <${Title} order=${2}>Firecracker case overlap on a warm KVM runner<///>
+              <${Text} my="sm">${overlap.finding}<//>
+              ${table(
+                [
+                  "Arm",
+                  "TestRunner process",
+                  "Both-case envelope",
+                  "Case overlap",
+                  "Live guest",
+                  "Proxy-trust refusal",
+                ],
+                overlap.rows.map((r) => [
+                  build(r.invocation, r.label),
+                  seconds(r.native_process_s),
+                  seconds(r.case_envelope_s),
+                  seconds(r.case_overlap_s),
+                  seconds(r.live_case_s),
+                  seconds(r.refusal_case_s),
+                ]),
+                810,
+              )}
+              <${Text} size="sm" mt="sm">${overlap.method}<//>
+              <${Text} size="sm" mt="sm">${overlap.limit}<//>
+              <${Text} my="sm">${overlap.decision} ${link("./firecracker-overlap-spike.patch", "Experiment patch")} · ${pr(18246)}<//>
+            </section>
             <section id="reruns">
               <${Title} order=${2}>Failure recovery drove the backend tail<//>
               <${Text} my="sm">The informational BuildBuddy status preceded final red by 4 seconds to 10m32s. For #18243, an early test failure was followed by 7m42s of ongoing CI before final red, then 11m03s until GitHub created the next job. Assignment on that retry took 2s. GitHub identifies the triggering account type as User on these five retries. The request source and reason for the interval are unobserved.<//>
@@ -397,9 +468,11 @@
                 ["Priority", "Change or test", "Expected effect and boundary"],
                 [
                   [
-                    "1 · Failure recovery",
-                    "Extend the bbapi failedTest lookup to include the TIMED_OUT group. On the exact #18273 invocation, GetTarget returned TIMED_OUT while first-failure returned an empty label. The timeout action finished 7m15s before the live failure status. Verify when the broader query can first see a timeout and that the subscriber receives the attempt and invocation link.",
-                    "This recovers a missing failure category without changing required tests. The 7m15s is the physical-action-to-status interval. API indexing and subscriber delivery would reduce the available lead. Fix repeat failures separately to improve time to green.",
+                    "1 · Shared KVM cache",
+                    html`Pilot a persistent BuildBuddy Cache Proxy with two
+                    isolated workers and identical inputs.
+                    ${link("#kvm-cas", "Replay and incident clocks")}`,
+                    "Two different workers spent about 9m42s on the same downloads on #18106. A proxy could remove repeated upstream reads for cached blobs. The CI gain and fleet hit rate need a cluster comparison.",
                   ],
                   [
                     "2 · Managed Pod queue",
@@ -411,19 +484,16 @@
                   ],
                   [
                     "3 · Firecracker scenario overlap",
-                    "Compare serial and concurrent execution of the independent proxy-trust negative and live-guest cases under one fixture. Keep separate guest and credential identities, one-minute idle policy, cleanup and required cold coverage. Measure nested admission and peak memory before extending to loaded runs.",
-                    "Up to 75s on the #18246 trace if the shorter case overlaps fully without slowing the long case. A second whole stack repeats setup. Three first-pass backend heads had Firecracker as latest physical finisher.",
-                  ],
-                  [
-                    "4 · Verify the VM recycle failure",
-                    "Make Docker namespace preparation idempotent when a recycled runner with verified private cgroups is already in its /init child. Exercise a clean fixture followed by a fingerprint-changing action on the same runner. Keep negative coverage for host or unprepared namespaces.",
-                    "Matching receipts on #18265 and a devel push confirm the rebuild predicate. About 25s conditional headroom on #18265 before Gateway budget becomes last. The two-worker minimum and fleet warm-hit rate still need a matched comparison.",
+                    html`${overlap.action}
+                    ${link("#firecracker-overlap", "Matched KVM comparison")}`,
+                    "Three of 12 earlier first-pass backend heads had Firecracker as latest physical finisher. Other gates and action stages constrain any PR-level saving.",
                   ],
                 ],
                 1000,
               )}
               <${Text} mt="sm">A 30% reduction from the 9m31s one-attempt median requires 2m51s. Reaching a four-minute mean requires a 4m52s reduction from the observed 8m52s mean. None of the isolated observed path reductions covers that distance. A larger design would narrow App-triggered guest, Firecracker and managed Pod work together. Keep an end-to-end App→guest witness and the separate guest lifecycle, PKI and recovery assertions. Compare on the same selected source changes with exact gates and action inputs before counting a gain.<///>
-              <${Text} mt="sm">The 20 November cold job reached its 30-minute GitHub timeout. BuildBuddy finished successfully about eight seconds after GitHub canceled it. Two executor attempts failed waiting for CAS Read responses before the test process started. Input fetch consumed 2m53s, 8m50s and 3m33s across two failed starts and the passing attempt. The passing process took 6m50s. Inspect the worker-side CAS read path before changing the cold test budget. ${link(evidence.cold_workflow[1].html_url, "Passed run")} · ${link(evidence.cold_workflow[0].html_url, "Timed-out GitHub job")}${" · "}${build(evidence.cold_execution.invocation, "Recovered BuildBuddy result")}<//>
+              <${Text} mt="sm">The timeout lookup fix and recycled Docker rebuild fix merged. Track subscriber delivery separately from test-recovery time. The two-worker minimum and fleet warm-hit rate still need a matched comparison. ${pr(18292)} · ${pr(18295)}<//>
+              <${Text} mt="sm">The 20 November cold job reached its 30-minute GitHub timeout. BuildBuddy finished successfully about eight seconds after GitHub canceled it. Two executor attempts failed waiting for CAS Read responses before the test process started. Input fetch consumed 2m53s, 8m50s and 3m33s across two failed starts and the passing attempt. The passing process took 6m50s. The retained receipts and cache replay are linked above. ${link(evidence.cold_workflow[1].html_url, "Passed run")} · ${link(evidence.cold_workflow[0].html_url, "Timed-out GitHub job")}${" · "}${build(evidence.cold_execution.invocation, "Recovered BuildBuddy result")}<//>
             </section>
             <${Accordion} variant="separated">
               <${Accordion.Item} value="method">
