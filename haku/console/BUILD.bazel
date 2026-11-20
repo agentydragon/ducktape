@@ -207,7 +207,6 @@ py_library(
         ":database_migrate",
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
-        "//haku/console/identity:operator_identity_store",
         "//third_party/containers:pgvector_pg18",
         "//testing:postgres",
         "//testing:postgres_fixtures",
