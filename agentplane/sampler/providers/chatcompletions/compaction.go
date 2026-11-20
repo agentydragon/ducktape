@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
@@ -76,36 +75,6 @@ func (c *Context) PrepareCompaction(keepRecentTurns int, environment string) (*C
 		return nil, err
 	}
 	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: slices.Clone(c.messages[cut:]), environment: environment}, nil
-}
-
-// StoreRequest freezes a dedicated summary request. Sampling instructions and tools are
-// supplied by the separate sampling profile after compaction settles.
-func (p *CompactionPlan) StoreRequest(store content.ContentWriter, model string, maxTokens int) (content.ContentID, []content.ContentID, error) {
-	raw, err := json.Marshal(requestProfile{Model: model, Stream: true, MaxTokens: maxTokens})
-	if err != nil {
-		return "", nil, err
-	}
-	profile, err := store.PutContent(profileKind, raw)
-	if err != nil {
-		return "", nil, err
-	}
-	messages := make([]message, 0, len(p.prefix)+2)
-	messages = append(messages, message{Role: "system", Content: summaryInstructions})
-	messages = append(messages, p.prefix...)
-	messages = append(messages, message{Role: "user", Content: "Write the handoff summary now."})
-	ids := make([]content.ContentID, 0, len(messages))
-	for _, m := range messages {
-		raw, err := json.Marshal(m)
-		if err != nil {
-			return "", nil, err
-		}
-		id, err := StoreRecord(store, raw)
-		if err != nil {
-			return "", nil, err
-		}
-		ids = append(ids, id)
-	}
-	return profile, ids, nil
 }
 
 func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {

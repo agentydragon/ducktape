@@ -1222,9 +1222,14 @@ async def test_chat_completions_compaction(
             async with await endpoint.next() as exchange:
                 frozen = exchange.request.body
                 assert frozen["max_tokens"] == 8192
-                assert "tools" not in frozen
-                assert any(m["role"] == "user" and m["content"] == old for m in frozen["messages"])
-                assert not any(m["content"] == recent for m in frozen["messages"])
+                assert frozen["tool_choice"] == "none"
+                assert frozen["tools"] == first_request["tools"]
+                messages = frozen["messages"]
+                assert messages[: len(first_request["messages"])] == first_request["messages"]
+                assert {"role": "assistant", "content": "old answer"} in messages
+                assert {"role": "user", "content": recent} in messages
+                assert messages[-1]["role"] == "user"
+                assert "handoff" in messages[-1]["content"]
                 if automatic:
                     await exchange.send(*completion("truncated summary")[:-1])
                 else:
@@ -1247,6 +1252,7 @@ async def test_chat_completions_compaction(
             async with await endpoint.next() as exchange:
                 continued = exchange.request.body
                 assert continued["tools"] == first_request["tools"]
+                assert "tool_choice" not in continued
                 assert continued["messages"][0] == first_request["messages"][0]
                 messages = continued["messages"]
                 assert {

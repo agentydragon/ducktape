@@ -17,6 +17,7 @@ type requestProfile struct {
 	Model         string         `json:"model"`
 	Tools         []tool         `json:"tools,omitempty"`
 	Stream        bool           `json:"stream"`
+	ToolChoice    string         `json:"tool_choice,omitempty"`
 	MaxTokens     int            `json:"max_tokens,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
 }
@@ -88,6 +89,40 @@ func WithStreamUsage(store interface {
 		return "", err
 	}
 	return store.PutContent(profileKind, raw)
+}
+
+// PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
+// disables their selection for the appended summary request.
+func PrepareCompactionRequest(store interface {
+	content.ContentReader
+	content.ContentWriter
+}, profileID content.ContentID, config CompactionConfig,
+) (content.ContentID, content.ContentID, error) {
+	raw, err := load(store, profileID, profileKind)
+	if err != nil {
+		return "", "", err
+	}
+	var profile requestProfile
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		return "", "", err
+	}
+	profile.ToolChoice = "none"
+	profile.MaxTokens = config.MaxTokens
+	raw, err = json.Marshal(profile)
+	if err != nil {
+		return "", "", err
+	}
+	profileID, err = store.PutContent(profileKind, raw)
+	if err != nil {
+		return "", "", err
+	}
+	instruction := fmt.Sprintf("%s The last %d user turns before this request will be retained verbatim. Focus the summary on the earlier turns.", summaryInstructions, config.KeepRecentTurns)
+	raw, err = json.Marshal(message{Role: "user", Content: instruction})
+	if err != nil {
+		return "", "", err
+	}
+	instructionID, err := StoreRecord(store, raw)
+	return profileID, instructionID, err
 }
 
 func StoreRecord(store content.ContentWriter, raw json.RawMessage) (content.ContentID, error) {

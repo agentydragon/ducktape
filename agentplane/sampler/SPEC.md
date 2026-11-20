@@ -397,9 +397,11 @@ Image tool results become text notices.
 
 A Chat Completions route with `chat_compaction` supports manual compaction and can set
 `auto_compact_tokens` to trigger at the last streamed usage total. The sampler keeps
-`keep_recent_turns` user turns verbatim and summarizes the older prefix through Chat Completions
-with no tools and an output budget of `max_tokens`. The cut is at a user message, so retained
-tool calls and their results stay together. A complete nonempty text summary replaces the active
+`keep_recent_turns` user turns verbatim. The summary request reuses the system message, tools and
+conversation, then appends a user message asking for a handoff summary of older turns. It sets
+`tool_choice: "none"` and an output budget of `max_tokens`. This preserves the prompt prefix for
+providers that cache it. The cut is at a user message, so retained tool calls and their results
+stay together. A complete nonempty text summary replaces the active
 prefix only if it reduces the serialized context. The full transcript remains available in History.
 The sampler commits the summary request before dispatch and reuses its exact body on retry.
 Automatic compaction waits for a settled context with an older turn available.
