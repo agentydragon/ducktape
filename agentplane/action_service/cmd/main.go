@@ -70,10 +70,9 @@ import (
 )
 
 const (
-	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
-	// service's graceful shutdown does.
+	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
-	// maxConnections and idleConnections size the pool as the Python service's: four kept and two more under load.
+	// maxConnections and idleConnections size the pool: four kept and two more under load.
 	maxConnections  = 6
 	idleConnections = 4
 )
@@ -122,8 +121,7 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 }
 
 // executors routes each Action the catalog offers to the Executor of its group. An Action the catalog does not offer,
-// or of a group no Executor runs, fails as unsupported, as in the Python service; one of a group that is unavailable
-// waits for it to come back.
+// or of a group no Executor runs, fails as unsupported; one of a group that is unavailable waits for it to come back.
 type executors struct {
 	catalog *catalog.Catalog
 	// byGroup holds the Executor of each group, by key.

@@ -167,8 +167,8 @@ func decodeStrict(config json.RawMessage, fields any, nullable ...string) error 
 	return nil
 }
 
-// checkEndpoint refuses a URL the Python service's HttpEndpointUrl refuses: one that is not http or https, or has no
-// host, or carries credentials, a query or a fragment.
+// checkEndpoint refuses a URL that is not http or https, or has no host, or carries credentials, a query or a
+// fragment.
 func checkEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
@@ -180,14 +180,14 @@ func checkEndpoint(endpoint string) error {
 	return nil
 }
 
-// defaultEnvironment names the variables a command inherits from this process, as the Python MCP SDK's
-// get_default_environment does: a command must not see this service's secrets.
+// defaultEnvironment names the variables a command inherits from this process: a command must not see this service's
+// secrets.
 var defaultEnvironment = []string{"HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"}
 
 func (s stdioServer) transport(Linkages, time.Duration) (mcp.Transport, error) {
 	command := exec.Command(s.Command, s.Args...)
 	for _, name := range defaultEnvironment {
-		// A value starting with "()" is an exported shell function, which the Python SDK leaves out too.
+		// A value starting with "()" is an exported shell function, which is left out.
 		if value, set := os.LookupEnv(name); set && !strings.HasPrefix(value, "()") {
 			command.Env = append(command.Env, name+"="+value)
 		}

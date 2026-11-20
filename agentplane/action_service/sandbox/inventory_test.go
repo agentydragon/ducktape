@@ -20,33 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// A delegated Identity box runs as the namespace's default ServiceAccount; its record names the Identity and is
-// unowned, so the box's lifecycle is explicit and deleting the Identity only revokes its credential.
-func TestADelegatedIdentityBoxRunsAsDefaultAndItsRecordIsUnowned(t *testing.T) {
-	f := newFixture(t, nil)
-	if _, err := f.create(t, f.inventory(), f.caller, "box", testTemplate); err != nil {
-		t.Fatal(err)
-	}
-	pod := f.pod(t, f.caller, "box")
-	record := f.record(t, f.caller, "box")
-	if pod.Spec.ServiceAccountName != defaultServiceAccount {
-		t.Errorf("the box runs as %q, want %q", pod.Spec.ServiceAccountName, defaultServiceAccount)
-	}
-	if owner := metav1.GetControllerOf(pod); owner == nil || owner.Kind != workloadapi.Kind || owner.UID != record.UID || len(pod.OwnerReferences) != 1 {
-		t.Errorf("the box is owned by %v, want its WorkloadCredential %s", pod.OwnerReferences, record.UID)
-	}
-	if len(record.OwnerReferences) != 0 {
-		t.Errorf("the box's credential is owned by %+v, want no owner", record.OwnerReferences)
-	}
-	if subject := record.Spec.Subject; subject.Identity == nil ||
-		*subject.Identity != (workloadapi.IdentitySubject{Name: f.caller.Name, UID: types.UID(f.caller.UID)}) {
-		t.Errorf("the box's credential names %+v, want its delegated Identity", subject)
-	}
-	if pod.Labels["app.kubernetes.io/name"] != "test-box" {
-		t.Errorf("the box's labels %v dropped the template's", pod.Labels)
-	}
-}
-
 // An Identity's box runs on the group namespace's default ServiceAccount, in a group outside the policy namespace that
 // holds the Identity. Its SVID resolves to the Identity, with the box as its Pod, as the egress proxy and the services
 // resolve a Sandbox's: the box acts as the Identity, by the Identity's bindings. Nothing owns its record, so the box
@@ -71,8 +44,11 @@ func TestAnIdentitysBoxOutlivesTheIdentityWithItsCredentialRevoked(t *testing.T)
 	if pod.Spec.ServiceAccountName != "default" {
 		t.Errorf("the box runs as %q, want the default ServiceAccount", pod.Spec.ServiceAccountName)
 	}
-	if owner := metav1.GetControllerOf(pod); owner == nil || owner.Kind != workloadapi.Kind || owner.UID != record.UID {
+	if owner := metav1.GetControllerOf(pod); owner == nil || owner.Kind != workloadapi.Kind || owner.UID != record.UID || len(pod.OwnerReferences) != 1 {
 		t.Errorf("the box is owned by %v, want its WorkloadCredential %s", pod.OwnerReferences, record.UID)
+	}
+	if pod.Labels["app.kubernetes.io/name"] != "test-box" {
+		t.Errorf("the box's labels %v dropped the template's", pod.Labels)
 	}
 	// What the garbage collector, which this test API server does not run, would collect the record by.
 	if len(record.OwnerReferences) != 0 {

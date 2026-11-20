@@ -44,7 +44,6 @@ type Timing struct {
 	Send time.Duration
 }
 
-// DefaultTiming is the Python service's.
 func DefaultTiming() Timing {
 	return Timing{Sweep: 30 * time.Second, Retry: 5 * time.Second, Send: 10 * time.Second}
 }

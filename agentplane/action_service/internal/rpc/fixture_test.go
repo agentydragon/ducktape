@@ -356,10 +356,11 @@ func as(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-// get is the HTTP facade's answer to a GET of path with the bearer, or with none when token is empty.
-func (s *served) get(t *testing.T, path, token string) (int, []byte) {
+// callFacade is the HTTP facade's answer to a call of method on path with the body and the bearer, or with none when
+// token is empty.
+func (s *served) callFacade(t *testing.T, method, path, token, body string) (int, []byte) {
 	t.Helper()
-	call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.facadeURL(token)+path, nil)
+	call, err := http.NewRequestWithContext(t.Context(), method, s.facadeURL(token)+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,11 +372,21 @@ func (s *served) get(t *testing.T, path, token string) (int, []byte) {
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	answer, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response.StatusCode, body
+	return response.StatusCode, answer
+}
+
+func (s *served) get(t *testing.T, path, token string) (int, []byte) {
+	t.Helper()
+	return s.callFacade(t, http.MethodGet, path, token, "")
+}
+
+func (s *served) post(t *testing.T, path, token, body string) (int, []byte) {
+	t.Helper()
+	return s.callFacade(t, http.MethodPost, path, token, body)
 }
 
 // submit stores a pending request of the owner, as admission would.
@@ -385,6 +396,20 @@ func (s *served) submit(t *testing.T, owner store.Owner, key string) store.Actio
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{"test": "argument"}`), Title: "test title for " + key,
 	}, store.Admission{RequestID: uuid.New()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request
+}
+
+// submitAction stores a pending request of the caller for the Action with the JSON arguments, as admission would.
+func (s *served) submitAction(t *testing.T, group, name, arguments string) store.ActionRequest {
+	t.Helper()
+	id := uuid.New()
+	request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+		IdempotencyKey: id.String(), Action: store.ActionIdentity{Group: group, Name: name},
+		Arguments: json.RawMessage(arguments), Title: name,
+	}, store.Admission{RequestID: id})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,8 +10,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// storedErrorKinds is the `kind` each ExecutionErrorKind is stored as in `action_execution.error`. Stored rows,
-// the Python service's among them, keep these spellings; UNSPECIFIED and UNKNOWN are never written.
+// storedErrorKinds is the `kind` each ExecutionErrorKind is stored as in `action_execution.error`. Stored rows keep
+// these spellings; UNSPECIFIED and UNKNOWN are never written.
 var storedErrorKinds = map[action_servicepb.ExecutionErrorKind]string{
 	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL:                    "internal",
 	action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN:   "execution_outcome_unknown",

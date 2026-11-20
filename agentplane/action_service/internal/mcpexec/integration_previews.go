@@ -27,7 +27,7 @@ func (e *Executor) GmailDraftSubjects(ctx context.Context, ids []string) []*oper
 			ID      string
 			Message gmailMessageHeaders
 		}
-		if !decodeGmailSummary(result, &draft) || draft.ID != id {
+		if !parsePreviewObject(result, &draft) || draft.ID != id {
 			return nil
 		}
 		return gmailResourceTitle(id, draft.Message.subject())
@@ -42,7 +42,7 @@ func (e *Executor) GmailMessageSubjects(ctx context.Context, ids []string) []*op
 			ID string
 			gmailMessageHeaders
 		}
-		if !decodeGmailSummary(result, &message) || message.ID != id {
+		if !parsePreviewObject(result, &message) || message.ID != id {
 			return nil
 		}
 		return gmailResourceTitle(id, message.subject())
@@ -55,7 +55,7 @@ func (e *Executor) GmailLabelNames(ctx context.Context, ids []string) []*operato
 
 func gmailLabelName(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
 	var label struct{ ID, Name string }
-	if !decodeGmailSummary(result, &label) || label.ID != id {
+	if !parsePreviewObject(result, &label) || label.ID != id {
 		return nil
 	}
 	return gmailResourceTitle(id, label.Name)
@@ -97,7 +97,7 @@ func (e *Executor) GmailMailLabelNames(ctx context.Context, id string, thread bo
 		return map[string]any{"id": id, "format": "minimal"}
 	}, func(id string, result *mcp.CallToolResult) *string {
 		var resource struct{ ID string }
-		if !decodeGmailSummary(result, &resource) || resource.ID != id {
+		if !parsePreviewObject(result, &resource) || resource.ID != id {
 			return nil
 		}
 		return &resource.ID
@@ -119,7 +119,7 @@ func (e *Executor) GmailFilters(ctx context.Context, ids []string) []*operator_a
 	return readSummaries(ctx, e, ids, "gmail", "filters_get", gmailIDArgument,
 		func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailFilterSummary {
 			filter := new(operator_action_servicepb.GmailFilterSummary)
-			payload := gmailSummaryJSON(result)
+			payload := previewPayload(result)
 			if protojson.Unmarshal(payload, filter) != nil ||
 				filter.GetId() != id || filter.Criteria == nil || filter.Action == nil {
 				return nil
@@ -249,15 +249,25 @@ func googleCalendarEventPreview(id string, result *mcp.CallToolResult) *operator
 }
 
 func parsePreviewObject(result *mcp.CallToolResult, target any) bool {
+	return json.Unmarshal(previewPayload(result), target) == nil
+}
+
+// previewPayload is the JSON a read tool returned: its structured content, else its only text block.
+// A result with neither has no payload.
+func previewPayload(result *mcp.CallToolResult) []byte {
 	if result.StructuredContent != nil {
 		payload, err := json.Marshal(result.StructuredContent)
-		return err == nil && json.Unmarshal(payload, target) == nil
+		if err == nil {
+			return payload
+		}
+		return nil
 	}
-	if len(result.Content) != 1 {
-		return false
+	if len(result.Content) == 1 {
+		if text, ok := result.Content[0].(*mcp.TextContent); ok {
+			return []byte(text.Text)
+		}
 	}
-	block, ok := result.Content[0].(*mcp.TextContent)
-	return ok && json.Unmarshal([]byte(block.Text), target) == nil
+	return nil
 }
 
 // These operator lookups share the supervisor's MCP session. Each method fixes its provider and
@@ -335,7 +345,7 @@ func gmailThreadSummary(id string, result *mcp.CallToolResult) *operator_action_
 		ID       string
 		Messages []gmailMessageHeaders
 	}
-	if !decodeGmailSummary(result, &thread) || thread.ID != id || len(thread.Messages) == 0 {
+	if !parsePreviewObject(result, &thread) || thread.ID != id || len(thread.Messages) == 0 {
 		return nil
 	}
 	subject := thread.Messages[0].subject()
@@ -343,26 +353,6 @@ func gmailThreadSummary(id string, result *mcp.CallToolResult) *operator_action_
 		return nil
 	}
 	return &operator_action_servicepb.GmailThreadSummary{ThreadId: id, Subject: subject}
-}
-
-func decodeGmailSummary(result *mcp.CallToolResult, summary any) bool {
-	return json.Unmarshal(gmailSummaryJSON(result), summary) == nil
-}
-
-func gmailSummaryJSON(result *mcp.CallToolResult) []byte {
-	if result.StructuredContent != nil {
-		payload, err := json.Marshal(result.StructuredContent)
-		if err == nil {
-			return payload
-		}
-		return nil
-	}
-	if len(result.Content) == 1 {
-		if text, ok := result.Content[0].(*mcp.TextContent); ok {
-			return []byte(text.Text)
-		}
-	}
-	return nil
 }
 
 var (

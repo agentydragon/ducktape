@@ -25,10 +25,9 @@ func TestObserveActionPreservesQueuedWakeAssessment(t *testing.T) {
 		},
 	}}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("observe_input", map[string]any{
 		"session_id": testSessionID, "command_id": testCommandID, "wait_seconds": 0,
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}

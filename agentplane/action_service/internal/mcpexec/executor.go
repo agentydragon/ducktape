@@ -37,7 +37,6 @@ type Timing struct {
 	Stable time.Duration
 }
 
-// DefaultTiming is the Python service's.
 func DefaultTiming() Timing {
 	return Timing{Refresh: 5 * time.Minute, Lifecycle: 15 * time.Second, Execution: 10 * time.Minute, Stable: 30 * time.Second}
 }
@@ -99,7 +98,7 @@ type session struct {
 // Actions until its server lists them; each change to the group is an Update of groups. linkages read the token of a
 // server its config authorizes through an operator's OAuth linkage.
 //
-// A config the Python service refuses is refused here, and its error names fields, never a value.
+// An invalid config is refused, and its error names fields, never a value.
 func New(groups *catalog.Catalog, key string, binding catalog.MCPBinding, linkages Linkages, timing Timing) (*Executor, error) {
 	server, err := parseServer(binding.Config)
 	if err != nil {

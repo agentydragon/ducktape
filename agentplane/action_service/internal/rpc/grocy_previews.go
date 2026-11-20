@@ -9,15 +9,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 )
 
 func (s *OperatorService) GetGrocyReferenceSummaries(ctx context.Context, request *operator_action_servicepb.GetGrocyReferenceSummariesRequest) (*operator_action_servicepb.GetGrocyReferenceSummariesResponse, error) {
-	id, err := parseRequestID(request.GetRequestId())
-	if err != nil {
-		return nil, err
-	}
-	receipt, err := s.store.Get(ctx, id, grpcgate.Admitted(ctx).Principal)
+	receipt, err := s.previewRequest(ctx, request.GetRequestId())
 	if err != nil {
 		return nil, err
 	}

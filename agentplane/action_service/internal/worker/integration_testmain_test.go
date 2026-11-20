@@ -176,7 +176,7 @@ func (f fixture) claimElsewhere(t *testing.T, id uuid.UUID, executorID string, l
 	return *claim
 }
 
-// testTiming is the Python service's, with a sweep and an executor heartbeat a test can wait for.
+// testTiming is DefaultTiming with a sweep and an executor heartbeat a test can wait for.
 func testTiming() Timing {
 	timing := DefaultTiming()
 	timing.Sweep = 20 * time.Millisecond

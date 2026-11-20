@@ -8,12 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -69,18 +67,8 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 	}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
-	submit := func(group, name, args string) store.ActionRequest {
-		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: group + "/" + name, Action: store.ActionIdentity{Group: group, Name: name},
-			Arguments: json.RawMessage(args), Title: name,
-		}, store.Admission{RequestID: uuid.New()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return request
-	}
-	gmail := submit("gmail", "threads_modify_labels", `{"thread_ids":["thread-1","thread-1","../other","2","3","4","5","6","7","8","9"]}`)
-	tana := submit("tana", "move_node", `{"nodeId":"draft","targetNodeId":"target","sourceParentId":"source","referenceNodeId":"draft"}`)
+	gmail := s.submitAction(t, "gmail", "threads_modify_labels", `{"thread_ids":["thread-1","thread-1","../other","2","3","4","5","6","7","8","9"]}`)
+	tana := s.submitAction(t, "tana", "move_node", `{"nodeId":"draft","targetNodeId":"target","sourceParentId":"source","referenceNodeId":"draft"}`)
 	gmailCall := &operator_action_servicepb.GetGmailThreadSummariesRequest{RequestId: gmail.ID.String()}
 	_, err := s.operators.GetGmailThreadSummaries(as(t, callerCertificate), gmailCall)
 	wantCode(t, "workload cannot read Gmail summaries", err, codes.Unauthenticated)
@@ -101,20 +89,20 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 		t.Fatalf("Tana lookup: %v, %v", tanaResponse, err)
 	}
 
-	calendar := submit("tana", "get_or_create_calendar_node", `{"workspaceId":"workspace-123","nodeId":"unrelated"}`)
+	calendar := s.submitAction(t, "tana", "get_or_create_calendar_node", `{"workspaceId":"workspace-123","nodeId":"unrelated"}`)
 	calendarResponse, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetTanaNodeSummariesRequest{RequestId: calendar.ID.String()})
 	if err != nil || calendarResponse.GetWorkspace().GetName() != "Product" || len(calendarResponse.GetNodes()) != 0 {
 		t.Fatalf("workspace lookup: %v, %v", calendarResponse, err)
 	}
 
-	invalid := submit("tana", "list_workspaces", `{"workspaceId":"../other"}`)
+	invalid := s.submitAction(t, "tana", "list_workspaces", `{"workspaceId":"../other"}`)
 	response, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetTanaNodeSummariesRequest{RequestId: invalid.ID.String()})
 	wantCode(t, "unsupported Tana action", err, codes.InvalidArgument)
 	if response != nil {
 		t.Fatalf("unsupported action returned %v", response)
 	}
 
-	checkbox := submit("tana", "set_tag_checkbox", `{
+	checkbox := s.submitAction(t, "tana", "set_tag_checkbox", `{
 		"tagId":"tag-1","nodeId":"unrelated",
 		"doneStateMapping":{"fieldId":"status","checkedValues":["done"],"uncheckedValues":["active"]}
 	}`)
@@ -160,17 +148,6 @@ func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
 	}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
-	submit := func(name, args string) store.ActionRequest {
-		t.Helper()
-		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: name, Action: store.ActionIdentity{Group: "gmail", Name: name},
-			Arguments: json.RawMessage(args), Title: name,
-		}, store.Admission{RequestID: uuid.New()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return request
-	}
 	lookup := func(request store.ActionRequest) {
 		t.Helper()
 		_, err := s.operators.GetGmailThreadSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGmailThreadSummariesRequest{RequestId: request.ID.String()})
@@ -178,23 +155,14 @@ func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lookup(submit("drafts_create", `{"thread_id":"reply-thread","thread_ids":["unrelated-thread"]}`))
-	search := submit("threads_list", `{"thread_id":"unrelated-thread","q":"test"}`)
+	lookup(s.submitAction(t, "gmail", "drafts_create", `{"thread_id":"reply-thread","thread_ids":["unrelated-thread"]}`))
+	search := s.submitAction(t, "gmail", "threads_list", `{"thread_id":"unrelated-thread","q":"test"}`)
 	lookup(search)
 	s.decide(t, search, store.VerdictAllow)
-	claim, err := s.store.ClaimExecution(t.Context(), search.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
-	if err != nil || claim == nil {
-		t.Fatalf("claim: %v, %v", claim, err)
-	}
-	if _, err := s.store.MarkRunning(t.Context(), search.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.FinishExecution(t.Context(), search.ID, claim.Lease, store.ExecutionOutcome{
+	s.execute(t, search, store.ExecutionOutcome{
 		State:  store.ExecutionSucceeded,
 		Result: json.RawMessage(`{"content":[],"structuredContent":{"threads":[{"id":"returned-thread"},{"id":"returned-thread"},{"id":"../invalid"}]}}`),
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	lookup(search)
 	mu.Lock()
 	defer mu.Unlock()
@@ -232,19 +200,7 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
 
-	submit := func(name, args string) store.ActionRequest {
-		t.Helper()
-		id := uuid.New()
-		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: id.String(), Action: store.ActionIdentity{Group: "google_calendar", Name: name},
-			Arguments: json.RawMessage(args), Title: name,
-		}, store.Admission{RequestID: id})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return request
-	}
-	receipt := submit("delete_event", `{"calendar_id":"facilities@example.test","event_id":"occurrence-1","recurring_event_id":"other-series"}`)
+	receipt := s.submitAction(t, "google_calendar", "delete_event", `{"calendar_id":"facilities@example.test","event_id":"occurrence-1","recurring_event_id":"other-series"}`)
 	request := &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: receipt.ID.String()}
 	_, err := s.operators.GetGoogleCalendarEventPreview(as(t, callerCertificate), request)
 	wantCode(t, "workload cannot read Calendar previews", err, codes.Unauthenticated)
@@ -257,7 +213,7 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 		t.Fatalf("Calendar preview response %d %s", code, body)
 	}
 
-	instances := submit("list_event_instances", `{"recurring_event_id":"series-2","event_id":"other-event"}`)
+	instances := s.submitAction(t, "google_calendar", "list_event_instances", `{"recurring_event_id":"series-2","event_id":"other-event"}`)
 	_, err = s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: instances.ID.String()})
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +234,7 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 		{"list_events", `{"calendar_id":"shifts@example.test","event_id":"unrelated"}`, "shifts@example.test"},
 		{"list_events", `{"calendar_id":"primary","event_id":"unrelated"}`, ""},
 	} {
-		recorded := submit(tc.action, tc.args)
+		recorded := s.submitAction(t, "google_calendar", tc.action, tc.args)
 		got, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: recorded.ID.String()})
 		if err != nil || got.GetEvent() != nil || got.GetCalendar().GetCalendarId() != tc.calendarID {
 			t.Fatalf("%s preview = %v, %v", tc.action, got, err)
@@ -296,8 +252,8 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 	}
 
 	for _, invalid := range []store.ActionRequest{
-		submit("unknown", `{"calendar_id":"unrelated@example.test","event_id":"other-event"}`),
-		submit("update_event", `{"calendar_id":null,"event_id":"other-event"}`),
+		s.submitAction(t, "google_calendar", "unknown", `{"calendar_id":"unrelated@example.test","event_id":"other-event"}`),
+		s.submitAction(t, "google_calendar", "update_event", `{"calendar_id":null,"event_id":"other-event"}`),
 	} {
 		_, err := s.operators.GetGoogleCalendarEventPreview(as(t, s.operatorToken), &operator_action_servicepb.GetGoogleCalendarEventPreviewRequest{RequestId: invalid.ID.String()})
 		wantCode(t, "no preview target", err, codes.InvalidArgument)
@@ -345,17 +301,6 @@ func TestGmailResourceSummariesLookUpOnlyRecordedResources(t *testing.T) {
 	s := serveWithPolicyOptions(
 		t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, IntegrationPreviews{Gmail: gmail},
 	)
-	submit := func(name, args string) store.ActionRequest {
-		t.Helper()
-		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: name, Action: store.ActionIdentity{Group: "gmail", Name: name},
-			Arguments: json.RawMessage(args), Title: name,
-		}, store.Admission{RequestID: uuid.New()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return request
-	}
 	lookup := func(receipt store.ActionRequest) *operator_action_servicepb.GetGmailResourceSummariesRequest {
 		t.Helper()
 		request := &operator_action_servicepb.GetGmailResourceSummariesRequest{RequestId: receipt.ID.String()}
@@ -366,11 +311,11 @@ func TestGmailResourceSummariesLookUpOnlyRecordedResources(t *testing.T) {
 		return request
 	}
 
-	filter := submit("filters_create", `{"criteria":{"subject":"review"},"action":{"addLabelIds":["Label_19"],"removeLabelIds":["INBOX"]},"label_id":"unrelated-label"}`)
+	filter := s.submitAction(t, "gmail", "filters_create", `{"criteria":{"subject":"review"},"action":{"addLabelIds":["Label_19"],"removeLabelIds":["INBOX"]},"label_id":"unrelated-label"}`)
 	request := lookup(filter)
 	_, err := s.operators.GetGmailResourceSummaries(as(t, callerCertificate), request)
 	wantCode(t, "workload cannot read Gmail resource summaries", err, codes.Unauthenticated)
-	draft := submit("drafts_delete", `{"draft_id":"test-draft","id":"unrelated-draft"}`)
+	draft := s.submitAction(t, "gmail", "drafts_delete", `{"draft_id":"test-draft","id":"unrelated-draft"}`)
 	lookup(draft)
 	s.decide(t, draft, store.VerdictDeny)
 	lookup(draft)
@@ -436,26 +381,9 @@ func TestGmailMailLabelsUseOnlyTheMatchingSuccessfulReceipt(t *testing.T) {
 			`{"content":[],"isError":true,"structuredContent":{"id":"thread-3","messages":[{"labelIds":["Label_82"]}]}}`, false,
 		},
 	} {
-		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: tc.args, Action: store.ActionIdentity{Group: "gmail", Name: tc.name},
-			Arguments: json.RawMessage(tc.args), Title: tc.name,
-		}, store.Admission{RequestID: uuid.New()})
-		if err != nil {
-			t.Fatal(err)
-		}
+		request := s.submitAction(t, "gmail", tc.name, tc.args)
 		s.decide(t, request, store.VerdictAllow)
-		claim, err := s.store.ClaimExecution(t.Context(), request.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
-		if err != nil || claim == nil {
-			t.Fatalf("claim: %v, %v", claim, err)
-		}
-		if _, err := s.store.MarkRunning(t.Context(), request.ID); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.store.FinishExecution(t.Context(), request.ID, claim.Lease, store.ExecutionOutcome{
-			State: store.ExecutionSucceeded, Result: json.RawMessage(tc.rawResult),
-		}); err != nil {
-			t.Fatal(err)
-		}
+		s.execute(t, request, store.ExecutionOutcome{State: store.ExecutionSucceeded, Result: json.RawMessage(tc.rawResult)})
 		response, err := s.operators.GetGmailResourceSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGmailResourceSummariesRequest{RequestId: request.ID.String()})
 		if err != nil || (len(response.GetLabels()) != 0) != tc.wantLabels {
 			t.Fatalf("receipt %s: %v, %v", tc.args, response, err)

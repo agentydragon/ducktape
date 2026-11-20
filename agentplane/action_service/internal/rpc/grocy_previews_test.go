@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 )
 
@@ -30,15 +28,9 @@ func TestGrocyPreviewsUseOnlyPendingRecordedReferences(t *testing.T) {
 	})}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
-	request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-		IdempotencyKey: "grocy-previews", Action: store.ActionIdentity{Group: "grocy_sf", Name: "products_merge"},
-		Arguments: json.RawMessage(`{"productIdToKeep":11,"productIdToRemove":22,"product":33}`), Title: "Merge coffee",
-	}, store.Admission{RequestID: uuid.New()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	request := s.submitAction(t, "grocy_sf", "products_merge", `{"productIdToKeep":11,"productIdToRemove":22,"product":33}`)
 	input := &operator_action_servicepb.GetGrocyReferenceSummariesRequest{RequestId: request.ID.String()}
-	_, err = s.operators.GetGrocyReferenceSummaries(as(t, callerCertificate), input)
+	_, err := s.operators.GetGrocyReferenceSummaries(as(t, callerCertificate), input)
 	wantCode(t, "workload cannot read Grocy summaries", err, codes.Unauthenticated)
 	got, err := s.operators.GetGrocyReferenceSummaries(as(t, s.operatorToken), input)
 	if err != nil || len(got.GetReferences()) != 1 || got.GetReferences()[0].GetName() != "Coffee" {

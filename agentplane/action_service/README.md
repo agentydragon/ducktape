@@ -485,7 +485,8 @@ The service image runs Goose migrations before opening listeners or starting wor
 `--migrate-only` mode uses the same code path for fixture checks. Each deployed environment gives
 the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
-separate from the integration app's database.
+separate from the integration app's database. Schema versions, adoption and rollback:
+[SPEC.md § Durable storage](SPEC.md#durable-storage).
 
 ### Service certificate admission
 
@@ -510,30 +511,6 @@ delegation is configured by `connection_delegation_service`. Listener `auth` acc
 `mode: spiffe`; any other mode fails settings decoding.
 Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
-
-### Schema initialization
-
-Goose version 7 creates the final typed schema on an empty database. A database that completed
-version 6 is adopted in place: the migration validates its history and schema, then records version
-7 without replaying DDL or rewriting Action rows. Version 8 adds nullable `caller_uid` provenance;
-existing requests remain unknown and are never backfilled. Existing Goose versions 1–6 and Alembic
-history remain intact. Databases behind version 6, or with a partial or unmarked schema, must first
-be repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent
-schema changes use later Goose versions.
-
-Version 12 adds a nullable typed delegating-actor snapshot and UUID columns for Session or
-Connection/grant provenance. The effective caller remains the owner and policy subject. No existing
-receipt is backfilled or refused, and older replicas may keep writing NULL during a roll. Rollback
-to the prior image keeps the additive columns and all receipts; no database downgrade is needed.
-
-Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
-messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
-errors retain JSONB. The rolling Deployment keeps the existing replica serving while replacements
-apply migrations. Goose's session lock serializes concurrent starts; every schema change must
-remain compatible with the old and new service versions during that overlap. A database with historical
-versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
-version 8 database requires a rollback image that understands the version 8 schema, or a
-coordinated database restore.
 
 ## MCP executor transports
 
