@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,8 +68,8 @@ func environmentEndpoint(t *testing.T, fixture *environmentFixture) string {
 
 func environmentVars(endpoint string) map[string]string {
 	return map[string]string{
-		"AGENTPLANE_SESSIONS_URL":        endpoint,
-		"AGENTPLANE_SESSIONS_CREDENTIAL": testCredential,
+		"AGENTPLANE_ENVIRONMENTS_URL":        endpoint,
+		"AGENTPLANE_ENVIRONMENTS_CREDENTIAL": testCredential,
 	}
 }
 
@@ -221,73 +222,45 @@ func TestEnvironmentGetReturnsCurrentFacts(t *testing.T) {
 	}
 }
 
-func TestEnvironmentUsesDedicatedEndpointAndCredential(t *testing.T) {
-	sessions := &environmentFixture{authorization: make(chan []string, 1)}
-	environments := &environmentFixture{authorization: make(chan []string, 1)}
-	environmentCredential := "environment-only-placeholder"
-	env := environmentVars(environmentEndpoint(t, sessions))
-	env["AGENTPLANE_SESSIONS_CREDENTIAL"] = "sessions-only-placeholder"
-	env["AGENTPLANE_ENVIRONMENTS_URL"] = environmentEndpoint(t, environments)
-	env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = environmentCredential
-
-	code, _, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != 0 || stderr != "" {
-		t.Fatalf("get from dedicated endpoint: exit %d stderr %q", code, stderr)
-	}
-	if got := <-environments.authorization; len(got) != 1 || got[0] != "Bearer "+environmentCredential {
-		t.Fatalf("EnvironmentService authorization=%v", got)
-	}
-	select {
-	case got := <-sessions.authorization:
-		t.Fatalf("used SessionDispatcher endpoint with authorization %v", got)
-	default:
-	}
-}
-
-func TestEnvironmentEndpointDoesNotBorrowSessionsCredential(t *testing.T) {
-	environments := &environmentFixture{authorization: make(chan []string, 1)}
-	env := environmentVars("http://127.0.0.1:1")
-	env["AGENTPLANE_ENVIRONMENTS_URL"] = environmentEndpoint(t, environments)
-	delete(env, "AGENTPLANE_ENVIRONMENTS_CREDENTIAL")
-
-	code, _, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != 0 || stderr != "" {
-		t.Fatalf("get without EnvironmentService credential: exit %d stderr %q", code, stderr)
-	}
-	if got := <-environments.authorization; len(got) != 0 {
-		t.Fatalf("EnvironmentService inherited SessionDispatcher authorization %v", got)
-	}
-}
-
-func TestEnvironmentUsesSessionEndpointAsCompatibilityFallback(t *testing.T) {
-	sessions := &environmentFixture{authorization: make(chan []string, 1)}
-	code, _, stderr := invoke(environmentVars(environmentEndpoint(t, sessions)), "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != 0 || stderr != "" {
-		t.Fatalf("get through compatibility endpoint: exit %d stderr %q", code, stderr)
-	}
-	if got := <-sessions.authorization; len(got) != 1 || got[0] != "Bearer "+testCredential {
-		t.Fatalf("compatibility endpoint authorization=%v", got)
-	}
-}
-
-func TestUnusableEnvironmentEndpointSettingsAreUsageErrorsNotSessionsFallbacks(t *testing.T) {
-	for name, tc := range map[string]struct{ key, value, wantStderr string }{
-		"a credential without an endpoint": {"AGENTPLANE_ENVIRONMENTS_CREDENTIAL", "environment-only-placeholder", "AGENTPLANE_ENVIRONMENTS_URL not set"},
-		"an invalid endpoint":              {"AGENTPLANE_ENVIRONMENTS_URL", "not a URL", "AGENTPLANE_ENVIRONMENTS_URL"},
+func TestEnvironmentSendsOnlyAConfiguredCredential(t *testing.T) {
+	for name, tc := range map[string]struct {
+		credential string
+		want       []string
+	}{
+		"a configured credential": {testCredential, []string{"Bearer " + testCredential}},
+		"no credential":           {"", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
-			sessions := &environmentFixture{authorization: make(chan []string, 1)}
-			env := environmentVars(environmentEndpoint(t, sessions))
-			env[tc.key] = tc.value
+			fixture := &environmentFixture{authorization: make(chan []string, 1)}
+			env := environmentVars(environmentEndpoint(t, fixture))
+			env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = tc.credential
 
+			code, _, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
+			if code != 0 || stderr != "" {
+				t.Fatalf("get: exit %d stderr %q", code, stderr)
+			}
+			if got := <-fixture.authorization; !slices.Equal(got, tc.want) {
+				t.Fatalf("EnvironmentService authorization=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEnvironmentsNeedAUsableEndpointOfTheirOwn(t *testing.T) {
+	for name, tc := range map[string]struct{ endpoint, wantStderr string }{
+		"no endpoint":         {"", "AGENTPLANE_ENVIRONMENTS_URL not set"},
+		"an invalid endpoint": {"not a URL", "AGENTPLANE_ENVIRONMENTS_URL"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Nothing listens at the Sessions URL, so a call that reached it would exit 3, not 2.
+			env := map[string]string{
+				"AGENTPLANE_SESSIONS_URL":        "http://127.0.0.1:1",
+				"AGENTPLANE_SESSIONS_CREDENTIAL": testCredential,
+				"AGENTPLANE_ENVIRONMENTS_URL":    tc.endpoint,
+			}
 			code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
 			if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, tc.wantStderr) {
 				t.Fatalf("exit %d stdout %q stderr %q, want a usage error naming %q", code, stdout, stderr, tc.wantStderr)
-			}
-			select {
-			case got := <-sessions.authorization:
-				t.Fatalf("used compatibility endpoint with authorization %v", got)
-			default:
 			}
 		})
 	}
