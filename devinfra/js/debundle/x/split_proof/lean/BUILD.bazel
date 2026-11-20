@@ -104,6 +104,38 @@ _PROOF_FIXTURE_SOURCES = [
 ]
 
 lean_axiom_test(
+    name = "inferred_identity_axioms_test",
+    srcs = _PROOF_SOURCES + [
+        "Experiments/InferredIdentity.lean",
+        "Experiments/LocalCall.lean",
+        "Experiments/MiniJS.lean",
+        "Experiments/QuietCrossing.lean",
+    ],
+    imports = ["Experiments.InferredIdentity"],
+    theorems = [
+        "MJS.stable_cstep",
+        "MJS.stable_exec",
+        "MJS.inferred_identity_reachable_quiet",
+        "MJS.eval_identity",
+        "MJS.anchored_quiet",
+        "MJS.anchored_step",
+        "MJS.anchored_exec",
+        "MJS.inferred_identity_plan_preserves",
+        "MJS.derived_identity_plan_preserves",
+        "MJS.InferredIdentityExample.accepted",
+        "MJS.InferredIdentityExample.automatically_discovered",
+        "MJS.InferredIdentityExample.reassigned_rejected",
+        "MJS.InferredIdentityExample.derived_reassigned_rejected",
+        "MJS.InferredIdentityExample.effectful_body_rejected",
+        "MJS.InferredIdentityExample.derived_effectful_body_rejected",
+        "MJS.InferredIdentityExample.effectful_argument_rejected",
+        "MJS.InferredIdentityExample.derived_effectful_argument_rejected",
+        "MJS.InferredIdentityExample.crossing_without_inference_rejected",
+        "MJS.InferredIdentityExample.crossing_preserves",
+    ],
+)
+
+lean_axiom_test(
     name = "quiet_crossing_axioms_test",
     srcs = _PROOF_SOURCES + ["Experiments/QuietCrossing.lean"],
     imports = ["Experiments.QuietCrossing"],

@@ -1,0 +1,13 @@
+# Inferred identity calls in MiniJS plans
+
+`MJS.deriveIdentity` extracts a candidate from a MiniJS program and uses `MJS.inferIdentity` to check a narrow, decidable condition: the selected statement calls a global name on a numeric literal, its initial hoisted binding is the identity closure, and no non-hoisted statement declares that name. No user-supplied name, argument or semantic certificate is needed. MiniJS has no assignment expression or external code, so this last condition is a property of its own state machine, not a JavaScript binding-stability analysis.
+
+`stable_cstep` and `stable_exec` prove that the initial binding remains unchanged after any sequence of modeled steps. `inferred_identity_reachable_quiet` then proves that evaluating the inferred statement leaves the modeled world unchanged in every such reachable state. Unlike the earlier `local_call_world`, this does not require a caller to supply the runtime-binding equality as an extra premise.
+
+The existing `QuietCertificates` quantifies over every possible input list, including unreachable lists containing a different closure. Consequently an inferred identity call cannot in general prove that certificate for the original `meaning`. `anchoredMeaning` instead fixes the selected call's meaning to the value inferred from its syntax. `anchored_step` and `anchored_exec` prove that this specialized meaning agrees with the MiniJS evaluator on reachable states. Its quiet certificate follows automatically. `inferred_identity_plan_preserves` combines that certificate and adequacy with the existing conditional plan theorem, while retaining all binding conflicts and permutation and closed-read checks.
+
+The checked example reverses a numeric identity call and a modeled log effect; the ordinary ordering predicate rejects that crossing. An effectful body, an effectful argument and a later non-hoisted rebinding all fail inference. The theorem checks all MiniJS fuel values; failed or fuel-exhausted evaluations still use MiniJS's existing `none`/poison semantics.
+
+This does not change the JavaScript checker or prove that any JavaScript parser, extractor, scope resolver or source analysis implements the model. It does not model JavaScript assignment, `eval`, host calls, exceptions, modules, or proof that a JavaScript function stays bound to the inferred closure. In particular it is not a proof that a real JavaScript split is correct. A separate checked JavaScript-to-MiniJS correspondence and binding-stability analysis are required before using this model result for JavaScript.
+
+Run `bbr test //devinfra/js/debundle/x/split_proof/lean:inferred_identity_axioms_test`.
