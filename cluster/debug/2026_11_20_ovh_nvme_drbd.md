@@ -4,6 +4,21 @@
 volumes after a node reboot restored most services. One DRBD resync remained
 stalled, and a SeaweedFS volume copy reported an index/data inconsistency.
 
+## Timeline
+
+Times are UTC on 2026-11-20. Kernel timestamps refer to the event, not the
+later time at which the log collector received it.
+
+| Time              | Observation                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 04:44             | Thin-pool data usage was 39.22%, metadata usage 1.96%, and the affected NVMe's composite temperature 33.85 °C.                                                                                 |
+| 04:45:56          | The kernel logged NVMe read and write timeouts. It attempted a controller reset at 04:46:26.                                                                                                   |
+| 04:47:38–04:48:59 | The controller did not become ready; the kernel disabled the device. DRBD detached Authentik's local database disk after I/O errors, and ext4 aborted its journal.                             |
+| 05:06             | Authentik's server was restarted after failing liveness checks. PostgreSQL had exhausted its ordinary connection slots.                                                                        |
+| 05:14–05:17       | Talos began shutting down but could not unmount busy CSI volumes. A later forced reboot request failed to acquire the existing reboot lock.                                                    |
+| 05:52–05:54       | The OVH hard-reboot task completed, and the NVMe was rediscovered during boot.                                                                                                                 |
+| 06:11–06:22       | Reattached the affected existing volumes. Authentik's former primary ran `pg_rewind` and rejoined as a standby. At the last check all CNPG clusters reported their configured instances ready. |
+
 ## Incident and recovery
 
 An OVH control-plane node's data NVMe timed out on reads and writes. The kernel
@@ -22,6 +37,15 @@ hard reboot brought the node and NVMe back. Authentik failed over to its
 surviving database instance. The drive's post-reboot NVMe health log reported
 no critical warning or media errors, which does not explain or disprove the
 observed controller failure.
+
+The post-reboot NVMe health log reported 55,959 powered-on hours, 13% endurance
+used, 100% available spare and zero media errors or error-log entries. These
+are device-reported lifetime counters; the pre-incident values were not
+captured. They cannot rule out an intermittent controller, device, PCIe or
+power fault. During the two hours before failure, the composite-temperature
+samples ranged from 33.85 to 39.85 °C. Around 04:43, five-minute average
+device throughput was approximately 51 MB/s written and 61 MB/s read; this
+does not establish a causal workload or an instantaneous rate at failure.
 
 At the operator's request, cleared LINSTOR's `DrbdOptions/SkipDisk` on the
 affected resources after confirming their backing logical volumes existed.
@@ -45,6 +69,13 @@ thousands of resync reads in `dagtag_wait`; the source and target remained
 connected. The target's resource ordering counter was much higher than the
 last tag the source had received from it. Small direct reads of the underlying
 logical devices completed, so those probes did not reproduce a disk read stall.
+
+At the investigation snapshot, the target's resource tag was `335004`, while
+its last tag sent to the source and the source's last received tag were both
+`2966`. DRBD reported 4,159 resync requests pending and the whole 266,144 KiB
+out of sync. The source's oldest queued resync reads had waited over 23 minutes.
+These are ordering and queue observations, not a measurement of disk capacity
+or proof of the exact dependency in each queued request.
 
 The installed DRBD 9.3.3 code gives the primary's current ordering tag to
 resync requests and queues source-side reads until the relevant peer's tag has
