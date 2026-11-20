@@ -46,7 +46,7 @@ const systemQueries = new Map([
 ]);
 
 function labelHref(id: string, name: string): string {
-  const query = systemQueries.get(id) ?? `label:"${name.replaceAll('"', '\"')}"`;
+  const query = systemQueries.get(id) ?? `label:"${name.replaceAll('"', '\\"')}"`;
   return `${gmail}#search/${encodeURIComponent(query)}`;
 }
 

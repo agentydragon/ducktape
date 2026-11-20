@@ -1,4 +1,4 @@
-import { Code, Stack, Text } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
