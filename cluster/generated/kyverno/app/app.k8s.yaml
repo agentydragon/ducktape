@@ -37,10 +37,20 @@ spec:
   targetNamespace: kyverno
   values:
     admissionController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "kyverno", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "224Mi"}, "maxAllowed": {"cpu": "100m", "memory": "384Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       antiAffinity:
         enabled: true
       certManager:
         enabled: false
+      container:
+        resources:
+          limits:
+            memory: 384Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
       priorityClassName: system-cluster-critical
@@ -50,6 +60,9 @@ spec:
           key: node-role.kubernetes.io/control-plane
           operator: Exists
     backgroundController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "208Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
       replicas: 1
@@ -61,6 +74,9 @@ spec:
           cpu: 50m
           memory: 64Mi
     cleanupController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "124Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
       replicas: 1
@@ -86,6 +102,9 @@ spec:
       image:
         registry: ghcr.io
     reportsController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
       replicas: 1
