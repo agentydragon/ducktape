@@ -553,7 +553,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	}
 	intentID, frozenWire, err := store.Begin(t.Context(), oldOwner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config),
 		&providerrequest.Preparation{ModelConfig: config, SessionEffort: session.Effort, SessionConfiguration: append([]byte(nil), session.Configuration...), Attribution: metadata}, func() *sessionstore.ProviderAttemptPolicy {
-			policy := sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease()}
+			policy := sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease(config)}
 			return &policy
 		}())
 	if err != nil {

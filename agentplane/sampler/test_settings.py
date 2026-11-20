@@ -119,6 +119,19 @@ def test_provider_phase_budgets_are_optional_and_independent() -> None:
     assert configured.provider_idle_timeout_seconds == 600
 
 
+def test_model_response_header_timeout_validation() -> None:
+    data = settings_data()
+    data["models"]["fixture-model"]["response_header_timeout_seconds"] = 360
+    settings = Settings.model_validate(data)
+    assert settings.models["fixture-model"].response_header_timeout_seconds == 360
+    data["models"]["fixture-model"]["response_header_timeout_seconds"] = 0
+    with pytest.raises(ValidationError):
+        Settings.model_validate(data)
+    data["models"]["fixture-model"]["response_header_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+    with pytest.raises(ValidationError):
+        Settings.model_validate(data)
+
+
 @pytest.mark.parametrize("server", ["session-dispatcher", "sandbox-controller"])
 def test_runtime_proxy_peer_accepts_each_cutover_receiver(server: str) -> None:
     configured = Settings.model_validate(

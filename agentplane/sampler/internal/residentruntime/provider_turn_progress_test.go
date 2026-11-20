@@ -287,3 +287,43 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 		t.Fatalf("next input after turn expiry: state=%+v requests=%d err=%v", state, requests.Load(), err)
 	}
 }
+
+func TestRuntimeUsesSelectedModelHeaderBudget(t *testing.T) {
+	store := runtimetesting.NewStore(t, integrationDatabase)
+	session := runtimetesting.OpenSessionForStore(t, store, "")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		// Delay longer than the shared one-second header budget, but within the route's budget.
+		timer := time.NewTimer(1500 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		item := responses.Item{Type: responses.ItemMessage, ID: "fixture-item", Role: "assistant", Content: json.RawMessage(`[{"type":"output_text","text":"done"}]`)}
+		_ = writeProviderTurnEvent(w, flusher, map[string]any{"type": responses.EventOutputItemDone, "item": item})
+		_ = writeProviderTurnEvent(w, flusher, map[string]any{"type": responses.EventCompleted, "response": map[string]any{"id": "fixture-response", "status": "completed"}})
+	}))
+	defer server.Close()
+	global, extended := 1, 5
+	settings := samplersettings.Settings{
+		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, ProviderResponseHeaderTimeoutSeconds: &global,
+		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}}},
+		Models:      map[string]samplersettings.ModelConfig{"fixture-model": {Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}, ResponseHeaderTimeoutSeconds: &extended}},
+	}
+	runtime := New(store, settings, fakeCodeHost(t))
+	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "route-header-budget", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "fixture"}}}, "fixture-account", nil); err != nil {
+		t.Fatal(err)
+	}
+	cancel, done := startRuntimeForTest(t, runtime)
+	defer func() { cancel(); waitRuntimeDone(t, done) }()
+	runtime.Wake(session.ID)
+	waitProviderCommandOutcome(t, store, session.ID, "route-header-budget", samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("provider requests=%d, want one", got)
+	}
+}

@@ -31,17 +31,21 @@ const (
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	Connection        string                            `json:"connection"`
-	ProviderModel     string                            `json:"provider_model"`
-	API               protocol.APIStyle                 `json:"api"`
-	Responses         responses.Config                  `json:"responses,omitzero"`
-	AnthropicMessages *anthropic.Config                 `json:"anthropic_messages,omitempty"`
-	ChatCompaction    *chatcompletions.CompactionConfig `json:"chat_compaction,omitempty"`
-	ExecEncoding      protocol.ExecEncoding             `json:"exec_encoding"`
-	ReasoningEfforts  []string                          `json:"reasoning_efforts"`
+	ResponseHeaderTimeoutSeconds *int                              `json:"response_header_timeout_seconds,omitempty"`
+	Connection                   string                            `json:"connection"`
+	ProviderModel                string                            `json:"provider_model"`
+	API                          protocol.APIStyle                 `json:"api"`
+	Responses                    responses.Config                  `json:"responses,omitzero"`
+	AnthropicMessages            *anthropic.Config                 `json:"anthropic_messages,omitempty"`
+	ChatCompaction               *chatcompletions.CompactionConfig `json:"chat_compaction,omitempty"`
+	ExecEncoding                 protocol.ExecEncoding             `json:"exec_encoding"`
+	ReasoningEfforts             []string                          `json:"reasoning_efforts"`
 }
 
 func (c ModelConfig) Validate() error {
+	if c.ResponseHeaderTimeoutSeconds != nil && (*c.ResponseHeaderTimeoutSeconds <= 0 || int64(*c.ResponseHeaderTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
+		return invalidSetting("response_header_timeout_seconds", "must be positive and fit in time.Duration")
+	}
 	if c.Connection == "" {
 		return invalidSetting("connection", "model connection is required")
 	}
