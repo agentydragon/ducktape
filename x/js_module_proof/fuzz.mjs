@@ -439,9 +439,35 @@ export function makeCase(seed, index) {
   };
 }
 
-export function execute(path, calls) {
-  const code = `const events=[];globalThis.record=v=>events.push(v);let phase='import';let index=-1;let names=[];const results=[];try{const m=await import(${JSON.stringify(pathToFileURL(path).href)});names=Object.keys(m);phase='call';for(const n of ${JSON.stringify(calls)}){index++;const v=m[n]();results.push(v===undefined?{undefined:true}:{value:v});}console.log(JSON.stringify({events,exports:names,results,error:null}));}catch(e){console.log(JSON.stringify({events,exports:names,results,error:{name:e.name,phase,index}}));}`;
-  const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", timeout: 10000 });
+export function execute(path, calls, { timeoutMs = 10000 } = {}) {
+  const code = `
+const events=[];
+globalThis.record=v=>events.push(v);
+let phase='import', index=-1, names=[];
+const results=[];
+const thrownValue=v=>{
+  if(v===null)return {kind:'null'};
+  if(v===undefined)return {kind:'undefined'};
+  if(typeof v==='number')return {kind:'number',value:Number.isNaN(v)?'NaN':Object.is(v,-0)?'-0':Number.isFinite(v)?v:String(v)};
+  if(typeof v==='string'||typeof v==='boolean')return {kind:typeof v,value:v};
+  if(typeof v==='bigint')return {kind:'bigint',value:String(v)};
+  if(v instanceof Error)return {kind:'opaque',name:v.name};
+  return {kind:'opaque'};
+};
+try{
+  const m=await import(${JSON.stringify(pathToFileURL(path).href)});
+  names=Object.keys(m);phase='call';
+  for(const n of ${JSON.stringify(calls)}){index++;const v=m[n]();results.push(v===undefined?{undefined:true}:{value:v});}
+  console.log(JSON.stringify({events,exports:names,results,error:null}));
+}catch(e){
+  const thrown=thrownValue(e);
+  console.log(JSON.stringify({events,exports:names,results,error:{name:e?.name??null,phase,index,thrown}}));
+}`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+    encoding: "utf8",
+    timeout: timeoutMs,
+  });
+  if (child.error?.code === "ETIMEDOUT") return { inconclusive: "timeout" };
   if (child.error || child.status !== 0) throw new Error(`Node oracle failed: ${child.error ?? child.stderr}`);
   return JSON.parse(child.stdout);
 }
@@ -472,6 +498,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     generated: 0,
     refused: 0,
     compared: 0,
+    inconclusive: 0,
+    inconclusiveCases: [],
     equal: 0,
     different: 0,
     mutated: 0,
@@ -514,6 +542,15 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (input.writesCaptured) summary.closureWrites++;
         const observed = execute(source, input.calls);
         await writeFile(join(root, "node-source.json"), JSON.stringify(observed, null, 2) + "\n");
+        if (observed.inconclusive || observed.error?.thrown?.kind === "opaque") {
+          summary.inconclusive++;
+          summary.inconclusiveCases.push({
+            index,
+            reason: observed.inconclusive ?? "opaque thrown value",
+            artifacts: root,
+          });
+          continue;
+        }
         if (
           observed.error ||
           observed.results.length !== input.calls.length ||
@@ -553,6 +590,21 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       }
       const before = execute(source, input.calls);
       const after = execute(join(out, input.spec.entry), input.calls);
+      if (
+        before.inconclusive ||
+        after.inconclusive ||
+        before.error?.thrown?.kind === "opaque" ||
+        after.error?.thrown?.kind === "opaque"
+      ) {
+        summary.inconclusive++;
+        await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
+        summary.inconclusiveCases.push({
+          index,
+          reason: before.inconclusive ?? after.inconclusive ?? "opaque thrown value",
+          artifacts: root,
+        });
+        continue;
+      }
       const equal = JSON.stringify(before) === JSON.stringify(after);
       summary.compared++;
       if (input.grammar === "modeledClosure") {

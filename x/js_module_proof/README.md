@@ -170,6 +170,10 @@ approximately 1/N sample for validation while still splitting and running all
 supported cases in Node. The summary distinguishes unvalidated cases, unknowns,
 proved results, unsafe witnesses and Node differences. A Node difference in an
 unvalidated or unknown case is useful evidence, not itself a validator error.
+The oracle records primitive thrown values and exception names, and retains the
+trace prefix before a throw. Timeouts and opaque thrown objects are reported as
+inconclusive, with artifacts retained; object identity and exception messages
+are not compared.
 
 The generator covers a deliberately small, extensible ESTree grammar: integer
 bindings, functions, calls, records and exports, and a separate scope-aware

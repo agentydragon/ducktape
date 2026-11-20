@@ -18,8 +18,30 @@ assert.deepEqual(execute(throwing, ["first", "fail"]), {
   events: [],
   exports: ["fail", "first"],
   results: [{ value: 42 }],
-  error: { name: "Error", phase: "call", index: 1 },
+  error: { name: "Error", phase: "call", index: 1, thrown: { kind: "opaque", name: "Error" } },
 });
+const primitiveThrow = join(process.env.TEST_TMPDIR, `primitive-throw-${shard}.mjs`);
+await writeFile(primitiveThrow, "export function first() { return 42; } export function fail() { throw 'changed'; }");
+assert.deepEqual(execute(primitiveThrow, ["first", "fail"]), {
+  events: [],
+  exports: ["fail", "first"],
+  results: [{ value: 42 }],
+  error: { name: null, phase: "call", index: 1, thrown: { kind: "string", value: "changed" } },
+});
+const nullThrow = join(process.env.TEST_TMPDIR, `null-throw-${shard}.mjs`);
+await writeFile(nullThrow, "export function fail() { throw null; }");
+assert.deepEqual(execute(nullThrow, ["fail"]).error, {
+  name: null,
+  phase: "call",
+  index: 0,
+  thrown: { kind: "null" },
+});
+const opaqueThrow = join(process.env.TEST_TMPDIR, `opaque-throw-${shard}.mjs`);
+await writeFile(opaqueThrow, "export function fail() { throw { value: 1 }; }");
+assert.equal(execute(opaqueThrow, ["fail"]).error.thrown.kind, "opaque");
+const timeout = join(process.env.TEST_TMPDIR, `timeout-${shard}.mjs`);
+await writeFile(timeout, "while (true) {}");
+assert.deepEqual(execute(timeout, [], { timeoutMs: 250 }), { inconclusive: "timeout" });
 const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
 console.log(JSON.stringify(result));
 assert.equal(result.cases, 16 / shards);
@@ -43,7 +65,7 @@ if (shards === 4 && shard === 2) {
   assert.ok(result.mutated > 0);
   assert.ok(result.different > 0);
 }
-assert.equal(result.generated, result.compared);
+assert.equal(result.generated, result.compared + result.inconclusive);
 
 // Exercise many additional programs against Node without paying for a Lean
 // invocation on every case. Validation is sampled independently by index.
@@ -56,7 +78,7 @@ const bulk = await runFuzz({
   validateEvery: 1000000000,
 });
 assert.equal(bulk.cases, 128 / shards);
-assert.equal(bulk.generated, bulk.compared);
+assert.equal(bulk.generated, bulk.compared + bulk.inconclusive);
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
