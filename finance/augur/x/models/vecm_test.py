@@ -17,7 +17,7 @@ from numpyro import distributions as dist
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
 from finance.augur.x.models.vecm import VecmConfig, VecmModel, VecmProviderConfig
 

@@ -15,7 +15,7 @@ from finance.augur.model.conditioning import (
     ObservationUnits,
 )
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.historical_series import HistoricalSeries
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,

@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from numpyro import distributions as dist
 
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import InflationKey
 from finance.augur.x.models.metrics_report import ModelMetricSpec, main
 

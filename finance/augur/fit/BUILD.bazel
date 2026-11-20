@@ -37,7 +37,7 @@ py_library(
     name = "model",
     srcs = ["model.py"],
     deps = [
-        "//finance/augur/model/path_models:scenarios",
+        "//finance/augur/model:historical_series",
         "@pypi//numpyro",
     ],
 )
@@ -58,7 +58,7 @@ py_library(
     deps = [
         ":model",
         ":scoring",
-        "//finance/augur/model/path_models:scenarios",
+        "//finance/augur/model:historical_series",
         "@pypi//numpy",
     ],
 )
@@ -69,8 +69,8 @@ py_library(
     deps = [
         ":evidence_data",
         "//finance/augur/model:conditioning",
+        "//finance/augur/model:historical_series",
         "//finance/augur/model:series",
-        "//finance/augur/model/path_models:scenarios",
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
@@ -104,8 +104,8 @@ py_test(
         ":metrics",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/model:historical_series",
         "//finance/augur/model:series",
-        "//finance/augur/model/path_models:scenarios",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",

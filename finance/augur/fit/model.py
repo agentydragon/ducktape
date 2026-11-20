@@ -25,7 +25,7 @@ from typing import Protocol
 
 from numpyro import distributions as dist
 
-from finance.augur.model.path_models.scenarios import HistoricalSeries
+from finance.augur.model.historical_series import HistoricalSeries
 
 
 class Fittable(Protocol):

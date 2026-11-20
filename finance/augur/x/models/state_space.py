@@ -37,7 +37,7 @@ from finance.augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from finance.augur.model.float64 import LEVEL_DTYPE
-from finance.augur.model.path_models.scenarios import (
+from finance.augur.model.historical_series import (
     HistoricalSeries,
     historical_log_returns,
     require_increasing_calendar_months,

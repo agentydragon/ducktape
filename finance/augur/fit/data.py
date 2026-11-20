@@ -22,7 +22,7 @@ from finance.augur.fit.evidence_data import (
     load_exogenous_evidence,
 )
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationUnits
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY, HomeValueKey, InflationKey, LevelSeriesKey, LocationId, RentKey
 from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series, require_positive_levels
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500

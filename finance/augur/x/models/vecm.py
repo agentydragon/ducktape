@@ -49,7 +49,7 @@ from pydantic import Field, model_validator
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.float64 import LEVEL_DTYPE
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries, calendar_month_index
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries, calendar_month_index
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key

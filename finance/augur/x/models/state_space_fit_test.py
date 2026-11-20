@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY
 from finance.augur.x.models.state_space_fit import _historical_cumulative_return, _monthly_sigma
 

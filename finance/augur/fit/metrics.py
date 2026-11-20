@@ -27,7 +27,7 @@ import numpy as np
 
 from finance.augur.fit.model import FittableScorable, Scorable
 from finance.augur.fit.scoring import gaussian_crps, joint_log_density, marginal_log_densities
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries
 
 _HistoricalInput = HistoricalSeries | DatedHistoricalSeries
 

@@ -17,8 +17,8 @@ from numpyro import distributions as dist
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.gbm import GeometricBrownian
+from finance.augur.model.historical_series import HistoricalSeries
 from finance.augur.model.level_series_groups import LevelSeriesGroups
-from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.model.series_model import ScalarSeriesSpec, sample_independent_levels
 

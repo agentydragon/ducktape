@@ -26,7 +26,7 @@ from finance.augur.fit.metrics import (
     multi_step_predictive_score,
     rolling_origin_predictive_score,
 )
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries, historical_log_returns
+from finance.augur.model.historical_series import DatedHistoricalSeries, HistoricalSeries, historical_log_returns
 from finance.augur.model.series import (
     SP500_SYMBOL,
     HomeValueKey,

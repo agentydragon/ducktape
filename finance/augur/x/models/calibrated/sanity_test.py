@@ -26,7 +26,7 @@ from finance.augur.model.exogenous import (
     Sampler,
     level_series_request_channels,
 )
-from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from finance.augur.model.historical_series import HistoricalSeries, historical_log_returns
 from finance.augur.model.series import SP500_KEY, SP500_SYMBOL, InflationKey, LevelSeriesKey
 from finance.augur.x.models.structural_macro import (
     EquityProcess,

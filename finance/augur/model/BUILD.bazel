@@ -367,3 +367,12 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "historical_series",
+    srcs = ["historical_series.py"],
+    deps = [
+        ":series",
+        "@pypi//numpy",
+    ],
+)

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
-from finance.augur.model.path_models.scenarios import DatedHistoricalSeries
+from finance.augur.model.historical_series import DatedHistoricalSeries
 from finance.augur.model.series import SP500_KEY, InflationKey
 from finance.augur.x.models.vecm import VecmConfig, VecmModel, VecmProviderConfig
 
