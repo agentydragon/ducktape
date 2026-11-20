@@ -6,7 +6,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
+from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
 
 labels_app = typer.Typer(help="Manage Gmail labels")
 

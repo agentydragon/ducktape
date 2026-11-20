@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gmail_api.labels import SystemLabel, is_system_label
-from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
+from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
 from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.filter_planner import GmailFilterPlanner
 from gmail_archiver.filter_sync import (

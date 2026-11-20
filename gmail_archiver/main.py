@@ -17,9 +17,9 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from gmail_api.labels import SystemLabel
-from gmail_archiver.cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
+from gmail_archiver.cli.options import DryRunDefaultTrueOption, TokenFileOption, get_client
 from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.event_classifier import EmailTemplateExtractor
 from gmail_archiver.fmt import format_truncation_suffix
