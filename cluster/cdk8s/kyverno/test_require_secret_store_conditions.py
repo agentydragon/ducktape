@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from cdk8s import App
+from cdk8s import App, Testing as Cdk8sTesting  # pytest would collect `Testing` as a test class
 
+from cluster.cdk8s.kyverno import policies
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
 
@@ -15,6 +16,21 @@ from cluster.cdk8s.kyverno.test_utils import manifest, policy
 @pytest.fixture
 def secret_store_conditions_policy(scratch_app: App, tmp_path: Path) -> Path:
     return policy(scratch_app, "require-secret-store-conditions", tmp_path, json_mode=True)
+
+
+def test_cluster_store_policy_enables_discoverable_v1_background_scan(scratch_app: App) -> None:
+    document = Cdk8sTesting.synth(policies.require_secret_store_conditions_chart(scratch_app))[0]
+    spec = document["spec"]
+    assert spec["evaluation"]["background"]["enabled"] is True
+    assert spec["evaluation"]["admission"]["enabled"] is True
+    assert spec["matchConstraints"]["resourceRules"] == [
+        {
+            "apiGroups": ["external-secrets.io"],
+            "apiVersions": ["v1"],
+            "operations": ["CREATE", "UPDATE"],
+            "resources": ["clustersecretstores"],
+        }
+    ]
 
 
 class TestRequireSecretStoreConditions:
