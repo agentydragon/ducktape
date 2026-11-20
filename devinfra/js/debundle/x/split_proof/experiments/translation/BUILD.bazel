@@ -216,3 +216,23 @@ js_binary(
     entry_point = "frontend_lean.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
+
+js_test(
+    name = "callback_mutation_test",
+    size = "medium",
+    data = _CHECKER_RUNFILES + [
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate",
+    ],
+    entry_point = "callback_mutation_test.mjs",
+    env = {
+        "FACTORY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate)",
+        "IDENTITY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate)",
+        "NO_ALIAS_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate)",
+        "NO_DEFERRED_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
