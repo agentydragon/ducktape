@@ -47,9 +47,16 @@ spec:
     certController:
       create: false
     concurrent: 8
+    deploymentAnnotations:
+      goldilocks.fairwinds.com/vpa-update-mode: auto
     installCRDs: false
     leaderElect: true
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
     priorityClassName: system-cluster-critical
+    readinessProbe:
+      enabled: true
     replicaCount: 2
     resources:
       limits:
