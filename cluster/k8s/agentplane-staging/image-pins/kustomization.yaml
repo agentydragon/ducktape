@@ -9,7 +9,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
     newTag: devel-20261119085249-6013647 # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
-    newTag: devel-20261118221932-90d28bf # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
+    newTag: devel-20261120202231-701d883 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
     newTag: devel-20261119002825-7656132 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
@@ -35,7 +35,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
     newTag: devel-20261120200109-575d419 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261120173959-4251ac7 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261120202230-701d883 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261119002802-7656132 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
