@@ -6,6 +6,45 @@ metadata:
   name: gateway-system
 spec: {}
 ---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-agent-gateway-routes
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.namespace in ['claude-sandbox', 'haku-sandbox']
+      name: agent-sandbox
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - gateway.networking.k8s.io
+        apiVersions:
+          - "*"
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - gateways
+          - grpcroutes
+          - httproutes
+          - tcproutes
+          - tlsroutes
+          - udproutes
+        scope: Namespaced
+  validations:
+    - expression: "false"
+      message: Gateway API routes and Gateways may not be written in agent sandbox namespaces. Public ingress is operator-owned through the Authentik proxy.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-agent-gateway-routes
+spec:
+  policyName: restrict-agent-gateway-routes
+  validationActions:
+    - Deny
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:

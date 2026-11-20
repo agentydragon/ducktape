@@ -685,7 +685,35 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:listener",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_agent_gateway_admission",
+    size = "medium",
+    srcs = ["test_agent_gateway_admission.py"],
+    data = [
+        "@gateway_api_httproute_crd//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "GATEWAY_API_HTTPROUTE_CRD": "$(rlocationpath @gateway_api_httproute_crd//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":conftest",
+        ":gateway",
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 
