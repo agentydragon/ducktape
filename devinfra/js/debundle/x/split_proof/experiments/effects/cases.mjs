@@ -1233,6 +1233,30 @@ console.log(seen);
     reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
   },
   {
+    name: "__defineGetter__ on a program object: reading the property runs the getter",
+    source: `
+const o = { n: 0 };
+const target = {};
+target.__defineGetter__("x", () => { o.n = 1; return 1; });
+const t = target.x;
+const seen = o.n;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
+    name: "__defineSetter__ on a program object: assigning the property runs the setter",
+    source: `
+const o = { n: 0 };
+const target = {};
+target.__defineSetter__("x", (v) => { o.n = v; });
+target.x = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
     name: "a global that names an intrinsic is replaced",
     source: `
 globalThis.Array = class { static isArray() { return "patched"; } };

@@ -169,7 +169,7 @@ Adding precision is the only way to get something wrong. So I compared against t
 
 | Bundle                                                      | Statements | Inert | Effect | Hoisted functions | Missed free names | Mis-classified eager | Exactly the oracle's set |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | ----------------- | ----------------- | -------------------- | ------------------------ |
-| lodash (subset)                                             | 670        | 633   | 37     | 167               | 0                 | 0                    | 99.3%                    |
+| lodash (subset)                                             | 670        | 638   | 32     | 167               | 0                 | 0                    | 99.3%                    |
 | acorn                                                       | 447        | 156   | 291    | 42                | 0                 | 0                    | 99.8%                    |
 | semver (CJS)                                                | 59         | 58    | 1      | 0                 | 0                 | 0                    | 100%                     |
 | zod                                                         | 1,072      | 874   | 198    | 560               | 0                 | 0                    | 100%                     |
@@ -186,12 +186,12 @@ All six _unsound_ mutants were caught: skipping a member expression's object, `e
 and ignoring pattern defaults, letting parameters see body-level names, binding a catch parameter over the whole `try` (caught only by the stress file).
 One mutant, forgetting a catch parameter is local, is on the safe side and is correctly not flagged. The oracle is only as strong as its corpus.
 
-**What real bundles look like**, from the same runs. `Effects.lean` makes 934 of 3,427 statements effects (27%); the allow-list of the first version made 1,272 (37%):
+**What real bundles look like**, from the same runs. `Effects.lean` makes 929 of 3,427 statements effects (27%); the allow-list of the first version made 1,272 (37%):
 
 - acorn: 291 (minified, 290), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
 - semver: 1 (a call);
 - zod: 198, of which 183 are `var X = factory(…)` calls; minified, 117;
-- lodash: 37: 18 calls, 9 logical expressions, 5 member reads, 4 conditionals and an `if`.
+- lodash: 32: 16 calls, 9 logical expressions, 4 conditionals, 2 member reads and an `if`.
 
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
@@ -396,10 +396,10 @@ What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.
 
 Evidence, none of it a proof:
 
-- 108 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 89 reordered programs. Node runs 88 of them differently from the original, and `translate` must not accept those; it must accept the 89th, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units and fails on a wrong accept; CI runs 3 per case.
+- 110 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 91 reordered programs. Node runs 90 of them differently from the original, and `translate` must not accept those; it must accept the 91st, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units and fails on a wrong accept; CI runs 3 per case.
 - The translation fuzzer ([`translation/fuzz.mjs`](translation/README.md#fuzzer)) generates random bundles and random splits of them, runs both in Node and compares with the verdict. CI runs the random catalog, the AST corpus, the callback corpus and the `--leaks` templates on fixed seeds.
 - The suites that existed before ran on it: the fixtures, the emission tests, the Shift grammar fuzzers, the real-bundle splits (§ 7: no accepted split behaved differently) and debundle's e2e cases (§ 11).
-- 71 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): each removes one rule of the analysis or of the model, and the cases, the fuzzer or a proof that stops building must catch it.
+- 71 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): each removes one rule of the analysis or of the model, and the cases, the fuzzer or a proof that stops building must catch it. In the last run 66 were caught by a case or the fuzzer, 4 by a proof, and 1 survives (`no Hygienic`, redundant with the link check).
 
 **What reading the code found that the fuzzer did not.** The first version had passed seven fuzz seeds. Reading every place where the interpreter does not run code, and asking what that code could still do, gave eleven programs it accepted wrongly (Node prints something else): a generator body, which runs when the iterator is advanced, in a later unit; a call deeper than the analysis follows, or through more candidates than it follows, whose callee was not marked as run; the same for a constructor; an `await`, whose continuation runs after the program in the order the awaits were reached; a read of state that a module outside the tree keeps; a getter, a setter and an inherited accessor; and an object assigned to a variable that the world's handler reads. The fuzzer's catalog had been written by the hand that wrote the analysis. The rules that came out of it: a give-up must escape what the skipped code can reach, and a rule that assumes code runs now must ask whether it runs later. Each is a case with the reordered program, and a mutant that removes it.
 

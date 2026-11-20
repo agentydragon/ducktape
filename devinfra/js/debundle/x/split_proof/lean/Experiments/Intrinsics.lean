@@ -72,6 +72,16 @@ inductive Ret where
   | descriptorOf (pos : Nat)
   /-- a new instance whose prototype is the intrinsic `path`, holding every argument -/
   | inst (path : String)
+  /-- a new array holding the arguments -/
+  | freshArgs
+  /-- a new array holding what the receiver and the arguments hold, and the arguments that are not arrays (`concat`) -/
+  | concatLike
+  /-- a new array holding what the objects at the position hold, at any depth (`flat`) -/
+  | flatLike (pos : Nat)
+  /-- a new array of arrays holding what the objects at the position hold, and keys (`Object.entries`) -/
+  | entriesOf (pos : Nat)
+  /-- a new array holding what the callbacks return and what those hold (`flatMap`) -/
+  | freshOfCallsFlat
   deriving Inhabited
 
 structure Summary where
@@ -111,31 +121,48 @@ structure Summary where
   readsContents : List Nat := []
   /-- `(to, f)`: the function at `f` becomes an accessor of the objects at `to` (`__defineGetter__`) -/
   accessors : List (Nat × Nat) := []
+  /-- the callback result feeds the next call (`reduce`): it runs twice -/
+  accumulates : Bool := false
+  /-- what the callbacks return may be returned (`reduce`, a reviver, a `mapFn`) -/
+  returnsCalls : Bool := false
+  /-- positions whose values may be returned (the initial value of `reduce`) -/
+  alsoReturns : List Nat := []
+  /-- the object at this position maps names to descriptors that define properties of the first argument -/
+  defineMap : Option Nat := none
+  /-- `(first, to)`: the properties of the objects at every position from `first` on are copied into the objects at `to` -/
+  copiesRest : Option (Nat × Nat) := none
   deriving Inhabited
+
+/-- The iterator helpers (`map`, `filter`, …) of the iterator of a `Map` or a `Set`, which the collection stands for: they
+run their callbacks as the iterator is consumed, which the analysis does not follow, so a call is a call into the world
+that keeps its callbacks. -/
+def iteratorHelperRows : List (String × Summary) :=
+  ["map", "filter", "flatMap", "take", "drop", "reduce", "toArray", "some", "every", "find"].flatMap fun m =>
+    ["Map", "Set"].map fun c => (c ++ ".prototype." ++ m, { world := true, retains := [1, 2] })
 
 open Ret in
 /-- Rows by path. `X.prototype.m` is a method of every `X` instance; `prim.m` a method of a string, number, boolean,
 symbol or bigint. `Function.prototype.call`, `apply` and `bind` have rows so that reading them yields the function; the
 analysis runs them itself (`callBuiltin`). -/
-def table : Std.HashMap String Summary := Std.HashMap.ofList [
+def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   -- Object
   ("Object.keys", { ret := freshPrims }),
   ("Object.getOwnPropertyNames", { ret := freshPrims }),
   ("Object.getOwnPropertySymbols", { ret := freshPrims }),
   ("Object.values", { ret := freshOf 1 }),
-  ("Object.entries", { ret := freshOf 1 }),
+  ("Object.entries", { ret := entriesOf 1 }),
   ("Object.fromEntries", { ret := freshOfEntries 1, iterates := [1] }),
   ("Object.create", { ret := freshProto 1 }),
   ("Object.getPrototypeOf", { ret := protoOf 1 }),
   ("Object.getOwnPropertyDescriptor", { ret := descriptorOf 1 }),
   ("Object.defineProperty", { ret := arg 0, muts := [1], define := true }),
-  ("Object.defineProperties", { ret := arg 0, muts := [1], define := true }),
+  ("Object.defineProperties", { ret := arg 0, muts := [1], defineMap := some 2 }),
   ("Object.is", {}),
   ("Object.isFrozen", {}), ("Object.isSealed", {}), ("Object.isExtensible", {}),
   ("Object.freeze", { ret := arg 0, muts := [1] }),
   ("Object.seal", { ret := arg 0, muts := [1] }),
   ("Object.preventExtensions", { ret := arg 0, muts := [1] }),
-  ("Object.assign", { ret := arg 0, muts := [1], copies := [(2, 1), (3, 1), (4, 1), (5, 1)] }),
+  ("Object.assign", { ret := arg 0, muts := [1], copiesRest := some (2, 1) }),
   ("Object.setPrototypeOf", { ret := arg 0, muts := [1], setProto := true }),
   ("Object.prototype.hasOwnProperty", {}),
   ("Object.prototype.isPrototypeOf", {}),
@@ -158,7 +185,7 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("Object.prototype.valueOf", { ret := thisV }),
   -- Symbol, JSON, Math, conversions
   ("Symbol", {}), ("Symbol.for", {}), ("Symbol.keyFor", {}),
-  ("JSON.parse", { ret := fresh, calls := [2] }),
+  ("JSON.parse", { ret := fresh, calls := [2], returnsCalls := true }),
   ("Math.abs", {}), ("Math.ceil", {}), ("Math.floor", {}), ("Math.round", {}), ("Math.trunc", {}), ("Math.sign", {}),
   ("Math.max", {}), ("Math.min", {}), ("Math.pow", {}), ("Math.sqrt", {}), ("Math.log", {}), ("Math.exp", {}),
   ("Math.random", { world := true }),
@@ -173,27 +200,28 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   -- Array
   ("Array", { ret := fresh, storeArgs := true }),
   ("Array.isArray", {}),
-  ("Array.of", { ret := freshOf 1 }), ("Array.from", { ret := freshOf 1, calls := [2], optionalIterates := [1] }),
+  ("Array.of", { ret := freshArgs }),
+  ("Array.from", { ret := freshOf 1, calls := [2], optionalIterates := [1], returnsCalls := true }),
   ("Array.prototype.push", { muts := [0], storeArgs := true }),
   ("Array.prototype.unshift", { muts := [0], storeArgs := true }),
   ("Array.prototype.pop", { ret := contents 0, muts := [0] }),
   ("Array.prototype.shift", { ret := contents 0, muts := [0] }),
   ("Array.prototype.splice", { ret := freshOf 0, muts := [0], storeArgs := true }),
   ("Array.prototype.reverse", { ret := thisV, muts := [0] }),
-  ("Array.prototype.sort", { ret := thisV, muts := [0], calls := [1] }),
+  ("Array.prototype.sort", { ret := thisV, muts := [0], calls := [1], convertsContents := [0] }),
   ("Array.prototype.fill", { ret := thisV, muts := [0], store := [(1, 0)] }),
   ("Array.prototype.slice", { ret := freshOf 0 }),
-  ("Array.prototype.concat", { ret := freshOf 0 }),
-  ("Array.prototype.flat", { ret := freshOf 0 }),
+  ("Array.prototype.concat", { ret := concatLike }),
+  ("Array.prototype.flat", { ret := flatLike 0 }),
   ("Array.prototype.filter", { ret := freshOf 0, calls := [1] }),
   ("Array.prototype.map", { ret := freshOfCalls, calls := [1] }),
-  ("Array.prototype.flatMap", { ret := freshOfCalls, calls := [1] }),
+  ("Array.prototype.flatMap", { ret := freshOfCallsFlat, calls := [1] }),
   ("Array.prototype.forEach", { calls := [1] }),
   ("Array.prototype.some", { calls := [1] }), ("Array.prototype.every", { calls := [1] }),
   ("Array.prototype.find", { ret := contents 0, calls := [1] }),
   ("Array.prototype.findLast", { ret := contents 0, calls := [1] }),
   ("Array.prototype.findIndex", { calls := [1] }),
-  ("Array.prototype.reduce", { ret := contents 0, calls := [1] }),
+  ("Array.prototype.reduce", { ret := contents 0, calls := [1], accumulates := true, returnsCalls := true, alsoReturns := [2] }),
   ("Array.prototype.includes", {}), ("Array.prototype.indexOf", {}), ("Array.prototype.lastIndexOf", {}),
   ("Array.prototype.join", { convertsContents := [0] }), ("Array.prototype.at", { ret := contents 0 }),
   -- Map, Set, WeakMap, WeakSet
@@ -203,13 +231,14 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("Map.prototype.set", { ret := thisV, muts := [0], storeArgs := true }),
   ("Map.prototype.has", {}), ("Map.prototype.delete", { muts := [0] }), ("Map.prototype.clear", { muts := [0] }),
   ("Map.prototype.forEach", { calls := [1] }),
-  ("Map.prototype.keys", { ret := freshOf 0 }), ("Map.prototype.values", { ret := freshOf 0 }),
-  ("Map.prototype.entries", { ret := freshOf 0 }),
+  -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor
+  ("Map.prototype.keys", { ret := thisV }), ("Map.prototype.values", { ret := thisV }),
+  ("Map.prototype.entries", { ret := thisV }), ("Map.prototype.next", { ret := freshOf 0, muts := [0] }),
   ("Set.prototype.add", { ret := thisV, muts := [0], storeArgs := true }),
   ("Set.prototype.has", {}), ("Set.prototype.delete", { muts := [0] }), ("Set.prototype.clear", { muts := [0] }),
   ("Set.prototype.forEach", { calls := [1] }),
-  ("Set.prototype.keys", { ret := freshOf 0 }), ("Set.prototype.values", { ret := freshOf 0 }),
-  ("Set.prototype.entries", { ret := freshOf 0 }),
+  ("Set.prototype.keys", { ret := thisV }), ("Set.prototype.values", { ret := thisV }),
+  ("Set.prototype.entries", { ret := thisV }), ("Set.prototype.next", { ret := freshOf 0, muts := [0] }),
   -- errors, regular expressions
   ("Error", { ret := inst "Error.prototype" }), ("TypeError", { ret := inst "Error.prototype" }),
   ("RangeError", { ret := inst "Error.prototype" }), ("SyntaxError", { ret := inst "Error.prototype" }),
@@ -259,10 +288,11 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("prim.codePointAt", {}), ("prim.at", {}), ("prim.indexOf", {}), ("prim.lastIndexOf", {}), ("prim.includes", {}),
   ("prim.startsWith", {}), ("prim.endsWith", {}), ("prim.padStart", {}), ("prim.padEnd", {}), ("prim.repeat", {}),
   ("prim.normalize", {}), ("prim.localeCompare", {}), ("prim.concat", {}), ("prim.toFixed", {}),
-  ("prim.toPrecision", {}), ("prim.search", {}), ("prim.description", {}),
-  ("prim.split", { ret := freshPrims }), ("prim.match", { ret := freshPrims }), ("prim.matchAll", { ret := freshPrims }),
-  ("prim.replace", { calls := [2] }), ("prim.replaceAll", { calls := [2] })
-]
+  ("prim.toPrecision", {}), ("prim.search", { muts := [1] }), ("prim.description", {}),
+  ("prim.split", { ret := freshPrims, muts := [1] }), ("prim.match", { ret := freshPrims, muts := [1] }),
+  ("prim.matchAll", { ret := freshPrims, muts := [1] }),
+  ("prim.replace", { calls := [2], muts := [1] }), ("prim.replaceAll", { calls := [2], muts := [1] })
+] : List (String × Summary)) ++ iteratorHelperRows)
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,
 symbol or bigint has), generated from Node by `experiments/effects/gen_members.mjs`. -/

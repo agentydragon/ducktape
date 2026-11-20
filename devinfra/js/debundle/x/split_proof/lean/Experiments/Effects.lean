@@ -171,8 +171,6 @@ structure Fr where
   this  : AV := AV.prim
   /-- the cell that collects what `return` returns -/
   ret   : Option Nat := none
-  /-- every argument joined, for `arguments` -/
-  args  : AV := #[]
   /-- the chain of calls that reached here, for allocation sites -/
   path  : UInt64 := 0
   /-- the call that started this activation: allocation sites are told apart by the last two calls only -/
@@ -522,6 +520,9 @@ def avCap : Nat := 256
 /-- Calls through a set with more function values than this are calls into the world. -/
 def fanOut : Nat := 20
 
+/-- The parameters a spread or `apply` fills: its elements may land in any of them. -/
+def spreadArity : Nat := 16
+
 def widen (v : AV) : M AV := do
   if v.size ≤ avCap then return v
   escapeAV v
@@ -719,7 +720,8 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
   -- what the world holds may have been changed by the world's code, which only a unit that runs unknown code runs: such
   -- a unit writes every name that reaches the world's objects, including the names of the imports (see `footprints`)
   if o == 0 then return AV.top
-  if seen.contains o || seen.length > 10 then return #[]
+  if seen.contains o then return #[]
+  if seen.length > 10 then return AV.top
   let ob ← getObj o
   match ob.kind with
   | .world => return AV.top
@@ -776,6 +778,7 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
           if typ code == "FunctionExpression" || typ code == "FunctionDeclaration" then
             let p ← alloc .plain (some (mixHash 7 (UInt64.ofNat o)))
             joinProp o "prototype" (AV.ofObj p)
+            joinProp p "constructor" (AV.ofObj o)
             r := r.join (AV.ofObj p)
         | _ => pure ()
     | none =>
@@ -808,7 +811,8 @@ partial def getAV (a : AV) (key : Option String) : M AV := do
 /-- Whether an assignment to `key` of the object `o` may run a setter (or a read a getter), found on the object and on
 what it inherits, and the accessor functions of kind `kind` found. -/
 partial def accessorsOn (o : Nat) (key : Option String) (kind : String) (seen : List Nat := []) : M (Bool × AV) := do
-  if seen.contains o || seen.length > 10 || o == 0 then return (false, #[])
+  if seen.contains o || o == 0 then return (false, #[])
+  if seen.length > 10 then return (true, AV.top)
   let ob ← getObj o
   let mut found := match key with | some k => ob.acc.contains k || ob.acc.contains "*" | none => !ob.acc.isEmpty
   let mut fns : AV := if found then accessorFns ob key kind else #[]
@@ -874,6 +878,15 @@ partial def contentsOf (a : AV) : M AV := do
         unless p.startsWith "env:" || p.startsWith "vendor" do recBuiltinRead p none
         parts := parts.push AV.top
       | _ => pure ()
+  return AV.joinMany parts
+
+/-- The keys and values inside the entries an iterable yields (`new Map(entries)`, `Object.fromEntries`): an array
+yields the pairs it holds, so they are in the contents of its contents; a collection yields its own keys and values. -/
+partial def entryContents (a : AV) : M AV := do
+  let mut parts : Array AV := #[]
+  for c in a do
+    parts := parts.push (← contentsOf (← contentsOf #[c]))
+    if c ≥ 2 && (← getObj (c - 1)).kind matches .coll then parts := parts.push (← contentsOf #[c])
   return AV.joinMany parts
 
 /-- A call into the world: it may do anything with what it is given, and keep it. -/
@@ -954,22 +967,31 @@ partial def callFuncRun (code : Json) (scope : Scope) (cthis : AV) (thisV : AV) 
   let retCell ← alloc .cell (some (mixHash path 1))
   let argJoin := AV.joinAll args
   let fr0 : Fr := { scope := scope, this := if isArrow then cthis else thisV, ret := some retCell,
-                    args := argJoin, path, site, depth := fr.depth + 1, klass := fr.klass }
-  let names := (params.toList.flatMap binders) ++ selfName ++ (stmts.toList.flatMap varNames) ++ lexicalNames stmts
-  let fr1 ← newFrame fr0 names
+                    path, site, depth := fr.depth + 1, klass := fr.klass }
+  let declared := (params.toList.flatMap binders) ++ selfName ++ (stmts.toList.flatMap varNames) ++ lexicalNames stmts
+  -- `arguments` is a binding of the function, so an arrow function inside it reads it lexically
+  let bindsArguments := !isArrow && !declared.contains "arguments" && (← codeInfo code).1.contains "arguments"
+  let fr1 ← newFrame fr0 (if bindsArguments then "arguments" :: declared else declared)
   let outer := (← get).cur
   modify fun s => { s with cur := fr1 }
+  if bindsArguments then
+    if let some c := fr1.scope.head!.get? "arguments" then
+      let o ← alloc .array (some (mixHash path 67))
+      joinAny o argJoin
+      joinAny c (AV.ofObj o)
   if let some n := selfName.head? then
     -- a function expression's own name
     if let some c := fr1.scope.head!.get? n then
       let f ← alloc (.func code scope cthis) (some (← codeSite fr code))
       joinAny c (AV.ofObj f)
+  -- a call with a spread passes `spreadArity` positions, each holding whatever the spread may: a parameter past them too
+  let past : AV := if args.length ≥ spreadArity then args.getLast?.getD #[] else #[]
   for (p, i) in params.toList.zipIdx do
     if typ p == "RestElement" then
       let arr ← alloc .array (some (mixHash path (hash p)))
       joinAny arr (AV.joinAll (args.drop i))
       bindPattern fr1 (fld p "argument") (AV.ofObj arr)
-    else bindPattern fr1 p (args[i]?.getD #[])
+    else bindPattern fr1 p (args[i]?.getD past)
   if typ body == "BlockStatement" then
     hoistFns fr1 stmts
     for s in stmts do exec fr1 s
@@ -979,6 +1001,7 @@ partial def callFuncRun (code : Json) (scope : Scope) (cthis : AV) (thisV : AV) 
   modify fun s => { s with cur := outer }
   let r ← readVar retCell
   if flag code "async" then
+    callThenables r fr (mixHash site 71)
     let p ← alloc .plain (some (mixHash path 23))
     joinProto p (AV.ofObj (← builtinObj "Promise.prototype"))
     joinAny p (r.join AV.top)
@@ -995,7 +1018,7 @@ partial def construct (cls : Nat) (inst : Nat) (args : List AV) (fr : Fr) (site 
       escapeObj cls
       return ← worldCall (AV.ofObj inst :: args)
     let path := mixHash site (hash (shallow code))
-    let fr0 : Fr := { scope := scope, this := AV.ofObj inst, path, site, depth := fr.depth + 1, klass := some cls, args := AV.joinAll args }
+    let fr0 : Fr := { scope := scope, this := AV.ofObj inst, path, site, depth := fr.depth + 1, klass := some cls }
     let members := items (fld (fld code "body") "body")
     -- instance fields
     for m in members do
@@ -1008,9 +1031,10 @@ partial def construct (cls : Nat) (inst : Nat) (args : List AV) (fr : Fr) (site 
     let ctor := members.find? fun m => typ m == "MethodDefinition" && str (fld m "kind") == "constructor"
     match ctor with
     | some m =>
-      let _ ← callFunc (fld m "value") scope AV.prim (AV.ofObj inst) args { fr0 with depth := fr.depth }
+      -- `new` yields the object the constructor returns, if it returns one
+      let r ← callFunc (fld m "value") scope AV.prim (AV.ofObj inst) args { fr0 with depth := fr.depth }
         (mixHash site 29)
-      pure ()
+      return (AV.ofObj inst).join r
     | none =>
       if !isNull (fld code "superClass") then
         let _ ← superCall fr0 args
@@ -1031,10 +1055,29 @@ partial def superCall (fr : Fr) (args : List AV) : M AV := do
       match pob.kind with
       | .klass .. => r := r.join (← construct (c - 1) inst args fr 31)
       | .func code scope cthis => r := r.join (← callFunc code scope cthis fr.this args fr 37)
-      | .builtin path => r := r.join (← callBuiltin path fr.this args fr 41)
+      | .builtin path =>
+        -- a class object inherits from `Function.prototype`, which is not its superclass
+        unless path == "Function.prototype" do r := r.join (← callBuiltin path fr.this args fr 41)
       | _ => pure ()
   if ob.proto.isEmpty then r := r.join (← worldCall (fr.this :: args))
   return r
+
+/-- The descriptors `d` define properties of the objects of `target`: their contents become the target's contents. A
+descriptor that may carry a getter or a setter makes the property an accessor: reading it runs code the analysis does
+not see. -/
+partial def defineFrom (target : AV) (d : AV) : M Unit := do
+  setAV target none (← contentsOf d)
+  let mut accessor := false
+  for c in d do
+    if c == 1 then accessor := true
+    else if c ≥ 2 then
+      let dob ← getObj (c - 1)
+      match dob.kind with
+      | .plain => if dob.props.contains "get" || dob.props.contains "set" || !dob.any.isEmpty || dob.escaped then accessor := true
+      | _ => accessor := true
+  if accessor then
+    for c in target do
+      if c ≥ 2 then modObj (c - 1) fun x => { x with acc := "*" :: x.acc }
 
 /-- Apply a summary from the table, or a vendor entry. -/
 partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (fr : Fr) (site : UInt64) :
@@ -1064,7 +1107,7 @@ partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (fr : Fr) 
     if path == "Function.prototype.call" then
       return ← callAll thisV (args[0]?.getD #[]) (args.drop 1) false deeper site
     let a ← contentsOf (args[1]?.getD #[])
-    return ← callAll thisV (args[0]?.getD #[]) (List.replicate 4 a) false deeper site
+    return ← callAll thisV (args[0]?.getD #[]) (List.replicate spreadArity a) false deeper site
   if path == "Function.prototype.bind" then
     let o ← alloc (.bound thisV (args[0]?.getD #[]) (args.drop 1)) (some (mixHash (mixHash fr.path site) 71))
     return AV.ofObj o
@@ -1098,6 +1141,8 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
   -- copying a property reads it: a getter the source has runs
   for (src, dst) in s.copies do setAV (pos dst) none (← contentsOf (pos src))
+  if let some (first, dst) := s.copiesRest then
+    for i in [first:args.length + 1] do setAV (pos dst) none (← contentsOf (pos i))
   for (dst, f) in s.accessors do
     setAV (pos dst) none (pos f)
     for c in pos dst do
@@ -1107,22 +1152,8 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     for c in pos 1 do
       if c == 1 then setWorld "prototype of a value the world made"
       else if c ≥ 2 then joinProto (c - 1) (pos 2)
-  if s.define then
-    -- the descriptor's contents become the target's contents. A descriptor that may carry a getter or a setter makes
-    -- the property an accessor: reading it runs code the analysis does not see.
-    let d := pos 3
-    setAV (pos 1) none (← contentsOf d)
-    let mut accessor := false
-    for c in d do
-      if c == 1 then accessor := true
-      else if c ≥ 2 then
-        let dob ← getObj (c - 1)
-        match dob.kind with
-        | .plain => if dob.props.contains "get" || dob.props.contains "set" || !dob.any.isEmpty || dob.escaped then accessor := true
-        | _ => accessor := true
-    if accessor then
-      for c in pos 1 do
-        if c ≥ 2 then modObj (c - 1) fun x => { x with acc := "*" :: x.acc }
+  if s.define then defineFrom (pos 1) (pos 3)
+  if let some m := s.defineMap then defineFrom (pos 1) (← contentsOf (pos m))
   let deeper : Fr := { fr with depth := fr.depth + 1 }
   -- callbacks that cannot be run from here may run later, at any time
   let tooDeep := fr.depth ≥ maxDepth && !(s.callsWithWorld.isEmpty && s.calls.isEmpty)
@@ -1134,73 +1165,98 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       let _ ← callAll (pos p) AV.prim [AV.top, AV.top] false deeper (mixHash site (UInt64.ofNat (p + 100)))
   let mut calledRet : AV := #[]
   if !s.calls.isEmpty && !tooDeep then
-    let elems ← contentsOf (AV.joinAll (thisV :: args))
-    for p in s.calls do
-      calledRet := calledRet.join (← callAll (pos p) AV.prim [elems, AV.prim, thisV] false deeper (mixHash site (UInt64.ofNat p)))
+    -- a callback gets elements, indexes, keys, the receiver, an accumulator and a `this`, in an order that depends on the
+    -- function: each parameter may hold any of them
+    let others : AV := (thisV :: args).zipIdx.foldl (fun (acc : AV) (v, i) => if s.calls.contains i then acc else AV.join acc v) #[]
+    let given : AV := AV.join (AV.join (← contentsOf others) others) AV.prim
+    for round in [0:(if s.accumulates then 2 else 1)] do
+      let all := given.join calledRet
+      for p in s.calls do
+        calledRet := calledRet.join (← callAll (pos p) all [all, all, all, all] false deeper (mixHash site (UInt64.ofNat (p + 1000 * round))))
   let mkArr (contents : AV) : M AV := do
     let o ← alloc .array (some (mixHash (mixHash fr.path site) 53))
     joinAny o contents
     return AV.ofObj o
-  match s.ret with
-  | .prim => return AV.prim
-  | .fresh =>
-    let o ← alloc .plain (some (mixHash (mixHash fr.path site) 59))
-    if s.storeArgs then joinAny o (AV.joinAll args)
-    return AV.ofObj o
-  | .thisV => return thisV
-  | .arg i => return pos (i + 1)
-  | .contents p => contentsOf (pos p)
-  | .freshOf p => mkArr (← contentsOf (pos p))
-  | .freshOfCalls => mkArr calledRet
-  | .freshPrims => mkArr AV.prim
-  | .member => return AV.top
-  | .freshProto p =>
-    let o ← alloc .plain (some (mixHash (mixHash fr.path site) 73))
-    joinProto o (pos p)
-    return AV.ofObj o
-  | .protoOf p =>
-    let mut r : AV := #[]
-    -- a value that is a primitive for certain has the prototypes of the five wrappers; one that only may be has an unknown one
-    if pos p == AV.prim then return ← primitivePrototypeValue
-    for c in pos p do
-      if c ≤ 1 then r := r.join AV.top
-      else
-        let ob ← getObj (c - 1)
-        r := r.join ob.proto
-        match ob.kind with
-        | .builtin q =>
-          if q.startsWith "env:" || q.startsWith "vendor" then r := r.join AV.top
-          else
-            match builtinProto q with
-            | some pp => r := r.join (AV.ofObj (← builtinObj pp))
-            | none => pure ()
-        | _ => pure ()
-    return r
-  | .freshOfEntries p =>
-    let o ← alloc .plain (some (mixHash (mixHash fr.path site) 83))
-    joinAny o (← contentsOf (← contentsOf (pos p)))
-    return AV.ofObj o
-  | .descriptorOf p =>
-    let o ← alloc .plain (some (mixHash (mixHash fr.path site) 79))
-    joinProp o "value" (← contentsOf (pos p))
-    -- the source may be an accessor: then the descriptor has a getter
-    for c in pos p do
-      if c == 1 then joinProp o "get" AV.top
-      else if c ≥ 2 then
-        let sob ← getObj (c - 1)
-        if !sob.acc.isEmpty || sob.escaped then joinProp o "get" AV.top
-    return AV.ofObj o
-  | .inst proto =>
-    let o ← alloc (if proto == "Map.prototype" || proto == "Set.prototype" then .coll else .plain) (some (mixHash (mixHash fr.path site) 61))
-    joinProto o (AV.ofObj (← builtinObj proto))
-    -- `new Map(entries)` holds the keys and values inside the entries, `new Set(items)` the items
-    if proto == "Map.prototype" then joinAny o (← contentsOf (← contentsOf (pos 1)))
-    else if proto == "Set.prototype" then joinAny o (← contentsOf (pos 1))
-    else joinAny o (AV.joinAll args)
-    if proto == "Error.prototype" then
-      joinProp o "message" AV.prim
-      joinProp o "stack" AV.prim
-    return AV.ofObj o
+  let shape : M AV := do
+    match s.ret with
+    | .prim => return AV.prim
+    | .fresh =>
+      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 59))
+      if s.storeArgs then joinAny o (AV.joinAll args)
+      return AV.ofObj o
+    | .thisV => return thisV
+    | .arg i => return pos (i + 1)
+    | .contents p => contentsOf (pos p)
+    | .freshOf p => mkArr ((← contentsOf (pos p)).join (if s.returnsCalls then calledRet else #[]))
+    | .freshOfCalls => mkArr calledRet
+    | .freshPrims => mkArr AV.prim
+    | .member => return AV.top
+    | .freshProto p =>
+      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 73))
+      joinProto o (pos p)
+      defineFrom (AV.ofObj o) (← contentsOf (pos 2))
+      return AV.ofObj o
+    | .protoOf p =>
+      let mut r : AV := #[]
+      -- a value that is a primitive for certain has the prototypes of the five wrappers; one that only may be has an unknown one
+      if pos p == AV.prim then return ← primitivePrototypeValue
+      for c in pos p do
+        if c ≤ 1 then r := r.join AV.top
+        else
+          let ob ← getObj (c - 1)
+          r := r.join ob.proto
+          match ob.kind with
+          | .builtin q =>
+            if q.startsWith "env:" || q.startsWith "vendor" then r := r.join AV.top
+            else
+              match builtinProto q with
+              | some pp => r := r.join (AV.ofObj (← builtinObj pp))
+              | none => pure ()
+          | _ => pure ()
+      return r
+    | .freshOfEntries p =>
+      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 83))
+      joinAny o (← entryContents (pos p))
+      return AV.ofObj o
+    | .descriptorOf p =>
+      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 79))
+      joinProp o "value" (← contentsOf (pos p))
+      -- the source may be an accessor: then the descriptor has a getter
+      for c in pos p do
+        if c == 1 then joinProp o "get" AV.top
+        else if c ≥ 2 then
+          let sob ← getObj (c - 1)
+          if !sob.acc.isEmpty || sob.escaped then joinProp o "get" AV.top
+      return AV.ofObj o
+    | .freshArgs => mkArr (AV.joinAll args)
+    | .concatLike =>
+      let given := AV.joinAll args
+      mkArr (((← contentsOf thisV).join given).join (← contentsOf given))
+    | .flatLike p =>
+      let mut level ← contentsOf (pos p)
+      let mut every := level
+      for _ in [0:4] do
+        level ← contentsOf level
+        every := every.join level
+      mkArr every
+    | .entriesOf p => mkArr (← mkArr ((← contentsOf (pos p)).join AV.prim))
+    | .freshOfCallsFlat => mkArr (calledRet.join (← contentsOf calledRet))
+    | .inst proto =>
+      let o ← alloc (if proto == "Map.prototype" || proto == "Set.prototype" then .coll else .plain) (some (mixHash (mixHash fr.path site) 61))
+      joinProto o (AV.ofObj (← builtinObj proto))
+      -- `new Map(entries)` holds the keys and values inside the entries, `new Set(items)` the items
+      if proto == "Map.prototype" then joinAny o (← entryContents (pos 1))
+      else if proto == "Set.prototype" then joinAny o (← contentsOf (pos 1))
+      else joinAny o (AV.joinAll args)
+      if proto == "Error.prototype" then
+        joinProp o "message" AV.prim
+        joinProp o "stack" AV.prim
+      return AV.ofObj o
+
+  let r ← shape
+  -- what a callback returned (`reduce`, a reviver) and the initial value may be what the call returns
+  let extra : AV := AV.join (s.alsoReturns.foldl (fun (acc : AV) p => AV.join acc (pos p)) #[]) (if s.returnsCalls then calledRet else #[])
+  return r.join extra
 
 -- ## Expressions
 
@@ -1239,7 +1295,8 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
 
 /-- Whether converting the object may run a function: it or what it inherits has a hook. -/
 partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
-  if seen.contains o || seen.length > 10 then return false
+  if seen.contains o then return false
+  if seen.length > 10 then return true
   let ob ← getObj o
   if ob.hook || !ob.acc.isEmpty then return true
   for p in ob.proto do
@@ -1259,11 +1316,9 @@ partial def hookFns (f : AV) : M AV := do
       | _ => pure ()
   return r
 
-/-- `await v`, or one step of `for await`: the rest of the async function runs after the program, in the order the
-awaits were reached, so the unit that awaits is an effect and two such units keep their order. A thenable the program
-defined has its `then` called when the value is resolved. -/
-partial def awaitValue (v : AV) (fr : Fr) (site : UInt64) : M Unit := do
-  setTrace "await"
+/-- A thenable the program defined has its `then` called when a promise is resolved with it (`await`, the value an async
+function returns). -/
+partial def callThenables (v : AV) (fr : Fr) (site : UInt64) : M Unit := do
   for c in v do
     if c ≥ 2 then
       let mut fns : AV := #[]
@@ -1274,6 +1329,12 @@ partial def awaitValue (v : AV) (fr : Fr) (site : UInt64) : M Unit := do
           | _ => pure ()
       unless fns.isEmpty do
         let _ ← callAll fns (AV.ofObj (c - 1)) [AV.top, AV.top] false fr site
+
+/-- `await v`, or one step of `for await`: the rest of the async function runs after the program, in the order the
+awaits were reached, so the unit that awaits is an effect and two such units keep their order. -/
+partial def awaitValue (v : AV) (fr : Fr) (site : UInt64) : M Unit := do
+  setTrace "await"
+  callThenables v fr site
 
 partial def evalIdent (fr : Fr) (n : String) : M AV := do
   match ← lookup fr n with
@@ -1286,10 +1347,6 @@ partial def evalIdent (fr : Fr) (n : String) : M AV := do
         modify fun s => { s with usedVendor := s.usedVendor.insert key }
         return AV.ofObj (← builtinObj ("vendor:" ++ key))
       else return AV.top
-    else if n == "arguments" && fr.depth > 0 then
-      let o ← alloc .array (some (mixHash fr.path 67))
-      joinAny o fr.args
-      return AV.ofObj o
     else if n == "undefined" then return #[]
     else if primGlobals.contains n then return AV.prim
     else if intrinsicGlobals.contains n then
@@ -1303,16 +1360,23 @@ partial def evalIdent (fr : Fr) (n : String) : M AV := do
 
 partial def evalArgs (fr : Fr) (args : Array Json) : M (List AV) := do
   let mut out : List AV := []
+  -- from the first spread on, a position may hold anything the spread or an argument after it holds
+  let mut spread := false
+  let mut rest : AV := #[]
   for a in args do
     if typ a == "SpreadElement" then
       let v ← eval fr (fld a "argument")
-      out := out ++ [← iterate v]
-    else out := out ++ [← eval fr a]
-  return out
+      spread := true
+      rest := rest.join (← iterate v)
+    else
+      let v ← eval fr a
+      if spread then rest := rest.join v else out := out ++ [v]
+  return if spread then out ++ List.replicate spreadArity rest else out
 
 /-- Whether the object or what it inherits holds a value under a key the analysis does not know. -/
 partial def mayHaveComputedKey (o : Nat) (seen : List Nat := []) : M Bool := do
-  if seen.contains o || seen.length > 10 then return false
+  if seen.contains o then return false
+  if seen.length > 10 then return true
   let ob ← getObj o
   if ob.kind matches .builtin _ then return false
   if !ob.any.isEmpty || !ob.acc.isEmpty || ob.escaped || ob.fam.isSome then return true
@@ -1386,7 +1450,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     let arg := fld j "argument"
     if op == "delete" && typ arg == "MemberExpression" then
       let o ← eval fr (fld arg "object")
-      let k ← if flag arg "computed" then (do let _ ← eval fr (fld arg "property"); pure (memberKey arg)) else pure (memberKey arg)
+      let k ← if flag arg "computed" then (do convert [← eval fr (fld arg "property")] fr (shallow arg); pure (memberKey arg)) else pure (memberKey arg)
       setAV o k AV.prim
       return AV.prim
     let v ← eval fr arg
@@ -1459,12 +1523,12 @@ partial def evalObject (fr : Fr) (j : Json) : M AV := do
           unless sob.acc.isEmpty do setWorld "getter or setter"
       joinAny o (← contentsOf src)
     else
-      let key ← if flag p "computed" then (do let _ ← eval fr (fld p "key"); pure (propKey p)) else pure (propKey p)
+      let key ← if flag p "computed" then (do convert [← eval fr (fld p "key")] fr (shallow p); pure (propKey p)) else pure (propKey p)
       let v ← eval fr (fld p "value")
       let kind := str (fld p "kind")
       if kind == "get" || kind == "set" then
         -- the function is kept under its own key so that escaping finds it; reads of the key are a world call
-        modObj o fun x => { x with acc := (key.getD "") :: x.acc }
+        modObj o fun x => { x with acc := (key.getD "*") :: x.acc }
         match key with
         | some k => joinProp o (kind ++ ":" ++ k) v
         | none => joinAny o v
@@ -1489,6 +1553,7 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
   let P ← alloc .plain (some (mixHash site 3))
   joinAny innerCell (AV.ofObj C)
   joinProp C "prototype" (AV.ofObj P)
+  joinProp P "constructor" (AV.ofObj C)
   joinProto C superAV
   let objProto := AV.ofObj (← builtinObj "Object.prototype")
   let superProto ← if hasSuper then getAV superAV (some "prototype") else pure objProto
@@ -1500,11 +1565,11 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
       let kind := str (fld m "kind")
       let static := flag m "static"
       let target := if static then C else P
-      let key ← if flag m "computed" then (do let _ ← eval fr' (fld m "key"); pure (propKey m)) else pure (propKey m)
+      let key ← if flag m "computed" then (do convert [← eval fr' (fld m "key")] fr' (shallow m); pure (propKey m)) else pure (propKey m)
       let f ← alloc (.func (fld m "value") scope' AV.prim) (some (mixHash site (← codeHash m)))
       if kind == "constructor" then pure ()
       else if kind == "get" || kind == "set" then
-        modObj target fun x => { x with acc := (key.getD "") :: x.acc }
+        modObj target fun x => { x with acc := (key.getD "*") :: x.acc }
         match key with
         | some k => joinProp target (kind ++ ":" ++ k) (AV.ofObj f)
         | none => joinAny target (AV.ofObj f)
@@ -1514,7 +1579,7 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
         | none => joinAny target (AV.ofObj f)
     | "PropertyDefinition" =>
       if flag m "computed" then
-        let _ ← eval fr' (fld m "key")
+        convert [← eval fr' (fld m "key")] fr' (shallow m)
       if flag m "static" && !isNull (fld m "value") then
         let v ← eval fr' (fld m "value")
         recWrite C
@@ -1588,7 +1653,7 @@ partial def assignTo (fr : Fr) (t : Json) (v : AV) : M Unit := do
   | "MemberExpression" =>
     let o ← eval fr (fld t "object")
     if flag t "computed" then
-      let _ ← eval fr (fld t "property")
+      convert [← eval fr (fld t "property")] fr (shallow t)
     setAV o (memberKey t) v
   | _ => bindPattern fr t v
 
@@ -1603,7 +1668,7 @@ partial def bindPattern (fr : Fr) (p : Json) (v : AV) : M Unit := do
         joinAny rest (← contentsOf v)
         bindPattern fr (fld q "argument") (AV.ofObj rest)
       else
-        let key ← if flag q "computed" then (do let _ ← eval fr (fld q "key"); pure (propKey q)) else pure (propKey q)
+        let key ← if flag q "computed" then (do convert [← eval fr (fld q "key")] fr (shallow q); pure (propKey q)) else pure (propKey q)
         bindPattern fr (fld q "value") (← getAV v key)
   | "ArrayPattern" =>
     let elems ← iterate v
