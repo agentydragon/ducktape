@@ -12,8 +12,7 @@
 //! * **Vendor residual emission** — each partially / bundled-partially
 //!   swapped chunk's residual is computed by [`emit_vendor_residual`]:
 //!   the canonicalize → self-rewrite → strip composition as one
-//!   function body, so the former stage ordering is structural rather
-//!   than a pipeline concern.
+//!   function body.
 //!
 //! Wrappers, facade bundles, and the bundle copy are emission outputs
 //! written by [`write_planned_vendor_outputs`] (write-gated behind
@@ -299,9 +298,10 @@ fn extract_residual_job<'a>(
 /// The residual computation as one function body. Per pass-through
 /// file of the swapped chunk:
 ///
-/// 1. **canonicalize** — the unified directive rewrite (§2.4), which
-///    also applies any consumer-side surgery the chunk's own files need
-///    against *other* swapped chunks;
+/// 1. **canonicalize** — the unified directive rewrite
+///    (`rewrite_passthrough_module`), which also applies any
+///    consumer-side surgery the chunk's own files need against *other*
+///    swapped chunks;
 /// 2. **self-rewrite** (bundled family) — facade import plus internal
 ///    reference re-targeting, seeding the strip's
 ///    `replacement_import_locals`;
@@ -311,10 +311,8 @@ fn extract_residual_job<'a>(
 /// 3. **strip** — split var decls, strip swapped export specifiers,
 ///    sweep unreachable top-level items. The strip-internal soundness
 ///    gates (split-brain, observable-effect privacy, live-reads,
-///    export-surface invariance) live inside the strip and run
-///    unchanged on the same module shape the former stage order
-///    produced — the composition is structural here instead of a
-///    pipeline ordering concern.
+///    export-surface invariance) live inside the strip and run on the
+///    module after steps 1 and 2.
 fn emit_vendor_residual(
     job: ResidualJob<'_>,
     context: &PassthroughContext<'_>,
