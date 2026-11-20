@@ -317,24 +317,16 @@ class ScenarioKey(ApiModel):
     annual_insurance_pct: NonNegativeFloat = DEFAULT_ANNUAL_INSURANCE_PCT
     annual_maintenance_pct: NonNegativeFloat = DEFAULT_ANNUAL_MAINTENANCE_PCT
 
-    @classmethod
-    def _normalize_currency_code(cls, code: str) -> str:
-        normalized = code.strip().upper()
-        if not normalized:
-            raise ValueError("currency_code must not be empty")
-        return normalized
-
-    @classmethod
-    def _validate_currency_quantum(cls, quantum: object) -> Decimal:
-        return validate_currency_quantum(quantum)
-
     @model_validator(mode="before")
     @classmethod
     def _validate_currency(cls, value: object) -> object:
         if isinstance(value, dict):
             copy = dict(value)
-            copy["currency_code"] = cls._normalize_currency_code(str(copy.get("currency_code", "USD")))
-            copy["currency_quantum"] = cls._validate_currency_quantum(copy.get("currency_quantum", "0.01"))
+            code = str(copy.get("currency_code", "USD")).strip().upper()
+            if not code:
+                raise ValueError("currency_code must not be empty")
+            copy["currency_code"] = code
+            copy["currency_quantum"] = validate_currency_quantum(copy.get("currency_quantum", "0.01"))
             return copy
         return value
 
@@ -454,18 +446,20 @@ class PrivateEquityOpportunityEvent(_RolloutEventBase):
     proceeds_quanta: CurrencyQuanta
 
 
-class MonthlyExpenseEvent(_RolloutEventBase):
+class _DueEventBase(_RolloutEventBase):
+    """The settlement of one due claim: what was owed, what was paid, and what stayed unpaid."""
+
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
+
+
+class MonthlyExpenseEvent(_DueEventBase):
     kind: Literal["monthly_expense"] = "monthly_expense"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
-class OutsideRentPaymentEvent(_RolloutEventBase):
+class OutsideRentPaymentEvent(_DueEventBase):
     kind: Literal["outside_rent"] = "outside_rent"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
 class PropertyPurchaseEvent(_RolloutEventBase):
@@ -487,32 +481,20 @@ class MortgagePaymentEvent(_RolloutEventBase):
     principal_quanta: CurrencyQuanta
 
 
-class PropertyTaxPaymentEvent(_RolloutEventBase):
+class PropertyTaxPaymentEvent(_DueEventBase):
     kind: Literal["property_tax_payment"] = "property_tax_payment"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
-class HoaDuesPaymentEvent(_RolloutEventBase):
+class HoaDuesPaymentEvent(_DueEventBase):
     kind: Literal["hoa_dues_payment"] = "hoa_dues_payment"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
-class HomeownersInsurancePaymentEvent(_RolloutEventBase):
+class HomeownersInsurancePaymentEvent(_DueEventBase):
     kind: Literal["homeowners_insurance_payment"] = "homeowners_insurance_payment"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
-class PropertyMaintenancePaymentEvent(_RolloutEventBase):
+class PropertyMaintenancePaymentEvent(_DueEventBase):
     kind: Literal["property_maintenance_payment"] = "property_maintenance_payment"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
 class TaxAccrualEvent(_RolloutEventBase):
@@ -535,19 +517,13 @@ class TaxAccrualEvent(_RolloutEventBase):
     standard_deduction_quanta: CurrencyQuanta
 
 
-class TaxPaymentEvent(_RolloutEventBase):
+class TaxPaymentEvent(_DueEventBase):
     kind: Literal["tax_payment"] = "tax_payment"
     obligation_type: str
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
-class RolloutFailureEvent(_RolloutEventBase):
+class RolloutFailureEvent(_DueEventBase):
     kind: Literal["failure"] = "failure"
-    amount_due_quanta: CurrencyQuanta
-    amount_paid_quanta: CurrencyQuanta
-    shortfall_quanta: CurrencyQuanta
 
 
 class SetRentedFractionMarkerEvent(_RolloutEventBase):

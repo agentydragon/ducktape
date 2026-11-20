@@ -85,32 +85,24 @@ from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_inco
 from finance.augur.sim.world import World
 
 PRIMARY_ACCOUNT_ID = AccountId("checking")
+# Every counterparty agent holds one account under this ID.
+COUNTERPARTY_ACCOUNT_ID = AccountId("checking")
 SPEND_SINK_AGENT_ID = AgentId("spend_sink")
-SPEND_SINK_ACCOUNT_ID = AccountId("checking")
 SPEND_OBLIGATION_ID = "monthly_spend"
 LANDLORD_AGENT_ID = AgentId("landlord")
-LANDLORD_ACCOUNT_ID = AccountId("checking")
 RENT_OBLIGATION_ID = "outside_rent"
 TAX_AUTHORITY_AGENT_ID = AgentId("tax_authority")
-TAX_AUTHORITY_ACCOUNT_ID = AccountId("checking")
 PROPERTY_SELLER_AGENT_ID = AgentId("property_seller")
-PROPERTY_SELLER_ACCOUNT_ID = AccountId("checking")
 MORTGAGE_LENDER_AGENT_ID = AgentId("mortgage_lender")
-MORTGAGE_LENDER_ACCOUNT_ID = AccountId("checking")
 HOA_AGENT_ID = AgentId("hoa")
-HOA_ACCOUNT_ID = AccountId("checking")
 HOA_OBLIGATION_ID = "hoa_dues"
 INSURER_AGENT_ID = AgentId("insurer")
-INSURER_ACCOUNT_ID = AccountId("checking")
 INSURANCE_OBLIGATION_ID = "homeowners_insurance"
 MAINTENANCE_VENDOR_AGENT_ID = AgentId("maintenance_vendor")
-MAINTENANCE_VENDOR_ACCOUNT_ID = AccountId("checking")
 MAINTENANCE_OBLIGATION_ID = "property_maintenance"
 TENANT_AGENT_ID = AgentId("tenant")
-TENANT_ACCOUNT_ID = AccountId("checking")
 RENTAL_INCOME_CAUSE_ID = "rental_income"
 PROPERTY_MANAGEMENT_AGENT_ID = AgentId("property_management_agency")
-PROPERTY_MANAGEMENT_ACCOUNT_ID = AccountId("checking")
 MANAGEMENT_FEE_CAUSE_ID = "management_fee"
 LEASING_FEE_CAUSE_ID = "leasing_fee"
 # The wire has no land-fraction field. 20% land / 80% building is a common cost-segregation
@@ -228,8 +220,8 @@ def build_situation(
 
     accounts = [
         (primary, currency.quanta(initial_cash)),
-        _empty_account(SPEND_SINK_AGENT_ID, SPEND_SINK_ACCOUNT_ID),
-        _empty_account(TAX_AUTHORITY_AGENT_ID, TAX_AUTHORITY_ACCOUNT_ID),
+        _empty_account(SPEND_SINK_AGENT_ID, COUNTERPARTY_ACCOUNT_ID),
+        _empty_account(TAX_AUTHORITY_AGENT_ID, COUNTERPARTY_ACCOUNT_ID),
     ]
     obligations = [
         Obligation(
@@ -237,7 +229,7 @@ def build_situation(
             obligation_id=SPEND_OBLIGATION_ID,
             obligation_type=ObligationType.CASH_SPEND,
             from_account=primary,
-            to_account=AccountRef(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID),
+            to_account=AccountRef(agent_id=SPEND_SINK_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
             amount_due=_monthly_spend_amount(scenario_key, currency=currency),
             property_id=None,
             deduction_category=None,
@@ -247,14 +239,14 @@ def build_situation(
 
     if scenario_key.monthly_rent > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
-        accounts.append(_empty_account(LANDLORD_AGENT_ID, LANDLORD_ACCOUNT_ID))
+        accounts.append(_empty_account(LANDLORD_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         obligations.append(
             Obligation(
                 schedule=Recurring(start_month=0, end_month=end_month),
                 obligation_id=RENT_OBLIGATION_ID,
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=primary,
-                to_account=AccountRef(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID),
+                to_account=AccountRef(agent_id=LANDLORD_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
                 amount_due=_indexed(
                     currency.quanta(scenario_key.monthly_rent),
                     RentKey(location_id=LocationId(scenario_key.rental_location_id)),
@@ -272,7 +264,7 @@ def build_situation(
         jurisdiction_ids=[JurisdictionId("federal_us"), JurisdictionId("california")],
         tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
         payment_account_id=PRIMARY_ACCOUNT_ID,
-        tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
+        tax_authority_account_id=COUNTERPARTY_ACCOUNT_ID,
     )
     jurisdictions = load_jurisdictions_for([profile])
     tax_profile = compile_profile(profile, jurisdictions, currency=currency)
@@ -281,11 +273,11 @@ def build_situation(
     if scenario_key.property_purchase is not None:
         purchase = scenario_key.property_purchase
         property_ = properties_by_id[purchase.property_id]
-        accounts.append(_empty_account(PROPERTY_SELLER_AGENT_ID, PROPERTY_SELLER_ACCOUNT_ID))
+        accounts.append(_empty_account(PROPERTY_SELLER_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         mortgage = _mortgage_for(purchase, property_, currency=currency)
         interest_deduction = None
         if mortgage is not None:
-            accounts.append(_empty_account(MORTGAGE_LENDER_AGENT_ID, MORTGAGE_LENDER_ACCOUNT_ID))
+            accounts.append(_empty_account(MORTGAGE_LENDER_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
             if purchase.is_primary_residence:
                 interest_deduction = MortgageInterestDeduction(
                     liability_id=mortgage.liability_id,
@@ -327,7 +319,7 @@ def build_situation(
                 owner_agent_id=primary_agent_id,
                 from_account_id=PRIMARY_ACCOUNT_ID,
                 tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
-                tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
+                tax_authority_account_id=COUNTERPARTY_ACCOUNT_ID,
                 # The app's month 0 is January of the year its bundled income-tax tables are law for.
                 start_year=one({rules.law_year for rules in tax_profile.jurisdictions}),
                 start_month=0,
@@ -607,17 +599,17 @@ def _wire_property_expenses(
     accounts: list[tuple[AccountRef, int]] = []
     obligations: list[Obligation] = []
     if property_.hoa_monthly > 0:
-        accounts.append(_empty_account(HOA_AGENT_ID, HOA_ACCOUNT_ID))
+        accounts.append(_empty_account(HOA_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         obligations.append(
             bill(
                 HOA_OBLIGATION_ID,
                 ObligationType.HOA_DUES,
-                AccountRef(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID),
+                AccountRef(agent_id=HOA_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
                 _amount(property_.hoa_monthly),
             )
         )
     if scenario_key.annual_insurance_pct > 0:
-        accounts.append(_empty_account(INSURER_AGENT_ID, INSURER_ACCOUNT_ID))
+        accounts.append(_empty_account(INSURER_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         effective_insurance_pct = insurance_rate(
             base_annual_pct=float(scenario_key.annual_insurance_pct),
             occupancy_mode=initial_occupancy_mode,
@@ -627,7 +619,7 @@ def _wire_property_expenses(
             bill(
                 INSURANCE_OBLIGATION_ID,
                 ObligationType.HOMEOWNERS_INSURANCE,
-                AccountRef(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID),
+                AccountRef(agent_id=INSURER_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
                 round_currency_amount(
                     _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12),
                     quantum=currency.quantum,
@@ -635,7 +627,7 @@ def _wire_property_expenses(
             )
         )
     if scenario_key.annual_maintenance_pct > 0:
-        accounts.append(_empty_account(MAINTENANCE_VENDOR_AGENT_ID, MAINTENANCE_VENDOR_ACCOUNT_ID))
+        accounts.append(_empty_account(MAINTENANCE_VENDOR_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         effective_maintenance_pct = maintenance_rate(
             base_annual_pct=float(scenario_key.annual_maintenance_pct),
             occupancy_mode=initial_occupancy_mode,
@@ -645,7 +637,7 @@ def _wire_property_expenses(
             bill(
                 MAINTENANCE_OBLIGATION_ID,
                 ObligationType.PROPERTY_MAINTENANCE,
-                AccountRef(agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID),
+                AccountRef(agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
                 round_currency_amount(
                     _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12),
                     quantum=currency.quantum,
@@ -714,8 +706,8 @@ def _wire_landlord_rental(
         return _EMPTY_LANDLORD_RENTAL_WIRING
 
     owner = AccountRef(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID)
-    agency = AccountRef(agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID)
-    accounts = [_empty_account(TENANT_AGENT_ID, TENANT_ACCOUNT_ID)]
+    agency = AccountRef(agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID)
+    accounts = [_empty_account(TENANT_AGENT_ID, COUNTERPARTY_ACCOUNT_ID)]
     recurring_property_cashflows: list[PropertyCashflow] = []
     scheduled_property_cashflows: list[PropertyCashflow] = []
     for segment in rental_segments:
@@ -728,7 +720,7 @@ def _wire_landlord_rental(
                 schedule=Recurring(start_month=segment.start_month, end_month=segment.end_month),
                 property_id=property_.id,
                 cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
-                from_account=AccountRef(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID),
+                from_account=AccountRef(agent_id=TENANT_AGENT_ID, account_id=COUNTERPARTY_ACCOUNT_ID),
                 to_account=owner,
                 amount=_indexed(currency.quanta(base_monthly_collected), rent_series, adjustment_period_months=12),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
@@ -740,7 +732,7 @@ def _wire_landlord_rental(
 
     management = purchase.rental_management
     if management is not None:
-        accounts.append(_empty_account(PROPERTY_MANAGEMENT_AGENT_ID, PROPERTY_MANAGEMENT_ACCOUNT_ID))
+        accounts.append(_empty_account(PROPERTY_MANAGEMENT_AGENT_ID, COUNTERPARTY_ACCOUNT_ID))
         management_fee_fraction = Decimal(str(management.management_fee_pct)) / Decimal(100)
         if management_fee_fraction > 0:
             for segment in rental_segments:
@@ -871,7 +863,7 @@ def _mortgage_for(purchase: PropertyPurchase, property_: Property, *, currency: 
     return MortgageFinancing(
         liability_id=LiabilityId(f"{property_.id}_mortgage"),
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
-        lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
+        lender_account_id=COUNTERPARTY_ACCOUNT_ID,
         # Derived from the rounded down payment rather than rounded independently from the
         # percentage: the down payment and the principal must sum to the price exactly, and two
         # half-quantum roundings of a split can each go up and overshoot it by one.
@@ -954,7 +946,7 @@ def _housing(
                 buyer_agent_id=primary_agent_id,
                 buyer_account_id=PRIMARY_ACCOUNT_ID,
                 seller_agent_id=PROPERTY_SELLER_AGENT_ID,
-                seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
+                seller_account_id=COUNTERPARTY_ACCOUNT_ID,
                 purchase_price=currency.quanta(purchase_price),
                 down_payment=currency.quanta(_down_payment_for(purchase, property_, currency=currency)),
                 buyer_closing_cost=currency.quanta(
