@@ -281,9 +281,124 @@ _KEFIR_CHANGE = {
 _KEFIR_ALERT = {"product_id": 21, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"}
 
 
+HA_SENSOR = {
+    "entity_id": "sensor.greenhouse_temperature",
+    "state": "21.5",
+    "attributes": {"friendly_name": "Greenhouse temperature", "unit_of_measurement": "°C"},
+}
+HA_FAN = {"entity_id": "fan.greenhouse", "friendly_name": "Greenhouse fan", "state": "on"}
+
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
+    ActionExample(
+        "home_assistant",
+        "ha_call_service",
+        {
+            "domain": "fan",
+            "service": "set_percentage",
+            "entity_id": "fan.greenhouse",
+            "data": {"percentage": 35},
+            "wait": True,
+        },
+        {
+            "success": True,
+            "domain": "fan",
+            "service": "set_percentage",
+            "message": "Successfully executed fan.set_percentage",
+            "entity_id": "fan.greenhouse",
+            "result": [HA_FAN],
+        },
+        "Successfully executed fan.set_percentage",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_call_event",
+        {"event_type": "greenhouse_report", "data": {"summary": "Temperature check"}},
+        {"success": True, "event_type": "greenhouse_report", "message": "Event greenhouse_report fired."},
+        "Event greenhouse_report fired.",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_bulk_control",
+        {
+            "selector": {"domain": "fan", "area_ids": ["greenhouse"]},
+            "action": "off",
+            "dry_run": True,
+            "parallel": False,
+        },
+        {"success": True, "message": "Dry run · 2 targets matched", "results": []},
+        "Dry run · 2 targets matched",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_state",
+        {"entity_id": "sensor.greenhouse_temperature"},
+        {"data": HA_SENSOR, "metadata": {"timezone": "America/Los_Angeles"}},
+        "21.5 °C",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_entity",
+        {"entity_id": "fan.greenhouse"},
+        {
+            "success": True,
+            "entity_id": "fan.greenhouse",
+            "entity_entry": {"entity_id": "fan.greenhouse", "name": "Greenhouse fan"},
+        },
+        "Greenhouse fan",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_device",
+        {"entity_id": "fan.greenhouse"},
+        {
+            "success": True,
+            "device": {
+                "device_id": "device-1",
+                "name_by_user": "Greenhouse controller",
+                "manufacturer": "Example",
+                "model": "Airflow controller",
+                "entities": [HA_FAN],
+            },
+        },
+        "Greenhouse controller",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_search",
+        {"query": "greenhouse", "domain_filter": "fan", "limit": 12},
+        {"entities": [HA_FAN], "count": 1, "total_matches": 1, "has_more": False},
+        "Greenhouse fan",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_overview",
+        {"domains": ["sensor"], "include_state": True},
+        {"domains": {"sensor": {"count": 1, "entities": [HA_SENSOR]}}, "system_summary": {"version": "2026.11"}},
+        "Greenhouse temperature",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_list_floors_areas",
+        {},
+        {
+            "success": True,
+            "floors": [{"name": "Ground floor", "areas": [{"name": "Greenhouse"}, {"name": "Workshop"}]}],
+            "unassigned_areas": [],
+        },
+        "Greenhouse, Workshop",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_list_services",
+        {"domain": "fan"},
+        {
+            "success": True,
+            "services": {"fan.set_percentage": {"name": "Set fan speed", "description": "Set the percentage speed."}},
+        },
+        "Set fan speed",
+    ),
     ActionExample(
         "orchestration_v1",
         "launch_sandbox",

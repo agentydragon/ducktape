@@ -16,6 +16,7 @@ import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
 import { gmailRenderers } from "./gmail";
 import { googleCalendarRenderers } from "./google_calendar";
+import { homeAssistantRenderers } from "./home_assistant";
 import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
@@ -29,6 +30,7 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["github", githubRenderers],
   ["gmail", gmailRenderers],
   ["google_calendar", googleCalendarRenderers],
+  ["home_assistant", homeAssistantRenderers],
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],

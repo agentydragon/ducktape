@@ -227,6 +227,21 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["read_turns", fixedActionNotification("Read Session turns")],
     ]),
   ],
+  [
+    "home_assistant",
+    new Map([
+      ["ha_call_service", fixedActionNotification("Call Home Assistant service")],
+      ["ha_call_event", fixedActionNotification("Fire Home Assistant event")],
+      ["ha_bulk_control", fixedActionNotification("Control Home Assistant devices")],
+      ["ha_get_state", fixedActionNotification("Read entity state")],
+      ["ha_get_entity", fixedActionNotification("Inspect Home Assistant entity")],
+      ["ha_get_device", fixedActionNotification("Inspect Home Assistant devices")],
+      ["ha_get_overview", fixedActionNotification("Read Home Assistant overview")],
+      ["ha_search", fixedActionNotification("Search Home Assistant")],
+      ["ha_list_floors_areas", fixedActionNotification("List floors and areas")],
+      ["ha_list_services", fixedActionNotification("List Home Assistant services")],
+    ]),
+  ],
   ["sandbox", new Map([["exec", sandboxExecNotification]])],
   ["ssh", new Map([["exec", sshExecNotification]])],
   [
