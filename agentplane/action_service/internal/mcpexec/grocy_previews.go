@@ -296,18 +296,15 @@ func grocyStockEntrySummary(key string, result *mcp.CallToolResult) *operator_ac
 	return &operator_action_servicepb.GrocyReferenceSummary{Key: key, Name: name}
 }
 
+// parseGrocyRows decodes a Grocy tool's rows: its text block, or the "result" of its structured content.
 func parseGrocyRows(result *mcp.CallToolResult, rows any) bool {
+	payload := previewPayload(result)
 	if result.StructuredContent != nil {
-		payload, err := json.Marshal(result.StructuredContent)
-		if err != nil {
+		var envelope struct{ Result json.RawMessage }
+		if json.Unmarshal(payload, &envelope) != nil {
 			return false
 		}
-		var envelope struct{ Result json.RawMessage }
-		return json.Unmarshal(payload, &envelope) == nil && json.Unmarshal(envelope.Result, rows) == nil
+		payload = envelope.Result
 	}
-	if len(result.Content) != 1 {
-		return false
-	}
-	text, ok := result.Content[0].(*mcp.TextContent)
-	return ok && json.Unmarshal([]byte(text.Text), rows) == nil
+	return json.Unmarshal(payload, rows) == nil
 }

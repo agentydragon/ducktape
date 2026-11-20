@@ -13,6 +13,20 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// previewExecutor is the group's Executor over an MCP session with the server, which it serves over HTTP.
+func previewExecutor(t *testing.T, group string, server *mcp.Server) *Executor {
+	t.Helper()
+	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	t.Cleanup(upstream.Close)
+	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
+	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { connected.Close() })
+	return &Executor{key: group, available: true, current: &session{client: connected}}
+}
+
 func TestGmailThreadSummary(t *testing.T) {
 	const raw = `{"id":"thread-1","messages":[{"snippet":"private body","payload":{"headers":[{"name":"sUbJeCt","value":"Deployment review"}]}}]}`
 	var structured any
@@ -82,15 +96,7 @@ func TestTanaSummariesCallTheReadToolAndKeepPartialResults(t *testing.T) {
 			&mcp.TextContent{Text: "- Draft notes <!-- node-id: draft -->"},
 		}}, nil
 	})
-	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
-	defer upstream.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
-	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connected.Close()
-	executor := &Executor{key: "tana", available: true, current: &session{client: connected}}
+	executor := previewExecutor(t, "tana", server)
 	got := executor.TanaNodeSummaries(t.Context(), []string{"missing", "draft"})
 	if len(got) != 1 || got[0].GetName() != "Draft notes" {
 		t.Errorf("Tana summaries = %v", got)
@@ -152,15 +158,7 @@ func TestGoogleCalendarSummaryReadsOnePageFromTheExactCalendar(t *testing.T) {
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil
 	})
-	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
-	defer upstream.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
-	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connected.Close()
-	executor := &Executor{key: "google_calendar", available: true, current: &session{client: connected}}
+	executor := previewExecutor(t, "google_calendar", server)
 	got := executor.GoogleCalendarSummary(t.Context(), "facilities@example.test")
 	if got.GetCalendarId() != "facilities@example.test" || got.GetSummary() != "Facilities calendar" {
 		t.Errorf("calendar summary = %v", got)
@@ -232,16 +230,8 @@ func TestGmailMailLabelsRequireTheRecordedResourceInTheCurrentMailbox(t *testing
 		}
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"id": params.ID, "name": "Deployments/Reviewed"}}, nil
 	})
-	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
-	defer upstream.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
-	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connected.Close()
 
-	executor := &Executor{key: "gmail", available: true, current: &session{client: connected}}
+	executor := previewExecutor(t, "gmail", server)
 	for _, thread := range []bool{false, true} {
 		got := executor.GmailMailLabelNames(t.Context(), "current-account", thread, []string{"Label_19"})
 		if len(got) != 1 || got[0].GetTitle() != "Deployments/Reviewed" {
@@ -339,15 +329,7 @@ func TestGrocyProductEditResolvesChangedLinksInBatches(t *testing.T) {
 		}
 		return &mcp.CallToolResult{StructuredContent: map[string]any{"result": rows}}, nil
 	})
-	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
-	defer upstream.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "grocy-preview-client"}, nil)
-	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer connected.Close()
-	executor := &Executor{key: "grocy_sf", available: true, current: &session{client: connected}}
+	executor := previewExecutor(t, "grocy_sf", server)
 
 	check := func(t *testing.T, count, firstChanged int) {
 		var keys []string
