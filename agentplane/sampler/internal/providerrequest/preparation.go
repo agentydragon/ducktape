@@ -98,13 +98,13 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 			if err != nil {
 				return Recipe{}, err
 			}
-			profile, system, err = chatcompletions.PrepareRequest(store, preparation.ModelConfig.ProviderModel, snapshot.Instructions, tools)
+			profile, system, err = chatcompletions.PrepareRequest(store, preparation.ModelConfig.ProviderModel, preparation.SessionEffort, snapshot.Instructions, tools)
 			if err != nil {
 				return Recipe{}, err
 			}
 		} else {
 			var err error
-			profile, err = chatcompletions.WithStreamUsage(store, profile)
+			profile, err = chatcompletions.PrepareNextProfile(store, profile, preparation.SessionEffort)
 			if err != nil {
 				return Recipe{}, err
 			}

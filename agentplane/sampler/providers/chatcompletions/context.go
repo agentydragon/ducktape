@@ -49,13 +49,8 @@ type Context struct {
 
 var _ protocol.Context = (*Context)(nil)
 
-func (*Context) API() protocol.APIStyle { return protocol.APIStyleChatCompletions }
-func (*Context) ChangeEffort(effort string) error {
-	if effort != "" {
-		return protocol.ErrPrecondition
-	}
-	return nil
-}
+func (*Context) API() protocol.APIStyle    { return protocol.APIStyleChatCompletions }
+func (*Context) ChangeEffort(string) error { return nil }
 
 func (c *Context) MarshalJSON() ([]byte, error)        { return json.Marshal(c.messages) }
 func (c *Context) RecordCount() int                    { return len(c.messages) }

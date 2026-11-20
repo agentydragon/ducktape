@@ -10,6 +10,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -178,5 +179,59 @@ func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T)
 	}
 	if strings.Contains(string(legacy), "stream_options") {
 		t.Fatal("upgrade rewrote a previously committed request")
+	}
+}
+
+func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.T) {
+	memory := memoryContent{}
+	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, ChatCompaction: &chatcompletions.CompactionConfig{MaxTokens: 100, KeepRecentTurns: 1}}
+	snapshot := Snapshot{API: config.API}
+	preparation := Preparation{ModelConfig: config, SessionEffort: "medium"}
+	first, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.PreviousProfileID, snapshot.PreviousFirstID = first.ProfileID, first.PrefixIDs[0]
+	preparation.SessionEffort = "low"
+	next, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation.Compaction = true
+	compact, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation.Compaction = false
+	preparation.SessionEffort = ""
+	reset, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		recipe Recipe
+		want   string
+	}{{"retained", first, "medium"}, {"next", next, "low"}, {"compaction", compact, "low"}, {"default", reset, ""}} {
+		t.Run(test.name, func(t *testing.T) {
+			wire, err := Render(memory, config.API, test.recipe.ProfileID, test.recipe.PrefixIDs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request map[string]json.RawMessage
+			if err := json.Unmarshal(wire, &request); err != nil {
+				t.Fatal(err)
+			}
+			if test.want == "" {
+				if _, ok := request["reasoning_effort"]; ok {
+					t.Fatalf("unexpected effort: %s", wire)
+				}
+				return
+			}
+			var got string
+			if err := json.Unmarshal(request["reasoning_effort"], &got); err != nil || got != test.want {
+				t.Fatalf("effort = %q, error = %v; want %q", got, err, test.want)
+			}
+		})
 	}
 }

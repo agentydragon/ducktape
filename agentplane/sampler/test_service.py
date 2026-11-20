@@ -1069,12 +1069,12 @@ async def test_chat_completions_tool_round_trip(
         config.models["test-model"] = ModelConfig(
             connection="provider",
             provider_model="chat-test-model",
-            reasoning_efforts={""},
+            reasoning_efforts={"", "medium", "low"},
             api="chat_completions",
             exec_encoding="json",
         )
         request = create_request(tmp_path)
-        request.spec.reasoning_effort = ""
+        request.spec.reasoning_effort = "medium"
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await submit_input(
@@ -1105,6 +1105,7 @@ async def test_chat_completions_tool_round_trip(
             async with await endpoint.next() as exchange:
                 initial = exchange.request.body
                 assert initial["model"] == "chat-test-model"
+                assert initial["reasoning_effort"] == "medium"
                 assert {"role": "user", "content": "Use the tool."} in initial["messages"]
                 assert initial["tools"][0]["function"]["name"] == "exec"
                 # The first stream contains a complete-looking call, then disconnects without [DONE].
@@ -1186,7 +1187,7 @@ async def test_chat_completions_compaction(
         config.models["test-model"] = ModelConfig(
             connection="provider",
             provider_model="chat-test-model",
-            reasoning_efforts={""},
+            reasoning_efforts={"", "medium", "low"},
             api="chat_completions",
             exec_encoding="json",
             chat_compaction=ChatCompactionConfig(
@@ -1200,7 +1201,7 @@ async def test_chat_completions_compaction(
             ),
         )
         request = create_request(tmp_path)
-        request.spec.reasoning_effort = ""
+        request.spec.reasoning_effort = "medium"
         old = "old source " * 300
         recent = "Keep this request verbatim."
         async with service(config) as stub:
@@ -1208,10 +1209,18 @@ async def test_chat_completions_compaction(
             await submit_input(stub, session_id=request.session_id, command_id="old", text=old, timeout_s=10)
             async with await endpoint.next() as exchange:
                 first_request = exchange.request.body
+                assert first_request["reasoning_effort"] == "medium"
                 assert first_request["stream_options"] == {"include_usage": True}
                 await exchange.send(*completion("old answer", tokens=500))
             assert (await turn_completed(stub, request.session_id, "old")).status == event_pb2.TURN_STATUS_COMPLETED
 
+            await stub.ChangeReasoningEffort(
+                harness_host_pb2.ChangeReasoningEffortRequest(
+                    session_id=request.session_id, command_id="change-effort", effort="low"
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
             await submit_input(stub, session_id=request.session_id, command_id="recent", text=recent, timeout_s=10)
             if not automatic:
                 async with await endpoint.next() as exchange:
@@ -1227,6 +1236,7 @@ async def test_chat_completions_compaction(
 
             async with await endpoint.next() as exchange:
                 frozen = exchange.request.body
+                assert frozen["reasoning_effort"] == "low"
                 assert frozen["max_tokens"] == 8192
                 assert frozen["tool_choice"] == "none"
                 assert frozen["tools"] == first_request["tools"]
@@ -1260,6 +1270,7 @@ async def test_chat_completions_compaction(
 
             async with await endpoint.next() as exchange:
                 continued = exchange.request.body
+                assert continued["reasoning_effort"] == "low"
                 assert continued["tools"] == first_request["tools"]
                 assert "tool_choice" not in continued
                 assert continued["messages"][0] == first_request["messages"][0]

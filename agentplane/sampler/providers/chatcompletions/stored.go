@@ -14,12 +14,13 @@ const (
 )
 
 type requestProfile struct {
-	Model         string         `json:"model"`
-	Tools         []tool         `json:"tools,omitempty"`
-	Stream        bool           `json:"stream"`
-	ToolChoice    string         `json:"tool_choice,omitempty"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	Model           string         `json:"model"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Tools           []tool         `json:"tools,omitempty"`
+	Stream          bool           `json:"stream"`
+	ToolChoice      string         `json:"tool_choice,omitempty"`
+	MaxTokens       int            `json:"max_tokens,omitempty"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {
@@ -38,7 +39,7 @@ type toolDefinition struct {
 }
 
 // PrepareRequest stores the reusable request options and the system-message prefix.
-func PrepareRequest(store content.ContentWriter, model string, instructions *string, surface protocol.ToolSurface) (content.ContentID, content.ContentID, error) {
+func PrepareRequest(store content.ContentWriter, model, effort string, instructions *string, surface protocol.ToolSurface) (content.ContentID, content.ContentID, error) {
 	if !json.Valid(surface.Parameters) {
 		return "", "", protocol.ErrInvalid
 	}
@@ -51,7 +52,7 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 		return "", "", err
 	}
 	profile, err := json.Marshal(requestProfile{
-		Model: model, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
+		Model: model, ReasoningEffort: effort, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
 		Tools: []tool{{Type: "function", Function: toolDefinition{Name: "exec", Description: surface.Description, Parameters: surface.Parameters}}},
 	})
 	if err != nil {
@@ -65,12 +66,12 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 	return profileID, systemID, err
 }
 
-// WithStreamUsage upgrades a retained sampling profile for new requests. Already
+// PrepareNextProfile updates the retained profile for new requests. Already
 // committed attempts still render their original profile on retry or inspection.
-func WithStreamUsage(store interface {
+func PrepareNextProfile(store interface {
 	content.ContentReader
 	content.ContentWriter
-}, id content.ContentID,
+}, id content.ContentID, effort string,
 ) (content.ContentID, error) {
 	raw, err := load(store, id, profileKind)
 	if err != nil {
@@ -80,10 +81,11 @@ func WithStreamUsage(store interface {
 	if err := json.Unmarshal(raw, &profile); err != nil {
 		return "", err
 	}
-	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage {
+	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage && profile.ReasoningEffort == effort {
 		return id, nil
 	}
 	profile.StreamOptions = &streamOptions{IncludeUsage: true}
+	profile.ReasoningEffort = effort
 	raw, err = json.Marshal(profile)
 	if err != nil {
 		return "", err

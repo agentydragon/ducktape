@@ -214,8 +214,8 @@ func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 
 func (a chatAdapter) API() protocol.APIStyle { return protocol.APIStyleChatCompletions }
 
-func (a chatAdapter) Prepare(_ *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
-	return &providerrequest.Preparation{ModelConfig: a.config, Attribution: attribution}
+func (a chatAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
+	return &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Attribution: attribution}
 }
 
 func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
@@ -238,7 +238,7 @@ func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
 	return nil
 }
 
-func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, _ *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
 	config := a.config.ChatCompaction
 	if config == nil {
 		return nil, protocol.ErrPrecondition
@@ -248,7 +248,7 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, _ *sessions
 		return nil, err
 	}
 	return &compactionPlan{
-		Preparation: &providerrequest.Preparation{ModelConfig: a.config, Compaction: true},
+		Preparation: &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true},
 		Apply: func(result *sampleResult) (protocol.Context, error) {
 			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
 		},
