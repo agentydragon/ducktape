@@ -191,7 +191,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
         arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
         title: "inspect pod logs",
       },
-      visible: ["container sidecar", "previous run", "tail -1"],
+      visible: ["container sidecar", "previous run", "last 100 lines (default)"],
       expands: false,
     },
     {

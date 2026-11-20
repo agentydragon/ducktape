@@ -141,6 +141,10 @@ export function renderDetailsResult(
 ): ReactNode | null | undefined {
   if (result.isError) return undefined;
   const details = presentation(action)?.details;
+  if (details?.envelopeResult) {
+    const rendered = renderResultPreview(details.envelopeResult, result, context);
+    if (rendered !== undefined) return rendered;
+  }
   const value = toolValue(result);
   if (result.content.length === 0 && value == null && details?.emptyResult !== undefined) {
     return details.emptyResult;

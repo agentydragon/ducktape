@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { create } from "@bufbuild/protobuf";
+import { act } from "react";
 
 import {
   ActionIdentitySchema,
@@ -8,7 +9,7 @@ import {
   type ActionIdentity,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
 import { executionResult } from "../presentation";
 import {
   actionCompactCardExpands,
@@ -153,7 +154,7 @@ describe("Action presentation slots", () => {
   it.each([
     [{ container: "sidecar" }, "View logs for Pod apps/web-0, container sidecar"],
     [{ previous: true, tail: 60 }, "View logs for Pod apps/web-0, previous run, last 60 lines"],
-    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, tail -1"],
+    [{ previous: false, tail: -1 }, "View logs for Pod apps/web-0, last 100 lines (default)"],
   ])("puts how a log read is cut into its label: %o", async (options, expected) => {
     const action = identity("kubernetes_admin", "pods_log");
     const args = { name: "web-0", namespace: "apps", ...options };
@@ -589,9 +590,15 @@ describe("Action presentation slots", () => {
     expect(actionOffersCardDecisionButtons(action, args)).toBe(false);
   });
 
-  it("keeps pod-delete arguments schema-bound while omitting the empty pretty view", async () => {
+  it("shows pod-deletion scope before approval and keeps unknown arguments visible", async () => {
     const action = identity("kubernetes_admin", "pods_delete");
-    expect(renderDetailsArguments(action, { name: "web-0", namespace: "apps" })).toBeNull();
+    const args = { name: "web-0", namespace: "apps" };
+    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain(
+      "matching Services and OpenShift Routes"
+    );
+    expect((await mount(renderPaneCollapsed(action, args))).textContent).toContain(
+      "matching Services and OpenShift Routes"
+    );
 
     const recorded = await mount(
       renderDetailsArguments(action, { name: "web-0", namespace: "apps", futureField: true })
@@ -760,9 +767,70 @@ describe("details result rendering", () => {
     if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     const container = await mount(renderDetailsResult(action, result));
-    expect(container.textContent).toContain("Resource 1 · ConfigMap apps/settings");
-    expect(container.textContent).toContain("Resource 2 · Secret apps/token");
+    expect(container.textContent).toContain("ConfigMap apps/settings");
+    expect(container.textContent).toContain("Secret apps/token");
+    expect(renderActionOutcome(action, result)?.label).toBe("Resources applied");
+    await act(async () => button(container, "Resource YAML").click());
     expect(container.querySelectorAll(".cm-editor")).toHaveLength(2);
+  });
+
+  it("renders the real resource-table envelope and keeps the extra provider columns readable", async () => {
+    const action = identity("kubernetes_admin", "resources_list");
+    const result = parseCallToolResult({
+      structuredContent: {
+        items: [{ Name: "web-0", Namespace: "apps", Ready: "1/2", Status: "Running", Restarts: "1 (2m ago)" }],
+      },
+      content: [
+        {
+          type: "text",
+          text: "NAMESPACE   NAME    READY   STATUS    RESTARTS       LABELS\napps        web-0   1/2     Running   1 (2m ago)     app=web\n",
+        },
+      ],
+    });
+    if (result === null) throw new Error("invalid resource list result");
+    const view = await mount(renderDetailsResult(action, result));
+    expect(view.textContent).toContain("apps/web-0");
+    expect(view.textContent).toContain("1/2 ready");
+    await act(async () => button(view, "Provider output").click());
+    expect(view.textContent).toContain("app=web");
+    expect(
+      renderDetailsResult(action, {
+        ...result,
+        content: [...result.content, { type: "text", text: "separate notice" }],
+      })
+    ).toBeUndefined();
+  });
+
+  it("shows events from the provider's YAML report and handles known empty results", async () => {
+    const action = identity("kubernetes_admin", "events_list");
+    const report = [
+      "# The following events (YAML format) were found:",
+      "- InvolvedObject: {apiVersion: v1, Kind: Pod, Name: web-0}",
+      "  Message: Back-off restarting failed container",
+      "  Namespace: apps",
+      "  Reason: BackOff",
+      "  Timestamp: 2026-10-12 03:00:00 +0000 UTC",
+      "  Type: Warning",
+    ].join("\n");
+    const view = await mount(
+      renderDetailsResult(action, { isError: false, content: [{ type: "text", text: report }] })
+    );
+    expect(view.textContent).toContain("Pod apps/web-0");
+    expect(view.textContent).toContain("BackOff");
+    expect(view.textContent).toContain("Warning");
+    const empty = await mount(
+      renderDetailsResult(action, { isError: false, content: [{ type: "text", text: "# No events found" }] })
+    );
+    expect(empty.textContent).toContain("No events found.");
+  });
+
+  it("keeps plain Pod logs intact even when the contents are JSON", async () => {
+    const action = identity("kubernetes_admin", "pods_log");
+    const text = '{"level":"info","msg":"Ready"}\n';
+    const view = await mount(renderDetailsResult(action, { isError: false, content: [{ type: "text", text }] }));
+    expect(view.textContent).toContain("Container logs");
+    const lines = [...view.querySelectorAll(".ui-code-block .cm-line")].map((line) => line.textContent);
+    expect(lines).toEqual([text.trimEnd(), ""]);
   });
 
   it("shows an exact delete success as an outcome with no fabricated result body", async () => {
@@ -891,7 +959,7 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "pods_log",
     args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-    visible: ["container sidecar", "previous run", "tail -1"],
+    visible: ["container sidecar", "previous run", "last 100 lines (default)"],
   },
   {
     group: "kubernetes_admin",

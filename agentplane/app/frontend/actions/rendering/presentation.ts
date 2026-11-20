@@ -30,6 +30,8 @@ export interface ActionPresentation {
     result?: ResultPreview | null;
     /** A successful MCP call whose provider returns no content. */
     emptyResult?: ReactNode;
+    /** Decode the full MCP envelope when the provider returns different text and structured projections. */
+    envelopeResult?: ResultPreview;
     nativeResult?: ResultPreview | null;
   };
   /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per
