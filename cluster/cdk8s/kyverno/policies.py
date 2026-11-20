@@ -312,7 +312,7 @@ def cleanup_controller_jobs_chart(app: App) -> Chart:
 
 def cleanup_controller_workloads_chart(app: App) -> Chart:
     """Consumers: the claude-sandbox janitor (agents/agent-rbac-base/) and the props
-    finished-pod reaper (props/deploy/cleanuppolicy-finished-pods.yaml) — kyverno rejects a CleanupPolicy at admission
+    finished-pod reaper (props/deploy/deletingpolicy-finished-pods.yaml) — kyverno rejects a deleting policy at admission
     unless the controller can delete every kind it matches."""
     return _cleanup_controller_cluster_role_chart(
         app,
