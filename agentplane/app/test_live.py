@@ -18,7 +18,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
@@ -101,11 +100,7 @@ async def gateway_service(
     namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str
 ) -> AsyncIterator[GatewayProcess]:
     async with run_gateway(
-        api_server.kubeconfig,
-        database_url=dispatcher_database_url,
-        namespace=namespace.name,
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
+        api_server.kubeconfig, database_url=dispatcher_database_url, namespace=namespace.name
     ) as service:
         yield service
 

@@ -18,6 +18,7 @@ from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
@@ -30,7 +31,6 @@ from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, Shell
 # gazelle:include_dep //agentplane/system_tests:app_fixtures
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
-CLI = "/run/agentplane/environment/bin/agentplane"
 _SESSION_ACTIONS = {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
 
 

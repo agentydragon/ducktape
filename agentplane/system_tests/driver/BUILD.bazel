@@ -323,10 +323,10 @@ py_library(
         ":identity",
         ":native_auth",
         ":sandbox_cleanup",
+        ":sandbox_object",
         ":sandbox_ownership",
         ":tls",
         ":tracing",
-        "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:identity_pb2",
@@ -595,7 +595,7 @@ py_library(
     srcs = ["egress_decisions.py"],
     deps = [
         ":cluster",
-        ":port_forward",
+        ":dispatcher_transport",
         ":tls",
         "//agentplane/egress/api/admin:egress_admin_pb2",
         "//agentplane/egress/api/admin:egress_admin_pb2_grpc",
@@ -794,9 +794,9 @@ py_library(
     srcs = ["native_platform.py"],
     deps = [
         ":cluster",
+        ":dispatcher_transport",
         ":environment_transport",
         ":native_auth",
-        ":port_forward",
         ":tls",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
@@ -941,5 +941,14 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "sandbox_object",
+    srcs = ["sandbox_object.py"],
+    deps = [
+        ":cluster",
+        "//agentplane:sandbox_resource",
     ],
 )

@@ -46,11 +46,7 @@ async def gateway_service(
     api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str
 ) -> AsyncIterator[GatewayProcess]:
     async with run_gateway(
-        api_server.kubeconfig,
-        database_url=dispatcher_database_url,
-        namespace=sandbox.namespace,
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
+        api_server.kubeconfig, database_url=dispatcher_database_url, namespace=sandbox.namespace
     ) as service:
         yield service
 

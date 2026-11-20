@@ -19,11 +19,9 @@ import yaml
 from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, event_log_pb2, identity_pb2, session_pb2
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.dispatcher.api.session import (
     session_dispatcher_pb2 as pb,
     session_dispatcher_pb2_grpc,
@@ -31,15 +29,16 @@ from agentplane.session_dispatcher.dispatcher.api.session import (
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, forward as _forward, service_caller
+from agentplane.system_tests.driver.dispatcher_transport import Caller, forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
+from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_diagnostics import (
     archive_runner_data,
     capture_cleanup_diagnostics,
     container_mount_sources,
 )
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -54,19 +53,11 @@ class DispatchFailedError(RuntimeError):
 
 
 async def _delete_pod(cluster: Cluster, name: str, uid: str) -> None:
-    await _delete(cluster, "pod", name, uid)
-
-
-async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
     async with cluster.api_client() as api:
-        options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
-        if kind == "pod":
-            await k8s.CoreV1Api(api).delete_namespaced_pod(name, cluster.namespace, body=options)
-        else:
-            await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-                GROUP, VERSION, cluster.namespace, "sandboxes", name, body=options
-            )
-    await cluster.kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
+        await k8s.CoreV1Api(api).delete_namespaced_pod(
+            name, cluster.namespace, body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
+        )
+    await cluster.kubectl("wait", f"pod/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _cleanup_sandbox(
@@ -78,34 +69,13 @@ async def _cleanup_sandbox(
     session_ids: list[str],
     command_ids: list[str],
 ) -> None:
-    with tracer.start_as_current_span("system_test.dispatcher.cleanup"):
-        try:
-            await cluster.kubectl(
-                "patch",
-                "sandbox.agentplane.allegedly.works",
-                name,
-                "--type=merge",
-                "-p",
-                json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.operatingMode}=Suspended",
-                "--timeout=300s",
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.stopStage}=Stopped",
-                "--timeout=300s",
-            )
-            await _delete(cluster, "sandbox.agentplane.allegedly.works", name, uid)
-        except Exception as error:
-            await capture_without_masking(
-                error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
-            )
-            raise
+    try:
+        await delete_sandbox(cluster, name, uid)
+    except Exception as error:
+        await capture_without_masking(
+            error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
+        )
+        raise
 
 
 async def _dispatch_until(
@@ -452,22 +422,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         )
         identities = await stack.enter_async_context(AsyncExitStack())
         identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                    "spec": {"template": POD_TEMPLATE, "running": False, "identity": {"name": identity}},
-                },
-            )
+        resource = await create_sandbox_object(
+            cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=False
         )
-        uid = created["metadata"]["uid"]
+        uid = resource["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
         cleaned = False
 
@@ -496,7 +454,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "--timeout=300s",
         )
         server_credentials = authentication.channel_credentials
-        target = await stack.enter_async_context(_forward(cluster))
+        target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(
             dial(
                 target,
@@ -570,7 +528,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             peer = await stack.enter_async_context(
                 _replace_original_with_peer(cluster, deployment["metadata"]["uid"], evidence)
             )
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
@@ -605,7 +563,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 )
             )
             await settlement_gate.aclose()
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
@@ -739,7 +697,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             streams = []
             server_credentials = authentication.channel_credentials
             for replica in live:
-                target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
+                target = await stack.enter_async_context(forward(cluster, f"pod/{replica['metadata']['name']}"))
                 channel = await stack.enter_async_context(
                     dial(
                         target,
@@ -788,16 +746,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
             environment_target = await stack.enter_async_context(
-                async_port_forward(
-                    PortForward(
-                        cluster.command("port-forward"),
-                        resource="service/environments",
-                        local_address="127.0.0.1",
-                        local_port=None,
-                        remote_port=8082,
-                        readiness_timeout_s=30,
-                    )
-                )
+                forward(cluster, "service/environments", remote_port=8082)
             )
             environment_channel = await stack.enter_async_context(
                 dial(
@@ -924,28 +873,10 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     # Closed in cleanup, after the Sandbox that acts as it.
     identities = AsyncExitStack()
     identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-    created = json.loads(
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            "-o",
-            "json",
-            body={
-                "apiVersion": SANDBOX_API_VERSION,
-                "kind": "Sandbox",
-                "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                "spec": {
-                    "template": POD_TEMPLATE,
-                    "running": True,
-                    "wakeOnSend": True,
-                    "idleSuspendAfter": "1m",
-                    "identity": {"name": identity},
-                },
-            },
-        )
+    resource = await create_sandbox_object(
+        cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=True, wakeOnSend=True, idleSuspendAfter="1m"
     )
-    uid = created["metadata"]["uid"]
+    uid = resource["metadata"]["uid"]
     evidence["sandbox_uid"] = uid
     cleaned = False
 
@@ -997,7 +928,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         server_credentials = app_authentication.channel_credentials
-        async with _forward(cluster) as target:
+        async with forward(cluster) as target:
             channel = dial(
                 target,
                 channel_credentials=server_credentials,

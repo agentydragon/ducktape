@@ -295,7 +295,6 @@ py_test(
         "//agentplane:sandbox_resource",
         "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:egress_proxy",
-        "//agentplane/app/testing:gateway_fixtures",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:thread_test_support",

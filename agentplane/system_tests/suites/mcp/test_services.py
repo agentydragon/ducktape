@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import httpx
 import pytest
 import pytest_bazel
@@ -25,14 +23,10 @@ pytest_plugins = (
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_central_sampler_action_wait_keeps_other_code_mode_cells_live(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, operator_bff: httpx.AsyncClient
+    cluster: Cluster, scripted: ScriptedUpstream, operator_bff: httpx.AsyncClient
 ) -> None:
     await central_sampler.delegated_action_wait_keeps_code_mode_live(
-        cluster,
-        tmp_path,
-        scripted,
-        Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-actions"),
-        operator_bff,
+        cluster, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-actions"), operator_bff
     )
 
 

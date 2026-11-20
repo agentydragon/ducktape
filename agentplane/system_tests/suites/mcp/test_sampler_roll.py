@@ -1,7 +1,5 @@
 """Sampler-only Pod replacement while a confirmed turn owns live executor work."""
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
@@ -18,10 +16,10 @@ pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_sampler_roll_retains_active_turn_and_history_accepts_next_input(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+    cluster: Cluster, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.sampler_roll_retains_active_turn_and_history_accepts_next_input(
-        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/sampler-roll")
+        cluster, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/sampler-roll")
     )
 
 

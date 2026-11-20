@@ -62,10 +62,7 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
-    log_path: Path
     environment_service: EnvironmentServiceProcess
-    dispatcher_audience: str
-    gateway_audience: str
     service_certificates: dict[str, tuple[Path, Path]]
     _restart: RestartGoProcess
     _close_listener: Callable[[], None]
@@ -126,7 +123,6 @@ class GatewayProcess:
         """Replace the process while retaining its listener, database and deployment settings."""
         started = await self._restart(while_stopped)
         self.process = started.process
-        self.log_path = started.stderr
 
 
 @asynccontextmanager
@@ -137,8 +133,6 @@ async def run_gateway(
     namespace: str,
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
-    dispatcher_audience: str,
-    gateway_audience: str,
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Run the Dispatcher and an independent production Environments Runtime proxy peer."""
@@ -177,12 +171,7 @@ async def run_gateway(
                     auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
                 )
                 service_certificates = {}
-                for service in (
-                    runtime_transport.APP_URI,
-                    runtime_transport.GATEWAY_SESSIONS_URI,
-                    runtime_transport.SANDBOX_CONTROLLER_URI,
-                    runtime_transport.CENTRAL_SAMPLER_URI,
-                ):
+                for service in (runtime_transport.APP_URI, runtime_transport.CENTRAL_SAMPLER_URI):
                     directory = settings_directory / service.rsplit("/", 1)[-1]
                     directory.mkdir()
                     service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
@@ -225,10 +214,7 @@ async def run_gateway(
                     gateway = GatewayProcess(
                         process=started.process,
                         target=f"localhost:{rpc_listener.port}",
-                        log_path=started.stderr,
                         environment_service=environment_service,
-                        dispatcher_audience=dispatcher_audience,
-                        gateway_audience=gateway_audience,
                         service_certificates=service_certificates,
                         _restart=restart_process,
                         _close_listener=rpc_listener.socket.close,

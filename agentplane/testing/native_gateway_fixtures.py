@@ -40,9 +40,6 @@ __all__ = [
     "sandbox",
 ]
 
-DISPATCHER_AUDIENCE = "test-contract-dispatcher"
-GATEWAY_AUDIENCE = "test-contract-gateway"
-
 
 @pytest.fixture
 def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
@@ -65,8 +62,6 @@ async def gateway_service(
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
         runtime_proxy_controller_callers=(SANDBOX_CONTROLLER_URI,) if controller_enabled else (),
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
     ) as service:
         yield service
 
