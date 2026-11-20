@@ -137,6 +137,12 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["search_code", fixedActionNotification("Search GitHub code")],
       ["search_repositories", fixedActionNotification("Search GitHub repositories")],
       ["search_users", fixedActionNotification("Search GitHub users")],
+      ["actions_get", fixedActionNotification("Read GitHub Actions data")],
+      ["actions_list", fixedActionNotification("List GitHub Actions data")],
+      ["actions_run_trigger", fixedActionNotification("Change GitHub workflow run")],
+      ["get_job_logs", fixedActionNotification("Read GitHub Actions logs")],
+      ["ui_get", fixedActionNotification("Read GitHub form options")],
+      ["run_secret_scanning", fixedActionNotification("Scan for secrets with GitHub")],
     ]),
   ],
   [

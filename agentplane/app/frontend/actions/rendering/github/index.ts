@@ -1,4 +1,6 @@
 import type { ActionPresentation } from "../presentation";
+import { workflowRenderers } from "./workflows";
+import { githubMetadataRenderers } from "./metadata";
 import { discoveryRenderers } from "./discovery";
 import { repositoryRenderers } from "./repository_reads";
 import { issueRenderers } from "./issues";
@@ -17,6 +19,8 @@ export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<
   ...reviewRenderers,
   ...repositoryRenderers,
   ...discoveryRenderers,
+  ...workflowRenderers,
+  ...githubMetadataRenderers,
   ["create_or_update_file", createOrUpdateFilePresentation],
   ["push_files", pushFilesPresentation],
   ["delete_file", deleteFilePresentation],

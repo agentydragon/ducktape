@@ -59,6 +59,7 @@ ts_library(
         "github/display.tsx",
         "github/index.ts",
         "github/issues.tsx",
+        "github/metadata.tsx",
         "github/push_files.tsx",
         "github/receipts.tsx",
         "github/repository_reads.tsx",
@@ -66,6 +67,7 @@ ts_library(
         "github/search_pull_requests.tsx",
         "github/update_pull_request.tsx",
         "github/update_pull_request_branch.tsx",
+        "github/workflows.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [

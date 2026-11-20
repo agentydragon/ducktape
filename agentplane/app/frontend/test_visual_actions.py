@@ -1166,6 +1166,108 @@ EXAMPLES = (
         compact_card_expands=False,
     ),
     ActionExample(
+        "github",
+        "actions_get",
+        {**GITHUB_REPO, "method": "get_workflow_job", "resource_id": "208"},
+        {
+            "method": "get_workflow_job",
+            "workflow_job": {
+                "id": 208,
+                "run_id": 81,
+                "name": "Check staging readiness",
+                "status": "completed",
+                "conclusion": "failure",
+                "html_url": "https://github.com/example/service/actions/runs/81/job/208",
+                "steps": [{"name": "Verify readiness", "number": 1, "status": "completed", "conclusion": "failure"}],
+            },
+        },
+        "Verify readiness",
+    ),
+    ActionExample(
+        "github",
+        "actions_list",
+        {
+            **GITHUB_REPO,
+            "method": "list_workflow_runs",
+            "resource_id": "rollout.yml",
+            "workflow_runs_filter": {"branch": "devel", "status": "completed"},
+        },
+        {
+            "total_count": 1,
+            "workflow_runs": [
+                {
+                    "id": 81,
+                    "name": "Rollout checks",
+                    "display_title": "Check staging deployment",
+                    "workflow_id": 4,
+                    "run_number": 5,
+                    "run_attempt": 1,
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "head_branch": "devel",
+                    "html_url": "https://github.com/example/service/actions/runs/81",
+                }
+            ],
+        },
+        "Check staging deployment",
+    ),
+    ActionExample(
+        "github",
+        "actions_run_trigger",
+        {**GITHUB_REPO, "method": "rerun_failed_jobs", "run_id": 81},
+        {
+            "message": "Failed jobs have been queued for re-run",
+            "run_id": 81,
+            "status": "201 Created",
+            "status_code": 201,
+        },
+        "Rerun queued",
+    ),
+    ActionExample(
+        "github",
+        "get_job_logs",
+        {**GITHUB_REPO, "run_id": 81, "failed_only": True, "return_content": True, "tail_lines": 25},
+        {
+            "run_id": 81,
+            "failed_jobs": 1,
+            "total_jobs": 2,
+            "message": "Retrieved logs for 1 failed jobs",
+            "logs": [
+                {
+                    "job_id": 208,
+                    "job_name": "Check staging readiness",
+                    "logs_content": "The health endpoint returned 503.",
+                    "message": "Log content",
+                    "original_length": 100,
+                }
+            ],
+            "return_format": {"content": True, "urls": False},
+        },
+        "The health endpoint returned 503.",
+    ),
+    ActionExample(
+        "github",
+        "run_secret_scanning",
+        {**GITHUB_REPO, "files": ["EXAMPLE_CONFIG=stub", "EXAMPLE_TOKEN=fixture-only"]},
+        "Hosted scanner receipt fixture",
+        "View submitted content and scan findings in Raw.",
+    ),
+    ActionExample(
+        "github",
+        "ui_get",
+        {**GITHUB_REPO, "method": "reviewers"},
+        {
+            "method": "reviewers",
+            "reviewers": {
+                "users": [{"login": "test-reviewer", "avatar_url": ""}],
+                "teams": [{"org": "example", "name": "Release reviewers", "slug": "release-reviewers"}],
+                "totalCount": 2,
+                "has_more": False,
+            },
+        },
+        "Release reviewers",
+    ),
+    ActionExample(
         "gmail",
         "drafts_create",
         {
