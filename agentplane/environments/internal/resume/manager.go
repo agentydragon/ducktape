@@ -72,10 +72,7 @@ func (s *Manager) ResumeEnvironment(
 		// observed generation anyway so conflict retries cannot silently advance a later one.
 		resumeToken = lifecycle.NewResumeToken(target, view.Spec.WakeGeneration)
 	}
-	assessment, err := s.policy.ApplyExplicitResume(ctx, target, caller, resumeToken, operator)
-	if err != nil {
-		return nil, err
-	}
+	assessment := s.policy.ApplyExplicitResume(ctx, target, caller, resumeToken, operator)
 	switch assessment.GetState() {
 	case environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED:
 		return resumeResponse(target, assessment.GetTargetGeneration(), environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED, eligibility, assessment), nil

@@ -127,45 +127,45 @@ func (s *Policy) applyResume(
 	operator bool,
 	automatic bool,
 	reserve func(context.Context, int64) (time.Duration, error),
-) (*environmentlifecyclepb.WakeAssessment, error) {
+) *environmentlifecyclepb.WakeAssessment {
 	for attempt := 0; attempt < maxPatchAttempts; attempt++ {
 		view, err := s.ReadTarget(ctx, target)
 		if err != nil {
-			return assessmentFromError(err), nil
+			return assessmentFromError(err)
 		}
 		var eligibility *environmentlifecyclepb.ResumeEligibility
 		if !automatic {
 			eligibility, err = s.EligibilityFor(ctx, view, caller, operator)
 			if err != nil {
-				return failureAssessment(codes.Unavailable, "caller or execution account state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
+				return failureAssessment(codes.Unavailable, "caller or execution account state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration)
 			}
 			if eligibility.GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
-				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, wakeReasonForEligibility(eligibility), view.Spec.WakeGeneration), nil
+				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, wakeReasonForEligibility(eligibility), view.Spec.WakeGeneration)
 			}
 		}
 		if automatic {
 			wakePolicy, permitted := s.automaticWakeAssessment(ctx, view, caller)
 			if !permitted {
-				return wakePolicy, nil
+				return wakePolicy
 			}
 		}
 		if resumeToken != "" && resumeToken != NewResumeToken(target, view.Spec.WakeGeneration) {
-			return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_EVALUATED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, view.Spec.WakeGeneration), nil
+			return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_EVALUATED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, view.Spec.WakeGeneration)
 		}
 		if view.Spec.WakeGeneration == math.MaxInt64 {
-			return failureAssessment(codes.FailedPrecondition, "wake generation cannot be incremented", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
+			return failureAssessment(codes.FailedPrecondition, "wake generation cannot be incremented", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration)
 		}
 		if stopping := stoppingAssessment(view); stopping != nil {
-			return stopping, nil
+			return stopping
 		}
 
 		idleSuspended := view.Status.StopStage == sandboxapi.StopStageStopped && idleSuspensionAtCurrentGeneration(view)
 		if !idleSuspended {
 			if view.Spec.Running {
-				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_NEEDED, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, view.Spec.WakeGeneration), nil
+				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_NEEDED, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, view.Spec.WakeGeneration)
 			}
 			if !operator {
-				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP, view.Spec.WakeGeneration), nil
+				return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP, view.Spec.WakeGeneration)
 			}
 		}
 
@@ -173,10 +173,10 @@ func (s *Policy) applyResume(
 		if automatic {
 			delay, err := reserve(ctx, nextGeneration)
 			if err != nil {
-				return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
+				return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration)
 			}
 			if delay > 0 {
-				return rateLimited(delay, view.Spec.WakeGeneration), nil
+				return rateLimited(delay, view.Spec.WakeGeneration)
 			}
 		}
 		updated := view.DeepCopy()
@@ -187,15 +187,15 @@ func (s *Policy) applyResume(
 			continue
 		}
 		if err != nil {
-			return unknownAssessment(view.Spec.WakeGeneration), nil
+			return unknownAssessment(view.Spec.WakeGeneration)
 		}
 		reason := environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED
 		if automatic && s.isWakeBroker(caller) && (eligibility == nil || eligibility.GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE) {
 			reason = environmentlifecyclepb.WakeReason_WAKE_REASON_ALLOWED_WAKE_BROKER
 		}
-		return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED, reason, nextGeneration), nil
+		return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED, reason, nextGeneration)
 	}
-	return failureAssessment(codes.Aborted, "Sandbox changed during all guarded resume attempts", environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, -1), nil
+	return failureAssessment(codes.Aborted, "Sandbox changed during all guarded resume attempts", environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, -1)
 }
 
 func (s *Policy) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, bool) {
@@ -599,7 +599,7 @@ func permissionDenied(eligibility *environmentlifecyclepb.ResumeEligibility) err
 
 // ApplyExplicitResume reauthorizes an admitted caller on every guarded write attempt. The caller
 // must capture the token before this operation, including tokenless operator requests.
-func (s *Policy) ApplyExplicitResume(ctx context.Context, target *Target, caller WakeCaller, token string, operator bool) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Policy) ApplyExplicitResume(ctx context.Context, target *Target, caller WakeCaller, token string, operator bool) *environmentlifecyclepb.WakeAssessment {
 	return s.applyResume(ctx, target, caller, token, operator, false, nil)
 }
 
@@ -618,5 +618,5 @@ func (s *Policy) ApplyAutomaticWake(ctx context.Context, target *Target, caller 
 	if target.Namespace != s.namespace {
 		return assessment(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, nil), nil
 	}
-	return s.applyResume(ctx, target, caller, "", false, true, reserve)
+	return s.applyResume(ctx, target, caller, "", false, true, reserve), nil
 }

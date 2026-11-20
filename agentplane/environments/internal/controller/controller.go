@@ -114,7 +114,6 @@ type workload struct {
 	// credential is the one the current or next incarnation runs with, once issued.
 	credential                  requester.Issued
 	credentialBinding           *sandboxapi.RunnerCredential
-	runtimeCredentialAccepted   bool
 	runtimeIncarnationPublished bool
 }
 
@@ -275,10 +274,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	needsQuiesce := own && !sandboxSessionsQuiesced(sandbox)
 	var runtimeUID string
 	if needsQuiesce {
-		var err error
-		if runtimeUID, err = r.unquiescedRuntime(ctx, sandbox); err != nil {
-			return w, nil, err
-		}
+		runtimeUID = unquiescedRuntime(sandbox)
 		needsQuiesce = runtimeUID != ""
 	}
 	if needsQuiesce {
@@ -296,8 +292,8 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 			if err != nil || ready != nil {
 				return w, ready, err
 			}
-			if ready, err := r.firecrackerQuiesceReady(ctx, sandbox, w.pod); err != nil || ready != nil {
-				return w, ready, err
+			if ready := r.firecrackerQuiesceReady(sandbox, w.pod); ready != nil {
+				return w, ready, nil
 			}
 		}
 		w, blocked, err := r.converge(ctx, sandbox, w, true, credentialGate)
@@ -348,15 +344,15 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 
 // unquiescedRuntime conservatively seals a published incarnation after takeover.
 // Losing controller memory cannot establish that an Environment Runtime never admitted work.
-func (r *Reconciler) unquiescedRuntime(ctx context.Context, sandbox *sandboxapi.Sandbox) (string, error) {
+func unquiescedRuntime(sandbox *sandboxapi.Sandbox) string {
 	if sandbox.Status.Incarnation == nil {
-		return "", nil
+		return ""
 	}
 	runtimeUID := sandbox.Status.Incarnation.UID
 	if sandboxQuiescedIncarnation(sandbox, runtimeUID) {
-		return "", nil
+		return ""
 	}
-	return runtimeUID, nil
+	return runtimeUID
 }
 
 func (r *Reconciler) trackRuntime(sandbox *sandboxapi.Sandbox, w workload) {
@@ -384,13 +380,13 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 	if pod == nil {
 		return nil, nil
 	}
-	runtimeUID, err := r.unquiescedRuntime(ctx, sandbox)
-	if err != nil || runtimeUID == "" || runtimeUID != string(pod.UID) {
-		return nil, err
+	runtimeUID := unquiescedRuntime(sandbox)
+	if runtimeUID == "" || runtimeUID != string(pod.UID) {
+		return nil, nil
 	}
 	if !sandboxQuiescing(sandbox) {
-		if held, err := r.holdSuspend(ctx, sandbox, runtimeUID); held != nil || err != nil {
-			return held, err
+		if held := r.holdSuspend(sandbox, runtimeUID); held != nil {
+			return held, nil
 		}
 	}
 	return r.quiesce(ctx, sandbox, runtimeUID)
@@ -398,17 +394,17 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
 // Session's setup runs, keeping delivery fenced while initialization finishes. The
-// The Environment Runtime's next fact enqueues the Sandbox, so no retry is set. A delete does not
+// Environment Runtime's next fact enqueues the Sandbox, so no retry is set. A delete does not
 // come here.
-func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
+func (r *Reconciler) holdSuspend(sandbox *sandboxapi.Sandbox, runtimeUID string) *unready {
 	facts := r.States.Snapshot(sandbox, runtimeUID).Facts
 	switch {
 	case facts.Bootstrap == BootstrapRunning:
-		return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}, nil
+		return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}
 	case facts.SetupsRunning:
-		return &unready{reason: "SuspendPending", message: "a Session's setup is running; the suspend waits for it"}, nil
+		return &unready{reason: "SuspendPending", message: "a Session's setup is running; the suspend waits for it"}
 	}
-	return nil, nil
+	return nil
 }
 
 // quiesce asks the Environment Runtime in the Pod with this UID to seal every Session and, once the
@@ -775,7 +771,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *sandboxapi.Sandb
 	if incarnation != nil {
 		snapshot = r.States.Snapshot(sandbox, string(incarnation.UID))
 	}
-	connected, recheck := runtimeConnectedCondition(sandbox, workloadReady, incarnation, snapshot, r.Now())
+	connected, recheck := runtimeConnectedCondition(sandbox, workloadReady, snapshot, r.Now())
 	meta.SetStatusCondition(&status.Conditions, connected)
 	if sandbox.Spec.IdleSuspendAfter != nil && snapshot.fresh(r.Now()) {
 		status.IdleSuspendBlockers = snapshot.Facts.AutosuspendBlockers
@@ -828,7 +824,7 @@ func workloadReadyCondition(sandbox *sandboxapi.Sandbox, running metav1.Conditio
 }
 
 // runtimeConnectedCondition uses local receive time, with grace for brief observation outages.
-func runtimeConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, incarnation *corev1.Pod, snapshot RuntimeSnapshot, now time.Time) (metav1.Condition, time.Duration) {
+func runtimeConnectedCondition(sandbox *sandboxapi.Sandbox, workload metav1.Condition, snapshot RuntimeSnapshot, now time.Time) (metav1.Condition, time.Duration) {
 	condition := metav1.Condition{Type: sandboxapi.ConditionEnvironmentRuntimeConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
 		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"

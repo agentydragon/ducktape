@@ -27,9 +27,6 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	if err != nil {
 		return err
 	}
-	if !identity.valid() {
-		return status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
-	}
 	broad := s.broadReader(ctx, identity)
 	if identity.identity == nil && !broad {
 		return status.Error(codes.NotFound, "environment not found")
