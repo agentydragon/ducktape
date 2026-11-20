@@ -4,7 +4,7 @@ metadata:
   annotations:
     description: Holds the write-scoped Google OAuth token; never mirrored elsewhere.
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: google-mcp
   name: google-mcp
 spec: {}
@@ -64,6 +64,9 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "224Mi"}, "maxAllowed": {"cpu": "50m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: google-mcp
   name: google-mcp

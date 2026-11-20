@@ -15,7 +15,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.plaid_mcp import db
@@ -23,8 +23,11 @@ from cluster.cdk8s.plaid_mcp.db import NAMESPACE
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 _NAME = "plaid-pgweb"
+_CPU_REQUEST = "25m"
+_MEMORY_LIMIT = "256Mi"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # Clients use the default HTTP port; pgweb's unprivileged container still listens on 8081.
 SERVICE = ServiceRef(
@@ -55,10 +58,16 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
+                **namespaces.initial_memory_request_annotations(
+                    # Peak 30-day working set was 36Mi.
+                    ContainerPolicy.memory_requests_only(
+                        "pgweb", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit=_MEMORY_LIMIT
+                    )
+                ),
                 "description": (
                     "pgweb over the Plaid sync database as the read-only plaid_ro role, for sandboxes that reach it"
                     " through the agentplane-staging egress proxy."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -95,7 +104,7 @@ def _deployment(chart: Chart) -> None:
                                     name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
                                 )
                             ],
-                            resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
+                            resources=container_resources(cpu=_CPU_REQUEST, memory="64Mi", memory_limit=_MEMORY_LIMIT),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),

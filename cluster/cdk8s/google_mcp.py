@@ -57,8 +57,13 @@ from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "google-mcp"
+_CPU_REQUEST_MILLIS = 50
+_CPU_REQUEST = f"{_CPU_REQUEST_MILLIS}m"
+_MEMORY_LIMIT_MIB = 512
+_MEMORY_LIMIT = f"{_MEMORY_LIMIT_MIB}Mi"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
@@ -104,7 +109,17 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAME,
+                labels=SERVICE.pods.selector,
+                annotations=namespaces.initial_memory_request_annotations(
+                    # Peak 30-day working set was 196Mi, including startup.
+                    ContainerPolicy.memory_requests_only(
+                        "server", cpu_request=_CPU_REQUEST, memory_floor="224Mi", memory_limit=_MEMORY_LIMIT
+                    )
+                ),
+            ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -128,8 +143,8 @@ class GoogleMcpApp(Construct):
             },
             ports=[SERVICE.port.container_port()],
             resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(_MEMORY_LIMIT_MIB)),
             ),
             readiness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=15, period_seconds=20),
@@ -187,7 +202,7 @@ class GoogleMcp(Construct):
             self,
             "namespace",
             name=NAME,
-            vpa=Vpa.DISABLED,
+            vpa=Vpa.RECOMMEND,
             labels={"name": NAME},
             annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: plaid-mcp
 spec: {}
 ---
@@ -903,6 +903,8 @@ kind: Deployment
 metadata:
   annotations:
     description: pgweb over the Plaid sync database as the read-only plaid_ro role, for sandboxes that reach it through the agentplane-staging egress proxy.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "pgweb", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "25m", "memory": "64Mi"}, "maxAllowed": {"cpu": "25m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: plaid-pgweb
   name: plaid-pgweb
@@ -1257,6 +1259,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Plaid Spend serves its Authentik-protected browser UI and desktop API from the same configured card view and subscribes to committed plaid_spend_changed invalidations.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "plaid-spend", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "384Mi"}, "maxAllowed": {"cpu": "50m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: plaid-spend
   name: plaid-spend

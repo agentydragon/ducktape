@@ -54,8 +54,12 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "ha-mcp"
+_CPU_REQUEST_MILLIS = 50
+_CPU_REQUEST = f"{_CPU_REQUEST_MILLIS}m"
+_BACKEND_MEMORY_LIMIT_MIB = 1024
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app-image-pins"
@@ -182,12 +186,21 @@ class HaMcpApp(Construct):
                 namespace=_NAMESPACE,
                 labels=FACADE.pods.selector,
                 annotations={
+                    **namespaces.initial_memory_request_annotations(
+                        # Peak 30-day working set was 126Mi.
+                        ContainerPolicy.memory_requests_only(
+                            "ha-mcp",
+                            cpu_request=_CPU_REQUEST,
+                            memory_floor="256Mi",
+                            memory_limit=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
+                        )
+                    ),
                     "description": (
                         "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal "
                         "and gated by a static bearer that only agentplane-staging's Action Service holds. "
                         "The upstream HA token remains server-side, and the Action Service applies its own "
                         "per-call approval policy."
-                    )
+                    ),
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=FACADE.pods.selector),
@@ -210,8 +223,8 @@ class HaMcpApp(Construct):
                 "HOMEASSISTANT_TOKEN": _HOME_ASSISTANT_TOKEN.env_value(self, "ha-mcp-home-assistant-token-ref")
             },
             resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+                cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.mebibytes(_BACKEND_MEMORY_LIMIT_MIB)),
             ),
             readiness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=5),
             liveness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=20, period_seconds=20),
@@ -304,7 +317,7 @@ class HaMcp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self, "namespace", name=_NAMESPACE, vpa=Vpa.DISABLED, labels={"app.kubernetes.io/name": _NAMESPACE}
+            self, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND, labels={"app.kubernetes.io/name": _NAMESPACE}
         )
         _home_assistant_token(self)
         HaMcpApp(self, "app")

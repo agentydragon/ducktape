@@ -9,7 +9,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import cilium, external_creds, namespaces
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
@@ -23,11 +23,14 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 from finance.plaid.spend.settings import SpendSettings
 from util.settings_contract import env_name
 
 NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
+_CPU_REQUEST = "50m"
+_MEMORY_LIMIT = "512Mi"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
 POLICY_SECRET = "plaid-spend-policy"
@@ -164,10 +167,16 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_WEB.pods.selector,
             annotations={
+                **namespaces.initial_memory_request_annotations(
+                    # Peak 30-day working set was 338Mi.
+                    ContainerPolicy.memory_requests_only(
+                        "plaid-spend", cpu_request=_CPU_REQUEST, memory_floor="384Mi", memory_limit=_MEMORY_LIMIT
+                    )
+                ),
                 "description": (
                     "Plaid Spend serves its Authentik-protected browser UI and desktop API from the same"
                     " configured card view and subscribes to committed plaid_spend_changed invalidations."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -219,7 +228,7 @@ def _deployment(chart: Chart) -> None:
                                 k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
                             ],
                             resources=container_resources(
-                                cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
+                                cpu=_CPU_REQUEST, memory="128Mi", cpu_limit="500m", memory_limit=_MEMORY_LIMIT
                             ),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=20, period_seconds=20),
