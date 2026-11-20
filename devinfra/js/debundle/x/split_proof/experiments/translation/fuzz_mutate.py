@@ -1,7 +1,7 @@
 """Mutation test of the analysis' tests: weaken the checker in a scratch copy, rebuild `translate` and `lower`, run the
 cases of `experiments/effects` (`run.mjs`), then `fuzz.mjs`.
 
-    [SHARD=i/n] python3 fuzz_mutate.py [bundles-per-mutant] [seed] [only-substring]
+    [SHARD=i/n] [START=k] python3 fuzz_mutate.py [bundles-per-mutant] [seed] [only-substring]
 
 A mutant that neither the cases nor the fuzzer flag as a WRONG ACCEPT either is harmless (the rule it removes is
 redundant or conservative) or shows a gap in the catalog. Each line says which.
@@ -92,8 +92,8 @@ MUTANTS = {
     ),
     "builtins mutate nothing": (
         EFFECTS,
-        "  for p in s.muts do\n    for c in pos p do",
-        "  for p in ([] : List Nat) do\n    for c in pos p do",
+        '  for p in s.muts do\n    noteChange (pos p) "mutation of"\n    for c in pos p do',
+        '  for p in ([] : List Nat) do\n    noteChange (pos p) "mutation of"\n    for c in pos p do',
         "`Object.assign` / `defineProperty` / `push` write their target",
     ),
     "call and apply do not call": (
@@ -285,8 +285,8 @@ MUTANTS = {
     ),
     "setPrototypeOf stores contents": (
         EFFECTS,
-        "        joinProto (c - 1) (pos 2)\n",
-        "        joinAny (c - 1) (pos 2)\n",
+        "      else if c ≥ 2 then joinProto (c - 1) (pos 2)\n",
+        "      else if c ≥ 2 then joinAny (c - 1) (pos 2)\n",
         "a method found through a prototype set later",
     ),
     "getPrototypeOf returns nothing": (
@@ -398,10 +398,11 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         lean = pathlib.Path(tmp) / "lean"
         shutil.copytree(ROOT / "lean", lean, symlinks=True, ignore=shutil.ignore_patterns("bin"))
-        # `SHARD=i/n` takes every n-th mutant starting at i, so that n copies can run at once
+        # `SHARD=i/n` takes every n-th mutant starting at i, so that n copies can run at once; `START=k` skips the first k
         index, shards = (int(x) for x in os.environ.get("SHARD", "0/1").split("/"))
+        start = int(os.environ.get("START", "0"))
         for n, (name, (file, old, new, why)) in enumerate(MUTANTS.items()):
-            if only not in name or n % shards != index:
+            if only not in name or n % shards != index or n < start:
                 continue
             path = lean / file
             original = path.read_text()

@@ -89,18 +89,6 @@ def exportedNames (s : Json) : List String :=
   | "ExportDefaultDeclaration" => ["default"]
   | _ => []
 
-/-- Local bindings exposed by an export can be observed during cyclic evaluation. -/
-def exportedBindings (s : Json) : List String :=
-  match Lower.typ s with
-  | "ExportNamedDeclaration" =>
-    if Lower.isNull (Lower.fld s "declaration") then
-      (Lower.items (Lower.fld s "specifiers")).toList.map fun sp => Lower.str (Lower.fld (Lower.fld sp "local") "name")
-    else Lower.topDefs (Lower.fld s "declaration")
-  | "ExportDefaultDeclaration" =>
-    let d := Lower.fld s "declaration"
-    if Lower.typ d == "Identifier" then [Lower.str (Lower.fld d "name")] else Lower.topDefs d
-  | _ => []
-
 /-- Statement types the model does not cover. -/
 def unsupported (t : String) : Bool := t == "ImportDeclaration" || t == "ExportAllDeclaration"
 
@@ -145,7 +133,7 @@ def main (args : List String) : IO UInt32 := do
     let t := Lower.typ (Lower.fld s "ast")
     if unsupported t then
       IO.eprintln s!"unsupported top-level statement: {t}"; return 3
-  let exported := stmts.toList.flatMap fun s => exportedBindings (Lower.fld s "ast")
+  let exported := stmts.toList.flatMap fun s => Lower.exportedBindings (Lower.fld s "ast")
   let fps ← match fpPath? with
     | some p => do
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"

@@ -40,23 +40,22 @@ The list of members the standard objects have comes from the Node that ran [`gen
 - Calls into code it can see are run (inlined; one level of call-site context, a depth cap, a step budget per unit, memoized while the heap is unchanged). Bound functions and the calls a standard function makes count as a level of the call chain. Intrinsics come from the table in [`Intrinsics.lean`](../../lean/Experiments/Intrinsics.lean) (data, with the reason each row is safe). Any other call is the world.
 - A call into the world makes the unit an effect; every object passed in **escapes**: the world may mutate it and call any function reachable from it. Variables those functions assign are _tainted_ (reads may return anything). A unit that runs code the analysis cannot see writes every name that reaches an escaped object; a unit that only talks to the environment (`console.log`, `addEventListener` with a callback it keeps) writes none.
 - `writes` are names: every module-scope name from which a changed object can be reached. `deps` are names read by code the unit ran but did not mention (closures reached through objects other units filled).
-- Names the bundle exports start out escaped: another module may call an exported function, or read an exported binding, while this one evaluates (a cycle).
+- Names the bundle exports start out escaped: another module may call an exported function, or read an exported binding, while this one evaluates (a cycle). The front end lists them; for an ESTree dump (`lowering/dump.mjs`) they come from its `export` statements, the same function (`Lower.exportedBindings`) for `lower` and `lowersplit`.
 - Code that runs without a call expression is run or given up on the same way: a getter or setter (own or inherited), a conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`), the iterator of a spread or a `for…of`, a `then` of a thenable, a generator body (it runs when the iterator is advanced, in some later unit), and the conversions the standard functions do on their arguments. `await` makes the unit an effect: the continuation runs after the program, in the order the awaits were reached.
 
 **Fail safe.** An unrecognized node, a direct `eval`, an exhausted budget or an over-wide set becomes a call into the world that also escapes everything the unit mentions. A call that is run but not looked into (deeper than the depth cap, through more candidates than the fan-out cap, a generator) escapes the function and its closure. More precision comes from understanding a construct. A wrong understanding gives a wrong verdict, and so does a give-up that forgets what the code it skipped can reach.
 
 ## Cost
 
-@@TANA@@
+On the large production bundle (private, 9,707 units): 114 s for the analysis, 318,332 abstract objects, 1.45 GB peak for the whole `translate` run. 135 units run out of the 100,000-step budget and become unknown code. `zod` (1,072 units) takes 200 to 350 s depending on the load, minified 60 to 70 s; where the time goes is not profiled (`TODO.md`). A split of one big bundle should be analyzed once: `lowersplit --footprints` reads what `lower` printed. Bazel's `lean_binary` runs the Lean interpreter, about ten times slower than the native build, so the Bazel tests use small inputs.
 
 ## Tests
 
-- [`cases.mjs`](cases.mjs): 78 small bundles with the classification of every unit (`world`, `pure`, `writes a b`, `world writes a b`), each checked against what JavaScript does, and 61 reordered programs run in Node next to the original (60 print something else; `run.mjs` requires the checker to refuse those). `--permutations N` adds random permutations of every case's units. A `pure` where the code writes something is a bug; a `world` where the code is harmless is a loss of precision. CI runs them as `effects_cases_test` and `effects_permutations_test`.
+- [`cases.mjs`](cases.mjs): 83 small bundles with the classification of every unit (`world`, `pure`, `writes a b`, `world writes a b`), each checked against what JavaScript does, and 65 reordered programs run in Node next to the original (64 print something else; `run.mjs` requires the checker to refuse those). `--permutations N` adds random permutations of every case's units. A `pure` where the code writes something is a bug; a `world` where the code is harmless is a loss of precision. CI runs them as `effects_cases_test` and `effects_permutations_test`.
 - [`fuzz.mjs`](../translation/fuzz.mjs): random bundles and splits, Node as the oracle (`fuzz_test`, `fuzz_leaks_test`, the corpora of [the translation README](../translation/README.md#fuzzer)). Templates that need this analysis: aliases through a variable, a destructuring or a registry object, writes through a helper, closures with state, instances, decorators and getters.
+- [`lower_exports_test.mjs`](../translation/lower_exports_test.mjs): `lower` and `lowersplit` hold the names an ESTree dump exports for the world, and agree on how many units touch it.
 - The existing suites of the project run on it: the fixtures, the emission tests, the Shift grammar fuzzers (about 5,500 random programs in a larger run, none accepted wrongly) and [the real-bundle splits](../README.md#7-real-splits-halves-cuts-blocks-random-placements).
-- [`fuzz_mutate.py`](../translation/fuzz_mutate.py): 59 mutants, each removing one rule of the analysis (or of the model); `run.mjs` runs first, then the fuzzer. A mutant that neither catches is either harmless or a missing case.
-
-@@MUTANTS@@
+- [`fuzz_mutate.py`](../translation/fuzz_mutate.py): 61 mutants, each removing one rule of the analysis (or of the model); `run.mjs` runs first, then the fuzzer. A mutant that neither catches is either harmless or a missing case.
 
 ## Finding what blocks precision
 

@@ -1,6 +1,6 @@
 // Many splits of one real bundle: what the Lean checker says, and what Node does with the split program.
 //
-//   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--out results.jsonl]
+//   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--footprints f.jsonl] [--out results.jsonl]
 //
 //   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (experiments/lowering/bundles/<bundle>.{json,mjs})
 //   strategy  halves | cuts | cuts_entry_first | blocks | random
@@ -9,8 +9,8 @@
 //             blocks: k = 2…8 contiguous blocks
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
-// The bundle's footprints are computed once (`lower`); each split is checked with `lowersplit --force --footprints`
-// (checks, writes the modules even when rejected), then
+// The bundle's footprints are computed once (`lower`, or the file given with `--footprints`); each split is checked
+// with `lowersplit --force --footprints` (checks, writes the modules even when rejected), then
 // `smoke.mjs` on the entry module. One JSON line per split:
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
@@ -49,11 +49,16 @@ const run = (cmd, args) =>
   });
 
 // The analysis takes minutes on a big bundle and does not depend on the split: run it once.
-const work = await mkdtemp(path.join(tmpdir(), "footprints_"));
-const footprints = path.join(work, "footprints.jsonl");
-const analysis = await run(lower, [path.join(lowering, `${bundle}.json`)]);
-if (analysis.code !== 0) throw new Error(`lower exit ${analysis.code}: ${analysis.stderr.split("\n").pop()}`);
-await writeFile(footprints, analysis.stdout);
+let work;
+async function analyze() {
+  const analysis = await run(lower, [path.join(lowering, `${bundle}.json`)]);
+  if (analysis.code !== 0) throw new Error(`lower exit ${analysis.code}: ${analysis.stderr.split("\n").pop()}`);
+  work = await mkdtemp(path.join(tmpdir(), "footprints_"));
+  const file = path.join(work, "footprints.jsonl");
+  await writeFile(file, analysis.stdout);
+  return file;
+}
+const footprints = option("footprints", null) ?? (await analyze());
 const bundleJson = JSON.parse(await readFile(path.join(lowering, `${bundle}.json`), "utf8"));
 const n = bundleJson.statements.length;
 const baseline = JSON.stringify(await smoke(family, path.join(lowering, `${bundle}.mjs`)));
@@ -118,7 +123,7 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: jobs }, worker));
-await rm(work, { recursive: true, force: true });
+if (work) await rm(work, { recursive: true, force: true });
 console.log(`${bundle} ${strategy}: ${plans.length} splits`, tally);
 if (tally["accept/different"]) {
   console.error("UNSOUND: an accepted split behaves differently");

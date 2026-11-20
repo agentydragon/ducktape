@@ -134,6 +134,17 @@ js_test(
 )
 
 js_test(
+    name = "lower_exports_test",
+    size = "medium",
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/lean:lower"],
+    entry_point = "lower_exports_test.mjs",
+    env = {
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+)
+
+js_test(
     name = "inert_escape_test",
     data = _CHECKER_RUNFILES + [
         "pair.mjs",

@@ -156,28 +156,29 @@ same nodes, and the analysis that was my weakest trusted part (including the cal
 and later proved.
 
 [`dump.mjs`](lowering/dump.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.
-[`Lower.lean`](../lean/Experiments/Lower.lean) (270 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
-The analysis is total on it and sound by construction:
+[`Lower.lean`](../lean/Experiments/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
+It scans what each statement declares, mentions and assigns. The scan is total and sound by construction:
 
 - a name is local only if a _recognized_ binder introduces it;
-- any node type it does not recognize goes through a fallback: every identifier below is a reference. That can add dependencies, never drop one;
-- a statement is inert only if it matches a short allow-list; everything else is an effect.
+- any node type it does not recognize goes through a fallback: every identifier below is a reference. That can add dependencies, never drop one.
+
+Whether a statement touches the world, and which names it may change, is not decided here: [`Effects.lean`](../lean/Experiments/Effects.lean) does that (§ 13), and the model uses no other classification.
 
 Adding precision is the only way to get something wrong. So I compared against the oracle on real code
 ([`compare.mjs`](lowering/compare.mjs)), on four packages bundled by esbuild (readable and minified) and on a hand-written scoping stress file:
 
 | Bundle                                                      | Statements | Inert | Effect | Hoisted functions | Missed free names | Mis-classified eager | Exactly the oracle's set |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | ----------------- | ----------------- | -------------------- | ------------------------ |
-| lodash (subset)                                             | 670        | 516   | 154    | 167               | 0                 | 0                    | 99.3%                    |
-| acorn                                                       | 447        | 116   | 331    | 42                | 0                 | 0                    | 99.8%                    |
-| semver (CJS)                                                | 59         | 4     | 55     | 0                 | 0                 | 0                    | 100%                     |
-| zod                                                         | 1,072      | 801   | 271    | 560               | 0                 | 0                    | 100%                     |
-| acorn, minified                                             | 374        | 58    | 316    | 42                | 0                 | 0                    | 99.7%                    |
-| zod, minified                                               | 805        | 660   | 145    | 560               | 0                 | 0                    | 100%                     |
-| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 23         | 15    | 8      | 10                | 0                 | 0                    | 100%                     |
-| the 12-statement example                                    | 12         | 8     | 4      | 4                 | 0                 | 0                    | 100%                     |
+| lodash (subset)                                             | 670        | 633   | 37     | 167               | 0                 | 0                    | 99.3%                    |
+| acorn                                                       | 447        | 156   | 291    | 42                | 0                 | 0                    | 99.8%                    |
+| semver (CJS)                                                | 59         | 58    | 1      | 0                 | 0                 | 0                    | 100%                     |
+| zod                                                         | 1,072      | 874   | 198    | 560               | 0                 | 0                    | 100%                     |
+| acorn, minified                                             | 374        | 84    | 290    | 42                | 0                 | 0                    | 99.7%                    |
+| zod, minified                                               | 805        | 688   | 117    | 560               | 0                 | 0                    | 100%                     |
+| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 23         | 23    | 0      | 10                | 0                 | 0                    | 100%                     |
+| the 12-statement example                                    | 12         | 10    | 2      | 4                 | 0                 | 0                    | 100%                     |
 
-That is 3,427 real statements with no missed free variable. On the example, `extract.mjs` and the Lean analysis give identical footprints for 12 of 12 statements.
+That is 3,427 real statements with no missed free variable. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
 No real bundle contained a node type the analysis does not recognize, so the fallback was exercised on a synthetic unknown node: it recorded the type and still collected every identifier below it.
 
 **Does a zero mean anything?** I injected bugs into `Lower.lean` and scored them against the oracle.
@@ -185,17 +186,16 @@ All six _unsound_ mutants were caught: skipping a member expression's object, `e
 and ignoring pattern defaults, letting parameters see body-level names, binding a catch parameter over the whole `try` (caught only by the stress file).
 One mutant, forgetting a catch parameter is local, is on the safe side and is correctly not flagged. The oracle is only as strong as its corpus.
 
-**What real bundles look like**, from the same runs. The conservative rule makes 37% of statements effects (1,272 of 3,427):
+**What real bundles look like**, from the same runs. `Effects.lean` makes 934 of 3,427 statements effects (27%); the allow-list of the first version made 1,272 (37%):
 
-- acorn: 294 of its 331 effects are `proto.method = function …`;
-- semver: 48 of 55 are `var require_x = __commonJS({…})` wrapper calls;
-- zod: 232 of 271 are `var X = factory(…)` calls;
-- lodash: 56 `var x = obj.member` reads and 26 calls.
+- acorn: 291 (minified, 290), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
+- semver: 1 (a call);
+- zod: 198, of which 183 are `var X = factory(…)` calls; minified, 117;
+- lodash: 37: 18 calls, 9 logical expressions, 5 member reads, 4 conditionals and an `if`.
 
-A call to a _local pure helper_ (`__commonJS`, a factory) and an initializing assignment to a not-yet-escaped prototype are where a better analysis would pay.
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
-**End to end in one program.** [`LowerSplit.lean`](../lean/Experiments/LowerSplit.lean) (108 lines) takes the JSON and a spec, computes footprints in Lean,
+**End to end in one program.** [`LowerSplit.lean`](../lean/Experiments/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
 plans, checks, writes the modules, and with `--lean` writes a Lean file for the kernel. On the example the modules are identical to the ones produced through `extract.mjs`
 except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
 The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
@@ -214,7 +214,7 @@ Run it: `./run.sh --lowering` (installs esbuild, lodash-es, acorn, zod, semver, 
 ## 7. Real splits: halves, cuts, blocks, random placements
 
 A bundle cannot be cut anywhere. This section runs the checker on 2,740 splits of six real bundles and runs each result in Node.
-Run it with [`splits/run_all.sh`](splits/run_all.sh) (about 3 minutes, after `./run.sh --lowering`).
+Run it with [`splits/run_all.sh`](splits/run_all.sh) (about 10 minutes, most of it the footprint analysis of `zod`, which runs once per bundle; after `./run.sh --lowering`).
 
 For every split, `lowersplit --force` checks it and writes the modules even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
 entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
@@ -222,16 +222,16 @@ The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortB
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
 One JSON line per split is in [`splits/results/`](splits/results); [`results/summary.md`](splits/results/summary.md) has the per-bundle table.
 
-| Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                          |
-| ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | ------------------------------------------------ |
-| halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                                |
-| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `Reassign` 13                                    |
-| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `Reassign` 2                       |
-| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 0         | 0                      | 476                   | 4                   | `OrderOk` 480, `Reassign` 370, `ExportNames` 158 |
-| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `OrderOk` 198, `ExportOutsideEntry` 198          |
-| **all**                                                                            | **2,740** | **2,033** | **0**                  | **698**               | **9**               |                                                  |
+| Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                                  |
+| ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | -------------------------------------------------------- |
+| halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                                        |
+| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `AssignsHome` 13                                         |
+| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `AssignsHome` 2                            |
+| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 2         | 0                      | 476                   | 2                   | `OrderOk` 478, `AssignsHome` 370, `ExportNames` 158      |
+| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `ExportOutsideEntry` 198, `OrderOk` 198, `AssignsHome` 1 |
+| **all**                                                                            | **2,740** | **2,035** | **0**                  | **698**               | **7**               |                                                          |
 
-- **No accepted split behaved differently.** That is the soundness claim, tested on 2,033 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
+- **No accepted split behaved differently.** That is the soundness claim, tested on 2,035 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
 - **Halving is mostly fine, which I did not expect.** With the entry in the second half, the entry imports the first half. If the first half refers back to the second
   (a function calling a helper declared later), it imports it too, and the cycle is cut at the entry. The order of the bodies stays the bundle's order.
   99.4% of the single cuts are accepted.
@@ -239,11 +239,11 @@ One JSON line per split is in [`splits/results/`](splits/results); [`results/sum
   (lodash cut at 422: statement 422 assigns `getTag`, declared by statement 421; acorn cut at 41: `warnedAboutEcmaVersion`). ES imports are read-only, so the assignment would throw.
   Three of the 13 run fine in my smoke test, because the assignment sits in a path the test does not take.
 - **Three or more modules break the order.** A forward reference from block 0 to block 1 makes block 1 run first, because an import runs before the importer.
-  Lodash and semver survive all 7 block splits. Acorn survives 5 of 7 and zod 1 of 7: initialization calls (`var X = factory(…)`) are effects, and effects keep their order.
-- **Arbitrary placement never works:** 0 of 480 accepted, and 476 break in Node. The other 4 are semver splits that reorder effects which do not show in the smoke test.
+  Lodash and semver survive all 7 block splits. Acorn survives 5 of 7 and zod 1 of 7: the `proto.method = function …` stores of acorn and the `var X = factory(…)` calls of zod are effects (§ 13), and effects keep their order.
+- **Arbitrary placement almost never works:** 2 of 480 accepted (two semver placements, and Node agrees), and 476 break in Node. The other 2 are semver splits that reorder effects which do not show in the smoke test.
 - **Putting the entry in the wrong half loses the API.** The `export { … }` statement is a statement like any other; I had not checked that it stays in the entry module.
   `lowersplit` now rejects it (`ExportOutsideEntry`). Before this experiment the checker would have accepted a split with the exports in a non-entry module.
-- **The checker is conservative in 9 of 707 rejections** (1.3%): 3 reassignments that are not on the executed path, 2 block orders that happen to commute, and 4 random placements.
+- **The checker is conservative in 7 of 705 rejections** (1.0%): 3 reassignments that are not on the executed path, 2 block orders that happen to commute, and 2 random placements.
 
 ## 8. How a proof is produced
 
@@ -392,23 +392,25 @@ What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.
 
 ## 13. Footprints by abstract interpretation
 
-`Lower.lean` decides what is an effect from a short list of inert shapes, so every call is an effect and any two calls keep their order. [`effects/`](effects/README.md) reads the code instead. `Effects.lean` runs the bundle's top level once over abstract values and reports, per unit, whether it touches the world, which names it may change and which names it reads through functions it calls. `translate_effects` is `translate` with these footprints; `translate`, `lower` and `lowersplit` are unchanged. The model gains one field, `Stmt.deps`.
+`Effects.lean` decides what each unit touches by running the bundle's top level once over abstract values. [`effects/`](effects/README.md) has the rules, the premises and the tests. `lower`, `translate` and `lowersplit` use it and no other classification: there is no allow-list of inert shapes and no recognizer for calls it can clear. The model has `Stmt.deps` (names a statement reads through functions it calls). A hoisted declaration does not conflict with a unit that binds the same name, since running it changes nothing (`step_hoisted`); that halved the obligations on the large bundle.
 
 Evidence, none of it a proof:
 
-- 65 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 52 reordered programs. Node runs 51 of them differently from the original, and `translate_effects` must not accept those; it must accept the 52nd, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units: no wrong accept in 1,100 so far.
-- The translation fuzzer with `--effects`: six runs of 100 to 300 random bundles each (the random catalog on three seeds, the AST corpus, the callback corpus, `--leaks`), 0 wrong accepts. On one seed it accepts 375 trees that Node agrees with, `translate` 322.
-- 54 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): the cases or the fuzzer must catch each.
+- 84 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 65 reordered programs. Node runs 64 of them differently from the original, and `translate` must not accept those; it must accept the 65th, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units and fails on a wrong accept; CI runs 3 per case.
+- The translation fuzzer ([`translation/fuzz.mjs`](translation/README.md#fuzzer)) generates random bundles and random splits of them, runs both in Node and compares with the verdict. CI runs the random catalog, the AST corpus, the callback corpus and the `--leaks` templates on fixed seeds.
+- The suites that existed before ran on it: the fixtures, the emission tests, the Shift grammar fuzzers, the real-bundle splits (§ 7: no accepted split behaved differently) and debundle's e2e cases (§ 11).
+- 61 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): each removes one rule of the analysis or of the model, and the cases, the fuzzer or a proof that stops building must catch it.
 
 **What reading the code found that the fuzzer did not.** The first version had passed seven fuzz seeds. Reading every place where the interpreter does not run code, and asking what that code could still do, gave eleven programs it accepted wrongly (Node prints something else): a generator body, which runs when the iterator is advanced, in a later unit; a call deeper than the analysis follows, or through more candidates than it follows, whose callee was not marked as run; the same for a constructor; an `await`, whose continuation runs after the program in the order the awaits were reached; a read of state that a module outside the tree keeps; a getter, a setter and an inherited accessor; and an object assigned to a variable that the world's handler reads. The fuzzer's catalog had been written by the hand that wrote the analysis. The rules that came out of it: a give-up must escape what the skipped code can reach, and a rule that assumes code runs now must ask whether it runs later. Each is a case with the reordered program, and a mutant that removes it.
 
+**What running the older suites on it found.** A bundle that defines a getter on `Object.prototype` and later reads `{}.missing` was accepted (`fixtures/inherited_getter`): the analysis assumed the intrinsics unpatched, and the bundle patched one itself. A patch the bundle makes by name is seen now. A change to a static member (`Symbol.dispose ??= …`) makes the units that read it effects. A change to a prototype, to an unknown key or to a conversion hook makes every unit that is not a function declaration an effect. The first version treated every patch that way, and the one polyfill in the large bundle turned 2,059 effect units into 6,571. A value that may also be another object does not count as a patch, or every library that walks a prototype chain would. `zod`'s constructor helper overflowed the stack, because a bound function stored where its target came from calls itself. No case covered the rule that exported names start out held by the world. Fixtures and cases that expected a refusal where Node prints the same were limits of the earlier recognizers: they are accepted now.
+
 **On the large production bundle** (private; numbers only; the committed readable tree, 9,707 units):
 
-| footprints from                                         | effect units | obligations | time  |
-| ------------------------------------------------------- | -----------: | ----------: | ----- |
-| `translate`: the allow-list of `Lower.lean`             |        4,234 |   2,343,730 | 2 s   |
-| `translate_effects`, no premises                        |        2,059 |   1,788,140 | 114 s |
-| `translate_effects`, premise P3                         |        1,583 |   1,326,105 | 111 s |
-| P3 and 40 imports assumed to only allocate (unreviewed) |          730 |     659,827 | 135 s |
+| footprints                                              | effect units | obligations | analysis | whole run |
+| ------------------------------------------------------- | -----------: | ----------: | -------: | --------: |
+| no premises                                             |        2,059 |     865,930 |    114 s |     324 s |
+| premise P3                                              |        1,583 |     669,532 |    114 s |     288 s |
+| P3 and 40 imports assumed to only allocate (unreviewed) |          730 |     344,781 |    132 s |     219 s |
 
-The obligations are effect-effect pairs: 1,583 effect units are 1.25 million pairs. 1,557 of the units run unknown code (`EFFECTS_WHY=1 effects …` lists the first reason for each). One vendor import is called, directly or through a local wrapper, by 511 units; 527 units apply a decorator helper to a class or a prototype (`f([decorators], C.prototype, "member", …)`); a few dozen other imports account for most of the rest. What would clear them is a reviewed table of vendor functions that only allocate, keyed by package and export, and an audited claim that decorators on different prototypes commute ([`translation/PLAN.md`](translation/PLAN.md)). The table in the last row is keyed by minified names and was written to see what a table could do: it is an illustration, not a result.
+The obligations are effect-effect pairs the tree runs in the opposite order from the bundle: 1,583 effect units make 1.25 million pairs, and 1,527 of the units run unknown code (`EFFECTS_WHY=1 lower …` lists the first reason for each). One vendor import is called, directly or through a local wrapper, by 511 units; 451 read or assign a property of a value the world returned, which may run a getter or setter the world made (premise P3 does not cover those); 527 units apply a decorator helper to a class or a prototype (`f([decorators], C.prototype, "member", …)`); a few dozen other imports account for most of the rest. What would clear them is a reviewed table of vendor functions that only allocate, keyed by package and export, and an audited claim that decorators on different prototypes commute ([`translation/PLAN.md`](translation/PLAN.md)). The table in the last row is keyed by minified names and was written to see what a table could do: it is an illustration, not a result.

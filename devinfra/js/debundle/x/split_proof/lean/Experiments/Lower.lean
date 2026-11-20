@@ -251,6 +251,18 @@ partial def topDefs (s : Json) : List String :=
   -- a `var` inside a block, loop or `try` at the top level still declares a module-scope binding
   | _ => varNames s
 
+/-- Local bindings an `export` statement exposes. Another module may observe them while this one evaluates (a cycle). -/
+def exportedBindings (s : Json) : List String :=
+  match typ s with
+  | "ExportNamedDeclaration" =>
+    if isNull (fld s "declaration") then
+      (items (fld s "specifiers")).toList.map fun sp => str (fld (fld sp "local") "name")
+    else topDefs (fld s "declaration")
+  | "ExportDefaultDeclaration" =>
+    let d := fld s "declaration"
+    if typ d == "Identifier" then [str (fld d "name")] else topDefs d
+  | _ => []
+
 def isHoisted (s : Json) : Bool :=
   typ s == "FunctionDeclaration"
     || ((typ s == "ExportNamedDeclaration" || typ s == "ExportDefaultDeclaration")

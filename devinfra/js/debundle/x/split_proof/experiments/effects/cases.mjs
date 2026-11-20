@@ -61,6 +61,19 @@ const y = next();
     expect: ["pure", "writes next", "writes next"],
   },
   {
+    name: "a closure another unit stored reads a variable the calling unit never mentions",
+    source: `
+let x = 0;
+const registry = {};
+registry.read = () => x;
+x = 1;
+const seen = registry.read();
+console.log(seen);
+`,
+    expect: ["pure", "pure", "writes registry", "writes x", "pure", "world"],
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
     name: "a class: the constructor and a method write `this`",
     source: `
 class Box { n = 0; inc() { this.n++; return this.n; } }
@@ -548,6 +561,17 @@ const m = cfg.mode;
 cfg.mode = "b";
 `,
     expect: ["pure", "world", "pure", "writes cfg"],
+  },
+  {
+    name: "without premise P3 a property of an object the world holds may run a getter the world added",
+    premises: {},
+    source: `
+const cfg = { mode: "a" };
+window.addEventListener("x", () => cfg.mode);
+const m = cfg.mode;
+cfg.mode = "b";
+`,
+    expect: ["pure", "world", "world", "world writes cfg m"],
   },
   {
     name: "a getter the world made runs code the analysis cannot see",

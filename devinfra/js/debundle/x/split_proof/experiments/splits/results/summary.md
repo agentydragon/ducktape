@@ -19,7 +19,7 @@
 | semver    | cut             | 58     | 58       | 0                      | 0                     | 0                   |                                                  |
 | semver    | cut_entry_first | 5      | 0        | 0                      | 5                     | 0                   | ExportOutsideEntry 5, OrderOk 5                  |
 | semver    | halves          | 1      | 1        | 0                      | 0                     | 0                   |                                                  |
-| semver    | random          | 80     | 0        | 0                      | 76                    | 4                   | OrderOk 80                                       |
+| semver    | random          | 80     | 2        | 0                      | 76                    | 2                   | OrderOk 78                                       |
 | zod.min   | blocks          | 7      | 1        | 0                      | 5                     | 1                   | OrderOk 6                                        |
 | zod.min   | cut             | 201    | 199      | 0                      | 2                     | 0                   | AssignsHome 2                                    |
 | zod.min   | cut_entry_first | 20     | 0        | 0                      | 20                    | 0                   | ExportOutsideEntry 20, OrderOk 20                |

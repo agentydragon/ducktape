@@ -1,6 +1,6 @@
 # Plan: more of debundle's cases through the Lean checker
 
-State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 81 agree with debundle (66 accepts, 15 rejects), 10 disagree, 103 are not run.
+State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 83 agree with debundle (68 accepts, 15 rejects), 8 disagree, 103 are not run.
 Causes: [`experiments/debundle_cases/README.md`](experiments/debundle_cases/README.md); numbers: [`results/summary.md`](experiments/debundle_cases/results/summary.md).
 
 Acceptance for every step, after `./run.sh --debundle-cases`:

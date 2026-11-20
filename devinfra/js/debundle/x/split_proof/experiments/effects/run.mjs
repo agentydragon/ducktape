@@ -1,5 +1,6 @@
 // Runs every case of `cases.mjs`: front end, `lower`, and compares each unit's classification with the expectation.
-// A case may also list `reorders`: the same units in another order, written as a one-module tree. Node runs both; the
+// A case may set its own `premises` (the file's apply otherwise) and list `reorders`: the same units in another order,
+// written as a one-module tree. Node runs both; the
 // order must change what Node prints (`differs`) or not (`same`), and `translate` must not accept a tree that
 // differs. A `same` reorder with `accepted: true` is a positive anchor: the analysis is precise enough to allow it.
 //
@@ -46,6 +47,12 @@ const shuffled = (n) => {
 const work = mkdtempSync(path.join(tmpdir(), "effects_"));
 const premisesFile = path.join(work, "premises.json");
 writeFileSync(premisesFile, JSON.stringify(premises));
+const premisesOf = (c, n) => {
+  if (c.premises === undefined) return premisesFile;
+  const file = path.join(work, `premises_${n}.json`);
+  writeFileSync(file, JSON.stringify(c.premises));
+  return file;
+};
 
 // `world` says nothing about what the unit may change; a case that expects `world writes a b` (`world writes -` for no
 // names) also checks that.
@@ -93,7 +100,7 @@ const reorder = (c, bundleFile, bundleJson, lines, order) => {
     const r = spawnSync(process.execPath, args, { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`${c.name}: ${name} of [${order}]: ${r.stderr}`);
   }
-  const checked = spawnSync(translate, [bundleJson, outputJson, certJson, "--premises", premisesFile], {
+  const checked = spawnSync(translate, [bundleJson, outputJson, certJson, "--premises", c.premisesFile], {
     encoding: "utf8",
     maxBuffer: 1 << 26,
   });
@@ -103,14 +110,14 @@ const reorder = (c, bundleFile, bundleJson, lines, order) => {
 };
 
 let failures = 0;
-for (const raw of cases) {
-  const c = { ...raw, source: raw.source.replaceAll("%VENDOR%", vendorFile) };
+for (const [n, raw] of cases.entries()) {
+  const c = { ...raw, source: raw.source.replaceAll("%VENDOR%", vendorFile), premisesFile: premisesOf(raw, n) };
   const source = path.join(work, "case.mjs");
   const bundle = path.join(work, "bundle.json");
   writeFileSync(source, c.source);
   const front = spawnSync(process.execPath, [frontend, "bundle", source, "--out", bundle], { encoding: "utf8" });
   if (front.status !== 0) throw new Error(`${c.name}: ${front.stderr}`);
-  const run = spawnSync(lower, [bundle, "--premises", premisesFile], { encoding: "utf8", maxBuffer: 1 << 26 });
+  const run = spawnSync(lower, [bundle, "--premises", c.premisesFile], { encoding: "utf8", maxBuffer: 1 << 26 });
   if (run.status !== 0) throw new Error(`${c.name}: ${run.stderr}`);
   const footprints = run.stdout
     .trim()
