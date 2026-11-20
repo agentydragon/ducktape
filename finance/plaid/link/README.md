@@ -18,7 +18,7 @@ Both use shared `PlaidSettings`; the Link UI adds its OIDC fields through
 - `PLAID_MCP_PLAID_ENV` (`sandbox`|`production`), `PLAID_MCP_CLIENT_ID`,
   `PLAID_MCP_CLIENT_SECRET`.
 - `DATABASE_URL`: writer URL, usually CNPG secret `plaid-mcp-db-app`.
-- `PLAID_MCP_PUBLIC_BASE_URL`: UI origin, default `https://plaid-mcp.allegedly.works`.
+- `PLAID_MCP_PUBLIC_BASE_URL`: UI origin; required. The cluster ConfigMap sets `https://plaid-mcp.allegedly.works`.
 - `PLAID_MCP_WEBHOOK_URL`: set on new Link tokens and updated on existing Items during sync;
   keep it aligned with the `/webhooks/plaid` route.
 - `PLAID_MCP_TRANSACTION_DAYS`: history depth requested when Transactions is first linked.

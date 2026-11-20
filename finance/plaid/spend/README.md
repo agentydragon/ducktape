@@ -259,26 +259,19 @@ reads on the next request.
 
 Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
 clients. Portfolio reads execute SQLAlchemy Select builders against active accounts, the latest complete capture for
-each Item, and its explicit per-account coverage. Capture IDs identify batches; timestamps describe observation time.
-Convert header timestamps to timezone-aware `datetime` objects, validate them as `AccountObservation` /
-`HoldingObservation`, and pass holdings for the configured correction/exclusion accounts. Successful calls return
-`PlaidValuation` with named gross assets, signed liabilities and exclusions in USD cents. Unavailable data raises
-`PlaidValuationError`; it never returns a zero-valued portfolio. `corrected_holding_value` applies the same
-exact-position policy corrections to allocation detail rows.
+each Item, and its explicit per-account coverage. Convert header timestamps to timezone-aware `datetime` objects,
+validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for the configured correction/exclusion
+accounts. Successful calls return `PlaidValuation` with named gross assets, signed liabilities and exclusions in USD
+cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued portfolio.
+`corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
 
 For each account with corrections or exclusions, Spend takes the current balance, currency and observation time from
 that same holdings capture's account-coverage row. Other selected accounts continue to use their latest balance
-snapshots. The account's holdings must carry the same capture ID; timestamp equality does not identify a batch. The
-latest Item capture must explicitly cover every required account, with no fallback to an older capture. A covered
-capture with no holding rows means zero current positions, so an excluded or corrected security absent from that
-complete capture has value zero. An uncovered or never-captured account remains unavailable. This keeps ordinary
-accounts usable with transaction-only freshness while requiring a coherent holding observation wherever policy
-adjustments depend on positions.
-
-A successful `/investments/holdings/get` API event whose ID is greater than the selected capture's API event ID is
-treated as unapplied and makes a required holding read unavailable. This catches responses with no positions or whose
-application did not commit; a later complete capture moves the boundary past that event. Every holding row references
-a capture, and capture IDs identify batches.
+snapshots. [Holdings captures](../db/README.md#holdings-captures) define which capture is current and when a read
+fails closed. A covered capture with no holding rows means zero current positions, so an excluded or corrected
+security absent from that complete capture has value zero. An uncovered or never-captured account, or an unapplied
+holdings event, leaves a required holding read unavailable. This keeps ordinary accounts usable with transaction-only
+freshness while requiring a coherent holding observation wherever policy adjustments depend on positions.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are
