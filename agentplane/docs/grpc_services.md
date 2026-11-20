@@ -209,8 +209,8 @@ Other explicit plaintext dial paths reviewed for this change:
 - `agentplane/egress/sidecar/internal/relay/platform_routes.go`: the sidecar's explicitly plaintext telemetry route
   forwards to Alloy over an in-cluster network connection. This is a real plaintext hop for telemetry; it carries no
   bearer and is not an Agentplane backend service RPC.
-- `agentplane/cli/client.go`: an explicitly configured `http://` Action Service endpoint uses plaintext and can carry
-  the CLI's configured bearer. This is a user-directed CLI connection, not an internal service-to-service hop.
+- `agentplane/cli/internal/invocation/client.go`: an explicitly configured `http://` service endpoint uses plaintext and
+  can carry the CLI's configured bearer. This is a user-directed CLI connection, not an internal service-to-service hop.
 - `agentplane/env/runtime/execution/companion/control/control.go` uses a protected Unix socket, and
   `agentplane/firecracker/host/guest_management.go` uses vsock. These are local IPC transports, not network service hops.
 

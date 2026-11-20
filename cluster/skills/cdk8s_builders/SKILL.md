@@ -160,7 +160,7 @@ mebibytes/gibibytes before formatting (`container.ts`), which is why `EphemeralS
 only accepts whole gibibytes (this repo's own gotcha above). That is a quirk of `Container`'s
 internal representation, not a pattern to imitate in a new wrapper: `Container`'s own
 `resources=` keeps passing `Cpu`/`Size` objects straight through (`CpuResources(request=Cpu.millis(50))`,
-already the established pattern throughout this repo, e.g. `agentplane/actions.py`) and does the
+already the established pattern throughout this repo, e.g. `cluster/cdk8s/agentplane/actions.py`) and does the
 mebibyte/gibibyte forcing itself, internally. A raw CRD field has no such internal step and no
 requirement to match `Container`'s unit choice — `as_string()` in whatever unit the caller
 constructed is correct and simpler.

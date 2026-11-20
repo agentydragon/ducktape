@@ -325,7 +325,7 @@ unverified around it (operator-facing summary: `haku/docs/security.md`):
       when AnkiWeb's side is empty, so the collection is pushed to the dedicated AnkiWeb account
       straight away. Also consider dropping `optional: true` so a missing Secret is loud.
 - [ ] Enforce at two layers. Agentplane egress enforces each account's host rules at L7, but its
-      Pods have open 80/443 (`cilium.open_internet_egress` in `agentplane/egress.py`), so a proxy
+      Pods have open 80/443 (`cilium.open_internet_egress` in `cluster/cdk8s/agentplane/egress.py`), so a proxy
       bug is not backstopped at L3/L4.
 - [ ] Route cluster-internal traffic through the proxies too. The haku-ci runner
       (`_PROXY_ENV` in `cluster/cdk8s/haku_ci/runner.py`) sets `NO_PROXY` to
