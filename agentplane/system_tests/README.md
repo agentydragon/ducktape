@@ -16,6 +16,7 @@ in [the egress spec](../egress/SPEC.md).
 | [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap and networking         |
 | [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance     |
 | [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence        |
+| [`debug/`](debug/README.md)             | Dated investigations and evidence, with `k3s/debug/` |
 
 Offline tests stay beside the helper they exercise. The deployment guide owns stack setup and
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
@@ -108,6 +109,8 @@ for VM image layout and lifecycle.
   Pod is replaced, and a prior failed turn remains retained before a new command is sent.
 - `test_delegation` continues an external MCP Connection with the app scaled down; the separate
   `test_parent_delegation` case drives a child Session through the actual `agentplane` CLI.
+- [`dcr.md`](dcr.md) covers external-client dynamic registration: the SDK component test
+  `//agentplane/mcp_edge/internal/authserver:sdk_dcr_test` and the deployed-edge scenario in `test_services_mcp`.
 - MCP operator login reads one named test Secret from the fixture API and keeps credentials in
   memory. The caller suppresses HTTP logging and refuses pytest `--showlocals` for the full exchange;
   do not add credential-bearing traces or artifacts ([`test_actions.py`](suites/mcp/test_actions.py),
