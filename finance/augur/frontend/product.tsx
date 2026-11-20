@@ -309,7 +309,7 @@ function RolloutResultsPanel({
 
 // The Product surface: owns the comparison scenario set (Base + variants), fans out one metric-fan
 // request per scenario over a shared seed set, and renders the editor, stat cards, and rollout
-// results. Shared controls (rollout count / seed / model / horizon / scale / currency) are owned by
+// results. Shared controls (rollout count / seed / model / horizon / scale) are owned by
 // the app shell and passed in; this component owns only product-tab state.
 export function ProductProjectionWorkspace({
   sharedControlsSlot,

@@ -99,7 +99,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
-        ":header",
         ":rollout_event_vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -380,7 +379,6 @@ ts_library(
         ":calibration",
         ":client",
         ":header",
-        ":hooks",
         ":input_helpers",
         ":product",
         ":skeleton",

@@ -16,10 +16,8 @@ import {
   tabFromSearch,
   writeTabToSearch,
   type AugurTab,
-  type CurrencyDisplay,
 } from "./header";
 import { ProductProjectionLoading } from "./skeleton";
-import { CurrencyDisplayProvider } from "./hooks";
 import {
   rolloutCountFromSearch,
   rolloutCountDefault,
@@ -62,10 +60,6 @@ function writeHorizonMonthsToSearch(value: number | null, bootstrap: Bootstrap) 
 
 function writeMetricScaleToSearch(value: MetricScale) {
   replaceSearchParams({ scale: value === "log" ? "log" : null });
-}
-
-function currencyDisplayFromSearch(searchString: string): "exact" | "compact" {
-  return new URLSearchParams(searchString).get("fmt") === "exact" ? "exact" : "compact";
 }
 
 function BudgetAppSurface({
@@ -154,9 +148,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     horizonMonthsFromSearch(window.location.search, bootstrap)
   );
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
-  const [currencyDisplay, setCurrencyDisplay] = useState<CurrencyDisplay>(() =>
-    currencyDisplayFromSearch(window.location.search)
-  );
   const [settingsOpen, setSettingsOpen] = useState(true);
 
   const onSelectTab = (next: AugurTab) => {
@@ -186,11 +177,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     writeMetricScaleToSearch(value);
   };
 
-  const onChangeCurrencyDisplay = (value: CurrencyDisplay) => {
-    setCurrencyDisplay(value);
-    replaceSearchParams({ fmt: value !== "compact" ? "exact" : null });
-  };
-
   const sharedProps = {
     sharedControlsSlot: (
       <SharedControls
@@ -202,8 +188,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
         models={bootstrap.models}
         metricScale={metricScale}
         onChangeMetricScale={onChangeMetricScale}
-        currencyDisplay={currencyDisplay}
-        onChangeCurrencyDisplay={onChangeCurrencyDisplay}
         settingsOpen={settingsOpen}
         onChangeSettingsOpen={setSettingsOpen}
       />
@@ -219,19 +203,9 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     onChangeHorizonMonths,
     metricScale,
   };
-  let surface: ReactNode;
-  if (tab === "calibration") {
-    surface = <CalibrationAppSurface {...sharedProps} />;
-  } else if (tab === "budget") {
-    surface = <BudgetAppSurface {...sharedProps} />;
-  } else {
-    surface = <ProductProjectionWorkspace {...sharedProps} />;
-  }
-  return (
-    <CurrencyDisplayProvider value={{ display: currencyDisplay, setDisplay: onChangeCurrencyDisplay }}>
-      {surface}
-    </CurrencyDisplayProvider>
-  );
+  if (tab === "calibration") return <CalibrationAppSurface {...sharedProps} />;
+  if (tab === "budget") return <BudgetAppSurface {...sharedProps} />;
+  return <ProductProjectionWorkspace {...sharedProps} />;
 }
 
 function ProductProjectionAppShell() {
