@@ -102,6 +102,47 @@ func TestStreamCompletion(t *testing.T) {
 	}
 }
 
+// Staging LiteLLM 1.103.0 appended this usage-bearing empty choice after a
+// finished TabbyAPI response on 2026-11-20.
+func TestTrailingUsageChoice(t *testing.T) {
+	const stop = `{"id":"chat","choices":[{"index":0,"delta":{"content":"Done"},"finish_reason":"stop"}]}`
+	for _, tc := range []struct {
+		name, trailing string
+		accept         bool
+	}{
+		{name: "empty choice with usage", trailing: `{"id":"chat","choices":[{"index":0,"delta":{}}],"usage":{"total_tokens":251}}`, accept: true},
+		{name: "empty choice and null finish", trailing: `{"id":"chat","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"total_tokens":251}}`, accept: true},
+		{name: "missing usage", trailing: `{"id":"chat","choices":[{"index":0,"delta":{}}]}`},
+		{name: "null usage", trailing: `{"id":"chat","choices":[{"index":0,"delta":{}}],"usage":null}`},
+		{name: "late content", trailing: `{"id":"chat","choices":[{"index":0,"delta":{"content":"late"}}],"usage":{"total_tokens":251}}`},
+		{name: "late tool", trailing: `{"id":"chat","choices":[{"index":0,"delta":{"tool_calls":[{}]}}],"usage":{"total_tokens":251}}`},
+		{name: "unknown delta", trailing: `{"id":"chat","choices":[{"index":0,"delta":{"audio":"late"}}],"usage":{"total_tokens":251}}`},
+		{name: "unknown choice", trailing: `{"id":"chat","choices":[{"index":0,"delta":{},"logprobs":{}}],"usage":{"total_tokens":251}}`},
+		{name: "repeated finish", trailing: `{"id":"chat","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":251}}`},
+		{name: "wrong index", trailing: `{"id":"chat","choices":[{"index":1,"delta":{}}],"usage":{"total_tokens":251}}`},
+		{name: "null delta", trailing: `{"id":"chat","choices":[{"index":0,"delta":null}],"usage":{"total_tokens":251}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := readStream(t.Context(), sse(stop, tc.trailing, "[DONE]"), nil, false, protocol.ProviderHooks{})
+			if !tc.accept {
+				if err == nil || result != nil {
+					t.Fatalf("accepted invalid trailing choice: %+v", result)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Audit.FinishReason != "stop" || result.ContextTokens == nil || *result.ContextTokens != 251 || !bytes.Contains(result.Audit.Usage, []byte(`"total_tokens":251`)) || !bytes.Contains(result.Record, []byte(`"content":"Done"`)) {
+				t.Fatalf("lost result or usage: %+v", result)
+			}
+		})
+	}
+	if result, err := readStream(t.Context(), sse(stop, `{"id":"chat","choices":[{"index":0,"delta":{}}],"usage":{"total_tokens":251}}`), nil, false, protocol.ProviderHooks{}); err == nil || result != nil {
+		t.Fatalf("accepted stream without DONE: %+v %v", result, err)
+	}
+}
+
 func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	c := &Context{}
 	if err := c.AppendRecords([]json.RawMessage{

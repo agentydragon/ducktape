@@ -179,8 +179,14 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 	}
 	progress := false
 	if len(c.Choices) > 0 {
-		if len(c.Choices) != 1 || c.Choices[0].Index != 0 || s.audit.FinishReason != "" {
+		if len(c.Choices) != 1 || c.Choices[0].Index != 0 {
 			return false, malformed("unexpected choice")
+		}
+		if s.audit.FinishReason != "" {
+			if !isTrailingUsageChoice(raw, c.Usage) {
+				return false, malformed("unexpected choice")
+			}
+			return false, s.record(ctx, evidence, frame{Data: raw}, nil)
 		}
 		choice := c.Choices[0]
 		d := choice.Delta
@@ -217,6 +223,39 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 		progress = d.Content != "" || d.Reasoning != "" || len(d.ToolCalls) > 0 || choice.FinishReason != ""
 	}
 	return progress, s.record(ctx, evidence, frame{Data: raw}, observations)
+}
+
+// LiteLLM can attach a usage-only chunk to an empty choice after the finish
+// marker. Reject any unknown choice or delta fields so that later content is
+// never silently discarded.
+func isTrailingUsageChoice(raw, usage json.RawMessage) bool {
+	if len(usage) == 0 || bytes.Equal(bytes.TrimSpace(usage), []byte("null")) {
+		return false
+	}
+	var body struct {
+		Choices []map[string]json.RawMessage `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil || len(body.Choices) != 1 {
+		return false
+	}
+	choice := body.Choices[0]
+	if !bytes.Equal(bytes.TrimSpace(choice["index"]), []byte("0")) {
+		return false
+	}
+	for key := range choice {
+		if key != "index" && key != "delta" && key != "finish_reason" {
+			return false
+		}
+	}
+	if finish, ok := choice["finish_reason"]; ok && !bytes.Equal(bytes.TrimSpace(finish), []byte("null")) {
+		return false
+	}
+	delta := bytes.TrimSpace(choice["delta"])
+	if len(delta) == 0 || delta[0] != '{' {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	return json.Unmarshal(delta, &fields) == nil && len(fields) == 0
 }
 
 func mergeStable(dst *string, value string) bool {
