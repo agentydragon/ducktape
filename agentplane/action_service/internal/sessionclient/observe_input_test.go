@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -553,5 +554,19 @@ func TestObserveInputReadOncePersistsDispatcherCheckpoint(t *testing.T) {
 	position, err := decodeResumeToken(got.Observation.ResumeToken, testSessionID, testCommandID)
 	if err != nil || position.DispatchToken != "test-read-once-position" || got.Dispatch.Kind != SourceObserved {
 		t.Fatalf("read-once checkpoint = %+v result=%+v, %v", position, got, err)
+	}
+}
+
+func TestNewSourceErrorReportsTheCodeWithoutBackendDetail(t *testing.T) {
+	const detail = "test-only backend secret"
+	for code := codes.Canceled; code <= codes.Unauthenticated; code++ {
+		want := code
+		if code == codes.Unknown {
+			want = codes.Unavailable
+		}
+		got := NewSourceError(status.Error(code, detail))
+		if got.Code != want.String() || got.Message == "" || strings.Contains(got.Message, detail) {
+			t.Errorf("%v became %+v", code, got)
+		}
 	}
 }
