@@ -14,7 +14,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
@@ -25,48 +24,26 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 type directExecutionTestClient struct {
 	ctx         context.Context
-	cancel      context.CancelFunc
-	conn        *grpc.ClientConn
 	runtime     environmentruntimepb.EnvironmentRuntimeClient
 	harnessHost harnesshostpb.HarnessHostClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	stopWatch   func() error
-	bootID      string
 	incarnation string
 	identity    configuration.SandboxIdentity
 }
 
 func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string) *directExecutionTestClient {
 	t.Helper()
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
+	conn := dialControl(t, serveControl(t, r), r.security, "")
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
-	credentials, err := r.security.ClientCredentials("")
-	if err != nil {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		t.Fatal(err)
-	}
+	t.Cleanup(cancel)
 	runtimeClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	bindTestIncarnation(t, runtimeClient, r.config.Launch.Sandbox.UID, incarnation)
 	watchCtx, stopWatch := context.WithCancel(ctx)
@@ -75,35 +52,15 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	})
 	if err != nil {
 		stopWatch()
-		cancel()
-		_ = conn.Close()
-		server.Stop()
-		_ = listener.Close()
 		t.Fatal(err)
 	}
 	first, err := watch.Recv()
 	if err != nil {
-		cancel()
-		_ = conn.Close()
-		server.Stop()
-		_ = listener.Close()
 		t.Fatal(err)
 	}
-	callCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		control.SandboxMetadata, r.config.Launch.Sandbox.UID,
-		control.IncarnationMetadata, incarnation,
-		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
-	)
-	t.Cleanup(func() {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		_ = conn.Close()
-	})
 	return &directExecutionTestClient{
-		ctx: ctx, cancel: cancel, conn: conn, runtime: runtimeClient, harnessHost: harnesshostpb.NewHarnessHostClient(conn),
-		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx, stopWatch: func() error {
+		ctx: ctx, runtime: runtimeClient, harnessHost: harnesshostpb.NewHarnessHostClient(conn),
+		executor: executorpb.NewExecutorClient(conn), stopWatch: func() error {
 			stopWatch()
 			for {
 				if _, err := watch.Recv(); err != nil {
@@ -111,7 +68,8 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 				}
 			}
 		},
-		bootID: first.GetEnvironmentRuntimeBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
+		callCtx:     fencedContext(ctx, r.config.Launch.Sandbox.UID, incarnation, first.GetEnvironmentRuntimeBootId()),
+		incarnation: incarnation, identity: r.config.Launch.Sandbox,
 	}
 }
 
@@ -146,13 +104,7 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
 		return err
 	}
 	h.incarnation = incarnation
-	h.bootID = first.GetEnvironmentRuntimeBootId()
-	h.callCtx = metadata.AppendToOutgoingContext(
-		h.ctx,
-		control.SandboxMetadata, h.identity.UID,
-		control.IncarnationMetadata, incarnation,
-		control.BootMetadata, h.bootID,
-	)
+	h.callCtx = fencedContext(h.ctx, h.identity.UID, incarnation, first.GetEnvironmentRuntimeBootId())
 	h.stopWatch = func() error {
 		stopWatch()
 		for {

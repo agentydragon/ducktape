@@ -102,15 +102,6 @@ func (h *StartHandle) Stdin() *os.File   { return h.stdin }
 func (h *StartHandle) Stdout() io.Reader { return h.stdout }
 func (h *StartHandle) Stderr() io.Reader { return h.stderr }
 
-func (h *StartHandle) StartState() StartState {
-	h.observationMu.Lock()
-	defer h.observationMu.Unlock()
-	return h.observation.StartState
-}
-
-func (h *StartHandle) Accepted() bool    { return h.StartState() == StartAccepted }
-func (h *StartHandle) Unconfirmed() bool { return h.StartState() == StartUnconfirmed }
-
 // Observe subscribes to manager evidence and replays the latest observation.
 func (h *StartHandle) Observe(sink func(Observation)) {
 	h.observationMu.Lock()

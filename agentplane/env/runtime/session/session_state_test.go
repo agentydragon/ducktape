@@ -75,16 +75,45 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 }
 
+// newTestStore opens the retained Session store under root, backed by resources.
+func newTestStore(t *testing.T, root string, resources state.State) *retained.Store {
+	t.Helper()
+	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+// newTestRecord returns the retained record of a Session hosted by the test Sandbox.
+func newTestRecord(t *testing.T, kind sessionpb.Harness, cwd, setup string) *retained.Record {
+	t.Helper()
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: cwd, Model: "test-model",
+	}, setup, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// writeTestRecord stores a new test Session's record under id and returns it.
+func writeTestRecord(t *testing.T, store *retained.Store, id string, kind sessionpb.Harness, cwd, setup string) *retained.Record {
+	t.Helper()
+	record := newTestRecord(t, kind, cwd, setup)
+	if err := store.Write(id, record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
 func newSessionTestManager(t *testing.T, environment map[string]string) (context.Context, string, state.State, *retained.Store, *Manager) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
 	manager, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
 		HarnessEnvironment: environment,
@@ -118,12 +147,7 @@ func reserveTestSession(t *testing.T, ctx context.Context, manager *Manager, sto
 
 func reserveTestSessionWithHarness(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string, kind sessionpb.Harness) *Session {
 	t.Helper()
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: cwd, Model: "test-model",
-	}, setup, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := newTestRecord(t, kind, cwd, setup)
 	s, err := manager.ReserveFresh(ctx, id, func() error { return store.Write(id, record) })
 	if err != nil {
 		t.Fatal(err)

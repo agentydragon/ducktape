@@ -27,7 +27,7 @@ func TestSystemdScopeIdentity(t *testing.T) {
 	const stateDir, sandboxUID = "/state/sandbox", "sandbox-uid"
 	identities := make(map[string]SystemdScopeID)
 	for _, scope := range []SystemdScopeID{SystemdEnvironmentRuntimeScopeID, "harness", "execution-service"} {
-		owner := SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: scope}
+		owner := RuntimeOwner(scope)
 		identity := systemdScopeIdentity(stateDir, sandboxUID, owner)
 		if want := stateDir + "\x00" + sandboxUID + "\x00" + string(scope); identity != want {
 			t.Fatalf("scope %q identity = %q, want %q", scope, identity, want)

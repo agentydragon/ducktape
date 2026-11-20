@@ -93,7 +93,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			live := p != nil && p.Running()
 			server.mu.Unlock()
 			if live && desiredState.Mode == lifecycle.Running && environmentGeneration == desiredState.Generation {
-				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+				ready, dependencyErr, err := server.executorDependency(ctx, &current, time.Now())
 				if err != nil {
 					return err
 				}
@@ -236,7 +236,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	server.mu.Unlock()
 	if initializing != nil {
 		if !current.ExecServerReadyDeadline.IsZero() {
-			ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+			ready, dependencyErr, err := server.executorDependency(ctx, &current, time.Now())
 			if err != nil {
 				return err
 			}
@@ -271,7 +271,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				return write()
 			}
 			if current.Phase == Initializing && current.EnvironmentGeneration == desiredState.Generation {
-				ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+				ready, dependencyErr, err := server.executorDependency(ctx, &current, time.Now())
 				if err != nil {
 					return err
 				}
@@ -324,7 +324,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return write()
 	}
 
-	ready, dependencyErr, err := server.executorDependency(ctx, r, &current, time.Now())
+	ready, dependencyErr, err := server.executorDependency(ctx, &current, time.Now())
 	if err != nil {
 		return err
 	}
@@ -390,12 +390,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	return nil
 }
 
-func (server *Host) executorDependency(
-	ctx context.Context,
-	r controller.QRuntime,
-	current *Status,
-	now time.Time,
-) (bool, error, error) {
+func (server *Host) executorDependency(ctx context.Context, current *Status, now time.Time) (bool, error, error) {
 	if server.deps.ExecServerURL == "" {
 		return true, nil, nil
 	}

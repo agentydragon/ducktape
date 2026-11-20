@@ -130,7 +130,6 @@ def test_runner_accepts_model_config_target() -> None:
         {"harness_environment": {"inherit": ["NAME=value"]}},
         {"harness_environment": {"values": {"": "value"}}},
         {"codex": {"binary": "/test/codex"}},
-        {"control": {"target": "gateway.test:7100", "bearer": "legacy-token"}},
         {
             "control": {
                 "listen_address": "127.0.0.1:8090",
@@ -144,20 +143,6 @@ def test_runner_accepts_model_config_target() -> None:
         {
             "control": {
                 "listen_address": "host:notaport",
-                "security": {
-                    "mode": "mtls",
-                    "tls": {
-                        "cert_file": "/run/test/tls.crt",
-                        "key_file": "/run/test/tls.key",
-                        "ca_file": "/run/test/ca.crt",
-                    },
-                },
-            }
-        },
-        {
-            "control": {
-                "listen_address": "0.0.0.0:8090",
-                "target": "gateway.test:7100",
                 "security": {
                     "mode": "mtls",
                     "tls": {
@@ -215,13 +200,6 @@ def test_runner_accepts_model_config_target() -> None:
                 "kind": "pod",
                 "supervision": "pid1",
                 "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative"},
-            }
-        },
-        {
-            "environment": {
-                "kind": "pod",
-                "supervision": "pid1",
-                "executor": {"url": "ws://127.0.0.1:4501", "socket": "/test/socket", "root": "/test/cgroup"},
             }
         },
         {"unexpected": "value"},

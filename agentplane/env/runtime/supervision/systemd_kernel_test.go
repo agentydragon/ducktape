@@ -71,9 +71,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		return job, err
 	}
 	stateDir := "/state/testing/supervision/proof"
-	runtimeOwner := SystemdOwner{
-		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID,
-	}
+	runtimeOwner := RuntimeOwner(SystemdEnvironmentRuntimeScopeID)
 	supervisor := reconcileKernelSystemdScope(t, launcher, stateDir, sandboxUID, runtimeOwner)
 	// These cases deliberately inject stale markers and uncertain launch replies.
 	if err := launcher.configureScope(stateDir, sandboxUID, runtimeOwner); err != nil {
@@ -98,7 +96,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 
 	t.Run("stale_runtime_invocation_cannot_execute", func(t *testing.T) {
 		stale := *launcher
-		stale.lifetimeMarker = filepath.Join(runtimeLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
+		stale.lifetimeMarker = filepath.Join(runtimeOwner.LifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
 		effect := filepath.Join(dir, "stale-runtime-effect")
 		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, StopGrace: fixtureStopGrace})
 		if err != nil {

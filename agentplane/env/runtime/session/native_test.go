@@ -380,10 +380,7 @@ func frameTestSessionWithHarness(t *testing.T, command []string, withController 
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
 	engine, err := cosiruntime.NewRuntime(resources, zap.L())
 	if err != nil {
 		t.Fatal(err)
@@ -451,10 +448,7 @@ func frameTestSessionWithHarness(t *testing.T, command []string, withController 
 			t.Error(err)
 		}
 	}()
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: root, Model: "test"}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := newTestRecord(t, kind, root, "")
 	s, err := m.ReserveFresh(ctx, "session", func() error { return store.Write("session", record) })
 	if err != nil {
 		t.Fatal(err)
@@ -776,10 +770,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := newTestRecord(t, sessionpb.Harness_HARNESS_CLAUDE, t.TempDir(), "")
 	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) }}
 	s := newSession(deps, "session-1", record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}

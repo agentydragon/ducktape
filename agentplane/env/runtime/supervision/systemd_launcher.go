@@ -37,6 +37,11 @@ type SystemdOwner struct {
 	ScopeID           SystemdScopeID
 }
 
+// RuntimeOwner is the Environment Runtime service, with the scope's native processes bound to its invocation.
+func RuntimeOwner(scope SystemdScopeID) SystemdOwner {
+	return SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: scope}
+}
+
 // SystemdLauncher describes systemd-owned containment, independently of a launch.
 // Scope declarations snapshot this configuration before reconciliation performs I/O.
 type SystemdLauncher struct {
