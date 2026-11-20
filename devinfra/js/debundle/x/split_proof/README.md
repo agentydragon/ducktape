@@ -5,6 +5,8 @@ ES modules come out, and Lean checks that the split is a valid reshuffle.
 
 This is an experiment. It does not use the `debundle` code; nothing here imports it.
 
+The intended replacement must support the JavaScript syntax actually used across all configured `gaffer-private` debundle inputs. Broader syntax support is welcome. This is a requirement for the replacement, not a claim that the experiment supports it today.
+
 Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order` or `--splits`).
 It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
 `run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
