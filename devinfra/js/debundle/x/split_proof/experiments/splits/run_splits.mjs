@@ -15,7 +15,7 @@
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile, appendFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,7 +75,7 @@ else if (strategy === "random")
   for (const k of [2, 3, 5, 8]) for (let seed = 1; seed <= seeds; seed++) plans.push({ strategy, args: [k, seed] });
 else throw new Error(`unknown strategy ${strategy}`);
 
-await writeFile(out, "");
+const lines = [];
 const tally = {};
 let next = 0;
 async function worker() {
@@ -114,7 +114,7 @@ async function worker() {
         node,
         detail,
       };
-      await appendFile(out, `${JSON.stringify(line)}\n`);
+      lines.push(line);
       const key = `${verdict}/${node}`;
       tally[key] = (tally[key] ?? 0) + 1;
     } finally {
@@ -123,6 +123,16 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: jobs }, worker));
+// the workers finish in any order: one order for every run keeps a rerun's diff to what changed
+const order = (a, b) =>
+  a.args.length - b.args.length || a.args.reduce((d, x, i) => d || (x < b.args[i] ? -1 : x > b.args[i] ? 1 : 0), 0);
+await writeFile(
+  out,
+  lines
+    .sort(order)
+    .map((l) => `${JSON.stringify(l)}\n`)
+    .join("")
+);
 if (work) await rm(work, { recursive: true, force: true });
 console.log(`${bundle} ${strategy}: ${plans.length} splits`, tally);
 if (tally["accept/different"]) {

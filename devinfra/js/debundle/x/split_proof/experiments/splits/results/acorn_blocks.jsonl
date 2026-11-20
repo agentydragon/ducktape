@@ -1,7 +1,7 @@
-{"bundle":"acorn","strategy":"blocks","args":[4],"modules":4,"verdict":"accept","failed":[],"node":"same","detail":""}
-{"bundle":"acorn","strategy":"blocks","args":[5],"modules":5,"verdict":"accept","failed":[],"node":"same","detail":""}
 {"bundle":"acorn","strategy":"blocks","args":[2],"modules":2,"verdict":"accept","failed":[],"node":"same","detail":""}
 {"bundle":"acorn","strategy":"blocks","args":[3],"modules":3,"verdict":"reject","failed":["AssignsHome","OrderOk"],"node":"different","detail":"TypeError: Cannot set properties of undefined (setting 'enterClassBody')"}
-{"bundle":"acorn","strategy":"blocks","args":[8],"modules":8,"verdict":"accept","failed":[],"node":"same","detail":""}
+{"bundle":"acorn","strategy":"blocks","args":[4],"modules":4,"verdict":"accept","failed":[],"node":"same","detail":""}
+{"bundle":"acorn","strategy":"blocks","args":[5],"modules":5,"verdict":"accept","failed":[],"node":"same","detail":""}
 {"bundle":"acorn","strategy":"blocks","args":[6],"modules":6,"verdict":"reject","failed":["AssignsHome","OrderOk"],"node":"different","detail":"TypeError: Assignment to constant variable."}
 {"bundle":"acorn","strategy":"blocks","args":[7],"modules":7,"verdict":"accept","failed":[],"node":"same","detail":""}
+{"bundle":"acorn","strategy":"blocks","args":[8],"modules":8,"verdict":"accept","failed":[],"node":"same","detail":""}
