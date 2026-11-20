@@ -1,4 +1,4 @@
-"""Select uncached managed VM results and archive both routes for the CI experiment."""
+"""Select uncached required VM results and archive both routes for the CI experiment."""
 
 import json
 import os
@@ -42,7 +42,7 @@ def first_attempt(target: dict[str, Any]) -> str | None:
     return None
 
 
-def _managed_job_finished() -> bool:
+def _required_job_finished() -> bool:
     endpoint = "repos/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}/attempts/{GITHUB_RUN_ATTEMPT}/jobs".format_map(
         os.environ
     )
@@ -61,13 +61,13 @@ def _select(inv_id: str, label: str) -> str:
                     return selection
                 if rows[0].get("invocationStatus") == _COMPLETE:
                     return "no-fresh-result"
-            if _managed_job_finished():
+            if _required_job_finished():
                 # Re-read after GitHub signals completion, including jobs that died before Bazel started.
                 if not _json("invocation", "status", inv_id).get("invocation"):
                     return "no-invocation"
                 return first_attempt(_target(inv_id, label)) or "no-fresh-result"
         except (CLIError, subprocess.SubprocessError) as error:
-            print(f"Retrying managed result lookup: {error}", file=sys.stderr, flush=True)
+            print(f"Retrying required result lookup: {error}", file=sys.stderr, flush=True)
         time.sleep(30)
     return "observation-timeout"
 
@@ -137,23 +137,26 @@ def main() -> None:
     directory = Path(os.environ["PAIR_DIR"])
     directory.mkdir(exist_ok=True)
     run_id, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
-    managed = str(invocation_id(run_id=run_id, attempt=attempt, role="test"))
+    required = str(invocation_id(run_id=run_id, attempt=attempt, role="test"))
     shadow = str(invocation_id(run_id=run_id, attempt=attempt, role="vm-shadow"))
-    managed_label, shadow_label = os.environ["MANAGED_LABEL"], os.environ["SHADOW_LABEL"]
+    required_label, shadow_label = os.environ["REQUIRED_LABEL"], os.environ["SHADOW_LABEL"]
     manifest = directory / "pair.json"
     if sys.argv[1] == "select":
         record = {
             "sha": os.environ["GITHUB_SHA"],
             "run_id": run_id,
             "run_attempt": attempt,
-            "managed": managed,
+            "schema_version": 2,
+            "required_route": "kvm",
+            "shadow_route": "managed",
+            "required": required,
             "shadow": shadow,
-            "managed_label": managed_label,
+            "required_label": required_label,
             "shadow_label": shadow_label,
             "selection": "waiting",
         }
         _write(manifest, record)
-        record["selection"] = _select(managed, managed_label)
+        record["selection"] = _select(required, required_label)
         _write(manifest, record)
         with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
             print(f"selection={record['selection']}\nshadow_id={shadow}", file=output)
@@ -164,21 +167,21 @@ def main() -> None:
     record = json.loads(manifest.read_text())
     record["shadow_step"] = os.environ["SHADOW_OUTCOME"]
     _write(manifest, record)
-    routes = [("managed", managed, managed_label)]
+    routes = [(record["required_route"], required, required_label)]
     if record["shadow_step"] != "skipped":
-        routes.append(("shadow", shadow, shadow_label))
+        routes.append((record["shadow_route"], shadow, shadow_label))
     failures = []
     for route, inv_id, label in routes:
         try:
-            if route == "managed" and record["selection"] == "fresh":
-                # KVM may finish while the managed retry is still running.
+            if route == record["required_route"] and record["selection"] == "fresh":
+                # The shadow can finish while the required suite retries.
                 for _ in range(60):
                     rows = _json("invocation", "status", inv_id).get("invocation", [])
                     if rows and rows[0].get("invocationStatus") == _COMPLETE:
                         break
                     time.sleep(15)
                 else:
-                    failures.append("managed: invocation still incomplete at archive deadline")
+                    failures.append(f"{route}: invocation still incomplete at archive deadline")
             _collect(directory / route, inv_id, label)
         except (CLIError, ValueError, ElementTree.ParseError) as error:
             failures.append(f"{route}: {error}")

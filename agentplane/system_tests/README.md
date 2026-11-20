@@ -43,14 +43,17 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
+| `//agentplane/system_tests/suites:test_vm`                             | Required Claude and Codex VM scenarios on hosted KVM  |
+| `//agentplane/system_tests/suites:test_vm_tcg`                         | Same VM scenarios on managed QEMU, devel shadow       |
 | `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
 | `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
 | `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |
 | `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling            |
-| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Cold KVM comparison, manual                           |
 
-`test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
+See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests) for pool selection and the paired evidence.
+
+`test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
