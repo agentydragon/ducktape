@@ -28,7 +28,7 @@ from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.sampler.testing import Endpoint, create_request, service, settings, submit_input, turn_completed
-from agentplane.sampler.testing_store import Store
+from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.sqlalchemy_engines import postgres_async_engine
 
@@ -72,6 +72,10 @@ class ExecutorProxy:
     dropped_count: int = 0
 
 
+def is_process_start(call: dict[str, Any], marker: str) -> bool:
+    return call.get("method") == "StartProcess" and marker in json.dumps(call.get("argv", []))
+
+
 @asynccontextmanager
 async def faulting_executor_proxy(
     execution_target: str, *, drop_method: str, marker: str, drop_count: int = 1, prior_output_marker: str | None = None
@@ -82,14 +86,13 @@ async def faulting_executor_proxy(
     def as_dict(value: Any) -> dict[str, Any]:
         return MessageToDict(value, preserving_proto_field_name=True)
 
-    def is_target_start(request: dict[str, Any]) -> bool:
-        return request.get("method") == "StartProcess" and marker in json.dumps(request.get("argv", []))
-
     def is_target(request: dict[str, Any], response: Any) -> bool:
         if drop_method == "process/start":
-            return is_target_start(request)
+            return is_process_start(request, marker)
         if drop_method == "process/read":
-            target_processes = {start.get("process_id") for start in observed.requests if is_target_start(start)}
+            target_processes = {
+                start.get("process_id") for start in observed.requests if is_process_start(start, marker)
+            }
             return (
                 request.get("method") == "ReadProcess"
                 and request.get("process_id") in target_processes
@@ -202,6 +205,58 @@ async def faulting_executor_proxy(
         async with serving(server, "127.0.0.1:0", grace_s=0) as port:
             observed.url = f"127.0.0.1:{port}"
             yield observed
+
+
+def find_started_process_id(proxy: ExecutorProxy, marker: str) -> str:
+    """The process started by the one `StartProcess` request whose argv carries `marker`."""
+    starts = [call for call in proxy.requests if is_process_start(call, marker)]
+    assert len(starts) == 1
+    process_id: str = starts[0]["process_id"]
+    return process_id
+
+
+async def find_start_intent(store: Store, marker: str) -> IntentSnapshot:
+    """The one `process/start` intent whose argv carries `marker`."""
+    intents = [
+        intent
+        for intent in await store.intents()
+        if intent.request.get("method") == "process/start"
+        and marker in json.dumps(intent.request.get("params", {}).get("argv"))
+    ]
+    assert len(intents) == 1
+    return intents[0]
+
+
+async def assert_process_abandoned(store: Store, process_id: str) -> None:
+    process = await store.process(int(process_id.split("-", maxsplit=1)[0]))
+    assert process is not None
+    assert process.status == "abandoned"
+
+
+def assert_reply_loss_recovered(proxy: ExecutorProxy) -> None:
+    """The proxy lost one completed reply and the sampler resumed the same executor session."""
+    assert proxy.dropped.is_set()
+    assert proxy.effect_observed.is_set()
+    assert len(proxy.sessions) == 2
+    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
+    assert "resume_session_id" not in proxy.sessions[0][0]
+    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
+    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
+
+
+async def assert_lost_start_ack_settled(proxy: ExecutorProxy, store: Store, marker: str) -> None:
+    """The start whose ack was lost ran once, was never read or replayed, and left an abandoned process."""
+    assert_reply_loss_recovered(proxy)
+    process_id = find_started_process_id(proxy, marker)
+    assert not any(
+        call.get("method") == "ReadProcess" and call.get("process_id") == process_id for call in proxy.requests
+    )
+    start_intent = await find_start_intent(store, marker)
+    assert start_intent.result is not None
+    assert start_intent.result["remote_outcome"] == "unknown"
+    assert start_intent.result["automatic_replay"] is False
+    await assert_process_abandoned(store, process_id)
+    assert all(intent.result is not None for intent in await store.intents())
 
 
 @pytest.mark.parametrize("failure", ["permanent", "failed", "429", "503", "partial", "invalid_wait"])
@@ -374,16 +429,9 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
             session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
-    assert proxy.dropped.is_set()
-    assert proxy.effect_observed.is_set()
+    assert_reply_loss_recovered(proxy)
     assert (tmp_path / "fault-marker").read_text() == "x"
-    starts = [
-        call
-        for call in proxy.requests
-        if call.get("method") == "StartProcess" and "fault-marker" in json.dumps(call.get("argv"))
-    ]
-    assert len(starts) == 1
-    process_id = starts[0]["process_id"]
+    process_id = find_started_process_id(proxy, "fault-marker")
     reads = [
         call for call in proxy.requests if call.get("method") == "ReadProcess" and call.get("process_id") == process_id
     ]
@@ -394,21 +442,8 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
     assert proxy.dropped_reply is not None
     dropped_chunks = proxy.dropped_reply["chunks"]
     assert output.encode() in b"".join(base64.b64decode(chunk["data"]) for chunk in dropped_chunks)
-    assert len(proxy.sessions) == 2
-    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
-    assert "resume_session_id" not in proxy.sessions[0][0]
-    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
-    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
-    intents = await store.intents()
-    start_intents = [
-        intent
-        for intent in intents
-        if intent.request.get("method") == "process/start"
-        and "fault-marker" in json.dumps(intent.request.get("params", {}).get("argv"))
-    ]
-    assert len(start_intents) == 1
-    assert start_intents[0].result is not None
-    assert all(intent.result is not None for intent in intents)
+    assert (await find_start_intent(store, "fault-marker")).result is not None
+    assert all(intent.result is not None for intent in await store.intents())
 
 
 async def test_lost_process_read_after_observed_output_is_catchable_without_replay(
@@ -526,15 +561,7 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
     assert proxy.dropped_count == 2
     assert (tmp_path / "fault-marker").read_text() == "x"
     assert (tmp_path / "continued-marker").read_text() == "y"
-    starts = [
-        call
-        for call in proxy.requests
-        if call.get("method") == "StartProcess" and lost_output in json.dumps(call.get("argv"))
-    ]
-    assert len(starts) == 1
-    process = await store.process(int(starts[0]["process_id"].split("-", maxsplit=1)[0]))
-    assert process is not None
-    assert process.status == "abandoned"
+    await assert_process_abandoned(store, find_started_process_id(proxy, lost_output))
     intents = await store.intents()
     assert any(intent.id == failure["intent_id"] and intent.result is not None for intent in intents)
     assert all(intent.result is not None for intent in intents)
@@ -586,39 +613,9 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
             session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
-    assert proxy.dropped.is_set()
-    assert proxy.effect_observed.is_set()
-    assert len(proxy.sessions) == 2
     assert (tmp_path / "fault-marker").read_text() == "x"
-    starts = [
-        call
-        for call in proxy.requests
-        if call.get("method") == "StartProcess" and "fault-marker" in json.dumps(call.get("argv"))
-    ]
-    assert len(starts) == 1
-    process_id = starts[0]["process_id"]
     assert (tmp_path / "continued-marker").read_text() == "y"
-    assert not any(
-        call.get("method") == "ReadProcess" and call.get("process_id") == process_id for call in proxy.requests
-    )
-    start_intents = [
-        intent
-        for intent in await store.intents()
-        if intent.request.get("method") == "process/start"
-        and "fault-marker" in json.dumps(intent.request.get("params", {}).get("argv"))
-    ]
-    assert len(start_intents) == 1
-    assert start_intents[0].result is not None
-    assert start_intents[0].result["remote_outcome"] == "unknown"
-    assert start_intents[0].result["automatic_replay"] is False
-    process = await store.process(int(process_id.split("-", maxsplit=1)[0]))
-    assert process is not None
-    assert process.status == "abandoned"
-    assert all(intent.result is not None for intent in await store.intents())
-    assert len(proxy.sessions) == 2
-    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
-    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
-    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
+    await assert_lost_start_ack_settled(proxy, store, "fault-marker")
 
 
 async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
@@ -676,38 +673,9 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
             session = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not session.blocked
 
-    assert proxy.dropped.is_set()
-    assert proxy.effect_observed.is_set()
     assert (tmp_path / "applied.txt").read_text() == marker + "\n"
     assert (tmp_path / "continued-marker").read_text() == "continued"
-    starts = [
-        call
-        for call in proxy.requests
-        if call.get("method") == "StartProcess" and marker in json.dumps(call.get("argv"))
-    ]
-    assert len(starts) == 1
-    process_id = starts[0]["process_id"]
-    assert not any(
-        call.get("method") == "ReadProcess" and call.get("process_id") == process_id for call in proxy.requests
-    )
-    patch_intents = [
-        intent
-        for intent in await store.intents()
-        if intent.request.get("method") == "process/start"
-        and marker in json.dumps(intent.request.get("params", {}).get("argv"))
-    ]
-    assert len(patch_intents) == 1
-    assert patch_intents[0].result is not None
-    assert patch_intents[0].result["remote_outcome"] == "unknown"
-    assert patch_intents[0].result["automatic_replay"] is False
-    process = await store.process(int(process_id.split("-", maxsplit=1)[0]))
-    assert process is not None
-    assert process.status == "abandoned"
-    assert all(intent.result is not None for intent in await store.intents())
-    assert len(proxy.sessions) == 2
-    executor_session_id = proxy.sessions[0][1]["execution_session_id"]
-    assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
-    assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
+    await assert_lost_start_ack_settled(proxy, store, marker)
 
 
 async def test_host_loss_settles_and_resets_javascript_session(
