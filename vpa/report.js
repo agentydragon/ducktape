@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/3e5c6e345ed85521e7f1ea0c20cf1c616080b526/";
+const currentSource = github + "blob/78cef4c59145f5a4152374e9aec967ed47dcea35/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2131`).then((r) => {
+        fetch(`${url}?v=20261120-2134`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -334,6 +334,11 @@ function Report() {
             25m CPU and 224 MiB memory while preserving the 256 MiB limit. Its
             existing singleton remained Ready.<//
           >
+          <${Text} component="p" mb=${0}
+            >The roaming-node controller has an Initial memory-request VPA
+            bounded to 64–80 MiB; its recommendation was pending and its
+            existing singleton remained Ready.<//
+          >
         <//>
         <${Paper} withBorder p="md" radius="md">
           <${Title} order=${4}>Platform Sessions providers<//>
@@ -474,8 +479,8 @@ function Report() {
       <${Title} order=${2} mt="xl">Sources and limits<//>
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
-        was observed at 20:28–20:30 UTC. The Flux source at 21:31 UTC was
-        ${" "}<${Anchor} href=${currentSource}>devel at 3e5c6e345e<//>${" "};
+        was observed at 20:28–20:30 UTC. The Flux source at 21:34 UTC was
+        ${" "}<${Anchor} href=${currentSource}>devel at 78cef4c591<//>${" "};
         Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}

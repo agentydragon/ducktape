@@ -1,15 +1,15 @@
 {
-  "collection_started_utc": "2026-11-20T21:31:18Z",
-  "collection_finished_utc": "2026-11-20T21:31:31Z",
-  "history_end_utc": "2026-11-20T21:31:31Z",
+  "collection_started_utc": "2026-11-20T21:33:50Z",
+  "collection_finished_utc": "2026-11-20T21:34:02Z",
+  "history_end_utc": "2026-11-20T21:34:02Z",
   "history_query": "max by (namespace,pod,container) (max_over_time(container_memory_working_set_bytes{container!=\"\",container!=\"POD\",pod!=\"\"}[7d]))",
   "counts": {
     "active_controllers": 233,
-    "active_direct_vpa": 193,
-    "all_vpa_objects": 227,
+    "active_direct_vpa": 194,
+    "all_vpa_objects": 228,
     "vpa_modes": {
       "Recreate": 56,
-      "Initial": 107,
+      "Initial": 108,
       "Off": 64
     },
     "active_pods": 470,
@@ -17,7 +17,7 @@
     "pod_owner_rows": 39,
     "missing_requests_cpu": 132,
     "missing_requests_memory": 132,
-    "missing_limits_cpu": 376,
+    "missing_limits_cpu": 375,
     "missing_limits_memory": 254
   },
   "workloads": [
@@ -49,7 +49,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2970.2,
+          "currentMemoryMaxMiB": 3048.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 6309.6,
           "peakSampledPods": 1
@@ -95,7 +95,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 73.3,
+          "currentMemoryMaxMiB": 73.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 101.1,
           "peakSampledPods": 1
@@ -134,7 +134,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 6980.7,
+          "currentMemoryMaxMiB": 6869.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8419.0,
           "peakSampledPods": 1
@@ -180,7 +180,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 79.2,
+          "currentMemoryMaxMiB": 79.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 116.1,
           "peakSampledPods": 1
@@ -219,7 +219,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 5132.5,
+          "currentMemoryMaxMiB": 5131.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 7407.9,
           "peakSampledPods": 1
@@ -242,7 +242,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 445.7,
+          "currentMemoryMaxMiB": 445.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 445.9,
           "peakSampledPods": 1
@@ -265,7 +265,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 85.2,
+          "currentMemoryMaxMiB": 85.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 152.3,
           "peakSampledPods": 1
@@ -304,7 +304,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 41.5,
+          "currentMemoryMaxMiB": 41.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2046.5,
           "peakSampledPods": 1
@@ -327,7 +327,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.7,
+          "currentMemoryMaxMiB": 29.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 327.5,
           "peakSampledPods": 1
@@ -490,7 +490,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 15.5,
+          "currentMemoryMaxMiB": 15.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 19.1,
           "peakSampledPods": 1
@@ -561,7 +561,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 107.3,
+          "currentMemoryMaxMiB": 107.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 134.7,
           "peakSampledPods": 1
@@ -872,7 +872,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 699.6,
+          "currentMemoryMaxMiB": 702.9,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 706.0,
           "peakSampledPods": 9
@@ -1065,7 +1065,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 191.3,
+          "currentMemoryMaxMiB": 190.5,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 297.8,
           "peakSampledPods": 9
@@ -1232,7 +1232,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 193.7,
+          "currentMemoryMaxMiB": 194.0,
           "sampledPods": 8,
           "peak7dCurrentPodMiB": 259.7,
           "peakSampledPods": 8
@@ -1332,7 +1332,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 45.0,
+          "currentMemoryMaxMiB": 44.3,
           "sampledPods": 5,
           "peak7dCurrentPodMiB": 50.6,
           "peakSampledPods": 5
@@ -1421,7 +1421,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 74.7,
+          "currentMemoryMaxMiB": 75.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 148.6,
           "peakSampledPods": 2
@@ -1665,7 +1665,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1089.6,
+          "currentMemoryMaxMiB": 1102.5,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 1279.8,
           "peakSampledPods": 9
@@ -1961,7 +1961,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 34.2,
+          "currentMemoryMaxMiB": 34.0,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 37.3,
           "peakSampledPods": 6
@@ -2141,7 +2141,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.6,
+          "currentMemoryMaxMiB": 30.1,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 31.3,
           "peakSampledPods": 9
@@ -2321,7 +2321,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 31.8,
+          "currentMemoryMaxMiB": 32.5,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 55.2,
           "peakSampledPods": 9
@@ -2680,7 +2680,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 54.3,
+          "currentMemoryMaxMiB": 54.2,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 86.8,
           "peakSampledPods": 9
@@ -2996,7 +2996,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.2,
+          "currentMemoryMaxMiB": 26.9,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 28.6,
           "peakSampledPods": 9
@@ -3132,7 +3132,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.8,
+          "currentMemoryMaxMiB": 48.5,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 77.4,
           "peakSampledPods": 9
@@ -3278,7 +3278,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 303.3,
+          "currentMemoryMaxMiB": 303.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 354.8,
           "peakSampledPods": 1
@@ -3659,7 +3659,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 436.4,
+          "currentMemoryMaxMiB": 391.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 481.1,
           "peakSampledPods": 1
@@ -3913,7 +3913,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 321.8,
+          "currentMemoryMaxMiB": 321.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 454.0,
           "peakSampledPods": 1
@@ -4008,7 +4008,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 5.3,
+          "currentMemoryMaxMiB": 5.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.8,
           "peakSampledPods": 1
@@ -4040,7 +4040,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 372.6,
+          "currentMemoryMaxMiB": 413.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 397.6,
           "peakSampledPods": 1
@@ -4167,7 +4167,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 239.4,
+          "currentMemoryMaxMiB": 239.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 289.1,
           "peakSampledPods": 1
@@ -4262,7 +4262,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2.3,
+          "currentMemoryMaxMiB": 2.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.6,
           "peakSampledPods": 1
@@ -4493,7 +4493,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 148.1,
+          "currentMemoryMaxMiB": 150.2,
           "sampledPods": 9,
           "peak7dCurrentPodMiB": 270.7,
           "peakSampledPods": 9
@@ -4696,7 +4696,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1.2,
+          "currentMemoryMaxMiB": 1.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 4.5,
           "peakSampledPods": 1
@@ -4728,7 +4728,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.6,
+          "currentMemoryMaxMiB": 10.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 11.1,
           "peakSampledPods": 1
@@ -4823,7 +4823,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2.0,
+          "currentMemoryMaxMiB": 4.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5.6,
           "peakSampledPods": 1
@@ -4855,7 +4855,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7.7,
+          "currentMemoryMaxMiB": 7.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 16.5,
           "peakSampledPods": 1
@@ -5904,7 +5904,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 352.7,
+          "currentMemoryMaxMiB": 238.8,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 1087.8,
           "peakSampledPods": 6
@@ -6045,7 +6045,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 15.8,
+          "currentMemoryMaxMiB": 15.9,
           "sampledPods": 6,
           "peak7dCurrentPodMiB": 17.2,
           "peakSampledPods": 6
@@ -6431,7 +6431,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 68.1,
+          "currentMemoryMaxMiB": 69.5,
           "sampledPods": 7,
           "peak7dCurrentPodMiB": 255.5,
           "peakSampledPods": 7
@@ -6742,7 +6742,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 75.5,
+          "currentMemoryMaxMiB": 67.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 83.8,
           "peakSampledPods": 2
@@ -6843,7 +6843,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 55.3,
+          "currentMemoryMaxMiB": 55.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 56.5,
           "peakSampledPods": 2
@@ -6944,7 +6944,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 37.9,
+          "currentMemoryMaxMiB": 40.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 40.6,
           "peakSampledPods": 2
@@ -7018,7 +7018,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 31.7,
+          "currentMemoryMaxMiB": 32.0,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 71.8,
           "peakSampledPods": 3
@@ -7066,7 +7066,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 306.2,
+          "currentMemoryMaxMiB": 306.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 438.6,
           "peakSampledPods": 1
@@ -7127,7 +7127,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 83.4,
+          "currentMemoryMaxMiB": 80.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 83.0,
           "peakSampledPods": 2
@@ -7329,7 +7329,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 54.8,
+          "currentMemoryMaxMiB": 54.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 56.2,
           "peakSampledPods": 2
@@ -7430,7 +7430,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 41.5,
+          "currentMemoryMaxMiB": 42.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 42.7,
           "peakSampledPods": 2
@@ -7531,7 +7531,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 39.3,
+          "currentMemoryMaxMiB": 37.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 47.1,
           "peakSampledPods": 2
@@ -7632,7 +7632,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 54.4,
+          "currentMemoryMaxMiB": 54.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 55.0,
           "peakSampledPods": 2
@@ -7733,7 +7733,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 56.0,
+          "currentMemoryMaxMiB": 56.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 59.6,
           "peakSampledPods": 2
@@ -7834,7 +7834,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 47.9,
+          "currentMemoryMaxMiB": 48.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 52.2,
           "peakSampledPods": 2
@@ -8312,7 +8312,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.9,
+          "currentMemoryMaxMiB": 26.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 38.9,
           "peakSampledPods": 1
@@ -8408,7 +8408,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 189.2,
+          "currentMemoryMaxMiB": 189.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 260.6,
           "peakSampledPods": 1
@@ -8456,7 +8456,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.6,
+          "currentMemoryMaxMiB": 16.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 63.7,
           "peakSampledPods": 1
@@ -8600,7 +8600,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 34.0,
+          "currentMemoryMaxMiB": 34.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 44.2,
           "peakSampledPods": 2
@@ -8873,7 +8873,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 60.4,
+          "currentMemoryMaxMiB": 60.6,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 63.7,
           "peakSampledPods": 3
@@ -9003,7 +9003,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 36.8,
+          "currentMemoryMaxMiB": 36.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 57.0,
           "peakSampledPods": 2
@@ -9069,7 +9069,7 @@
       "scope": "controller-template",
       "desiredReplicas": 2,
       "readyReplicas": 2,
-      "activePods": 3,
+      "activePods": 2,
       "containers": [
         {
           "name": "claude-session-sync",
@@ -9085,32 +9085,6 @@
           },
           "admitted": [
             {
-              "pod": "claude-session-sync-667dd84765-6r7qr",
-              "phase": "Running",
-              "node": "ovh-ns103711",
-              "requests": {
-                "cpu": "50m",
-                "memory": "256Mi"
-              },
-              "limits": {
-                "cpu": null,
-                "memory": "1Gi"
-              }
-            },
-            {
-              "pod": "claude-session-sync-667dd84765-m5xwb",
-              "phase": "Running",
-              "node": "ovh-ns102453",
-              "requests": {
-                "cpu": "50m",
-                "memory": "256Mi"
-              },
-              "limits": {
-                "cpu": null,
-                "memory": "1Gi"
-              }
-            },
-            {
               "pod": "claude-session-sync-796498f8dd-2l7fx",
               "phase": "Running",
               "node": "ovh-ns103711",
@@ -9122,11 +9096,24 @@
                 "cpu": null,
                 "memory": "1Gi"
               }
+            },
+            {
+              "pod": "claude-session-sync-796498f8dd-qqmdp",
+              "phase": "Running",
+              "node": "ovh-ns102453",
+              "requests": {
+                "cpu": "50m",
+                "memory": "256Mi"
+              },
+              "limits": {
+                "cpu": null,
+                "memory": "1Gi"
+              }
             }
           ],
-          "currentMemoryMaxMiB": 115.2,
+          "currentMemoryMaxMiB": 179.0,
           "sampledPods": 2,
-          "peak7dCurrentPodMiB": 191.2,
+          "peak7dCurrentPodMiB": 179.0,
           "peakSampledPods": 2
         }
       ],
@@ -9142,7 +9129,7 @@
       "name": "control",
       "scope": "controller-template",
       "desiredReplicas": 1,
-      "readyReplicas": 0,
+      "readyReplicas": 1,
       "activePods": 1,
       "containers": [
         {
@@ -9172,10 +9159,10 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": null,
-          "sampledPods": 0,
-          "peak7dCurrentPodMiB": null,
-          "peakSampledPods": 0
+          "currentMemoryMaxMiB": 200.6,
+          "sampledPods": 1,
+          "peak7dCurrentPodMiB": 200.6,
+          "peakSampledPods": 1
         }
       ],
       "vpas": [],
@@ -9220,7 +9207,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 134.4,
+          "currentMemoryMaxMiB": 134.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 164.2,
           "peakSampledPods": 1
@@ -9382,7 +9369,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 34.1,
+          "currentMemoryMaxMiB": 33.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 73.4,
           "peakSampledPods": 1
@@ -9414,7 +9401,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.2,
+          "currentMemoryMaxMiB": 25.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 59.0,
           "peakSampledPods": 1
@@ -9518,7 +9505,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 157.5,
+          "currentMemoryMaxMiB": 157.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 217.3,
           "peakSampledPods": 1
@@ -9594,7 +9581,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.1,
+          "currentMemoryMaxMiB": 27.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 55.8,
           "peakSampledPods": 1
@@ -9847,7 +9834,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.2,
+          "currentMemoryMaxMiB": 33.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 51.7,
           "peakSampledPods": 1
@@ -9950,7 +9937,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 28.4,
+          "currentMemoryMaxMiB": 31.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 62.9,
           "peakSampledPods": 1
@@ -10057,7 +10044,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 145.1,
+          "currentMemoryMaxMiB": 144.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 528.5,
           "peakSampledPods": 1
@@ -10164,7 +10151,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 200.8,
+          "currentMemoryMaxMiB": 203.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 703.2,
           "peakSampledPods": 1
@@ -10284,7 +10271,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 3.1,
+          "currentMemoryMaxMiB": 3.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 12.4,
           "peakSampledPods": 2
@@ -10478,7 +10465,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 77.3,
+          "currentMemoryMaxMiB": 75.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 159.5,
           "peakSampledPods": 2
@@ -10595,7 +10582,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 54.1,
+          "currentMemoryMaxMiB": 51.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 57.0,
           "peakSampledPods": 2
@@ -10703,7 +10690,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 140.3,
+          "currentMemoryMaxMiB": 107.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 259.2,
           "peakSampledPods": 1
@@ -10751,7 +10738,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 313.4,
+          "currentMemoryMaxMiB": 69.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 902.1,
           "peakSampledPods": 1
@@ -10799,7 +10786,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 158.3,
+          "currentMemoryMaxMiB": 159.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 304.2,
           "peakSampledPods": 1
@@ -10847,7 +10834,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 270.8,
+          "currentMemoryMaxMiB": 264.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 426.2,
           "peakSampledPods": 1
@@ -10895,7 +10882,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 56.8,
+          "currentMemoryMaxMiB": 56.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 77.0,
           "peakSampledPods": 1
@@ -10943,7 +10930,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 110.1,
+          "currentMemoryMaxMiB": 422.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 873.3,
           "peakSampledPods": 1
@@ -10991,7 +10978,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.2,
+          "currentMemoryMaxMiB": 43.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 76.8,
           "peakSampledPods": 1
@@ -11039,7 +11026,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 102.2,
+          "currentMemoryMaxMiB": 101.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 138.8,
           "peakSampledPods": 1
@@ -11100,7 +11087,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 300.6,
+          "currentMemoryMaxMiB": 298.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 947.1,
           "peakSampledPods": 2
@@ -11181,7 +11168,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 21.8,
+          "currentMemoryMaxMiB": 22.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 23.2,
           "peakSampledPods": 1
@@ -11366,7 +11353,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 14.5,
+          "currentMemoryMaxMiB": 13.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 106.5,
           "peakSampledPods": 2
@@ -11573,7 +11560,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1704.9,
+          "currentMemoryMaxMiB": 1704.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1887.2,
           "peakSampledPods": 1
@@ -11668,7 +11655,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 23.2,
+          "currentMemoryMaxMiB": 23.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 30.0,
           "peakSampledPods": 1
@@ -11757,7 +11744,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 45.3,
+          "currentMemoryMaxMiB": 45.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 78.8,
           "peakSampledPods": 2
@@ -11802,7 +11789,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2615.2,
+          "currentMemoryMaxMiB": 2622.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 2658.2,
           "peakSampledPods": 2
@@ -11992,7 +11979,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 11.2,
+          "currentMemoryMaxMiB": 11.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 11.8,
           "peakSampledPods": 1
@@ -12073,7 +12060,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 52.7,
+          "currentMemoryMaxMiB": 52.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 82.0,
           "peakSampledPods": 1
@@ -12235,9 +12222,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 137.8,
+          "currentMemoryMaxMiB": 137.9,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 137.9,
+          "peak7dCurrentPodMiB": 138.1,
           "peakSampledPods": 1
         }
       ],
@@ -12326,7 +12313,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 38.2,
+          "currentMemoryMaxMiB": 38.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 58.7,
           "peakSampledPods": 1
@@ -12799,7 +12786,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 20.4,
+          "currentMemoryMaxMiB": 20.1,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 23.3,
           "peakSampledPods": 3
@@ -12992,7 +12979,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.1,
+          "currentMemoryMaxMiB": 27.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 33.1,
           "peakSampledPods": 2
@@ -13073,7 +13060,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 48.0,
+          "currentMemoryMaxMiB": 48.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 132.8,
           "peakSampledPods": 1
@@ -13186,7 +13173,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 8.9,
+          "currentMemoryMaxMiB": 9.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.7,
           "peakSampledPods": 1
@@ -13469,7 +13456,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 18.7,
+          "currentMemoryMaxMiB": 18.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 31.2,
           "peakSampledPods": 1
@@ -13633,7 +13620,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 379.8,
+          "currentMemoryMaxMiB": 379.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 390.4,
           "peakSampledPods": 1
@@ -13882,7 +13869,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 67.5,
+          "currentMemoryMaxMiB": 87.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 196.0,
           "peakSampledPods": 1
@@ -14142,7 +14129,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 164.9,
+          "currentMemoryMaxMiB": 166.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 236.1,
           "peakSampledPods": 2
@@ -14231,7 +14218,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 38.5,
+          "currentMemoryMaxMiB": 38.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 40.1,
           "peakSampledPods": 2
@@ -14523,7 +14510,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 56.6,
+          "currentMemoryMaxMiB": 58.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 77.0,
           "peakSampledPods": 2
@@ -14599,7 +14586,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 133.3,
+          "currentMemoryMaxMiB": 128.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 263.3,
           "peakSampledPods": 1
@@ -14764,7 +14751,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 84.8,
+          "currentMemoryMaxMiB": 83.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 85.4,
           "peakSampledPods": 1
@@ -14853,7 +14840,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 51.4,
+          "currentMemoryMaxMiB": 51.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 64.8,
           "peakSampledPods": 2
@@ -14929,9 +14916,9 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 155.9,
+          "currentMemoryMaxMiB": 157.8,
           "sampledPods": 1,
-          "peak7dCurrentPodMiB": 155.9,
+          "peak7dCurrentPodMiB": 157.3,
           "peakSampledPods": 1
         }
       ],
@@ -15081,7 +15068,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.2,
+          "currentMemoryMaxMiB": 27.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 78.8,
           "peakSampledPods": 1
@@ -15185,7 +15172,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 239.9,
+          "currentMemoryMaxMiB": 243.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 340.2,
           "peakSampledPods": 2
@@ -15307,7 +15294,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 339.8,
+          "currentMemoryMaxMiB": 346.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 358.1,
           "peakSampledPods": 2
@@ -15381,7 +15368,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 169.3,
+          "currentMemoryMaxMiB": 169.5,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 180.0,
           "peakSampledPods": 3
@@ -15472,7 +15459,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 57.4,
+          "currentMemoryMaxMiB": 57.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 144.9,
           "peakSampledPods": 1
@@ -15576,7 +15563,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 85.0,
+          "currentMemoryMaxMiB": 83.4,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 108.9,
           "peakSampledPods": 2
@@ -15667,7 +15654,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 104.3,
+          "currentMemoryMaxMiB": 103.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 161.5,
           "peakSampledPods": 1
@@ -15758,7 +15745,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 759.6,
+          "currentMemoryMaxMiB": 764.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 892.6,
           "peakSampledPods": 1
@@ -15839,7 +15826,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 469.8,
+          "currentMemoryMaxMiB": 472.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 579.3,
           "peakSampledPods": 1
@@ -16046,7 +16033,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.1,
+          "currentMemoryMaxMiB": 13.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 15.1,
           "peakSampledPods": 1
@@ -16154,7 +16141,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 134.8,
+          "currentMemoryMaxMiB": 136.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 359.8,
           "peakSampledPods": 2
@@ -16564,7 +16551,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1818.7,
+          "currentMemoryMaxMiB": 1722.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2086.4,
           "peakSampledPods": 1
@@ -16913,7 +16900,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.9,
+          "currentMemoryMaxMiB": 10.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 12.1,
           "peakSampledPods": 1
@@ -17217,7 +17204,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 205.6,
+          "currentMemoryMaxMiB": 208.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 407.0,
           "peakSampledPods": 1
@@ -17369,7 +17356,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.3,
+          "currentMemoryMaxMiB": 24.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 27.7,
           "peakSampledPods": 1
@@ -17445,7 +17432,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 35.6,
+          "currentMemoryMaxMiB": 33.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 46.3,
           "peakSampledPods": 1
@@ -17597,7 +17584,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 106.2,
+          "currentMemoryMaxMiB": 93.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 266.5,
           "peakSampledPods": 1
@@ -17673,7 +17660,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 14.1,
+          "currentMemoryMaxMiB": 13.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 15.3,
           "peakSampledPods": 1
@@ -17749,7 +17736,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 86.4,
+          "currentMemoryMaxMiB": 123.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 159.9,
           "peakSampledPods": 1
@@ -17825,7 +17812,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 72.7,
+          "currentMemoryMaxMiB": 82.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 133.5,
           "peakSampledPods": 1
@@ -18129,7 +18116,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 40.9,
+          "currentMemoryMaxMiB": 41.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 79.3,
           "peakSampledPods": 1
@@ -18205,7 +18192,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 11.0,
+          "currentMemoryMaxMiB": 10.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 12.7,
           "peakSampledPods": 1
@@ -18281,7 +18268,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.2,
+          "currentMemoryMaxMiB": 16.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.0,
           "peakSampledPods": 1
@@ -18357,7 +18344,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 6162.5,
+          "currentMemoryMaxMiB": 6171.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 7651.4,
           "peakSampledPods": 1
@@ -18438,7 +18425,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 23.9,
+          "currentMemoryMaxMiB": 24.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 40.7,
           "peakSampledPods": 1
@@ -18555,7 +18542,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 22.1,
+          "currentMemoryMaxMiB": 32.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 36.2,
           "peakSampledPods": 1
@@ -18672,7 +18659,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 20.4,
+          "currentMemoryMaxMiB": 20.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 30.2,
           "peakSampledPods": 1
@@ -18984,7 +18971,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 17076.5,
+          "currentMemoryMaxMiB": 17055.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 18114.9,
           "peakSampledPods": 1
@@ -19060,7 +19047,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 18.6,
+          "currentMemoryMaxMiB": 17.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 25.6,
           "peakSampledPods": 1
@@ -19136,7 +19123,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 920.5,
+          "currentMemoryMaxMiB": 924.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1064.2,
           "peakSampledPods": 1
@@ -19212,7 +19199,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.4,
+          "currentMemoryMaxMiB": 16.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 18.4,
           "peakSampledPods": 1
@@ -19276,7 +19263,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 30.3,
+          "currentMemoryMaxMiB": 30.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 39.3,
           "peakSampledPods": 1
@@ -19372,7 +19359,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 16.9,
+          "currentMemoryMaxMiB": 17.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 22.6,
           "peakSampledPods": 1
@@ -19543,7 +19530,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 64.0,
+          "currentMemoryMaxMiB": 61.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 135.0,
           "peakSampledPods": 1
@@ -19786,7 +19773,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 200.9,
+          "currentMemoryMaxMiB": 201.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 257.7,
           "peakSampledPods": 1
@@ -20150,7 +20137,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 10.8,
+          "currentMemoryMaxMiB": 10.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 19.7,
           "peakSampledPods": 1
@@ -20241,7 +20228,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 481.9,
+          "currentMemoryMaxMiB": 482.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 514.5,
           "peakSampledPods": 1
@@ -20317,7 +20304,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 522.4,
+          "currentMemoryMaxMiB": 525.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 598.4,
           "peakSampledPods": 1
@@ -20950,7 +20937,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 369.2,
+          "currentMemoryMaxMiB": 369.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 506.9,
           "peakSampledPods": 1
@@ -21037,10 +21024,37 @@
           "peakSampledPods": 1
         }
       ],
-      "vpas": [],
+      "vpas": [
+        {
+          "name": "goldilocks-roaming-node-controller",
+          "mode": "Initial",
+          "minReplicas": null,
+          "containers": [
+            {
+              "containerName": "controller",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "10m",
+                "memory": "64Mi"
+              },
+              "maxAllowed": {
+                "cpu": "10m",
+                "memory": "80Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ],
+          "recommendations": []
+        }
+      ],
       "hpas": [],
-      "namespaceMode": null,
-      "namespaceEnabled": "false"
+      "namespaceMode": "off",
+      "namespaceEnabled": null
     },
     {
       "namespace": "seaweedfs",
@@ -21092,7 +21106,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 71.8,
+          "currentMemoryMaxMiB": 71.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 89.6,
           "peakSampledPods": 2
@@ -21140,7 +21154,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 187.3,
+          "currentMemoryMaxMiB": 170.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 218.3,
           "peakSampledPods": 1
@@ -21201,7 +21215,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 251.7,
+          "currentMemoryMaxMiB": 263.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 965.2,
           "peakSampledPods": 2
@@ -21249,7 +21263,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.2,
+          "currentMemoryMaxMiB": 13.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 20.4,
           "peakSampledPods": 1
@@ -21313,7 +21327,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 26.2,
+          "currentMemoryMaxMiB": 26.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 32.2,
           "peakSampledPods": 1
@@ -21590,7 +21604,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 24.3,
+          "currentMemoryMaxMiB": 24.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 27.6,
           "peakSampledPods": 1
@@ -21965,7 +21979,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 638.2,
+          "currentMemoryMaxMiB": 638.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 750.2,
           "peakSampledPods": 1
@@ -22103,7 +22117,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 29.6,
+          "currentMemoryMaxMiB": 29.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 52.1,
           "peakSampledPods": 1
@@ -22179,7 +22193,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 135.2,
+          "currentMemoryMaxMiB": 134.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 235.2,
           "peakSampledPods": 1
@@ -22368,7 +22382,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 465.8,
+          "currentMemoryMaxMiB": 461.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2360.9,
           "peakSampledPods": 1
@@ -22444,7 +22458,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 502.2,
+          "currentMemoryMaxMiB": 504.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 2374.2,
           "peakSampledPods": 1
@@ -22520,7 +22534,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 256.8,
+          "currentMemoryMaxMiB": 256.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 290.7,
           "peakSampledPods": 1
@@ -22596,7 +22610,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 338.4,
+          "currentMemoryMaxMiB": 338.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 339.9,
           "peakSampledPods": 1
@@ -22672,7 +22686,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 258.7,
+          "currentMemoryMaxMiB": 260.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 299.2,
           "peakSampledPods": 1
@@ -22868,7 +22882,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 229.6,
+          "currentMemoryMaxMiB": 229.5,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 304.6,
           "peakSampledPods": 3
@@ -22970,7 +22984,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 92.3,
+          "currentMemoryMaxMiB": 93.1,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 121.3,
           "peakSampledPods": 3
@@ -23306,7 +23320,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 25.2,
+          "currentMemoryMaxMiB": 25.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 37.9,
           "peakSampledPods": 2
@@ -23400,7 +23414,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 71.3,
+          "currentMemoryMaxMiB": 69.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 178.9,
           "peakSampledPods": 2
@@ -23553,7 +23567,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 392.3,
+          "currentMemoryMaxMiB": 387.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 870.8,
           "peakSampledPods": 2
@@ -23653,7 +23667,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 27.3,
+          "currentMemoryMaxMiB": 27.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 41.6,
           "peakSampledPods": 2
@@ -23698,7 +23712,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 13.4,
+          "currentMemoryMaxMiB": 14.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 30.1,
           "peakSampledPods": 2
@@ -23754,7 +23768,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 52.5,
+          "currentMemoryMaxMiB": 48.4,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1554.7,
           "peakSampledPods": 1
@@ -23843,7 +23857,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 2688.0,
+          "currentMemoryMaxMiB": 2695.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 3597.3,
           "peakSampledPods": 2
@@ -23919,7 +23933,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 1103.8,
+          "currentMemoryMaxMiB": 1103.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 1127.7,
           "peakSampledPods": 1
@@ -23995,7 +24009,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 696.0,
+          "currentMemoryMaxMiB": 739.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 3296.4,
           "peakSampledPods": 1
@@ -24084,7 +24098,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 326.6,
+          "currentMemoryMaxMiB": 331.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 421.3,
           "peakSampledPods": 2
@@ -24158,7 +24172,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 51.2,
+          "currentMemoryMaxMiB": 51.4,
           "sampledPods": 3,
           "peak7dCurrentPodMiB": 89.0,
           "peakSampledPods": 3
@@ -24206,7 +24220,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 172.8,
+          "currentMemoryMaxMiB": 178.1,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 923.9,
           "peakSampledPods": 1
@@ -24254,7 +24268,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 208.5,
+          "currentMemoryMaxMiB": 225.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 979.1,
           "peakSampledPods": 1
@@ -24302,7 +24316,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 162.9,
+          "currentMemoryMaxMiB": 189.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 312.6,
           "peakSampledPods": 1
@@ -24350,7 +24364,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 124.0,
+          "currentMemoryMaxMiB": 123.2,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 390.8,
           "peakSampledPods": 1
@@ -24398,7 +24412,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 241.3,
+          "currentMemoryMaxMiB": 160.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 336.1,
           "peakSampledPods": 1
@@ -24446,7 +24460,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 105.3,
+          "currentMemoryMaxMiB": 102.0,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 285.2,
           "peakSampledPods": 1
@@ -25278,7 +25292,7 @@
       "scope": "controller-template",
       "desiredReplicas": null,
       "readyReplicas": null,
-      "activePods": 0,
+      "activePods": 1,
       "containers": [
         {
           "name": "import",
@@ -25292,11 +25306,25 @@
               "memory": "2Gi"
             }
           },
-          "admitted": [],
-          "currentMemoryMaxMiB": null,
-          "sampledPods": 0,
-          "peak7dCurrentPodMiB": null,
-          "peakSampledPods": 0
+          "admitted": [
+            {
+              "pod": "ai-session-archive-import-wyrm2-29920172-gknwz",
+              "phase": "Running",
+              "node": "ovh-ns103711",
+              "requests": {
+                "cpu": "250m",
+                "memory": "512Mi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "2Gi"
+              }
+            }
+          ],
+          "currentMemoryMaxMiB": 139.2,
+          "sampledPods": 1,
+          "peak7dCurrentPodMiB": 179.8,
+          "peakSampledPods": 1
         }
       ],
       "vpas": [],
@@ -25538,7 +25566,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7394.3,
+          "currentMemoryMaxMiB": 7394.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8327.9,
           "peakSampledPods": 1
@@ -25600,7 +25628,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7378.9,
+          "currentMemoryMaxMiB": 7379.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8334.4,
           "peakSampledPods": 1
@@ -25662,7 +25690,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7787.4,
+          "currentMemoryMaxMiB": 7785.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8329.1,
           "peakSampledPods": 1
@@ -25724,7 +25752,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7698.8,
+          "currentMemoryMaxMiB": 7698.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8327.1,
           "peakSampledPods": 1
@@ -25786,7 +25814,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 4831.4,
+          "currentMemoryMaxMiB": 4831.5,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 5109.8,
           "peakSampledPods": 1
@@ -25848,7 +25876,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 7848.2,
+          "currentMemoryMaxMiB": 8030.8,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 8327.6,
           "peakSampledPods": 1
@@ -25910,7 +25938,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 584.0,
+          "currentMemoryMaxMiB": 583.6,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 611.8,
           "peakSampledPods": 1
@@ -25933,7 +25961,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 0.5,
+          "currentMemoryMaxMiB": 0.3,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 0.5,
           "peakSampledPods": 1
@@ -25985,7 +26013,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 583.7,
+          "currentMemoryMaxMiB": 590.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 3639.6,
           "peakSampledPods": 2
@@ -26037,7 +26065,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 86.3,
+          "currentMemoryMaxMiB": 88.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 103.1,
           "peakSampledPods": 2
@@ -26089,7 +26117,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 252.1,
+          "currentMemoryMaxMiB": 251.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 598.1,
           "peakSampledPods": 2
@@ -26141,7 +26169,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 317.0,
+          "currentMemoryMaxMiB": 315.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 366.4,
           "peakSampledPods": 2
@@ -26193,7 +26221,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 294.4,
+          "currentMemoryMaxMiB": 255.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 529.5,
           "peakSampledPods": 2
@@ -26245,7 +26273,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 220.0,
+          "currentMemoryMaxMiB": 221.1,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 291.9,
           "peakSampledPods": 2
@@ -26297,7 +26325,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 83.0,
+          "currentMemoryMaxMiB": 82.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 105.1,
           "peakSampledPods": 2
@@ -26349,7 +26377,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 185.7,
+          "currentMemoryMaxMiB": 211.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 483.3,
           "peakSampledPods": 2
@@ -26401,7 +26429,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 91.1,
+          "currentMemoryMaxMiB": 92.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 120.8,
           "peakSampledPods": 2
@@ -26453,7 +26481,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 120.0,
+          "currentMemoryMaxMiB": 121.0,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 155.7,
           "peakSampledPods": 2
@@ -26492,7 +26520,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 97.9,
+          "currentMemoryMaxMiB": 97.7,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 111.5,
           "peakSampledPods": 1
@@ -26544,7 +26572,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 90.2,
+          "currentMemoryMaxMiB": 91.5,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 118.4,
           "peakSampledPods": 2
@@ -26596,7 +26624,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 87.8,
+          "currentMemoryMaxMiB": 87.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 356.1,
           "peakSampledPods": 2
@@ -26648,7 +26676,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 120.5,
+          "currentMemoryMaxMiB": 120.9,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 161.5,
           "peakSampledPods": 2
@@ -26700,7 +26728,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 83.8,
+          "currentMemoryMaxMiB": 84.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 108.5,
           "peakSampledPods": 2
@@ -26752,7 +26780,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 212.1,
+          "currentMemoryMaxMiB": 211.7,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 232.2,
           "peakSampledPods": 2
@@ -26804,7 +26832,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 282.9,
+          "currentMemoryMaxMiB": 283.8,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 850.1,
           "peakSampledPods": 2
@@ -26856,7 +26884,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 82.9,
+          "currentMemoryMaxMiB": 81.6,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 107.3,
           "peakSampledPods": 2
@@ -26960,7 +26988,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 289.5,
+          "currentMemoryMaxMiB": 288.2,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 385.3,
           "peakSampledPods": 2
@@ -26999,7 +27027,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 292.1,
+          "currentMemoryMaxMiB": 300.9,
           "sampledPods": 1,
           "peak7dCurrentPodMiB": 437.0,
           "peakSampledPods": 1
@@ -27051,7 +27079,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 85.9,
+          "currentMemoryMaxMiB": 84.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 115.6,
           "peakSampledPods": 2
@@ -27103,7 +27131,7 @@
               }
             }
           ],
-          "currentMemoryMaxMiB": 69.4,
+          "currentMemoryMaxMiB": 68.3,
           "sampledPods": 2,
           "peak7dCurrentPodMiB": 171.9,
           "peakSampledPods": 2
