@@ -139,10 +139,20 @@ function WriteFields({ body }: { body: Record<string, unknown> }) {
   );
 }
 
-function EntityRow({ kind, data, objectId }: { kind: string; data: Record<string, unknown>; objectId?: number }) {
+function EntityRow({
+  kind,
+  data,
+  objectId,
+  displayName,
+}: {
+  kind: string;
+  data: Record<string, unknown>;
+  objectId?: number;
+  displayName?: string | null;
+}) {
   const parsed = apiId.safeParse(data.id);
   const id = objectId ?? (parsed.success ? parsed.data : undefined);
-  const name = textName(data);
+  const name = displayName ?? textName(data);
   const fields = [...fieldLabel.keys()].filter(
     (key) => data[key] !== undefined && data[key] !== null && data[key] !== name
   );
@@ -165,7 +175,19 @@ function EntityRow({ kind, data, objectId }: { kind: string; data: Record<string
 
 const entries = z.array(
   z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("ok"), entity_type: entity, object_id: id, data: record }),
+    z.strictObject({
+      kind: z.literal("ok"),
+      entity_type: entity,
+      object_id: id,
+      data: record,
+      shopping_item_names: z
+        .strictObject({
+          product_name: z.string().nullable(),
+          list_name: z.string().nullable(),
+          unit_name: z.string().nullable(),
+        })
+        .nullish(),
+    }),
     z.strictObject({ kind: z.literal("error"), entity_type: entity, object_id: id, error: z.string() }),
   ])
 );
@@ -174,7 +196,13 @@ const fetchedReceipt = defineResultPreview(entries, ({ result }) => (
     {result.length === 0 && <Line>No records returned</Line>}
     {result.map((row, index) =>
       row.kind === "ok" ? (
-        <EntityRow key={index} kind={row.entity_type} data={row.data} objectId={row.object_id} />
+        <EntityRow
+          key={index}
+          kind={row.entity_type}
+          data={row.data}
+          objectId={row.object_id}
+          displayName={row.shopping_item_names?.product_name}
+        />
       ) : (
         <Line key={index}>
           Failed · {subject(row.entity_type, row.object_id)} · {row.error}

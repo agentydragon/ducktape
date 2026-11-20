@@ -280,17 +280,18 @@ func TestGrocyApprovalValuesFromExactRows(t *testing.T) {
 	result := textResultForPreview(`[
 	  {"kind":"ok","entity_type":"shopping_list","object_id":52,"data":{
 	    "product_id":"2","shopping_list_id":7,"qu_id":4,"amount":"2.5","done":false,"note":"Plain"
-	  }}
+	  },"shopping_item_names":{"product_name":"Rolled oats","list_name":"Weekly shop","unit_name":"Bag"}}
 	]`)
 	item := grocyEntitySummary("shopping_list/52", result)
 	if item == nil {
 		t.Fatal("no shopping item summary")
 	}
-	if len(item.links) != 3 || item.links[0] != "products/2" || item.links[1] != "shopping_lists/7" || item.links[2] != "quantity_units/4" {
-		t.Errorf("unexpected shopping refs: %v", item.links)
+	if item.summary.GetName() != "Rolled oats" || len(item.links) != 0 {
+		t.Errorf("expected product name from the exact item lookup: %v, links %v", item.summary, item.links)
 	}
 	current := item.summary.GetShoppingItemCurrent()
-	if current.GetAmount() != 2.5 || current.Done == nil || current.GetDone() || current.GetNote() != "Plain" {
+	if current.GetAmount() != 2.5 || current.Done == nil || current.GetDone() || current.GetNote() != "Plain" ||
+		current.GetListName() != "Weekly shop" || current.GetUnitName() != "Bag" {
 		t.Errorf("unexpected shopping fields: %v", current)
 	}
 	if item := grocyEntitySummary("shopping_list/53", result); item != nil {
