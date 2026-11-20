@@ -303,7 +303,8 @@ end reads
 /-! ## Conflicts -/
 
 /-- Statements `i` and `j` must keep their relative order if they conflict:
-both have effects, one reads a name the other binds (declares or assigns), or both bind the same name.
+both have effects, one has an effect and the other is an observed initializer, one reads a name
+the other binds (declares or assigns), or both bind the same name.
 A hoisted declaration is available from the start, so nobody waits for it. -/
 def Bundle.conflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i

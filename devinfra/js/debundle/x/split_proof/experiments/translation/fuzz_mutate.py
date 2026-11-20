@@ -24,12 +24,7 @@ BUNDLE, PLAN, LOWER, TRANSLATE = (
 
 # name: (file, old text, new text, why the fuzzer should see it)
 MUTANTS = {
-    "drop the effect-effect conflict": (
-        BUNDLE,
-        "(a.effect && b.effect)\n    || (!b.hoisted",
-        "false\n    || (!b.hoisted",
-        "effects swap",
-    ),
+    "drop the effect-effect conflict": (BUNDLE, "(a.effect && b.effect)", "false", "effects swap"),
     "drop read-after-declare": (
         BUNDLE,
         "|| (!b.hoisted && b.binds.any",

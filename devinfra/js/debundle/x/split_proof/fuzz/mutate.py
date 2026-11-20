@@ -13,11 +13,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MUTANTS = {
-    "drop effect-effect conflict": (
-        "EsmSplit/Bundle.lean",
-        "(a.effect && b.effect)\n    || (!b.hoisted",
-        "false\n    || (!b.hoisted",
-    ),
+    "drop effect-effect conflict": ("EsmSplit/Bundle.lean", "(a.effect && b.effect)", "false"),
     "drop read-after-declare conflict": (
         "EsmSplit/Bundle.lean",
         "|| (!b.hoisted && b.defs.any",
