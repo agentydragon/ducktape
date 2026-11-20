@@ -4,6 +4,9 @@
   "type": "module",
   "dependencies": {
     "acorn": "8.19.0",
-    "eslint-scope": "9.1.2"
+    "eslint-scope": "9.1.2",
+    "shift-codegen": "8.1.0",
+    "shift-fuzzer": "3.0.0",
+    "shift-parser": "8.0.0"
   }
 }
