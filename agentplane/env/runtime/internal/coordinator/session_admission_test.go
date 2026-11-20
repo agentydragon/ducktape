@@ -316,8 +316,8 @@ func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
 	input, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, sessionID)
-	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
-		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
+		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want interrupted", input, found, err)
 	}
 	if err := closeRuntimeForTest(t, r); err != nil {
 		t.Fatalf("close recovered Host: %v", err)

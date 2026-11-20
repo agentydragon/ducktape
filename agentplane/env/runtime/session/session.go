@@ -97,7 +97,7 @@ type sessionDependencies struct {
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
 	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED}
-	if retained.HasSetupScript(record) {
+	if len(record.SetupScript) != 0 {
 		s.setup = sessionpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
