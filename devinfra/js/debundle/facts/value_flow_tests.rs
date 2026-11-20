@@ -7,6 +7,12 @@ fn id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
+fn has_function(values: &Values) -> bool {
+    values
+        .iter()
+        .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
+}
+
 fn assert_matches_reference(source: &str) -> ChunkValueFlow {
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
@@ -33,6 +39,15 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
         "resolved value-flow mismatch for source:\n{source}"
     );
     actual
+}
+
+/// Analyzes `source`, checking the result against the reference analysis.
+fn analyze_checked(source: &str) -> (ChunkValueFlow, super::value_flow::FlowWorkStats) {
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
+    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    (flow, stats)
 }
 
 #[test]
@@ -509,11 +524,7 @@ fn invoke_return_set_fanout(target_count: usize, feedback: bool) -> String {
 }
 
 fn argument_evaluations(source: &str) -> usize {
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
-    stats.argument_evaluations
+    analyze_checked(source).1.argument_evaluations
 }
 
 fn expression_dependency_stats(source: &str) -> super::value_flow::FlowWorkStats {
@@ -823,11 +834,7 @@ poly(box.missing || leaf, extra);
 fn reverse_return_call_chain_has_bounded_worklist_growth() {
     let mut previous_executions = None;
     for depth in [64, 128, 256, 512] {
-        let source = return_call_chain(depth, false);
-        let module = raw_js_test_support::parse(&source);
-        let body = top_level_item_views(&module.body);
-        let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
-        assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
+        let (_, stats) = analyze_checked(&return_call_chain(depth, false));
         if let Some(previous) = previous_executions {
             assert!(
                 stats.event_executions <= previous * 3,
@@ -895,11 +902,7 @@ const later = invoke(box.run);
 
     let callback_values = flow.values_of_binding(&id("callback"));
     assert!(callback_values.contains(&Value::Top));
-    assert!(
-        callback_values
-            .iter()
-            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
-    );
+    assert!(has_function(&callback_values));
 }
 
 #[test]
@@ -925,11 +928,7 @@ box = {};
 
         let values = flow.values_of_binding(&id("early"));
         assert!(values.contains(&Value::Top));
-        assert!(
-            values
-                .iter()
-                .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
-        );
+        assert!(has_function(&values));
     }
 }
 
@@ -940,17 +939,10 @@ const box = { run: target };
 const early = box.run;
 function target() {}
 "#;
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     let values = flow.values_of_binding(&id("early"));
     assert!(values.contains(&Value::Top));
-    assert!(
-        values
-            .iter()
-            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
-    );
+    assert!(has_function(&values));
     assert_eq!(stats.property_impossible_reads_skipped, 0);
     assert!(stats.property_possible_reads_tracked > 0);
 }
@@ -958,10 +950,7 @@ function target() {}
 #[test]
 fn impossible_property_absence_keeps_top_without_a_property_watcher() {
     let source = "const box = {};\nconst early = box.neverWritten;\n";
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
     assert_eq!(stats.property_impossible_reads_skipped, 1);
     assert_eq!(stats.property_possible_reads_tracked, 0);
@@ -977,17 +966,10 @@ const early = box.run;
 receiver = box;
 receiver.run = target;
 "#;
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     let values = flow.values_of_binding(&id("early"));
     assert!(values.contains(&Value::Top));
-    assert!(
-        values
-            .iter()
-            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
-    );
+    assert!(has_function(&values));
     assert_eq!(stats.property_impossible_reads_skipped, 0);
     assert!(stats.property_possible_reads_tracked > 0);
 }
@@ -1001,17 +983,10 @@ function target() {}
 const early = box.run;
 other.run = target;
 "#;
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     let values = flow.values_of_binding(&id("early"));
     assert!(values.contains(&Value::Top));
-    assert!(
-        !values
-            .iter()
-            .any(|value| matches!(value, Value::Alloc(Kind::Function, _)))
-    );
+    assert!(!has_function(&values));
     assert_eq!(stats.property_impossible_reads_skipped, 0);
     assert!(stats.property_possible_reads_tracked > 0);
 }
@@ -1023,10 +998,7 @@ const box = {};
 const early = box.run;
 box.run = 1;
 "#;
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
     assert_eq!(stats.property_impossible_reads_skipped, 0);
     assert!(stats.property_possible_reads_tracked > 0);
@@ -1325,11 +1297,7 @@ const next = target;
 }
 
 fn invocation_work(source: &str) -> super::value_flow::FlowWorkStats {
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (actual, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(actual, ChunkValueFlow::analyze_reference(&body));
-    stats
+    analyze_checked(source).1
 }
 
 #[test]
@@ -1731,10 +1699,7 @@ fn numeric_property_reads_keep_constant_work_as_named_fields_grow() {
         }
         source.push_str("};\nconst numeric = items[items.length - 1];\n");
 
-        let module = raw_js_test_support::parse(&source);
-        let body = top_level_item_views(&module.body);
-        let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-        assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+        let (flow, stats) = analyze_checked(&source);
         assert_eq!(
             stats.numeric_property_reads, 1,
             "width {named_count}: {stats:?}"
@@ -1769,10 +1734,7 @@ target.run = items[items.length - 1];
 const early = target.run;
 items["2"] = late_value;
 "#;
-    let module = raw_js_test_support::parse(source);
-    let body = top_level_item_views(&module.body);
-    let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
-    assert_eq!(flow, ChunkValueFlow::analyze_reference(&body));
+    let (flow, stats) = analyze_checked(source);
     let early = flow.values_of_binding(&id("early"));
     assert!(early.contains(&Value::Top), "{early:?}");
     for value in flow.values_of_binding(&id("late_value")) {
