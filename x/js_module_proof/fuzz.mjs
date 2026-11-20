@@ -398,14 +398,22 @@ function parameterCase(seed, index) {
   const rand = random(seed ^ 0x70617261, index);
   const initial = 1 + rand(8);
   const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
-  const left = { type: "BinaryExpression", operator: "+", left: id(parameters[0]), right: id(parameters[1]) };
+  const multiply = Math.floor(index / 32) % 2 === 1;
+  const left = {
+    type: "BinaryExpression",
+    operator: multiply ? "*" : "+",
+    left: id(parameters[0]),
+    right: id(parameters[1]),
+  };
   const value = call(id("helper"), [left]);
   const thrownValue = ["generated", false, null, 1 + rand(8)][Math.floor(index / 32) % 4];
   const firstArgument = 1 + rand(8),
     secondArgument = 1 + rand(8),
     condition = 1 + rand(8);
   const observedThrow =
-    typeof thrownValue === "number" ? secondArgument + condition + initial + condition : thrownValue;
+    typeof thrownValue === "number"
+      ? (multiply ? secondArgument * condition : secondArgument + condition) + initial + condition
+      : thrownValue;
   const expectedThrown =
     observedThrow === null ? { kind: "null" } : { kind: typeof observedThrow, value: observedThrow };
   const ast = {

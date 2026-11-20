@@ -784,3 +784,87 @@ export { alias2 };
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
 }
+
+if (shard === 10) {
+  await writeFile(
+    source,
+    `let seed = 4;
+function product(value, factor) { let total = value; total *= factor; return total * seed; }
+function maybe(flag) { if (flag) { throw 7; } else { return seed; } }
+function invoke(flag) { return maybe(flag) * 2; }
+export { product, invoke };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 2] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 3] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "product", args: [2, 3] },
+    { name: "invoke", args: [0] },
+    { name: "invoke", args: [1] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 24 }, { value: 8 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 2, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const logic = join(out, "logic.mjs");
+  await writeFile(logic, (await readFile(logic, "utf8")).replace("total *= factor", "total += factor"));
+  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
+}
+
+if (shard === 11) {
+  await writeFile(
+    source,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make(start) { let value = start * seed; return (step) => { value += step; return value; }; }
+bump();
+const first = make(2);
+export { first };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "closures.mjs": { imports: ["state.mjs"], statements: [5] },
+        "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const witness = cli("validate", source, spec, out);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
+  assert.deepEqual(execute(source, witness.calls).results, [{ value: 4 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+}

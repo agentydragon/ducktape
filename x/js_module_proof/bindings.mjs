@@ -161,8 +161,12 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!["globalThis", "eval", "arguments"].includes(value), "unsupported dynamic reference");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && node.operator === "+")
-      return { kind: "add", left: expression(node.left), right: expression(node.right) };
+    if (node?.type === "BinaryExpression" && ["+", "*"].includes(node.operator))
+      return {
+        kind: node.operator === "+" ? "add" : "multiply",
+        left: expression(node.left),
+        right: expression(node.right),
+      };
     if (node?.type === "CallExpression" && !node.optional) {
       const target = identifier(node.callee);
       check(!localNames.has(target), "calls through local bindings are unsupported");
@@ -205,10 +209,15 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (first.type === "ExpressionStatement" && rest.length > 0) {
       const assignment = first.expression;
       let name, value;
-      if (assignment?.type === "AssignmentExpression" && ["=", "+="].includes(assignment.operator)) {
+      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*="].includes(assignment.operator)) {
         name = identifier(assignment.left);
         value = expression(assignment.right);
-        if (assignment.operator === "+=") value = { kind: "add", left: { kind: "name", name }, right: value };
+        if (assignment.operator === "+=" || assignment.operator === "*=")
+          value = {
+            kind: assignment.operator === "+=" ? "add" : "multiply",
+            left: { kind: "name", name },
+            right: value,
+          };
       } else if (assignment?.type === "UpdateExpression" && assignment.operator === "++") {
         name = identifier(assignment.argument);
         value = { kind: "add", left: { kind: "name", name }, right: { kind: "literal", value: 1 } };
@@ -258,6 +267,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "name":
         return bound.includes(item.name) ? [] : [item.name];
       case "add":
+      case "multiply":
         return [...free(item.left, bound), ...free(item.right, bound)];
       case "conditional":
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
@@ -730,7 +740,8 @@ function leanExpression(expression) {
     case "name":
       return `.name ${str(expression.name)}`;
     case "add":
-      return `.add (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
+    case "multiply":
+      return `.${expression.kind} (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
     case "conditional":
       return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
@@ -920,7 +931,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       assumptions: [
         "The Acorn-to-Lean AST conversion faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values, arguments and intermediate sums remain nonnegative safe integers",
+        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers",
         ...(hasExpressions
           ? [
               "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
@@ -1032,6 +1043,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     if (expression.kind === "name") return bound;
     if (expression.kind === "add")
       return expressionBound(expression.left, bound) + expressionBound(expression.right, bound);
+    if (expression.kind === "multiply") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
+    }
     if (expression.kind === "conditional")
       return [expression.test, expression.consequent, expression.alternative]
         .map((part) => expressionBound(part, bound))

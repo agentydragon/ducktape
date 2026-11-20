@@ -239,6 +239,7 @@ def expressionNames : NumericExpr → List String
   | .literal _ => []
   | .name name => [name]
   | .add left right => expressionNames left ++ expressionNames right
+  | .multiply left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .local _ _ initial body => expressionNames initial ++ expressionNames body
   | .assign name value body => [name] ++ expressionNames value ++ expressionNames body
@@ -254,6 +255,7 @@ def laterExpressionNames : NumericExpr → List String
   | .literal _ => []
   | .name _ => []
   | .add _ _ => []
+  | .multiply _ _ => []
   | .conditional _ _ _ => []
   | .raise _ => []
   | .raisePrimitive _ => []
@@ -270,6 +272,7 @@ def argumentCount : NumericExpr → Option Nat
   | .literal _ => none
   | .name _ => none
   | .add _ _ => none
+  | .multiply _ _ => none
   | .conditional _ _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
@@ -282,6 +285,7 @@ def validNumericExpression : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
   | .add left right => validNumericExpression left && validNumericExpression right
+  | .multiply left right => validNumericExpression left && validNumericExpression right
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
   | .raise value => validNumericExpression value
   | .raisePrimitive _ => true
@@ -302,6 +306,7 @@ def validNumericArguments : NumericExpr → Bool
   | .literal _ => false
   | .name _ => false
   | .add _ _ => false
+  | .multiply _ _ => false
   | .conditional _ _ _ => false
   | .local _ _ _ _ => false
   | .assign _ _ _ => false
@@ -314,6 +319,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .literal _ => []
   | .name name => if bound.contains name then [] else [name]
   | .add left right => expressionFreeNames bound left ++ expressionFreeNames bound right
+  | .multiply left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .local name _ initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
   | .assign name value body => (if bound.contains name then [] else [name]) ++ expressionFreeNames bound value ++ expressionFreeNames bound body
@@ -332,6 +338,7 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
   | .add left right => validLocalWrites bound left && validLocalWrites bound right
+  | .multiply left right => validLocalWrites bound left && validLocalWrites bound right
   | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .local name mutable initial body => validLocalWrites bound initial && validLocalWrites ((name, mutable) :: bound) body
   | .assign name value body => mutableLocal bound name && validLocalWrites bound value && validLocalWrites bound body
@@ -373,6 +380,7 @@ def expressionCalls : NumericExpr → List String
   | .literal _ => []
   | .name _ => []
   | .add left right => expressionCalls left ++ expressionCalls right
+  | .multiply left right => expressionCalls left ++ expressionCalls right
   | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .local _ _ initial body => expressionCalls initial ++ expressionCalls body
   | .assign _ value body => expressionCalls value ++ expressionCalls body
@@ -386,6 +394,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
   | .add left right => matchingInvocations source left && matchingInvocations source right
+  | .multiply left right => matchingInvocations source left && matchingInvocations source right
   | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .local _ _ initial body => matchingInvocations source initial && matchingInvocations source body
   | .assign _ value body => matchingInvocations source value && matchingInvocations source body

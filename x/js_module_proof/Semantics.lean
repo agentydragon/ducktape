@@ -19,6 +19,7 @@ inductive NumericExpr where
   | literal (value : Nat)
   | name (name : String)
   | add (left right : NumericExpr)
+  | multiply (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
   | assign (name : String) (value body : NumericExpr)
@@ -95,6 +96,15 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue + rightValue)⟩
+  | .multiply left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue * rightValue)⟩
   | .conditional test consequent alternative => do
     let result ← evaluateExpression locals globals test
     match result.completion with
@@ -149,6 +159,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .literal _ => none
   | .name _ => none
   | .add _ _ => none
+  | .multiply _ _ => none
   | .conditional _ _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
