@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
+import { branchUpdateQueued, githubBranchUpdateOutcome, GitHubLink, pullRequestLink } from "./receipts";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -20,15 +21,19 @@ function UpdatePullRequestBranchLabel({ args }: { args: UpdatePullRequestBranchA
       </Text>
       {args.expectedHeadSha !== undefined && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Expected PR HEAD SHA: <Code>{args.expectedHeadSha}</Code>
+          Only if the PR head is <Code>{args.expectedHeadSha}</Code>
         </Text>
       )}
     </Stack>
   );
 }
 
-function NoFurtherArguments(): JSX.Element {
-  return <></>;
+function ReviewPullRequest({ args }: { args: UpdatePullRequestBranchArguments }): JSX.Element {
+  return (
+    <Text size="sm">
+      <GitHubLink href={pullRequestLink(args)}>Open pull request in GitHub</GitHubLink>
+    </Text>
+  );
 }
 
 export const updatePullRequestBranchLabel: ArgumentsPreview = definePreview(
@@ -37,7 +42,7 @@ export const updatePullRequestBranchLabel: ArgumentsPreview = definePreview(
 );
 export const updatePullRequestBranchArguments: ArgumentsPreview = definePreview(
   zUpdatePullRequestBranchArguments,
-  NoFurtherArguments
+  ReviewPullRequest
 );
 
 export function offersCardDecisionButtonsUpdatePullRequestBranch(args: unknown): boolean {
@@ -45,9 +50,10 @@ export function offersCardDecisionButtonsUpdatePullRequestBranch(args: unknown):
 }
 
 export const updatePullRequestBranchPresentation: ActionPresentation = {
+  outcome: githubBranchUpdateOutcome,
   fallbackLabel: "Update GitHub pull request branch",
   label: updatePullRequestBranchLabel,
-  details: { arguments: updatePullRequestBranchArguments },
+  details: { arguments: updatePullRequestBranchArguments, result: branchUpdateQueued },
   offersCardDecisionButtons: offersCardDecisionButtonsUpdatePullRequestBranch,
   compactCardExpands: expandsForRejectedArguments(zUpdatePullRequestBranchArguments),
 };
