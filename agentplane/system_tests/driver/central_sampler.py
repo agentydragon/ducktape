@@ -19,7 +19,6 @@ from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
 from agentplane.sampler.api import sampler_admin_pb2_grpc
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.system_tests.driver import sandbox_cleanup
@@ -31,6 +30,7 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
 )
 from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
@@ -84,21 +84,7 @@ async def _owned_native_sandbox(cluster: Cluster, name: str, template: str) -> A
     """Own the acknowledged native Sandbox before readiness work and release its Identity last."""
     async with AsyncExitStack() as cleanup:
         identity = await create_scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS))
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": name, "namespace": cluster.namespace},
-                    "spec": {"template": template, "running": True, "identity": {"name": identity["name"]}},
-                },
-            )
-        )
+        created = await create_sandbox_object(cluster, name, template=template, identity=identity["name"], running=True)
         metadata = created["metadata"]
         target = EnvironmentTarget(namespace=metadata["namespace"], name=metadata["name"], uid=metadata["uid"])
         owned: list[EnvironmentTarget] = []

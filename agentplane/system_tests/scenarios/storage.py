@@ -22,6 +22,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -397,25 +398,8 @@ async def fresh_workspace_storage_survives_replacement(
         with tracer.start_as_current_span(
             "system_test.storage.create_sandbox", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            created = json.loads(
-                await cluster.kubectl(
-                    "create",
-                    "-f",
-                    "-",
-                    "-o",
-                    "json",
-                    body={
-                        "apiVersion": SANDBOX_API_VERSION,
-                        "kind": "Sandbox",
-                        "metadata": {"name": name, "namespace": cluster.namespace},
-                        "spec": {
-                            "template": template,
-                            "running": True,
-                            "identity": {"name": identity},
-                            "bootstrap": bootstrap,
-                        },
-                    },
-                )
+            created = await create_sandbox_object(
+                cluster, name, template=template, identity=identity, running=True, bootstrap=bootstrap
             )
         uid = created["metadata"]["uid"]
         sandbox_uid = uid

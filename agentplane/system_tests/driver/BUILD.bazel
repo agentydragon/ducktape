@@ -323,10 +323,10 @@ py_library(
         ":identity",
         ":native_auth",
         ":sandbox_cleanup",
+        ":sandbox_object",
         ":sandbox_ownership",
         ":tls",
         ":tracing",
-        "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:identity_pb2",
@@ -941,5 +941,14 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "sandbox_object",
+    srcs = ["sandbox_object.py"],
+    deps = [
+        ":cluster",
+        "//agentplane:sandbox_resource",
     ],
 )

@@ -22,7 +22,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, event_log_pb2, identity_pb2, session_pb2
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.dispatcher.api.session import (
     session_dispatcher_pb2 as pb,
     session_dispatcher_pb2_grpc,
@@ -39,6 +38,7 @@ from agentplane.system_tests.driver.sandbox_diagnostics import (
     capture_cleanup_diagnostics,
     container_mount_sources,
 )
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -422,22 +422,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         )
         identities = await stack.enter_async_context(AsyncExitStack())
         identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                    "spec": {"template": POD_TEMPLATE, "running": False, "identity": {"name": identity}},
-                },
-            )
+        resource = await create_sandbox_object(
+            cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=False
         )
-        uid = created["metadata"]["uid"]
+        uid = resource["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
         cleaned = False
 
@@ -885,28 +873,10 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     # Closed in cleanup, after the Sandbox that acts as it.
     identities = AsyncExitStack()
     identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-    created = json.loads(
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            "-o",
-            "json",
-            body={
-                "apiVersion": SANDBOX_API_VERSION,
-                "kind": "Sandbox",
-                "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                "spec": {
-                    "template": POD_TEMPLATE,
-                    "running": True,
-                    "wakeOnSend": True,
-                    "idleSuspendAfter": "1m",
-                    "identity": {"name": identity},
-                },
-            },
-        )
+    resource = await create_sandbox_object(
+        cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=True, wakeOnSend=True, idleSuspendAfter="1m"
     )
-    uid = created["metadata"]["uid"]
+    uid = resource["metadata"]["uid"]
     evidence["sandbox_uid"] = uid
     cleaned = False
 

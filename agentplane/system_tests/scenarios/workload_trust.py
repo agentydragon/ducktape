@@ -29,6 +29,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import forward
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.tls import service_root_certificates
 
 # cluster/cdk8s/agentplane/egress.py: `proxy()` and its listener port.
@@ -319,17 +320,7 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_runtime_proxy(
             },
         )
         cleanup.push_async_callback(cluster.kubectl, "delete", f"sandboxtemplates.{GROUP}", name, "--wait=false")
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            body={
-                "apiVersion": SANDBOX_API_VERSION,
-                "kind": "Sandbox",
-                "metadata": {"name": name, "namespace": cluster.namespace},
-                "spec": {"template": name, "running": True, "identity": {"name": identity}},
-            },
-        )
+        await create_sandbox_object(cluster, name, template=name, identity=identity, running=True)
         cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")
         cleanup.push_async_callback(cluster.kubectl, "delete", f"sandboxes.{GROUP}", name, "--timeout=300s")
         # The Sandbox's WorkloadCredential, once issued, names the Runtime's URI and its own key pair's Secret.

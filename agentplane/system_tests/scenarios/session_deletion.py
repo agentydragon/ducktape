@@ -20,7 +20,6 @@ from agentplane.grpc.calls import dial
 from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 from agentplane.proto import session_pb2
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher import api
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.system_tests.driver.action_cli import CLI
@@ -38,6 +37,7 @@ from agentplane.system_tests.driver.identity import (
 )
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -74,21 +74,7 @@ async def _sandbox(cluster: Cluster, name: str, policies: list[str]) -> AsyncIte
 
 @asynccontextmanager
 async def _sandbox_as(cluster: Cluster, name: str, identity: str) -> AsyncIterator[str]:
-    resource = json.loads(
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            "-o",
-            "json",
-            body={
-                "apiVersion": SANDBOX_API_VERSION,
-                "kind": "Sandbox",
-                "metadata": {"name": name, "namespace": cluster.namespace},
-                "spec": {"template": POD_TEMPLATE, "running": True, "identity": {"name": identity}},
-            },
-        )
-    )
+    resource = await create_sandbox_object(cluster, name, template=POD_TEMPLATE, identity=identity, running=True)
     uid = resource["metadata"]["uid"]
     try:
         await cluster.kubectl("wait", f"sandbox/{name}", "--for=condition=Ready=True", "--timeout=300s")
