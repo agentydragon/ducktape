@@ -69,6 +69,32 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
+def test_auto_vpa_namespaces_declare_a_resource_policy(
+    generated: Path, checkout: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    # Parked third-party applications keep their hand-written manifests. Check those too,
+    # so reviving one does not silently lose the default when the admission rule is retired.
+    parked = [
+        doc
+        for path in (checkout / PARKED_ROOT).rglob("*.yaml")
+        for doc in yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader)
+        if isinstance(doc, dict)
+    ]
+    namespaces = [
+        doc
+        for doc in [*_generated_documents(generated, parsed_yaml_documents), *parked]
+        if doc.get("kind") == "Namespace"
+        and doc.get("metadata", {}).get("labels", {}).get("goldilocks.fairwinds.com/vpa-update-mode") == "auto"
+    ]
+    assert namespaces
+    missing = [
+        doc["metadata"]["name"]
+        for doc in namespaces
+        if "goldilocks.fairwinds.com/vpa-resource-policy" not in doc["metadata"].get("annotations", {})
+    ]
+    assert not missing, f"auto VPA namespaces missing a resource policy: {missing}"
+
+
 def test_tofu_controller_accepts_external_artifacts(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

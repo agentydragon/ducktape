@@ -1,4 +1,4 @@
-"""Ducktape's policy for the Namespace kind: the labels Goldilocks and `kyverno/policies.py` read."""
+"""Ducktape's Namespace labels and Goldilocks resource-policy defaults."""
 
 from __future__ import annotations
 
@@ -71,6 +71,23 @@ def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, 
     return {**extra, **policy}
 
 
+def _vpa_annotations(
+    name: str, vpa: Vpa | VpaProfile, annotations: Mapping[str, str] | None
+) -> tuple[Vpa, dict[str, str] | None]:
+    metadata_annotations = None if annotations is None else dict(annotations)
+    if isinstance(vpa, VpaProfile):
+        vpa_annotations = vpa.annotations()
+        metadata_annotations = metadata_annotations or {}
+        if overlap := metadata_annotations.keys() & vpa_annotations.keys():
+            raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
+        metadata_annotations.update(vpa_annotations)
+        vpa = vpa.mode
+    if vpa is Vpa.AUTO:
+        metadata_annotations = metadata_annotations or {}
+        metadata_annotations.setdefault(VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation(REQUESTS_ONLY))
+    return vpa, metadata_annotations
+
+
 def namespace(
     scope: Construct,
     id: str,
@@ -81,14 +98,7 @@ def namespace(
     annotations: Mapping[str, str] | None = None,
 ) -> Namespace:
     """A Namespace labeled for `vpa` and the shared diagnostics policy."""
-    metadata_annotations = None if annotations is None else dict(annotations)
-    if isinstance(vpa, VpaProfile):
-        vpa_annotations = vpa.annotations()
-        metadata_annotations = metadata_annotations or {}
-        if overlap := metadata_annotations.keys() & vpa_annotations.keys():
-            raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
-        metadata_annotations.update(vpa_annotations)
-        vpa = vpa.mode
+    vpa, metadata_annotations = _vpa_annotations(name, vpa, annotations)
     return Namespace(
         scope,
         id,
@@ -97,8 +107,19 @@ def namespace(
 
 
 def namespace_patch(
-    scope: Construct, id: str, *, name: str, vpa: Vpa, labels: Mapping[str, str] | None = None
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    vpa: Vpa | VpaProfile,
+    labels: Mapping[str, str] | None = None,
+    annotations: Mapping[str, str] | None = None,
 ) -> k8s.KubeNamespace:
     """A strategic-merge patch labeling an upstream release's Namespace `name` as `namespace`
     would. Tier 2, since `Namespace` renders `spec: {}`, which the patch would add to the object."""
-    return k8s.KubeNamespace(scope, id, metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels)))
+    vpa, metadata_annotations = _vpa_annotations(name, vpa, annotations)
+    return k8s.KubeNamespace(
+        scope,
+        id,
+        metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels), annotations=metadata_annotations),
+    )

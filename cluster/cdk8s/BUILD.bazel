@@ -2062,6 +2062,7 @@ py_test(
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster:parked_generated_manifests",
+        "//cluster:parked_yaml_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/agentplane-staging:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
