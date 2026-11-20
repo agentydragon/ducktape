@@ -16,23 +16,57 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "keda"
 NAMESPACE = "keda"
 OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
 
-def _resources(*, cpu_request: str, memory_request: str, cpu_limit: str, memory_limit: str) -> dict[str, object]:
+def _resources(
+    *, cpu_request: str, memory_request: str, cpu_limit: str, memory_limit: str
+) -> dict[str, dict[str, str]]:
     return {
         "requests": {"cpu": cpu_request, "memory": memory_request},
         "limits": {"cpu": cpu_limit, "memory": memory_limit},
     }
 
 
+def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) -> ContainerPolicy:
+    requests = resources["requests"]
+    # Admission can still see a CPU recommendation from before the policy change.
+    # Clamp it to the template request until the recommender refreshes.
+    return ContainerPolicy(
+        container_name=container_name,
+        controlled_values=ControlledValues.REQUESTS_ONLY,
+        controlled_resources=("memory",),
+        min_allowed={"cpu": requests["cpu"], "memory": requests["memory"]},
+        max_allowed={"cpu": requests["cpu"], "memory": resources["limits"]["memory"]},
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    operator_resources = _resources(cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi")
+    metrics_resources = _resources(cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi")
+    webhook_resources = _resources(cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi")
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                # Keep CPU reservations for these scaling and admission services. The memory floors
+                # preserve the startup reservations even when the recommender has sparse samples.
+                _memory_policy("keda-operator", operator_resources),
+                _memory_policy("keda-operator-metrics-apiserver", metrics_resources),
+                _memory_policy("keda-admission-webhooks", webhook_resources),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     helm_release(
         chart,
         NAME,
@@ -56,15 +90,9 @@ def chart(app: App) -> Chart:
             "watchNamespace": f"{runner.NAMESPACE},buildbuddy-executor",
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             "resources": {
-                "operator": _resources(
-                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                ),
-                "metricServer": _resources(
-                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                ),
-                "webhooks": _resources(
-                    cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi"
-                ),
+                "operator": operator_resources,
+                "metricServer": metrics_resources,
+                "webhooks": webhook_resources,
             },
         },
     )

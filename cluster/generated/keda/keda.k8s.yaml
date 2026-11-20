@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "keda-operator", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "keda-operator-metrics-apiserver", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "keda-admission-webhooks", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "25m", "memory": "64Mi"}, "maxAllowed": {"cpu": "25m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: keda
 spec: {}
 ---
