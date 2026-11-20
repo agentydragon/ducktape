@@ -10,7 +10,6 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from agentplane.native.claude import wire
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
@@ -107,11 +106,10 @@ async def test_child_resume(runfiles: Runfiles, tmp_path: Path, scenario: str) -
             )
         async with harness.start(model, subagents=True, resume_id=initial.session_id, initialize=False) as resumed:
             async with asyncio.timeout(45):
-                # Keep background results independently observable while the
-                # shared facade waits for the correlated initialization reply.
+                # Keep background results independently observable while `initialize`
+                # waits for the correlated initialization reply.
                 automatic = resumed.events()
                 reply = await resumed.initialize()
-                assert isinstance(reply, wire.ControlResponseFrame)
                 assert reply.response.subtype == "success"
                 if active:
                     notification_result = await automatic.result()

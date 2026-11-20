@@ -10,36 +10,27 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from agentplane.native.claude import facade, wire
-from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
+from agentplane.native.claude.testing.async_run import ClaudeRun
+from agentplane.native.testing.async_process import NativeProcessEofError
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])
 async def test_initialize_requires_its_control_reply(runfiles: Runfiles, tmp_path: Path, outcome: str) -> None:
-    async with AsyncNativeProcess(
-        tmp_path,
-        [
-            sys.executable,
-            str(runfiles.root() / "ducktape/agentplane/native/claude/testing/control_reply_peer.py"),
-            outcome,
-        ],
-        cwd=tmp_path,
-        environment=dict(os.environ),
-    ) as process:
-        observed = process.frames()
-        harness = facade.ClaudeHarness(process)
+    peer = runfiles.root() / "ducktape/agentplane/native/claude/testing/control_reply_peer.py"
+    async with ClaudeRun(
+        tmp_path, [sys.executable, str(peer), outcome], cwd=tmp_path, environment=os.environ, initialize=False
+    ) as run:
+        observed = run.frames()
         if outcome == "eof":
             with pytest.raises(NativeProcessEofError, match="stdout closed"):
-                await harness.initialize()
+                await run.initialize()
         elif outcome == "error":
             with pytest.raises(RuntimeError, match="Claude initialization rejected: probe rejection"):
-                await harness.initialize()
+                await run.initialize()
         else:
-            receipt = await harness.initialize()
-            assert isinstance(receipt.response, wire.ControlResponseFrame)
-            assert receipt.response.response.subtype == "success"
-            assert receipt.response.response.request_id != "another-request"
-            assert receipt.sequence == 5
+            response = await run.initialize()
+            assert response.response.subtype == "success"
+            assert response.response.request_id != "another-request"
         # Matching does not consume the raw trace or another observer's cursor.
         assert (await observed.next())["subtype"] == "task_notification"
         result = await observed.next()

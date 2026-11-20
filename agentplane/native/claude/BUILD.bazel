@@ -27,17 +27,6 @@ py_library(
 )
 
 py_library(
-    name = "facade",
-    srcs = ["facade.py"],
-    deps = [
-        ":driver",
-        ":wire",
-        "//agentplane/native:transport",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
@@ -61,23 +50,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_facade",
-    srcs = ["test_facade.py"],
-    data = ["//agentplane/native/claude/testing:control_reply_peer"],
-    deps = [
-        ":conftest",
-        ":facade",
-        ":wire",
-        "//:conftest",
-        "//agentplane/native:conftest",
-        "//agentplane/native/testing:async_process",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
