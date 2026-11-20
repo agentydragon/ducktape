@@ -1,11 +1,9 @@
 import {
-  Accordion,
   Alert,
   Anchor,
   Badge,
   Box,
   Button,
-  Code,
   Container,
   Group,
   NativeSelect,
@@ -50,18 +48,6 @@ function mode(row) {
   return row.vpas.length
     ? (modeLabels[row.vpas[0].mode] ?? row.vpas[0].mode)
     : "No direct VPA";
-}
-
-function policy(row) {
-  if (!row.vpas.length) return "No direct target";
-  const policies = row.vpas[0].containers;
-  if (!policies.length) return "Default: requests + limits";
-  return policies
-    .map(
-      (p) =>
-        `${p.containerName ?? "*"}: ${p.mode === "Off" ? "off" : (p.controlledValues ?? "requests + limits")}`,
-    )
-    .join("; ");
 }
 
 function Stat({ value, label, detail }) {
@@ -479,7 +465,9 @@ function Report() {
         >${" "}; current inventory is in ${" "}<${Anchor}
           href="./inventory.json"
           >inventory.json<//
-        >${" "} and hashes and timestamps are in ${" "}<${Anchor}
+        >${" "}, with the ${" "}<${Anchor} href="./collect_inventory.py"
+          >collector<//
+        >${" "}. Hashes and timestamps are in ${" "}<${Anchor}
           href="./manifest.json"
           >manifest.json<//
         >.<//
