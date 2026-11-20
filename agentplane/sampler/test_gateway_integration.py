@@ -96,7 +96,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     tmp_path: Path,
 ) -> None:
     sampler = ServiceAccountRef(namespace="test-central", name="sampler")
-    gateway_audience = "test-central-gateway"
     ensure_electric_role(postgres_admin_url)
     with (
         create_temporary_database(postgres_admin_url, "central_gateway_" + uuid4().hex) as gateway_database,
@@ -112,8 +111,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 database_url=gateway_database,
                 namespace=sandbox.namespace,
                 runtime_proxy_executor_callers=(CENTRAL_SAMPLER_URI,),
-                dispatcher_audience="test-central-dispatcher",
-                gateway_audience=gateway_audience,
             ) as gateway,
             go_history_service(
                 history_database,
