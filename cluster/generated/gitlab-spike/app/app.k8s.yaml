@@ -43,6 +43,16 @@ spec:
           enabled: true
           size: 50Gi
           storageClass: piraeus-hdd-local
+      gitlab-exporter:
+        deployment:
+          annotations:
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-exporter","controlledValues":"RequestsOnly","minAllowed":{"cpu":"75m","memory":"96Mi"},"maxAllowed":{"cpu":"75m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-update-mode: initial
+      gitlab-shell:
+        deployment:
+          annotations:
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"20m","memory":"96Mi"},"maxAllowed":{"cpu":"50m","memory":"128Mi"},"controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-update-mode: initial
       praefect:
         affinity:
           podAntiAffinity:
@@ -51,6 +61,10 @@ spec:
         replicas: 3
       sidekiq:
         concurrency: 10
+        deployment:
+          annotations:
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"sidekiq","controlledValues":"RequestsOnly","minAllowed":{"cpu":"900m","memory":"3Gi"},"maxAllowed":{"cpu":"900m","memory":"4Gi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-update-mode: initial
         livenessProbe:
           initialDelaySeconds: 300
         maxReplicas: 2
@@ -190,6 +204,10 @@ spec:
     prometheus:
       install: false
     registry:
+      deployment:
+        annotations:
+          goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"registry","controlledValues":"RequestsOnly","minAllowed":{"cpu":"50m","memory":"96Mi"},"maxAllowed":{"cpu":"50m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+          goldilocks.fairwinds.com/vpa-update-mode: initial
       storage:
         key: config
         secret: gitlab-spike-registry-connection
