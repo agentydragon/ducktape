@@ -14,13 +14,14 @@ from cluster.cdk8s.kyverno.test_utils import manifest, policy
 
 @pytest.fixture
 def secret_store_conditions_policy(scratch_app: App, tmp_path: Path) -> Path:
-    return policy(scratch_app, "require-secret-store-conditions", tmp_path)
+    return policy(scratch_app, "require-secret-store-conditions", tmp_path, json_mode=True)
 
 
 class TestRequireSecretStoreConditions:
     """An unfenced ClusterSecretStore is readable from every namespace.
 
-    Kind-scoped with no subject match, so `kyverno apply` exercises it directly.
+    Evaluated as a JSON payload: offline `kyverno apply` cannot map the ESO CRD's kind (see
+    `apply_policy`). Only the CEL `validations` are exercised, not the admission match.
     """
 
     @pytest.mark.parametrize(
@@ -35,11 +36,13 @@ class TestRequireSecretStoreConditions:
         ],
     )
     def test_non_fencing_conditions_are_denied(self, secret_store_conditions_policy: Path, manifest_name: str) -> None:
-        result = apply_policy(secret_store_conditions_policy, manifest(manifest_name))
+        result = apply_policy(secret_store_conditions_policy, manifest(manifest_name), json_payload=True)
         assert result.failed == 1, f"{manifest_name} must be denied\n{result.stdout}"
 
     def test_declared_conditions_allowed(self, secret_store_conditions_policy: Path):
-        result = apply_policy(secret_store_conditions_policy, manifest("cluster_secret_store_with_conditions.yaml"))
+        result = apply_policy(
+            secret_store_conditions_policy, manifest("cluster_secret_store_with_conditions.yaml"), json_payload=True
+        )
         assert result.failed == 0, f"store naming its namespaces must pass\n{result.stdout}"
 
 
