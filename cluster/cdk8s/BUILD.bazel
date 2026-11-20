@@ -909,6 +909,7 @@ py_library(
     name = "claude_sandbox_secrets",
     srcs = ["claude_sandbox_secrets.py"],
     deps = [
+        ":agent_rbac_base",
         ":artifact_generators",
         ":external_creds",
         ":manifest_roots",

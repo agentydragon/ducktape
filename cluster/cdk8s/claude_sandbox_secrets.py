@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.agent_rbac_base import NAMESPACE
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -26,7 +27,6 @@ from cluster.cdk8s.reflector import mirror_annotations
 
 NAME = "claude-sandbox-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/claude-sandbox-secrets"
-_NAMESPACE = "claude-sandbox"
 SOPS_FILES = ("claude-web-age-key.sops.yaml", "claude-forgejo-tea.sops.yaml")
 _TELEGRAM_BOT_TOKEN = "openclaw-telegram-bot-token"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
@@ -43,7 +43,7 @@ def _external_creds_secret(
     ExternalSecret(
         chart,
         name,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[remote_data(name, key)],
@@ -66,7 +66,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # Consumer-owned referent identity for source-approved external credentials.
     k8s.KubeServiceAccount(
-        chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
+        chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
     _external_creds_secret(chart, _TELEGRAM_BOT_TOKEN, key="token", deletion_policy=None)
     _external_creds_secret(
@@ -78,5 +78,5 @@ def chart(app: App) -> Chart:
     )
     # tf/gitops/forgejo-claude's account, which agent sessions fetch on demand
     # (devinfra/claude/claude_hook/creds_banner.sh).
-    secret_copy.secret_copy(chart, "claude-forgejo-credentials", reader=secret_copy.reader(chart, _NAMESPACE))
+    secret_copy.secret_copy(chart, "claude-forgejo-credentials", reader=secret_copy.reader(chart, NAMESPACE))
     return chart
