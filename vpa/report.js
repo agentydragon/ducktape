@@ -115,7 +115,7 @@ function Inventory({ workloads }) {
       />
     <//>
     <${Text} size="sm" c="dimmed" aria-live="polite"
-      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. Filters distinguish templates from admitted active Pods; owner-only rows have no template and are not proof of direct VPA coverage.`}<//
+      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. A missing filter matches either CPU or memory absent or zero. Filters distinguish templates from admitted active Pods; owner-only rows have no template and are not proof of direct VPA coverage.`}<//
     >
     <${Table.ScrollContainer}
       minWidth=${1160}
