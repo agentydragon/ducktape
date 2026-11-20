@@ -439,7 +439,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
     # Recorder and other init-container resources are outside these policies.
     vpa_policy: ContainerPolicy | None
     match instance:
-        case "anthropic":
+        case "anthropic" | "chatgpt" | "openai":
             vpa_policy = ContainerPolicy.memory_requests_only(
                 "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
             )
