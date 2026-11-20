@@ -18546,5 +18546,498 @@
       "ha_facade_resources_preserved": true,
       "excluded_plaid_web_received_vpa_annotations": false
     }
+  },
+  "latest_rollout_wave": {
+    "observed_at_utc": "2026-11-20T10:38:53Z",
+    "prs": {
+      "18127": {
+        "number": 18127,
+        "title": "Size selected MCP and Plaid service memory requests at admission",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18127",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:00:52Z",
+        "merge_commit_sha": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856"
+      },
+      "18133": {
+        "number": 18133,
+        "title": "Protect CoreDNS and Cilium operator during voluntary disruption",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18133",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:17:57Z",
+        "merge_commit_sha": "5d1c541b3f672b9e9dde51a7479a86bc5ad3b78b"
+      },
+      "18134": {
+        "number": 18134,
+        "title": "Raise kubectl passthrough MCP memory above its observed OOM limit",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18134",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:20:14Z",
+        "merge_commit_sha": "534e4d47a3f40608074f1ec3c833852ea600ff27"
+      },
+      "18135": {
+        "number": 18135,
+        "title": "Replicate certificate admission webhooks across nodes",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18135",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:22:11Z",
+        "merge_commit_sha": "ef381970ae03a5283e4aa0be6e78354114ab1ce7"
+      },
+      "18136": {
+        "number": 18136,
+        "title": "Size selected Platform Sessions memory requests at admission",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18136",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:27:59Z",
+        "merge_commit_sha": "1f95495d778d31f6d669f7c4579a46ac22e4932f"
+      },
+      "18139": {
+        "number": 18139,
+        "title": "Replicate the External Secrets validating webhook",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18139",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:26:03Z",
+        "merge_commit_sha": "64d1002499b931576fa3cbfa0d77940d7840b944"
+      },
+      "18140": {
+        "number": 18140,
+        "title": "Protect the KubeVirt operator webhook during voluntary disruption",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18140",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:31:49Z",
+        "merge_commit_sha": "21500fa053b44057db341021128af5a051223fb2"
+      },
+      "18142": {
+        "number": 18142,
+        "title": "Replicate the Kyverno cleanup admission webhook",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18142",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:34:23Z",
+        "merge_commit_sha": "507198b378ad555e04a88076a0fb89ccfc080838"
+      },
+      "18143": {
+        "number": 18143,
+        "title": "Spread Kyverno admission replicas across control-plane hosts",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18143",
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-11-20T10:34:37Z",
+        "merge_commit_sha": "346dba542bacc233937f8780c8150302ca5e1c46"
+      }
+    },
+    "workloads": {
+      "coredns": {
+        "namespace": "kube-system",
+        "deployment": "coredns",
+        "ready": 2,
+        "desired": 2,
+        "distinct_ready_nodes": 2,
+        "pdb": {
+          "min_available": 1,
+          "healthy": 2,
+          "disruptions_allowed": 1
+        },
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2
+      },
+      "cilium-operator": {
+        "namespace": "kube-system",
+        "deployment": "cilium-operator",
+        "ready": 2,
+        "desired": 2,
+        "distinct_ready_nodes": 2,
+        "pdb": {
+          "min_available": 1,
+          "healthy": 2,
+          "disruptions_allowed": 1
+        },
+        "lease_renew_time": "2026-11-20T10:32:55.172569Z"
+      },
+      "kubectl-passthrough-mcp": {
+        "namespace": "kubectl-passthrough-mcp",
+        "deployment": "kubectl-passthrough-mcp",
+        "ready": 1,
+        "desired": 1,
+        "distinct_ready_nodes": 1,
+        "pods": [
+          {
+            "resources": {
+              "server": {
+                "limits": {
+                  "cpu": "200m",
+                  "memory": "384Mi"
+                },
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "192Mi"
+                }
+              }
+            },
+            "restarts": 0
+          }
+        ],
+        "ready_endpoints": 1,
+        "distinct_ready_endpoint_nodes": 1,
+        "vpa": {
+          "update_mode": "Initial",
+          "target": {
+            "server": {
+              "memory": "192Mi"
+            }
+          }
+        }
+      },
+      "cert-manager-webhook": {
+        "namespace": "cert-manager",
+        "deployment": "cert-manager-webhook",
+        "ready": 3,
+        "desired": 3,
+        "distinct_ready_nodes": 3,
+        "pdb": {
+          "min_available": 2,
+          "healthy": 3,
+          "disruptions_allowed": 1
+        },
+        "ready_endpoints": 3,
+        "distinct_ready_endpoint_nodes": 3,
+        "vpa": {
+          "update_mode": "Initial",
+          "target": {
+            "cert-manager-webhook": {
+              "memory": "100Mi"
+            }
+          }
+        }
+      },
+      "trust-manager": {
+        "namespace": "cert-manager-trust",
+        "deployment": "trust-manager",
+        "ready": 2,
+        "desired": 2,
+        "distinct_ready_nodes": 2,
+        "pdb": {
+          "min_available": 1,
+          "healthy": 2,
+          "disruptions_allowed": 1
+        },
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "vpa": {
+          "update_mode": "Initial",
+          "target": {
+            "trust-manager": {
+              "cpu": "25m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      },
+      "external-secrets-webhook": {
+        "namespace": "external-secrets-system",
+        "deployment": "external-secrets-webhook",
+        "ready": 2,
+        "desired": 2,
+        "distinct_ready_nodes": 2,
+        "pods": [
+          {
+            "resources": {
+              "webhook": {
+                "requests": {
+                  "cpu": "15m",
+                  "memory": "256Mi"
+                }
+              }
+            },
+            "restarts": 0
+          },
+          {
+            "resources": {
+              "webhook": {
+                "requests": {
+                  "cpu": "15m",
+                  "memory": "256Mi"
+                }
+              }
+            },
+            "restarts": 0
+          }
+        ],
+        "pdb": {
+          "min_available": 1,
+          "healthy": 2,
+          "disruptions_allowed": 1
+        },
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "vpa": {
+          "update_mode": "Initial",
+          "target": {
+            "webhook": {
+              "cpu": "15m",
+              "memory": "256Mi"
+            }
+          }
+        }
+      },
+      "virt-operator": {
+        "namespace": "kubevirt",
+        "deployment": "virt-operator",
+        "ready": 2,
+        "desired": 2,
+        "distinct_ready_nodes": 2,
+        "pdb": {
+          "min_available": 1,
+          "healthy": 2,
+          "disruptions_allowed": 1
+        },
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2
+      }
+    },
+    "trust_manager_bundles": {
+      "total": 6,
+      "synced": 6
+    },
+    "source_devel_commit": "346dba542bacc233937f8780c8150302ca5e1c46",
+    "mcp_plaid_admission": {
+      "observed_at_utc": "2026-11-20T10:17Z",
+      "mode": "Initial",
+      "real_replicaset_owner_server_dry_run": true,
+      "memory_requests": {
+        "Google MCP": "224Mi",
+        "HA MCP backend": "256Mi",
+        "SSH MCP": "144Mi",
+        "Plaid pgweb": "100Mi",
+        "Plaid Spend": "384Mi"
+      },
+      "cpu_limits_and_ha_facade_preserved": true,
+      "plaid_web_admission_mutated": false,
+      "pods_created": false
+    },
+    "platform_sessions_admission": {
+      "observed_at_utc": "2026-11-20T10:30:28+00:00",
+      "pods_same_uid_count": 9,
+      "dry_runs": [
+        {
+          "workload": "anthropic",
+          "vpa_mode": "Initial",
+          "vpa_observed_containers": "provider",
+          "vpa_updates": "Pod resources updated by goldilocks-anthropic: container 0: memory request",
+          "memory_request_changes": {
+            "provider": {
+              "before": "128Mi",
+              "admitted": "163378051"
+            }
+          }
+        },
+        {
+          "workload": "blueshield",
+          "vpa_mode": "Initial",
+          "vpa_observed_containers": "provider",
+          "vpa_updates": "Pod resources updated by goldilocks-blueshield: container 0: memory request",
+          "memory_request_changes": {
+            "provider": {
+              "before": "128Mi",
+              "admitted": "416Mi"
+            }
+          }
+        },
+        {
+          "workload": "chatgpt",
+          "vpa_mode": "Off",
+          "vpa_observed_containers": null,
+          "vpa_updates": null,
+          "memory_request_changes": {}
+        },
+        {
+          "workload": "gateway",
+          "vpa_mode": "Initial",
+          "vpa_observed_containers": "gateway",
+          "vpa_updates": "Pod resources updated by goldilocks-gateway: container 0: memory request",
+          "memory_request_changes": {
+            "gateway": {
+              "before": "128Mi",
+              "admitted": "96Mi"
+            }
+          }
+        },
+        {
+          "workload": "myquest",
+          "vpa_mode": "Off",
+          "vpa_observed_containers": null,
+          "vpa_updates": null,
+          "memory_request_changes": {}
+        },
+        {
+          "workload": "myquest-canary",
+          "vpa_mode": "Off",
+          "vpa_observed_containers": null,
+          "vpa_updates": null,
+          "memory_request_changes": {}
+        },
+        {
+          "workload": "openai",
+          "vpa_mode": "Off",
+          "vpa_observed_containers": null,
+          "vpa_updates": null,
+          "memory_request_changes": {}
+        },
+        {
+          "workload": "quest-scheduler",
+          "vpa_mode": "Initial",
+          "vpa_observed_containers": "provider",
+          "vpa_updates": "Pod resources updated by goldilocks-quest-scheduler: container 0: cpu capped to maxAllowed, memory capped to minAllowed, memory request, cpu request",
+          "memory_request_changes": {
+            "provider": {
+              "before": "128Mi",
+              "admitted": "576Mi"
+            }
+          }
+        },
+        {
+          "workload": "thrive",
+          "vpa_mode": "Off",
+          "vpa_observed_containers": null,
+          "vpa_updates": null,
+          "memory_request_changes": {}
+        }
+      ],
+      "cpu_limits_and_init_resources_preserved": true,
+      "real_replicaset_owner_server_dry_run": true
+    },
+    "rollout_checks": {
+      "18133": {
+        "observed_at_utc": "2026-11-20T10:19:39Z",
+        "flux_ready": true,
+        "pod_identities_preserved": 4,
+        "cluster_dns_lookup_passed": true,
+        "cilium_operator_lease_renewing": true
+      },
+      "18134": {
+        "observed_at_utc": "2026-11-20T10:21:46Z",
+        "flux_ready_healthy": true,
+        "prior_memory_request": "64Mi",
+        "prior_memory_limit": "256Mi",
+        "first_replacement_memory_request": "192Mi",
+        "first_replacement_memory_limit": "384Mi",
+        "first_replacement_resource_source": "Deployment pod template",
+        "endpoint_watch": [
+          {
+            "time_utc": "10:21:08",
+            "ready": "old"
+          },
+          {
+            "time_utc": "10:21:18",
+            "ready": "old"
+          },
+          {
+            "time_utc": "10:21:28",
+            "ready": "old and new"
+          },
+          {
+            "time_utc": "10:21:29",
+            "ready": "new"
+          }
+        ]
+      },
+      "18135": {
+        "observed_at_utc": "2026-11-20T10:24:43Z",
+        "certificate_ready": true,
+        "trust_manager_lease_renewing": true,
+        "bundles_synced": 6,
+        "bundles_total": 6,
+        "certificate_and_bundle_server_dry_runs_passed": true
+      },
+      "18136": {
+        "goldilocks_namespace_event_at_utc": "2026-11-20T10:30:14Z",
+        "capacity_assessed_at_utc": "2026-11-20T10:19Z",
+        "remaining_ovh_headroom_after_caps_mib": [1327, 4105, 5073],
+        "sidekiq_max_memory_request_mib": 4096,
+        "capacity_caveat": "Sidekiq can lose surge fit if multiple capped Crossplane providers move to a newly eligible node with scarce capacity. The model includes restartable recorder sidecars and applies to an individual surge at the observed replica counts and placements."
+      },
+      "18139": {
+        "observed_at_utc": "2026-11-20T10:28:46Z",
+        "flux_ready": true,
+        "controller_ready": 2,
+        "controller_desired": 2,
+        "controller_vpa_mode": "Recreate",
+        "controller_lease_renewing": true,
+        "certificate_ready": true,
+        "external_secrets_ready": 198,
+        "external_secrets_total": 198,
+        "validating_webhook_server_dry_run_replace_passed": true
+      },
+      "18140": {
+        "observed_at_utc": "2026-11-20T10:32:56Z",
+        "flux_ready_healthy": true,
+        "pod_identities_preserved": 2,
+        "existing_api_and_controller_budgets_independent": true,
+        "leader_lease_renewing": true,
+        "kubevirt_server_dry_run_update_passed": true
+      },
+      "kyverno": {
+        "observed_at_utc": "2026-11-20T10:38:53Z",
+        "helm_release_ready": true,
+        "helm_release_revision": 11,
+        "cleanup": {
+          "ready": 2,
+          "distinct_ready_endpoint_nodes": 2,
+          "pdb_min_available": 1,
+          "disruptions_allowed": 1,
+          "vpa_mode": "Initial"
+        },
+        "admission": {
+          "ready": 3,
+          "distinct_ready_endpoint_nodes": 3,
+          "pdb_min_available": 2,
+          "disruptions_allowed": 1,
+          "vpa_mode": "Initial"
+        }
+      }
+    },
+    "plan_update": {
+      "observed_at_utc": "2026-11-20T10:37Z",
+      "policy_helper_refactor": {
+        "pr": 18132,
+        "merge_commit_sha": "7a3c88712f10f0d8f53aff751fc26a8fd39c6d33",
+        "generated_manifests_byte_identical": true
+      },
+      "cdviz_collector": {
+        "vpa_mode": "Initial",
+        "recommendation_provided": true,
+        "ready": 1,
+        "desired": 1,
+        "server_dry_run_real_replicaset_owner": true,
+        "vpa_updates_reported": true,
+        "memory_before": "128Mi",
+        "memory_admitted": "272061154",
+        "cpu_preserved": "100m",
+        "memory_limit_preserved": "512Mi",
+        "init_resources_preserved": true,
+        "pods_created": false
+      },
+      "live_kyverno_policies": {
+        "cluster_policies": [
+          "agentplane-staging-launcher-relay",
+          "default-disable-service-links",
+          "default-revision-history-limit",
+          "require-gitops",
+          "require-secret-store-conditions",
+          "restrict-agent-gateway-routes"
+        ],
+        "cleanup_policies": [
+          "claude-sandbox/sandbox-janitor",
+          "thrive-scraper/reap-wedged-jobs"
+        ]
+      }
+    },
+    "workloads_observed_at_utc": "2026-11-20T10:32:57+00:00"
   }
 }
