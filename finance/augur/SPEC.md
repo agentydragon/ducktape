@@ -253,7 +253,8 @@ observed population, not eventual survivors. Unobserved values are null. Selecte
 stopped paths retain their actual closing books. Projections reject unsupported
 or uncaptured holdings instead of inventing zero values.
 
-Selected detail is sampled/simulated on request without a server rollout cache.
+Selected detail is sampled and simulated on request. A projection is a pure function of its request, so the
+server answers repeats from a bounded LRU keyed on the whole request (`projection_cache_entries`; 0 disables it).
 The browser discards obsolete selected detail and ignores stale responses;
 displayed scenario fans remain separate request state. No general optimizer,
 strategic multi-agent economy, cross-border tax model, partial-payment recovery

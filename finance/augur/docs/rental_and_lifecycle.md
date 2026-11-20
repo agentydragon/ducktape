@@ -6,9 +6,10 @@ mortgage servicing and sale modeling.
 ## Product Surface
 
 Owned-property rental starts at purchase through `PropertyPurchase.initial_rental`.
-If it is unset, the property has no tenant rent stream; a later
-`set_rented_fraction` event with a positive fraction is rejected because the
-scenario has no rent/vacancy terms to resize.
+If it is unset, the property has no tenant rent stream until a later
+`set_rented_fraction` event with a positive fraction starts one. That stream uses the
+property's `rent_estimate` and the default `vacancy_pct` (5%). A property without a
+`rent_estimate` is rejected with a request to set `initial_rental.full_property_monthly_rent`.
 
 `RentalIncomePlan.full_property_monthly_rent` is full-property market rent before
 vacancy and management fees. If it is `None`, the app's preparation uses the selected

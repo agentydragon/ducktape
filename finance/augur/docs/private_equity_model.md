@@ -29,8 +29,8 @@ probability, not each rollout's realized IPO date.
 
 At a round, the current sampler multiplies valuation by `(1 + cash_ratio) * step_up`
 and shares by `1 + cash_ratio / step_up`. These are the implemented model rules;
-the old plan's claimed derivation of a post-round unit price as simply the
-pre-round price times `step_up` does not follow for general non-unit step-up.
+a post-round unit price is not simply the pre-round price times `step_up` for
+general non-unit step-up.
 Do not treat this description as an endorsement or silently change its arithmetic
 in a documentation cleanup. Tender/exit realization is a separate channel; none
 of these latent marks establishes a particular holder's liquidity or waterfall.
@@ -47,7 +47,7 @@ knob or an arbitrary macro-conditioned company program.
 That Poisson-rate fit and the runtime's direct monthly Bernoulli probability are
 different conventions. Their reconciliation, non-unit step-up economics,
 posterior propagation and predictive adequacy belong to deferred PE research,
-not a claim that the old plan has certified a complete model.
+not a claim that the model is complete.
 
 A headline company valuation is not a realizable holder price: sale rights,
 discounts and eligibility need a stated owner and provenance. Conditioning company
