@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from pathlib import Path
 
@@ -15,7 +15,7 @@ from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_truncated_and_deleted_file_keeps_prior_versions(tmp_path: Path, postgres_engine: Engine) -> None:

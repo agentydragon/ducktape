@@ -32,9 +32,9 @@ from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
 from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
-from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage, open_visual_page
-from util.testing.frontend_visual.context import deterministic_browser_context
+from testing.asgi import serve_app_sync
+from testing.frontend_visual.capture import VisualPage, open_visual_page
+from testing.frontend_visual.context import deterministic_browser_context
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright

@@ -21,9 +21,9 @@ from playwright.async_api import Browser, Page, Playwright, expect
 from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
-from util.testing.asgi import serve_app
-from util.testing.frontend_visual.capture import open_visual_page
-from util.testing.frontend_visual.context import deterministic_browser_context
+from testing.asgi import serve_app
+from testing.frontend_visual.capture import open_visual_page
+from testing.frontend_visual.context import deterministic_browser_context
 
 pytest_plugins = ("util.playwright",)
 

@@ -14,7 +14,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
-from util.testing import asgi
+from testing import asgi
 
 HOST = "127.0.0.1"
 

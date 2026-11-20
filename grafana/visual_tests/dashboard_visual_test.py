@@ -22,8 +22,8 @@ from grafana.visual_tests.fixture_codec import expand_fixture
 from grafana.visual_tests.recorded import replay_query, validate_fixture
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 
 pytest_plugins = ("devinfra.testing.pytest_outputs",)
 

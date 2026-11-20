@@ -155,7 +155,7 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

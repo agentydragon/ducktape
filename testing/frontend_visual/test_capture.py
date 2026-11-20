@@ -14,7 +14,7 @@ from python.runfiles import Runfiles
 
 from devinfra.testing.output_records import output_key
 from devinfra.testing.output_writer import BoundTestOutputs
-from util.testing.frontend_visual.capture import (
+from testing.frontend_visual.capture import (
     HarnessConfig,
     InlinePage,
     VisualHarness,
@@ -22,11 +22,11 @@ from util.testing.frontend_visual.capture import (
     open_visual_page,
     playwright_trace,
 )
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.viewports import Viewport
 
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
-pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
+# gazelle:include_dep //testing/frontend_visual:fixtures
+pytest_plugins = ("util.playwright", "testing.frontend_visual.fixtures")
 
 
 def _records(output_dir: Path) -> list[dict[str, object]]:
@@ -291,8 +291,7 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open(viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
         fixture = (
-            Runfiles.CreateOrRaise().root()
-            / "ducktape/util/testing/frontend_visual/assets/capture_diagnostics_fixture.js"
+            Runfiles.CreateOrRaise().root() / "ducktape/testing/frontend_visual/assets/capture_diagnostics_fixture.js"
         ).read_text(encoding="utf-8")
         await view.page.evaluate(fixture)
         await view.capture("viewport", scale="css")

@@ -36,17 +36,17 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from util.db_url import render_postgresql_url
-from util.net import refusing_tcp_endpoint
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
-from util.testing.sqlalchemy_engines import managed_async_engine
+from testing.sqlalchemy_engines import managed_async_engine
+from util.db_url import render_postgresql_url
+from util.net import refusing_tcp_endpoint
 
 # These imported fixtures and the hook are part of this plugin's public pytest surface.
 __all__ = [

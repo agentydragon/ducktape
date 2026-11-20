@@ -32,7 +32,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 _UTC = datetime.UTC
 

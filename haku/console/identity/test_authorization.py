@@ -39,8 +39,8 @@ from haku.console.identity.agent_management import AgentAccessProfileManagedByDe
 from haku.console.identity.authorization import AgentGrantAuthorityUnavailableError, PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from testing.sqlalchemy_engines import managed_async_engine
 from util.db_url import render_postgresql_url
-from util.testing.sqlalchemy_engines import managed_async_engine
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
 _REDIRECT_URI = "https://claude.test/oauth/callback"

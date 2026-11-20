@@ -8,8 +8,8 @@ import pytest
 import pytest_asyncio
 
 from finance.plaid.db.link_store import PlaidLinkStorage
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.db_url import render_postgresql_url
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer the dependency.
 # gazelle:include_dep @pypi//asyncpg

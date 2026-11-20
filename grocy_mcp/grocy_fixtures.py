@@ -15,8 +15,8 @@ from opentelemetry import trace
 
 from devinfra.oci.oci import load_oci_image
 from grocy_mcp.grocy_container import configure_grocy_container, grocy_custom_init_dir, grocy_url, wait_for_grocy_ready
+from testing.container_logs import LoggedContainer
 from third_party.containers import grocy
-from util.testing.container_logs import LoggedContainer
 
 tracer = trace.get_tracer(__name__)
 

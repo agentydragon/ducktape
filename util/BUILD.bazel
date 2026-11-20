@@ -61,7 +61,7 @@ py_library(
     srcs = ["playwright.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/testing/browser:launcher",
+        "//testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
     ],
@@ -177,8 +177,8 @@ py_test(
     deps = [
         ":oidc_login",
         "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
+        "//testing:asgi",
+        "//testing:mock_oidc",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//itsdangerous",

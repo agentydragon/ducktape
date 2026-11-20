@@ -30,16 +30,16 @@ from testcontainers.postgres import PostgresContainer
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from third_party.containers import postgres_18, ryuk
-from util.db_migrations import MigrationRunner
-from util.testing.postgres import (
+from testing.postgres import (
     DatabaseClones,
     DatabaseNames,
     PostgresDatabaseTemplate,
     database_name_for_test,
     migrated_database_template,
 )
-from util.testing.sqlalchemy_engines import postgres_async_engine
+from testing.sqlalchemy_engines import postgres_async_engine
+from third_party.containers import postgres_18, ryuk
+from util.db_migrations import MigrationRunner
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg

@@ -1,6 +1,6 @@
 """The accepted debundled Excalidraw app loads and responds in headless Chromium."""
 
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
+# gazelle:include_dep //testing/frontend_visual:fixtures
 
 import json
 import os
@@ -18,10 +18,10 @@ from starlette.responses import HTMLResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from util.testing.asgi import serve_app
-from util.testing.frontend_visual.context import deterministic_browser_context
+from testing.asgi import serve_app
+from testing.frontend_visual.context import deterministic_browser_context
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 PACKAGES_PREFIX = "/__packages"

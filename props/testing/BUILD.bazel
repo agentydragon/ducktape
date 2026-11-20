@@ -58,7 +58,7 @@ py_test(
         "//:conftest",
         "//openai_utils:model",
         "//props:conftest",
-        "//util/testing:asgi",
+        "//testing:asgi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

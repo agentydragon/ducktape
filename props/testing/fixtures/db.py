@@ -19,12 +19,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
-from util.testing.postgres import (
-    DatabaseNames,
-    PostgresDatabaseTemplate,
-    create_database_sync,
-    force_drop_database_sync,
-)
+from testing.postgres import DatabaseNames, PostgresDatabaseTemplate, create_database_sync, force_drop_database_sync
 
 
 def _test_model_config() -> PropsConfig:

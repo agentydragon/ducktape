@@ -1,5 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -88,6 +88,6 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//finance/plaid/db:testing",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
     ],
 )

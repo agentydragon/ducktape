@@ -23,16 +23,16 @@ from devinfra.testing.output_writer import BoundTestOutputs
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
-from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage, open_visual_page
-from util.testing.frontend_visual.context import deterministic_browser_context
-from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
+from testing.asgi import serve_app_sync
+from testing.frontend_visual.capture import VisualPage, open_visual_page
+from testing.frontend_visual.context import deterministic_browser_context
+from testing.postgres import DatabaseNames, PostgresDatabaseTemplate
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
+# gazelle:include_dep //testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
+pytest_plugins = ("util.playwright", "testing.frontend_visual.fixtures")
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino

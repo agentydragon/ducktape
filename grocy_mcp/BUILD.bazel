@@ -120,8 +120,8 @@ py_library(
     deps = [
         ":grocy_container",
         "//devinfra/oci",
+        "//testing:container_logs",
         "//third_party/containers:grocy",
-        "//util/testing:container_logs",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],
@@ -133,7 +133,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":grocy_fixtures",
-        "//util/testing:otel_tracing",
+        "//testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],

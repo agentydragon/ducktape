@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, func, select
 
 from finance.plaid.db.models import Base
 from finance.plaid.spend.portfolio_queries import select_account_balances, select_holding_batches
-from util.testing.postgres import PostgresDatabaseTemplate
+from testing.postgres import PostgresDatabaseTemplate
 
 # SQLAlchemy loads psycopg from the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 
 from python.runfiles import Runfiles
 
-from util.testing.browser.launcher import DETERMINISTIC_BROWSER_ARGS, chromium_executable
+from testing.browser.launcher import DETERMINISTIC_BROWSER_ARGS, chromium_executable
 
 if TYPE_CHECKING:
     from playwright.async_api import BrowserContext, Playwright, ViewportSize
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 # Chromium reads generic-family choices from the profile, not from page CSS.
 _RUNFILES_ROOT = Runfiles.CreateOrRaise().root()
 _FONT_PREFERENCES = json.loads(
-    (_RUNFILES_ROOT / "ducktape/util/testing/frontend_visual/assets/chromium_font_preferences.json").read_text()
+    (_RUNFILES_ROOT / "ducktape/testing/frontend_visual/assets/chromium_font_preferences.json").read_text()
 )
 # Hard-pins every animation and transition to its first frame, for a page that inlines its own
 # `<style>`. `reduced_motion="reduce"` is not enough: it only helps component CSS that checks that
@@ -32,9 +32,7 @@ _FONT_PREFERENCES = json.loads(
 # the page before the animated element mounts: `animation-play-state: paused` pins an animation to its
 # start frame only when it is in effect at creation; applied later it freezes whatever frame the
 # animation had reached by then.
-DISABLE_ANIMATIONS_CSS = (
-    _RUNFILES_ROOT / "ducktape/util/testing/frontend_visual/assets/disable_animations.css"
-).read_text()
+DISABLE_ANIMATIONS_CSS = (_RUNFILES_ROOT / "ducktape/testing/frontend_visual/assets/disable_animations.css").read_text()
 
 
 # The instant visual harnesses freeze page clocks to, so date-relative text renders the same on
@@ -110,5 +108,5 @@ def disable_animations_script() -> str:
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    source = (_RUNFILES_ROOT / "ducktape/util/testing/frontend_visual/assets/frozen_clock.js").read_text()
+    source = (_RUNFILES_ROOT / "ducktape/testing/frontend_visual/assets/frozen_clock.js").read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"

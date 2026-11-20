@@ -17,8 +17,8 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.env.e2e.testing import launches
 from agentplane.env.runtime.execution.companion.control import control_pb2, control_pb2_grpc
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import debian_slim
-from util.testing.container_logs import LoggedContainer
 
 # The generated gRPC stubs resolve protobuf's own stubs through direct deps.
 # gazelle:include_dep @pypi//protobuf

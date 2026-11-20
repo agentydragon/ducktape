@@ -1,6 +1,6 @@
 """The importer image carries and can apply its own Alembic history."""
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -8,10 +8,10 @@ from testcontainers.postgres import PostgresContainer
 
 from ai_session_archive import ingest_test_image
 from devinfra.oci.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.container_logs import LoggedContainer
+from testing.postgres import DatabaseNames, create_temporary_database
 
-pytest_plugins = ["util.testing.postgres_fixtures"]
+pytest_plugins = ["testing.postgres_fixtures"]
 
 
 def test_importer_image_runs_migrations(

@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """A transient Restic failure retries without losing metadata from the other source."""
 
@@ -20,7 +20,7 @@ from ai_session_archive.restic import ResticCommandError
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, postgres_engine: Engine) -> None:

@@ -26,8 +26,8 @@ from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import debian_slim, ryuk
-from util.testing.container_logs import LoggedContainer
 
 # gazelle:include_dep @pypi//protobuf
 

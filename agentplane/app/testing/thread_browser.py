@@ -55,9 +55,9 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.session_dispatcher.testing.runner_server import runner_server
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
-from util.testing.frontend_visual.viewports import DESKTOP, Viewport
-from util.testing.postgres import DatabaseNames
+from testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
+from testing.frontend_visual.viewports import DESKTOP, Viewport
+from testing.postgres import DatabaseNames
 
 # gazelle:include_dep @pypi//protobuf
 

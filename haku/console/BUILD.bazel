@@ -108,7 +108,7 @@ py_test(
         ":database_schema",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing:postgres",
+        "//testing:postgres",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -209,8 +209,8 @@ py_library(
         "//haku/console/identity:operator_identity",
         "//haku/console/identity:operator_identity_store",
         "//third_party/containers:pgvector_pg18",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
         # operator_session_cookie mints one for tests.
@@ -223,7 +223,7 @@ py_library(
         "@pypi//psycopg",
         "@pypi//httpx",
         ":settings",
-        "//util/testing:sqlalchemy_engines",
+        "//testing:sqlalchemy_engines",
     ],
 )
 

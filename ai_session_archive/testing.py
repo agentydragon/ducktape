@@ -11,7 +11,7 @@ from sqlalchemy.engine import Engine
 
 from ai_session_archive.database_migrate import RUNNER
 from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres import DatabaseNames, create_temporary_database
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 # gazelle:exclude migrations
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "products",
@@ -84,8 +84,8 @@ py_library(
     ],
     deps = [
         ":link_store",
+        "//testing:postgres",
         "//util:db_url",
-        "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
@@ -228,7 +228,7 @@ py_library(
         ":link_store",
         ":models",
         ":testing",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )
@@ -244,8 +244,8 @@ py_test(
         ":link_store",
         ":models",
         "//:conftest",
+        "//testing:postgres",
         "//util:db_url",
-        "//util/testing:postgres",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

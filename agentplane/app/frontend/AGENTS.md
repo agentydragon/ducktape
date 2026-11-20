@@ -33,8 +33,8 @@ async def test_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
 ```
 
 - Python owns readiness, clicks, scrolls, assertions and capture. Pass geometry explicitly from
-  `util/testing/frontend_visual/viewports.py` and crop locators to `view.capture()`.
-- Load both `util.testing.frontend_visual.fixtures` and `agentplane.app.frontend.testing.visual_fixtures`
+  `testing/frontend_visual/viewports.py` and crop locators to `view.capture()`.
+- Load both `testing.frontend_visual.fixtures` and `agentplane.app.frontend.testing.visual_fixtures`
   plugins. `view` owns browser cleanup; the app plugin provides `app` and the default desktop
   viewport.
 - Screenshot names default to the pytest case ID and never select behavior; pass explicit names

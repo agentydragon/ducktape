@@ -14,12 +14,12 @@ from agentplane.notification_service.testing.process_fixture.process import noti
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri
-from util.testing.postgres import create_temporary_database
+from testing.postgres import create_temporary_database
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("util.testing.postgres_fixtures",)
+pytest_plugins = ("testing.postgres_fixtures",)
 
 
 @pytest.fixture

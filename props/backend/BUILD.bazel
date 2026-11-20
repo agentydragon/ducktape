@@ -193,7 +193,7 @@ py_test(
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -334,7 +334,7 @@ py_test(
         "//props:config",
         "//props:conftest",
         "//props/core:oci_utils",
-        "//util/testing:asgi",
+        "//testing:asgi",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",

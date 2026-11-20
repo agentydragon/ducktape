@@ -15,8 +15,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.db.database import Database
 
 # gazelle:include_dep //props/testing/fixtures:db
-# gazelle:include_dep //util/testing:postgres_fixtures
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+# gazelle:include_dep //testing:postgres_fixtures
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 def test_dev_server_reaches_backend(db: Database, tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ even if the test is killed by Bazel timeout (SIGKILL).
 
 Usage in conftest.py:
 
-    from util.testing.otel_tracing import configure_tracing
+    from testing.otel_tracing import configure_tracing
 
     def pytest_configure(config):
         configure_tracing(config)

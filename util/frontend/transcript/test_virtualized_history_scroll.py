@@ -4,10 +4,10 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Locator, expect
 
-from util.testing.frontend_visual.capture import VisualHarness
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness
+from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

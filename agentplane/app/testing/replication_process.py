@@ -43,10 +43,10 @@ from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, Client
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from agentplane.testing.tls import CertificateAuthority, make_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.asgi import serve_app_in_loop
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
-from util.testing.asgi import serve_app_in_loop
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 
 # gazelle:include_dep @pypi//protobuf
 

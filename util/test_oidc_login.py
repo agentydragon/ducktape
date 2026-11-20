@@ -17,9 +17,9 @@ from fastapi import FastAPI
 from itsdangerous import TimestampSigner
 from pydantic import SecretStr
 
+from testing.asgi import bind_http_server
+from testing.mock_oidc import RSAKeyPair, build_mock_oidc_app, generate_rsa_keypair
 from util.oidc_login import LoginConfig, LoginSession, install_login, valid_claims
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import RSAKeyPair, build_mock_oidc_app, generate_rsa_keypair
 
 ISSUER = "https://idp.test/application/o/test/"
 CLIENT_ID = "test-client"

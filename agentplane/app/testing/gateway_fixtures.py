@@ -15,7 +15,7 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres import DatabaseNames, create_temporary_database
 
 DISPATCHER_AUDIENCE = "test-dispatcher"
 GATEWAY_AUDIENCE = "test-gateway"

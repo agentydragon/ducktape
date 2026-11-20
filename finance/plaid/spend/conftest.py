@@ -11,14 +11,14 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from finance.plaid.db.testing import db_url, plaid_database_template
-from util.db_url import render_postgresql_url
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
+from util.db_url import render_postgresql_url
 
 # SQLAlchemy loads both drivers from the URL schemes at runtime.
 # gazelle:include_dep @pypi//asyncpg

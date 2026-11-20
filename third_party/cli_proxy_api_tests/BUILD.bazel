@@ -16,8 +16,8 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/oci",
+        "//testing:container_logs",
         "//third_party/cli_proxy_api_tests:cli_proxy_api_image",
-        "//util/testing:container_logs",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

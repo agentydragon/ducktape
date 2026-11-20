@@ -7,14 +7,14 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from testcontainers.postgres import PostgresContainer
 
-from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
+from testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
 
 # SQLAlchemy loads this driver from the explicit URL scheme below.
 # gazelle:include_dep @pypi//psycopg
 # pytest loads the shared container fixture as a plugin.
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 
-pytest_plugins = ["util.testing.postgres_fixtures"]
+pytest_plugins = ["testing.postgres_fixtures"]
 
 
 def test_database_names_are_safe_unique_and_deterministic() -> None:

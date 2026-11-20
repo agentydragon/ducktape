@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ from ai_session_archive.session_projection import CLAUDE_TITLE_PROJECTION_VERSIO
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_claude_title_projection_follows_native_renames(tmp_path: Path, postgres_engine: Engine) -> None:

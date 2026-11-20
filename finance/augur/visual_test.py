@@ -25,16 +25,16 @@ from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
 from finance.augur.testing.property_lifecycle import PROPERTY_LIFECYCLE_URL
 from finance.evidence.markets import Platform
-from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage, open_visual_page
-from util.testing.frontend_visual.context import deterministic_browser_context
-from util.testing.frontend_visual.page_capture import wait_for_stable
+from testing.asgi import serve_app_sync
+from testing.frontend_visual.capture import VisualPage, open_visual_page
+from testing.frontend_visual.context import deterministic_browser_context
+from testing.frontend_visual.page_capture import wait_for_stable
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
+# gazelle:include_dep //testing/frontend_visual:fixtures
 
-pytest_plugins = ("util.playwright", "util.testing.frontend_visual.fixtures")
+pytest_plugins = ("util.playwright", "testing.frontend_visual.fixtures")
 
 
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}

@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import os
 from pathlib import Path
@@ -15,7 +15,7 @@ from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_changed_file_version_is_kept_with_same_metadata_diff(tmp_path: Path, postgres_engine: Engine) -> None:

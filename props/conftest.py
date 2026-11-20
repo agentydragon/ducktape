@@ -6,7 +6,7 @@ from collections.abc import Generator
 import pytest
 from opentelemetry import trace
 
-from util.testing.otel_tracing import configure_tracing
+from testing.otel_tracing import configure_tracing
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
 from datetime import timedelta
@@ -25,7 +25,7 @@ from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgres_engine: Engine) -> None:

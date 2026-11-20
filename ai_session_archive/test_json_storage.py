@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
 import json
@@ -24,7 +24,7 @@ from ai_session_archive.version_queries import list_events, list_versions
 from ai_session_archive.web import create_app
 from ai_session_archive.web_settings import WebSettings
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_json_null_and_syntax_errors_keep_distinct_parse_state() -> None:

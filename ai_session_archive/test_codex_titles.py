@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """Codex names from captured metadata, including later renames and ambiguous IDs."""
 
@@ -16,7 +16,7 @@ from ai_session_archive.models import Harness
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine) -> None:

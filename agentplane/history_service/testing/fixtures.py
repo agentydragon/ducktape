@@ -19,7 +19,7 @@ from agentplane.history_service.testing.go_service import (
 from agentplane.history_service.testing.history import History, scripted_history
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 
 @pytest.fixture(scope="session")

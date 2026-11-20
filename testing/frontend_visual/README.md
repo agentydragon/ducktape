@@ -9,7 +9,7 @@ There is no JSON/jq instruction interpreter and no browser-side test driver.
 
 ## Responsibilities
 
-The shared Chromium executable and launch flags live in `util/testing/browser/`; ordinary
+The shared Chromium executable and launch flags live in `testing/browser/`; ordinary
 Playwright fixtures use those without depending on visual capture policy. This package owns
 deterministic contexts, render health, visual fixtures, and screenshot publication.
 
@@ -21,7 +21,7 @@ deterministic contexts, render health, visual fixtures, and screenshot publicati
 - **TS harnesses** mount production components and provide synthetic fixture data or fake
   services. A shared/generated fixture catalog may enumerate data; it must not contain
   selectors, clicks, waits, or capture instructions.
-- **`VisualHarness` / `VisualPage`** (`util/testing/frontend_visual/capture.py`) own browser lifecycle,
+- **`VisualHarness` / `VisualPage`** (`testing/frontend_visual/capture.py`) own browser lifecycle,
   render-health checks, screenshot mechanics and review publication.
 - **`py_visual_test`** owns Bazel runfiles, the Python entry point and the `visual` tag.
 
@@ -32,10 +32,10 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from util.testing.frontend_visual.capture import VisualHarness
+from testing.frontend_visual.capture import VisualHarness
 
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+# gazelle:include_dep //testing/frontend_visual:fixtures
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -60,7 +60,7 @@ Gazelle-managed libraries rather than loading sibling test modules into one runn
 setup APIs, configure the mocks and mount the component from Python before asserting
 readiness. Do not add a name-to-recipe registry just to open a page.
 
-`visual.open()` accepts browser geometry (`util/testing/frontend_visual/viewports.py`), color scheme,
+`visual.open()` accepts browser geometry (`testing/frontend_visual/viewports.py`), color scheme,
 explicit query parameters and an optional frozen instant. Inline harnesses use `window_globals`
 instead of a query. The macro's `page_url` gives an inline document an origin for
 storage; `served_documents` supplies mock iframe documents.
@@ -124,11 +124,11 @@ with synthetic visual cases. `VISUAL_TRACE` accepts `0` or `1` and defaults to `
 ## One way in
 
 Every review screenshot comes from a page of `deterministic_browser_context`
-(`util/testing/frontend_visual/context.py`) published by `VisualPage.capture()`. Choose the entry by
+(`testing/frontend_visual/context.py`) published by `VisualPage.capture()`. Choose the entry by
 where the page is served:
 
 - Mounted by a bundled harness: `VisualHarness.open()` or the `view` fixture
-  (`util/testing/frontend_visual/fixtures.py`).
+  (`testing/frontend_visual/fixtures.py`).
 - Served by a real server: `deterministic_browser_context(...)` plus
   `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
   for uncaught page errors, including errors after the last screenshot. If another error is

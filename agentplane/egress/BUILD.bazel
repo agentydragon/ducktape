@@ -31,8 +31,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )

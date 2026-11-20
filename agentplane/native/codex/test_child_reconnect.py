@@ -25,7 +25,7 @@ from agentplane.native.codex.testing.model import MODEL
 from agentplane.native.codex.testing.probe_support import native_probe_thread_start_params
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
-from util.testing.net import async_wait_for_port
+from testing.net import async_wait_for_port
 
 
 @dataclass

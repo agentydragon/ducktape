@@ -23,7 +23,7 @@ from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretC
 from airlock.oauth.k8s_client import K8sTokenStore
 from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, TokenData
 from airlock.settings import Settings
-from util.testing.asgi import BoundHTTPServer, bind_http_server
+from testing.asgi import BoundHTTPServer, bind_http_server
 
 
 @pytest.fixture

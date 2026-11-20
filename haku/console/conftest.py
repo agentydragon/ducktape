@@ -41,10 +41,10 @@ from haku.console.identity.operator_identity import (
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.settings import Settings
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from testing.sqlalchemy_engines import managed_async_engine
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import managed_async_engine
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx

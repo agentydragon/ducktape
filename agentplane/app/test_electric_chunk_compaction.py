@@ -48,7 +48,7 @@ from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
-from util.testing.asgi import serve_app_in_loop
+from testing.asgi import serve_app_in_loop
 
 # gazelle:include_dep @pypi//protobuf
 

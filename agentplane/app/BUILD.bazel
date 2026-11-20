@@ -9,7 +9,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = [
     "//agentplane/app:__subpackages__",
@@ -141,8 +141,8 @@ py_test(
         "//agentplane/proto:identity_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:tls",
+        "//testing:postgres",
         "//util:net",
-        "//util/testing:postgres",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -368,8 +368,8 @@ py_test(
         "//agentplane/testing:tls",
         "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//playwright",
@@ -518,7 +518,7 @@ py_test(
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_pb2",
         "//agentplane/sandboxes/testing:sandbox_namespace",
-        "//util/testing:asgi",
+        "//testing:asgi",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
@@ -697,11 +697,11 @@ py_library(
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
+        "//testing:sqlalchemy_engines",
         "//util:db_url",
         "//util:net",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//protobuf",

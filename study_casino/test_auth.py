@@ -15,8 +15,8 @@ from starlette.websockets import WebSocketDisconnect
 from study_casino.app import create_app
 from study_casino.config import Settings
 from study_casino.store import SqlStore
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _SESSION_SECRET = "test-session-secret-at-least-32-characters"
 

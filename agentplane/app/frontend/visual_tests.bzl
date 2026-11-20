@@ -1,6 +1,6 @@
 """One Python test module per target, sharing the Agentplane browser assets."""
 
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 def agentplane_visual_test(name, src, title, shard_count = 1, test_deps = []):
     """Run one test file against the app's callable fixture harness."""
@@ -20,9 +20,9 @@ def agentplane_visual_test(name, src, title, shard_count = 1, test_deps = []):
             "//agentplane/app/frontend/testing:app",
             "//agentplane/app/frontend/testing:visual_fixtures",
             "//agentplane/app/frontend/testing:visual_assertions",
-            "//util/testing/frontend_visual:page_capture",
-            "//util/testing/frontend_visual:viewports",
-            "//util/testing/frontend_visual:capture",
+            "//testing/frontend_visual:page_capture",
+            "//testing/frontend_visual:viewports",
+            "//testing/frontend_visual:capture",
             "@pypi//playwright",
             "@pypi//pytest",
             "@pypi//pytest_asyncio",

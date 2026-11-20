@@ -151,7 +151,7 @@ request/model content.
 Propagate context across async tasks, worker threads and process/service boundaries
 where supported. Use span links or explicit operation identities for independently
 started asynchronous work; identity correlation alone does not prove a dependency.
-In Python tests, `util.testing.otel_tracing.configure_tracing` provides the existing
+In Python tests, `testing.otel_tracing.configure_tracing` provides the existing
 streaming JSONL export pattern. Reuse an already configured provider. Persist spans
 to Bazel undeclared outputs and list/download them through the execution artifact
 tooling. Account for batching, export/shutdown cost and unfinished spans lost on a

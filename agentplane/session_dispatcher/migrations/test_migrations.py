@@ -7,8 +7,8 @@ import pytest_bazel
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.db_url import render_postgresql_url
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg

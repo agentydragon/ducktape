@@ -8,7 +8,7 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "vitest_config")
 load("//devinfra/python:defs.bzl", "py_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
 npm_link_all_packages(name = "node_modules")
@@ -197,7 +197,7 @@ py_test(
         "//props:conftest",
         "//props/db:database",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
@@ -319,8 +319,8 @@ py_visual_test(
     harness = ":harness_js",
     shard_count = 4,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -339,7 +339,7 @@ py_visual_test(
     page_url = "http://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
-        "//util/testing/frontend_visual:capture",
+        "//testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
