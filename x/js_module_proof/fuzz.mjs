@@ -249,11 +249,13 @@ function closureCase(seed, index) {
   const entry = "entry.mjs";
   const modules = Object.fromEntries([...names, entry].map((name) => [name, { imports: [], statements: [] }]));
   modules[entry].imports = shuffle(names, rand);
-  // Keep a regular stream of valid assignments while retaining independent,
-  // often invalid random partitions for the other generated programs.
-  statements.forEach((_, i) =>
-    modules[index % 16 === 11 ? entry : [...names, entry][rand(names.length + 1)]].statements.push(i)
-  );
+  // Keep a regular stream of valid cross-module assignments while retaining
+  // independent, often invalid random partitions for the other programs.
+  statements.forEach((_, i) => {
+    const owner =
+      index % 16 === 11 ? (i === statements.length - 2 ? entry : names[0]) : [...names, entry][rand(names.length + 1)];
+    modules[owner].statements.push(i);
+  });
   return {
     ast,
     source: print(ast),

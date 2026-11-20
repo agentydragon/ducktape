@@ -12,6 +12,8 @@ const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
+const scopedCandidate = makeCase(123, 11);
+assert.ok(Object.values(scopedCandidate.spec.modules).filter((module) => module.statements.length).length > 1);
 await assert.rejects(
   runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, shard: 2, shards: 2 }),
   /shard must/
