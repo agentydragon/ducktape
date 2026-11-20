@@ -132,6 +132,12 @@ def add_service_workload(
     # With the database (cnpg_conventions R5).
     if placement is not None:
         pod_policy.place(deployment, placement, tolerate_control_plane=tolerate_control_plane)
+    if name in env.hostname_spread_services:
+        if replicas.count < 2:
+            raise ValueError(f"hostname spread requires at least two replicas: {name}")
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add("/spec/template/spec/topologySpreadConstraints", [node_scheduling.hostname_spread(labels)])
+        )
     pod_policy.harden(deployment)
     if create_service:
         service = Service(
