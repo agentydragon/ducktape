@@ -1,0 +1,23 @@
+load("@rules_lean//lean:lean.bzl", "lean_binary")
+
+_SOURCE = "//devinfra/js/debundle/x/split_proof/lean:translate_mutation_source"
+
+_BASE = "//devinfra/js/debundle/x/split_proof/lean:translate_mutation_base_sources"
+
+genrule(
+    name = "mutated_translate",
+    srcs = [_SOURCE],
+    outs = ["Experiments/Translate.lean"],
+    cmd = "test \"$$(grep -F -c 'observedInit := f.observedInit' $(location " + _SOURCE + "))\" -eq 1 && " +
+          "sed 's/observedInit := f.observedInit/observedInit := false/' $(location " + _SOURCE + ") > $@",
+)
+
+lean_binary(
+    name = "translate",
+    srcs = [
+        _BASE,
+        ":mutated_translate",
+    ],
+    entry = "Experiments/TranslateMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)

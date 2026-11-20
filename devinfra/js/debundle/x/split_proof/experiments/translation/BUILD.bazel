@@ -341,3 +341,39 @@ js_test(
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
 )
+
+js_test(
+    name = "callback_indirect_probe",
+    size = "large",
+    data = _CHECKER_RUNFILES + [
+        "ast_generator.mjs",
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
+    ],
+    entry_point = "callback_indirect_probe.mjs",
+    env = {
+        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+    tags = ["manual"],
+)
+
+js_test(
+    name = "ast_indirect_callback_test",
+    args = [
+        "--ast-corpus",
+        "--count",
+        "16",
+        "--seed",
+        "17",
+        "--trees",
+        "2",
+        "--jobs",
+        "4",
+        "--require-accepted",
+        "--require-indirect-guided",
+    ],
+    data = _CHECKER_RUNFILES + ["ast_generator.mjs"],
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
