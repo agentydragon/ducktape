@@ -30,6 +30,8 @@ Apps that opt into `fingerprint = True` instead emit content-hashed assets under
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 
+_OUT_DIR = "dist"
+
 def _fingerprinted_spa_bundle_impl(ctx):
     esbuild_outputs = ctx.attr.esbuild[DefaultInfo].files.to_list()
     esbuild_dirs = [f for f in esbuild_outputs if f.is_directory]
@@ -56,14 +58,14 @@ def _fingerprinted_spa_bundle_impl(ctx):
     asset_manifest = ctx.actions.declare_file(ctx.label.name + "_fingerprinted_assets.json")
     ctx.actions.write(asset_manifest, json.encode(asset_manifest_entries))
 
-    out_dir = ctx.actions.declare_directory(ctx.attr.out_dir)
+    out_dir = ctx.actions.declare_directory(_OUT_DIR)
     args = ctx.actions.args()
     args.add("--esbuild-dir", esbuild_dirs[0].path)
     args.add("--metafile", metafiles[0].path)
     args.add("--index-template", ctx.file.index_html.path)
     args.add("--asset-manifest", asset_manifest.path)
     args.add("--out-dir", out_dir.path)
-    args.add("--entry-placeholder", ctx.attr.entry_placeholder)
+    args.add("--entry-placeholder", "__SPA_ENTRY__")
     args.add("--url-prefix", ctx.attr.url_prefix)
 
     ctx.actions.run(
@@ -87,8 +89,6 @@ _fingerprinted_spa_bundle = rule(
             allow_files = True,
             doc = "Extra files to copy under /assets/ with content-hashed names: label -> index.html placeholder.",
         ),
-        "entry_placeholder": attr.string(default = "__SPA_ENTRY__"),
-        "out_dir": attr.string(default = "dist"),
         "url_prefix": attr.string(default = "/"),
         "_tool": attr.label(
             default = "//devinfra/js:spa_fingerprint_bin",
@@ -107,26 +107,21 @@ def spa_bundle(
         jsx = None,
         splitting = False,
         public = None,
-        public_dir = "public",
-        out_dir = "dist",
-        target = "es2022",
-        minify = True,
         sourcemap = "linked",
         fingerprint = False,
         fingerprinted_assets = None,
-        entry_placeholder = "__SPA_ENTRY__",
         url_prefix = "/",
         visibility = None,
         **kwargs):
     """Bundle a browser SPA into a served directory of static assets.
 
     Args:
-        name: Target name. The result is a directory (`out_dir`) suitable for a
+        name: Target name. The result is a `dist` directory suitable for a
             FastAPI `StaticFiles(directory=...)` mount or an nginx `oci_image`.
         entry_point: The entry source file (e.g. `main.tsx`, `src/main.ts`).
         deps: `js_library` targets forming the app's module graph (incl. the
             entry's library and its `//:node_modules/*` deps).
-        index_html: HTML shell copied to `<out_dir>/index.html`. Must reference
+        index_html: HTML shell copied to `dist/index.html`. Must reference
             the bundle as `/main.js` (and `/main.css` if CSS is imported). Pass
             `None` when the app's index.html is served separately (e.g. a backend
             packages it next to, not inside, the bundle dir).
@@ -135,19 +130,16 @@ def spa_bundle(
             sets instead.
         jsx: esbuild `jsx` mode, e.g. `"automatic"` for React. Inline-config path.
         splitting: Enable esbuild code splitting (emits shared chunks).
-        public: Files copied verbatim into `out_dir`, with `public_dir` stripped
-            (e.g. `glob(["public/**/*"])` → `public/icon.svg` lands at `/icon.svg`).
-        public_dir: Package-relative directory prefix stripped from `public`.
-        out_dir: Name of the produced served directory (default `dist`).
-        target: esbuild target (default `es2022`).
-        minify: Minify the output (default True).
+        public: Files copied verbatim into `dist`, with the package's `public/`
+            prefix stripped (e.g. `glob(["public/**/*"])` → `public/icon.svg`
+            lands at `/icon.svg`).
         sourcemap: esbuild sourcemap mode (default `linked`).
         fingerprint: If True, emit entry/chunk/assets under `assets/[name]-[hash]`
-            and rewrite `index_html` placeholders to the generated URLs.
+            and rewrite `index_html` placeholders to the generated URLs; the
+            esbuild entry URL replaces `__SPA_ENTRY__`.
         fingerprinted_assets: Extra single-file labels to copy under `/assets/`
             with content-hashed names, as `{label: placeholder}`. Use this for
             assets produced outside esbuild, such as a Tailwind CLI stylesheet.
-        entry_placeholder: Placeholder in `index_html` for the esbuild entry URL.
         url_prefix: URL prefix prepended to generated asset paths.
         visibility: Visibility of the produced directory target.
         **kwargs: Passed through to the underlying `esbuild` rule.
@@ -182,10 +174,10 @@ def spa_bundle(
         output_dir = True,
         format = "esm",
         platform = "browser",
-        target = [target],
+        target = ["es2022"],
         sourcemap = sourcemap,
         metafile = fingerprint,
-        minify = minify,
+        minify = True,
         splitting = splitting,
         **kwargs
     )
@@ -196,8 +188,6 @@ def spa_bundle(
             esbuild = ":" + esbuild_name,
             index_html = index_html,
             fingerprinted_assets = fingerprinted_assets or {},
-            entry_placeholder = entry_placeholder,
-            out_dir = out_dir,
             url_prefix = url_prefix,
             visibility = visibility,
         )
@@ -207,18 +197,18 @@ def spa_bundle(
     esbuild_root = "{}/{}".format(pkg, esbuild_name) if pkg else esbuild_name
 
     # Strip prefixes so the esbuild outputs, index.html, and public/ assets all
-    # land at the root of out_dir. Longest-matching root first; the bare package
+    # land at the root of dist. Longest-matching root first; the bare package
     # path (catching index.html) must come last.
     root_paths = [esbuild_root]
     if public:
-        root_paths.append("{}/{}".format(pkg, public_dir) if pkg else public_dir)
+        root_paths.append("{}/public".format(pkg) if pkg else "public")
     root_paths.append(pkg if pkg else ".")
 
     srcs = [":" + esbuild_name] + ([index_html] if index_html else []) + (public or [])
     copy_to_directory(
         name = name,
         srcs = srcs,
-        out = out_dir,
+        out = _OUT_DIR,
         root_paths = root_paths,
         visibility = visibility,
     )
