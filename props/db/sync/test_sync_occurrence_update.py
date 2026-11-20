@@ -52,14 +52,26 @@ def _fp_issue_from_orm(fp: FalsePositive) -> SyncFalsePositive:
     )
 
 
+def _get_tp_occ(session: Session, tp_id: str, occurrence_id: str) -> TruePositiveOccurrenceORM:
+    return (
+        session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=SLUG, tp_id=tp_id, occurrence_id=occurrence_id)
+        .one()
+    )
+
+
+def _get_fp_occ(session: Session, fp_id: str, occurrence_id: str) -> FalsePositiveOccurrenceORM:
+    return (
+        session.query(FalsePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=SLUG, fp_id=fp_id, occurrence_id=occurrence_id)
+        .one()
+    )
+
+
 def test_tp_occ_round_trip(synced_test_session: Session):
     """_tp_occ_from_orm produces a Pydantic model matching the original YAML data."""
     # tp-006 has two occurrences with distinct scopes and match_file_restriction
-    db_occ = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-006", occurrence_id="occ-add")
-        .one()
-    )
+    db_occ = _get_tp_occ(synced_test_session, "tp-006", "occ-add")
     pydantic_occ = _tp_occ_from_orm(db_occ)
 
     assert pydantic_occ.occurrence_id == "occ-add"
@@ -71,11 +83,7 @@ def test_tp_occ_round_trip(synced_test_session: Session):
 
 def test_fp_occ_round_trip(synced_test_session: Session):
     """_fp_occ_from_orm produces a Pydantic model matching the original YAML data."""
-    db_occ = (
-        synced_test_session.query(FalsePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, fp_id="fp-001", occurrence_id="fp-occ-1")
-        .one()
-    )
+    db_occ = _get_fp_occ(synced_test_session, "fp-001", "fp-occ-1")
     pydantic_occ = _fp_occ_from_orm(db_occ)
 
     assert pydantic_occ.occurrence_id == "fp-occ-1"
@@ -116,11 +124,7 @@ def test_tp_occ_none_anchor_round_trip(
 
     # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
     # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
-    db_occ = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-none-anchor")
-        .one()
-    )
+    db_occ = _get_tp_occ(synced_test_session, "tp-001", "occ-none-anchor")
     assert len(db_occ.ranges) == 1
     r = db_occ.ranges[0]
     assert str(r.file_path) == "add.py"
@@ -164,11 +168,7 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
     _sync_fp_issue(synced_test_session, existing, yaml_fp)
     synced_test_session.flush()
 
-    db_occ = (
-        synced_test_session.query(FalsePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, fp_id="fp-001", occurrence_id="fp-occ-mixed")
-        .one()
-    )
+    db_occ = _get_fp_occ(synced_test_session, "fp-001", "fp-occ-mixed")
     pydantic_occ = _fp_occ_from_orm(db_occ)
     assert pydantic_occ.occurrence_id == "fp-occ-mixed"
     assert pydantic_occ.files == {
@@ -194,11 +194,7 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
 
 def test_unchanged_occurrence_preserved(synced_test_session: Session):
     """Re-syncing identical data preserves existing ORM rows (no delete+re-add)."""
-    db_occ = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-006", occurrence_id="occ-add")
-        .one()
-    )
+    db_occ = _get_tp_occ(synced_test_session, "tp-006", "occ-add")
     original_created_at = db_occ.created_at
     original_range_ids = {r.id for r in db_occ.ranges}
     original_scope_hashes = {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall}
@@ -234,11 +230,7 @@ def test_note_change_detected(synced_test_session: Session):
     _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    refreshed = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-006", occurrence_id="occ-add")
-        .one()
-    )
+    refreshed = _get_tp_occ(synced_test_session, "tp-006", "occ-add")
     assert refreshed.note == "Changed note"
 
 
@@ -261,11 +253,7 @@ def test_files_change_detected(synced_test_session: Session):
 
     # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
     # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
-    db_occ = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-1")
-        .one()
-    )
+    db_occ = _get_tp_occ(synced_test_session, "tp-001", "occ-1")
     assert len(db_occ.ranges) == 1
     r = db_occ.ranges[0]
     assert str(r.file_path) == "subtract.py"
@@ -305,11 +293,7 @@ def test_critic_scopes_change_replaces_occurrence(synced_test_session: Session):
     _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    db_occ = (
-        synced_test_session.query(TruePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-1")
-        .one()
-    )
+    db_occ = _get_tp_occ(synced_test_session, "tp-001", "occ-1")
     assert db_occ.created_at != original_created_at
 
 
@@ -375,11 +359,7 @@ def test_fp_relevant_files_change_detected(synced_test_session: Session):
     _sync_fp_issue(synced_test_session, existing, yaml_fp)
     synced_test_session.flush()
 
-    db_occ = (
-        synced_test_session.query(FalsePositiveOccurrenceORM)
-        .filter_by(snapshot_slug=SLUG, fp_id="fp-001", occurrence_id="fp-occ-1")
-        .one()
-    )
+    db_occ = _get_fp_occ(synced_test_session, "fp-001", "fp-occ-1")
     reconstructed = _fp_occ_from_orm(db_occ)
     assert Path("add.py") in reconstructed.relevant_files
 
