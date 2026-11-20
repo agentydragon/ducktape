@@ -189,4 +189,4 @@ def test_empty_input_has_header_no_entries() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(pytest_bazel.main())
+    pytest_bazel.main()

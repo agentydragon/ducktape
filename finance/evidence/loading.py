@@ -25,7 +25,7 @@ from typing import assert_never
 
 import polars as pl
 
-from finance.calendar_months import is_next_calendar_month as _is_next_calendar_month
+from finance.calendar_months import is_next_calendar_month
 from finance.evidence import sources
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
@@ -118,7 +118,7 @@ def contiguous_month_segments(months: Sequence[date]) -> tuple[tuple[int, int], 
     segments = []
     start = 0
     for index, (earlier, later) in enumerate(pairwise(months), start=1):
-        if not _is_next_calendar_month(earlier, later):
+        if not is_next_calendar_month(earlier, later):
             segments.append((start, index))
             start = index
     segments.append((start, len(months)))
@@ -489,8 +489,4 @@ def read_monthly_levels(evidence_dir: Path, source: EvidenceSource) -> list[Mont
             )
         case _ as unreachable:
             assert_never(unreachable)
-    monthly = monthly_last(raw)
-    return [
-        MonthlyLevel(month=month, value=value)
-        for month, value in zip(monthly["month"].to_list(), monthly["value"].to_list(), strict=True)
-    ]
+    return monthly_levels(monthly_last(raw))

@@ -32,9 +32,7 @@ class EvidenceSource:
     # Series identity within its kind: FRED series id / Yahoo symbol / Zillow dataset stem.
     series_id: str
     upstream_url: str
-    # Filename the scraper writes into the evidence repo and the loader reads back by basename
-    # (also the vendored fallback name). test_evidence_sources checks the spec matches the
-    # checked-in data files.
+    # Filename the scraper writes into the evidence repo and the loader reads back by basename.
     output_filename: str
 
     @property
