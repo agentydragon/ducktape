@@ -383,6 +383,6 @@ check_vitest_specs()
 agentplane_visual_test(
     name = "visual_actions",
     src = "test_visual_actions.py",
-    shard_count = 4,
+    shard_count = 16,
     title = "Agentplane: action presentations",
 )

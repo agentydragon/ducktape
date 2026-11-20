@@ -216,7 +216,7 @@ GMAIL_FILTER = {
     "action": {"addLabelIds": ["STARRED"], "removeLabelIds": ["INBOX"], "forward": "archive@example.com"},
 }
 
-GITHUB_REPO = {"owner": "example", "repo": "service"}
+GITHUB_REPO: dict[str, object] = {"owner": "example", "repo": "service"}
 GITHUB_PULL = {**GITHUB_REPO, "pullNumber": 42}
 GITHUB_ISSUE = {**GITHUB_REPO, "issue_number": 7}
 GITHUB_PULL_ROW = {

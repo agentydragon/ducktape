@@ -148,7 +148,7 @@ export function byMethod(views: Record<string, ResultPreview>): ResultPreview {
   };
 }
 
-export function acknowledgement(text: string, structured = text): ResultPreview {
+export function acknowledgement(text: string, structured: string = text): ResultPreview {
   const result = z.union([z.literal(text), z.object({ message: z.literal(structured) })]);
   return defineResultPreview(result, ({ result }) => (
     <Text size="sm">{typeof result === "string" ? result : result.message}</Text>
