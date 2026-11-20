@@ -375,3 +375,27 @@ for (const [name, code] of [
   assert.equal(checked.status, 4, `${checked.stdout}\n${checked.stderr}`);
   assert.match(checked.stdout, /FAIL\s+OrderOk/);
 }
+
+// A read of an earlier initialized binding can still move across an unrelated
+// effect; the output must retain the binding-before-read dependency.
+{
+  const code = `const value = 1;\nconst alias = value;\nconsole.log("side");\nconsole.log(alias);`;
+  const dir = path.join(temp, "prior_initialized_read");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "prior_initialized_read.mjs");
+  const input = path.join(temp, "prior_initialized_read-ast.json");
+  const spec = path.join(temp, "prior_initialized_read-spec.json");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#1", "#3"], "side.mjs": ["#0", "#2"] } })
+  );
+  const emitted = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(emitted.status, 0, `${emitted.stdout}\n${emitted.stderr}`);
+  const before = run(process.execPath, [source]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.equal(after.status, 0, after.stderr);
+  assert.equal(after.stdout, before.stdout);
+}
