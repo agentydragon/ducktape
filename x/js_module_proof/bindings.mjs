@@ -170,7 +170,27 @@ function expressionFunction(node) {
       const declaration = first.declarations[0];
       const name = identifier(declaration.id);
       check(name !== "globalThis", "unsupported local binding");
-      return { kind: "local", name, initial: expression(declaration.init), body: sequence(rest) };
+      return {
+        kind: "local",
+        name,
+        mutable: first.kind === "let",
+        initial: expression(declaration.init),
+        body: sequence(rest),
+      };
+    }
+    if (first.type === "ExpressionStatement" && rest.length > 0) {
+      const assignment = first.expression;
+      let name, value;
+      if (assignment?.type === "AssignmentExpression" && ["=", "+="].includes(assignment.operator)) {
+        name = identifier(assignment.left);
+        value = expression(assignment.right);
+        if (assignment.operator === "+=") value = { kind: "add", left: { kind: "name", name }, right: value };
+      } else if (assignment?.type === "UpdateExpression" && assignment.operator === "++") {
+        name = identifier(assignment.argument);
+        value = { kind: "add", left: { kind: "name", name }, right: { kind: "literal", value: 1 } };
+      } else check(false, "unsupported mutation");
+      check(!["globalThis", "eval", "arguments"].includes(name), "unsupported assignment target");
+      return { kind: "assign", name, value, body: sequence(rest) };
     }
     check(rest.length === 0, "unsupported statements after return");
     return returning(first);
@@ -206,6 +226,7 @@ function expressionFunction(node) {
     check(false, "unsupported function body");
   };
   const body = sequence(node.body.body);
+  const writes = new Set();
   const free = (item, bound) => {
     switch (item.kind) {
       case "literal":
@@ -218,6 +239,13 @@ function expressionFunction(node) {
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
       case "local":
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
+      case "assign":
+        if (!bound.includes(item.name)) writes.add(item.name);
+        return [
+          ...(bound.includes(item.name) ? [] : [item.name]),
+          ...free(item.value, bound),
+          ...free(item.body, bound),
+        ];
       case "raise":
         return free(item.value, bound);
       case "raisePrimitive":
@@ -231,6 +259,7 @@ function expressionFunction(node) {
     parameters,
     expression: body,
     references: [...new Set(free(body, parameters))],
+    writes: [...writes],
   };
 }
 
@@ -440,7 +469,7 @@ function generateFiles(source, spec, names) {
         check(defs.get(item.target) === name, "cannot write an imported binding");
         check(!immutable.has(item.target), "cannot write a const binding");
       }
-      if (item.kind === "scopedFunction")
+      if (item.kind === "scopedFunction" || item.kind === "expressionFunction")
         for (const target of item.writes) {
           check(defs.get(target) === name, "cannot write an imported binding");
           check(!immutable.has(target), "cannot write a const binding");
@@ -538,7 +567,9 @@ function leanExpression(expression) {
     case "conditional":
       return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
-      return `.local ${str(expression.name)} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
+      return `.local ${str(expression.name)} ${expression.mutable} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
+    case "assign":
+      return `.assign ${str(expression.name)} (${leanExpression(expression.value)}) (${leanExpression(expression.body)})`;
     case "raise":
       return `.raise (${leanExpression(expression.value)})`;
     case "raisePrimitive": {
@@ -790,6 +821,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       const initial = expressionBound(expression.initial, bound);
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
       return initial > body ? initial : body;
+    }
+    if (expression.kind === "assign") {
+      const value = expressionBound(expression.value, bound);
+      const body = expressionBound(expression.body, value > bound ? value : bound);
+      return value > body ? value : body;
     }
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
     if (expression.kind === "raisePrimitive") return 0n;

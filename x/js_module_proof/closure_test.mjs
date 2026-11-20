@@ -310,7 +310,8 @@ function text(flag) { if (flag) { throw "oops"; } else { return seed; } }
 function boolean(flag) { if (flag) { throw false; } else { return seed; } }
 function nil(flag) { if (flag) { throw null; } else { return seed; } }
 function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
-export { shadow, add, choose, local, maybe, text, boolean, nil, undef };
+function update(value) { let total = value; total += seed; total++; return total; }
+export { shadow, add, choose, local, maybe, text, boolean, nil, undef, update };
 `
   );
   await writeFile(
@@ -320,7 +321,7 @@ export { shadow, add, choose, local, maybe, text, boolean, nil, undef };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -336,6 +337,7 @@ export { shadow, add, choose, local, maybe, text, boolean, nil, undef };
     { name: "choose", args: [1, 5] },
     { name: "local", args: [0, 3] },
     { name: "local", args: [1, 3] },
+    { name: "update", args: [3] },
   ];
   const sourceTrace = execute(parameterSource, calls);
   assert.deepEqual(sourceTrace.results, [
@@ -346,6 +348,7 @@ export { shadow, add, choose, local, maybe, text, boolean, nil, undef };
     { value: 9 },
     { value: 10 },
     { value: 9 },
+    { value: 8 },
   ]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
   const throwingCalls = [
@@ -404,6 +407,28 @@ export { broken };
   assert.equal(cli("validate", tdzSource, tdzSpec, tdzOut).result, "unknown");
   assert.equal(execute(tdzSource, ["broken"]).error.name, "ReferenceError");
   assert.equal(execute(join(tdzOut, "entry.mjs"), ["broken"]).error.name, "ReferenceError");
+  const immutableSource = join(root, "immutable-local.mjs");
+  const immutableSpec = join(root, "immutable-local.json");
+  const immutableOut = join(root, "immutable-local-out");
+  await writeFile(
+    immutableSource,
+    `function broken(value) { const local = value; local += 1; return local; }
+export { broken };
+`
+  );
+  await writeFile(
+    immutableSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": { imports: [], statements: [0] },
+      },
+    })
+  );
+  assert.equal(cli("generate", immutableSource, immutableSpec, immutableOut).result, "generated");
+  assert.equal(cli("validate", immutableSource, immutableSpec, immutableOut).result, "unknown");
+  assert.equal(execute(immutableSource, [{ name: "broken", args: [1] }]).error.name, "TypeError");
   const logic = join(parameterOut, "logic.mjs");
   await writeFile(logic, (await readFile(logic, "utf8")).replace("(a + b) + seed", "(a + b) + a"));
   assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unknown");

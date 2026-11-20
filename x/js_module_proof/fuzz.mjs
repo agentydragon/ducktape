@@ -413,7 +413,11 @@ function parameterCase(seed, index) {
           test: id("y"),
           consequent: {
             type: "BlockStatement",
-            body: [declaration("temp", value), { type: "ThrowStatement", argument: literal(thrownValue) }],
+            body: [
+              declaration("temp", value),
+              add("temp", "y"),
+              { type: "ThrowStatement", argument: literal(thrownValue) },
+            ],
           },
           alternate: {
             type: "BlockStatement",

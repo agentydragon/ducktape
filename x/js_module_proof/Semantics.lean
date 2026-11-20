@@ -20,7 +20,8 @@ inductive NumericExpr where
   | name (name : String)
   | add (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
-  | local (name : String) (initial body : NumericExpr)
+  | local (name : String) (mutable : Bool) (initial body : NumericExpr)
+  | assign (name : String) (value body : NumericExpr)
   | raise (value : NumericExpr)
   | raisePrimitive (value : ThrownValue)
   deriving DecidableEq, Repr
@@ -59,6 +60,12 @@ def lookupBinding : List (String × Nat) → String → Option Nat
   | [], _ => none
   | (key, value) :: rest, name => if key == name then some value else lookupBinding rest name
 
+def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
+  | [], _, _ => none
+  | (key, old) :: rest, name, value =>
+    if key == name then some ((key, value) :: rest)
+    else (updateBinding rest name value).map (fun tail => (key, old) :: tail)
+
 /- `Except.error` is a JavaScript throw, while `none` means the model could
    not evaluate an unsupported or uninitialized operation. -/
 def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue Nat)
@@ -79,21 +86,21 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
     | .ok condition =>
       if condition == 0 then evaluateExpression locals globals alternative
       else evaluateExpression locals globals consequent
-  | .local name initial body => do
+  | .local name _ initial body => do
     match ← evaluateExpression locals globals initial with
     | .error value => pure (.error value)
     | .ok value => evaluateExpression ((name, value) :: locals) globals body
+  | .assign name expression body => do
+    match ← evaluateExpression locals globals expression with
+    | .error value => pure (.error value)
+    | .ok value =>
+      let updated ← updateBinding locals name value
+      evaluateExpression updated globals body
   | .raise expression => do
     match ← evaluateExpression locals globals expression with
     | .error value => pure (.error value)
     | .ok value => pure (.error (.number value))
   | .raisePrimitive value => some (.error value)
-
-def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
-  | [], _, _ => none
-  | (key, old) :: rest, name, value =>
-    if key == name then some ((key, value) :: rest)
-    else (updateBinding rest name value).map (fun tail => (key, old) :: tail)
 
 def ExecutionState.cell (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$live"
 def ExecutionState.snapshot (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$snapshot"

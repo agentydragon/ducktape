@@ -210,12 +210,14 @@ def expressionNames : NumericExpr → List String
   | .name name => [name]
   | .add left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
-  | .local _ initial body => expressionNames initial ++ expressionNames body
+  | .local _ _ initial body => expressionNames initial ++ expressionNames body
+  | .assign name value body => [name] ++ expressionNames value ++ expressionNames body
   | .raise value => expressionNames value
   | .raisePrimitive _ => []
 
 def laterExpressionNames : NumericExpr → List String
-  | .local name _ body => name :: laterExpressionNames body
+  | .local name _ _ body => name :: laterExpressionNames body
+  | .assign _ _ body => laterExpressionNames body
   | .literal _ => []
   | .name _ => []
   | .add _ _ => []
@@ -233,18 +235,37 @@ def validNumericExpression : NumericExpr → Bool
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
   | .raise value => validNumericExpression value
   | .raisePrimitive _ => true
-  | .local name initial body =>
+  | .local name _ initial body =>
     !(expressionNames initial).any (fun reference => (name :: laterExpressionNames body).contains reference) &&
       validNumericExpression initial && validNumericExpression body
+  | .assign name value body =>
+    !(name :: expressionNames value).any (fun reference => (laterExpressionNames body).contains reference) &&
+      validNumericExpression value && validNumericExpression body
 
 def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .literal _ => []
   | .name name => if bound.contains name then [] else [name]
   | .add left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
-  | .local name initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
+  | .local name _ initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
+  | .assign name value body => (if bound.contains name then [] else [name]) ++ expressionFreeNames bound value ++ expressionFreeNames bound body
   | .raise value => expressionFreeNames bound value
   | .raisePrimitive _ => []
+
+def mutableLocal (bound : List (String × Bool)) (name : String) : Bool :=
+  match bound.find? (fun binding => binding.1 == name) with
+  | none => false
+  | some binding => binding.2
+
+def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
+  | .literal _ => true
+  | .name _ => true
+  | .add left right => validLocalWrites bound left && validLocalWrites bound right
+  | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
+  | .local name mutable initial body => validLocalWrites bound initial && validLocalWrites ((name, mutable) :: bound) body
+  | .assign name value body => mutableLocal bound name && validLocalWrites bound value && validLocalWrites bound body
+  | .raise value => validLocalWrites bound value
+  | .raisePrimitive _ => true
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
   expressionFreeNames parameters expression
@@ -260,6 +281,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
   | .thrower _ _ => true
   | .expressionFunction _ parameters expression =>
     parameters.all (fun name => parameters.count name == 1) && validNumericExpression expression &&
+      validLocalWrites (parameters.map (fun name => (name, true))) expression &&
       (freeExpressionNames parameters expression).all (fun name =>
         isReadableBinding source name && visible modules index name)
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
