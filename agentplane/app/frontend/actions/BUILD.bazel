@@ -365,6 +365,12 @@ ts_library(
 )
 
 ts_library(
+    name = "tana_action_titles",
+    srcs = ["schemas/tana_titles.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "notifications",
     srcs = [
         "notifications/command.ts",
@@ -400,6 +406,7 @@ ts_library(
         ":presentation",
         ":sandbox_action_schemas",
         ":ssh_action_schemas",
+        ":tana_action_titles",
         "//:node_modules/zod",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/ui:argv_text",

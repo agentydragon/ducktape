@@ -37,7 +37,7 @@ func (f tanaSummariesFuncs) TanaWorkspaceSummary(ctx context.Context, id string)
 
 func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 	gmailIDs := make(chan []string, 1)
-	tanaIDs := make(chan []string, 1)
+	tanaIDs := make(chan []string, 2)
 	previews := IntegrationPreviews{
 		Gmail: gmailSummariesFunc(func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
 			select {
@@ -108,6 +108,15 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 		t.Fatalf("unsupported action returned %v", response)
 	}
 
+	checkbox := submit("tana", "set_tag_checkbox", `{
+		"tagId":"tag-1","nodeId":"unrelated",
+		"doneStateMapping":{"fieldId":"status","checkedValues":["done"],"uncheckedValues":["active"]}
+	}`)
+	checkboxResponse, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetTanaNodeSummariesRequest{RequestId: checkbox.ID.String()})
+	if err != nil || len(checkboxResponse.GetNodes()) == 0 || checkboxResponse.GetWorkspace() != nil {
+		t.Fatalf("checkbox lookup: %v, %v", checkboxResponse, err)
+	}
+
 	for _, tc := range []struct {
 		ids     chan []string
 		want    []string
@@ -115,6 +124,7 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 	}{
 		{gmailIDs, []string{"thread-1", "2", "3", "4", "5", "6", "7", "8"}, gmail},
 		{tanaIDs, []string{"draft", "target", "source"}, tana},
+		{tanaIDs, []string{"tag-1", "status", "done", "active"}, checkbox},
 	} {
 		select {
 		case got := <-tc.ids:

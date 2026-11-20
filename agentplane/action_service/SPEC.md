@@ -97,12 +97,12 @@ is assigned an explicit boundary.
 
 Operator integration summaries resolve live display metadata from the MCP groups configured as
 `gmail` and `tana`. `GetGmailThreadSummaries` reads subjects for a recorded Gmail relabel or draft
-reply, or threads returned by a recorded search. `GetTanaNodeSummaries` reads node names for
-`move_node` and the workspace name for `get_or_create_calendar_node`. Both methods take the saved
-request UUID and derive resource IDs from its arguments or successful result. The service calls
+reply, or threads returned by a recorded search. `GetTanaNodeSummaries` reads node and workspace
+names for supported Tana Actions, using an explicit allowlist of ID fields per tool. Both methods
+take the saved request UUID and derive resource IDs from its arguments or successful result. The service calls
 the fixed read tools `threads_get` in metadata format and `read_node` at depth zero. Tana's
 `list_workspaces` has no filter, so the service returns only the workspace named in the saved
-request. It tries up to eight distinct IDs per call within a shared two-second
+request. It tries up to eight distinct thread or node IDs per call within a shared two-second
 lookup budget and omits unavailable results. The reads create no Action request, Decision or
 Execution. Names and subjects reflect current provider data and can change after the request
 was recorded. The original IDs remain on the receipt.
