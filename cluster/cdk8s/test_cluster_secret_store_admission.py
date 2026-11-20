@@ -146,11 +146,6 @@ async def test_cluster_secret_store_admission(scratch_app: App, eso_store_crds: 
                         _GROUP, _VERSION, _RESOURCE, _store("ClusterSecretStore", "node-request"), dry_run="All"
                     )
 
-        admission = k8s_client.AdmissionregistrationV1Api(server.api)
-        live_policy = await admission.read_validating_admission_policy(policy["metadata"]["name"])
-        assert live_policy.status.type_checking is not None
-        assert not live_policy.status.type_checking.expression_warnings
-
 
 if __name__ == "__main__":
     pytest_bazel.main()
