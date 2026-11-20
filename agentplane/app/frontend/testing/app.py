@@ -162,6 +162,13 @@ class AgentplaneFixture:
         )
         await expect(self.page.locator("#app > *").first).to_be_attached()
 
+    async def mount_action_presentations(self, *, sidebar_width: int, detail_width: int, mcp: bool) -> None:
+        await self.page.evaluate(
+            "([sidebar, detail, mcp]) => window.agentplaneVisual.mountActionPresentations(sidebar, detail, mcp)",
+            [sidebar_width, detail_width, mcp],
+        )
+        await expect(self.page.locator("[data-action-visual=sidebar]")).to_be_attached()
+
     async def mount_operation_presentation(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.mountOperationPresentation()")
         await expect(self.page.locator("#operation-presentation-surface")).to_be_attached()

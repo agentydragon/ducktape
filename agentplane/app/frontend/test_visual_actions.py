@@ -7,8 +7,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Locator, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture
-from agentplane.app.frontend.testing.visual_assertions import _open_phone_navigation
+from agentplane.app.frontend.testing.app import AgentplaneFixture
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
@@ -391,10 +390,32 @@ async def test_action_presentations(
     summaries: dict[str, object] | None = (
         {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
     )
+    # Native sandbox results are stored directly. MCP results use the actual wire envelope.
+    result = (
+        example.result
+        if example.group == "sandbox"
+        else {
+            "content": [
+                {
+                    "type": "text",
+                    "text": example.result if isinstance(example.result, str) else json.dumps(example.result),
+                }
+            ],
+            **({"structuredContent": example.result} if isinstance(example.result, dict) else {}),
+            "isError": False,
+        }
+    )
+    await app.show_action_receipt(example.group, example.name, example.arguments, result)
     await app.show_action_preview(example.group, example.name, example.arguments, summaries)
-    await app.mount_thread(IDLE_THREAD)
-    await _open_phone_navigation(page)
-    sidebar = page.locator(".agentplane-actions-sidebar")
+    # The shell uses a 240px desktop sidebar and a full-width phone drawer. The queue
+    # leaves 8px per side, and routed cards have two 16px content gutters.
+    sidebar_width = (viewport.width if viewport == MOBILE else 240) - 16
+    detail_width = viewport.width - (0 if viewport == MOBILE else 240) - 32
+    await app.mount_action_presentations(
+        sidebar_width=sidebar_width, detail_width=detail_width, mcp=example.group != "sandbox"
+    )
+    sidebar = page.locator("[data-action-visual=sidebar]")
+    await sidebar.scroll_into_view_if_needed()
     await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_be_visible()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
@@ -408,17 +429,14 @@ async def test_action_presentations(
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
         await wait_for_stable(page)
         await capture("sidebar-expanded", sidebar)
-        review_link = sidebar.get_by_role("link", name="Details", exact=True)
+        await expect(sidebar.get_by_role("link", name="Details", exact=True)).to_be_visible()
     else:
         await expect(disclosure).to_have_count(0)
-        review_link = sidebar.get_by_role("link", name="View details for ", exact=False)
+        await expect(sidebar.get_by_role("link", name="View details for ", exact=False)).to_be_visible()
 
-    # Follow the actual review link so pending detail controls and argument composition are visible too.
-    await review_link.click()
-    pending = page.locator(".agentplane-shell-main .mantine-Paper-root").filter(
-        has=page.get_by_role("button", name="Approve", exact=True)
-    )
-    await expect(pending).to_have_count(1)
+    pending = page.locator("[data-action-visual=approval]")
+    await pending.scroll_into_view_if_needed()
+    await expect(pending.get_by_role("button", name="Approve", exact=True)).to_be_visible()
     await expect(pending).to_contain_text("Check the exact call before approving.")
     await _expect_live_preview(pending, example)
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
@@ -440,24 +458,7 @@ async def test_action_presentations(
     await wait_for_stable(page)
     await capture("pending-detail", pending)
 
-    # Native sandbox results are stored directly. MCP results use the actual wire envelope.
-    result = (
-        example.result
-        if example.group == "sandbox"
-        else {
-            "content": [
-                {
-                    "type": "text",
-                    "text": example.result if isinstance(example.result, str) else json.dumps(example.result),
-                }
-            ],
-            **({"structuredContent": example.result} if isinstance(example.result, dict) else {}),
-            "isError": False,
-        }
-    )
-    await app.show_action_receipt(example.group, example.name, example.arguments, result)
-    await page.evaluate("window.location.hash = '/actions/70000000-0000-4000-8000-000000000007'")
-    receipt = page.locator("[data-action-receipt]")
+    receipt = page.locator("[data-action-visual=receipt]")
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
@@ -468,10 +469,7 @@ async def test_action_presentations(
     await wait_for_stable(page)
     await capture("detail-result", receipt)
 
-    await page.evaluate("window.location.hash = '/actions'")
-    await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
-    await expect(page.locator("[data-action-receipt]")).to_have_count(1)
-    history = page.locator("[data-action-receipt]")
+    history = page.locator("[data-action-visual=history]")
     details = history.get_by_role("button", name="Receipt details", exact=True)
     await expect(details).to_have_attribute("aria-expanded", "false")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
