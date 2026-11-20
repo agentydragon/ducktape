@@ -179,7 +179,6 @@ class EnvironmentSandboxTemplate(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
-        disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -195,7 +194,6 @@ class EnvironmentSandboxTemplate(Construct):
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.codex_readiness = codex_readiness
-        self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
@@ -342,7 +340,6 @@ class EnvironmentSandboxTemplate(Construct):
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.proxy_environment(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
-                    *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if self.disable_otel_sdk else []),
                     # Harnesses require these API-key variables, but the sidecar's exact-origin
                     # SVID route strips Authorization before the LLM ingress receives the request.
                     k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value=_SVID_ROUTE_AUTH_VALUE),
@@ -420,7 +417,6 @@ class EnvironmentSandboxTemplate(Construct):
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
                 enable_telemetry=True,
-                disable_otel_sdk=self.disable_otel_sdk,
                 keep_sidecar_until_workload_exit=True,
                 fs_group_change_policy="OnRootMismatch",
             ),

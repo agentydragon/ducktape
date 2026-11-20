@@ -63,7 +63,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.service_ref import Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
 NAME = environment_service.NAME
@@ -146,10 +146,6 @@ def environment_service_delegated_methods(env: Environment) -> tuple[str, ...]:
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(64)
 _DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
-
-
-def pods(namespace: str) -> Pods:
-    return environment_service.environments_service(namespace).pods
 
 
 def _add_controller_workload(

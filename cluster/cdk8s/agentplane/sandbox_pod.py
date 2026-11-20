@@ -188,7 +188,6 @@ def _egress_sidecar(
     resources: k8s.ResourceRequirements,
     *,
     telemetry_enabled: bool,
-    disable_otel_sdk: bool,
     restart_policy: str | None = None,
     volume_mounts: Sequence[k8s.VolumeMount] = (),
 ) -> k8s.Container:
@@ -204,11 +203,7 @@ def _egress_sidecar(
         name=sidecar_config.CONTAINER_NAME,
         restart_policy=restart_policy,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-        env=[
-            settings.path_env,
-            *telemetry_env,
-            *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if disable_otel_sdk else []),
-        ],
+        env=[settings.path_env, *telemetry_env],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False,
             capabilities=k8s.Capabilities(drop=["ALL"]),
@@ -247,7 +242,6 @@ def pod_spec(
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
     enable_telemetry: bool = False,
-    disable_otel_sdk: bool = False,
     keep_sidecar_until_workload_exit: bool = False,
     sidecar_mounts: Sequence[k8s.VolumeMount] = (),
     security_context: k8s.PodSecurityContext | None = None,
@@ -262,8 +256,7 @@ def pod_spec(
     settings file (`add_sidecar_settings`); `None` omits the sidecar and settings mount. `workload_volumes`
     are Pod volumes the workload mounts beyond the trust and tool-config
     volumes. `node_selector` is the optional
-    placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
-    hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
+    placement restriction for this template. A Runner needs its local telemetry relay through its own
     tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle.
     A caller-supplied `security_context` carries its own fsGroup policy; `fs_group_change_policy` applies
     to the default context. Stateful Sandbox templates set it, while command boxes leave it unset."""
@@ -286,7 +279,6 @@ def pod_spec(
                 limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
             ),
             telemetry_enabled=enable_telemetry,
-            disable_otel_sdk=disable_otel_sdk,
             restart_policy="Always" if keep_sidecar_until_workload_exit else None,
             volume_mounts=sidecar_mounts,
         )
