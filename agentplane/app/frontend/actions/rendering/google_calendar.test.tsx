@@ -11,7 +11,7 @@ import { renderDetailsArguments, renderDetailsResult } from "./index";
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
 const target = { event_id: "occurrence-1", calendar_id: "facilities@example.test" };
 const link = "https://calendar.google.com/calendar/event?eid=occurrence-1";
-const calendarLink = "https://calendar.google.com/calendar/r?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q";
+const calendarLink = "https://calendar.google.com/calendar?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q";
 
 function success(value: unknown) {
   const envelope = parseCallToolResult({
@@ -78,7 +78,7 @@ describe("Calendar Action review", () => {
   it.each([
     ["create_event", { summary: "Office closure", start: { date: "2026-11-26" }, end: { date: "2026-11-27" } }],
     ["list_events", { query: "Office closure" }],
-  ])("resolves the explicit pending calendar without an event ID for %s", async (name, fields) => {
+  ] as const)("resolves the explicit pending calendar without an event ID for %s", async (name, fields) => {
     const args = { ...fields, calendar_id: target.calendar_id };
     const sent = answerApi(({ path }) =>
       path.endsWith("/request-1/google-calendar-event-preview")
@@ -97,17 +97,20 @@ describe("Calendar Action review", () => {
   });
 
   it("keeps the primary alias and does not use a summary for another calendar", async () => {
-    const sent = answerApi(() => ({ calendar: { calendarId: "other@example.test", summary: "Unrelated calendar" } }));
-    const action = identity("list_events");
-    const primary = await mount(renderDetailsArguments(action, {}, "primary-request", true));
+    const sent = answerApi(() => ({
+      event: { eventId: target.event_id, summary: "Office closure", htmlLink: link },
+      calendar: { calendarId: "other@example.test", summary: "Unrelated calendar" },
+    }));
+    const primary = await mount(renderDetailsArguments(identity("list_events"), {}, "primary-request", true));
     expect(primary.textContent).toContain("Primary calendar");
     expect(primary.querySelector("a")).toBeNull();
 
-    const review = await mount(renderDetailsArguments(action, { calendar_id: target.calendar_id }, "request-1", true));
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const review = await mount(renderDetailsArguments(identity("get_event"), target, "request-1", true));
+    await vi.waitFor(() => expect(review.querySelector("a")?.href).toBe(link));
     expect(review.textContent).toContain(target.calendar_id);
     expect(review.textContent).not.toContain("Unrelated calendar");
-    expect(review.querySelector("a")).toBeNull();
+    expect(review.querySelectorAll("a")).toHaveLength(1);
+    expect(sent).toHaveLength(1);
   });
 
   it("retains the IDs and unresolved scope when lookup fails", async () => {
@@ -140,9 +143,18 @@ describe("Calendar Action results", () => {
     expect(receipt.querySelector("a")?.textContent).toBe("Recorded Facilities calendar");
     expect(receipt.querySelector("a")?.href).toBe(calendarLink);
 
-    const primary = await mount(renderDetailsResult(action, result, { arguments: { calendar_id: "primary" } }));
+    const primary = await mount(
+      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: "primary" } })
+    );
     expect(primary.textContent).toContain("Recorded Facilities calendar");
     expect(primary.querySelector("a")).toBeNull();
+
+    const longId = "設備".repeat(180);
+    const oversized = await mount(
+      renderDetailsResult(action, result, { requestId: "completed", arguments: { calendar_id: longId } })
+    );
+    expect(oversized.textContent).toContain("Recorded Facilities calendar");
+    expect(oversized.querySelector("a")).toBeNull();
     expect(sent).toHaveLength(0);
   });
 

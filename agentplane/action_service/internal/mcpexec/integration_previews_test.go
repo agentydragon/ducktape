@@ -119,6 +119,7 @@ func TestCalendarEventPreviewProjectsOccurrenceMetadata(t *testing.T) {
 }
 
 func TestGoogleCalendarSummaryReadsOnePageFromTheExactCalendar(t *testing.T) {
+	calls := make(chan string, 4)
 	server := mcp.NewServer(&mcp.Implementation{Name: "calendar-preview-test"}, nil)
 	server.AddTool(&mcp.Tool{Name: "list_events", InputSchema: json.RawMessage(`{
 		"type": "object",
@@ -131,6 +132,11 @@ func TestGoogleCalendarSummaryReadsOnePageFromTheExactCalendar(t *testing.T) {
 		}
 		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 			return nil, err
+		}
+		select {
+		case calls <- args.CalendarID:
+		default:
+			t.Error("unexpected calendar lookup")
 		}
 		var result string
 		switch args.CalendarID {
@@ -160,6 +166,9 @@ func TestGoogleCalendarSummaryReadsOnePageFromTheExactCalendar(t *testing.T) {
 		if got := executor.GoogleCalendarSummary(t.Context(), id); got != nil {
 			t.Errorf("calendar %q should have no summary, got %v", id, got)
 		}
+	}
+	if len(calls) != 3 {
+		t.Errorf("provider received %d reads for three lookups", len(calls))
 	}
 }
 

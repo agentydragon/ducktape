@@ -80,7 +80,8 @@ SANDBOX = {"name": "review-sandbox", "template": "python", "phase": "Running", "
 
 CALENDAR_ID = "facilities@example.test"
 CALENDAR_NAME = "Facilities calendar"
-CALENDAR_URL = "https://calendar.google.com/calendar/r?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q"
+CALENDAR_RECORDED_NAME = "Facilities schedule"
+CALENDAR_URL = "https://calendar.google.com/calendar?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q"
 CALENDAR_START = {"date_time": "2026-11-23T09:00:00-08:00", "time_zone": "America/Los_Angeles"}
 CALENDAR_END = {"date_time": "2026-11-23T09:30:00-08:00", "time_zone": "America/Los_Angeles"}
 CALENDAR_SERIES = {
@@ -3035,7 +3036,11 @@ EXAMPLES = (
         "google_calendar",
         "list_events",
         {"calendar_id": CALENDAR_ID, **CALENDAR_WINDOW, "query": "facilities"},
-        {"events": [CALENDAR_SERIES, CALENDAR_ALL_DAY], "summary": CALENDAR_NAME, "next_page_token": "next-page"},
+        {
+            "events": [CALENDAR_SERIES, CALENDAR_ALL_DAY],
+            "summary": CALENDAR_RECORDED_NAME,
+            "next_page_token": "next-page",
+        },
         "More events are available.",
         live_preview=calendar_preview(),
     ),
@@ -3279,7 +3284,7 @@ async def test_action_presentations(
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
     if example.key == "google_calendar.list_events":
-        await expect(receipt.get_by_role("link", name=CALENDAR_NAME, exact=True)).to_have_attribute(
+        await expect(receipt.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)).to_have_attribute(
             "href", CALENDAR_URL
         )
     if example.key == "tana.get_or_create_calendar_node":
@@ -3314,6 +3319,10 @@ async def test_action_presentations(
         await expect(history).not_to_contain_text("Label_19")
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(history, example)
+    if example.key == "google_calendar.list_events":
+        await expect(history.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)).to_have_attribute(
+            "href", CALENDAR_URL
+        )
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await capture("history-expanded", history)

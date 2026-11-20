@@ -106,10 +106,13 @@ function Field({ label, children }: { label: string; children: ReactNode }): JSX
 function CalendarName({ id, name }: { id?: string; name?: string | null }): JSX.Element {
   if (!id || id === "primary") return <>{name?.trim() ? name : "Primary calendar"}</>;
   if (!name?.trim()) return <Code>{id}</Code>;
+  // Match the service's 1024-byte calendar ID limit even for links built from recorded results.
+  if (id.length > 1024) return <>{name}</>;
+  const bytes = new TextEncoder().encode(id);
+  if (bytes.length > 1024) return <>{name}</>;
   // The calendar target is explicit. Let Google select the browser's account rather than pinning
   // an account slot, which need not match the credential used by the integration.
-  const url = new URL("https://calendar.google.com/calendar/r");
-  const bytes = new TextEncoder().encode(id);
+  const url = new URL("https://calendar.google.com/calendar");
   url.searchParams.set("cid", btoa(String.fromCharCode(...bytes)).replace(/=+$/, ""));
   return (
     <Anchor href={url.href} target="_blank" rel="noreferrer" inherit>
