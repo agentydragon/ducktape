@@ -70,13 +70,31 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
 
 def isFactory (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
-  | some (.factory _ _ _) => true
-  | _ => false
+  | none => false
+  | some statement => match statement with
+    | .factory _ _ _ => true
+    | .variable _ _ => false
+    | .function _ _ _ => false
+    | .reader _ _ => false
+    | .closure _ _ => false
+    | .wrapper _ _ => false
+    | .recordCall _ => false
+    | .call _ => false
+    | .record _ => false
 
 def isClosure (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
-  | some (.closure _ _) => true
-  | _ => false
+  | none => false
+  | some statement => match statement with
+    | .closure _ _ => true
+    | .factory _ _ _ => false
+    | .variable _ _ => false
+    | .function _ _ _ => false
+    | .reader _ _ => false
+    | .wrapper _ _ => false
+    | .recordCall _ => false
+    | .call _ => false
+    | .record _ => false
 
 /- A closure declaration owns this name, and source declarations are unique.
    Closure bindings occupy no separate numeric slot, so the same key denotes
@@ -275,16 +293,31 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
   | .reader _ _ => some []
   | .factory _ _ _ => some []
   | .closure name factory => do
-    match findDefinition source factory with
-    | some (.factory _ _ sourceName) => some [.copyBinding (closureCell name) sourceName]
-    | _ => none
+    let definition ← findDefinition source factory
+    match definition with
+    | .factory _ _ sourceName => some [.copyBinding (closureCell name) sourceName]
+    | .variable _ _ => none
+    | .function _ _ _ => none
+    | .reader _ _ => none
+    | .closure _ _ => none
+    | .wrapper _ _ => none
+    | .recordCall _ => none
+    | .call _ => none
+    | .record _ => none
   | .wrapper _ _ => some []
   | .recordCall name => do
     let ops ← functionOperations source name false
-    let target ← match findDefinition source name with
-      | some (.closure closureName _) => some closureName
-      | some (.wrapper _ closureName) => some closureName
-      | _ => none
+    let definition ← findDefinition source name
+    let target ← match definition with
+      | .closure closureName _ => some closureName
+      | .wrapper _ closureName => some closureName
+      | .factory _ _ _ => none
+      | .variable _ _ => none
+      | .function _ _ _ => none
+      | .reader _ _ => none
+      | .recordCall _ => none
+      | .call _ => none
+      | .record _ => none
     some (ops ++ [.observeBinding (closureCell target)])
   | .record name => some [.observeBinding name]
   | .call name => functionOperations source name false
