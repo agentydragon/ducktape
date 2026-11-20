@@ -48,6 +48,10 @@ turn's outcome. Materialization never establishes that a harness is running. A S
 History summary appears with its materialization state. History-only records cannot add list
 members. Metadata and History watches refresh the joins without polling.
 
+The Thread page uses Dispatcher placement to identify the exact Environment before History exists.
+Failed materialization and its reason are visible and command controls are disabled. Missing identity
+is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can

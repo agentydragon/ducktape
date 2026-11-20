@@ -305,6 +305,8 @@ ts_library(
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:session_pb",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
