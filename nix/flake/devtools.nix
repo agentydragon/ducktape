@@ -107,7 +107,6 @@ let
     pkgs.opentofu
     pkgs.sops
     pkgs.ssh-to-age
-    buildBuddyRunnerPackages.bazelDiff
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
   # remains Python and is exposed separately as `claude-statusline`.
