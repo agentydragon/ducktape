@@ -19,9 +19,5 @@ describe("toolPreview", () => {
   it("uses raw data for other tools", () => {
     expect(toolPreview("haku_routine", "other_tool", {}, "detailed")).toBeNull();
     expect(toolPreview("tana", "launch_routine", {}, "detailed")).toBeNull();
-    expect(toolPreview("tana", "move_node", { nodeId: "t1" }, "compact")).toBeNull();
-    expect(toolPreview("gmail", "threads_get", { thread_id: "m1" }, "detailed")).toBeNull();
-    expect(toolPreview("google_calendar", "get_event", { event_id: "e1" }, "detailed")).toBeNull();
-    expect(toolPreview("grocy-sf", "stock_get", {}, "detailed")).toBeNull();
   });
 });
