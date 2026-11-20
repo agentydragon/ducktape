@@ -8,8 +8,8 @@ mkdir -p "$dir/good" "$dir/bad" "$dir/forced"
 "$render" "$dir/good"
 cp "$bundle" "$dir/bundle.mjs"
 # Test-only exports let Node observe local bindings without changing the input fixture.
-printf '\nexport { unused, one, copy };\n' >> "$dir/bundle.mjs"
-printf '\nexport { unused, copy };\n' >> "$dir/good/main.mjs"
+printf '\nexport { unused, one, copy };\n' >>"$dir/bundle.mjs"
+printf '\nexport { unused, copy };\n' >>"$dir/good/main.mjs"
 "$node" --input-type=module - "$dir/bundle.mjs" "$dir/good/main.mjs" <<'JS'
 import { pathToFileURL } from "node:url";
 import { deepStrictEqual } from "node:assert";
