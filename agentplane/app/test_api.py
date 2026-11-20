@@ -20,8 +20,8 @@ from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
 from agentplane.proto import identity_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.tls import make_ca
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.net import listen_tcp
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
 pytest_plugins = ("agentplane.app.integration_fixtures",)

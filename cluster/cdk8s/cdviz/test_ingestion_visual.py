@@ -37,9 +37,9 @@ from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import TEST_PASSWORD, grafana_server
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk, timescaledb_pg18
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 
 pytest_plugins = ("devinfra.testing.pytest_outputs",)
 

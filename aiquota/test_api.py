@@ -36,7 +36,7 @@ from aiquota.providers.claude import USAGE_URL
 from aiquota.render.view_model import AllQuotasView
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
-from util.testing.asgi import serve_app_in_loop
+from testing.asgi import serve_app_in_loop
 
 if __name__ == "__main__":
     pytest_bazel.main()

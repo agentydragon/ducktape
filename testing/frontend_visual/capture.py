@@ -25,8 +25,8 @@ from pydantic import JsonValue, TypeAdapter
 from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
-from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
-from util.testing.frontend_visual.page_capture import (
+from testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
+from testing.frontend_visual.page_capture import (
     WAIT_TIMEOUT_MS,
     DevtoolsViewport,
     PageErrors,
@@ -37,7 +37,7 @@ from util.testing.frontend_visual.page_capture import (
     screenshot_locator,
     wait_for_stable,
 )
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.viewports import Viewport
 
 # `document.fonts.check` is true for a family no `@font-face` declares, so on its own it passes when the
 # stylesheet declaring the font never arrived (or the name is misspelled) and the page renders in a fallback.
@@ -113,7 +113,7 @@ async def playwright_trace(
 # Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
 # never page text, input values, URLs, or accessible names.
 _CAPTURE_DIAGNOSTICS_JS = (
-    Runfiles.CreateOrRaise().root() / "ducktape/util/testing/frontend_visual/assets/capture_diagnostics.js"
+    Runfiles.CreateOrRaise().root() / "ducktape/testing/frontend_visual/assets/capture_diagnostics.js"
 ).read_text(encoding="utf-8")
 
 

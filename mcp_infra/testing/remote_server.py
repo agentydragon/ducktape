@@ -10,7 +10,7 @@ from fastmcp.mcp_config import RemoteMCPServer
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from util.testing.asgi import serve_app_sync
+from testing.asgi import serve_app_sync
 
 
 @contextmanager

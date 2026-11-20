@@ -13,7 +13,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/testing/browser:launcher",
+        "//testing/browser:launcher",
         "@pypi//playwright",
         "@rules_python//python/runfiles",
     ],
@@ -116,8 +116,8 @@ py_test(
         "//:conftest",
         "//devinfra/testing:output_records",
         "//devinfra/testing:output_writer",
+        "//testing/frontend_visual:fixtures",
         "//util:playwright",
-        "//util/testing/frontend_visual:fixtures",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -36,9 +36,9 @@ from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, workload_uri, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.postgres import PostgresDatabaseTemplate
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
-from util.testing.postgres import PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//protobuf
 

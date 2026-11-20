@@ -17,8 +17,8 @@ from starlette.routing import Mount
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.authentik_auth.provider import build_authentik_auth
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _CLIENT_CALLBACK = "http://127.0.0.1:19876/callback"
 _SCOPES = "openid email profile offline_access"

@@ -2,7 +2,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # gazelle:exclude test_virtualized_history_scroll.py
 
@@ -214,9 +214,9 @@ py_visual_test(
     ],
     harness = ":virtualized_history_scroll_harness_js",
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

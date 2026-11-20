@@ -125,10 +125,10 @@ py_library(
     deps = [
         ":chunking",
         ":store",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
+        "//testing:sqlalchemy_engines",
         "//third_party/containers:pgvector_pg18",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pygit2",

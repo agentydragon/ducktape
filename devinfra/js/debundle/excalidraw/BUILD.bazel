@@ -245,9 +245,9 @@ py_test(
     },
     deps = [
         "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing/frontend_visual:context",
-        "//util/testing/frontend_visual:fixtures",
+        "//testing:asgi",
+        "//testing/frontend_visual:context",
+        "//testing/frontend_visual:fixtures",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

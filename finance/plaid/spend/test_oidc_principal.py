@@ -28,8 +28,8 @@ from finance.plaid.spend.oidc_principal import (
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _ISSUER = "https://auth.example.test/application/o/haku-mcp/"
 _CLIENT_ID = "haku-mcp"

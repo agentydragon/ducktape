@@ -30,11 +30,11 @@ from props.registry_proxy.app import create_app
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_CRITIC_DIGEST
-from util.testing.asgi import serve_app_in_loop
+from testing.asgi import serve_app_in_loop
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",

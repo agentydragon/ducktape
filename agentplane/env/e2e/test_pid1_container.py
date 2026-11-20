@@ -35,8 +35,8 @@ from agentplane.net.peertls.config import MTLS
 from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.container_logs import LoggedContainer
 from third_party.containers import debian_slim, ryuk
-from util.testing.container_logs import LoggedContainer
 
 
 def _load_images() -> str:

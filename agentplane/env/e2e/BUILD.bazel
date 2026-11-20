@@ -21,7 +21,7 @@ py_library(
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//agentplane/testing:sandbox_fixtures",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
     ],
 )
 
@@ -397,8 +397,8 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
         "//devinfra/oci",
+        "//testing:container_logs",
         "//third_party/containers:debian_slim",
-        "//util/testing:container_logs",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -438,9 +438,9 @@ py_test(
         "//agentplane/proto:session_pb2",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "//testing:container_logs",
         "//third_party/containers:debian_slim",
         "//third_party/containers:ryuk",
-        "//util/testing:container_logs",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",

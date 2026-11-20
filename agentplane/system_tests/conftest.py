@@ -21,8 +21,8 @@ from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.tracing import timing_summary, tracer
 from agentplane.system_tests.k3s.pytest_plugin import k3s_binary
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.otel_tracing import configure_tracing
 from util.net import Listener
-from util.testing.otel_tracing import configure_tracing
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

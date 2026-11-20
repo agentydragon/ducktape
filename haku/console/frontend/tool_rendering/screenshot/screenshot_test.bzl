@@ -18,7 +18,7 @@ page can inline the bundle in a `<script>` without module CORS.
 
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 def preview_screenshots(name, entry, fixtures, deps, visibility = None):
     """Define a per-server preview screenshot `py_visual_test`.

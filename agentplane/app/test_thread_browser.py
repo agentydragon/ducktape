@@ -76,8 +76,8 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 
 
 @asynccontextmanager

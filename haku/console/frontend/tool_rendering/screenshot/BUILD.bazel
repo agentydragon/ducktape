@@ -78,9 +78,9 @@ py_library(
     testonly = True,
     srcs = ["preview_visual.py"],
     deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:fixtures",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:fixtures",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pydantic",
         "@pypi//pytest",

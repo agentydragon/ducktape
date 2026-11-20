@@ -1,6 +1,6 @@
 """Browser-level read of real, owner-authenticated archived transcript data."""
 
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
+# gazelle:include_dep //testing/frontend_visual:fixtures
 
 from __future__ import annotations
 
@@ -39,11 +39,11 @@ from ai_session_archive.web_main import _frontend_dir
 from ai_session_archive.web_settings import WebSettings
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.asgi import serve_app
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
+from testing.asgi import serve_app
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 _PARSER_VERSION = "jsonl-v1"

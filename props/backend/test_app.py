@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from props.backend import app as backend_app
 from props.config import PropsConfig
 from props.core.oci_utils import RegistryProxyConfig
-from util.testing.asgi import bind_http_server
+from testing.asgi import bind_http_server
 
 
 @pytest.fixture

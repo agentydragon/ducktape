@@ -42,7 +42,7 @@ from agentplane.sampler.testing import (
 from agentplane.sampler.testing_store import Store
 from agentplane.testing.codex_fixtures import ExecutorServer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.sqlalchemy_engines import postgres_async_engine
+from testing.sqlalchemy_engines import postgres_async_engine
 
 
 async def test_flat_model_routes_enforce_effort_and_session_contract(

@@ -26,8 +26,8 @@ from finance.plaid.db.models import (
     PlaidApiEventRow,
     SecurityRow,
 )
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.db_url import render_postgresql_url
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 
 @contextmanager

@@ -9,8 +9,8 @@ from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import ryuk
-from util.testing.container_logs import LoggedContainer
 
 
 async def test_go_suite() -> None:

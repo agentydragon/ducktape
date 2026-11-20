@@ -24,7 +24,7 @@ from agentplane.history_service.testing.fixtures import service_database_templat
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from agentplane.testing.sandbox_fixtures import sandbox
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,

@@ -18,7 +18,7 @@ bbr test //haku/console/frontend/tool_rendering/<server>:previews [--test_filter
   `RegisteredToolPreviewFixture` to that server's `preview_fixtures.ts`, covering both variants.
 - A single-component scene renders inside its real production container (preview cards:
   `.haku-shell-panels`) and screenshots that element — no hardcoded width or full-viewport shot
-  (<../../../util/testing/frontend_visual/README.md>).
+  (<../../../testing/frontend_visual/README.md>).
 
 ## Tool-call rendering
 

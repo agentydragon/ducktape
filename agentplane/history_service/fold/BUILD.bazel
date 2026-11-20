@@ -23,7 +23,7 @@ py_library(
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )

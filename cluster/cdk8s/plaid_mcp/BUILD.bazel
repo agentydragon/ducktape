@@ -108,7 +108,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
+    deps = ["//testing:postgres_fixtures"],
 )
 
 py_test(
@@ -122,7 +122,7 @@ py_test(
         "//:conftest",
         "//finance/plaid/db:models",
         "//finance/plaid/spend:portfolio_queries",
-        "//util/testing:postgres",
+        "//testing:postgres",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

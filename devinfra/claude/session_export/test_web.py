@@ -29,8 +29,8 @@ from devinfra.claude.session_export.settings import ServeSettings, WebSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OWNER = "test-owner-subject"
 REFUSAL_BODY = "test-refusal-body"

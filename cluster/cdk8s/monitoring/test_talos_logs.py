@@ -16,8 +16,8 @@ from testcontainers.core.network import Network
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.container_logs import LoggedContainer
 from third_party.containers import alloy_config, loki_test
-from util.testing.container_logs import LoggedContainer
 
 _LOKI_CONFIG = """\
 auth_enabled: false

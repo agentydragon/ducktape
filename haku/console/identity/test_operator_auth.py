@@ -1,6 +1,6 @@
 """End-to-end auth boundary for the console's `/api/*` split, exercised through the real
 ``create_app`` — real routers, real router-level guards, real SessionMiddleware, and a real Authentik
-authorization-code login against a hermetic mock OIDC provider (``util.testing.mock_oidc``). No stub
+authorization-code login against a hermetic mock OIDC provider (``testing.mock_oidc``). No stub
 app, no hand-minted session: the operator credential is obtained by actually walking
 ``/auth/login`` → provider → ``/auth/callback``.
 
@@ -30,8 +30,8 @@ from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
 from haku.console.database_schema import OidcIdentity
 from haku.console.identity import operator_auth, operator_login_flow
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 AGENT_TOKEN = "agent-secret"  # a test literal, not a real credential
 _OPERATOR_SUBJECT = "op-subject-1"  # the opaque Authentik `sub` the mock IdP issues

@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -14,7 +14,7 @@ from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous(postgres_engine: Engine) -> None:

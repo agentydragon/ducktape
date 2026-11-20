@@ -34,8 +34,8 @@ from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import debian_slim
-from util.testing.container_logs import LoggedContainer
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.
 # gazelle:include_dep @pypi//protobuf

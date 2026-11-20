@@ -1,6 +1,6 @@
 """The versioned archive history creates the exact schema and is safe to rerun."""
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 from collections.abc import Iterator
 from typing import Any, cast
 
@@ -13,9 +13,9 @@ from sqlalchemy.schema import SchemaItem
 
 from ai_session_archive.database import Base, make_engine
 from ai_session_archive.database_migrate import RUNNER
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres import DatabaseNames, create_temporary_database
 
-pytest_plugins = ["util.testing.postgres_fixtures"]
+pytest_plugins = ["testing.postgres_fixtures"]
 
 
 @pytest.fixture

@@ -22,11 +22,11 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _open_standalone_reasoning,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

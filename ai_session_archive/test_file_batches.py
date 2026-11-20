@@ -1,6 +1,6 @@
 """Durable file staging must never change the published read API before commit."""
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
 import cProfile
@@ -42,7 +42,7 @@ from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.version_queries import list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 PATH = "/.claude/projects/project/session.jsonl"
 SNAPSHOT = ResticSnapshot(
     id="snapshot", captured_at=datetime(2026, 1, 1, tzinfo=UTC), parent_id=None, tree_id="tree", paths=("/.claude",)

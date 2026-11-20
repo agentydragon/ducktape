@@ -6,9 +6,9 @@ from props.agents.critic_dev.recipes.ground_truth import count_issues_by_snapsho
 from props.core.splits import Split
 from props.db.database import Database
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 def test_count_issues_by_snapshot(synced_db: Database) -> None:

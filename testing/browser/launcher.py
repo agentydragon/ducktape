@@ -5,7 +5,7 @@ import json
 from python.runfiles import Runfiles
 
 _RUNFILES = Runfiles.CreateOrRaise()
-_FLAGS = json.loads((_RUNFILES.root() / "ducktape/util/testing/browser/chromium-flags.json").read_text())
+_FLAGS = json.loads((_RUNFILES.root() / "ducktape/testing/browser/chromium-flags.json").read_text())
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
 

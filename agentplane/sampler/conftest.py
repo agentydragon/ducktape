@@ -16,7 +16,7 @@ from agentplane.testing.codex_fixtures import (
 )
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
+from testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 
 
 @pytest.fixture

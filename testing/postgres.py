@@ -6,7 +6,7 @@ fixtures directly into the owning package conftest; keep this wiring local to th
 Postgres so unrelated tests do not load Docker or migration dependencies.
 
 ```python
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones, database_names, migrated_database_fixtures, postgres_admin_url, postgres_container,
     postgres_image,
 )

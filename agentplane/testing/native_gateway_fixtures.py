@@ -14,8 +14,8 @@ from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from agentplane.testing.sandbox_fixtures import sandbox
-from util.testing.postgres import DatabaseNames, create_temporary_database
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,

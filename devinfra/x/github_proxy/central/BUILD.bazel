@@ -60,7 +60,7 @@ py_test(
         "//devinfra/oci",
         "//devinfra/x/github_proxy/central:github_api_proxy_image",
         "//devinfra/x/github_proxy/central/testing:certificates",
-        "//util/testing:container_logs",
+        "//testing:container_logs",
         "@pypi//aiohttp",
         "@pypi//pytest_bazel",
     ],

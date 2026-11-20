@@ -6,8 +6,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from util.testing.postgres import DatabaseNames, create_temporary_database
-from util.testing.postgres_fixtures import database_names, postgres_admin_url, postgres_container, postgres_image
+from testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres_fixtures import database_names, postgres_admin_url, postgres_container, postgres_image
 
 
 @pytest.fixture

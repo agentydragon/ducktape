@@ -14,7 +14,7 @@ from websockets.sync.server import ServerConnection, serve
 
 from platform_sessions.provider.cdp_browser import CdpBrowser
 from platform_sessions.provider.interactive_browser import InteractiveBrowserRuntime
-from util.testing.browser.launcher import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from testing.browser.launcher import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 
 
 @pytest.fixture
