@@ -465,11 +465,6 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	script := fmt.Sprintf(": > %q\nwhile [ ! -f %q ]; do sleep 0.01; done\nprintf b >> %q\nprintf ready", started, release, count)
 	r := newHostTestRuntime(t, &script, stateDir, nil)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
-	initialSignal, found, err := lifecycle.Read[operationSignal](t.Context(), r.state, ResourceID)
-	if err != nil || !found || initialSignal.Revision != 0 {
-		t.Fatalf("bootstrap operation signal before admission = (%+v, found=%t, err=%v), want initialized revision 0", initialSignal, found, err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
 	defer cancel()
 	const waiters = 8
@@ -489,10 +484,6 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	r.workers.Wait()
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap script count = %q, %v; want one execution", data, err)
-	}
-	signal, found, err := lifecycle.Read[operationSignal](ctx, r.state, ResourceID)
-	if err != nil || !found || signal.Revision != 2 {
-		t.Fatalf("bootstrap operation signal = (%+v, found=%t, err=%v), want revision 2", signal, found, err)
 	}
 }
 

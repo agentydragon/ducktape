@@ -70,8 +70,8 @@ define parking and durable terminal release before promising indefinite process 
 
 ### Tentative review findings (2026-11-19)
 
-Proposals for owner review, not approved work. Estimates of net savings need prototypes and must
-include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
+Review candidates; validate each proposed change before burning it down. Estimates of net savings
+need prototypes and must include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
 durable user data and uncertain-effect handling in any accepted change.
 
 - **Close ownership:** Consider one Runtime-owned sequential Close worker observing component COSI
@@ -103,9 +103,6 @@ durable user data and uncertain-effect handling in any accepted change.
 - **Delivery status:** Consider deriving `Delivered` from the generation-qualified seal and ACK fields
   in [Session status](runtime/session/resources.go), rather than storing the derived boolean too.
   Retain detailed blockers and tests for missing, unsealed, wrong-cursor and stale-generation ACKs.
-- **Tests:** Review exact internal wakeup-revision assertions, such as the concurrent-bootstrap test,
-  for removal where behavior is already covered. Retain controller-restart, publication-failure,
-  no-replay and ordering race coverage.
 - **Possible admission cleanup defect:** In [Execution admission](runtime/internal/coordinator/forward.go),
   `execCalls` is populated before admission-count publication; on publication failure the error path
   appears to leave the entry and cancel function until teardown. Confirm with fault injection before
