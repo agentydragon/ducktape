@@ -28,7 +28,7 @@ def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str,
 def test_environment_management_and_dispatcher_wake_have_separate_authority(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    app_rules = find_resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
+    app_rules = find_resource(staging_manifests, "Role", app.NAME)["rules"]
     for rule in app_rules:
         if rule["resources"] == ["sandboxes"]:
             assert set(rule["verbs"]) == {"get", "list", "watch"}
@@ -38,7 +38,7 @@ def test_environment_management_and_dispatcher_wake_have_separate_authority(
 
     gateway = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     assert gateway["serviceAccountName"] == runner_gateway.NAME
-    gateway_rules = find_resource(staging_manifests, "Role", runner_gateway.NAME.removeprefix("agentplane-"))["rules"]
+    gateway_rules = find_resource(staging_manifests, "Role", runner_gateway.NAME)["rules"]
     assert set(one(rule for rule in gateway_rules if rule["resources"] == ["sandboxes"])["verbs"]) == {
         "get",
         "list",
@@ -61,9 +61,7 @@ def test_environment_management_and_dispatcher_wake_have_separate_authority(
 def test_notifications_have_their_own_account_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:
     pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
-    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))[
-        "spec"
-    ]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]

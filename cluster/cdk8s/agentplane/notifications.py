@@ -182,7 +182,7 @@ class Notifications(Construct):
             path="/etc/agentplane-notifications/settings.yaml",
             content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
         )
-        role_name = NAME.removeprefix("agentplane-")
+        role_name = NAME
         Role(
             self,
             "role",
@@ -226,7 +226,7 @@ class Notifications(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers),

@@ -157,11 +157,7 @@ def environment_chart(
         | notifications_caller
         | actions.orchestration_callers(env)
         | actions.session_delegation_callers(env),
-        delegation_actor=(
-            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
-            else None
-        ),
+        delegation_actor=sandbox_controller.action_delegation_actor(env),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

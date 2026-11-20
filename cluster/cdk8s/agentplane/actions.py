@@ -669,14 +669,13 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
-                # The staged edge has no Pods until the Connection/MCP traffic cutover.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]
                 ),

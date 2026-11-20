@@ -166,9 +166,7 @@ def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint:
     NetworkPolicy(
         scope,
         f"{policy}-proxy-egress",
-        metadata=ApiObjectMetadata(
-            name=f"{endpoint.name.removeprefix('agentplane-')}-{policy}-proxy", namespace=namespace
-        ),
+        metadata=ApiObjectMetadata(name=f"{endpoint.name}-{policy}-proxy", namespace=namespace),
         endpoint_selector=proxy(namespace).pods.selector,
         egress=[endpoint.egress()],
     )
@@ -660,17 +658,12 @@ class Egress(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
-            rules=role_rules,
-        )
+        Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
         RoleBinding(
             self,
             "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
         # A standing workload's record lives in its own namespace; its Identity subject in the policy
         # namespace, read above.
@@ -857,7 +850,7 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.proxy.pods.selector,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes. command_sandbox.py imports this

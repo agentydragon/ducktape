@@ -3,7 +3,7 @@
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
 ducktape-flux and public-coder rbac charts; its traffic over the app and Agentplane egress.
 The ClickHouse reader's hand-written Secret is checked in
-`//cluster/validation:test_public_coder_clickhouse_reader_contract`.
+`//cluster/cdk8s/clickhouse:test_public_coder_clickhouse_reader_contract`.
 """
 
 from __future__ import annotations

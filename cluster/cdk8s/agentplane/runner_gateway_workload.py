@@ -403,7 +403,7 @@ def serving_chart(
         sessions_image=_SESSIONS_IMAGE,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,
-        delegation_actor=(sandbox_controller.action_delegation_actor(env)),
+        delegation_actor=sandbox_controller.action_delegation_actor(env),
         wake_service_callers=wake_service_callers,
     ).add_platform_resources()
     return chart

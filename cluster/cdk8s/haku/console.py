@@ -222,7 +222,7 @@ class Console(Construct):
                 self._from_secret(oidc.key("operator_client_id"), "operator_oidc", "client_id"),
                 self._from_secret(oidc.key("operator_client_secret"), "operator_oidc", "client_secret"),
                 self._from_secret(oidc.key("operator_session_secret"), "operator_oidc", "session_secret"),
-                # The Authentik user-id namespace both providers above share (sub_mode=user_id).
+                # The Authentik user-id namespace the operator provider uses (sub_mode=user_id).
                 (
                     env_name(Settings, "operator_identity", "trust_domain"),
                     EnvValue.from_value("auth.allegedly.works/authentik-user-id/v1"),

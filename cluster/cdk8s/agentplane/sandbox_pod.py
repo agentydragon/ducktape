@@ -236,7 +236,7 @@ def pod_spec(
     *,
     workload: k8s.Container,
     additional_workloads: Sequence[k8s.Container] = (),
-    sidecar_settings: SettingsFile | None,
+    sidecar_settings: SettingsFile,
     node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
@@ -253,47 +253,33 @@ def pod_spec(
     The Sandbox controller sets the Sandbox's ServiceAccount. Command boxes use the namespace's
     default ServiceAccount and carry their effective Identity only in the WorkloadCredential.
     `additional_workloads` are other workload containers. `sidecar_settings` is the sidecar's
-    settings file (`add_sidecar_settings`); `None` omits the sidecar and settings mount. `workload_volumes`
+    settings file (`add_sidecar_settings`). `workload_volumes`
     are Pod volumes the workload mounts beyond the trust and tool-config
     volumes. `node_selector` is the optional
     placement restriction for this template. A Runner needs its local telemetry relay through its own
     tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle.
     A caller-supplied `security_context` carries its own fsGroup policy; `fs_group_change_policy` applies
     to the default context. Stateful Sandbox templates set it, while command boxes leave it unset."""
-    if (keep_sidecar_until_workload_exit or sidecar_mounts) and sidecar_settings is None:
-        raise ValueError("sidecar settings are required for sidecar lifecycle or mounts")
-    settings = (
-        sidecar_settings.pod_wiring(
-            volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
-        )
-        if sidecar_settings is not None
-        else None
+    settings = sidecar_settings.pod_wiring(
+        volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
-    sidecar = (
-        _egress_sidecar(
-            env,
-            settings,
-            sidecar_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-                limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-            ),
-            telemetry_enabled=enable_telemetry,
-            restart_policy="Always" if keep_sidecar_until_workload_exit else None,
-            volume_mounts=sidecar_mounts,
-        )
-        if settings is not None
-        else None
+    sidecar = _egress_sidecar(
+        env,
+        settings,
+        sidecar_resources
+        or k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
+        ),
+        telemetry_enabled=enable_telemetry,
+        restart_policy="Always" if keep_sidecar_until_workload_exit else None,
+        volume_mounts=sidecar_mounts,
     )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[
-            workload,
-            *additional_workloads,
-            *([sidecar] if sidecar is not None and not keep_sidecar_until_workload_exit else []),
-        ],
-        init_containers=[sidecar] if sidecar is not None and keep_sidecar_until_workload_exit else None,
+        containers=[workload, *additional_workloads, *([] if keep_sidecar_until_workload_exit else [sidecar])],
+        init_containers=[sidecar] if keep_sidecar_until_workload_exit else None,
         automount_service_account_token=False,
         # Container restarts create a fresh PID namespace for the isolated Codex executor.
         restart_policy=restart_policy,
@@ -313,7 +299,7 @@ def pod_spec(
             fs_group_change_policy=fs_group_change_policy,
             seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
         ),
-        volumes=[*_egress_volumes(env), *([settings.volume] if settings is not None else []), *workload_volumes],
+        volumes=[*_egress_volumes(env), settings.volume, *workload_volumes],
     )
 
 
