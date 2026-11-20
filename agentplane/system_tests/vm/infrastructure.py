@@ -157,11 +157,15 @@ def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
 @tracer.start_as_current_span("system_test.virtualization.apis")
 def wait_for_apis(kubectl: Kubectl) -> None:
     """Wait for the CRDs and Kyverno webhook before applying resources that invoke admission."""
-    crds = ["crd/virtualmachines.kubevirt.io", "crd/clusterpolicies.kyverno.io"]
+    crds = [
+        "crd/virtualmachines.kubevirt.io",
+        "crd/mutatingpolicies.policies.kyverno.io",
+        "crd/validatingpolicies.policies.kyverno.io",
+    ]
     # `condition=Established` fails at once on a CRD that does not exist yet.
     kubectl("wait", "--for=create", *crds, f"--timeout={READY_SECONDS}s")
     kubectl("wait", "--for=condition=Established", *crds, f"--timeout={READY_SECONDS}s")
-    # A ClusterPolicy invokes Kyverno admission even before any VM is created.
+    # A policy invokes Kyverno admission even before any VM is created.
     kubectl(
         "-n", KYVERNO_NAMESPACE, "wait", "--for=create", "endpoints/kyverno-svc",
         f"--timeout={READY_SECONDS}s",
@@ -184,4 +188,8 @@ def wait_until_ready(kubectl: Kubectl, *, require_cluster_policies: bool = True)
         f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     if require_cluster_policies:
-        kubectl("wait", "--for=condition=Ready", "clusterpolicy", "--all", f"--timeout={READY_SECONDS}s")
+        for resource in ("mutatingpolicies", "validatingpolicies"):
+            kubectl(
+                "wait", "--for=jsonpath={.status.conditionStatus.ready}=true", f"{resource}.policies.kyverno.io", "--all",
+                f"--timeout={READY_SECONDS}s",
+            )  # fmt: skip

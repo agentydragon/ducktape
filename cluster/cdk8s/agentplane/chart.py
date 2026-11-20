@@ -202,7 +202,7 @@ def environment_chart(
             runner_scope,
             "launcher-relay",
             namespace=env.namespace,
-            runner_pod=runner_template.spec["pod"],
+            template_name=environment_template_name,
             settings_config_map=relay_settings,
         )
         state_volume = runner_template.spec["stateVolume"]

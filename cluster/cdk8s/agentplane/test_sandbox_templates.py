@@ -345,13 +345,16 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     launcher_settings["listen_address"] = runner_settings["listen_address"]
     assert launcher_settings == runner_settings
 
-    policy = find_resource(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
-    inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
-    volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
-    assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
-    append = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "append-native-relay")
-    relay = one(entry for entry in append["context"] if entry["name"] == "relay")["variable"]["value"]
-    assert {mount["name"] for mount in relay["volumeMounts"]} <= {volume["name"] for volume in volumes}
+    policy = find_resource(staging_manifests, "MutatingPolicy", f"{staging.ENV.namespace}-launcher-relay")
+    volume_patch = one(
+        m["jsonPatch"]["expression"]
+        for m in policy["spec"]["mutations"]
+        if "launcher-relay-egress-sidecar" in m["jsonPatch"]["expression"]
+    )
+    assert "egress-sidecar-settings" in volume_patch
+    # The relay is copied from the runner template, so its mounts must name volumes the template Pod has.
+    template_relay = one(c for c in pod["initContainers"] if c["name"] == "egress-sidecar")
+    assert {mount["name"] for mount in template_relay["volumeMounts"]} <= {volume["name"] for volume in pod["volumes"]}
 
 
 def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:

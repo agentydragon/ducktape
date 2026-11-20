@@ -45,6 +45,7 @@ _VMI_NAME = "ci-guest"
 _STATE_PVC_NAME = "ci-guest-state"
 _WORKSPACE_PVC_NAME = "ci-guest-workspace"
 _POLICY_SUFFIX = "-virtiofs-shutdown"
+_POLICY_RESOURCE = "mutatingpolicies.policies.kyverno.io"
 _BOOT_EVIDENCE = "AGENTPLANE_BOOT_EVIDENCE_END status=complete"
 _VIRSH_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
 _BOOT_WAIT_SECONDS = 240
@@ -200,7 +201,7 @@ def _virtiofs_shutdown_policy(namespace: str) -> dict[str, Any]:
     return policy
 
 
-def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
+def _create_mutating_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
     resource = _virtiofs_shutdown_policy(namespace)
     try:
         return _create(k3s, resource)
@@ -209,7 +210,7 @@ def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
         # kubectl lost its response.
         current = k3s.kubectl(
             "get",
-            "clusterpolicy",
+            _POLICY_RESOURCE,
             resource["metadata"]["name"],
             "-o",
             "json",
@@ -225,7 +226,7 @@ def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
             metadata.get("labels", {}).get(_OWNER_LABEL) != _owner_value(namespace)
             or metadata.get("labels", {}).get(_OWNER_NAMESPACE_LABEL) != namespace
         ):
-            raise RuntimeError(f"refusing create recovery for unowned ClusterPolicy {metadata.get('name')}")
+            raise RuntimeError(f"refusing create recovery for unowned MutatingPolicy {metadata.get('name')}")
         return cast(dict[str, Any], policy)
 
 
@@ -1050,7 +1051,7 @@ def _cleanup_namespace(
 
     policy_name = name + _POLICY_SUFFIX
     policy_json = k3s.kubectl(
-        "get", "clusterpolicy", policy_name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
+        "get", _POLICY_RESOURCE, policy_name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
     )
     if policy_json:
         policy = json.loads(policy_json)
@@ -1060,12 +1061,12 @@ def _cleanup_namespace(
             or metadata.get("labels", {}).get(_OWNER_LABEL) != _owner_value(name)
             or metadata.get("labels", {}).get(_OWNER_NAMESPACE_LABEL) != name
         ):
-            raise RuntimeError(f"refusing to delete ClusterPolicy {policy_name}: its UID or ownership labels changed")
-        k3s.kubectl("delete", "clusterpolicy", policy_name, "--wait=true", "--timeout=30s")
+            raise RuntimeError(f"refusing to delete MutatingPolicy {policy_name}: its UID or ownership labels changed")
+        k3s.kubectl("delete", _POLICY_RESOURCE, policy_name, "--wait=true", "--timeout=30s")
         if k3s.kubectl(
-            "get", "clusterpolicy", policy_name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
+            "get", _POLICY_RESOURCE, policy_name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
         ).strip():
-            raise RuntimeError(f"action-owned ClusterPolicy {policy_name} did not disappear")
+            raise RuntimeError(f"action-owned MutatingPolicy {policy_name} did not disappear")
 
     pvc_json = k3s.kubectl(
         "get",
@@ -1213,7 +1214,7 @@ def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> No
         ("namespace-events.yaml", ("get", "events", "-n", namespace, "--sort-by=.lastTimestamp", "-o", "yaml")),
         ("namespace-pvc.yaml", ("get", "pvc", "-n", namespace, "-o", "yaml")),
         ("namespace-configmaps.yaml", ("get", "configmap", "-n", namespace, "-o", "yaml")),
-        ("namespace-launcher-policy.yaml", ("get", "clusterpolicy", namespace + _POLICY_SUFFIX, "-o", "yaml")),
+        ("namespace-launcher-policy.yaml", ("get", _POLICY_RESOURCE, namespace + _POLICY_SUFFIX, "-o", "yaml")),
         ("kubevirt.yaml", ("get", "kubevirt", "kubevirt", "-n", infrastructure.KUBEVIRT_NAMESPACE, "-o", "yaml")),
         ("node.yaml", ("get", "node", "env", "-o", "yaml")),
     ]:
@@ -1235,27 +1236,17 @@ def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace
 
     assert policy["metadata"]["name"] == namespace + _POLICY_SUFFIX
     assert policy["metadata"]["labels"][_OWNER_NAMESPACE_LABEL] == namespace
-    rules = policy["spec"]["rules"]
-    assert len(rules) == 1
-    rule = rules[0]
-    assert rule["name"] == "keep-virtiofs-through-guest-shutdown"
-    resources = rule["match"]["any"][0]["resources"]
-    assert resources["namespaces"] == [namespace]
-    assert resources["selector"]["matchLabels"] == {"kubevirt.io": "virt-launcher"}
-    conditions = policy["spec"]["webhookConfiguration"]["matchConditions"]
-    assert len(conditions) == 1
-    assert f"request.namespace == '{namespace}'" in conditions[0]["expression"]
-    assert [entry["name"] for entry in rule["context"]] == ["vmiOwner", "vmi"]
-    foreach = rule["mutate"]["foreach"]
-    assert len(foreach) == 1
-    assert foreach[0]["list"] == "request.object.spec.containers"
-    patches = foreach[0]["patchesJson6902"]
-    assert "/spec/initContainers/-" in patches
-    assert '"restartPolicy":"Always"' in patches
-    assert "/spec/containers/{{elementIndex}}" in patches
+    conditions = policy["spec"]["matchConditions"]
+    assert any(f"request.namespace == '{namespace}'" in condition["expression"] for condition in conditions)
+    assert [m["name"] for m in policy["spec"]["variables"]][:2] == ["vmiOwner", "vmi"]
+    mutations = policy["spec"]["mutations"]
+    assert len(mutations) == 1
+    expression = mutations[0]["jsonPatch"]["expression"]
+    assert "/spec/initContainers/-" in expression
+    assert "'Always'" in expression
 
 
-def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluster_policy(
+def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_mutating_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
@@ -1272,7 +1263,7 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
             self.calls.append((args, stdout_only))
             if args[:2] == ("get", "namespace"):
                 return json.dumps(namespace_object) if self.namespace_exists else ""
-            if args[0] == "get" and args[1] in {"vmi", "clusterpolicy", "pvc"}:
+            if args[0] == "get" and args[1] in {"vmi", _POLICY_RESOURCE, "pvc"}:
                 # kubectl can print a NotFound diagnostic on stderr even with --ignore-not-found;
                 # stdout-only reads keep that diagnostic from being mistaken for JSON/object data.
                 return "" if stdout_only else "Error from server (NotFound): resource not found"
@@ -1288,13 +1279,13 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
 
     monkeypatch.setattr(sys.modules[__name__], "_virtiofs_shutdown_policy", fail_generation)
     with pytest.raises(RuntimeError, match="policy generation failed"):
-        _create_cluster_policy(cast(baseline.K3s, k3s), namespace)
+        _create_mutating_policy(cast(baseline.K3s, k3s), namespace)
 
     _cleanup_namespace(cast(baseline.K3s, k3s), namespace, "owned-uid", None, None, None)
 
     assert any(args[:2] == ("delete", "namespace") for args, _ in k3s.calls)
     assert all(args[:2] != ("create", "-") for args, _ in k3s.calls)
-    assert any(args[:2] == ("get", "clusterpolicy") and stdout_only for args, stdout_only in k3s.calls)
+    assert any(args[:2] == ("get", _POLICY_RESOURCE) and stdout_only for args, stdout_only in k3s.calls)
 
 
 def test_shutdown_policy_cycle_count_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1817,13 +1808,13 @@ def _run_cycle(
             )
         policy: dict[str, Any] | None = None
         if not skip_virtiofs_policy:
-            policy = _create_cluster_policy(k3s, namespace_name)
+            policy = _create_mutating_policy(k3s, namespace_name)
             policy_uid = policy["metadata"]["uid"]
             (output / "virtiofs-shutdown-policy.yaml").write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
             k3s.kubectl(
                 "wait",
                 "--for=condition=Ready",
-                f"clusterpolicy/{namespace_name + _POLICY_SUFFIX}",
+                f"{_POLICY_RESOURCE}/{namespace_name + _POLICY_SUFFIX}",
                 f"--timeout={infrastructure.READY_SECONDS}s",
             )
         (output / "virtiofs-policy-mode.json").write_text(

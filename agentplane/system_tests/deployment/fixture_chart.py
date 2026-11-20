@@ -929,11 +929,7 @@ def add_vm_templates(
     scope = chart
     relay_settings = runner_template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar")
     launcher_relay.LauncherRelayPolicy(
-        scope,
-        "launcher-relay",
-        namespace=env.namespace,
-        runner_pod=runner_template.spec["pod"],
-        settings_config_map=relay_settings,
+        scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
     state_volume = runner_template.spec["stateVolume"]
     state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
