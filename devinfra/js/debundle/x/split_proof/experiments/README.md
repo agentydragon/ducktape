@@ -389,3 +389,26 @@ A tree with renamed locals is accepted. Two effects run in the other order give 
 
 On a large production bundle that is not in this repository, the checker accepts the translation, with every unit equal up to renaming and every link resolved, and reports only effect-order obligations.
 What justifies those is the next step: [`translation/PLAN.md`](translation/PLAN.md).
+
+## 13. Footprints by abstract interpretation
+
+`Lower.lean` decides what is an effect from a short list of inert shapes, so every call is an effect and any two calls keep their order. [`effects/`](effects/README.md) reads the code instead. `Effects.lean` runs the bundle's top level once over abstract values and reports, per unit, whether it touches the world, which names it may change and which names it reads through functions it calls. `translate_effects` is `translate` with these footprints; `translate`, `lower` and `lowersplit` are unchanged. The model gains one field, `Stmt.deps`.
+
+Evidence, none of it a proof:
+
+- 60 small bundles in [`effects/cases.mjs`](effects/cases.mjs): the classification of every unit, and 47 reordered programs. Node runs 46 of them differently from the original, and `translate_effects` must not accept those; it must accept the 47th, which Node runs the same. `node run.mjs --permutations N` adds N random permutations of every case's units: no wrong accept in 1,100 so far.
+- The translation fuzzer with `--effects`: six runs of 100 to 300 random bundles each (the random catalog on three seeds, the AST corpus, the callback corpus, `--leaks`), 0 wrong accepts. On one seed it accepts 375 trees that Node agrees with, `translate` 322.
+- 54 mutants of the checker, run by [`translation/fuzz_mutate.py`](translation/fuzz_mutate.py): the cases or the fuzzer must catch each.
+
+**What reading the code found that the fuzzer did not.** The first version had passed seven fuzz seeds. Reading every place where the interpreter does not run code, and asking what that code could still do, gave eleven programs it accepted wrongly (Node prints something else): a generator body, which runs when the iterator is advanced, in a later unit; a call deeper than the analysis follows, or through more candidates than it follows, whose callee was not marked as run; the same for a constructor; an `await`, whose continuation runs after the program in the order the awaits were reached; a read of state that a module outside the tree keeps; a getter, a setter and an inherited accessor; and an object assigned to a variable that the world's handler reads. The fuzzer's catalog had been written by the hand that wrote the analysis. The rules that came out of it: a give-up must escape what the skipped code can reach, and a rule that assumes code runs now must ask whether it runs later. Each is a case with the reordered program, and a mutant that removes it.
+
+**On the large production bundle** (private; numbers only; the committed readable tree, 9,707 units):
+
+| footprints from                                         | effect units | obligations | time  |
+| ------------------------------------------------------- | -----------: | ----------: | ----- |
+| `translate`: the allow-list of `Lower.lean`             |        4,234 |   2,343,730 | 2 s   |
+| `translate_effects`, no premises                        |        2,059 |   1,788,140 | 114 s |
+| `translate_effects`, premise P3                         |        1,583 |   1,326,105 | 111 s |
+| P3 and 40 imports assumed to only allocate (unreviewed) |          730 |     659,827 | 135 s |
+
+The obligations are effect-effect pairs: 1,583 effect units are 1.25 million pairs. 1,557 of the units run unknown code (`EFFECTS_WHY=1 effects …` lists the first reason for each). One vendor import is called, directly or through a local wrapper, by 511 units; 527 units apply a decorator helper to a class or a prototype (`f([decorators], C.prototype, "member", …)`); a few dozen other imports account for most of the rest. What would clear them is a reviewed table of vendor functions that only allocate, keyed by package and export, and an audited claim that decorators on different prototypes commute ([`translation/PLAN.md`](translation/PLAN.md)). The table in the last row is keyed by minified names and was written to see what a table could do: it is an illustration, not a result.

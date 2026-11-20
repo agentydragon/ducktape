@@ -1,6 +1,6 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
-//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
+//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--effects] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -8,6 +8,9 @@
 // generator knows what every unit declares and mentions, so its imports do not depend on the checker's scope analysis.
 // Node runs the bundle and every tree. A tree the checker accepts (exit 0) must print the same as the bundle:
 // an accepted tree that does not is a WRONG ACCEPT, and the exit code of this script is 1.
+//
+// `--effects` checks with `translate_effects` (footprints from the abstract interpreter of `lean/Experiments/Effects.lean`,
+// under the premises `effectsPremises` below) instead of `translate`.
 //
 // `--leaks` adds templates whose behavior depends on something a move or a rename changes: `import.meta.url`, direct `eval`,
 // top-level `await` (the checker must refuse these) and `fn.name` (assumed harmless: such wrong accepts are counted apart).
@@ -23,6 +26,11 @@ import { generateAstBundle, astStatistics, printAst } from "./ast_generator.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
+const translateEffects =
+  process.env.TRANSLATE_EFFECTS ?? path.join(here, "../../lean/.lake/build/bin/translate_effects");
+// What `--effects` assumes besides the always-on premises: the world defines no accessors or conversion hooks on program
+// objects (P3), which the generated bundles satisfy.
+const effectsPremises = { noWorldHooks: true };
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -98,6 +106,42 @@ const makeClass = (g) => {
     `class ${top(c)} { constructor(${local(p)}) { this.v = ${local(p)}; } get() { return this.v + ${top(u.name)}; } }`,
     { defs: [c], regs: [{ name: c, kind: "class", cls: true }] }
   );
+};
+// A function that writes `.n` of its argument, and a function that returns its argument: the helpers through which a
+// write or an alias travels in the templates below.
+const makeSetter = (g) => {
+  const f = g.fresh("set");
+  g.add("setterFn", `function ${top(f)}(t, v) { t.n = v; }`, {
+    defs: [f],
+    regs: [{ name: f, kind: "fn", setter: true }],
+  });
+};
+const makeIdentity = (g) => {
+  const f = g.fresh("id");
+  g.add("identityFn", `function ${top(f)}(x) { return x; }`, {
+    defs: [f],
+    regs: [{ name: f, kind: "fn", identity: true }],
+  });
+};
+const makeClosure = (g) => {
+  const f = g.fresh("next");
+  g.add("closureCounter", `const ${top(f)} = (() => { let n = 0; return () => ++n; })();`, {
+    defs: [f],
+    regs: [{ name: f, kind: "const", callable: true, closure: true }],
+  });
+};
+const makeInstance = (g) => {
+  const c = g.fresh("C");
+  const i = g.fresh("inst");
+  g.add("counterClass", `class ${top(c)} { n = 0; inc() { this.n++; return this.n; } }`, {
+    defs: [c],
+    regs: [{ name: c, kind: "class" }],
+  });
+  g.add("counterInstance", `const ${top(i)} = new ${top(c)}();`, {
+    defs: [i],
+    // printing an instance shows the name of its class, which a rename changes (the `fn.name` assumption): not `data`
+    regs: [{ name: i, kind: "const", prop: true, instance: true, json: true }],
+  });
 };
 const makeProp = (g) => {
   const o = g.fresh("o");
@@ -597,6 +641,216 @@ const TEMPLATES = [
       });
     },
   ],
+  // ---- how a write and an alias can reach an object: the analysis must see every route
+  [
+    "aliasOf",
+    4,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const a = g.fresh("a");
+      const id = g.need((e) => e.identity, makeIdentity);
+      const routes = [
+        `{ k: ${top(o.name)} }.k`,
+        `[${top(o.name)}][0]`,
+        `new Map([["k", ${top(o.name)}]]).get("k")`,
+        `(true ? ${top(o.name)} : { n: 9 })`,
+        `(() => ${top(o.name)})()`,
+        `{ self() { return ${top(o.name)}; } }.self()`,
+        `(null ?? ${top(o.name)})`,
+        `${top(id.name)}(${top(o.name)})`,
+        `[1].map(() => ${top(o.name)})[0]`,
+        `Object.assign({ z: 1 }, { w: ${top(o.name)} }).w`,
+        `[${top(o.name)}].concat([])[0]`,
+        `{ ...{ w: ${top(o.name)} } }.w`,
+      ];
+      const route = g.r.pick(routes);
+      g.add("aliasOf", route.startsWith("{") ? `const ${top(a)} = (${route});` : `const ${top(a)} = ${route};`, {
+        defs: [a],
+        regs: [{ name: a, kind: "const", prop: true, instance: o.instance, json: true, data: !o.instance }],
+      });
+    },
+  ],
+  [
+    "aliasViaDestructure",
+    1,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const a = g.fresh("a");
+      g.add("aliasViaDestructure", `const { k: ${top(a)} } = { k: ${top(o.name)} };`, {
+        defs: [a],
+        regs: [{ name: a, kind: "const", prop: true, instance: o.instance, json: true, data: !o.instance }],
+      });
+    },
+  ],
+  [
+    "aliasViaRegistry",
+    2,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const reg = g.fresh("reg");
+      const a = g.fresh("a");
+      g.add("registry", `const ${top(reg)} = {};`, { defs: [reg], regs: [{ name: reg, kind: "const", json: true }] });
+      g.add("registryStore", `${top(reg)}.k = ${top(o.name)};`);
+      g.add("registryRead", `const ${top(a)} = ${top(reg)}.k;`, {
+        defs: [a],
+        regs: [{ name: a, kind: "const", prop: true, instance: o.instance, json: true, data: !o.instance }],
+      });
+    },
+  ],
+  [
+    "writeVia",
+    5,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const k = 1 + g.r.int(8);
+      const t = top(o.name);
+      const set = g.need((e) => e.setter, makeSetter);
+      const s = top(set.name);
+      const forms = [
+        `Object.assign(${t}, { n: ${k} });`,
+        `[${k}].forEach((v) => { ${t}.n = v; });`,
+        `(function (x) { x.n = ${k}; })(${t});`,
+        `(() => { ${t}.n = ${k}; })();`,
+        `Object.defineProperty(${t}, "n", { value: ${k}, writable: true, configurable: true, enumerable: true });`,
+        `for (const v of [${k}]) ${t}.n = v;`,
+        `try { ${t}.n = ${k}; } catch (e) {}`,
+        `${t}.n++;`,
+        `[${t}].map((x) => { x.n = ${k}; });`,
+        `${s}(${t}, ${k});`,
+        `${s}.call(null, ${t}, ${k});`,
+        `${s}.apply(null, [${t}, ${k}]);`,
+        `${s}.bind(null, ${t})(${k});`,
+        `${s}(...[${t}, ${k}]);`,
+        `(${k} > 0 ? ${t} : { n: 0 }).n = ${k};`,
+        `({ w: ${t} }).w.n = ${k};`,
+        `[${t}][0].n = ${k};`,
+        `${t}["n"] = ${k};`,
+        `(function* () { ${t}.n = ${k}; yield 1; })().next();`,
+        `[...(function* () { ${t}.n = ${k}; yield 1; })()];`,
+        `for (const _ of (function* () { ${t}.n = ${k}; yield 1; })()) {}`,
+        // code the language runs implicitly: accessors, prototypes, conversions, iteration
+        `({ get v() { ${t}.n = ${k}; return 1; } }).v;`,
+        `({ set v(x) { ${t}.n = ${k}; } }).v = 1;`,
+        `new (class { get v() { ${t}.n = ${k}; return 1; } })().v;`,
+        `Object.setPrototypeOf({}, { m() { ${t}.n = ${k}; } }).m();`,
+        `({ __proto__: { m() { ${t}.n = ${k}; } } }).m();`,
+        `new Set({ [Symbol.iterator]() { ${t}.n = ${k}; return [][Symbol.iterator](); } });`,
+        `Array.from({ [Symbol.iterator]() { ${t}.n = ${k}; return [][Symbol.iterator](); } });`,
+        `Math.floor({ valueOf() { ${t}.n = ${k}; return 1; } });`,
+        `[{ toString() { ${t}.n = ${k}; return "s"; } }].join();`,
+        `JSON.stringify({ toJSON() { ${t}.n = ${k}; return 1; } });`,
+        `void (({ [Symbol.toPrimitive]() { ${t}.n = ${k}; return 1; } }) + 1);`,
+        `void (1 instanceof class { static [Symbol.hasInstance]() { ${t}.n = ${k}; return true; } });`,
+      ];
+      g.add("writeVia", g.r.pick(forms));
+    },
+  ],
+  [
+    "readVia",
+    4,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const t = top(o.name);
+      const v = g.fresh("v");
+      const forms = [
+        `(({ n }) => n)(${t})`,
+        `Object.values(${t})[0]`,
+        `[${t}].map((x) => x.n)[0]`,
+        `(() => ${t}.n)()`,
+        `Object.entries(${t})[0][1]`,
+        `{ ...${t} }.n`,
+        `[...[${t}]][0].n`,
+        `(${t}.n ?? 0)`,
+      ];
+      const f = g.r.pick(forms);
+      g.add("readVia", `const ${top(v)} = ${f.startsWith("{") ? `(${f})` : f};`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", num: true, json: true, data: true }],
+      });
+    },
+  ],
+  ["closureCounter", 2, false, makeClosure],
+  [
+    "closureUse",
+    3,
+    false,
+    (g) => {
+      const f = g.need((e) => e.closure, makeClosure);
+      if (!f) return false;
+      if (g.r.chance(0.5)) return g.add("closureCall", `${top(f.name)}();`);
+      const v = g.fresh("v");
+      g.add("closureConst", `const ${top(v)} = ${top(f.name)}();`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", num: true, json: true, data: true }],
+      });
+    },
+  ],
+  // A generator body runs when the iterator is advanced, in a later unit than the one that created it.
+  [
+    "generatorIterator",
+    3,
+    false,
+    (g) => {
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const it = g.fresh("gen");
+      g.add(
+        "generatorCreate",
+        `const ${top(it)} = (function* () { ${top(o.name)}.n = ${1 + g.r.int(8)}; yield 1; })();`,
+        {
+          defs: [it],
+          regs: [{ name: it, kind: "const", genIter: true }],
+        }
+      );
+      g.add("generatorAdvance", `${top(it)}.next();`);
+    },
+  ],
+  ["counterInstance", 2, false, makeInstance],
+  [
+    "instanceUse",
+    4,
+    false,
+    (g) => {
+      const i = g.need((e) => e.instance, makeInstance);
+      if (!i) return false;
+      if (g.r.chance(0.5)) return g.add("instanceInc", `${top(i.name)}.inc();`);
+      const v = g.fresh("v");
+      g.add("instanceConst", `const ${top(v)} = ${top(i.name)}.inc();`, {
+        defs: [v],
+        regs: [{ name: v, kind: "const", num: true, json: true, data: true }],
+      });
+    },
+  ],
+  [
+    "decorate",
+    2,
+    false,
+    (g) => {
+      // the shape of a decorator helper: a function that defines a property of its argument, called on a prototype or an object
+      const o = g.pickValue((e) => e.prop);
+      if (!o) return false;
+      const d = g.fresh("deco");
+      g.add(
+        "decoFn",
+        `function ${top(d)}(t, k) { Object.defineProperty(t, k, { value: 1, writable: true, configurable: true, enumerable: true }); }`,
+        {
+          defs: [d],
+          regs: [{ name: d, kind: "fn" }],
+        }
+      );
+      g.add("decoCall", `${top(d)}(${top(o.name)}, "z");`);
+    },
+  ],
   [
     "absoluteUrl",
     1,
@@ -939,6 +1193,7 @@ async function main() {
   const leaks = args.includes("--leaks");
   const callbackCorpus = args.includes("--callback-corpus");
   const astCorpus = args.includes("--ast-corpus");
+  const effects = args.includes("--effects");
   if (callbackCorpus && astCorpus) throw new Error("choose one structured corpus");
   const astTypes = {};
   const astFeatures = {};
@@ -978,6 +1233,8 @@ async function main() {
       return;
     }
     const bundleJson = path.join(dir, "bundle.json");
+    const premisesJson = path.join(dir, "premises.json");
+    writeFileSync(premisesJson, JSON.stringify(effectsPremises));
     try {
       writeFileSync(bundleJson, JSON.stringify(frontBundle(bundleFile)));
     } catch (error) {
@@ -1023,7 +1280,9 @@ async function main() {
       }
       writeFileSync(certJson, JSON.stringify({ pairs: plan.mapping }));
       const [checked, ran] = await Promise.all([
-        run(translate, [bundleJson, outputJson, certJson]),
+        effects
+          ? run(translateEffects, [bundleJson, outputJson, certJson, "--premises", premisesJson])
+          : run(translate, [bundleJson, outputJson, certJson]),
         run(process.execPath, [path.join(treeDir, "entry.js")]),
       ]);
       const tree = behavior(ran);
@@ -1199,10 +1458,14 @@ async function main() {
   const byTemplate = {};
   for (const w of wrongAccepts) for (const t of w.templates) byTemplate[t] = (byTemplate[t] ?? 0) + 1;
   console.log(`WRONG ACCEPTS: ${wrongAccepts.length}`);
-  for (const w of wrongAccepts.slice(0, 5))
+  for (const w of wrongAccepts.slice(0, 5)) {
+    const a = w.reference.stdout.split("\n");
+    const b = w.observed.stdout.split("\n");
+    const at = a.findIndex((line, i) => line !== b[i]);
     console.log(
-      `  bundle ${w.round} tree ${w.tree} (${w.plan.strategy}, ${w.plan.modules} modules): ${JSON.stringify(w.reference.stdout.split("\n").slice(0, 3))} against ${JSON.stringify(w.observed.stdout.split("\n").slice(0, 3))} ${w.observed.error}`
+      `  bundle ${w.round} tree ${w.tree} (${w.plan.strategy}, ${w.plan.modules} modules): first difference at line ${at}: ${JSON.stringify(a.slice(Math.max(0, at - 1), at + 2))} against ${JSON.stringify(b.slice(Math.max(0, at - 1), at + 2))} ${w.observed.error}`
     );
+  }
   if (wrongAccepts.length > 0)
     console.log(
       `  templates present in wrong accepts: ${Object.entries(byTemplate)

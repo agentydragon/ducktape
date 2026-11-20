@@ -156,6 +156,7 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
+A statement may also read names it does not mention, through a function it calls that it reached through an object (`deps`); they order it like `eager` names do.
 Two statements **conflict** ([`Bundle.lean`](lean/EsmSplit/Bundle.lean)) if both have effects,
 or one reads a name the other binds (either direction), or both bind the same name.
 A hoisted `function` declaration never conflicts: it exists before any code runs.
@@ -189,6 +190,7 @@ The main development does not use `native_decide`, so the compiler is not truste
    Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals.
    The names a statement may assign (`writes`) are the ones its own code assigns and, for a statement with effects, the ones assigned in every function body it may reach. `Lower.finalize` computes that closure; it is unverified like the rest of this item.
    Before `writes` existed, a read of a reassigned variable could move across the assignment; the fuzzer of item 7 found it, and the model now orders them as cells.
+   [`Effects.lean`](lean/Experiments/Effects.lean) computes the same footprint by abstract interpretation instead (`effects`, `translate_effects`; [`experiments/effects/`](experiments/effects/README.md)). It trusts its rules and its printed premises instead of the allow-list; both are tested against Node, neither is proved.
    A statement with effects also counts everything it mentions as eager, since a call may invoke a callback or an immediately invoked function. The first version missed this and accepted a split that throws on load; see [`experiments/README.md`](experiments/README.md).
    A `var` inside a top-level block declares a module-scope name. The Lean front end missed this at first and accepted four splits from debundle's corpus that fail to load ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
    It rejects syntax it does not model (classes, destructuring, reassigning a top-level binding, `eval`, `import.meta`, async). Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines.
