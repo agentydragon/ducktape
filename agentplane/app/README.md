@@ -144,8 +144,8 @@ unchanged commands alone. Deletion receipts may have no Sandbox address. If rete
 that some delivery updates may be missing. A fresh snapshot cannot recover pruned deletion receipts.
 Queued and delivering are distinct from runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
 History remains the authority for command outcomes. The browser retains the command locally until History
-projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
-and authorize the app ServiceAccount before rolling out an app image that requires this setting.
+projects its admission or command row; the app adds no command queue. Grant the Session Dispatcher's
+service caller allowlist `spiffe://agentplane/app` before rolling out an app image that requires this setting.
 
 The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
 operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
@@ -184,7 +184,7 @@ Session ID in `cwd`, and creates app-owned Thread metadata before submitting the
 the Dispatcher with `CreateSession`. Dispatcher owns the durable logical Session, delivery and
 materialization status. Session reads use `GET /upstream/dispatcher/v1/sessions/{session_id}`, which
 the app exposes only to an authenticated operator browser session and forwards with the app's
-Dispatcher service-account token.
+service SVID.
 The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
 preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
@@ -787,7 +787,7 @@ settles it, including shared input confirmations and lifecycle effects.
 
 The Notifications drawer follows the Notification Service's generated Session-addressed inbox,
 entry-summary and subscription watches for the loaded Threads. The app authenticates the browser
-operator and proxies each generated gRPC/HTTP route with its rotating service-account token. The
+operator and proxies each generated gRPC/HTTP route with the app's service SVID. The
 browser consumes generated protobuf types. Summaries include the first 100 retained unacknowledged
 entry identities and safe lifecycle fields, never provider payloads; inspection changes nothing.
 
