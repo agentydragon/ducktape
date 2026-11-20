@@ -1,9 +1,10 @@
 # Codex executor isolation
 
 Environment Runtime embeds the Execution Service and owns its executor lifetime. Runtime
-runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to connect directly to the native
-execution service's Codex-compatible WebSocket endpoint. An executor failure never enables local execution. Claude continues to execute in its own harness
-process.
+runs the shared Codex app-server and sets `CODEX_EXEC_SERVER_URL` to the backend's WebSocket endpoint.
+`environment.executor.implementation` selects the native backend with a Codex-compatible WebSocket
+or Codex `exec-server` itself. An executor failure never enables local execution. Claude continues
+to execute in its own harness process.
 
 The executor is a resource boundary within the same Sandbox principal. It shares workspace, home,
 temporary files and native state paths with the app-server. It is not an authorization boundary
@@ -19,9 +20,9 @@ CPU limits; kubelet restarts the container. Its PID namespace must be private
 directory, environment binary disk and proxy trust bundle. Projected workload tokens remain
 confined to the egress sidecar.
 
-The embedded Execution Service claims the companion over gRPC on its ownership Unix socket. A claim's explicit
-environment reaches the native execution service through `supervision.Process`; PID 1's process-wide reaper owns
-native and orphan waits. The Claim stream and companion lifetime remain the executor's
+The embedded Execution Service claims the companion over gRPC on its ownership Unix socket. The claim
+selects which backend the companion starts and supplies its environment and any configured native limits.
+PID 1's process-wide reaper owns executor and orphan waits. The Claim stream and companion lifetime remain the executor's
 ownership protocol. The companion does not construct Runtime's COSI lifecycle or Host's journals.
 Stdout/stderr readers are not joined before PID 1 exits, since escaped descendants can retain them.
 
@@ -39,7 +40,7 @@ idle generation while keeping PID 1 alive. If that in-container fence fails, the
 the container runtime can fence the whole namespace; only a new container generation then proves
 that outer cleanup completed. A stream close alone does not prove either fence.
 
-A claim whose backend cannot be spawned at all (a missing or unexecutable execution-service binary) starts
+A claim whose backend cannot be spawned at all (a missing or unexecutable backend binary) starts
 nothing, so there is no workload generation to fence. The companion refuses the claim with the reason,
 stays PID 1 and serving, and answers a later claim the same way. Runtime reports a failed service
 startup instead of retrying through a companion restart loop.
@@ -71,8 +72,8 @@ configured OS reserve below guest RAM. Aggregate groups and native leaves disabl
 can be killed while the execution service survives, but the kernel can also select the server itself.
 Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
 
-Runtime starts `agentplane-execution-service serve` as a systemd transient service with `Restart=no`, bound to the
-Runtime service unit. Runtime fences prior native scopes before admitting an incarnation. During
+Runtime starts `agentplane-execution-service serve` or `codex exec-server` as a systemd transient
+service with `Restart=no`, bound to the Runtime service unit. Runtime fences prior native scopes before admitting an incarnation. During
 orderly shutdown Runtime drains Host and proves Execution fenced before joining the components.
 The guest supplies
 systemd, agent UID/GID and block devices; templates supply resource limits.
@@ -84,10 +85,10 @@ See [native supervision](../../supervision/docs/supervision.md) for the backend 
    fresh idle companion generation before admitting an incarnation. In VMs it fences old owned
    systemd services in the expected slices.
 2. When adopting an incarnation with Codex execution configured, Runtime starts the embedded
-   Execution Service and waits for a bounded native probe. The probe initializes a WebSocket session
-   and reads `environment/status`; it also checks typed gRPC health. Runtime starts the app-server when requested, with the
-   configured executor URL.
-3. Execution Service probes both typed and Codex-compatible endpoints every five seconds with a three-second deadline.
+   Execution Service and waits for the backend to be ready. The probe initializes a WebSocket session
+   and reads `environment/status`. The native backend must also pass a typed gRPC health check.
+   Runtime starts the app-server when requested, with the configured executor URL.
+3. Execution Service repeats the applicable checks every five seconds with a three-second deadline.
    Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service
    invocation fenced, then attempts one replacement while the same incarnation remains RUNNING. A
    failed fence or replacement fails Runtime; there is no internal restart loop or backoff. Commands
@@ -104,7 +105,7 @@ container runtime cleaned up the prior namespace.
 
 ## Scope in Codex 0.162.1
 
-The compatibility endpoint implements the Codex operations used by the harness; unsupported
+The native backend’s compatibility endpoint implements the Codex operations used by the harness; unsupported
 sandbox policy requests are rejected. Codex can reconnect after a transient WebSocket loss while
 the server retains its session registry.
 A restarted server loses that registry and running commands; an interrupted tool can return an

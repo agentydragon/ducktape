@@ -32,11 +32,11 @@ func runCompanion(args []string) int {
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
 	binary := flags.String("binary", "", "execution service executable")
 	healthListen := flags.String("health-listen", "", "HTTP health endpoint")
-	limitsFile := flags.String("limits-file", "", "absolute path to execution limits JSON")
+	codexBinary := flags.String("codex-binary", "/bin/codex", "Codex executable")
 	if err := flags.Parse(args); err != nil {
 		return 64
 	}
-	if !filepath.IsAbs(*socket) || !filepath.IsAbs(*binary) || *healthListen == "" || (*limitsFile != "" && !filepath.IsAbs(*limitsFile)) || flags.NArg() != 0 {
+	if !filepath.IsAbs(*socket) || !filepath.IsAbs(*binary) || *healthListen == "" || !filepath.IsAbs(*codexBinary) || flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, invalidCompanionUsage)
 		return 64
 	}
@@ -49,7 +49,7 @@ func runCompanion(args []string) int {
 		return 64
 	}
 	if err := companion.Run(companion.Config{
-		Socket: *socket, Listen: *listen, Binary: *binary, HealthListen: *healthListen, LimitsFile: *limitsFile,
+		Socket: *socket, Listen: *listen, Binary: *binary, HealthListen: *healthListen, CodexBinary: *codexBinary,
 	}); err != nil {
 		if errors.Is(err, companion.ErrNotPID1) {
 			fmt.Fprintln(os.Stderr, invalidCompanionUsage)

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -44,7 +45,7 @@ type Config struct {
 	Listen       string
 	Binary       string
 	HealthListen string
-	LimitsFile   string
+	CodexBinary  string
 }
 
 // Run must own PID 1 in a private container PID namespace. Returning exits that
@@ -60,7 +61,7 @@ func Run(config Config) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	return serveWithLimits(ctx, config.Socket, config.Binary, config.Listen, config.HealthListen, config.LimitsFile, supervisor)
+	return serve(ctx, config, supervisor)
 }
 
 func healthHandler(socket string) http.Handler {
@@ -84,11 +85,8 @@ func healthHandler(socket string) http.Handler {
 	return mux
 }
 
-func serve(ctx context.Context, socket, binary, listen, healthListen string, supervisor *supervision.Supervisor) error {
-	return serveWithLimits(ctx, socket, binary, listen, healthListen, "", supervisor)
-}
-
-func serveWithLimits(ctx context.Context, socket, binary, listen, healthListen, limitsFile string, supervisor *supervision.Supervisor) error {
+func serve(ctx context.Context, config Config, supervisor *supervision.Supervisor) error {
+	socket := config.Socket
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -103,7 +101,7 @@ func serveWithLimits(ctx context.Context, socket, binary, listen, healthListen, 
 	if err := os.Chmod(socket, 0o600); err != nil {
 		return err
 	}
-	healthListener, err := net.Listen("tcp", healthListen)
+	healthListener, err := net.Listen("tcp", config.HealthListen)
 	if err != nil {
 		return err
 	}
@@ -117,7 +115,7 @@ func serveWithLimits(ctx context.Context, socket, binary, listen, healthListen, 
 	go state.fenceLoop(lifetime, cancel, supervisor)
 	controlServer := grpc.NewServer(grpc.MaxRecvMsgSize(1 << 20))
 	controlpb.RegisterCompanionControlServer(controlServer, &companionControl{
-		lifetime: lifetime, cancel: cancel, state: state, binary: binary, listen: listen, limitsFile: limitsFile, supervisor: supervisor,
+		lifetime: lifetime, cancel: cancel, state: state, config: config, supervisor: supervisor,
 	})
 	healthServerGRPC := health.NewServer()
 	healthServerGRPC.SetServingStatus(controlpb.CompanionControl_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
@@ -160,9 +158,7 @@ type companionControl struct {
 	lifetime   context.Context
 	cancel     context.CancelFunc
 	state      *companionOwnership
-	binary     string
-	listen     string
-	limitsFile string
+	config     Config
 	supervisor *supervision.Supervisor
 }
 
@@ -181,15 +177,15 @@ func (s *companionControl) Fence(_ context.Context, request *controlpb.FenceRequ
 }
 
 func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.ServerStreamingServer[controlpb.ClaimResponse]) error {
+	command, err := s.command(request)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	s.state.mu.Lock()
 	if s.state.status.Owned || s.state.fencing {
 		s.state.mu.Unlock()
 		s.cancel()
 		return status.Error(codes.Aborted, "executor companion already owned or fencing")
-	}
-	command := []string{s.binary, "serve", "--listen", s.listen}
-	if s.limitsFile != "" {
-		command = append(command, "--limits-file", s.limitsFile)
 	}
 	process, err := s.supervisor.NewProcess(supervision.ProcessConfig{
 		Command:   command,
@@ -237,6 +233,14 @@ func (s *companionControl) Claim(request *controlpb.ClaimRequest, stream grpc.Se
 	case <-s.lifetime.Done():
 		return status.Error(codes.Unavailable, "executor companion is stopping")
 	}
+}
+
+func (s *companionControl) command(request *controlpb.ClaimRequest) ([]string, error) {
+	binary := s.config.Binary
+	if request.GetImplementation() == codexexecserver.ImplementationCodex {
+		binary = s.config.CodexBinary
+	}
+	return codexexecserver.Command(request.GetImplementation(), binary, s.config.Listen, request.GetLimitsJson())
 }
 
 type companionOwnership struct {

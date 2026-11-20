@@ -1,4 +1,4 @@
-// Package service owns Runtime's embedded execution adapter and native backend.
+// Package service owns Runtime's embedded execution adapter and supervised backend.
 package service
 
 import (
@@ -20,9 +20,11 @@ type Config struct {
 	WorkingDirectory string
 	StateDir         string
 	Binary           string
+	CodexBinary      string
 	ContainerSocket  string
 	ExecutorURL      string
-	LimitsFile       string
+	Implementation   string
+	LimitsJSON       string
 	Environment      map[string]string
 	Backend          string
 	Readiness        codexexecserver.Readiness
@@ -40,6 +42,10 @@ func (c Config) Resolve() (Config, error) {
 		return Config{}, err
 	}
 	c.Readiness = readiness
+	c.Implementation, err = codexexecserver.ResolveImplementation(c.Implementation)
+	if err != nil {
+		return Config{}, err
+	}
 	if err := c.validate(); err != nil {
 		return Config{}, err
 	}
@@ -58,20 +64,20 @@ func (c Config) validate() error {
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
 	}
-	if c.LimitsFile != "" && (!filepath.IsAbs(c.LimitsFile) || c.Backend == "companion") {
-		return errors.New("execution limits file requires an absolute path and systemd backend")
+	if c.Implementation == codexexecserver.ImplementationCodex && c.LimitsJSON != "" {
+		return errors.New("execution limits are configurable only for the native implementation")
 	}
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
 	if c.Backend != "companion" {
-		if !filepath.IsAbs(c.Binary) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
+		if !filepath.IsAbs(c.binary()) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
 			return errors.New("direct execution requires absolute binary and working directory and no companion socket")
 		}
 	}
 	switch c.Backend {
 	case "companion":
-		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.WorkingDirectory != "" {
+		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.CodexBinary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
 		}
 	case "systemd":
@@ -82,4 +88,11 @@ func (c Config) validate() error {
 		return fmt.Errorf("unknown execution backend %q", c.Backend)
 	}
 	return nil
+}
+
+func (c Config) binary() string {
+	if c.Implementation == codexexecserver.ImplementationCodex {
+		return c.CodexBinary
+	}
+	return c.Binary
 }

@@ -24,6 +24,9 @@ import (
 )
 
 const (
+	ImplementationNative = "native"
+	ImplementationCodex  = "codex"
+
 	healthInterval     = 5 * time.Second
 	healthDeadline     = 3 * time.Second
 	healthFailureLimit = 3
@@ -79,13 +82,17 @@ var ErrContainerOwnershipLost = errors.New("executor container ownership connect
 // Config selects local systemd supervision or ownership of the Pod executor container.
 type Config struct {
 	URL             string
-	LimitsFile      string
+	Implementation  string
+	LimitsJSON      string
 	ContainerSocket string
 	Launcher        *supervision.SystemdLauncher
 	Readiness       Readiness
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
+	if _, err := ResolveImplementation(c.Implementation); err != nil {
+		return err
+	}
 	if err := ValidateURL(c.URL); err != nil {
 		return err
 	}
@@ -113,6 +120,37 @@ func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
 		}
 	}
 	return nil
+}
+
+// ResolveImplementation defaults an unspecified implementation to the native executor.
+func ResolveImplementation(value string) (string, error) {
+	switch value {
+	case "", ImplementationNative:
+		return ImplementationNative, nil
+	case ImplementationCodex:
+		return ImplementationCodex, nil
+	default:
+		return "", fmt.Errorf("unknown execution backend implementation %q", value)
+	}
+}
+
+// Command builds the supervised process command for the selected execution implementation.
+func Command(implementation, binary, endpoint, limitsJSON string) ([]string, error) {
+	implementation, err := ResolveImplementation(implementation)
+	if err != nil {
+		return nil, err
+	}
+	if implementation == ImplementationCodex {
+		if limitsJSON != "" {
+			return nil, errors.New("execution limits are configurable only for the native implementation")
+		}
+		return []string{binary, "exec-server", "--listen", endpoint}, nil
+	}
+	command := []string{binary, "serve", "--listen", endpoint}
+	if limitsJSON != "" {
+		command = append(command, "--limits-json", limitsJSON)
+	}
+	return command, nil
 }
 
 type NativeConfig struct {
@@ -146,14 +184,14 @@ func NativeStart(config NativeConfig) Start {
 			delete(env, name)
 		}
 		if config.Config.ContainerSocket != "" {
-			return claimContainer(ctx, config.Config.ContainerSocket, env)
+			return claimContainer(ctx, config.Config.ContainerSocket, env, config.Config.Implementation, config.Config.LimitsJSON)
 		}
 		if config.Supervisor == nil && config.LaunchProcess == nil {
 			return nil, errors.New("execution backend supervisor is not configured")
 		}
-		command := []string{config.Binary, "serve", "--listen", config.Config.URL}
-		if config.Config.LimitsFile != "" {
-			command = append(command, "--limits-file", config.Config.LimitsFile)
+		command, err := Command(config.Config.Implementation, config.Binary, config.Config.URL, config.Config.LimitsJSON)
+		if err != nil {
+			return nil, err
 		}
 		processConfig := supervision.ProcessConfig{
 			Command:      command,
@@ -302,7 +340,9 @@ func probe(ctx context.Context, endpoint string) error {
 
 type Refusal struct{ Reason string }
 
-func (r Refusal) Error() string { return "executor companion refused to start Codex: " + r.Reason }
+func (r Refusal) Error() string {
+	return "executor companion refused to start the backend: " + r.Reason
+}
 
 // FenceContainer waits for an idle generation at startup, or proof that the
 // specified previous owner's generation was fenced during shutdown.
@@ -340,7 +380,7 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 	})
 }
 
-func claimContainer(ctx context.Context, socket string, env map[string]string) (*supervision.Instance, error) {
+func claimContainer(ctx context.Context, socket string, env map[string]string, implementation, limitsJSON string) (*supervision.Instance, error) {
 	connection, err := executorcontrol.Dial(socket)
 	if err != nil {
 		return nil, err
@@ -348,7 +388,7 @@ func claimContainer(ctx context.Context, socket string, env map[string]string) (
 	// The handshake is bounded by ctx; the established stream lives until Stop.
 	leaseCtx, cancelLease := context.WithCancel(context.Background())
 	stopHandshake := context.AfterFunc(ctx, cancelLease)
-	stream, err := controlpb.NewCompanionControlClient(connection).Claim(leaseCtx, &controlpb.ClaimRequest{Environment: env})
+	stream, err := controlpb.NewCompanionControlClient(connection).Claim(leaseCtx, &controlpb.ClaimRequest{Environment: env, Implementation: implementation, LimitsJson: limitsJSON})
 	var claim *controlpb.ClaimResponse
 	if err == nil {
 		claim, err = stream.Recv()

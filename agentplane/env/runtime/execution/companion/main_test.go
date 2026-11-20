@@ -32,14 +32,10 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 	}
 	served := make(chan error, 1)
 	go func() {
-		served <- serve(
-			ctx,
-			socket,
-			filepath.Join(dir, "absent-codex"),
-			"ws://127.0.0.1:4501",
-			"127.0.0.1:0",
-			supervisor,
-		)
+		served <- serve(ctx, Config{
+			Socket: socket, CodexBinary: filepath.Join(dir, "absent-codex"),
+			Listen: "ws://127.0.0.1:4501", HealthListen: "127.0.0.1:0",
+		}, supervisor)
 	}()
 	waitForSocket(t, socket)
 	info, err := os.Stat(socket)
@@ -76,7 +72,7 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		stream, err := client.Claim(ctx, &controlpb.ClaimRequest{
-			Environment: map[string]string{"PATH": "/usr/bin"},
+			Environment: map[string]string{"PATH": "/usr/bin"}, Implementation: "codex",
 		})
 		if err != nil {
 			t.Fatalf("claim %d: %v", attempt, err)
@@ -150,7 +146,12 @@ func TestClaimStreamOwnsExecutorUntilCanceledOrFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, socket, binary, "ws://127.0.0.1:4501", "127.0.0.1:0", supervisor) }()
+	go func() {
+		served <- serve(ctx, Config{
+			Socket: socket, Binary: binary, CodexBinary: binary,
+			Listen: "ws://127.0.0.1:4501", HealthListen: "127.0.0.1:0",
+		}, supervisor)
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {

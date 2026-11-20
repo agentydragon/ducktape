@@ -179,8 +179,57 @@ class Codex(Harness):
     )
 
 
+class NativeExecutionLimits(_RuntimeConfigModel):
+    max_sessions: int | None = Field(default=None, gt=0)
+    max_processes_per_session: int | None = Field(default=None, gt=0)
+    max_files_per_session: int | None = Field(default=None, gt=0)
+    max_writes_per_process: int | None = Field(default=None, gt=0)
+    max_processes: int | None = Field(default=None, gt=0)
+    max_output_bytes_per_process: int | None = Field(default=None, gt=0)
+    max_output_bytes: int | None = Field(default=None, gt=0)
+    max_writes: int | None = Field(default=None, gt=0)
+    max_read_bytes: int | None = Field(default=None, gt=0)
+    max_stdin_queue_bytes_per_process: int | None = Field(default=None, gt=0)
+    max_stdin_queue_bytes: int | None = Field(default=None, gt=0)
+    max_stdin_queue_chunks_per_process: int | None = Field(default=None, gt=0)
+    session_retention_seconds: int | None = Field(default=None, gt=0)
+    process_retention_seconds: int | None = Field(default=None, gt=0)
+
+
+class CodexProtocolLimits(_RuntimeConfigModel):
+    max_message_bytes: int | None = Field(default=None, gt=0)
+    max_concurrent_requests: int | None = Field(default=None, gt=0)
+    max_open_files: int | None = Field(default=None, gt=0)
+    max_buffered_http_bytes: int | None = Field(default=None, gt=0)
+    max_walk_depth: int | None = Field(default=None, gt=0)
+    max_walk_directories: int | None = Field(default=None, gt=0)
+    max_walk_entries: int | None = Field(default=None, gt=0)
+    max_walk_response_bytes: int | None = Field(default=None, gt=0)
+    max_discovery_roots: int | None = Field(default=None, gt=0)
+    max_discovery_depth: int | None = Field(default=None, gt=0)
+    max_discovery_directories: int | None = Field(default=None, gt=0)
+    max_discovery_entries: int | None = Field(default=None, gt=0)
+    max_discovery_file_bytes: int | None = Field(default=None, gt=0)
+    max_discovery_bundle_bytes: int | None = Field(default=None, gt=0)
+    max_read_file_bytes: int | None = Field(default=None, gt=0)
+    max_read_directory_entries: int | None = Field(default=None, gt=0)
+
+
+class ExecutionLimits(_RuntimeConfigModel):
+    native: NativeExecutionLimits | None = None
+    codex: CodexProtocolLimits | None = None
+
+
 class Executor(_RuntimeConfigModel):
     url: str
+    implementation: Literal["native", "codex"] = "native"
+    limits: ExecutionLimits | None = None
+
+    @model_validator(mode="after")
+    def native_limits_only(self) -> Self:
+        if self.implementation == "codex" and self.limits is not None:
+            raise ValueError("execution limits require the native implementation")
+        return self
 
     @field_validator("url")
     @classmethod
@@ -215,15 +264,6 @@ class ContainerExecutor(Executor):
 
 class VMExecutor(Executor):
     """Loopback exec-server endpoint supervised by the guest systemd manager."""
-
-    limits_file: str | None = None
-
-    @field_validator("limits_file")
-    @classmethod
-    def absolute_limits_file(cls, value: str | None) -> str | None:
-        if value is not None and not Path(value).is_absolute():
-            raise ValueError("execution limits file must be absolute")
-        return value
 
 
 class PodEnvironment(_RuntimeConfigModel):

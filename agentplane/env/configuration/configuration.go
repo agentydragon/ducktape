@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/settings"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
@@ -187,8 +188,10 @@ func (h *HarnessConfiguration) resolve(environ map[string]string) (*harness.Laun
 }
 
 type ContainerExecutorConfiguration struct {
-	URL    string `json:"url"`
-	Socket string `json:"socket"`
+	URL            string          `json:"url"`
+	Socket         string          `json:"socket"`
+	Implementation string          `json:"implementation"`
+	Limits         json.RawMessage `json:"limits"`
 }
 
 type PodEnvironmentConfiguration struct {
@@ -198,8 +201,9 @@ type PodEnvironmentConfiguration struct {
 }
 
 type VMExecutorConfiguration struct {
-	URL        string  `json:"url"`
-	LimitsFile *string `json:"limits_file"`
+	URL            string          `json:"url"`
+	Implementation string          `json:"implementation"`
+	Limits         json.RawMessage `json:"limits"`
 }
 
 type VMEnvironmentConfiguration struct {
@@ -214,6 +218,20 @@ type VMEnvironmentConfiguration struct {
 
 func (v VMEnvironmentConfiguration) launcher(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdLauncher {
 	return &supervision.SystemdLauncher{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
+}
+
+func configureExecutionLimits(executor *codexexecserver.Config, raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if executor.Implementation == "codex" {
+		return errors.New("execution limits require the native implementation")
+	}
+	if _, err := settings.Parse(string(raw)); err != nil {
+		return fmt.Errorf("execution limits: %w", err)
+	}
+	executor.LimitsJSON = string(raw)
+	return nil
 }
 
 // The environment selects resource ownership and executor transport together.
@@ -241,7 +259,10 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		podPID1 = pod.Supervision == "pid1"
 		supervisionMode = pod.Supervision
 		if pod.Executor != nil {
-			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
+			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket, Implementation: pod.Executor.Implementation}
+			if err := configureExecutionLimits(executor, pod.Executor.Limits); err != nil {
+				return nil, nil, nil, false, "", err
+			}
 			if !filepath.IsAbs(pod.Executor.Socket) {
 				return nil, nil, nil, false, "", errors.New("container executor socket must be absolute")
 			}
@@ -269,11 +290,9 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		}
 		if vm.Executor != nil {
 			executor = &codexexecserver.Config{URL: vm.Executor.URL, Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
-			if vm.Executor.LimitsFile != nil {
-				if !filepath.IsAbs(*vm.Executor.LimitsFile) {
-					return nil, nil, nil, false, "", errors.New("execution limits file must be absolute")
-				}
-				executor.LimitsFile = *vm.Executor.LimitsFile
+			executor.Implementation = vm.Executor.Implementation
+			if err := configureExecutionLimits(executor, vm.Executor.Limits); err != nil {
+				return nil, nil, nil, false, "", err
 			}
 		}
 	default:

@@ -1,4 +1,4 @@
-"""Native execution backend in the Runtime private companion container."""
+"""Execution backends in the Runtime private companion container."""
 
 import http.client
 import os
@@ -81,6 +81,8 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
                     url,
                     "--binary",
                     "/execution-service",
+                    "--codex-binary",
+                    "/opt/codex/bin/codex",
                     "--health-listen",
                     f"127.0.0.1:{health_port}",
                 ]

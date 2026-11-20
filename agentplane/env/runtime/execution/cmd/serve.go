@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim"
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/settings"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -27,44 +26,6 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
-
-// limitsFile contains optional overrides; omitted fields use the defaults.
-type limitsFile struct {
-	Native native.Limits    `json:"native"`
-	Codex  codexshim.Limits `json:"codex"`
-}
-
-func readLimits(path string) (limitsFile, error) {
-	limits := limitsFile{Native: native.DefaultLimits(), Codex: codexshim.DefaultLimits()}
-	if path != "" {
-		if !filepath.IsAbs(path) {
-			return limitsFile{}, errors.New("limits file path must be absolute")
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return limitsFile{}, err
-		}
-		defer f.Close()
-		decoder := json.NewDecoder(io.LimitReader(f, 1<<20))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&limits); err != nil {
-			return limitsFile{}, err
-		}
-		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-			if err == nil {
-				return limitsFile{}, errors.New("limits file must contain one JSON object")
-			}
-			return limitsFile{}, err
-		}
-	}
-	if err := limits.Native.Validate(); err != nil {
-		return limitsFile{}, err
-	}
-	if err := limits.Codex.Validate(); err != nil {
-		return limitsFile{}, err
-	}
-	return limits, nil
-}
 
 // runServer hosts both APIs in one supervised execution process and session registry.
 func runServer(args []string) int {
@@ -75,7 +36,7 @@ func runServer(args []string) int {
 	flags := flag.NewFlagSet("agentplane-execution-service serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	ws := flags.String("listen", "", "Codex WebSocket URL")
-	limitsPath := flags.String("limits-file", "", "absolute path to execution limits JSON")
+	limitsJSON := flags.String("limits-json", "", "execution limit overrides as JSON")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 64
 	}
@@ -83,7 +44,7 @@ func runServer(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
-	limits, err := readLimits(*limitsPath)
+	limits, err := settings.Parse(*limitsJSON)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "execution limits:", err)
 		return 64

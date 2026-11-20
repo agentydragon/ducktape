@@ -195,7 +195,12 @@ def command(
         else None,
         environment=PodEnvironment(
             supervision="pid1",
-            executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
+            executor=ContainerExecutor(
+                url=config.codex_executor_url,
+                socket=str(config.codex_executor_socket),
+                implementation=config.executor_implementation,
+                limits=config.executor_limits,
+            )
             if config.codex_executor_url is not None
             else None,
         ),

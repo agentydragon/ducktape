@@ -9,6 +9,7 @@ import textwrap
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import grpc.aio
@@ -17,6 +18,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, Retrying, retry, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.env.config import ExecutionLimits, NativeExecutionLimits
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
@@ -46,12 +48,24 @@ pytestmark = pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids
 
 
 @pytest.fixture
+def executor_implementation() -> Literal["native", "codex"]:
+    return "native"
+
+
+@pytest.fixture
+def executor_limits() -> ExecutionLimits | None:
+    return None
+
+
+@pytest.fixture
 def config(
     harness: session_pb2.Harness,
     endpoint: ModelEndpoint,
     tmp_path: Path,
     codex_exec_server_container: CodexExecServerContainer,
     sandbox: SandboxCluster,
+    executor_implementation: Literal["native", "codex"],
+    executor_limits: ExecutionLimits | None,
 ) -> RunnerTestConfig:
     runner_config = launches.config(
         harness,
@@ -63,7 +77,12 @@ def config(
         codex_executor_socket=codex_exec_server_container.socket,
     )
     environment = {**runner_config.harness_environment, "PATH": "/usr/bin:/bin"}
-    return replace(runner_config, harness_environment=environment)
+    return replace(
+        runner_config,
+        harness_environment=environment,
+        executor_implementation=executor_implementation,
+        executor_limits=executor_limits,
+    )
 
 
 async def _wait_for_status(
@@ -330,7 +349,16 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: sessi
             assert await asyncio.wait_for(claim.read(), timeout=5) is grpc.aio.EOF
 
 
-async def test_process_output_resume_files_and_incarnation_fence(runner: RunningRunner, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("executor_implementation", "executor_limits"),
+    [
+        pytest.param("native", ExecutionLimits(native=NativeExecutionLimits(max_processes_per_session=1)), id="native"),
+        pytest.param("codex", None, id="codex"),
+    ],
+)
+async def test_process_output_resume_files_and_incarnation_fence(
+    runner: RunningRunner, tmp_path: Path, executor_implementation: Literal["native", "codex"]
+) -> None:
     scope = executor_pb2.ExecutionScope(
         destination=identity_pb2.SandboxDestination(
             owner=identity_pb2.ServiceAccount(
@@ -370,6 +398,7 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
         )
         first = await anext(aiter(opened))
         assert first.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
+        assert bool(first.native_frames) == (executor_implementation == "codex")
         session = first.execution_session_id
         process = uuid4().hex
         started = await client.StartProcess(
@@ -387,6 +416,20 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
         )
         assert started.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
         assert started.process_id == process
+        if executor_implementation == "native":
+            excess = await client.StartProcess(
+                executor_pb2.StartProcessRequest(
+                    scope=scope,
+                    execution_session_id=session,
+                    request_id=uuid4().hex,
+                    process_id=uuid4().hex,
+                    argv=["/bin/true"],
+                    cwd=tmp_path.as_uri(),
+                ),
+                metadata=metadata,
+                timeout=10,
+            )
+            assert excess.status.message == "process limit reached"
         before = bytearray()
         cursor: int | None = None
         async with asyncio.timeout(10):

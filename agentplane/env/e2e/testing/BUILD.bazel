@@ -10,7 +10,10 @@ package(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = ["//agentplane/sandboxes/testing:identity"],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/sandboxes/testing:identity",
+    ],
 )
 
 py_library(

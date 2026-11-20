@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/settings",
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/session",
         "//agentplane/env/runtime/supervision",
