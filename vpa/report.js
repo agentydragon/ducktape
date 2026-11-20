@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/f516472325720af27470446b25c6592055ced178/";
+const currentSource = github + "blob/06f2eec31c43e9ec081b1f4e5a83d8e2edb73d7a/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2200`).then((r) => {
+        fetch(`${url}?v=20261120-2205`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -308,9 +308,15 @@ function Report() {
               >cert-manager CA injector<//
             >${" "}had two Ready replicas on separate nodes and a PDB allowing
             one disruption. Its VPA uses Recreate with memory requests bounded
-            to 224–512 MiB. Leader handoff can delay CA injection; readiness
-            does not prove informer sync, and no eviction or handoff was
-            tested.<//
+            to 224–512 MiB. At 22:04 UTC, the ${" "}<${Anchor}
+              href=${github + "pull/18300"}
+              >cert-manager controller and webhook<//
+            >${" "} also used Recreate: controller 2/2 Ready and webhook 3/3
+            Ready, each PDB allowing one disruption. All three webhook endpoints
+            passed CA-verified TLS, and server-side admission accepted a valid
+            certificate and denied an invalid one. Leader handoff can delay CA
+            injection or reconciliation; readiness does not prove informer sync,
+            and no eviction or handoff was tested.<//
           >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
@@ -325,10 +331,18 @@ function Report() {
             >Staging has eleven explicitly targeted Initial VPAs while
             namespace-wide Goldilocks remains disabled for dynamic Sandboxes.
             ${" "}<${Anchor} href=${github + "pull/18293"}>Electric<//>${" "}has
-            a 448–576 MiB memory-request range; its first recommendation was
-            pending at collection and its singleton stayed Ready. A second
-            Electric on the same stream can pass health checks while refusing
-            new shapes, so VPA must not evict the running Pod.<//
+            a 448–576 MiB memory-request range. Its 448 MiB target was applied
+            in an owner-backed admission dry run, preserving its 100m CPU
+            request and 1 GiB memory limit. Its existing singleton remained
+            Ready. A second Electric on the same stream can pass health checks
+            while refusing new shapes, so VPA must not evict the running Pod.<//
+          >
+          <${Text} component="p"
+            >The ${" "}<${Anchor} href=${github + "pull/18301"}
+              >staging frontend<//
+            >${" "}has two Ready replicas on distinct nodes, a PDB allowing one
+            disruption, and revision-scoped required hostname spread. Its VPA
+            remains Initial while an automatic update proposal is reviewed.<//
           >
           <${Text} component="p" mb=${0}
             >Loki read-proxy is Initial with a 128–160 MiB memory request range
@@ -491,8 +505,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        22:00 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at f516472325<//
+        22:05 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at 06f2eec31c<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}

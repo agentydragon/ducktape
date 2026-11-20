@@ -20033,14 +20033,14 @@
     "recommendation_available": true,
     "existing_pod_ready": true,
     "note": "The Deployment remains a singleton; Goldilocks is disabled in the namespace.",
-    "recommendation_observed_at_utc": "2026-11-20T22:00:00Z",
+    "recommendation_observed_at_utc": "2026-11-20T22:00:17Z",
     "target_memory": "448Mi",
     "dry_run_requests": {
       "cpu": "100m",
       "memory": "448Mi"
     },
     "dry_run_memory_limit": "1Gi",
-    "inventory_observed_at_utc": "2026-11-20T22:00:59Z"
+    "inventory_observed_at_utc": "2026-11-20T22:05:20Z"
   },
   "cainjector_recreate": {
     "observed_at_utc": "2026-11-20T21:56:14Z",
@@ -20058,5 +20058,29 @@
     "observed_generation": 2,
     "generation": 3,
     "note": "Readiness does not establish leader or informer synchronization; no eviction or failover was tested."
+  },
+  "cert_manager_auto": {
+    "observed_at_utc": "2026-11-20T22:04:00Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18300",
+    "controller_ready": 2,
+    "webhook_ready": 3,
+    "pdb_allowed_disruptions": 1,
+    "update_mode": "Recreate",
+    "webhook_endpoints_ca_and_hostname_verified": 3,
+    "admission_dry_run_valid_accepted": true,
+    "admission_dry_run_invalid_denied": true,
+    "generation": 3,
+    "observed_generation": 2,
+    "note": "No eviction or leader handoff performed."
+  },
+  "staging_frontend_spread": {
+    "observed_at_utc": "2026-11-20T22:05:08Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18301",
+    "replicas_ready": 2,
+    "replicas_updated": 2,
+    "nodes": ["ovh-ns102453", "ovh-ns103711"],
+    "pdb_allowed_disruptions": 1,
+    "constraint": "revision-scoped hard hostname spread, maxSkew=1, minDomains=2",
+    "vpa_mode": "Initial"
   }
 }
