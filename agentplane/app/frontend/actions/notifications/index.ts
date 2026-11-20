@@ -10,9 +10,6 @@ import { podsDeleteNotification } from "./kubernetes_admin/pods_delete";
 import { podsExecNotification } from "./kubernetes_admin/pods_exec";
 import { podsGetNotification } from "./kubernetes_admin/pods_get";
 import { podsLogNotification } from "./kubernetes_admin/pods_log";
-import { grocySystemInfoNotification } from "./grocy/get_system_info";
-import { grocyProductsListNotification } from "./grocy/products_list";
-import { grocyQuantityUnitsListNotification } from "./grocy/quantity_units_list";
 import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
 import { resourcesCreateOrUpdateNotification } from "./kubernetes_admin/resources_create_or_update";
 import { resourcesDeleteNotification } from "./kubernetes_admin/resources_delete";
@@ -20,7 +17,6 @@ import { resourcesGetNotification } from "./kubernetes_admin/resources_get";
 import { resourcesListNotification } from "./kubernetes_admin/resources_list";
 import { sandboxExecNotification } from "./sandbox/exec";
 import { sshExecNotification } from "./ssh/exec";
-import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import { gmailThreadLabelsNotification, tanaMoveNodeNotification } from "./integration_previews";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
 
@@ -88,9 +84,9 @@ export const ACTION_NOTIFICATION_FORMATTERS: ReadonlyMap<
   [
     "grocy_sf",
     new Map([
-      ["products_list", grocyProductsListNotification],
-      ["quantity_units_list", grocyQuantityUnitsListNotification],
-      ["get_system_info", grocySystemInfoNotification],
+      ["products_list", fixedActionNotification("List Grocy products")],
+      ["quantity_units_list", fixedActionNotification("List quantity units")],
+      ["get_system_info", fixedActionNotification("Show Grocy system information")],
       ["products_edit", fixedActionNotification("Edit Grocy products")],
       ["stock_get", fixedActionNotification("View Grocy stock on hand")],
       ["entities_create", fixedActionNotification("Create Grocy records")],
@@ -361,7 +357,7 @@ export const ACTION_NOTIFICATION_FORMATTERS: ReadonlyMap<
   [
     "tana",
     new Map([
-      ["get_or_create_calendar_node", tanaCalendarNodeNotification],
+      ["get_or_create_calendar_node", fixedActionNotification("Get or create calendar node")],
       ["move_node", tanaMoveNodeNotification],
       ...Array.from(tanaTitles, ([name, title]) => [name, fixedActionNotification(title)] as const),
     ]),
