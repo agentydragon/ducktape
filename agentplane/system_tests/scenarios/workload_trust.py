@@ -26,8 +26,8 @@ from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import forward
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_root_certificates
 
@@ -133,17 +133,10 @@ async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(
     own = await _secret_pem(cluster, cluster.namespace, credential)
 
     roots = await service_root_certificates(cluster)
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource=_PROXY_SERVICE,
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=_PROXY_PORT,
-    )
     # The k3s fixture adds this DNS name to the proxy's SVID for Python clients.
     server_name = f"egress-admin.{cluster.namespace}.svc.cluster.local"
     authority = f"llm-ingress.{cluster.namespace}.svc.cluster.local:8080"
-    async with async_port_forward(forward) as target:
+    async with forward(cluster, _PROXY_SERVICE, remote_port=_PROXY_PORT) as target:
 
         async def answers(certificate: tuple[bytes, bytes]) -> bool:
             return await _answers_connect(
@@ -204,14 +197,7 @@ class RunnerControlRoute(StrEnum):
 async def _runner_control_target(cluster: Cluster, pod: str, route: RunnerControlRoute) -> AsyncIterator[str]:
     match route:
         case RunnerControlRoute.PORT_FORWARD:
-            forward = PortForward(
-                cluster.command("port-forward"),
-                resource=f"pod/{pod}",
-                local_address="127.0.0.1",
-                local_port=None,
-                remote_port=_RUNNER_CONTROL_PORT,
-            )
-            async with async_port_forward(forward) as target:
+            async with forward(cluster, f"pod/{pod}", remote_port=_RUNNER_CONTROL_PORT) as target:
                 yield target
         case RunnerControlRoute.POD_IP:
             address = (await _object(cluster, "pod", pod))["status"]["podIP"]

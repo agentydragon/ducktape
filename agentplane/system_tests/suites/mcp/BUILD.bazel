@@ -251,7 +251,6 @@ py_test(
         "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",
-        "//agentplane/system_tests/driver:port_forward",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//grpcio",

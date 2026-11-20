@@ -20,8 +20,8 @@ from agentplane.session_dispatcher.api import (
     SANDBOX_UID_HEADER,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import forward
 from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
 
 # gazelle:include_dep @pypi//protobuf
@@ -41,16 +41,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         (SANDBOX_OWNER_NAME_HEADER, target.name),
     )
     async with (
-        async_port_forward(
-            PortForward(
-                cluster.command("port-forward"),
-                resource="service/environments",
-                local_address="127.0.0.1",
-                local_port=None,
-                remote_port=8082,
-                readiness_timeout_s=30,
-            )
-        ) as address,
+        forward(cluster, "service/environments", remote_port=8082) as address,
         dial(
             address,
             channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),

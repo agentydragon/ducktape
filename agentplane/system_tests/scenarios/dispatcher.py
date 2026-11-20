@@ -30,9 +30,8 @@ from agentplane.session_dispatcher.dispatcher.api.session import (
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, forward as _forward, service_caller
+from agentplane.system_tests.driver.dispatcher_transport import Caller, forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_diagnostics import (
@@ -467,7 +466,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "--timeout=300s",
         )
         server_credentials = authentication.channel_credentials
-        target = await stack.enter_async_context(_forward(cluster))
+        target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(
             dial(
                 target,
@@ -541,7 +540,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             peer = await stack.enter_async_context(
                 _replace_original_with_peer(cluster, deployment["metadata"]["uid"], evidence)
             )
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
@@ -576,7 +575,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 )
             )
             await settlement_gate.aclose()
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
@@ -710,7 +709,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             streams = []
             server_credentials = authentication.channel_credentials
             for replica in live:
-                target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
+                target = await stack.enter_async_context(forward(cluster, f"pod/{replica['metadata']['name']}"))
                 channel = await stack.enter_async_context(
                     dial(
                         target,
@@ -759,16 +758,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
             environment_target = await stack.enter_async_context(
-                async_port_forward(
-                    PortForward(
-                        cluster.command("port-forward"),
-                        resource="service/environments",
-                        local_address="127.0.0.1",
-                        local_port=None,
-                        remote_port=8082,
-                        readiness_timeout_s=30,
-                    )
-                )
+                forward(cluster, "service/environments", remote_port=8082)
             )
             environment_channel = await stack.enter_async_context(
                 dial(
@@ -968,7 +958,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         server_credentials = app_authentication.channel_credentials
-        async with _forward(cluster) as target:
+        async with forward(cluster) as target:
             channel = dial(
                 target,
                 channel_credentials=server_credentials,

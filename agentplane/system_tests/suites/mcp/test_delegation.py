@@ -22,7 +22,7 @@ from agentplane.proto import identity_pb2
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.app_sandbox import suspend_and_delete, wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.dispatcher_transport import forward, native_client
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
     create_scenario_identity,
@@ -30,7 +30,6 @@ from agentplane.system_tests.driver.identity import (
 )
 from agentplane.system_tests.driver.mcp_connection import ExternalMCPSession, connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
@@ -94,15 +93,8 @@ async def _wait_app(cluster: Cluster, *, replicas: int) -> None:
 async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) -> None:
     service = json.loads(await cluster.kubectl("get", "service", "app", "-o", "json"))
     remote_port = service["spec"]["ports"][0]["port"]
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource="service/app",
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=remote_port,
-    )
     async with (
-        async_port_forward(forward) as endpoint,
+        forward(cluster, "service/app", remote_port=remote_port) as endpoint,
         Client.connect(base_url=f"http://{endpoint}", token=token) as cleanup_client,
     ):
         await suspend_and_delete(cluster, cleanup_client, name, uid)

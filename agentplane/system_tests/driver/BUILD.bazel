@@ -595,7 +595,7 @@ py_library(
     srcs = ["egress_decisions.py"],
     deps = [
         ":cluster",
-        ":port_forward",
+        ":dispatcher_transport",
         ":tls",
         "//agentplane/egress/api/admin:egress_admin_pb2",
         "//agentplane/egress/api/admin:egress_admin_pb2_grpc",
@@ -794,9 +794,9 @@ py_library(
     srcs = ["native_platform.py"],
     deps = [
         ":cluster",
+        ":dispatcher_transport",
         ":environment_transport",
         ":native_auth",
-        ":port_forward",
         ":tls",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
