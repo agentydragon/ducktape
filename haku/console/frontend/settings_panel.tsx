@@ -48,17 +48,8 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   );
 }
 
-function SectionHeading({ title, description }: { title: string; description?: string }) {
-  return (
-    <div>
-      <Text fw={600}>{title}</Text>
-      {description && (
-        <Text size="xs" c="dimmed" mt={4}>
-          {description}
-        </Text>
-      )}
-    </div>
-  );
+function SectionHeading({ title }: { title: string }) {
+  return <Text fw={600}>{title}</Text>;
 }
 
 function DenseTable({ label, children }: { label: string; children: ReactNode }): JSX.Element {
@@ -73,7 +64,6 @@ function DenseTable({ label, children }: { label: string; children: ReactNode })
 
 function ResourcePanel<T>({
   title,
-  description,
   resource,
   label,
   emptyMessage,
@@ -81,7 +71,6 @@ function ResourcePanel<T>({
   children,
 }: {
   title?: string;
-  description?: string;
   resource: Pick<UseQueryResult<T>, "data" | "error">;
   label: string;
   emptyMessage?: string;
@@ -105,7 +94,7 @@ function ResourcePanel<T>({
       <Group justify="center" p="xl">
         <Loader aria-label={`Loading ${label}`} />
       </Group>
-    ) : emptyMessage && (isEmpty ? isEmpty(data) : Array.isArray(data) && data.length === 0) ? (
+    ) : emptyMessage && isEmpty?.(data) ? (
       <div className="haku-empty-state">
         <Text size="sm" c="dimmed">
           {emptyMessage}
@@ -116,7 +105,7 @@ function ResourcePanel<T>({
     );
   return title ? (
     <Stack gap="xs" className="haku-page-list">
-      <SectionHeading title={title} description={description} />
+      <SectionHeading title={title} />
       {errorNotice}
       {body}
     </Stack>
