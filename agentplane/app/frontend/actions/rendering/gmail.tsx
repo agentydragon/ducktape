@@ -75,7 +75,15 @@ function header(message: z.infer<typeof messageSummary> | null | undefined, name
   return message?.payload?.headers?.find((item) => item.name.toLowerCase() === name)?.value;
 }
 
-function DraftFields({ args, short = false }: { args: DraftArguments; short?: boolean }): JSX.Element {
+function DraftFields({
+  args,
+  short = false,
+  clamp = false,
+}: {
+  args: DraftArguments;
+  short?: boolean;
+  clamp?: boolean;
+}): JSX.Element {
   return (
     <>
       <EmailField name="To" value={args.to.join(", ")} />
@@ -86,7 +94,7 @@ function DraftFields({ args, short = false }: { args: DraftArguments; short?: bo
           {args.body || "(empty body)"}
         </Text>
       ) : (
-        <TextBlock text={args.body || "(empty body)"} heading="Message body" format="prose" clamp={false} />
+        <TextBlock text={args.body || "(empty body)"} heading="Message body" format="prose" clamp={clamp} />
       )}
     </>
   );
@@ -127,7 +135,7 @@ function DraftCall({
         {result ? "Saved as an unsent draft." : "Creates an unsent draft."}
       </Text>
       {args.thread_id && <DraftReply id={args.thread_id} requestId={requestId} />}
-      <DraftFields args={args} />
+      <DraftFields args={args} clamp={result !== undefined} />
     </Stack>
   );
 }
