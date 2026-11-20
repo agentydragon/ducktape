@@ -1,6 +1,6 @@
 # Experiments: what it costs to go further
 
-Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts. The [ESMeta spike](esmeta/README.md) investigates a fuller JavaScript semantics.
+Run it from the project root: `./run.sh --experiments` (§ 1–4), `--lowering` (§ 6), `--es-order` (§ 10), `--splits` (§ 7), `--debundle-cases` (§ 11), `--translation` (§ 12). § 5 and § 8 have their own scripts. The [ESMeta spike](esmeta/README.md) investigates a fuller JavaScript semantics; [inferred identity](inferred_identity.md) connects a MiniJS identity call to a conditional plan proof.
 Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Sound plans without a spec
