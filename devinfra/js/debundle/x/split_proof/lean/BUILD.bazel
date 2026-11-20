@@ -104,6 +104,26 @@ _PROOF_FIXTURE_SOURCES = [
 ]
 
 lean_axiom_test(
+    name = "quiet_crossing_axioms_test",
+    srcs = _PROOF_SOURCES + ["Experiments/QuietCrossing.lean"],
+    imports = ["Experiments.QuietCrossing"],
+    theorems = [
+        "EsmSplit.Bundle.conditionalConflict_none",
+        "EsmSplit.Bundle.step_comm_conditional",
+        "EsmSplit.conditional_order_none",
+        "EsmSplit.Bundle.exec_reorder_conditional",
+        "EsmSplit.conditional_plan_preserves",
+        "EsmSplit.QuietCrossingExample.no_certificate_rejected",
+        "EsmSplit.QuietCrossingExample.proposed_quiet_accepted",
+        "EsmSplit.QuietCrossingExample.quiet_proved",
+        "EsmSplit.QuietCrossingExample.conditional_correct",
+        "EsmSplit.QuietCrossingExample.binding_dependency_rejected",
+        "EsmSplit.QuietCrossingExample.false_certificate_refuted",
+        "EsmSplit.QuietCrossingExample.generated_unsafe_rejected",
+    ],
+)
+
+lean_axiom_test(
     name = "local_call_axioms_test",
     srcs = [
         "EsmSplit/Bundle.lean",
