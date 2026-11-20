@@ -42,9 +42,13 @@ spec:
     remediation:
       retries: 3
   values:
+    metricsServer:
+      replicaCount: 2
     nodeSelector:
       topology.kubernetes.io/region: hil
     podDisruptionBudget:
+      metricServer:
+        minAvailable: 1
       webhooks:
         minAvailable: 1
     resources:
@@ -69,6 +73,18 @@ spec:
         requests:
           cpu: 25m
           memory: 64Mi
+    topologySpreadConstraints:
+      metricsServer:
+        - labelSelector:
+            matchLabels:
+              app: keda-operator-metrics-apiserver
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
     watchNamespace: haku-ci,buildbuddy-executor
     webhooks:
       affinity:
