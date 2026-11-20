@@ -195,6 +195,16 @@ lean_axiom_test(
 )
 
 lean_axiom_test(
+    name = "identity_generated_axioms_test",
+    srcs = _PROOF_SOURCES + ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_certificate"],
+    imports = ["IdentityCertificate.Instance"],
+    theorems = [
+        "Generated.plan_valid",
+        "Generated.plan_correct",
+    ],
+)
+
+lean_axiom_test(
     name = "property_read_axioms_test",
     srcs = [
         "EsmSplit/Bundle.lean",
