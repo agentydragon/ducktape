@@ -238,6 +238,26 @@ GITHUB_ISSUE_ROW = {
     "assignees": ["test-reviewer"],
 }
 
+GITHUB_COMMIT = {
+    "sha": "0123456789abcdef0123456789abcdef01234567",
+    "html_url": "https://github.com/example/service/commit/0123456789abcdef0123456789abcdef01234567",
+    "commit": {
+        "message": "Document readiness checks",
+        "author": {"name": "Test maintainer", "date": "2026-11-19T18:00:00Z"},
+    },
+}
+GITHUB_RELEASE = {
+    "id": 15,
+    "tag_name": "v1.2.0",
+    "name": "Rollout tools 1.2",
+    "html_url": "https://github.com/example/service/releases/tag/v1.2.0",
+    "published_at": "2026-11-19T18:00:00Z",
+    "prerelease": False,
+    "draft": False,
+    "body": "Adds staging readiness and rollback checks.",
+}
+GITHUB_USER = {"login": "test-reviewer", "profile_url": "https://github.com/test-reviewer"}
+
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
@@ -956,6 +976,194 @@ EXAMPLES = (
         {**GITHUB_REPO, "name": "deployments"},
         {"name": "deployments", "description": "Release and rollout work", "color": "0366d6"},
         "Release and rollout work",
+    ),
+    ActionExample(
+        "github",
+        "create_repository",
+        {
+            "name": "demo-rollout",
+            "organization": "example",
+            "private": True,
+            "autoInit": True,
+            "description": "Tools for staging rollout",
+        },
+        {"id": "13", "url": "https://github.com/example/demo-rollout"},
+        "Repository created",
+    ),
+    ActionExample(
+        "github",
+        "fork_repository",
+        {**GITHUB_REPO, "organization": "test-destination"},
+        "Fork is in progress",
+        "Fork accepted",
+    ),
+    ActionExample(
+        "github",
+        "get_file_contents",
+        {**GITHUB_REPO, "path": "docs", "ref": "refs/heads/devel"},
+        [
+            {
+                "name": "readiness.md",
+                "path": "docs/readiness.md",
+                "type": "file",
+                "size": 120,
+                "html_url": "https://github.com/example/service/blob/devel/docs/readiness.md",
+            }
+        ],
+        "docs/readiness.md",
+    ),
+    ActionExample(
+        "github",
+        "get_commit",
+        {**GITHUB_REPO, "sha": GITHUB_COMMIT["sha"], "detail": "full_patch"},
+        {
+            **GITHUB_COMMIT,
+            "stats": {"additions": 1, "deletions": 0},
+            "files": [
+                {
+                    "filename": "docs/readiness.md",
+                    "status": "added",
+                    "additions": 1,
+                    "patch": "@@ -0,0 +1 @@\n+Check readiness.",
+                }
+            ],
+        },
+        "Check readiness.",
+    ),
+    ActionExample(
+        "github",
+        "list_commits",
+        {**GITHUB_REPO, "sha": "devel", "path": "docs", "perPage": 5},
+        [GITHUB_COMMIT],
+        "Document readiness checks",
+    ),
+    ActionExample(
+        "github",
+        "list_branches",
+        {**GITHUB_REPO, "perPage": 5},
+        [
+            {"name": "devel", "sha": GITHUB_COMMIT["sha"], "protected": True},
+            {"name": "docs", "sha": GITHUB_COMMIT["sha"], "protected": False},
+        ],
+        "Protected",
+    ),
+    ActionExample("github", "list_tags", GITHUB_REPO, [{"name": "v1.2.0", "sha": GITHUB_COMMIT["sha"]}], "v1.2.0"),
+    ActionExample(
+        "github",
+        "get_tag",
+        {**GITHUB_REPO, "tag": "v1.2.0"},
+        {"ref": "refs/tags/v1.2.0", "object": {"type": "commit", "sha": GITHUB_COMMIT["sha"]}},
+        "Lightweight tag",
+    ),
+    ActionExample("github", "list_releases", {**GITHUB_REPO, "perPage": 5}, [GITHUB_RELEASE], "Rollout tools 1.2"),
+    ActionExample("github", "get_latest_release", GITHUB_REPO, GITHUB_RELEASE, "Adds staging readiness"),
+    ActionExample(
+        "github", "get_release_by_tag", {**GITHUB_REPO, "tag": "v1.2.0"}, GITHUB_RELEASE, "Rollout tools 1.2"
+    ),
+    ActionExample(
+        "github",
+        "search_commits",
+        {"query": "repo:example/service readiness", "perPage": 5},
+        {
+            "total_count": 1,
+            "incomplete_results": False,
+            "items": [{**GITHUB_COMMIT, "repository": {"full_name": "example/service"}}],
+        },
+        "Document readiness checks",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "get_me",
+        {},
+        {**GITHUB_USER, "details": {"name": "Test reviewer", "company": "Example organization"}},
+        "Test reviewer",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "get_team_members",
+        {"org": "example", "team_slug": "release-reviewers"},
+        ["test-reviewer"],
+        "test-reviewer",
+    ),
+    ActionExample(
+        "github",
+        "get_teams",
+        {"user": "test-reviewer"},
+        [
+            {
+                "org": "example",
+                "teams": [
+                    {"name": "Release reviewers", "slug": "release-reviewers", "description": "Review staging changes"}
+                ],
+            }
+        ],
+        "Release reviewers",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "list_repository_collaborators",
+        {**GITHUB_REPO, "affiliation": "direct"},
+        {
+            "firstPage": 1,
+            "lastPage": 3,
+            "nextPage": 2,
+            "prevPage": 0,
+            "items": [{"login": "test-reviewer", "id": 8, "role_name": "triage"}],
+        },
+        "Triage",
+    ),
+    ActionExample(
+        "github",
+        "search_code",
+        {"query": "repo:example/service readiness", "perPage": 5},
+        {
+            "total_count": 1,
+            "incomplete_results": False,
+            "items": [
+                {
+                    "name": "readiness.md",
+                    "path": "docs/readiness.md",
+                    "sha": GITHUB_COMMIT["sha"],
+                    "repository": "example/service",
+                    "text_matches": [{"fragment": "Wait for staging readiness."}],
+                }
+            ],
+        },
+        "Wait for staging readiness.",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "search_repositories",
+        {"query": "org:example rollout", "minimal_output": True},
+        {
+            "total_count": 1,
+            "incomplete_results": False,
+            "items": [
+                {
+                    "id": 10,
+                    "name": "service",
+                    "full_name": "example/service",
+                    "html_url": "https://github.com/example/service",
+                    "description": "Staging rollout tools",
+                    "language": "Go",
+                    "stargazers_count": 12,
+                }
+            ],
+        },
+        "Staging rollout tools",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "github",
+        "search_users",
+        {"query": "org:example reviewer"},
+        {"total_count": 1, "incomplete_results": False, "items": [GITHUB_USER]},
+        "test-reviewer",
+        compact_card_expands=False,
     ),
     ActionExample(
         "gmail",
