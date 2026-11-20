@@ -69,6 +69,22 @@ def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tupl
     ]
 
 
+def test_tofu_controller_accepts_external_artifacts(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+) -> None:
+    documents = parsed_yaml_documents[generated / GENERATED_ROOT / "tofu-controller/tofu-controller.k8s.yaml"]
+    release = next(doc for doc in documents if doc["kind"] == "HelmRelease")
+    crd = next(doc for doc in documents if doc["kind"] == "CustomResourceDefinition")
+    assert release["spec"]["values"]["featureGates"]["externalArtifact"] is True
+    assert crd["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+    (version,) = crd["spec"]["versions"]
+    assert version["name"] == "v1alpha2"
+    source_kind = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["sourceRef"]["properties"][
+        "kind"
+    ]
+    assert "ExternalArtifact" in source_kind["enum"]
+
+
 def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:

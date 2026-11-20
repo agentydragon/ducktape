@@ -18,9 +18,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 from tofu_controller.io.fluxcd.contrib.infra import (
-    TerraformV1Alpha2SpecSourceRef,
-    TerraformV1Alpha2SpecSourceRefKind,
-    TerraformV1Alpha2SpecStoreReadablePlan,
+    TerraformSpecSourceRef,
+    TerraformSpecSourceRefKind,
+    TerraformSpecStoreReadablePlan,
 )
 
 from cluster.cdk8s import ducktape_flux, terraform
@@ -105,14 +105,14 @@ def chart(app: App) -> Chart:
         plan_only=True,
         # Without this the pending plan says only that something changed. `human`
         # writes the diff to a ConfigMap in this namespace — README § Reading a plan.
-        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
+        store_readable_plan=TerraformSpecStoreReadablePlan.HUMAN,
         # Every plan takes the PG advisory lock on schema `main` — the lock
         # `bazel run //cluster:bootstrap` also needs. README § State lock contention
         # before shortening this.
         interval="6h",
         path="./cluster/terraform/main",
-        source_ref=TerraformV1Alpha2SpecSourceRef(
-            kind=TerraformV1Alpha2SpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=terraform.NAMESPACE
+        source_ref=TerraformSpecSourceRef(
+            kind=TerraformSpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=terraform.NAMESPACE
         ),
         # The OVH server resources and nothing else — the one subgraph whose only
         # dependencies are the ovh provider and two SOPS files. README § What this

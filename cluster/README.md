@@ -78,16 +78,16 @@ nodes. Full set and checklist: <docs/decisions.md> § "OVH-Only Resilience Invar
 
 ## In-cluster Terraform (tofu-controller)
 
-`Terraform` CRs (`tf/gitops/*`, infra-drift) run on two custom GHCR images (not Forgejo:
-the Forgejo pull credential is created by one of those CRs):
+`Terraform` CRs (`tf/gitops/*`, infra-drift) use the upstream tofu-controller chart and
+image, with `ExternalArtifact` enabled. Each module reads its own content-addressed
+`ArtifactGenerator` artifact (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>), so
+only changed modules replan. Flux applies the chart release's CRD separately, since Helm
+does not upgrade CRDs from the chart's `crds/` directory.
 
-- `ghcr.io/agentydragon/tofu-controller`: built from an upstream commit with the
-  `ExternalArtifact` source kind (<../third_party/tofu_controller/README.md>), so
-  each module reads its own content-addressed `ArtifactGenerator` artifact
-  (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>) and only changed modules replan.
-  Drop once upstream releases flux-iac/tofu-controller#1901.
-- `ghcr.io/agentydragon/tf-runner`: upstream runner with all pinned providers baked in
-  (<tf_runner/README.md>); its protocol must match the controller.
+The controller uses our `ghcr.io/agentydragon/tf-runner`, an upstream runner with all pinned
+providers baked in (<tf_runner/README.md>). Its upstream base must match the controller's
+release and their rollout must be coordinated. Both images come from GHCR, not Forgejo:
+the Forgejo pull credential is itself created by a Terraform CR.
 
 ## Layout
 

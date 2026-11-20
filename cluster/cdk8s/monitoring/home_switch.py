@@ -25,10 +25,10 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from pydantic import BaseModel, ConfigDict, Field
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap,
-    TerraformV1Alpha2SpecStoreReadablePlan,
+    TerraformSpecRunnerPodTemplateSpecVolumeMounts,
+    TerraformSpecRunnerPodTemplateSpecVolumes,
+    TerraformSpecRunnerPodTemplateSpecVolumesConfigMap,
+    TerraformSpecStoreReadablePlan,
 )
 
 from cluster.cdk8s import terraform
@@ -119,18 +119,15 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
         # Secret-bearing attributes come from Secrets, so the plan masks them.
-        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
+        store_readable_plan=TerraformSpecStoreReadablePlan.HUMAN,
         node_selector=_HOME_LAN,
         volumes=[
-            TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes(
-                name="cluster-ca",
-                config_map=TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE),
+            TerraformSpecRunnerPodTemplateSpecVolumes(
+                name="cluster-ca", config_map=TerraformSpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE)
             )
         ],
         volume_mounts=[
-            TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts(
-                name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True
-            )
+            TerraformSpecRunnerPodTemplateSpecVolumeMounts(name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True)
         ],
     )
     return chart
