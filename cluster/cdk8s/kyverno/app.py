@@ -8,7 +8,7 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa, initial_memory_request_annotations
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, initial_memory_request_annotations
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "kyverno"
@@ -37,14 +37,17 @@ def _values() -> dict[str, object]:
             "updateStrategy": {"rollingUpdate": {"maxUnavailable": 0}},
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
-            "annotations": initial_memory_request_annotations(
-                ContainerPolicy.memory_requests_only(
-                    "kyverno",
-                    cpu_request=_ADMISSION_CPU_REQUEST,
-                    memory_floor="224Mi",
-                    memory_limit=_ADMISSION_MEMORY_LIMIT,
-                )
-            ),
+            "annotations": {
+                **initial_memory_request_annotations(
+                    ContainerPolicy.memory_requests_only(
+                        "kyverno",
+                        cpu_request=_ADMISSION_CPU_REQUEST,
+                        memory_floor="224Mi",
+                        memory_limit=_ADMISSION_MEMORY_LIMIT,
+                    )
+                ),
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+            },
             "container": {
                 "resources": {
                     "limits": {"memory": _ADMISSION_MEMORY_LIMIT},
