@@ -1,18 +1,17 @@
 ---
 name: workspace-gc
 description: >-
-  Inspect and safely clean stale local dev state: unused Git worktrees, merged
-  branches, orphaned Bazel output bases, unreferenced repo-contents-cache
-  entries. Use for pruning worktrees/branches or reclaiming Bazel disk — drive
-  the `workspace-gc` tool and apply PR judgment to REVIEW items.
+  Inspect and safely clean stale local dev state: unused Git worktrees, local branches,
+  orphaned Bazel output bases, and unreferenced repo-contents-cache entries. Use for pruning
+  worktrees and branches or reclaiming Bazel disk — drive `workspace-gc` and apply PR judgment
+  to REVIEW items.
 ---
 
 # Clean Workspaces
 
-`workspace-gc` runs **one joint scan** over four coupled domains and classifies them
-together (the domains depend on each other: a branch checked out in a live worktree can't be
-deleted; an output base orphans when its workspace worktree is removed; a repo-cache entry is
-unreferenced once the bases linking to it are gone):
+`workspace-gc` processes four coupled domains concurrently (branch classification
+depends on its worktree holders; an output base orphans when its workspace worktree is removed;
+a repo-cache entry is unreferenced once the bases linking to it are gone):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
@@ -21,22 +20,22 @@ unreferenced once the bases linking to it are gone):
 - **repo-cache** — entries of Bazel's repo contents cache that no output base links to.
 
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees`,
-`workspace-gc bazel-bases` and `workspace-gc repo-cache` are **views** of that same computed
-result, scoped to one domain.
-All use the PRUNE/KEEP/REVIEW model and are dry by default. Worktrees and branches are
-removed based on the scan; Bazel bases and repo-cache entries are rechecked under locks.
-The workspace must not be modified by other processes while workspace-gc runs: checks and
-removals are not atomic.
-Gitignored files are not uncommitted changes: removing a worktree or foreign clone deletes
-them (a gitignored `.env` or local data is lost), so inspect KEEP/REVIEW reasons for
-anything you would miss.
+`workspace-gc bazel-bases` and `workspace-gc repo-cache` scope the work to one domain.
+All use the PRUNE/KEEP/REVIEW model and are dry by default. Workspace state is assumed not to
+be modified externally during a run; output bases and repo-cache entries are also rechecked
+under their respective locks before removal.
+With a deletion flag, removals start while other items are being scanned; completed work can
+unlock further work. Findings describe each item as observed, not a single snapshot. The live
+display shows ready, running, dependency-waiting, and finished counts; each bar covers only work
+discovered so far, so it can move backward as new work is added.
+Gitignored files are not uncommitted changes, so removing a worktree deletes them, including
+local data such as a gitignored `.env`. Foreign clones are only reported and remain in place.
 
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
 
 Git or filesystem failures inspecting a worktree, branch, or foreign clone produce `REVIEW`
-with the error, leaving that item intact while other items continue. An existing directory
-with unreadable Git metadata is never treated as
+with the error, leaving that item intact while other items continue. An existing directory with unreadable Git metadata is never treated as
 a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
 An item skipped at deletion (it no longer qualifies, or its Bazel lock or the cache is busy) is
 reported as `SKIPPED` and does not change the exit status; a failed removal does.
@@ -92,23 +91,32 @@ default is the only root.
 
 `workspace-gc worktrees` classifies each worktree; interpret it literally:
 
-- `PRUNE`: clean, idle (not main/active, no process cwd'd inside), and its work is already
-  in the main branch — an ancestor, a squash/rebase-merge (merging into main is a no-op),
-  an empty branch, or a **merged GitHub PR** for its branch. Remove with
-  `workspace-gc worktrees --prune`: it runs `git worktree remove` **without `--force`**
-  (so Git refuses tracked and untracked changes) and **never deletes branches** — the work
-  stays reachable through them.
+- `PRUNE`: clean (no tracked or untracked changes), idle (not main/active, no process cwd'd inside),
+  and its work has landed on the default branch, or its branch has a merged or closed PR.
+  `workspace-gc worktrees --prune` calls `git worktree remove` without `--force`; Git deletes ignored files. Attached branches survive worktree removal. A detached
+  HEAD with landed content or patches is eligible; Git removes its HEAD and reflog without
+  creating recovery refs. The tool assumes no external modifications to workspace state during
+  its run, including worktrees and their checked-out branches and HEADs. If the worktree
+  directory is already missing, Git removes its worktree registration.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
   changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
   (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
   dirt is real work.
-- `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with
-  unique commits, or an undeterminable default branch. Judge these yourself — inspect the
-  commits/PR and decide; removal must not make any commit unreachable.
+- `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with unique commits, or an
+  undeterminable default branch.
+  Judge these yourself by inspecting the commits and PR.
 
 The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on
-git signals only (offline). After pruning, re-run `git worktree prune --dry-run --verbose`
+git signals only (offline). An unavailable PR check produces REVIEW for otherwise-prunable
+work. After pruning, re-run `git worktree prune --dry-run --verbose`
 and run `git worktree prune --verbose` only if every listed record is confirmed stale.
+
+## Foreign Clones
+
+The `all` view reports same-project clones found through Bazel output-base workspaces.
+They are independent Git repositories whose worktrees do not account for all refs, commits,
+or other data. A clone whose worktrees appear prunable is REVIEW; the tool never removes
+an independent clone. The former `--delete-foreign-clones` flag is rejected.
 
 ### Inspect KEEP worktrees, don't just trust the label
 
@@ -138,22 +146,26 @@ genuine keep.
 The joint scan (`workspace-gc`, shown in the `# Branches` section) classifies each local
 branch; interpret it literally:
 
-- `PRUNE`: its work is provably in the default branch and it is not held by a kept worktree —
-  established by git (an ancestor, an empty branch, a squash/rebase-merge no-op, or every
-  commit having a patch-equivalent already on the default branch) **or** by
-  a merged PR whose merged head the branch has not advanced beyond. A branch checked out in a
-  _prunable_ worktree is eligible too; `all --prune` removes that worktree first, then the
-  branch. Deletion uses `git branch -D` (git's safe `-d` rejects squash-merges); it removes
-  the ref (recoverable only via reflog).
+- `PRUNE`: a historical content candidate based on git showing its changes are in the default
+  branch (an ancestor, an empty branch, a squash/rebase-merge no-op, or every commit having a
+  patch-equivalent on the default branch), or a merged PR whose head the branch has not advanced
+  beyond. The classifier also marks a closed-not-merged PR as a candidate when the branch has
+  not advanced past its PR head; that is not evidence its unique commit history is disposable.
+  A branch checked out in a _prunable_ worktree is a candidate too; `all --prune` removes that
+  worktree first. Branch removal preserves the classified tip and reflog commits under recovery
+  refs. A branch whose worktree remains checked out is kept.
 - `KEEP`: the default branch, a branch with an open PR, or a branch checked out in a retained
-  worktree (git won't delete a checked-out branch anyway).
-- `REVIEW`: commits not in the default branch and no merged PR, or a merged PR the branch has
-  advanced beyond (unmerged local commits past the merge point). Judge these yourself —
-  removal must not make any commit unreachable.
+  worktree.
+- `REVIEW`: commits not in the default branch and no candidate PR signal, or a branch that has
+  advanced past its merged or closed PR head. Judge these yourself — removal must not make any
+  commit unreachable.
 
-Branch deletion requires an explicit `--prune` and is never implied by the dry scan. The PR
-cross-check uses `GITHUB_TOKEN` or `gh auth token`; `--no-prs` classifies on git signals
-alone (so squash-merges the API would have confirmed fall to REVIEW).
+`--prune` prints a recovery ref for each removed branch. Restore the tip with
+`git branch <branch-name> <recovery-ref>`; additional refs in the same recovery directory
+preserve commits found in the branch reflog. Those refs keep the captured commits until removed
+separately. If the reflog cannot be inventoried, branch deletion fails closed. The PR cross-check uses `GITHUB_TOKEN` or
+`gh auth token`; `--no-prs` classifies on git signals alone (so squash-merges the API would
+have confirmed fall to REVIEW).
 
 ## Bazel Output Bases
 
@@ -186,20 +198,18 @@ runs only on an idle server, and never asks whether anything still links to an e
 `workspace-gc repo-cache` does; interpret it literally:
 
 - `PRUNE`: no output base the scan knows — the root's and the per-session ones — links to the
-  entry, and every known base's reference inventory was complete. A missing `external/`
-  directory, a vanished entry, or a real non-symlink entry is harmless. Remove with
-  `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock` exclusively (every Bazel
-  command holds it shared while it runs, so nothing can be fetching or linking meanwhile; a
-  busy lock skips the round), re-lists the bases and their links, then removes the entry the
-  way Bazel's GC does (recorded inputs first, directory via `_trash/`). An incomplete fresh
-  reference inventory skips every candidate for that round.
+  entry. Remove with `workspace-gc repo-cache --delete`: it takes Bazel's `gc_lock`
+  exclusively (every Bazel command holds it shared while it runs, so nothing can be fetching
+  or linking meanwhile; a busy lock skips the round), re-lists the bases and their links,
+  then removes the entry the way Bazel's GC does (recorded inputs first, directory via
+  `_trash/`).
 - `KEEP`: some base that itself stays (KEEP or REVIEW) links to it. An entry whose only
   referrers are **prunable bases** is KEEP in this view, annotated "only prunable bases
   reference it"; run `all --prune` to remove those bases and then the entry in one pass.
 - `REVIEW`: a malformed name, a directory without its `.recorded_inputs` (or the reverse), a
-  nested mount, an unreadable entry, or an entry with no known referrers when any base's
-  `external/` directory or a link could not be inspected. Never `rm -rf` one without proving
-  what it is.
+  nested mount, an unreadable entry, or an incomplete reference scan. An incomplete fresh
+  reference scan also prevents deletion under the cache lock. Never `rm -rf` one without
+  proving what it is.
 
 `LAST USED` is the recorded-inputs mtime, which Bazel touches on every cache hit. `--sizes`
 runs `du` per entry and is slow on thousands of entries. The scan derives the cache location
@@ -211,16 +221,15 @@ is deleted — that base re-fetches the repo, the same exposure Bazel's own GC a
 
 Handle these manually per situation instead of expanding the tool's deletion surface:
 
-- `REVIEW` worktrees (unmerged commits, detached heads, missing upstreams) and open PRs;
+- `REVIEW` worktrees (unmerged commits, unique detached heads, missing upstreams) and open PRs;
 - stale directories that are not registered Git worktrees;
 - `REVIEW` output bases and failed GC quarantines;
 - nondefault output-base layouts and additional output-user-roots; and
 - Bazel's shared repository (download), disk, and install caches.
 
-`workspace-gc` deletes only **local** branches it proves are merged; deleting remote branches
-is never implied — do that only when the user separately requests it and its safety is
-established.
+Deleting remote branches is never implied — do that only when the user separately requests it
+and its safety is established.
 
-Finish with a concise ledger: worktrees removed and retained, branches deleted and retained,
-output bases and repo-cache entries deleted, space reclaimed, roots scanned, and every item
-still requiring review.
+Finish with a concise ledger: worktrees removed and retained, branches deleted and their
+recovery refs, output bases and repo-cache entries deleted, space reclaimed, roots scanned,
+and every item still requiring review.
