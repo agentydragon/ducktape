@@ -64,6 +64,9 @@ it.each([undefined, null, "", "setup"])(
           },
         },
         model: "test-model",
+        cwd: "",
+        reasoningEffort: "",
+        instructions: "",
       },
       ...(setup === undefined ? {} : { setup_script: setup }),
     });
