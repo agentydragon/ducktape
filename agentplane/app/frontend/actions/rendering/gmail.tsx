@@ -22,7 +22,7 @@ function GmailLink({ href, children }: { href: string; children: ReactNode }): J
   );
 }
 
-function ThreadTarget({ id, subject }: { id: string; subject?: string }): JSX.Element {
+function ThreadTarget({ id, subject }: { id: string; subject?: string | null }): JSX.Element {
   return <GmailLink href={threadHref(id)}>{subject || <Code>{id}</Code>}</GmailLink>;
 }
 
