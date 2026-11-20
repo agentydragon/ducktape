@@ -15,8 +15,12 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "kubectl-passthrough-mcp"
+_CPU_REQUEST = "50m"
+_MEMORY_REQUEST = "192Mi"
+_MEMORY_LIMIT = "384Mi"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/kubectl-passthrough-mcp/app"
 SERVICE = ServiceRef(
     name=NAME,
@@ -50,10 +54,15 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
+                **namespaces.initial_memory_request_annotations(
+                    ContainerPolicy.memory_requests_only(
+                        "server", cpu_request=_CPU_REQUEST, memory_floor=_MEMORY_REQUEST, memory_limit=_MEMORY_LIMIT
+                    )
+                ),
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
                     " forwarded directly to kube-apiserver; server itself is unprivileged."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -85,7 +94,7 @@ def _deployment(chart: Chart) -> None:
                                 )
                             ],
                             resources=container_resources(
-                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
+                                cpu=_CPU_REQUEST, memory=_MEMORY_REQUEST, cpu_limit="200m", memory_limit=_MEMORY_LIMIT
                             ),
                             readiness_probe=_healthz(initial_delay_seconds=3, period_seconds=10),
                             liveness_probe=_healthz(initial_delay_seconds=15, period_seconds=20),
@@ -100,7 +109,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     k8s.KubeServiceAccount(
         chart,
         "serviceaccount",

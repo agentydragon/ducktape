@@ -818,6 +818,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@rules_python//python/runfiles",
