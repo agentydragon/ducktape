@@ -468,7 +468,7 @@ def inferredIdentities (fuel : Nat) (tops : Array Top) : Option IdentityNames :=
 inert shapes, or it reads an undeclared name. A statement with effects counts everything it mentions as eager
 (a call may run any function it can reach), and the names it may assign are those assigned by the statement
 itself and by every function body it can reach. -/
-def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
+def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String := #[]) : Array Footprint × Bool :=
   let scan := inferredIdentities identityScanFuel tops
   let identities := scan.getD {}
   let factories := tops.foldl (fun seen t => match t.factoryDef with
@@ -497,9 +497,18 @@ def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.rawEager ++ t.rawLazy)) m) {}
   let lazyW : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
+  -- A result captured by deferred code may be read by an earlier-escaped callback.
+  -- An inert initializer that reads it may also create an alias for such a callback.
+  -- In both cases do not commute the call past an unknown effect.
+  let indirect : Std.HashSet String := tops.foldl (fun seen t =>
+    let refs := t.rawLazy ++ (if t.inert then t.rawEager else #[])
+    refs.foldl (fun seen n => seen.insert n) seen)
+      (externallyVisible.foldl (fun seen n => seen.insert n) {})
   let footprints := tops.map fun t =>
-    let identityInert := t.identityCall.any identities.contains
-    let factoryInert := !factoryIdentifiers.contains "eval" && t.factoryCall.any (fun (n, arg) => factories.contains n && stableArgs.contains arg && factoryIdentifiers.getD n 0 == factoryCalls.getD n 0 + 1)
+    let unobserved := t.defs.all (!indirect.contains ·)
+    let identityInert := t.identityCall.any identities.contains && unobserved
+    let factoryInert := unobserved && !factoryIdentifiers.contains "eval" &&
+      t.factoryCall.any (fun (n, arg) => factories.contains n && stableArgs.contains arg && factoryIdentifiers.getD n 0 == factoryCalls.getD n 0 + 1)
     let effect := !(t.inert || identityInert || factoryInert) || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
