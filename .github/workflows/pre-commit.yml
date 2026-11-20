@@ -40,6 +40,9 @@ jobs:
         with:
           installables: ".#precommit"
 
+      - name: Check Rust toolchain alignment
+        run: python3 devinfra/ci/check_rust_versions.py "$(nix eval --raw .#rustfmt.src.name)"
+
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-roles-restore

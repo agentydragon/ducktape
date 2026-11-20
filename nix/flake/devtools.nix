@@ -7,6 +7,7 @@
 }:
 
 let
+  inherit (rustToolchain) rustfmt;
   llvmAddr2line = pkgs.llvmPackages.bintools-unwrapped;
   # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
   # RBE container image. These are the only Nix tools its scripts need.
@@ -46,7 +47,7 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
-    rustToolchain.rustfmt
+    rustfmt
     pkgs.ansible
   ];
 
@@ -124,5 +125,6 @@ in
     preCommitPackages
     systemLibs
     devToolPackages
+    rustfmt
     ;
 }
