@@ -79,14 +79,7 @@ impl CandidateReachabilityClosure {
             {
                 work.completed_keys_scanned += 1;
             }
-            if let Some(origin) = match key {
-                FlowKey::Properties(object) if native_set_allocations.contains(object) => {
-                    Some(Value::Alloc(Kind::Set, *object))
-                }
-                FlowKey::Properties(object) => Some(Value::Alloc(Kind::Object, *object)),
-                FlowKey::Return(function) => Some(Value::Alloc(Kind::Function, *function)),
-                _ => None,
-            } {
+            if let Some(origin) = carrier_origin(key, &native_set_allocations) {
                 may_reach.insert(origin_table.id(origin).0);
             }
         }
@@ -355,7 +348,6 @@ fn close_graph(
     #[cfg(test)]
     {
         work.graph_edges = graph.edge_visits.get();
-        work.candidate_edges_considered = work.graph_edges;
     }
     let mut component_of = vec![0usize; graph.node_keys.len()];
     for (component, members) in components.iter().enumerate() {
@@ -396,8 +388,6 @@ fn close_graph(
                 #[cfg(test)]
                 {
                     work.condensation_edges += 1;
-                    work.summary_edge_transfers += 1;
-                    work.bitmap_union_calls += 1;
                 }
 
                 let (earlier, current_and_later) = summaries.split_at_mut(component);
@@ -446,7 +436,6 @@ fn close_graph(
         }
         #[cfg(test)]
         {
-            work.output_bitmap_cardinality += summary.bits.len();
             work.emitted_facts += 1;
         }
         output.insert(
@@ -471,7 +460,6 @@ struct CandidateSummary {
 struct CandidateClosureWork {
     completed_keys_scanned: usize,
     completed_facts_scanned: usize,
-    candidate_edges_considered: usize,
     graph_nodes: usize,
     graph_edges: usize,
     graph_adjacency_slots: usize,
@@ -482,10 +470,7 @@ struct CandidateClosureWork {
     candidate_value_memberships_examined: usize,
     components: usize,
     condensation_edges: usize,
-    summary_edge_transfers: usize,
-    bitmap_union_calls: usize,
     emitted_facts: usize,
-    output_bitmap_cardinality: u64,
 }
 
 #[cfg(test)]
@@ -660,14 +645,12 @@ mod tests {
             assert!(!bits.is_empty());
         }
         let expected = oracle(&graph, &seeds, &local_dependencies);
-        let (actual, work) = close_for_test(graph, seeds, local_dependencies);
+        let (actual, _) = close_for_test(graph, seeds, local_dependencies);
         let actual: BTreeMap<_, _> = actual
             .into_iter()
             .map(|(key, fact)| (key, (fact.bits.as_ref().clone(), fact.dependencies)))
             .collect();
         assert_eq!(actual, expected);
-        assert_eq!(work.summary_edge_transfers, work.condensation_edges);
-        assert_eq!(work.bitmap_union_calls, work.condensation_edges);
     }
 
     #[test]
@@ -759,9 +742,6 @@ mod tests {
         );
         assert_eq!(work.completed_keys_scanned, facts.len());
         assert_eq!(work.completed_facts_scanned, facts.len());
-        assert_eq!(work.candidate_edges_considered, work.graph_edges);
-        assert_eq!(work.summary_edge_transfers, work.condensation_edges);
-        assert_eq!(work.bitmap_union_calls, work.condensation_edges);
         assert_eq!(work.graph_materialized_edge_records, 0);
         assert!(
             work.candidate_value_memberships_examined > 2 * work.graph_edges,
@@ -879,8 +859,7 @@ mod tests {
             .map(|(key, fact)| (key, (fact.bits.as_ref().clone(), fact.dependencies)))
             .collect();
         assert_eq!(actual, oracle(&graph, &seeds, &BTreeMap::new()));
-        assert_eq!(work.summary_edge_transfers, ROOTS as usize);
-        assert_eq!(work.bitmap_union_calls, ROOTS as usize);
+        assert_eq!(work.condensation_edges, ROOTS as usize);
         assert_eq!(actual[&node(ROOTS)].0.len(), u64::from(ROOTS));
     }
 
