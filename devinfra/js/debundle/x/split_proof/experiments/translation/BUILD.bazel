@@ -41,18 +41,30 @@ js_test(
     },
 )
 
+_LOWER_CALLBACK_FUZZ_DATA = [
+    "scope_metadata.mjs",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
 js_test(
     name = "lower_callback_fuzz_test",
     size = "small",
-    data = [
-        "scope_metadata.mjs",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
+    data = _LOWER_CALLBACK_FUZZ_DATA,
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "lower_callback_fuzz_extended_test",
+    size = "medium",
+    args = ["64"],
+    data = _LOWER_CALLBACK_FUZZ_DATA,
+    entry_point = "lower_callback_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    tags = ["manual"],
 )
 
 js_test(
