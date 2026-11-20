@@ -48,7 +48,6 @@ def begin_suite(*, runtime: SandboxRuntime, backend: Backend, include_mcp_edge: 
     )
     env = fixture_chart.environment(
         runtime=runtime,
-        platform_callers=fixture_chart.APP_CALLERS,
         routes=routes,
         app=app_props,
         central_sampler=None,

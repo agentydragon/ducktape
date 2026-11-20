@@ -425,7 +425,6 @@ def mcp_edge_props(*, operator_oidc: OperatorOidcSettings, oauth_secret_name: st
 def environment(
     *,
     runtime: SandboxRuntime,
-    platform_callers: dict[ServiceAccountRef, Pods],
     routes: HarnessRoutes,
     app: AppProps | None,
     central_sampler: CentralSamplerProps | None,
