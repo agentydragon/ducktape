@@ -241,6 +241,15 @@ function Report() {
   );
   const certManagerHA = data.cert_manager_ha;
   const certManagerTime = certManagerHA.observed_at_utc.slice(11, 16);
+  const controllerHA = data.controller_ha_followup;
+  const controllerHATime = controllerHA.observed_at_utc.slice(11, 16);
+  const crossplaneHA = controllerHA.crossplane;
+  const metricsHA = controllerHA.metrics_server;
+  const sidekiq = controllerHA.sidekiq;
+  const stagingInitial = data.agentplane_staging_initial;
+  const stagingInitialTime = stagingInitial.observed_at_utc.slice(11, 16);
+  const stagingAdmissionTime =
+    stagingInitial.admission_verification.observed_at_utc.slice(11, 16);
   const revisionHistoryCutover = data.revision_history_cutover;
   const revisionHistoryTime = revisionHistoryCutover.observed_at_utc.slice(
     11,
@@ -1335,6 +1344,78 @@ function Report() {
             >
           <//>
         <//>
+        <${Paper} id="controller-ha" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4">Crossplane and resource metrics API<//>
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${controllerHATime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>Crossplane core.</strong>${" "}Flux and Helm reported Ready.
+            Two Ready webhook endpoints served from${" "}
+            ${crossplaneHA.ready_endpoints.map(({ node }) => node).join(" and ")}.
+            ${` The disruption budget allowed ${crossplaneHA.disruptions_allowed} disruption, and the core leader lease was renewing. Both Pods received a ${quantityMiB(crossplaneHA.admitted_memory_request)} memory request with a ${quantityMiB(crossplaneHA.admitted_memory_limit)} limit.`}${" "}<${Anchor}
+              href=${crossplaneHA.pr_url}
+              >PR #18145<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>metrics-server.</strong>${" "}Flux and Helm reported Ready.
+            Two Ready endpoints served from${" "}
+            ${metricsHA.ready_endpoints.map(({ node }) => node).join(" and ")}.
+            The disruption budget allowed ${metricsHA.disruptions_allowed}${" "}
+            disruption and the aggregated APIService was Available. It returned
+            metrics for ${metricsHA.node_metrics_returned} nodes at${" "}
+            ${controllerHATime} UTC and${" "}
+            ${metricsHA.earlier_node_metrics_returned} in an adjacent sample.
+            Four successive checks at 17:58 UTC returned metrics for all nine
+            Ready nodes. Both Pods received a${" "}
+            ${quantityMiB(metricsHA.admitted_memory_request)} memory request
+            with a ${quantityMiB(metricsHA.admitted_memory_limit)} limit.
+            Hostname anti-affinity preserves host separation, while zone
+            placement can change.${" "}<${Anchor} href=${metricsHA.pr_url}
+              >PR #18154<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <strong>Sidekiq capacity.</strong>${" "}Sidekiq was${" "}
+            ${sidekiq.available_replicas}/${sidekiq.desired_replicas} available.
+            The 17:44 UTC placement model left about${" "}
+            ${sidekiq.adverse_scenario_remaining_mib_on_ovh_ns103711.toLocaleString("en-US")}${" "}
+            MiB on ovh-ns103711 in a modeled overlap involving a provider move,
+            controller replacements and ${" "}<${Anchor}
+              href=${sidekiq.staging_proposal_url}
+              >staging rollout<//
+            >
+            ${" "}at proposed caps. That falls below its 3 GiB recommendation
+            and 4 GiB cap. An ordinary blocked surge leaves the incumbent in
+            place, while a concurrent host loss could leave Sidekiq unavailable.
+            Check current OVH headroom before overlapping rollouts. The
+            metrics-server VPA still has no explicit request cap.
+          <//>
+        <//>
+        <${Paper} id="agentplane-staging-initial" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4">
+            Agentplane staging service requests
+          <//>
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${stagingInitialTime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            Flux applied ${stagingInitial.targets.length} explicit Initial VPAs
+            for ${stagingInitial.targets.join(", ")}. They manage memory
+            requests only. The namespace remains opted out of Goldilocks.
+            ${" "}<${Anchor} href=${stagingInitial.pr_url}>PR #18195<//>
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            The ${stagingInitial.ready_pods} existing service Pods were Ready
+            and older than the merge. Recommendations appeared at 18:00 UTC.
+            Server-side Pod CREATE dry runs at ${stagingAdmissionTime} UTC,
+            using the existing ReplicaSet owners, admitted 40 MiB for frontend,
+            256 MiB for sessions and 128 MiB for each other selected container.
+            All eight kept their CPU requests and limits. The dry runs created
+            no Pods. Verify resources and scheduling on actual replacements.
+          <//>
+        <//>
       <//>
       <${Title} id="remaining-work" order=${3} mt="xl">Remaining work<//>
       <${Stack} gap="sm" mt="sm">
@@ -1374,16 +1455,12 @@ function Report() {
             certificate, External Secrets and KEDA webhooks have disruption
             budgets and remain Initial. Evaluate eviction for each dependency
             independently, including placement, endpoint readiness, client
-            behavior and failure recovery. Crossplane and metrics-server HA are
-            ready for review with a documented capacity tradeoff: overlapping
-            rollouts can stall a GitLab Sidekiq surge, and a concurrent host
-            failure could affect its availability. ${" "}<${Anchor}
-              href=${progress.prs[18145].html_url}
-              >Crossplane HA PR<//
+            behavior and failure recovery. The ${" "}<${Anchor}
+              href="#controller-ha"
+              >Crossplane and metrics-server follow-up<//
             >
-            ${" · "}<${Anchor} href=${github + "pull/18154"}
-              >Metrics-server HA PR<//
-            >. CDviz and ntfy stay non-evicting pending delivery and
+            ${" "}records their deployed replicas and the remaining Sidekiq
+            capacity risk. CDviz and ntfy stay non-evicting pending delivery and
             availability proof. Review every VPA in a namespace before lowering
             its minimum replica count.
           <//>

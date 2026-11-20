@@ -19213,7 +19213,7 @@
       },
       "revision_history": {
         "pr": 18158,
-        "state": "Explicit −1 gate",
+        "state": "Explicit \u22121 gate",
         "probe_at_utc": "2026-11-20T10:53:54Z",
         "create_update_omitted_admitted": 10,
         "valid_explicit_create_values_preserved": [0, 3, 10],
@@ -19532,5 +19532,160 @@
       "total": 59
     },
     "certificate_and_bundle_server_dry_runs_passed": true
+  },
+  "controller_ha_followup": {
+    "observed_at_utc": "2026-11-20T17:57:47Z",
+    "crossplane": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/18145",
+      "merge_commit": "7bf599b357d378c37e1eee17b5f7a50e8ed7291e",
+      "flux_ready": true,
+      "helm_ready_at_utc": "2026-11-20T17:55:59Z",
+      "ready_endpoints": [
+        {
+          "node": "optiplex",
+          "zone": "home-lan"
+        },
+        {
+          "node": "wyrm2",
+          "zone": "atlas"
+        }
+      ],
+      "disruptions_allowed": 1,
+      "leader_pod": "crossplane-6cc7c8c85-gsrc9",
+      "lease_renewed_at": "2026-11-20T17:57:19.786332Z",
+      "admitted_memory_request": "671629701",
+      "admitted_memory_limit": "1Gi"
+    },
+    "metrics_server": {
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/18154",
+      "merge_commit": "928f10857e385197f3e495605123d13b056e3d4a",
+      "flux_ready": true,
+      "helm_ready_at_utc": "2026-11-20T17:56:26Z",
+      "ready_endpoints": [
+        {
+          "node": "optiplex",
+          "zone": "home-lan"
+        },
+        {
+          "node": "ovh-ns103711",
+          "zone": "hil-ovh"
+        }
+      ],
+      "disruptions_allowed": 1,
+      "apiservice_available": true,
+      "node_metrics_returned": 9,
+      "earlier_node_metrics_returned": 8,
+      "admitted_memory_request": "126805489",
+      "admitted_memory_limit": "507221956",
+      "subsequent_samples": {
+        "observed_at_utc": "2026-11-20T17:58:00Z",
+        "samples": 4,
+        "ready_node_metrics_per_sample": 9
+      }
+    },
+    "sidekiq": {
+      "available_replicas": 1,
+      "desired_replicas": 1,
+      "capacity_model_at_utc": "2026-11-20T17:44:00Z",
+      "ovh_worker_headroom_mib_before_rollout": {
+        "ovh-ns102453": 1180,
+        "ovh-ns103656": 2864,
+        "ovh-ns103711": 7297
+      },
+      "current_recommendation_gib": 3,
+      "request_cap_gib": 4,
+      "adverse_scenario_remaining_mib_on_ovh_ns103711": 2360,
+      "scenario": "One Crossplane provider at its 2 GiB cap, eight concurrently surging Agentplane staging Deployments at proposed caps, and one replacement each for Crossplane at 1 GiB and metrics-server at 121 MiB land on ovh-ns103711. Neither other eligible worker had 3 GiB free in the model.",
+      "staging_proposal_url": "https://github.com/agentydragon/ducktape/pull/18195"
+    }
+  },
+  "agentplane_staging_initial": {
+    "observed_at_utc": "2026-11-20T17:59:43Z",
+    "pr_url": "https://github.com/agentydragon/ducktape/pull/18195",
+    "merge_commit": "8a82684a033d5b87e0d8c7e7aaeab5714e04c9f9",
+    "flux_ready": true,
+    "flux_revision": "latest@sha256:8dcd3b2a8c92755498452c9f6673f52d3dbf2092de35866a330dbd4e30097494",
+    "goldilocks_namespace_enabled": false,
+    "update_mode": "Initial",
+    "controlled_values": "RequestsOnly",
+    "controlled_resources": ["memory"],
+    "targets": [
+      "actions",
+      "app",
+      "frontend",
+      "history-service",
+      "llm-ingress",
+      "mcp-edge",
+      "notifications",
+      "sessions"
+    ],
+    "ready_pods": 16,
+    "existing_pods_predate_merge": true,
+    "existing_pod_restarts": 0,
+    "vpas_with_recommendations": 0,
+    "recommendations_available_at_utc": "2026-11-20T18:00:17Z",
+    "admission_verification": {
+      "observed_at_utc": "2026-11-20T18:03:02Z",
+      "kind": "server-side Pod CREATE dry runs with real ReplicaSet owners",
+      "pods_created": 0,
+      "results": {
+        "actions": {
+          "replicaset_owner": "actions-9c7597967",
+          "observed_container": "actions",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "app": {
+          "replicaset_owner": "app-658895f4f9",
+          "observed_container": "app",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "frontend": {
+          "replicaset_owner": "frontend-56c9f48fdf",
+          "observed_container": "frontend",
+          "admitted_memory_request": "40Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "history-service": {
+          "replicaset_owner": "history-service-58c4f46686",
+          "observed_container": "history-service",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "llm-ingress": {
+          "replicaset_owner": "llm-ingress-bc8d48644",
+          "observed_container": "ingress",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "mcp-edge": {
+          "replicaset_owner": "mcp-edge-64767dd985",
+          "observed_container": "mcp-edge",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "notifications": {
+          "replicaset_owner": "notifications-78b7655499",
+          "observed_container": "notifications",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "sessions": {
+          "replicaset_owner": "sessions-57644d457f",
+          "observed_container": "sessions",
+          "admitted_memory_request": "256Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        }
+      }
+    }
   }
 }
