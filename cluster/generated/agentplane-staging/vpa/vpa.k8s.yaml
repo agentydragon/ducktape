@@ -1,0 +1,199 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: actions
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: actions
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 160Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: actions
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: app
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: app
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 160Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: frontend
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: frontend
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 40Mi
+        minAllowed:
+          memory: 32Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: history-service
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: history-service
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 256Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: history-service
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: llm-ingress
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: ingress
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 160Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-ingress
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: mcp-edge
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: mcp-edge
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 160Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mcp-edge
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: notifications
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: notifications
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 160Mi
+        minAllowed:
+          memory: 128Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notifications
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: sessions
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: sessions
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 320Mi
+        minAllowed:
+          memory: 256Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sessions
+  updatePolicy:
+    updateMode: Initial

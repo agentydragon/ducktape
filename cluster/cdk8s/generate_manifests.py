@@ -86,6 +86,7 @@ from cluster.cdk8s.agentplane import (
     db_backups as agentplane_staging_db_backups,
     generation as agentplane_generation,
     staging,
+    staging_vpa,
 )
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
@@ -646,7 +647,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
-    flux.flux_kustomization(
+    vpa_kustomization = flux.flux_kustomization(
         flux_chart,
         vpa.NAME,
         write_directory(root, vpa_artifact, vpa.chart),
@@ -2267,6 +2268,13 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         litellm_crossplane_keys_kustomization,
     )
+    agentplane_staging_vpa_artifact = artifact(staging_vpa.NAME, staging_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        staging_vpa.NAME,
+        write_directory(root, agentplane_staging_vpa_artifact, staging_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
+    )
     agentplane_staging_delivery_artifact = artifact(
         "agentplane-staging-delivery", staging.LAYOUT.delivery_output_dir, staging.LAYOUT.image_pins
     )
@@ -2512,6 +2520,7 @@ def generate_manifests(root: Path) -> None:
             user_agentydragon_artifact,
             talos_logs_artifact,
             vpa_artifact,
+            agentplane_staging_vpa_artifact,
             website_artifact,
             home_switch_module,
             gitlab_spike_module,
