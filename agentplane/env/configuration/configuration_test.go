@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -426,5 +427,34 @@ func TestConfigurationLogLevel(t *testing.T) {
 				t.Fatalf("log level = %v, want %v", config.LogLevel, test.want)
 			}
 		})
+	}
+}
+
+func TestVMExecutionLimits(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	value, path, launch := configurationFixture(t)
+	env := configurationVMEnvironment()
+	configurationVMExecutor(env)
+	executor := env["executor"].(map[string]any)
+	executor["limits"] = map[string]any{"native": map[string]any{"max_sessions": 3}}
+	value["environment"] = env
+	writeJSONFixture(t, path, value)
+	config, _, _, err := load(path, launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(config.CodexExecServer.LimitsJSON, `"max_sessions":3`) {
+		t.Fatalf("limits = %q", config.CodexExecServer.LimitsJSON)
+	}
+	executor["implementation"] = "codex"
+	writeJSONFixture(t, path, value)
+	if _, _, _, err := load(path, launch); err == nil {
+		t.Fatal("accepted native limits with Codex backend")
+	}
+	executor["implementation"] = "native"
+	executor["limits"] = map[string]any{"native": map[string]any{"max_sessions": 0}}
+	writeJSONFixture(t, path, value)
+	if _, _, _, err := load(path, launch); err == nil {
+		t.Fatal("accepted invalid limit")
 	}
 }

@@ -18,7 +18,12 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -177,7 +182,7 @@ func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 
 func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	attempted := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		attempted <- struct{}{}
 		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
@@ -246,7 +251,7 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	releaseFirstProbe := make(chan struct{})
 	var releaseFirst sync.Once
 	t.Cleanup(func() { releaseFirst.Do(func() { close(releaseFirstProbe) }) })
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		probe := probes.Add(1)
 		probeTimes <- time.Now()
 		connection, err := websocket.Accept(writer, request, nil)
@@ -346,7 +351,7 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 
 func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		t.Cleanup(server.Close)
@@ -394,7 +399,7 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 
 	t.Run("caller cancellation", func(t *testing.T) {
 		attempted := make(chan struct{}, 1)
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			attempted <- struct{}{}
 			connection, err := websocket.Accept(writer, request, nil)
 			if err != nil {
@@ -449,9 +454,62 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 	})
 }
 
+func TestTypedReadinessIsRequiredBeforePublishing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			_, payload, err := c.Read(r.Context())
+			if err != nil {
+				return
+			}
+			response := ""
+			switch {
+			case strings.Contains(string(payload), `"id":1`):
+				response = `{"id":1,"result":{"sessionId":"health"}}`
+			case strings.Contains(string(payload), `"id":2`):
+				response = `{"id":2,"result":{"status":"ready"}}`
+			}
+			if response != "" {
+				if c.Write(r.Context(), websocket.MessageText, []byte(response)) != nil {
+					return
+				}
+			}
+		}
+	}))
+	defer server.Close()
+	cfg := Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http"), Readiness: codexexecserver.Readiness{Timeout: 200 * time.Millisecond, ProbeTimeout: 100 * time.Millisecond, ProbeInterval: 10 * time.Millisecond}}
+	ready := false
+	err := runWithReady(t.Context(), cfg, func(context.Context) (*supervision.Instance, error) {
+		return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+	}, func(executorpb.ExecutorServer, context.Context) { ready = true })
+	if ready || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ready=%v, err=%v; want typed health timeout", ready, err)
+	}
+}
+
+func testServer(t *testing.T, ws http.Handler) *httptest.Server {
+	t.Helper()
+	rpc := grpc.NewServer()
+	h := health.NewServer()
+	h.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(rpc, h)
+	t.Cleanup(rpc.Stop)
+	return httptest.NewServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			rpc.ServeHTTP(w, r)
+			return
+		}
+		ws.ServeHTTP(w, r)
+	}), &http2.Server{}))
+}
+
 func testExecutorEndpoint(t *testing.T) string {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
 			return

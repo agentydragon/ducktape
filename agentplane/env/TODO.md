@@ -1,5 +1,15 @@
 # TODO — Agentplane environment
 
+## Complete Codex execution protocol coverage
+
+The execution backend rejects restricted sandbox policies, managed networking, network-proxy
+launch and shell snapshots; it must never silently run those requests unrestricted. Implement and
+test the supported Linux policies before enabling them for the Codex harness. Add differential
+tests against the pinned Codex exec-server for capability discovery, filesystem and process
+operations, error data, reconnect and HTTP edge cases; current tests cover selected flows, not full
+protocol parity. Discovery V2 and environment configuration reads are not implemented. Separate
+the backend's memory budget from its commands so a tool OOM does not kill the execution owner.
+
 ## Resolve legacy Codex inputs without a client message ID
 
 Some retained Codex inputs predate `clientUserMessageId`. A matching historical text item does

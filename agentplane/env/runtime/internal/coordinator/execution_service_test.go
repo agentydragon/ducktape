@@ -108,7 +108,7 @@ func TestFencedExecutionBackendLossLogsCauseAndRemainsRecoverable(t *testing.T) 
 	undo := zap.ReplaceGlobals(zap.New(core))
 	t.Cleanup(undo)
 
-	const lossReason = "execution backend lost\nCodex exec-server exited: code=137"
+	const lossReason = "execution backend lost\nexecution backend exited: code=137"
 	backendLoss := errors.Join(service.ErrFencedBackendLoss, errors.New(lossReason))
 	config := service.Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",

@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "codexshim",
+    srcs = [
+        "copy.go",
+        "discovery.go",
+        "filesystem.go",
+        "http.go",
+        "nofollow.go",
+        "shim.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim",
+    deps = [
+        "//agentplane/env/runtime/execution/native",
+        "@com_github_coder_websocket//:websocket",
+        "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "codexshim_test",
+    srcs = [
+        "cli_test.go",
+        "discovery_test.go",
+        "filesystem_test.go",
+        "limits_test.go",
+        "shim_test.go",
+    ],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:codex_binary",
+        "@agentplane_codex_cli_linux_x64//:files",
+    ],
+    embed = [":codexshim"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexshim.codexRlocation": "$(rlocationpath @agentplane_codex_cli_linux_x64//:codex_binary)"},
+    deps = [
+        "//agentplane/env/runtime/execution/native",
+        "@com_github_coder_websocket//:websocket",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "retention_test",
+    size = "small",
+    srcs = ["retention_test.go"],
+    embed = [":codexshim"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/execution/native",
+        "@com_github_coder_websocket//:websocket",
+    ],
+)

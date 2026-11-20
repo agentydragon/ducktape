@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,24 +27,37 @@ import (
 )
 
 func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
-	wantErr := errors.New("managed admission refused")
-	var observed supervision.ProcessConfig
-	start := NativeStart(NativeConfig{
-		Config: Config{URL: "ws://127.0.0.1:4501"}, Binary: "/bin/codex", StateDir: "/state",
-		Environment: map[string]string{"PATH": "/bin", "OPENAI_API_KEY": "secret"},
-		LaunchProcess: func(_ context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
-			observed = config
-			return nil, wantErr
-		},
-	})
-	if _, err := start(context.Background()); !errors.Is(err, wantErr) {
-		t.Fatalf("managed start error = %v, want %v", err, wantErr)
-	}
-	if observed.StopGrace != executorStopGrace || observed.FenceTimeout != fenceDeadline || observed.Dir != "/state" || strings.Join(observed.Command, " ") != "/bin/codex exec-server --listen ws://127.0.0.1:4501" {
-		t.Fatalf("managed process configuration = %+v", observed)
-	}
-	if _, found := observed.Env["OPENAI_API_KEY"]; found || observed.Env["PATH"] != "/bin" {
-		t.Fatal("managed executor received an unexpected environment")
+	for _, test := range []struct {
+		implementation string
+		binary         string
+		limits         string
+		wantCommand    []string
+	}{
+		{ImplementationNative, "/bin/agentplane-execution-service", `{"sessions":3}`, []string{"/bin/agentplane-execution-service", "serve", "--listen", "ws://127.0.0.1:4501", "--limits-json", `{"sessions":3}`}},
+		{ImplementationCodex, "/bin/codex", "", []string{"/bin/codex", "exec-server", "--listen", "ws://127.0.0.1:4501"}},
+	} {
+		t.Run(test.implementation, func(t *testing.T) {
+			wantErr := errors.New("managed admission refused")
+			var observed supervision.ProcessConfig
+			start := NativeStart(NativeConfig{
+				Config: Config{URL: "ws://127.0.0.1:4501", Implementation: test.implementation, LimitsJSON: test.limits},
+				Binary: test.binary, StateDir: "/state",
+				Environment: map[string]string{"PATH": "/bin", "OPENAI_API_KEY": "secret"},
+				LaunchProcess: func(_ context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+					observed = config
+					return nil, wantErr
+				},
+			})
+			if _, err := start(t.Context()); !errors.Is(err, wantErr) {
+				t.Fatalf("managed start error = %v, want %v", err, wantErr)
+			}
+			if observed.StopGrace != executorStopGrace || observed.FenceTimeout != fenceDeadline || observed.Dir != "/state" || !slices.Equal(observed.Command, test.wantCommand) {
+				t.Fatalf("managed process configuration = %+v", observed)
+			}
+			if _, found := observed.Env["OPENAI_API_KEY"]; found || observed.Env["PATH"] != "/bin" {
+				t.Fatal("managed executor received an unexpected environment")
+			}
+		})
 	}
 }
 
@@ -249,7 +263,7 @@ func TestClaimHandshakeContextDoesNotEndEstablishedLease(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	defer server.Stop()
 	handshake, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	instance, err := claimContainer(handshake, socket, map[string]string{"PATH": "/usr/bin"})
+	instance, err := claimContainer(handshake, socket, map[string]string{"PATH": "/usr/bin"}, "", "")
 	if err != nil {
 		cancel()
 		t.Fatal(err)

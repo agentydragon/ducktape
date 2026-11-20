@@ -295,6 +295,30 @@ def test_vm_executor_accepts_endpoint_with_budget() -> None:
     assert config.environment.executor is not None
 
 
+@pytest.mark.parametrize("kind", ["pod", "vm"])
+def test_executor_settings(kind: str) -> None:
+    executor = {"url": "ws://127.0.0.1:4501", "limits": {"native": {"max_sessions": 3}}}
+    environment: dict[str, object]
+    if kind == "pod":
+        environment = {"kind": "pod", "supervision": "pid1", "executor": executor | {"socket": "/run/executor.sock"}}
+    else:
+        environment = _vm_environment() | {
+            "resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)},
+            "executor": executor,
+        }
+    config = Configuration.model_validate(_configuration() | {"environment": environment})
+    assert config.environment.executor is not None
+    assert config.environment.executor.limits is not None
+    assert config.environment.executor.limits.native is not None
+    assert config.environment.executor.limits.native.max_sessions == 3
+    codex_executor = executor | {"implementation": "codex"}
+    if kind == "pod":
+        codex_executor["socket"] = "/run/executor.sock"
+    environment["executor"] = codex_executor
+    with pytest.raises(ValidationError):
+        Configuration.model_validate(_configuration() | {"environment": environment})
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
 

@@ -1,19 +1,17 @@
 # Environment execution service
 
 Environment Runtime embeds the typed [`Executor` API](executor.proto), independently of a native
-harness, app-server, model provider or integration app. It owns one Codex exec-server and calls the
-execution adapter directly. Generated Go and Python clients live with this protocol.
+harness, app-server, model provider or integration app. It forwards to the shared native execution
+backend, which also exposes the Codex WebSocket API. Generated Go and Python clients live with this protocol.
 [SPEC.md](SPEC.md) defines lifetime, admission and recovery guarantees.
 
 [Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
 backend, process placement, collective resource limits and failure scope.
 
-Environment Runtime runs this service in-process and calls its adapter directly. Host asks Runtime
+Environment Runtime runs the admission proxy in-process and forwards typed RPCs to the backend. Host asks Runtime
 for in-process readiness before starting its shared Codex app-server; Runtime owns startup, health,
-shutdown and fencing. Native protocol probing establishes readiness without a local listener. In Pods,
-the `companion` subcommand runs as PID 1 in the isolated
-Codex container and owns the native
-exec-server namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
+shutdown and fencing. Readiness checks both the typed service and Codex protocol endpoint. In Pods,
+the `companion` subcommand runs as PID 1 in the isolated executor container and owns its process namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
 protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
 filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
 
@@ -24,7 +22,7 @@ entrypoint. The environment owner starts it as PID 1 in the execution container:
 
 ```sh
 agentplane-execution-service companion --socket /run/agentplane/executor/control.sock \
-  --listen ws://127.0.0.1:4501 --binary /bin/codex --health-listen 0.0.0.0:4502
+  --listen ws://127.0.0.1:4501 --binary /run/agentplane/environment/bin/agentplane-execution-service --health-listen 0.0.0.0:4502
 ```
 
 The service fences a prior owned companion before claiming an idle generation. Canceling its gRPC
@@ -36,9 +34,32 @@ in-container proof fails, the companion exits so the outer runtime can fence the
 Runtime starts the API, waits for native protocol readiness, and joins its shutdown
 and 90-second backend fence before replacement. A failed cleanup is never an execution success receipt.
 
-All backends launch only `codex exec-server`; no harness configuration or provider credentials are required.
+The executor implementation is selected by `environment.executor.implementation` in the Runtime
+configuration: `native` (the default) launches `agentplane-execution-service serve`, while `codex`
+uses Codex's exec server through the compatibility adapter. Both Pod and VM environments support
+this choice.
 
-Runtime publishes the adapter after a bounded native protocol readiness probe. The service
+Native execution limits are optional overrides in the same Runtime configuration, for example:
+
+```json
+"executor": {
+  "url": "ws://127.0.0.1:4501",
+  "implementation": "native",
+  "limits": {
+    "native": { "max_sessions": 128, "max_output_bytes": 67108864 },
+    "codex": { "max_message_bytes": 16777216, "max_concurrent_requests": 64 }
+  }
+}
+```
+
+Pod executors also require `socket`. Unspecified fields use `native.DefaultLimits` and
+`codexshim.DefaultLimits`; unknown fields and invalid values are rejected. Values are counts or
+bytes, except the native retention settings, which are seconds. These limits apply to the native
+implementation and cannot be set with the Codex-backed implementation. A new configuration takes
+effect when the backend is restarted; restarting abandons its live process handles and never
+replays uncertain work.
+
+Runtime publishes the proxy after bounded typed and Codex protocol readiness probes. The service
 probes native dispatch every five seconds with a three-second deadline; three consecutive failures
 end the service lifetime and fence the backend. Shutdown closes held sessions, joins direct calls and stops
 the backend. Backend exit ends this service lifetime; Environment Runtime proves the old service
@@ -48,8 +69,9 @@ replays execution requests.
 
 ## Source ownership
 
-- `adapter/`: typed process/file operations, native session and WebSocket lifetime, bounded frames and
-  cancellation.
+- `native/`: process, session and file ownership.
+- `typedbackend/` and `typedproxy/`: internal typed operations and Runtime admission.
+- `codexshim/`: Codex WebSocket compatibility surface.
 - `codexexecserver/`: native launch/probe/fence backends.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
 - `service/`: environment identity and embedded adapter lifetime under Runtime ownership.
@@ -70,7 +92,7 @@ rollback.
 
 Environment Pods can run Codex command execution through a companion container in the same Pod. The runner
 retains the Codex app-server and journals; `agentplane-execution-service companion` runs as PID 1 and supervises
-`codex exec-server` in its private container PID namespace. The Execution Service claims the companion over gRPC on a Unix socket before Codex
+the native execution service in its private container PID namespace. The Execution Service claims the companion over gRPC on a Unix socket before the backend
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the environment services never replay an in-flight
 command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled

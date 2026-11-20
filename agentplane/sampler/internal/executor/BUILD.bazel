@@ -41,6 +41,7 @@ go_test(
         "executor_resume_test.go",
         "executor_test.go",
         "integration_testmain_test.go",
+        "native_wakeup_test.go",
         "unified_exec_test.go",
     ],
     embed = [":executor"],
@@ -48,6 +49,8 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution/native",
+        "//agentplane/env/runtime/execution/typedbackend",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -65,7 +68,9 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//proto",
     ],
 )

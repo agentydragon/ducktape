@@ -183,15 +183,15 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 
 func runtimeExecutionServiceConfig(config Config, incarnationUID string, processes *supervision.Host, supervisor *supervision.Supervisor) (service.Config, error) {
 	if config.CodexExecServer == nil {
-		return service.Config{}, errors.New("Execution service requires a configured Codex exec-server")
+		return service.Config{}, errors.New("Execution service requires a configured execution backend")
 	}
 	serviceConfig := service.Config{
 		ProcessHost: processes, Supervisor: supervisor,
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
 		StateDir:    filepath.Join(config.StateDir, "execution"),
-		ExecutorURL: config.CodexExecServer.URL, Environment: config.HarnessEnvironment,
-		Readiness: config.CodexExecServer.Readiness,
+		ExecutorURL: config.CodexExecServer.URL, LimitsJSON: config.CodexExecServer.LimitsJSON, Environment: config.HarnessEnvironment,
+		Implementation: config.CodexExecServer.Implementation, Readiness: config.CodexExecServer.Readiness,
 	}
 	if config.Supervision == "systemd" {
 		launcher := config.CodexExecServer.Launcher
@@ -199,9 +199,12 @@ func runtimeExecutionServiceConfig(config Config, incarnationUID string, process
 			return service.Config{}, errors.New("VM execution service requires its explicit systemd launcher")
 		}
 		serviceConfig.Backend = "systemd"
-		serviceConfig.Binary = config.CodexBinary
+		serviceConfig.Binary = "/run/agentplane/environment/bin/agentplane-execution-service"
 		serviceConfig.WorkingDirectory = config.StateDir
-
+		serviceConfig.CodexBinary = "/run/current-system/sw/bin/codex"
+		if config.Codex != nil {
+			serviceConfig.CodexBinary = config.Codex.Binary
+		}
 	} else {
 		if config.CodexExecServer.ContainerSocket == "" {
 			return service.Config{}, errors.New("Pod execution service requires the companion ownership socket")

@@ -42,7 +42,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = ["//agentplane/env/runtime/execution/adapter/testing:adapter_bin"],
+    data = ["//agentplane/env/runtime/execution/testing/typedproxy:typedproxy_bin"],
     deps = [
         "//agentplane/testing:codex_fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",

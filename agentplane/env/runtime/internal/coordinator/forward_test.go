@@ -2,11 +2,8 @@ package coordinator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +20,6 @@ import (
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -285,72 +281,38 @@ func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
 	}
 }
 
+type burstExecutor struct {
+	executorpb.UnimplementedExecutorServer
+	sent chan error
+}
+
+func (s *burstExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	if err := stream.Send(&executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}, ExecutionSessionId: "native-session"}); err != nil {
+		return err
+	}
+	for i := range 12 {
+		payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", 600_000)))
+		if err := stream.Send(&executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}}}); err != nil {
+			select {
+			case s.sent <- err:
+			default:
+			}
+			return err
+		}
+	}
+	s.sent <- nil
+	<-stream.Context().Done()
+	return nil
+}
+
 func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 	const burst = 12
 	const notificationData = 600_000
-	sent := make(chan error, 1)
-	execServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		defer connection.CloseNow()
-		_, payload, err := connection.Read(request.Context())
-		if err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		var initialize struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(payload, &initialize); err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		response := []byte(fmt.Sprintf(`{"id":%q,"result":{"sessionId":"native-session","environmentInfo":{"shell":{"name":"bash","path":"/bin/bash"}}}}`, initialize.ID))
-		if err := connection.Write(request.Context(), websocket.MessageText, response); err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		if _, _, err := connection.Read(request.Context()); err != nil { // initialized notification
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		for i := range burst {
-			payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", notificationData)))
-			if err := connection.Write(request.Context(), websocket.MessageText, payload); err != nil {
-				select {
-				case sent <- err:
-				default:
-				}
-				return
-			}
-		}
-		sent <- nil
-		<-request.Context().Done()
-	}))
-	defer execServer.Close()
-	r := newExecutionRuntime(t, "ws"+strings.TrimPrefix(execServer.URL, "http"), nil)
+	backend := &burstExecutor{sent: make(chan error, 1)}
+	address := startExecutorTestGRPC(t, backend)
+	r := newExecutionRuntime(t, address, nil)
 	client := startDirectExecutionTestClient(t, r, "pod-uid")
-	stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{
-		Scope: client.scope("session-1"), RequestId: "open-notification-session",
-	})
+	stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{Scope: client.scope("session-1"), RequestId: "open-notification-session"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +337,7 @@ func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 		transferred += len(frame.GetPayload())
 	}
 	select {
-	case err := <-sent:
+	case err := <-backend.sent:
 		if err != nil {
 			t.Fatalf("executor produced notifications: %v", err)
 		}

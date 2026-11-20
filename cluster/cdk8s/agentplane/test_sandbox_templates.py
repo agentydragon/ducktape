@@ -94,7 +94,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert args[0] == "companion"
     assert args[args.index("--socket") + 1] == config["environment"]["executor"]["socket"]
     assert args[args.index("--listen") + 1] == config["environment"]["executor"]["url"]
-    assert args[args.index("--binary") + 1] == "/bin/codex"
+    assert args[args.index("--binary") + 1] == "/run/agentplane/environment/bin/agentplane-execution-service"
     health_port = int(args[args.index("--health-listen") + 1].removeprefix(":"))
     for probe in ("livenessProbe", "readinessProbe"):
         assert executor[probe]["httpGet"] == {"path": "/healthz", "port": health_port}
