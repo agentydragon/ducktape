@@ -115,3 +115,47 @@ for (const [name, code, side] of tests) {
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, before.stdout);
 }
+
+// Exported declarations have no export-specifier read in the input AST, yet
+// an external cyclic importer may observe their bindings during evaluation.
+{
+  const code = `export const local = 7;\nglobalThis.hook();`;
+  const dir = path.join(temp, "export_declaration");
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, "export_declaration-ast.json");
+  const spec = path.join(temp, "export_declaration-spec.json");
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"], "side.mjs": ["#1"] } }));
+  const rejected = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+}
+
+// Node control for the external-module cycle. LowerSplit rejects import syntax,
+// so these source modules directly exercise the ESM behavior being guarded.
+for (const [name, reordered] of [
+  ["cycle_original", false],
+  ["cycle_reordered", true],
+]) {
+  const dir = path.join(temp, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "observer.mjs"),
+    `import { local } from "./entry.mjs";\nglobalThis.hook = () => console.log(local);`
+  );
+  writeFileSync(path.join(dir, "side.mjs"), `globalThis.hook();`);
+  writeFileSync(
+    path.join(dir, "entry.mjs"),
+    reordered
+      ? `import "./observer.mjs";\nimport "./side.mjs";\nexport const local = 7;`
+      : `import "./observer.mjs";\nexport const local = 7;\nglobalThis.hook();`
+  );
+  const result = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  if (reordered) {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /ReferenceError/);
+  } else {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "7\n");
+  }
+}

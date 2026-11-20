@@ -99,6 +99,18 @@ def exportedNames (s : Json) : List String :=
   | "ExportDefaultDeclaration" => ["default"]
   | _ => []
 
+/-- Local bindings exposed by an export can be observed during cyclic evaluation. -/
+def exportedBindings (s : Json) : List String :=
+  match Lower.typ s with
+  | "ExportNamedDeclaration" =>
+    if Lower.isNull (Lower.fld s "declaration") then
+      (Lower.items (Lower.fld s "specifiers")).toList.map fun sp => Lower.str (Lower.fld (Lower.fld sp "local") "name")
+    else Lower.topDefs (Lower.fld s "declaration")
+  | "ExportDefaultDeclaration" =>
+    let d := Lower.fld s "declaration"
+    if Lower.typ d == "Identifier" then [Lower.str (Lower.fld d "name")] else Lower.topDefs d
+  | _ => []
+
 /-- Statement types the model does not cover. -/
 def unsupported (t : String) : Bool := t == "ImportDeclaration" || t == "ExportAllDeclaration"
 
@@ -121,7 +133,8 @@ def main (args : List String) : IO UInt32 := do
     let t := Lower.typ (Lower.fld s "ast")
     if unsupported t then
       IO.eprintln s!"unsupported top-level statement: {t}"; return 3
-  let fps ← IO.lazyPure fun _ => Lower.finalize (stmts.map fun s => Lower.analyzeTop (Lower.fld s "ast"))
+  let exported := stmts.toList.flatMap fun s => exportedBindings (Lower.fld s "ast")
+  let fps ← IO.lazyPure fun _ => (Lower.finalizeWithScanStatus (stmts.map fun s => Lower.analyzeTop (Lower.fld s "ast")) exported.toArray).1
   let inferred := fps.toList.zipIdx.filterMap fun (f, i) => f.inferredIdentity.map fun n => (i, n)
   for (i, n) in inferred do
     IO.println s!"  inferred identity call: unit {i}, binding `{n}` (trusted source analysis)"
