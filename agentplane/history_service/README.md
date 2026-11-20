@@ -106,8 +106,7 @@ Each request chooses exactly one start:
 
 An empty `kinds` filter sends every observation. `EventKind` numbers match the fields of the runner's
 `Event.observation` oneof. Ingest stores that number in `session_event.kind` (zero for no known
-observation); `(session_id, kind, cursor)` indexes filtered reads and back starts. The separate kind
-backfill migration must deploy only after every History replica writes the column.
+observation); `(session_id, kind, cursor)` indexes filtered reads and back starts.
 
 `entries` and `caught_up` frames report `through_cursor`, the highest cursor covered by sent entries
 or the filter. Correction frames retain the last such cursor. Resume with `after_cursor` equal to the
@@ -200,9 +199,8 @@ backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
 ### Historical packing
 
-After every History reader supports event blocks (migration 16), the same service image supports
-`history-service compact-history --session UUID --dry-run` and `--apply`, or `--all` instead of
-`--session`. Both scope and mode are required. It needs only
+The same service image supports `history-service compact-history --session UUID --dry-run` and
+`--apply`, or `--all` instead of `--session`. Both scope and mode are required. It needs only
 `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does not run migrations or call harnesses/providers.
 The ingress flag independently controls new writes.
 
@@ -249,7 +247,7 @@ ordinary row count equals 162. This also separates live packing from a historica
 Each `Store.Append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
-(`storage/delta_templates.go`) and the retained completion holds exactly their
+(`internal/storage/delta_templates.go`) and the retained completion holds exactly their
 concatenation. Malformed frames, failed commands, harness exits and recovery boundaries keep the
 span whole. Harness stderr remains stored at its original cursor but does not prevent settlement
 of otherwise redundant deltas. The dropped cursors are recorded as a
@@ -358,20 +356,15 @@ stream without another frame. A request with `recorded_after` also gets `session
 Session History records at a later position, the backlog first and then each as its first push binds
 it, so the app can create a Thread view for Sessions it did not start. The binding draws the Session's
 `recorded_position` under a transaction advisory lock held to commit, so positions become visible in
-ascending order and a caller that reconnects after the last position it handled misses none. Migration
-9 renames the persisted ordinal without changing its values, sequence ownership, ordering or indexes.
+ascending order and a caller that reconnects after the last position it handled misses none.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, as typed
 `ThreadEntity` values. Common identity and cursor metadata sits on the entity; its oneof identifies
 view state, item, confirmed input, lifecycle Event, or command. Payload references keep their
 64-bit positions as `uint64`. Electric remains the row and payload synchronization source for the
 browser. A caller holding rows of a replaced epoch gets `FAILED_PRECONDITION`.
-The entity table keeps its indexed identity, ordering and pending columns; `state` is ProtoJSON of
-that entity's oneof variant, including its payload references. The migration preserves existing
-entities and payload chunks, converting rows in one transaction. Deployments must stop old History
-writers and old app instances for the schema and consumer cutover: old binaries cannot use the new
-row shape. The conversion locks the entity table until it commits, so migration time grows with the
-number of retained entities. A malformed row aborts and rolls back the entire conversion.
+The entity table has indexed identity, ordering and pending columns; `state` is ProtoJSON of
+that entity's oneof variant, including its payload references.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 `native_frame_read_batch_size` (default `200`, set by the YAML key) bounds the linked sequences in each raw-history
@@ -399,21 +392,15 @@ and execution-progress observations remain retained evidence; source-linked norm
 the ordinary Thread fold. History does not own the provider continuation. See the
 [sampler contract](../sampler/SPEC.md).
 
-The SessionSpec placement cutover's History migration 8 moved a legacy archived
-`SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
-the old record had no exact placement to report. It did not invent an environment identity or
-change raw events, cursors or event ordering. New live openings use the typed placement in
-`SessionSpec`; historical evidence remains available.
+Migration 18 is the selected Goose baseline. It creates the current schema on a fresh database and
+adopts a completed version-17 database after validating its schema. Adoption preserves existing rows,
+schema object identities, and Goose history. A deployed database below version 17 must first complete
+the previous image's audit rewrite (migration 17, run with writers stopped;
+[details](../postgres/migrate/README.md#sampler-and-history-audit-rewrite)); version 18 fails closed
+for older or partial predecessors.
 
-Migration 15 is the selected Goose baseline. It creates the current schema on a fresh database and
-adopts a completed version-14 database after validating its schema. Adoption preserves existing rows,
-schema object identities, and Goose history. A deployed database below version 14 must first run the
-previous History image through migration 14 and finish that rollout; version 15 fails closed for
-older or partial predecessors. Migration 14 removes the temporary command-operation bridge, so
-starting version 15 while an older rollout is still active is unsupported.
-
-Use a version-15-compatible image for fresh databases. Their ledger records version 15 without
-versions 11-14, so a version-14 image would reject that ledger as missing out-of-order migrations.
-On a database adopted from version 14, the prior migration rows remain present and the version-14
-Goose provider sees no pending migrations after version 15. That check covers migration startup;
-runtime rollback to an older image is unsupported.
+Use a version-18-compatible image for fresh databases. Their ledger starts at version 18, so a
+version-17 image would reject it as missing out-of-order migrations. On a database adopted from
+version 17, the prior migration rows remain present and the version-17 Goose provider sees no
+pending migrations after the baseline. That check covers migration startup; runtime rollback to an
+older image is unsupported.

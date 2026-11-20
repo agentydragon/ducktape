@@ -96,8 +96,6 @@ environment (`central_sampler_v1`); callers do not choose a service endpoint. Th
 HarnessHost creation requests and commands to the configured sampler; wrapped native Sessions use
 the same [`HarnessHostClient`](dispatcher/runtime_client.go) through the Environments proxy. Central
 controls bypass executor readiness/wake checks after Session creation.
-Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
-does not support optional attachments or environment-free Sessions.
 
 Executor runs in Environments, independently of Dispatcher admission. The sampler presents its own
 narrow service SVID grant there; this process has no Executor receiver. See the
