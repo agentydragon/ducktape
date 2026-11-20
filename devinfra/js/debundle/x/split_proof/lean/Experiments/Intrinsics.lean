@@ -37,6 +37,12 @@ defined is run (`Effects.convert`).
 
 Positions in a summary: `0` is the receiver (`this`), `i + 1` is argument `i`.
 
+A standard function may also run the program's code through a protocol: it calls a callback (`calls`), iterates its
+argument (`iterates`), reads the properties of an argument, so that a getter runs (`readsContents`, `copies`), or calls a
+method by name (`callsMethods`: `test` calls `exec`, `replace` calls the `Symbol.replace` of its pattern). A row says
+which, and nothing else runs. A protocol the row does not list is a limit of the rules:
+`experiments/effects/debug/general_known_gaps` has a program for each one known.
+
 Not listed means a world call. A row is added when a real bundle needs it, with the reason it is safe.
 -/
 

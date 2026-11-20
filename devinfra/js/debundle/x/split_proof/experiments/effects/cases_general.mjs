@@ -78,7 +78,7 @@ console.log(o.n);
     "reduce returns the initial value",
     `
 const o = { n: 0 };
-const r = [1].reduce((a) => a, o);
+const r = [].reduce(() => ({}), o);
 r.n = 1;
 console.log(o.n);
 `,
