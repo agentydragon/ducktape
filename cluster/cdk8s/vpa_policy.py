@@ -31,15 +31,19 @@ class ContainerPolicy(BaseModel):
 
     @classmethod
     def memory_requests_only(
-        cls, container_name: str, *, cpu_request: str, memory_floor: str, memory_ceiling: str
+        cls, container_name: str, *, cpu_request: str, memory_floor: str, memory_limit: str
     ) -> Self:
-        """Bound memory requests and pin CPU against recommendations cached before opt-in."""
+        """Bound memory requests and pin CPU against recommendations cached before opt-in.
+
+        memory_limit sets the VPA maxAllowed memory request. The Kubernetes container limit
+        stays in the workload spec.
+        """
         return cls(
             container_name=container_name,
             controlled_values=ControlledValues.REQUESTS_ONLY,
             controlled_resources=("memory",),
             min_allowed={"cpu": cpu_request, "memory": memory_floor},
-            max_allowed={"cpu": cpu_request, "memory": memory_ceiling},
+            max_allowed={"cpu": cpu_request, "memory": memory_limit},
         )
 
 

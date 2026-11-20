@@ -158,7 +158,7 @@ def _values() -> dict[str, object]:
                 "annotations": _vpa_annotations(
                     # Registry's HPA uses CPU utilization, which depends on the request.
                     ContainerPolicy.memory_requests_only(
-                        "registry", cpu_request="50m", memory_floor="96Mi", memory_ceiling="128Mi"
+                        "registry", cpu_request="50m", memory_floor="96Mi", memory_limit="128Mi"
                     )
                 )
             },
@@ -168,7 +168,7 @@ def _values() -> dict[str, object]:
                 "deployment": {
                     "annotations": _vpa_annotations(
                         ContainerPolicy.memory_requests_only(
-                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_ceiling="128Mi"
+                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_limit="128Mi"
                         )
                     )
                 }
@@ -227,7 +227,7 @@ def _values() -> dict[str, object]:
                 "deployment": {
                     "annotations": _vpa_annotations(
                         ContainerPolicy.memory_requests_only(
-                            "sidekiq", cpu_request="900m", memory_floor="3Gi", memory_ceiling="4Gi"
+                            "sidekiq", cpu_request="900m", memory_floor="3Gi", memory_limit="4Gi"
                         )
                     )
                 },

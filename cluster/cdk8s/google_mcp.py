@@ -116,7 +116,7 @@ class GoogleMcpApp(Construct):
                 annotations=namespaces.initial_memory_request_annotations(
                     # Peak 30-day working set was 196Mi, including startup.
                     ContainerPolicy.memory_requests_only(
-                        "server", cpu_request=_CPU_REQUEST, memory_floor="224Mi", memory_ceiling=_MEMORY_LIMIT
+                        "server", cpu_request=_CPU_REQUEST, memory_floor="224Mi", memory_limit=_MEMORY_LIMIT
                     )
                 ),
             ),

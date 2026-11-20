@@ -193,10 +193,10 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                     _NAME,
                     cpu_request=_APP_CPU_REQUEST,
                     memory_floor=_APP_MEMORY_REQUEST,
-                    memory_ceiling=_APP_MEMORY_LIMIT,
+                    memory_limit=_APP_MEMORY_LIMIT,
                 ),
                 ContainerPolicy.memory_requests_only(
-                    "caddy", cpu_request=_CADDY_CPU_REQUEST, memory_floor="40Mi", memory_ceiling=_CADDY_MEMORY_LIMIT
+                    "caddy", cpu_request=_CADDY_CPU_REQUEST, memory_floor="40Mi", memory_limit=_CADDY_MEMORY_LIMIT
                 ),
             ),
         ),

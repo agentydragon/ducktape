@@ -127,19 +127,19 @@ def chart(app: App) -> Chart:
                     "cert-manager-controller",
                     cpu_request=_CPU_REQUEST,
                     memory_floor="112Mi",
-                    memory_ceiling=_CONTROLLER_MEMORY_LIMIT,
+                    memory_limit=_CONTROLLER_MEMORY_LIMIT,
                 ),
                 ContainerPolicy.memory_requests_only(
                     "cert-manager-cainjector",
                     cpu_request=_CPU_REQUEST,
                     memory_floor="224Mi",
-                    memory_ceiling=_CAINJECTOR_MEMORY_LIMIT,
+                    memory_limit=_CAINJECTOR_MEMORY_LIMIT,
                 ),
                 ContainerPolicy.memory_requests_only(
                     "cert-manager-webhook",
                     cpu_request=_CPU_REQUEST,
                     memory_floor="64Mi",
-                    memory_ceiling=_WEBHOOK_MEMORY_LIMIT,
+                    memory_limit=_WEBHOOK_MEMORY_LIMIT,
                 ),
                 # The startupapicheck Job and any new containers stay outside the pilot.
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),

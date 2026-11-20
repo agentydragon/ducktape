@@ -39,7 +39,7 @@ def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) ->
         container_name,
         cpu_request=requests["cpu"],
         memory_floor=requests["memory"],
-        memory_ceiling=resources["limits"]["memory"],
+        memory_limit=resources["limits"]["memory"],
     )
 
 
