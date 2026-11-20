@@ -10,6 +10,8 @@ correctness for all JavaScript.
 The closure generator now tracks lexical bindings and independently runs nested,
 escaping closures in Node, including parameters, shadowing, captured writes,
 bounded loops and branches.
+A narrower incrementing-counter closure shape can also be split and validated
+against the shared Lean semantics; the fuzzer varies its module assignments.
 The following broader generator and syntax work remains open.
 
 - [ ] Replace the fixed collection of supported statement shapes and injected

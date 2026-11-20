@@ -70,3 +70,44 @@ if (!unsafe) {
   await writeFile(file, text.replace("++value", "value++"));
   assert.equal(cli("validate", source, spec, out).result, "unknown");
 }
+
+if (!unsafe) {
+  const multiSource = join(root, "multi.mjs");
+  const multiSpec = join(root, "multi.json");
+  const multiOut = join(root, "multi-out");
+  await writeFile(
+    multiSource,
+    `let seed = 1;
+function make() { let value = seed; return () => ++value; }
+const first = make();
+const second = make();
+function readFirst() { return first(); }
+function readSecond() { return second(); }
+export { readFirst, readSecond };
+`
+  );
+  await writeFile(
+    multiSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "reader.mjs": { imports: ["state.mjs"], statements: [4, 5] },
+        "entry.mjs": { imports: ["reader.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", multiSource, multiSpec, multiOut).result, "generated");
+  assert.equal(cli("validate", multiSource, multiSpec, multiOut).result, "proved under assumptions");
+  const multiCalls = ["readFirst", "readFirst", "readSecond"];
+  const sourceTrace = execute(multiSource, multiCalls);
+  assert.deepEqual(sourceTrace.results, [{ value: 2 }, { value: 3 }, { value: 2 }]);
+  assert.deepEqual(execute(join(multiOut, "entry.mjs"), multiCalls), sourceTrace);
+  const shadowSource = join(root, "shadow.mjs");
+  await writeFile(
+    shadowSource,
+    (await readFile(source, "utf8")).replace("let value = seed", "let seed = seed").replace("++value", "++seed")
+  );
+  assert.equal(cli("generate", shadowSource, spec, join(root, "shadow-out")).result, "unknown");
+}

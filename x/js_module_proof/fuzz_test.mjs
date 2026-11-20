@@ -56,6 +56,7 @@ if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
   assert.equal(bulk.modeledClosureCases, 8);
   assert.equal(bulk.modeledClosureCompared, 8);
+  assert.ok(bulk.modeledClosureCrossModule > 0);
   assert.equal(bulk.closureRefused, bulk.closureCases);
   assert.equal(bulk.controlFlowCases, bulk.cases / 2);
   assert.ok(bulk.branchThen > 0);

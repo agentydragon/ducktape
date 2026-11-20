@@ -343,6 +343,7 @@ function modeledClosureCase(seed, index) {
     spec: { kind: "bindings", entry, modules },
     calls: Array.from({ length: 2 + rand(4) }, () => "read"),
     grammar: "modeledClosure",
+    crossModuleCapture: seedOwner !== factoryOwner,
     expectUnsafe: unsafe,
     cyclic: false,
     invalidAssignment: false,
@@ -451,6 +452,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     start,
     cases: 0,
     modeledClosureCases: 0,
+    modeledClosureCrossModule: 0,
     modeledClosureCompared: 0,
     modeledClosureProved: 0,
     modeledClosureUnsafe: 0,
@@ -496,7 +498,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         join(root, "case.json"),
         JSON.stringify({ seed, index, calls: input.calls, unsupported: input.unsupported }, null, 2) + "\n"
       );
-      if (input.grammar === "modeledClosure") summary.modeledClosureCases++;
+      if (input.grammar === "modeledClosure") {
+        summary.modeledClosureCases++;
+        if (input.crossModuleCapture) summary.modeledClosureCrossModule++;
+      }
       if (input.grammar === "closure") {
         summary.closureCases++;
         summary.closureDepths[input.depth] = (summary.closureDepths[input.depth] ?? 0) + 1;
