@@ -61,7 +61,7 @@ class Pods:
         """The endpoint labels a Cilium rule matches these Pods by."""
         return {"k8s:io.kubernetes.pod.namespace": self.namespace, **self.selector}
 
-    def disruption_budget(self, scope: Construct, id: str, *, name: str) -> k8s.KubePodDisruptionBudget:
+    def add_disruption_budget(self, scope: Construct, id: str, *, name: str) -> k8s.KubePodDisruptionBudget:
         """Allow one voluntary eviction at a time (node drain, descheduler) across these Pods."""
         return k8s.KubePodDisruptionBudget(
             scope,

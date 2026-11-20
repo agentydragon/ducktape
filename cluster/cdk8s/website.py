@@ -93,7 +93,7 @@ def chart(app: App) -> Chart:
         liveness=probes.http_probe("/health", port=_SERVICE.pod_port, initial_delay_seconds=5, period_seconds=10),
     )
     pod_policy.harden(deployment)
-    _SERVICE.pods.disruption_budget(chart, "disruption-budget", name=_NAME)
+    _SERVICE.pods.add_disruption_budget(chart, "disruption-budget", name=_NAME)
     Service(
         chart,
         "service",

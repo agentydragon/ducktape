@@ -378,7 +378,7 @@ class LiteLLMProxy(Construct):
     def _add_service(self, deployment: Deployment) -> None:
         ref = service(self.spec)
         if self.spec.replicas > 1:
-            ref.pods.disruption_budget(self, "disruption-budget", name=ref.name)
+            ref.pods.add_disruption_budget(self, "disruption-budget", name=ref.name)
         Service(
             self,
             "service",

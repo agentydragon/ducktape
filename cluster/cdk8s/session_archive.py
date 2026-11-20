@@ -152,7 +152,7 @@ def _web(chart: Chart) -> None:
     ApiObject.of(workload).add_json_patch(JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()]))
     pod_policy.harden(workload)
     pod_policy.place(workload, node_scheduling.HIL_OVH)
-    _WEB.pods.disruption_budget(chart, "web-disruption-budget", name=_WEB.name)
+    _WEB.pods.add_disruption_budget(chart, "web-disruption-budget", name=_WEB.name)
 
     Service(
         chart,

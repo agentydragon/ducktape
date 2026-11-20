@@ -240,7 +240,7 @@ def _gateway(scope: Construct) -> None:
             ),
         ),
     )
-    _PODS.disruption_budget(scope, "disruption-budget", name=NAME)
+    _PODS.add_disruption_budget(scope, "disruption-budget", name=NAME)
     k8s.KubeService(
         scope,
         "service",
