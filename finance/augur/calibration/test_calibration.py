@@ -421,9 +421,6 @@ class _ProbClient:
             quote=None if probability is None else PoolQuote(price=probability),
         )
 
-    async def aclose(self) -> None:
-        pass
-
 
 async def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
     """A market whose quote carries no probability, and a categorical family whose bucket prices

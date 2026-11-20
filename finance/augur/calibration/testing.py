@@ -90,9 +90,6 @@ class _StaticClient:
             raise MarketNotMirroredError(f"no mock market {market_id!r}")
         return self._markets[market_id]
 
-    async def aclose(self) -> None:
-        pass
-
 
 def mock_price_clients(
     prices_by_platform: Mapping[Platform, Mapping[str, float | KalshiRungQuote]],
