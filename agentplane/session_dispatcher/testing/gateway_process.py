@@ -105,7 +105,6 @@ class GatewayProcess:
         """Call Runtime through this explicitly separate Environments listener."""
         return SandboxControlClient(
             control_target=self.environment_service.target,
-            token_file=None,
             request_timeout_s=request_timeout_s,
             channel_credentials=self.environment_service.channel_credentials(service),
         )

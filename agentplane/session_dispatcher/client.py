@@ -1,7 +1,6 @@
 """gRPC client for the Environments Runtime proxy reached through the stable Environments Service."""
 
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 
 import grpc
 from google.protobuf.message import Message
@@ -31,14 +30,12 @@ class SandboxControlClient:
         self,
         *,
         control_target: str,
-        token_file: Path | None,
         request_timeout_s: float,
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
     ) -> None:
         # A template of `{namespace}`: `environments.{namespace}.svc:8082`.
         self.control_target = control_target
-        self.token_file = token_file
         self.request_timeout_s = request_timeout_s
         self.channel_credentials = channel_credentials
         self.server_name = server_name
@@ -111,9 +108,8 @@ class SandboxControlClient:
             return await call_unary(
                 bind_call(channel),
                 request,
-                token_file=self.token_file,
                 timeout_s=timeout_s or self.request_timeout_s,
-                extra_metadata=self._metadata(destination, expected_incarnation_uid),
+                metadata=self._metadata(destination, expected_incarnation_uid),
             )
 
     async def list_sessions(
@@ -149,9 +145,8 @@ class SandboxControlClient:
             response = await call_unary(
                 checked_call,
                 request,
-                token_file=self.token_file,
                 timeout_s=self.request_timeout_s,
-                extra_metadata=self._metadata(destination, expected_incarnation_uid),
+                metadata=self._metadata(destination, expected_incarnation_uid),
             )
         return list(response.sessions)
 

@@ -278,16 +278,6 @@ async def electric(
         yield service
 
 
-@pytest.fixture
-def gateway_access(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(
-        target=gateway_service.target,
-        token_file=None,
-        tls=gateway_service.client_tls,
-        environment_runtime_ca=gateway_service.environment_service.ca,
-    )
-
-
 @asynccontextmanager
 async def scripted_runner(
     source: ReplicationSource,

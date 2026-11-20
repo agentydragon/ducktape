@@ -32,9 +32,6 @@ py_library(
     deps = [
         ":models",
         "//agentplane/app:app_service_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:session_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//tenacity",

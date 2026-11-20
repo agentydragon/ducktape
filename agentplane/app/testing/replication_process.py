@@ -60,7 +60,6 @@ class SandboxesAccess:
 @dataclass(frozen=True)
 class GatewayAccess:
     target: str
-    token_file: Path | None
     tls: ClientTLS | None = None
     environment_runtime_ca: CertificateAuthority | None = None
 
@@ -660,8 +659,8 @@ async def app_process(
                     {
                         "runner_gateway_target": environments.target,
                         "session_dispatcher_target": gateway.target,
-                        "runner_gateway_token_file": str(gateway.token_file) if gateway.token_file else "",
-                        "session_dispatcher_token_file": str(gateway.token_file) if gateway.token_file else "",
+                        "runner_gateway_token_file": "",
+                        "session_dispatcher_token_file": "",
                     }
                 )
                 settings["runner_gateway_tls"] = environments.tls.model_dump(mode="json")

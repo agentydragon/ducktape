@@ -2,7 +2,6 @@
 
 import subprocess
 from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
 
 import httpx
 import pytest
@@ -10,7 +9,6 @@ from python.runfiles import Runfiles
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.app.testing.gateway_fixtures import (
-    app_token_file,
     dispatcher_database_url,
     gateway_service,
     sandbox,
@@ -51,7 +49,6 @@ from util.net import refusing_tcp_endpoint
 # These imported fixtures and the hook are part of this plugin's public pytest surface.
 __all__ = [
     "api_server",
-    "app_token_file",
     "database_clones",
     "database_names",
     "dispatcher_database_url",
@@ -164,21 +161,23 @@ def app_config() -> dict[str, object]:
 
 
 @pytest.fixture
+def gateway_access(gateway_service: GatewayProcess) -> GatewayAccess:
+    return GatewayAccess(gateway_service.target, gateway_service.client_tls, gateway_service.environment_service.ca)
+
+
+@pytest.fixture
 async def app(
     db_url: str,
     history_service: GoHistoryService,
     sandbox: SandboxCluster,
-    gateway_service: GatewayProcess,
-    app_token_file: Path,
+    gateway_access: GatewayAccess,
     app_config: dict[str, object],
 ) -> AsyncIterator[AppProcess]:
     async with app_process(
         db_url,
         history_service,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-        gateway=GatewayAccess(
-            gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-        ),
+        gateway=gateway_access,
         config=app_config,
     ) as process:
         yield process

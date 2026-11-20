@@ -80,7 +80,6 @@ def runtime_client(gateway_service: GatewayProcess) -> SandboxControlClient:
 async def dispatcher(gateway_service: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
     async with SessionDispatcherClient.connect(
         gateway_service.target,
-        token_file=None,
         request_timeout_s=10,
         channel_credentials=gateway_service.service_credentials("spiffe://agentplane/app"),
     ) as client:

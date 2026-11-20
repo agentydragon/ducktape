@@ -93,7 +93,6 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
         dispatcher = await opened.enter_async_context(
             SessionDispatcherClient.connect(
                 dispatcher_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=credentials,
                 server_name=f"{DISPATCHER_SERVICE}.{cluster.namespace}.svc.cluster.local",
@@ -114,14 +113,12 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
             history=history,
             control=SandboxControlClient(
                 control_target=environment_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
             host_control=SandboxControlClient(
                 control_target=environment_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=await service_svid_credentials(cluster, "sessions-client-workload-tls"),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
@@ -136,7 +133,6 @@ async def sandbox_harness_host(cluster: Cluster) -> AsyncIterator[SandboxControl
     async with _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT) as target:
         yield SandboxControlClient(
             control_target=target,
-            token_file=None,
             request_timeout_s=REQUEST_TIMEOUT_SECONDS,
             channel_credentials=credentials,
             server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",

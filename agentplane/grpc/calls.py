@@ -1,12 +1,10 @@
-"""Bearer metadata and status translation for Agentplane gRPC clients, including Runner Gateway
+"""Channel dialing and status translation for Agentplane gRPC clients, including Runner Gateway
 calls that read FAILED_PRECONDITION as a `RefusedError`."""
 
-import asyncio
 import ipaddress
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Never
 
 import grpc
@@ -85,23 +83,10 @@ def _raise(error: grpc.aio.AioRpcError) -> Never:
     raise_status(error)
 
 
-async def bearer(token_file: Path | None) -> tuple[tuple[str, str], ...]:
-    if token_file is None:
-        return ()
-    # Projected tokens rotate. Read for every RPC.
-    token = (await asyncio.to_thread(token_file.read_text)).strip()
-    return (("authorization", f"Bearer {token}"),)
-
-
 async def call_unary[T](
-    call: Callable[..., Awaitable[T]],
-    request: Message,
-    *,
-    token_file: Path | None,
-    timeout_s: float,
-    extra_metadata: tuple[tuple[str, str], ...] = (),
+    call: Callable[..., Awaitable[T]], request: Message, *, timeout_s: float, metadata: tuple[tuple[str, str], ...] = ()
 ) -> T:
     try:
-        return await call(request, metadata=(*await bearer(token_file), *extra_metadata), timeout=timeout_s)
+        return await call(request, metadata=metadata, timeout=timeout_s)
     except grpc.aio.AioRpcError as error:
         _raise(error)
