@@ -7,14 +7,25 @@ export function composeModernExpressions(source, ast, random, marker) {
     if (Array.isArray(node)) return node.forEach((child) => visit(child, parent, field));
     if (
       node.type === "Literal" &&
-      (node.value === null || typeof node.value === "string" || typeof node.value === "boolean" || (typeof node.value === "number" && Number.isFinite(node.value))) &&
+      (node.value === null ||
+        typeof node.value === "string" ||
+        typeof node.value === "boolean" ||
+        (typeof node.value === "number" && Number.isFinite(node.value))) &&
       !node.regex &&
       !(parent?.type === "ExpressionStatement" && parent.directive) &&
-      !((parent?.type === "ImportDeclaration" || parent?.type === "ExportNamedDeclaration" || parent?.type === "ExportAllDeclaration") && field === "source") &&
-      !((parent?.type === "Property" || parent?.type === "MethodDefinition" || parent?.type === "PropertyDefinition") &&
+      !(
+        (parent?.type === "ImportDeclaration" ||
+          parent?.type === "ExportNamedDeclaration" ||
+          parent?.type === "ExportAllDeclaration") &&
+        field === "source"
+      ) &&
+      !(
+        (parent?.type === "Property" || parent?.type === "MethodDefinition" || parent?.type === "PropertyDefinition") &&
         field === "key" &&
-        !parent.computed)
-    ) sites.push(node);
+        !parent.computed
+      )
+    )
+      sites.push(node);
     for (const [key, child] of Object.entries(node)) if (child && typeof child === "object") visit(child, node, key);
   }
   visit(ast);

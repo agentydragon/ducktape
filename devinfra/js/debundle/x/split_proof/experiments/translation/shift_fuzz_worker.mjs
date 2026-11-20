@@ -8,7 +8,16 @@ const root = path.resolve(process.argv[2]);
 const context = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
 const marker = process.argv[4];
 const modernSeen = new Set();
-if (marker) Object.defineProperty(context, marker, { value: (kind, value) => { modernSeen.add(kind); return value; }, enumerable: false, writable: false, configurable: false });
+if (marker)
+  Object.defineProperty(context, marker, {
+    value: (kind, value) => {
+      modernSeen.add(kind);
+      return value;
+    },
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
 const result = (status) => ({ status, trace: context.__trace, ...(marker ? { modern: [...modernSeen].sort() } : {}) });
 vm.runInContext(
   `

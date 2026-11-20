@@ -10,7 +10,12 @@ const transformed = composeModernExpressions(source, parsed, () => [0, 0.4, 0.8]
 const reparsed = acorn.parse(transformed.source, { ecmaVersion: "latest", sourceType: "module" });
 assert.equal(reparsed.body[1].declarations[0].init.properties[0].key.value, 7);
 const trace = [];
-const context = { __testMarker: (kind, value) => { trace.push(kind); return value; } };
+const context = {
+  __testMarker: (kind, value) => {
+    trace.push(kind);
+    return value;
+  },
+};
 vm.runInNewContext(transformed.source, context, { timeout: 100 });
 assert.deepEqual(Array.from(context.answer), [1, 2, 3, 8]);
 for (const kind of ["nullish", "optional", "field"]) assert(trace.includes(kind), `${kind} not executed`);

@@ -259,15 +259,33 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     // Restrict generated code that could discover the non-enumerable marker
     // through the VM global or dynamic code. The marker is also excluded from
     // the original source, so it cannot be shadowed or referenced directly.
-    const forbidden = new Set(["globalThis", "global", "self", "window", "eval", "Function", "Reflect", "Proxy", marker]);
+    const forbidden = new Set([
+      "globalThis",
+      "global",
+      "self",
+      "window",
+      "eval",
+      "Function",
+      "Reflect",
+      "Proxy",
+      marker,
+    ]);
     let unsafe = false;
     (function scan(node) {
       if (!node || typeof node !== "object") return;
       if (Array.isArray(node)) return node.forEach(scan);
-      if (node.type === "ThisExpression" || node.type === "ImportExpression" || (node.type === "Identifier" && forbidden.has(node.name))) unsafe = true;
+      if (
+        node.type === "ThisExpression" ||
+        node.type === "ImportExpression" ||
+        (node.type === "Identifier" && forbidden.has(node.name))
+      )
+        unsafe = true;
       for (const value of Object.values(node)) if (value && typeof value === "object") scan(value);
     })(parsed);
-    if (unsafe) { stats.instrumentationRejected++; continue; }
+    if (unsafe) {
+      stats.instrumentationRejected++;
+      continue;
+    }
     const composed = composeModernExpressions(source, parsed, rng(seed ^ 0x8b11c5), marker);
     if (composed.sites) stats.modernComposed++;
     source = composed.source;
@@ -368,7 +386,10 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   stats.accepted++;
   if (baseline.status === "ok") stats.acceptedOk++;
   collect(parsed, acceptedSyntax);
-  const executed = modern && baseline.status === "ok" ? Object.keys(stats.modernExecuted).filter((kind) => baseline.modern.includes(kind)) : [];
+  const executed =
+    modern && baseline.status === "ok"
+      ? Object.keys(stats.modernExecuted).filter((kind) => baseline.modern.includes(kind))
+      : [];
   for (const kind of executed) stats.modernExecuted[kind]++;
   const match = emitter.stdout.match(/statement order\s+\[([^\]]*)\]/);
   let reordered = false;
@@ -439,4 +460,6 @@ assert(stats.accepted > 0, "no executable generated split was accepted");
 assert(stats.reordered > 0, "no accepted generated split reordered statements");
 if (scriptGrammar) assert(stats.reorderedOk > 0, "no successful generated split reordered statements");
 
-if (modern) for (const [kind, n] of Object.entries(stats.modernReorderedExecuted)) assert(n > 0, `no successful reordered split executed ${kind}`);
+if (modern)
+  for (const [kind, n] of Object.entries(stats.modernReorderedExecuted))
+    assert(n > 0, `no successful reordered split executed ${kind}`);
