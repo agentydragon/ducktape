@@ -33,5 +33,5 @@ export async function retryTransient<T>(request: () => Promise<T>, signal: Abort
   throw new DOMException("Request aborted", "AbortError");
 }
 export function errorMessage(reason: unknown): string {
-  return reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load sessions.";
+  return reason instanceof Error ? reason.message : "Could not load sessions.";
 }
