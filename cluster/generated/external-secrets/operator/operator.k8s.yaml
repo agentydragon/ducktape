@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "external-secrets", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "256Mi", "cpu": "100m"}, "maxAllowed": {"memory": "384Mi", "cpu": "100m"}, "controlledResources": ["memory"]}, {"containerName": "webhook", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "15m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m", "memory": "384Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: external-secrets-system
 spec: {}
 ---
