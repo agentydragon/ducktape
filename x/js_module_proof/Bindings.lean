@@ -102,7 +102,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
   | .reader _ sourceName => isVariable source sourceName && visible modules index sourceName
-  | .factory _ localName sourceName => localName != sourceName && isVariable source sourceName && visible modules index sourceName
+  | .factory _ localName sourceName => !(localName == sourceName) && isVariable source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
   | .wrapper _ target => isClosure source target && visible modules index target
   | .recordCall name => isFunction source name && visible modules index name
