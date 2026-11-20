@@ -371,9 +371,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
     assert ytd_gain(rollout, month_index=horizon, classification="stcg") == pytest.approx(0.0, abs=1e-6)
 
 
-def test_harvest_off_reproduces_baseline_capital_gains_exactly() -> None:
-    # Regression: a scenario with no harvest policy must produce byte-identical capital-gain YTD to
-    # the same scenario run on the pre-harvest code path (here: no harvested losses ever appear).
+def test_harvest_off_with_no_sales_books_no_capital_gains() -> None:
     [rollout] = run(situation({SP500: [[1.0, 0.8, 0.9, 0.85, 0.95, 1.1, 1.2]]}, with_harvest=False))
     assert rollout.trace is not None
     # No sales, no harvest → no capital-gain rows at all.
