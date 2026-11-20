@@ -177,38 +177,6 @@ export { read };
   assert.match(witnessReplay.stdout, /'binding_witness_original' does not depend on any axioms/);
   assert.match(witnessReplay.stdout, /'binding_witness_output' does not depend on any axioms/);
   assert.match(witnessReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
-  const combinedSource = join(root, "later-parameter-branch.mjs");
-  const combinedSpec = join(root, "later-parameter-branch.json");
-  const combinedOut = join(root, "later-parameter-branch-out");
-  await writeFile(
-    combinedSource,
-    (await readFile(laterSource, "utf8")).replace(
-      "export { read };",
-      "function choose(flag, value) { if (flag) { return seed + value; } else { return value + 1; } }\nexport { read, choose };"
-    )
-  );
-  const combinedAssignment = JSON.parse(await readFile(laterSpec, "utf8"));
-  combinedAssignment.modules["reader.mjs"].statements.push(7);
-  combinedAssignment.modules["reader.mjs"].imports.push("state.mjs");
-  await writeFile(combinedSpec, JSON.stringify(combinedAssignment));
-  assert.equal(cli("generate", combinedSource, combinedSpec, combinedOut).result, "generated");
-  const combinedWitness = cli("validate", combinedSource, combinedSpec, combinedOut);
-  assert.equal(combinedWitness.result, "unsafe", JSON.stringify(combinedWitness));
-  assert.deepEqual(combinedWitness.calls, [{ name: "read", args: [] }]);
-  assert.deepEqual(combinedWitness.original.results, [3]);
-  assert.deepEqual(combinedWitness.output.results, [2]);
-  const combinedReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
-    encoding: "utf8",
-    input: models + combinedWitness.certificate,
-  });
-  assert.equal(combinedReplay.status, 0, combinedReplay.stdout + combinedReplay.stderr);
-  assert.match(combinedReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
-  const branchCalls = [
-    { name: "choose", args: [0, 4] },
-    { name: "choose", args: [1, 4] },
-  ];
-  assert.deepEqual(execute(combinedSource, branchCalls).results, [{ value: 5 }, { value: 6 }]);
-  assert.deepEqual(execute(join(combinedOut, "entry.mjs"), branchCalls), execute(combinedSource, branchCalls));
 }
 
 if (shard === 0) {
@@ -548,4 +516,52 @@ export { first };
   );
   assert.equal(cli("generate", recursiveSource, recursiveSpec, recursiveOut).result, "generated");
   assert.equal(cli("validate", recursiveSource, recursiveSpec, recursiveOut).result, "unknown");
+}
+
+if (shard === 5) {
+  const combinedSource = join(root, "later-parameter-branch.mjs");
+  const combinedSpec = join(root, "later-parameter-branch.json");
+  const combinedOut = join(root, "later-parameter-branch-out");
+  await writeFile(
+    combinedSource,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make() { let value = seed; return () => ++value; }
+bump();
+const next = make();
+function read() { return next(); }
+function choose(flag, value) { if (flag) { return seed + value; } else { return value + 1; } }
+export { read, choose };
+`
+  );
+  const combinedAssignment = {
+    kind: "bindings",
+    entry: "entry.mjs",
+    modules: {
+      "state.mjs": { imports: [], statements: [0, 1, 2] },
+      "factory.mjs": { imports: ["state.mjs"], statements: [3, 5] },
+      "reader.mjs": { imports: ["factory.mjs", "state.mjs"], statements: [6, 7] },
+      "entry.mjs": { imports: ["state.mjs", "reader.mjs"], statements: [4] },
+    },
+  };
+  await writeFile(combinedSpec, JSON.stringify(combinedAssignment));
+  assert.equal(cli("generate", combinedSource, combinedSpec, combinedOut).result, "generated");
+  const combinedWitness = cli("validate", combinedSource, combinedSpec, combinedOut);
+  assert.equal(combinedWitness.result, "unsafe", JSON.stringify(combinedWitness));
+  assert.deepEqual(combinedWitness.calls, [{ name: "read", args: [] }]);
+  assert.deepEqual(combinedWitness.original.results, [3]);
+  assert.deepEqual(combinedWitness.output.results, [2]);
+  const combinedReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + combinedWitness.certificate,
+  });
+  assert.equal(combinedReplay.status, 0, combinedReplay.stdout + combinedReplay.stderr);
+  assert.match(combinedReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+  const branchCalls = [
+    { name: "choose", args: [0, 4] },
+    { name: "choose", args: [1, 4] },
+  ];
+  assert.deepEqual(execute(combinedSource, branchCalls).results, [{ value: 5 }, { value: 6 }]);
+  assert.deepEqual(execute(join(combinedOut, "entry.mjs"), branchCalls), execute(combinedSource, branchCalls));
 }
