@@ -282,7 +282,8 @@ each: the junit `timestamp` puts the session start 8-12s after the process start
 18-25s after it with the file handed over, so the time the session lost is spent before it starts.
 The mechanism is not established. Both trees import 580 modules (2.5-2.8s) before `pytest.main` and
 2451 (9-11s; 23.9s on a slow host) between `pytest.main` and the header: the
-`agentplane/app/conftest.py` chain, led by `kubernetes_asyncio.client` (12.7s cumulative on the slow
+`agentplane/app/conftest.py` chain (that file is gone; the same imports now arrive through the
+app test modules themselves), led by `kubernetes_asyncio.client` (12.7s cumulative on the slow
 host), `agentplane.app.action_policy` (4.7s) and `sqlalchemy.ext.asyncio` (1.8s).
 
 Side by side on the 44 targets that timed out in a cold full-suite CI run (one run each, at the same

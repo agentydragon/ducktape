@@ -258,7 +258,8 @@ v3-to-v4 migration is suspected, not proven. The one-time guarded Flux cleanup
 (`clickhouse-orphan-views-cleanup-v1`) ran to completion on 2026-11-01 and has
 been retired. Current replicas were checked separately: a read-only
 `system.tables` count on each returned no row for either view. The captured
-definitions are in git history (`cluster/debug/clickhouse_orphan_views.md`);
+definitions were in `cluster/debug/clickhouse_orphan_views.md`, retired in #17709 and
+recoverable from git history;
 verify current Langfuse migrations and view dependencies before restoring any
 old definition. A partially initialized replica can retain its own local copies,
 so check it separately before accepting its schema.
