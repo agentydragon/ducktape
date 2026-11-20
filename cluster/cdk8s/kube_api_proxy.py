@@ -17,12 +17,21 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
+_NGINX_CPU_REQUEST = "10m"
+_NGINX_MEMORY_REQUEST = "16Mi"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
 _SERVICE = ServiceRef(
@@ -51,7 +60,20 @@ def _deployment(chart: Chart) -> None:
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
-                )
+                ),
+                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name="nginx",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("memory",),
+                        # Pin CPU while VPA can still return a stale CPU recommendation.
+                        min_allowed={"cpu": _NGINX_CPU_REQUEST, "memory": _NGINX_MEMORY_REQUEST},
+                        # The working set peaked below 10Mi. Cap the global 100Mi recommendation floor.
+                        max_allowed={"cpu": _NGINX_CPU_REQUEST, "memory": "24Mi"},
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -80,7 +102,9 @@ def _deployment(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
+                            resources=container_resources(
+                                cpu=_NGINX_CPU_REQUEST, memory=_NGINX_MEMORY_REQUEST, memory_limit="64Mi"
+                            ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
