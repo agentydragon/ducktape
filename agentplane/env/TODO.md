@@ -74,12 +74,6 @@ Review candidates; validate each proposed change before burning it down. Estimat
 need prototypes and must include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
 durable user data and uncertain-effect handling in any accepted change.
 
-- **Close ownership:** Consider one Runtime-owned sequential Close worker observing component COSI
-  status, instead of the Close-only controller and its status resource
-  ([controller](runtime/internal/coordinator/lifecycle_controller.go),
-  [status](runtime/internal/coordinator/close_status.go)). Preserve exact-generation barriers,
-  shared Close, caller cancellation, engine-exit ordering, fences, History ACKs and owner release.
-  Prototype under the coordinator race suite and Pod/VM shutdown tests; recent fixes protect real races.
 - **Session operations:** Consider consuming operation completions and deciding the next action in
   the live Session owner, publishing smaller observations for the environment aggregate. Today
   [snapshots](runtime/session/inputs.go), operation revisions, local slots and

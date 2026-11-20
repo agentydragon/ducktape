@@ -172,11 +172,11 @@ Ordinary Close without a seal drains local work and creates no seal. Close prese
 for exact durable acknowledgements. Runtime first settles any accepted transition and fence before
 publishing Closing; it joins History before journals close, stops/joins the engine, joins workers,
 closes journals, fences the Pod PID namespace when applicable and releases its owner last.
-The Runtime Close status reports the ordered stage and any failure; it is never persisted.
-`ReadyToJoin` is permission to finish those steps, not successful owner release. Coordinator exit
-wakes callers before joining workers, preventing a shutdown worker from waiting on a transition
-caller that is itself waiting for engine exit. Joined workers and exact fences still determine
-whether cleanup is proved; coordinator restart never replays accepted work.
+The Close worker reads the generation-qualified component status and returns its result after
+cleanup. The lifecycle guard propagates engine cancellation to the operation coordinator before
+COSI joins its controllers. The coordinator wakes callers before joining its worker so Close can
+take the transition mutex and return on engine failure. Joined workers and exact fences determine whether
+cleanup is proved. Controller restart never replays accepted work.
 
 Concurrent Close callers share one accepted worker. Caller cancellation ends only that wait.
 Session recovery or History failure closes admission and starts cleanup without manufacturing a
