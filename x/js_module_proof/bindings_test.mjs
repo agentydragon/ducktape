@@ -97,7 +97,9 @@ theorem fixture_reference : ∃ owner declaration,
       assert.equal(cli("validate", source, spec, out).value.result, "proved under assumptions");
     }
   }
+}
 
+if (runSection(2)) {
   // Numeric const bindings remain immutable across extraction and generation.
   const constSource = join(root, "const-source.mjs");
   const constOut = join(root, "const-out");
