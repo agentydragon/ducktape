@@ -139,6 +139,11 @@ func TestFilesystemRPCParity(t *testing.T) {
 	call("fs/readFile", map[string]any{"path": "relative"}, -32602, nil)
 	call("fs/getMetadata", pathParams("file/child"), -32603, nil)
 	call("fs/writeFile", map[string]any{"path": uri(file), "dataBase64": "!"}, -32600, nil)
+	call("fs/writeFile", map[string]any{"path": uri(file)}, -32602, nil)
+	call("fs/writeFile", map[string]any{"path": uri(file), "dataBase64": nil}, -32602, nil)
+	if content, err := os.ReadFile(file); err != nil || string(content) != "target" {
+		t.Fatalf("invalid writes changed file: %q, %v", content, err)
+	}
 
 	call("fs/remove", pathParams("missing"), 0, nil)
 	missing := pathParams("missing")
