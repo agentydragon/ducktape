@@ -85,3 +85,54 @@ lean_binary(
     entry = "Experiments/TranslateMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
+
+_PROOF_FIXTURE_SOURCES = [
+    "EsmSplit/Bundle.lean",
+    "EsmSplit/Cli.lean",
+    "EsmSplit/Correct.lean",
+    "EsmSplit/Fast.lean",
+    "EsmSplit/Plan.lean",
+    "EsmSplit/Render.lean",
+    "EsmSplit/Semantics.lean",
+    "EsmSplit/Split.lean",
+    "Experiments/MiniJS.lean",
+    "Experiments/ProofFixture.lean",
+    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
+]
+
+lean_axiom_test(
+    name = "proof_fixture_axioms_test",
+    srcs = _PROOF_FIXTURE_SOURCES,
+    imports = ["Experiments.ProofFixture"],
+    theorems = [
+        "Example.plan_valid",
+        "Example.control_bad_rejected",
+        "ProofFixture.extracted_footprints",
+        "ProofFixture.execution_order",
+        "ProofFixture.preserves_model",
+        "ProofFixture.rendered_base",
+        "ProofFixture.rendered_entry",
+    ],
+)
+
+lean_binary(
+    name = "proof_fixture_render",
+    srcs = ["ProofFixtureMain.lean"] + _PROOF_FIXTURE_SOURCES,
+    entry = "ProofFixtureMain.lean",
+)
+
+sh_test(
+    name = "proof_fixture_test",
+    srcs = ["proof_fixture_test.sh"],
+    args = [
+        "$(rlocationpath :proof_fixture_render)",
+        "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs)",
+    ],
+    data = [
+        ":proof_fixture_render",
+        "//devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    use_bash_launcher = True,
+)

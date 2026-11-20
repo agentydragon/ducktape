@@ -1,0 +1,9 @@
+{
+  "why": "copy runs before its dependency one and throws in JavaScript",
+  "fails": "OrderOk",
+  "entry": "main.mjs",
+  "modules": {
+    "base.mjs": ["copy"],
+    "main.mjs": ["unused", "one"]
+  }
+}
