@@ -50,7 +50,6 @@ pub use realizability::{
 pub use realizability::{
     LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta, QuotientConstraints,
     QuotientTopologyDelta, RealizabilityIndex, check_realizability, check_realizability_touching,
-    simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,

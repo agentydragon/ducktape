@@ -623,51 +623,6 @@ pub fn check_realizability_touching(
     }
 }
 
-/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for an
-/// assignment's emitted module tree: lower index = body evaluates earlier.
-/// Derives the emitted module universe from assigned destinations plus entry,
-/// then applies the same source-order preference as the materializer before
-/// simulating entry fanout and intra-module imports. This predicts actual
-/// emission order; `check_realizability` retains its separate base-order
-/// simulator for the legacy constraint gate. Used by coarse residual planning and
-/// Node-differential pins (`e2e/realizability/evaluation_order.rs`)
-/// that compare this prediction against the evaluation order Node
-/// actually produces for the emitted tree.
-#[cfg(test)]
-pub fn simulated_evaluation_post_order(
-    canonical: &ChunkConstrainingEdgeSet,
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-) -> BTreeMap<ModuleId, usize> {
-    let entry = assignment.entry_destination().module_id();
-    let mut emitted_modules: BTreeSet<ModuleId> =
-        assignment.iter().map(|(_, module)| module).collect();
-    emitted_modules.insert(entry);
-    let import_order = EsmImportOrder::build_for_assignment(
-        canonical,
-        dependency_graph,
-        assignment,
-        &emitted_modules,
-    );
-    EsmImportSchedule::construct(
-        entry,
-        &canonical.pairs().collect(),
-        &canonical.i_successors,
-        &emitted_modules,
-        &import_order,
-    )
-    .unwrap_or_else(|_| {
-        EsmImportSchedule::from_policy(
-            entry,
-            &canonical.i_successors,
-            &emitted_modules,
-            &import_order,
-        )
-    })
-    .post_order()
-    .clone()
-}
-
 /// Mutable index over a working assignment: the incremental form of the
 /// predicate `check_realizability` computes (docs/design.md
 /// "Realizability primitive").
