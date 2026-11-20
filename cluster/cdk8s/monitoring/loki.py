@@ -132,7 +132,8 @@ def _loki_values() -> dict[str, object]:
                         controlled_values=ControlledValues.REQUESTS_ONLY,
                         min_allowed={"memory": "1Gi"},
                         max_allowed={"memory": "2Gi"},
-                    )
+                    ),
+                    compact=True,  # Preserve the Helm values byte for byte.
                 )
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,

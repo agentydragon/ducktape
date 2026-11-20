@@ -33,12 +33,13 @@ class ContainerPolicy(BaseModel):
 REQUESTS_ONLY = ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY)
 
 
-def resource_policy_annotation(*container_policies: ContainerPolicy) -> str:
+def resource_policy_annotation(*container_policies: ContainerPolicy, compact: bool = False) -> str:
     """Serialize a complete policy. A workload annotation replaces the namespace policy."""
     return json.dumps(
         {
             "containerPolicies": [
                 policy.model_dump(mode="json", by_alias=True, exclude_none=True) for policy in container_policies
             ]
-        }
+        },
+        separators=(",", ":") if compact else None,
     )
