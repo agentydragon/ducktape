@@ -1,7 +1,7 @@
 """E2E test for agent orchestration.
 
 Tests the orchestration workflow:
-1. Optimizer calls run_critic to spawn critic containers
+1. Optimizer starts critic containers with start_critic
 2. Critic receives system prompt and submits issues
 3. Grader processes edges
 4. Optimizer waits for grading and reports success
@@ -60,7 +60,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     """Test critic-dev optimizer orchestration with critic system prompt verification.
 
     Verifies:
-    1. Optimizer can call run_critic MCP tool
+    1. Optimizer can start a critic with the start_critic tool
     2. Critic receives a valid system prompt (mechanism check)
     3. Grader processes the edges
     4. Optimizer's wait_until_graded returns
@@ -117,7 +117,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
             with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
+                assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected EXITED, got {optimizer_run.status}"
 
 
 async def test_critic_cannot_push_images(e2e_stack, all_files_scope):
