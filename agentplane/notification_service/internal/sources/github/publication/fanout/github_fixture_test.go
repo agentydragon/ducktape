@@ -22,8 +22,7 @@ import (
 )
 
 // These helpers stand in for the parts of the GitHub source that call GitHub and subscribe: they write the shared
-// rows a subscription binds to as Python's subscribe does, and take the steps of a reconcile that touch only the
-// inbox.
+// rows a subscription binds to, and take the steps of a reconcile that touch only the inbox.
 
 const (
 	testFreshness      = 10 * time.Minute

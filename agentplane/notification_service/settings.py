@@ -128,9 +128,7 @@ class NoticeDebounceSettings(BaseModel):
 class QuotaSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    inboxes_per_account: int = Field(
-        default=64, ge=1, description="Maximum retained inboxes per owning ServiceAccount and Sandbox incarnation."
-    )
+    inboxes_per_account: int = Field(default=64, ge=1, description="Maximum retained inboxes per owning Identity.")
     active_subscriptions_per_inbox: int = Field(
         default=64, ge=1, description="Maximum non-cancelled, unexpired subscriptions per inbox."
     )
@@ -169,7 +167,7 @@ class Settings(BaseModel):
         ),
     )
     unavailable_destination_retry_s: PositiveSeconds = Field(
-        default=30, le=3600, description="Seconds between checks of an unavailable UID-pinned Sandbox."
+        default=30, le=3600, description="Seconds before delivery retries after a Dispatcher or History NotFound."
     )
     request_timeout_s: PositiveSeconds = Field(
         default=15, description="Bounds a call's backend work and each write to a watch stream."

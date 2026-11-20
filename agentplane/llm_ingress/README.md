@@ -12,7 +12,7 @@ Only inference requests forward provider-native traffic to LiteLLM with one serv
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
 (the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
-`litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
+`litellm_upstream` pin in `devinfra/bazel/oci.MODULE.bazel`). That version consumes the header
 (`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native
 `/v1/messages` and `/v1/responses`, including their streaming paths. The authoritative metadata
 object is:

@@ -28,7 +28,7 @@ const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
 // Secret inputs read explicitly from their existing environment keys after static settings are decoded.
 type config struct {
 	DatabaseURL string `mapstructure:"-"`
-	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
+	// Namespace is the workload credential, Identity and destination Sandbox namespace.
 	Namespace string `mapstructure:"namespace"`
 	// OperatorReaderServices are exact service SVIDs admitted to the same read-only diagnostic methods.
 	OperatorReaderServices []string          `mapstructure:"operator_reader_services"`
