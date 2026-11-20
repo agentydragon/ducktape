@@ -3,22 +3,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # === Libraries ===
 
 py_library(
-    name = "check_rust_versions",
-    srcs = ["check_rust_versions.py"],
-)
-
-py_test(
-    name = "test_check_rust_versions",
-    srcs = ["test_check_rust_versions.py"],
-    deps = [
-        ":check_rust_versions",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "artifacts",
     srcs = ["artifacts.py"],
     data = [
