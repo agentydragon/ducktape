@@ -13,7 +13,7 @@ const repository = z.object({
     .regex(/^[\w.-]+$/)
     .refine((repo) => repo !== "." && repo !== ".."),
 });
-type Repository = z.infer<typeof repository>;
+type Repository = { owner: string; repo: string };
 
 export function repositoryHref(repo: Repository): string {
   return `https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`;
