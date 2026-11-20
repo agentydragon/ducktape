@@ -117,20 +117,3 @@ resource "kubernetes_secret" "cpap_data_git_read_source" {
     repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
   }
 }
-
-# The cpap-sync ExternalSecrets adopt the Secrets these addresses created there.
-# CLEANUP(added 2026-09-28): Remove once the cpap_data state has forgotten both
-# addresses. Never destroy the ESO-owned Secrets.
-removed {
-  from = kubernetes_secret.cpap_data_git_write
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = kubernetes_secret.cpap_data_git_read
-  lifecycle {
-    destroy = false
-  }
-}
