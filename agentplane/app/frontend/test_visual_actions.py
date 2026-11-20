@@ -294,6 +294,235 @@ HA_FAN = {"entity_id": "fan.greenhouse", "friendly_name": "Greenhouse fan", "sta
 EXAMPLES = (
     ActionExample(
         "home_assistant",
+        "ha_eval_template",
+        {"template": "{{ 12 + 5 }}", "timeout": 3},
+        {"success": True, "template": "{{ 12 + 5 }}", "result": "17"},
+        "17",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_app",
+        {"source": "installed", "query": "weather"},
+        {
+            "success": True,
+            "addons": [
+                {
+                    "name": "Weather Bridge",
+                    "slug": "weather_bridge",
+                    "state": "started",
+                    "version": "1.4.0",
+                    "installed": True,
+                }
+            ],
+            "summary": {"total_installed": 1},
+        },
+        "Weather Bridge",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_blueprint",
+        {"domain": "automation"},
+        {
+            "success": True,
+            "blueprints": [
+                {"path": "sample/study.yaml", "name": "Study lighting", "description": "Turn on a desk lamp at dusk"}
+            ],
+        },
+        "Study lighting",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_hacs_info",
+        {"action": "search", "query": "study", "installed_only": False},
+        {
+            "success": True,
+            "query": "study",
+            "count": 1,
+            "has_more": False,
+            "results": [
+                {
+                    "name": "Study Lighting",
+                    "full_name": "example/study-lighting",
+                    "installed_version": "1.0.0",
+                    "available_version": "1.1.0",
+                }
+            ],
+        },
+        "Study Lighting",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_get_skill_guide",
+        {"skill": "home-assistant-best-practices", "file": "SKILL.md"},
+        {
+            "success": True,
+            "skill": "home-assistant-best-practices",
+            "file": "SKILL.md",
+            "content": "# Automation review\nReview triggers before saving.",
+        },
+        "Review triggers before saving",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_import_blueprint",
+        {"url": "https://example.test/blueprints/study.yaml", "overwrite": False},
+        {
+            "success": True,
+            "message": "Successfully imported blueprint",
+            "url": "https://example.test/blueprints/study.yaml",
+            "imported_blueprint": {"name": "Study lighting", "path": "sample/study.yaml"},
+            "overrides_existing": False,
+        },
+        "Study lighting",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_app",
+        {"slug": "weather_bridge", "action": "start"},
+        {
+            "success": True,
+            "message": "App (add-on) weather_bridge start completed.",
+            "action": "start",
+            "slug": "weather_bridge",
+        },
+        "start completed",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_backup",
+        {"scope": "edits", "action": "list", "domain": "automation", "limit": 5},
+        {
+            "success": True,
+            "data": {
+                "backups": [
+                    {
+                        "backup_name": "automation-study-2026-10-12.json",
+                        "domain": "automation",
+                        "entity_id": "automation.study",
+                    }
+                ],
+                "count": 1,
+            },
+        },
+        "automation.study",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_energy_prefs",
+        {"mode": "add_device", "stat_consumption": "sensor.desk_energy"},
+        {
+            "success": True,
+            "message": "Energy device added",
+            "mode": "add_device",
+            "target_key": "device_consumption",
+            "new_count": 1,
+        },
+        "Energy device added",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_hacs",
+        {"action": "add_repository", "repository": "example/study-lighting", "category": "integration"},
+        {
+            "success": True,
+            "message": "Registered example/study-lighting",
+            "data": {"name": "Study Lighting", "full_name": "example/study-lighting"},
+        },
+        "Registered example/study-lighting",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_pipeline",
+        {"action": "list"},
+        {
+            "success": True,
+            "operation": "list",
+            "pipelines": [{"id": "pipeline-study", "name": "Study voice", "language": "en"}],
+            "preferred_pipeline": "pipeline-study",
+        },
+        "Study voice",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_radio",
+        {"radio": "zigbee", "action": "network_status"},
+        {
+            "success": True,
+            "radio": "zigbee",
+            "action": "network_status",
+            "data": {"status": "online", "devices": [{"name": "Study sensor"}]},
+        },
+        "Online",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_theme",
+        {"action": "set", "theme_name": "Slate", "mode": "dark"},
+        {
+            "success": True,
+            "data": {"theme": "Slate", "mode": "dark", "default_theme": "default", "default_dark_theme": "Slate"},
+        },
+        "Slate",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_manage_updates",
+        {"action": "list", "categories": ["addons"], "include_skipped": False},
+        {
+            "success": True,
+            "updates_available": 1,
+            "skipped_count": 0,
+            "updates": [
+                {
+                    "entity_id": "update.weather_bridge",
+                    "name": "Weather Bridge",
+                    "installed_version": "1.0.0",
+                    "latest_version": "1.1.0",
+                }
+            ],
+        },
+        "Weather Bridge",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_reload_core",
+        {"target": "automation"},
+        {
+            "success": True,
+            "message": "Successfully reloaded automation",
+            "target": "automation",
+            "service": "automation.reload",
+        },
+        "Successfully reloaded automation",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_report_issue",
+        {"tool_call_count": 2},
+        {
+            "success": True,
+            "suggested_title": "Intermittent automation refresh failure",
+            "log_count": 4,
+            "formatted_report": "## Diagnostic summary\nAn example integration reported a refresh timeout.",
+        },
+        "Intermittent automation refresh failure",
+    ),
+    ActionExample(
+        "home_assistant",
+        "ha_restart",
+        {"confirm": True},
+        {
+            "success": True,
+            "message": "Home Assistant restart initiated. The system will be unavailable for 1-5 minutes.",
+            "warnings": ["Connection will be lost during restart."],
+        },
+        "Restart initiated",
+    ),
+    ActionExample(
+        "home_assistant",
         "ha_config_get_automation",
         {"identifier": "automation.study_lighting"},
         {
@@ -482,7 +711,7 @@ EXAMPLES = (
         {"resource_id": "resource-study"},
         {
             "success": True,
-            "message": "Dashboard resource deleted successfully",
+            "message": "Resource deleted successfully",
             "action": "delete",
             "resource_id": "resource-study",
         },
@@ -788,7 +1017,7 @@ EXAMPLES = (
     ActionExample(
         "home_assistant",
         "ha_get_system_health",
-        {"include": ["config_check"]},
+        {"include": "config_check"},
         {
             "success": True,
             "component_count": 1,

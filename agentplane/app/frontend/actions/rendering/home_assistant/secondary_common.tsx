@@ -93,12 +93,12 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
     const config = field === "config" ? asRecord(value) : undefined;
     if (!config) return exact;
     const sections = [
-      ["Triggers", config.triggers ?? config.trigger],
-      ["Conditions", config.conditions ?? config.condition],
-      ["Actions", config.actions ?? config.action ?? config.sequence],
-      ["Views", config.views],
+      ["trigger", config.triggers ?? config.trigger],
+      ["condition", config.conditions ?? config.condition],
+      ["action", config.actions ?? config.action ?? config.sequence],
+      ["view", config.views],
     ].flatMap(([label, entries]) =>
-      Array.isArray(entries) ? [`${entries.length} ${String(label).toLowerCase()}`] : []
+      Array.isArray(entries) ? [`${entries.length} ${String(label)}${entries.length === 1 ? "" : "s"}`] : []
     );
     return sections.length ? (
       <Stack gap={4}>
@@ -152,6 +152,13 @@ const rowFields = [
   "timestamp",
   "when",
   "trigger",
+  "theme",
+  "default_theme",
+  "default_dark_theme",
+  "connection_status",
+  "home_assistant_version",
+  "ha_mcp_version",
+  "entity_count",
   "condition",
   "action",
   "radius",
@@ -198,12 +205,20 @@ function rowTitle(entry: HaRecord): string | undefined {
 function simpleFields(entry: HaRecord, keys: readonly string[]): JSX.Element[] {
   return keys.flatMap((key) => {
     const value = entry[key];
+    const interval = ["period", "time_range", "timestamp"].includes(key) ? asRecord(value) : undefined;
+    const intervalText =
+      typeof interval?.start === "string"
+        ? [interval.start, interval.end ?? interval.finish]
+            .filter((part): part is string => typeof part === "string")
+            .join(" – ")
+        : undefined;
     const printableValue =
-      (key === "action" || key === "status" || key === "mode") &&
+      intervalText ??
+      ((key === "action" || key === "status" || key === "mode") &&
       typeof value === "string" &&
       /^[a-z][a-z_ -]*$/.test(value)
         ? humanField(value)
-        : printable(value);
+        : printable(value));
     if (printableValue !== undefined && printableValue !== "")
       return [
         <HaField key={key} name={humanField(key)}>
@@ -238,6 +253,9 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
     "sequence",
     "views",
     "cards",
+    "backups",
+    "devices",
+    "pipelines",
   ].filter((key) => Array.isArray(entry[key]));
   const error = asRecord(entry.error);
   const details = fields.length > 0 || nested.length > 0 || error !== undefined;
@@ -251,6 +269,11 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
         )}
         {fields}
         {error && simpleFields(error, ["message", "code"])}
+        {entry.has_more === true && (
+          <Text size="xs" c="dimmed">
+            More results are available.
+          </Text>
+        )}
         {nested.map((key) => (
           <ResultRows key={key} heading={humanField(key)} value={entry[key]} />
         ))}
@@ -330,12 +353,19 @@ export function haResult(spec: HaResultSpec): ResultPreview {
     const messages = typeof result.message === "string" ? result.message : undefined;
     const printed = simpleFields(
       result,
-      (spec.fields ?? []).filter((key) => key !== "status" || status === undefined)
+      (spec.fields ?? []).filter(
+        (key) =>
+          (key !== "status" || status === undefined) &&
+          (key !== "message" || messages === undefined) &&
+          !spec.rows?.includes(key) &&
+          !spec.text?.includes(key) &&
+          !spec.objects?.includes(key)
+      )
     );
     const error = asRecord(result.error);
     return (
       <Stack gap="xs">
-        {status && (
+        {status && !spec.reportsPhase && (
           <Group>
             <Badge color={status.failed ? "red" : "gray"} variant="light">
               {status.label}
@@ -430,7 +460,9 @@ export function haAction(spec: HaActionSpec): ActionPresentation {
     outcome: (value) => {
       const response = asRecord(value);
       if (response?.success === false) return { label: "Provider reported failure", failed: true };
+      if (response?.partial === true) return { label: "Partial result", failed: false };
       if (spec.result?.reportsPhase) {
+        if (response?.long_running === true) return { label: "Operation started", failed: false };
         const reported = phase(response?.status);
         if (reported !== undefined) return reported;
       }

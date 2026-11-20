@@ -53,7 +53,7 @@ export const homeAssistantHistoryRenderers: ReadonlyMap<string, ActionPresentati
         "statistic_types",
       ],
       required: ["entity_ids"],
-      result: { fields: ["source", "period_type", "warnings"], rows: ["entities"] },
+      result: { fields: ["source", "period", "time_range", "period_type", "warnings"], rows: ["entities"] },
     }),
   ],
   [
@@ -241,7 +241,7 @@ export const homeAssistantHistoryRenderers: ReadonlyMap<string, ActionPresentati
       target: ["entity_id"],
       fields: ["end", "entity_id", "max_results", "start"],
       required: ["entity_id"],
-      result: { fields: ["count", "total_available"], rows: ["events"] },
+      result: { fields: ["count", "total_available", "time_range"], rows: ["events"] },
     }),
   ],
   [
