@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("restic")
     parser.add_argument("snapshot_script")
@@ -113,8 +113,9 @@ def main() -> int:
         env=environment,
         check=True,
     )
-    return snapshot.returncode
+    if snapshot.returncode:
+        raise SystemExit(snapshot.returncode)  # `ai-session-backup.service` fails on a nonzero exit.
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

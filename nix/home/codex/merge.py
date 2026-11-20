@@ -38,16 +38,14 @@ def remove_deprecated_feature_flags(doc: dict) -> None:
         doc.pop("features")
 
 
-def unmanaged_live_paths(
-    live: dict, base: dict, *, prefix: tuple[str, ...] = (), preserve_keys: tuple[str, ...] = PRESERVE_KEYS
-) -> list[tuple[str, ...]]:
+def unmanaged_live_paths(live: dict, base: dict, *, prefix: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
     paths = []
     for key in sorted(live):
         path = (*prefix, key)
-        if (not prefix and key in preserve_keys) or key not in base:
+        if (not prefix and key in PRESERVE_KEYS) or key not in base:
             paths.append(path)
         elif isinstance(live[key], dict) and isinstance(base[key], dict):
-            paths.extend(unmanaged_live_paths(live[key], base[key], prefix=path, preserve_keys=preserve_keys))
+            paths.extend(unmanaged_live_paths(live[key], base[key], prefix=path))
     return paths
 
 
