@@ -2,8 +2,9 @@
 
 use super::support::unit_id_for_binding;
 use debundle_e2e_graph_support::json_module_path_for_unit;
+use debundle_e2e_support::saved_analysis::assert_ok;
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_node_output, debundle_fixture_output, debundler_path,
+    TreeFixture, TreeRun, assert_node_output, debundle_fixture_output, debundler_path, process,
     read_gzip_json, read_tree, tree_spec_args, write_tree_fixture,
 };
 use serde_json::{Value, json};
@@ -72,7 +73,7 @@ fn selected_fixture_for_tree(
 
     let subset_arg = subset.to_str().unwrap();
     let run = workspace.run(&["--graphs", "--ownership-subset", subset_arg]);
-    assert!(run.result.status.success(), "{}", run.result.stderr);
+    assert_ok(&run.result, "selected tree run");
     let graph = run.report_root.join("app/dependency_graph.json.gz");
     SelectedFixture {
         _run: run,
@@ -135,10 +136,6 @@ fn graph_args(fixture: &SelectedFixture) -> Vec<String> {
     ]
 }
 
-fn path_arg(path: &Path) -> &str {
-    path.to_str().expect("fixture path is UTF-8")
-}
-
 fn require_success(output: Output, context: &str) -> Value {
     assert!(
         output.status.success(),
@@ -179,6 +176,18 @@ fn plan_path(fixture: &SelectedFixture, plan: &Value) -> PathBuf {
     let path = fixture.root.join("selected-plan.json");
     fs::write(&path, serde_json::to_vec_pretty(plan).unwrap()).unwrap();
     path
+}
+
+fn check_plan(fixture: &SelectedFixture, plan: &Path) -> Output {
+    let mut args = vec!["modules".to_owned(), "check".to_owned()];
+    args.extend(graph_args(fixture));
+    args.extend([
+        "--plan".to_owned(),
+        plan.display().to_string(),
+        "--format".to_owned(),
+        "json".to_owned(),
+    ]);
+    cli(fixture, &args)
 }
 
 fn apply_plan(fixture: &SelectedFixture, plan: &Path, dry_run: bool) -> Output {
@@ -239,7 +248,7 @@ fn materialize_again(fixture: &SelectedFixture, output_root: &Path) -> Output {
 #[test]
 fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     let base = debundle_e2e_support::run_tree_fixture(&tree(), &[]);
-    assert!(base.result.status.success(), "{}", base.result.stderr);
+    assert_ok(&base.result, "base tree run");
     assert_node_output(&base.out_root.join("app/app/entry.js"), "0 1 8\n", "");
 
     let fixture = selected_fixture();
@@ -265,11 +274,7 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     let view_before = fs::read(&fixture.subset).unwrap();
     let config_before = fs::read(&fixture.config).unwrap();
 
-    let args = graph_args(&fixture);
-    let mut propose = vec!["modules", "propose"];
-    propose.extend(args.iter().map(String::as_str));
-    propose.extend(["--into", "fresh", "--format", "json"]);
-    let proposal = require_success(cli(&fixture, &propose), "unseeded selected proposal");
+    let proposal = propose(&fixture);
     assert_eq!(proposal["status"], "found", "{proposal:#}");
     assert!(proposal["plan"].is_object(), "{proposal:#}");
     assert!(proposal["residual_units_extracted"].as_u64().unwrap() > 0);
@@ -298,29 +303,24 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     assert_eq!(fs::read(&fixture.subset).unwrap(), view_before);
     assert_eq!(fs::read(&fixture.config).unwrap(), config_before);
 
-    let plan_path = fixture.root.join("selected-plan.json");
-    fs::write(&plan_path, serde_json::to_vec_pretty(plan).unwrap()).unwrap();
-    let plan_path = path_arg(&plan_path);
-    let mut check = vec!["modules", "check"];
-    check.extend(args.iter().map(String::as_str));
-    check.extend(["--plan", plan_path, "--format", "json"]);
-    let checked = require_success(cli(&fixture, &check), "selected plan check");
+    let plan_file = plan_path(&fixture, plan);
+    let checked = require_success(check_plan(&fixture, &plan_file), "selected plan check");
     assert_eq!(checked["accepted"], true, "{checked:#}");
     assert_eq!(checked["existing_units_moved"], 0, "{checked:#}");
     assert!(checked["plan"].is_object(), "{checked:#}");
 
-    let mut preview = vec!["modules", "apply"];
-    preview.extend(args.iter().map(String::as_str));
-    preview.extend(["--plan", plan_path, "--dry-run", "--format", "json"]);
-    let _ = require_success(cli(&fixture, &preview), "selected plan preview");
+    require_success(
+        apply_plan(&fixture, &plan_file, true),
+        "selected plan preview",
+    );
     assert_eq!(read_tree(&fixture.modules), modules_before);
     assert_eq!(fs::read(&fixture.subset).unwrap(), view_before);
     assert_eq!(fs::read(&fixture.config).unwrap(), config_before);
 
-    let mut apply = vec!["modules", "apply"];
-    apply.extend(args.iter().map(String::as_str));
-    apply.extend(["--plan", plan_path, "--format", "json"]);
-    let _ = require_success(cli(&fixture, &apply), "selected plan apply");
+    require_success(
+        apply_plan(&fixture, &plan_file, false),
+        "selected plan apply",
+    );
     assert_eq!(read_tree(&fixture.modules), modules_before);
     let updated_view: Value = serde_json::from_slice(&fs::read(&fixture.subset).unwrap()).unwrap();
     assert_eq!(
@@ -336,13 +336,7 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     );
 
     let output_root = fixture.root.join("after-apply");
-    let materialized = materialize_again(&fixture, &output_root);
-    assert!(
-        materialized.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&materialized.stdout),
-        String::from_utf8_lossy(&materialized.stderr)
-    );
+    process::assert_success(&materialize_again(&fixture, &output_root));
     assert_node_output(&output_root.join("app/app/entry.js"), "0 1 8\n", "");
     let exports_probe = output_root.join("retained-exports.mjs");
     fs::write(
