@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import Cpu, k8s
 from external_dns_crds.io.k8s.externaldns import DnsEndpoint, DnsEndpointSpec, DnsEndpointSpecEndpoints
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
@@ -22,6 +22,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 RECORDS_OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}-records"
 _CREDENTIALS_SOURCE = "aws-route53-external-dns-credentials"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
+_CPU_REQUEST = Cpu.millis(25).amount
+_MEMORY_REQUEST = Size.mebibytes(64).as_string()
 
 
 def chart(app: App) -> Chart:
@@ -37,7 +39,9 @@ def chart(app: App) -> Chart:
                     container_name=NAME,
                     controlled_values=ControlledValues.REQUESTS_ONLY,
                     controlled_resources=("memory",),
-                    min_allowed={"memory": Size.mebibytes(64).as_string()},
+                    # VPA admission can briefly use stale CPU recommendations after this policy changes.
+                    min_allowed={"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST},
+                    max_allowed={"cpu": _CPU_REQUEST},
                 ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
@@ -87,7 +91,10 @@ def chart(app: App) -> Chart:
                 for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
             ],
             "nodeSelector": dict(node_scheduling.HIL_OVH_NODE_SELECTOR),
-            "resources": {"requests": {"cpu": "25m", "memory": "64Mi"}, "limits": {"cpu": "250m", "memory": "256Mi"}},
+            "resources": {
+                "requests": {"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST},
+                "limits": {"cpu": "250m", "memory": "256Mi"},
+            },
         },
     )
     return chart
