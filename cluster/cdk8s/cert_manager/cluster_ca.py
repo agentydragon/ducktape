@@ -52,6 +52,7 @@ ROOT_CA_SECRET = "cluster-root-ca-secret"
 INTERNAL_ISSUER = CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer")
 BUNDLE = "cluster-internal-ca-bundle"
 BUNDLE_KEY = "ca-certificates.crt"
+BOOTSTRAP_ISSUER = "cluster-ca-bootstrap"
 
 PUBLIC_BUNDLE = "public-web-pki"
 
@@ -120,7 +121,7 @@ def chart(app: App) -> Chart:
     bootstrap = ClusterIssuer(
         chart,
         "bootstrap",
-        metadata=ApiObjectMetadata(name="cluster-ca-bootstrap"),
+        metadata=ApiObjectMetadata(name=BOOTSTRAP_ISSUER),
         spec=ClusterIssuerSpec(self_signed=ClusterIssuerSpecSelfSigned()),
     )
     Certificate(
