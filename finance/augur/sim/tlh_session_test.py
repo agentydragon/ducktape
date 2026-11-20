@@ -12,17 +12,14 @@ from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
@@ -34,7 +31,6 @@ WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 
 
@@ -100,16 +96,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
         world.declare_account(account=ref(agent_id), opening_balance=balance)
     if case.taxed:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
-                    {FEDERAL: load_jurisdiction(FEDERAL)},
-                    currency=WHOLE_DOLLARS,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(OWNER, [FEDERAL], authority=IRS, currency=WHOLE_DOLLARS))
     world.declare_portfolio(
         portfolio_id=MANAGED,
         owner_agent_id=OWNER,

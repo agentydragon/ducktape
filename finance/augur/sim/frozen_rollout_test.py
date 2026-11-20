@@ -15,23 +15,20 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
-CHECKING = AccountId("checking")
 PRIVATE = AccountId("private")
 FEDERAL = JurisdictionId("federal_us")
 ALICE = AgentId("alice")
@@ -60,36 +57,23 @@ def account(world: World, agent_id: AgentId, account_id: AccountId = CHECKING, b
 def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Biller:
     """One required payment larger than everything the payer has."""
 
-    return Biller(
+    return biller(
         schedule=Once(month=month),
         obligation_id="unfundable",
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=payer, account_id=CHECKING),
         to_account=AccountRef(agent_id=VENDOR, account_id=CHECKING),
         amount_due=USD.quanta(amount),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
     )
 
 
 def frozen_world(*, horizon_months: int) -> World:
     """A taxed agent whose one obligation is larger than everything they have."""
 
-    jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)}
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=horizon_months, income_sources=(ORDINARY_INCOME,))
     for agent_id in (ALICE, VENDOR, IRS):
         account(world, agent_id)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
-                jurisdictions,
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL], authority=IRS))
     world.track(unfundable(month=FAIL_MONTH, payer=ALICE, amount=Decimal(1)))
     return world
 

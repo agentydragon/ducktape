@@ -15,23 +15,22 @@ import pytest_bazel
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
-CHECKING = AccountId("checking")
 # Each home's parcel, taxed a flat 1.2% of its price.
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
@@ -224,18 +223,7 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
                 ),
             )
         ),
-        tax_policies=(
-            PropertyTaxPolicy(
-                property_id=PropertyId(f"{ALICE}-home"),
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=AgentId("county"),
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        tax_policies=(property_tax(PropertyId(f"{ALICE}-home"), AgentId("county")),),
     )
     recorded = run(world)
 
@@ -341,16 +329,13 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     )
     if fail_year_end:
         world.track(
-            Biller(
+            biller(
                 schedule=Once(month=11),
                 obligation_id="unfundable",
                 obligation_type="cash_spend",
                 from_account=ref(ALICE),
                 to_account=ref(AgentId("seller")),
                 amount_due=USD.quanta(1_000_000),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     books = drive(world, BOB, ALICE).books

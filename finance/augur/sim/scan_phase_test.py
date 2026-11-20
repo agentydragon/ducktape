@@ -11,15 +11,15 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
-CHECKING = AccountId("checking")
 
 
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
@@ -60,16 +60,13 @@ def cash(books: list[Book], agent_id: AgentId, month: int) -> int:
 
 
 def rent(amount: Decimal | int, *, end_month: int) -> Biller:
-    return Biller(
+    return biller(
         schedule=Recurring(start_month=0, end_month=end_month),
         obligation_id="rent",
         obligation_type="rent",
         from_account=ref(ALICE),
         to_account=ref(AgentId("landlord")),
         amount_due=USD.quanta(amount),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
     )
 
 

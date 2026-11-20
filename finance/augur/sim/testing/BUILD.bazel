@@ -10,19 +10,15 @@ py_library(
     srcs = ["bonds.py"],
     deps = [
         ":series",
+        ":tax_authority",
         "//finance/augur/model:series",
         "//finance/augur/sim:bonds",
         "//finance/augur/sim:books",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:income",
-        "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:market_path",
-        "//finance/augur/sim:money",
         "//finance/augur/sim:observations",
-        "//finance/augur/sim:tax_authority",
-        "//finance/augur/sim:tax_indexation",
-        "//finance/augur/sim:tax_profile",
         "//finance/augur/sim:world",
         "@pypi//numpy",
     ],
@@ -83,10 +79,10 @@ py_library(
     name = "funded_bill",
     srcs = ["funded_bill.py"],
     deps = [
+        ":bills",
         ":series",
         "//finance/augur/model:series",
         "//finance/augur/sim:actions",
-        "//finance/augur/sim:bills",
         "//finance/augur/sim:books",
         "//finance/augur/sim:claims",
         "//finance/augur/sim:fixed_point",
@@ -150,4 +146,23 @@ py_library(
         "//finance/augur/sim:results",
         "//finance/augur/sim:session",
     ],
+)
+
+py_library(
+    name = "tax_authority",
+    srcs = ["tax_authority.py"],
+    deps = [
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:money",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:tax_indexation",
+        "//finance/augur/sim:tax_profile",
+    ],
+)
+
+py_library(
+    name = "bills",
+    srcs = ["bills.py"],
+    deps = ["//finance/augur/sim:bills"],
 )

@@ -9,26 +9,16 @@ import pytest_bazel
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.fixed_point import (
-    currency_amount_to_quanta,
-    quantity_scale_for_asset,
-    quantity_to_quanta,
-    rate_to_ppb,
-)
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
-from finance.augur.sim.money import USD
 from finance.augur.sim.results import Finished, Paid, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.rollouts import tax_by_jurisdiction
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
@@ -53,12 +43,12 @@ from finance.augur.sim.testing.security_distributions import (
 )
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 
@@ -123,16 +113,7 @@ def compose(
     if is_taxed:
         # One single filer paying from checking to the irs agent; the rates, brackets and
         # exemptions come from the deployment's own jurisdiction records.
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=ALICE, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
-                    {id_: load_jurisdiction(id_) for id_ in FILED_IN},
-                    currency=USD,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(ALICE, FILED_IN, authority=IRS))
     scale = quantity_scale_for_asset(FUND)
     world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=AssetId(SYMBOL), quantity_scale=scale)
     world.hold_lot(
@@ -155,15 +136,12 @@ def compose(
         )
     if bill is not None:
         world.track(
-            Biller(
+            biller(
                 obligation_id="bill",
                 obligation_type=ObligationType.CASH_SPEND,
                 from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
                 to_account=AccountRef(agent_id=IRS, account_id=CHECKING),
                 amount_due=int(currency_amount_to_quanta(bill, quantum=QUANTUM)),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1),
                 schedule=Once(month=0),
             )
         )

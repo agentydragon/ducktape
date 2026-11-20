@@ -44,7 +44,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef, TaxAccrual
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -59,15 +59,14 @@ from finance.augur.sim.property import (
     ScheduledPurchase,
     ScheduledSale,
 )
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
-from finance.augur.sim.tax_authority import SaltDeduction, TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.tax_authority import SaltDeduction
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.situs import property_tax
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 OWNER, EMPLOYER, TENANT, SELLER, BANK, COUNTY, IRS = (
@@ -79,7 +78,6 @@ OWNER, EMPLOYER, TENANT, SELLER, BANK, COUNTY, IRS = (
     AgentId("test-county"),
     AgentId("test-irs"),
 )
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 HORIZON, LET, SOLD = 120, 36, 84
@@ -182,16 +180,7 @@ def compose(case: Expected) -> World:
         world.declare_account(account=ref(agent), opening_balance=dollars(balance))
     for agent in (SELLER, BANK, COUNTY, IRS):
         world.declare_account(account=ref(agent), opening_balance=0)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=IRS),
-                {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(OWNER, [FEDERAL, CALIFORNIA], authority=IRS))
     world.declare_deduction(SaltDeduction(profile_id=OWNER, federal_jurisdiction_id=FEDERAL, cap_schedule=()))
     world.declare_housing(
         Housing(
@@ -235,18 +224,7 @@ def compose(case: Expected) -> World:
             residence_events=(PrimaryResidenceEvent(month=LET, agent_id=OWNER, property_id=None),),
             rented_fraction_events=(RentedFraction(month=LET, property_id=HOME, rented_fraction_ppb=rate_to_ppb(1)),),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=HOME,
-                owner_agent_id=OWNER,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=2024,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(HOME, COUNTY, owner=OWNER),),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=HORIZON - 1),

@@ -9,16 +9,18 @@ horizon on an index the path carries, and an issuer's protocol path stays in ran
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from decimal import Decimal
 from fractions import Fraction
 from functools import partial
 
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import LocationId
+from finance.augur.model.series import IssuerId, LocationId
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import (
+    CHECKING,
     AccountId,
     AgentId,
     AssetId,
@@ -52,13 +54,14 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import MortgageInterestDeduction
-from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
+from finance.augur.sim.testing.bills import biller
+from finance.augur.sim.testing.issuer_protocol import issuer_protocol
+from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, property_tax
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
 HOLDER = AgentId("test-holder")
 COUNTERPARTY = AgentId("test-counterparty")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")
@@ -519,16 +522,7 @@ def test_housing_is_bought_inside_the_horizon_and_its_lifecycle_follows_the_purc
         composed().declare_housing(housing, ())
 
 
-PROPERTY_TAX = PropertyTaxPolicy(
-    property_id=PURCHASE.property_id,
-    owner_agent_id=HOLDER,
-    from_account_id=CHECKING,
-    tax_authority_agent_id=COUNTERPARTY,
-    tax_authority_account_id=CHECKING,
-    start_year=START_YEAR,
-    start_month=0,
-    end_month=None,
-)
+PROPERTY_TAX = property_tax(PURCHASE.property_id, COUNTERPARTY, owner=HOLDER)
 
 
 @pytest.mark.parametrize(
@@ -571,15 +565,12 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
 
 
 def bill(*, amount_due: Amount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
-    return Biller(
+    return biller(
         obligation_id="test-bill",
         obligation_type="cash_spend",
         from_account=ref(HOLDER),
         to_account=ref(COUNTERPARTY),
         amount_due=amount_due,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=0,
         schedule=schedule,
     )
 
@@ -662,31 +653,18 @@ def test_a_managed_portfolio_holds_its_pool_alone_whichever_is_declared_first() 
         portfolio(pool_first)
 
 
-ISSUER = "test-issuer"
-# A channel's level when nothing about the issuer is meant to happen.
-QUIET = {
-    "mark": 1,
-    "regime": 1,
-    "event_kind": 0,
-    "sale_opportunity": 0,
-    "sale_capacity": 0,
-    "eligible": 0,
-    "forced_sale": 0,
-    "liquidity_blocked": 0,
-    "forced_recovery": 0,
-    "company_valuation": 1,
-}
-
-
-def issuer_paths(**overrides: tuple[int, ...]) -> tuple[Series, ...]:
-    return tuple(
-        Series(
-            series_id=f"private_equity_{channel}:{ISSUER}",
-            snapshots=HORIZON + 1,
-            values=overrides.get(channel, (level,) * (HORIZON + 1)),
-        )
-        for channel, level in QUIET.items()
-    )
+ISSUER = IssuerId("test-issuer")
+CENT = Decimal("0.01")
+# One issuer's ten channels, flat over the horizon, where nothing about the issuer is meant to happen.
+issuer_paths = partial(
+    issuer_protocol,
+    ISSUER,
+    horizon_months=HORIZON,
+    mark_usd=CENT,
+    sale_capacity=0,
+    eligible=0,
+    company_valuation_usd=CENT,
+)
 
 
 def holding_private(*series: Series) -> None:
@@ -697,21 +675,21 @@ def holding_private(*series: Series) -> None:
 
 
 @pytest.mark.parametrize(
-    ("overrides", "match"),
+    ("protocol", "match"),
     [
-        ({"regime": (1, 5, 1)}, "invalid regime value 5 at month 1"),
-        ({"sale_capacity": (0, 0, 1_000_000_001)}, "invalid sale_capacity value"),
-        ({"event_kind": (0, 1, 0)}, "tender event and a sale opportunity in different months"),
+        (issuer_paths(regime=[1, 5, 1]), "invalid regime value 5 at month 1"),
+        (issuer_paths(sale_capacity=[0, 0, Decimal("1.000000001")]), "invalid sale_capacity value"),
+        (issuer_paths(event_kind=[0, 1, 0]), "tender event and a sale opportunity in different months"),
     ],
     ids=["unknown-regime", "capacity-above-one", "tender-without-opportunity"],
 )
 def test_an_issuer_protocol_path_stays_in_range_and_tenders_only_with_an_opportunity(
-    overrides: dict[str, tuple[int, ...]], match: str
+    protocol: tuple[Series, ...], match: str
 ) -> None:
     holding_private(*issuer_paths())
-    holding_private(*issuer_paths(event_kind=(0, 1, 0), sale_opportunity=(0, 1, 0)))
+    holding_private(*issuer_paths(event_kind=[0, 1, 0], sale_opportunity=[0, 1, 0]))
     with pytest.raises(ValueError, match=match):
-        holding_private(*issuer_paths(**overrides))
+        holding_private(*protocol)
 
 
 if __name__ == "__main__":

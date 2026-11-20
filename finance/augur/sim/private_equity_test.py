@@ -20,32 +20,28 @@ import pytest_bazel
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 SPEND_SINK = AgentId("spend_sink")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 SAVINGS = AccountId("savings")
 FEDERAL = JurisdictionId("federal_us")
 ISSUER = IssuerId("acme")
@@ -143,23 +139,13 @@ def holder(
 
 
 def compose(case: Holder, channels: Sequence[Series]) -> World:
-    jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)} if case.taxed else {}
     world = World(
         MarketPath(channels, 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
     if case.taxed:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
-                    jurisdictions,
-                    currency=USD,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(ALICE, [FEDERAL], authority=IRS))
     world.declare_pool(agent_id=ALICE, account_id=CHECKING, asset_id=ASSET_ID, quantity_scale=SCALE)
     world.hold_lot(
         lot_id=LOT_ID,
@@ -176,16 +162,13 @@ def compose(case: Holder, channels: Sequence[Series]) -> World:
             TenderPolicy(owner_agent_id=ALICE, proceeds_account_id=CHECKING, liquid_net_worth_floor=case.floor)
         )
     world.track(
-        Biller(
+        biller(
             schedule=Recurring(start_month=0, end_month=case.horizon_months - 1),
             obligation_id="monthly_spend",
             obligation_type=ObligationType.CASH_SPEND,
             from_account=AccountRef(agent_id=ALICE, account_id=CHECKING),
             to_account=AccountRef(agent_id=SPEND_SINK, account_id=CHECKING),
             amount_due=case.monthly_spend,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world
