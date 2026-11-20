@@ -134,15 +134,9 @@ function KindBadge({ kind }: { kind: BudgetBucket["kind"] }) {
   );
 }
 
-function Sparkline({
-  amounts,
-  width = 90,
-  height = 24,
-}: {
-  amounts: readonly Decimal[];
-  width?: number;
-  height?: number;
-}) {
+function Sparkline({ amounts }: { amounts: readonly Decimal[] }) {
+  const width = 90;
+  const height = 24;
   if (!amounts.length) return null;
   const max = Decimal.max(...amounts.map((value) => value.abs()));
   if (max.isZero()) return <svg width={width} height={height} aria-hidden="true" />;

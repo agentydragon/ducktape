@@ -35,7 +35,7 @@ function probabilityY(value: number | null, top: number, chartHeight: number) {
   return top + (1 - bounded) * chartHeight;
 }
 
-export function CategoricalMiniChart({ buckets }: { buckets: readonly CategoricalBucket[] }) {
+function CategoricalMiniChart({ buckets }: { buckets: readonly CategoricalBucket[] }) {
   const width = 320;
   const height = 124;
   const top = 10;
