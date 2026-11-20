@@ -53,13 +53,12 @@ def _values() -> dict[str, object]:
     return {
         # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable.
         "global": {"image": {"registry": "ghcr.io"}},
-        # HA: one replica per control-plane node (3 nodes = 3 replicas).
-        # Ensures the webhook is reachable from every API server without
-        # cross-node hops that can fail during early bootstrap.
+        # Three webhook replicas on the control plane.
         "admissionController": {
             "replicas": 3,
             # Keep two ready admission endpoints during voluntary evictions.
             "podDisruptionBudget": {"minAvailable": 2},
+            "updateStrategy": {"rollingUpdate": {"maxUnavailable": 0}},
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
             "annotations": _initial_memory_annotations(
@@ -83,12 +82,24 @@ def _values() -> dict[str, object]:
             "priorityClassName": "system-cluster-critical",
             "nodeSelector": {node_scheduling.CONTROL_PLANE_TAINT_KEY: ""},
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-            # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
-            # Replaces topologySpreadConstraints whose labelSelector didn't match
-            # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
-            # all 3 replicas to stack on a single control-plane node.
-            # The chart default uses preferredDuringScheduling with the correct labels.
+            # Prefer separate hosts from old Pods while rolling. Require each new
+            # ReplicaSet to spread across the control-plane nodes it can use.
             "antiAffinity": {"enabled": True},
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/component": "admission-controller",
+                            "app.kubernetes.io/instance": "{{ .Release.Name }}",
+                        }
+                    },
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
             # Use kyverno's INTERNAL cert management, not external cert-manager.
             #
             # WHY: Kyverno's startup sequence (cmd/kyverno/main.go:922-934) is:
