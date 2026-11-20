@@ -541,7 +541,7 @@ export async function generateBindings(sourcePath, specPath, out) {
 }
 
 function execute(path, calls = []) {
-  const script = `const events=[];globalThis.record=v=>events.push(v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(name=>m[name]());console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
+  const script = `const events=[];globalThis.record=v=>events.push(v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -654,11 +654,54 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       reason: "Lean did not prove a state difference",
       detail: mismatch.stdout || mismatch.stderr,
     };
-  if (hasExpressions) return { result: "unknown", reason: "argument-bearing witness search is not supported" };
+  const witnessed = (original, output, calls) => {
+    const events = (trace) => {
+      if (!trace.events.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
+      return list(trace.events.map((value) => `.number ${value}`));
+    };
+    const returns = (trace) => {
+      if (!trace.results.every((value) => value === null || (Number.isSafeInteger(value) && value >= 0))) return null;
+      return list(trace.results.map((value) => (value === null ? "none" : `some ${value}`)));
+    };
+    const sourceEvents = events(original),
+      outputEvents = events(output);
+    if (sourceEvents === null || outputEvents === null) return null;
+    let left, right, expectedLeft, expectedRight;
+    if (calls.length === 0) {
+      left = "(sourceBindingState bindingSource).map (fun state => state.events)";
+      right = "(outputBindingState bindingSource bindingModules bindingEntry).map (fun state => state.events)";
+      expectedLeft = `some ${sourceEvents}`;
+      expectedRight = `some ${outputEvents}`;
+    } else {
+      const sourceReturns = returns(original),
+        outputReturns = returns(output);
+      if (sourceReturns === null || outputReturns === null) return null;
+      const leanCalls = hasExpressions
+        ? list(calls.map((call) => `(${str(call.name)}, ${list(call.args.map(String))})`))
+        : leanStrings(calls);
+      const table = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
+      const runner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
+      left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => ${runner} table state ${leanCalls}))).map (fun state => (state.events, state.returns))`;
+      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) bindingExports).bind (fun table => ${runner} table state ${leanCalls}))).map (fun state => (state.events, state.returns))`;
+      expectedLeft = `some (${sourceEvents}, ${sourceReturns})`;
+      expectedRight = `some (${outputEvents}, ${outputReturns})`;
+    }
+    const witness = `\ntheorem binding_witness_original : ${left} = ${expectedLeft} := by decide\ntheorem binding_witness_output : ${right} = ${expectedRight} := by decide\ntheorem binding_witness_difference : ${left} ≠ ${right} := by decide\n#print axioms binding_witness_original\n#print axioms binding_witness_output\n#print axioms binding_witness_difference\n`;
+    const checked = runLean(prefix + different + witness);
+    return checked.status === 0 &&
+      ["binding_witness_original", "binding_witness_output", "binding_witness_difference"].every((name) =>
+        has(checked, name)
+      )
+      ? prefix + different + witness
+      : null;
+  };
   const original = execute(sourcePath);
   const output = execute(resolve(out, spec.entry));
-  if (JSON.stringify(original) !== JSON.stringify(output))
-    return { result: "unsafe", original, output, certificate: prefix + different };
+  if (JSON.stringify(original) !== JSON.stringify(output)) {
+    const certificate = witnessed(original, output, []);
+    if (certificate) return { result: "unsafe", original, output, certificate };
+    return { result: "unknown", reason: "Node initialization difference did not match the Lean observation" };
+  }
 
   // Initialization can leave the same visible trace but different captured
   // state. Search short public-call sequences in fresh Node processes. The
@@ -671,14 +714,42 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   const callable = source.exports.filter(
     (name) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === name)
   );
-  const candidates = callable.map((name) => [name]);
-  for (const first of callable) for (const second of callable) candidates.push([first, second]);
+  const candidates = hasExpressions
+    ? callable.flatMap((name) => {
+        const definition = source.statements.find((item) => item.ast.name === name)?.ast;
+        if (definition?.kind !== "expressionFunction") return [[{ name, args: [] }]];
+        return [0, 1, 2].map((value) => [{ name, args: definition.parameters.map(() => value) }]);
+      })
+    : callable.map((name) => [name]);
+  if (!hasExpressions) for (const first of callable) for (const second of callable) candidates.push([first, second]);
+  const expressionBound = (expression, bound) => {
+    if (expression.kind === "literal") return BigInt(expression.value);
+    if (expression.kind === "name") return bound;
+    if (expression.kind === "add")
+      return expressionBound(expression.left, bound) + expressionBound(expression.right, bound);
+    if (expression.kind === "conditional")
+      return [expression.test, expression.consequent, expression.alternative]
+        .map((part) => expressionBound(part, bound))
+        .reduce((a, b) => (a > b ? a : b));
+    throw new Error("unknown expression");
+  };
   for (const calls of candidates.slice(0, 64)) {
+    if (hasExpressions) {
+      const definition = source.statements.find((item) => item.ast.name === calls[0].name)?.ast;
+      const bound = BigInt(Math.max(maximum, 2)) << BigInt(initialCalls + 1);
+      if (
+        definition?.kind === "expressionFunction" &&
+        expressionBound(definition.expression, bound) > BigInt(Number.MAX_SAFE_INTEGER)
+      )
+        continue;
+    }
     if (BigInt(maximum) << BigInt(initialCalls + calls.length) > BigInt(Number.MAX_SAFE_INTEGER)) break;
     const before = execute(sourcePath, calls);
     const after = execute(resolve(out, spec.entry), calls);
-    if (JSON.stringify(before) !== JSON.stringify(after))
-      return { result: "unsafe", original: before, output: after, calls, certificate: prefix + different };
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      const certificate = witnessed(before, after, calls);
+      if (certificate) return { result: "unsafe", original: before, output: after, calls, certificate };
+    }
   }
   return { result: "unknown", reason: "modeled difference was not reproduced in Node" };
 }
