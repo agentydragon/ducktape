@@ -65,7 +65,6 @@ py_test(
         ":config",
         "//:conftest",
         "//haku/console:conftest",
-        "//haku/console:settings",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

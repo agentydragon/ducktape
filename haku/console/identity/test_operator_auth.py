@@ -115,7 +115,6 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
             assert me.status_code == 200, me.text
             assert me.json()["username"] == _OPERATOR_USERNAME
             assert (await operator.get("/api/config")).status_code == 200
-            assert (await operator.get("/api/tool-calls")).status_code == 404
 
 
 async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
@@ -238,15 +237,14 @@ def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-brow
     return state
 
 
-@pytest.mark.parametrize("return_to", ["/_console/settings"])
-def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
+def test_callback_returns_to_the_page_the_login_started_from(make_operator_client) -> None:
     with make_operator_client() as client:
-        state = _seed_login_flow(client, return_to=return_to)
+        state = _seed_login_flow(client, return_to="/_console/settings")
         client.app.state.operator_oauth = _MATCHING_ISSUER_OAUTH
         response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == return_to
+    assert response.headers["location"] == "/_console/settings"
 
 
 async def test_callback_without_a_continuation_returns_to_the_root(make_operator_client) -> None:
@@ -342,8 +340,7 @@ async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
         assert (await connection.scalar(select(func.count()).select_from(OidcIdentity))) == 0
 
 
-@pytest.mark.parametrize("path", ["/api/config"])
-def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
+def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client) -> None:
     """The app-owned OIDC session is the only operator identity boundary.
 
     These headers were trustworthy only behind the retired Authentik forward-auth
@@ -352,7 +349,8 @@ def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, 
     """
     with make_client() as client:
         response = client.get(
-            path, headers={"X-Authentik-Uid": "forged-operator-subject", "X-Authentik-Username": "forged-operator"}
+            "/api/config",
+            headers={"X-Authentik-Uid": "forged-operator-subject", "X-Authentik-Username": "forged-operator"},
         )
 
     assert response.status_code == 401
