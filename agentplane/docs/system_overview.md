@@ -65,7 +65,8 @@ flowchart LR
         runtime -->|lifecycle and execution RPC| execution
         execution -->|companion ownership: gRPC over Unix socket| podexec
         agent[Managed agent process and CLI]
-        podexec[Codex executor container]
+        podexec[Executor companion container]
+        execution -->|loopback gRPC or Codex WebSocket| podexec
         sidecar[Egress sidecar]
       end
       subgraph vm_guest[VM guest]
@@ -78,12 +79,12 @@ flowchart LR
         vmruntime -->|lifecycle and execution RPC| vmexecution
         guest_agent[Managed agent process and CLI]
         manager[systemd manager]
-        vmexec[Codex executor service]
+        vmexec[Execution backend service]
         vmruntime -->|process lifetime| manager
         guest -->|native supervision| manager
         vmexecution -->|executor supervision| manager
         manager -->|service lifetime and cgroup| vmexec
-        vmexecution -->|loopback typed gRPC| vmexec
+        vmexecution -->|loopback gRPC or Codex WebSocket| vmexec
       end
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]
@@ -404,7 +405,7 @@ flowchart LR
     proxy[Environments Executor :8082]
     runtime[Environment Runtime]
     execution[Execution Service]
-    executor[Native execution backend and Codex API]
+    executor[Execution backend]
     history[History ingress and Thread fold]
     llm[LLM ingress]
     responses[Responses API providers]
@@ -416,7 +417,7 @@ flowchart LR
     sampler -->|Executor RPCs: mTLS, sampler SVID| proxy
     proxy -->|mTLS Executor gRPC| runtime
     runtime -->|direct Executor calls| execution
-    execution -->|loopback typed gRPC| executor
+    execution -->|loopback gRPC or Codex WebSocket| executor
     sampler -->|mTLS sampler SVID + typed Session delegation: acknowledged journal outbox| history
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
@@ -447,10 +448,9 @@ Session or Pod routing, and startup scans, listener reconnect catch-up and perio
 cover missed signals.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
 Environments proxies the sandbox-owned [Executor service](../env/runtime/execution/executor.proto) through Environment Runtime to Execution Service,
-whose execution adapter owns the local
-Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
-connection; process and file operations use unary RPCs. Native frames return as evidence for the
-sampler's existing journal. No new persistence or operation receipts are introduced, and a lost
+whose adapter uses typed gRPC with the native backend or JSON-RPC over WebSocket with Codex
+`exec-server`. A held `OpenSession` stream owns the backend session. Process and file operations use
+unary RPCs. The Codex adapter also returns native frames for the sampler's journal. No new persistence or operation receipts are introduced, and a lost
 reply can still leave an operation outcome unknown. Dispatcher is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history
 or prevent its control RPCs. Existing Dispatcher routing still requires the bound Sandbox object.
@@ -541,7 +541,8 @@ flowchart LR
         exec[Companion container and execution backend]
         runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
-        execution -->|ownership gRPC over Unix socket and typed gRPC| exec
+        execution -->|ownership gRPC over Unix socket| exec
+        execution -->|loopback gRPC or Codex WebSocket| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
@@ -557,7 +558,7 @@ flowchart LR
         vmhost -->|native launch / fence| manager
         vmexecution -->|executor launch / fence| manager
         manager -->|service lifetime and cgroup| vmexec
-        vmexecution -->|loopback typed gRPC| vmexec
+        vmexecution -->|loopback gRPC or Codex WebSocket| vmexec
         manager -->|service lifetime and cgroup| harness
         harness -->|loopback WebSocket tools| vmexec
     end
