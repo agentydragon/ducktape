@@ -375,6 +375,7 @@ export function makeCase(seed, index) {
   };
   const chooseOwner = (minimum) => (mode === 2 ? minimum + rand(ranked.length - minimum) : 1 + rand(others.length));
   const declarations = [];
+  const useConstant = index % 16 === 0;
   for (let i = 0; i < count; i++) {
     const owner = ranked[owners[i]];
     const candidates = cells.map((_, j) => j).filter((j) => owners[j] <= owners[i]);
@@ -383,9 +384,10 @@ export function makeCase(seed, index) {
     const readerOwner = ranked[chooseOwner(owners[i])];
     dependency(readerOwner, owner);
     declarations.push([variable(cells[i], 1 + rand(8)), owner]);
-    declarations.push([fn(bumps[i], add(cells[i], cells[source])), owner]);
+    declarations.push([fn(bumps[i], add(cells[i], useConstant && i === 0 ? "offset" : cells[source])), owner]);
     declarations.push([fn(getters[i], reader(cells[i])), readerOwner]);
   }
+  if (useConstant) declarations.push([variable("offset", 1 + rand(8), "const"), state]);
   const statements = shuffle(declarations, rand);
   const calls = 1 + rand(3);
   const records = 1 + rand(3);
@@ -433,6 +435,7 @@ export function makeCase(seed, index) {
     unsupported: mode === 3,
     cyclic,
     invalidAssignment,
+    useConstant,
   };
 }
 
@@ -451,6 +454,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     seed,
     start,
     cases: 0,
+    constantCases: 0,
     modeledClosureCases: 0,
     modeledClosureCrossModule: 0,
     modeledClosureCompared: 0,
@@ -498,6 +502,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         join(root, "case.json"),
         JSON.stringify({ seed, index, calls: input.calls, unsupported: input.unsupported }, null, 2) + "\n"
       );
+      if (input.useConstant) summary.constantCases++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCases++;
         if (input.crossModuleCapture) summary.modeledClosureCrossModule++;

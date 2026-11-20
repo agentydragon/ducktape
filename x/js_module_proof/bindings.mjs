@@ -33,12 +33,12 @@ function statement(node) {
       check(name !== "globalThis", "globalThis cannot be locally declared");
       return { kind: "closure", name, factory: identifier(d.init.callee) };
     }
-    check(node.kind === "let", "expected a let declaration");
+    check(node.kind === "let" || node.kind === "const", "expected a lexical declaration");
     check(
       name !== "globalThis" && d.init?.type === "Literal" && Number.isSafeInteger(d.init.value) && d.init.value >= 0,
       "expected a nonnegative safe integer initializer"
     );
-    return { kind: "variable", name, value: d.init.value };
+    return { kind: node.kind === "const" ? "constant" : "variable", name, value: d.init.value };
   }
   if (node.type === "FunctionDeclaration") {
     check(!node.async && !node.generator && node.params.length === 0, "expected a simple function");
@@ -159,7 +159,9 @@ function readSpec(spec, count) {
 }
 
 const declarationName = (item) =>
-  ["variable", "function", "reader", "factory", "closure", "wrapper"].includes(item.kind) ? item.name : null;
+  ["variable", "constant", "function", "reader", "factory", "closure", "wrapper"].includes(item.kind)
+    ? item.name
+    : null;
 function references(item) {
   if (item.kind === "function") return [item.target, item.source];
   if (item.kind === "reader" || item.kind === "factory") return [item.source];
@@ -180,10 +182,14 @@ function generateFiles(source, spec, names) {
         defs.set(binding, name);
       }
     }
+  const immutable = new Set(source.statements.filter((s) => s.ast.kind === "constant").map((s) => s.ast.name));
   for (const name of names)
     for (const index of spec.modules[name].statements) {
       const item = source.statements[index].ast;
-      if (item.kind === "function") check(defs.get(item.target) === name, "cannot write an imported binding");
+      if (item.kind === "function") {
+        check(defs.get(item.target) === name, "cannot write an imported binding");
+        check(!immutable.has(item.target), "cannot write a const binding");
+      }
     }
   const referencesByModule = Object.fromEntries(
     names.map((name) => [
@@ -270,6 +276,8 @@ function leanStatement(item) {
   switch (item.kind) {
     case "variable":
       return `.variable ${str(item.name)} ${item.value}`;
+    case "constant":
+      return `.constant ${str(item.name)} ${item.value}`;
     case "function":
       return `.function ${str(item.name)} ${str(item.target)} ${str(item.source)}`;
     case "reader":

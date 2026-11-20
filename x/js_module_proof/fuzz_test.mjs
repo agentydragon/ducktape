@@ -23,7 +23,10 @@ assert.deepEqual(execute(throwing, ["first", "fail"]), {
 const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
 console.log(JSON.stringify(result));
 assert.equal(result.cases, 16 / shards);
-if (shards === 4 && shard === 0) assert.ok(result.proved > 0);
+if (shards === 4 && shard === 0) {
+  assert.ok(result.proved > 0);
+  assert.ok(result.constantCases > 0);
+}
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(result.closureCases + result.modeledClosureCases, result.cases);

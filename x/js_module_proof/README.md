@@ -90,7 +90,7 @@ assignment. `statements` are zero-based indices of non-export statements, and
 actual output imports and reexports, rather than assuming those in the spec.
 
 This subset supports up to 20 statements and 12 modules: `let` declarations
-initialized with nonnegative safe integers, parameterless functions with a
+or `const` declarations initialized with nonnegative safe integers, parameterless functions with a
 single `target += source` or `return binding` statement, calls to those functions, and
 `globalThis.record(binding)`. It also recognizes a closure factory shaped like
 `function make() { let local = seed; return () => ++local; }`, a top-level
@@ -101,7 +101,7 @@ lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone
 reference rather than falling through to an outer one. Other closure shapes
 remain unsupported. Public exports must be functions. Imports and
 exports use unaliased names, source declarations have unique names, function
-writes must target a local binding, and each module preserves its assigned
+writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
 reads return `unknown`.
 

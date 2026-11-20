@@ -98,6 +98,21 @@ theorem fixture_reference : ∃ owner declaration,
     }
   }
 
+  // Numeric const bindings remain immutable across extraction and generation.
+  const constSource = join(root, "const-source.mjs");
+  const constOut = join(root, "const-out");
+  await writeFile(constSource, (await readFile(source, "utf8")).replace("let amount = 1", "const amount = 1"));
+  const safeSpec = join(here, "example/bindings/safe.json");
+  assert.equal(cli("generate", constSource, safeSpec, constOut).value.result, "generated");
+  assert.equal(cli("validate", constSource, safeSpec, constOut).value.result, "proved under assumptions");
+  assert.deepEqual(execute(constSource, ["increment"]), execute(join(constOut, "entry.mjs"), ["increment"]));
+  const amountFile = join(constOut, "amount.mjs");
+  await writeFile(amountFile, (await readFile(amountFile, "utf8")).replace("const amount", "let amount"));
+  assert.equal(cli("validate", constSource, safeSpec, constOut).value.result, "unknown");
+  const immutableTarget = join(root, "immutable-target.mjs");
+  await writeFile(immutableTarget, (await readFile(source, "utf8")).replace("let count = 0", "const count = 0"));
+  assert.equal(cli("generate", immutableTarget, safeSpec, join(root, "immutable-target-out")).value.result, "unknown");
+
   // Assigning a function to a different module from its write target would turn
   // the target into an immutable import; it must not be proved safe.
   const importedWriteSpec = join(root, "imported-write.json");

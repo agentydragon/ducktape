@@ -1,6 +1,7 @@
 /- A small statement AST and linker. It follows Semantics.lean and Effects.lean. -/
 inductive BindingStmt where
   | variable (name : String) (initial : Nat)
+  | constant (name : String) (initial : Nat)
   | function (name target source : String)
   | reader (name source : String)
   | factory (name localName source : String)
@@ -26,6 +27,7 @@ structure BindingModule where
 
 def declaredName : BindingStmt → Option String
   | .variable name _ => some name
+  | .constant name _ => some name
   | .function name _ _ => some name
   | .reader name _ => some name
   | .factory name _ _ => some name
@@ -45,6 +47,22 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .variable _ _ => true
+    | .constant _ _ => false
+    | .function _ _ _ => false
+    | .reader _ _ => false
+    | .factory _ _ _ => false
+    | .closure _ _ => false
+    | .wrapper _ _ => false
+    | .recordCall _ => false
+    | .call _ => false
+    | .record _ => false
+
+def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
+  match findDefinition source name with
+  | none => false
+  | some statement => match statement with
+    | .variable _ _ => true
+    | .constant _ _ => true
     | .function _ _ _ => false
     | .reader _ _ => false
     | .factory _ _ _ => false
@@ -59,6 +77,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .variable _ _ => false
+    | .constant _ _ => false
     | .function _ _ _ => true
     | .reader _ _ => true
     | .factory _ _ _ => false
@@ -74,6 +93,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
   | some statement => match statement with
     | .factory _ _ _ => true
     | .variable _ _ => false
+    | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
     | .closure _ _ => false
@@ -89,6 +109,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .closure _ _ => true
     | .factory _ _ _ => false
     | .variable _ _ => false
+    | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
     | .wrapper _ _ => false
@@ -156,17 +177,18 @@ theorem lexical_nearest_binding (name : String) (identity : Nat) (ready : Bool)
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
   | .variable _ _ => true
+  | .constant _ _ => true
   | .function _ target sourceName =>
-    isVariable source target && isVariable source sourceName &&
+    isVariable source target && isReadableBinding source sourceName &&
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
-  | .reader _ sourceName => isVariable source sourceName && visible modules index sourceName
-  | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isVariable source sourceName && visible modules index sourceName
+  | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
+  | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
   | .wrapper _ target => isClosure source target && visible modules index target
   | .recordCall name => isFunction source name && visible modules index name
   | .call name => isFunction source name && visible modules index name
-  | .record name => isVariable source name && visible modules index name
+  | .record name => isReadableBinding source name && visible modules index name
 
 def moduleValid (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (module : BindingModule) : Bool :=
   let imported := module.imports.flatMap (fun i => i.locals)
@@ -204,6 +226,7 @@ def resolveReference (modules : List BindingModule) (index : Nat) (name : String
 
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []
+  | .constant _ _ => []
   | .function _ target source => [target, source]
   | .reader _ source => [source]
   | .factory _ _ source => [source]
@@ -321,12 +344,14 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .factory _ _ _ => none
     | .recordCall _ => none
     | .variable _ _ => none
+    | .constant _ _ => none
     | .call _ => none
     | .record _ => none
 
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
   match statement with
   | .variable name initial => some [.declareBinding name initial]
+  | .constant name initial => some [.declareBinding name initial]
   | .function _ _ _ => some []
   | .reader _ _ => some []
   | .factory _ _ _ => some []
@@ -335,6 +360,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     match definition with
     | .factory _ _ sourceName => some [.copyBinding (closureCell name) sourceName]
     | .variable _ _ => none
+    | .constant _ _ => none
     | .function _ _ _ => none
     | .reader _ _ => none
     | .closure _ _ => none
@@ -351,6 +377,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .wrapper _ closureName => some closureName
       | .factory _ _ _ => none
       | .variable _ _ => none
+      | .constant _ _ => none
       | .function _ _ _ => none
       | .reader _ _ => none
       | .recordCall _ => none
@@ -369,6 +396,7 @@ def runBindingStatements (source statements : List BindingStmt) : Option (Execut
 def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Unit) : Option (ExecutionState Unit) := do
   let names := source.filterMap (fun statement => match statement with
     | .variable name _ => some name
+    | .constant name _ => some name
     | .function _ _ _ => none
     | .reader _ _ => none
     | .factory _ _ _ => none
