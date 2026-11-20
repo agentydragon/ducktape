@@ -1813,6 +1813,20 @@ def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp
         )
         for asset in baseline_assets
     ]
+    # This baseline is a parent PR's review. One screenshot returns in the
+    # child and the other stays absent.
+    baseline_records.extend(
+        ReviewAsset(
+            path=asset.review_filename,
+            label=asset.label,
+            case_id=asset.case_id,
+            checkpoint=asset.checkpoint,
+            role=asset.role,
+            baseline_sha256=asset.variants[0].sha256,
+            classification="removed",
+        )
+        for asset in (candidate.assets[-1], _asset_from_file(_png(baseline_dir / "previously-removed.png")))
+    )
     objects = {
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json": BaselineMetadata(
             assets=baseline_records,
