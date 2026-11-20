@@ -50,7 +50,28 @@ def chart(app: App) -> Chart:
                 extraArgs={"recommender-interval": "15m"},
             ),
             "updater": _component(memory_request="128Mi", memory_limit="256Mi"),
-            "admissionController": _component(memory_request="128Mi", memory_limit="256Mi"),
+            "admissionController": _component(
+                memory_request="128Mi",
+                memory_limit="256Mi",
+                replicaCount=2,
+                podDisruptionBudget={"minAvailable": 1},
+                affinity={
+                    "podAntiAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": [
+                            {
+                                "labelSelector": {
+                                    "matchLabels": {
+                                        "app.kubernetes.io/component": "admission-controller",
+                                        "app.kubernetes.io/instance": NAME,
+                                        "app.kubernetes.io/name": NAME,
+                                    }
+                                },
+                                "topologyKey": "kubernetes.io/hostname",
+                            }
+                        ]
+                    }
+                },
+            ),
         },
     )
     return chart
