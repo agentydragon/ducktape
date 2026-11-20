@@ -36,29 +36,25 @@
     },
     "sections": [
       {
-        "heading": "Required KVM cutover",
-        "text": "Required Agentplane VM CI moved to recycled KVM on the self-hosted BuildBuddy kvm-vm pool on 20 November at 05:41 UTC. Managed TCG is the optional shadow on eligible devel pushes. All required checks passed on the routing PR. Its required VM target ran both scenarios successfully on its first attempt in 224.150s. That action was shared by BuildBuddy and recorded 85.272s of native queue time."
+        "heading": "Managed shadow retired",
+        "text": "Automatic managed TCG shadow admission was disabled on 20 November at 07:36 UTC. Required Agentplane VM CI runs on the self-hosted BuildBuddy kvm-vm pool. The managed and KVM results below are the archived comparison."
       },
       {
-        "heading": "First attempts and final verdicts across 68 commits",
-        "text": "Both routes passed first on 54 manual pairs. Only managed failed first on 13 pairs and only KVM failed first on one. Ten managed failures and the KVM failure recovered on retry. Final failures were 3 of 68 on managed and 0 of 68 on KVM. The managed-minus-KVM first-attempt failure difference was 17.6 percentage points. The conservative exact 95% interval was 2.6–33.7 points under independent pairs. The sampled commits share a time window and executor fleet."
+        "heading": "All 100 manual pairs",
+        "text": "Both routes passed on the first attempt in 76 pairs. Only managed TCG failed first in 22 pairs, only KVM in one, and both in one. Eighteen of 23 managed first-attempt failures and both KVM first-attempt failures recovered on retry. Final failures were 5 of 100 on managed and 0 of 100 on KVM. The 100 pairs include 89 distinct commits."
       },
       {
-        "heading": "Observed failures",
-        "text": "Managed first attempts hit nine Sandbox readiness deadlines, three guest shutdown failures and one interrupted session setup. Ten also refused recycle with a remaining Sandbox. The KVM failure in pair 64 recorded a VMI lookup failure, a Codex session timeout and a refused Kubernetes API connection in teardown. Both scenarios passed on retry."
+        "heading": "Failure signatures",
+        "text": "Managed first attempts hit 14 Sandbox readiness deadlines, seven guest shutdown failures, and two interrupted session setups. Some also refused recycling with a remaining Sandbox. The two KVM first-attempt failures recorded a VMI lookup failure with a later refused Kubernetes API connection (pair 64), and guest shutdown failure (pair 71). Both scenarios passed on retry."
       },
       {
-        "heading": "Devel push observations",
-        "text": "All three fresh pre-cutover devel pairs passed Claude and Codex on both routes on the first Bazel attempt. One managed run first needed a native retry after a Firecracker pause failure. The first post-cutover devel push reused a cached required KVM result. Its archive confirms the required KVM and managed shadow routes, and CI skipped launching the shadow. This push adds no fresh paired outcome."
-      },
-      {
-        "heading": "Next reliability measurements",
-        "text": "Track the required KVM target’s first and final verdicts, cache exposure and failures before a Bazel verdict on fresh devel and PR runs. Keep managed shadow outcomes paired with the same tested commit."
+        "heading": "Devel push pairs",
+        "text": "Both routes passed both scenarios on their first Bazel attempt in the three fresh pre-cutover pairs and the one fresh post-cutover pair. The post-cutover workflow recorded successful CI and comparison jobs. Its failed job published the Agentplane App image."
       }
     ],
-    "selection_note": "Across 68 pre-cutover devel push attempts, 38 reused cached managed results, 27 were cancelled before recording a managed invocation, and three produced fresh, complete pairs. The census ends at 05:41:06 UTC, just before cutover.",
+    "selection_note": "The pre-cutover census yielded three fresh pairs among 68 pushes. After cutover and through the disable time, 31 pushes yielded 19 cached required KVM results, 11 archives without a required invocation and one fresh completed pair. At review, each run had a collector archive.",
     "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
-    "sample_note": "Interim manual snapshot at 05:43 UTC on 20 November 2026. Of 100 planned pairs, 68 were complete, six were in flight and 26 were not yet reserved. The earlier 12-pair, single-commit experiment retains its original source and window.",
+    "sample_note": "Completed manual batch on 20 November 2026, 03:11–07:05 UTC. All 100 pairs ran the Claude and Codex VM scenarios on 89 distinct commits. The comparison used the original two routing targets, with up to six pairs in flight. Earlier manual snapshots retain their original windows.",
     "manual_interim": {
       "snapshot_utc": "2026-11-20T05:43:00.234065+00:00",
       "intended_pairs": 100,
@@ -119,7 +115,65 @@
       }
     },
     "post_cutover_url": "https://github.com/agentydragon/ducktape/actions/runs/44682660742",
-    "required_pr_invocation_url": "https://app.buildbuddy.io/invocation/11bd9467-fd4a-502e-bf67-4f0657e44e57"
+    "required_pr_invocation_url": "https://app.buildbuddy.io/invocation/11bd9467-fd4a-502e-bf67-4f0657e44e57",
+    "shadow_retirement": {
+      "disabled_confirmed_at_utc": "2026-11-20T07:36:33Z",
+      "new_admissions_disabled": true,
+      "required_route": "kvm",
+      "source_removal_pr": "https://github.com/agentydragon/ducktape/pull/18079"
+    },
+    "fresh_post_cutover_artifact_url": "https://github.com/agentydragon/ducktape/actions/runs/44688973875/artifacts/14607984419",
+    "manual_final": {
+      "started_at_utc": "2026-11-20T03:11:54.242090+00:00",
+      "last_client_finished_at_utc": "2026-11-20T07:05:20.808512+00:00",
+      "summary": {
+        "n": 100,
+        "different_shas": 89,
+        "first": {
+          "managed": [23, 100, [15.17, 32.49]],
+          "kvm": [2, 100, [0.24, 7.04]]
+        },
+        "final": {
+          "managed": {
+            "PASSED": 77,
+            "FLAKY": 18,
+            "FAILED": 5
+          },
+          "kvm": {
+            "PASSED": 98,
+            "FLAKY": 2
+          }
+        },
+        "cells": {
+          "both_passed": 76,
+          "managed_only_failed": 22,
+          "kvm_only_failed": 1,
+          "both_failed": 1
+        },
+        "faster": [97, 100, [91.48, 99.38]],
+        "median": 268.29200000000003,
+        "median_ci": [252.13299999999998, 304.47900000000004],
+        "coverage": 0.9647997997822951,
+        "arm_medians": [521.1015, 225.1005],
+        "discordant": [22, 23, [78.05, 99.89]],
+        "paired_p": 5.7220458984375e-6,
+        "final_cis": [
+          [5, 100, [1.64, 11.28]],
+          [0, 100, [0.0, 3.62]]
+        ],
+        "delta_pp": 21.0,
+        "conservative_paired_diff_ci": [7.2, 33.81]
+      }
+    },
+    "post_cutover_census_summary": {
+      "cutoff_utc": "2026-11-20T07:36:33Z",
+      "workflow_attempts_reviewed": 31,
+      "selections": {
+        "cached": 19,
+        "no-invocation": 11,
+        "fresh": 1
+      }
+    }
   },
   "schema_version": 1,
   "repository": "https://github.com/agentydragon/ducktape",

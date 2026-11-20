@@ -182,7 +182,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. The paired VM review found KVM first attempts were a median 4m27s shorter across 68 interim manual pairs. All three fresh devel push pairs also had shorter KVM attempts. Whole-PR latency and fleet reuse remain open."}
+                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. The paired VM review found KVM first attempts were a median 4m28s shorter across 100 manual pairs. KVM also ran faster in all four fresh devel pairs collected before the shadow was retired. Whole-PR latency and fleet reuse remain open."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
@@ -196,7 +196,7 @@
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" 10–16 November UTC: 32 failures / 883 completed mainline test invocations; VM cache and physical-attempt audit, the 375-second setup breakdown, an interim 380-result baseline census, and merge-time checks. The 17 November follow-up verifies merged case accounting, captures native profiles around 25 cold imports, narrows the browser snapshot boundary, and exercises a focused VM topology control; kernel and provider causes remain open. The paired VM review found 13 managed and one KVM first-attempt failure across 68 interim manual pairs. Three managed failures persisted on retry. Both routes passed all three fresh devel push pairs. "}
+                ${" 10–16 November UTC: 32 failures / 883 completed mainline test invocations; VM cache and physical-attempt audit, the 375-second setup breakdown, an interim 380-result baseline census, and merge-time checks. The 17 November follow-up verifies merged case accounting, captures native profiles around 25 cold imports, narrows the browser snapshot boundary, and exercises a focused VM topology control; kernel and provider causes remain open. The paired VM review found 23 managed and two KVM first-attempt failures across 100 manual pairs. Five managed failures persisted on retry. Both KVM failures recovered. Both routes passed all four fresh devel pairs collected before the shadow was retired. "}
               <//>
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">

@@ -5400,5 +5400,6416 @@
     "selection": "cached",
     "artifact_url": "https://github.com/agentydragon/ducktape/actions/runs/44682660742/artifacts/14605351862",
     "finding": "The first post-cutover devel push reused a cached required KVM result. Its archive confirms the required KVM and managed shadow routes, and CI skipped launching the shadow. This push adds no fresh paired outcome."
+  },
+  "manual_final": {
+    "intended_pairs": 100,
+    "pairs": [
+      {
+        "pair": 1,
+        "sha": "0518171ac769fce9823fadac00812c33ca034750",
+        "invocation": "dd1bd1ae-751e-4359-ae51-04324f9ee3b8",
+        "submitted": "2026-11-20T03:11:54.242090+00:00",
+        "client_finished": "2026-11-20T03:22:08.085170+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 577.245,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2dbb9e2115ad33fe",
+              "queue_s": 0.096,
+              "preparation_s": 2.154,
+              "process_s": 577.246,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 579.978
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 178.994,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1d627250a8fb3c1e",
+              "queue_s": null,
+              "preparation_s": 0.672,
+              "process_s": 178.994,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 179.308
+        }
+      },
+      {
+        "pair": 2,
+        "sha": "738bdc403f238d4e02fb46bd924df22f8f4de104",
+        "invocation": "2fde9c84-81a0-4513-8c0c-1fcd3af0eadb",
+        "submitted": "2026-11-20T03:11:54.635932+00:00",
+        "client_finished": "2026-11-20T03:21:10.873498+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 520.34,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "336acfc96bc94986",
+              "queue_s": 0.096,
+              "preparation_s": 1.503,
+              "process_s": 520.341,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 522.509
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 271.125,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f6fd0010f6e0ff8d",
+              "queue_s": 3.707,
+              "preparation_s": 10.145,
+              "process_s": 271.126,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 285.877
+        }
+      },
+      {
+        "pair": 3,
+        "sha": "c247f2ca7d41333c8488fd5fcfb106ad2d04f8a8",
+        "invocation": "ea7ff075-228b-4874-afbe-8f5e22f5b0b1",
+        "submitted": "2026-11-20T03:20:20.891321+00:00",
+        "client_finished": "2026-11-20T03:35:23.895311+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 450.97,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 410.311,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6000c48675f95140",
+              "queue_s": 0.099,
+              "preparation_s": 1.924,
+              "process_s": 450.97,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "73ed9fb6e5edc38c",
+              "queue_s": 0.099,
+              "preparation_s": 3.541,
+              "process_s": 410.312,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 868.463
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 316.165,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "94b94532ebae18b3",
+              "queue_s": 134.954,
+              "preparation_s": 57.964,
+              "process_s": 316.165,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 510.034
+        }
+      },
+      {
+        "pair": 4,
+        "sha": "38b92db307ed1695ecc29e5ea3b4b61a42ba2ace",
+        "invocation": "362e6814-c450-4635-a42b-a143702b6d36",
+        "submitted": "2026-11-20T03:20:20.917919+00:00",
+        "client_finished": "2026-11-20T03:46:53.609166+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 745.408,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 797.796,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f30ee85c3b8ff473",
+              "queue_s": 0.098,
+              "preparation_s": 1.82,
+              "process_s": 745.409,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "071f486dbe38d93d",
+              "queue_s": 11.471,
+              "preparation_s": 2.08,
+              "process_s": 797.796,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1559.817
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 311.766,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ed63cf4ed852c301",
+              "queue_s": 4.479,
+              "preparation_s": 46.557,
+              "process_s": 311.767,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 363.959
+        }
+      },
+      {
+        "pair": 5,
+        "sha": "5c611f915b744caf2ca84241e0886745e381a5fc",
+        "invocation": "2fda10ed-d698-4d99-b70b-106f2ca90d32",
+        "submitted": "2026-11-20T03:20:20.942516+00:00",
+        "client_finished": "2026-11-20T03:26:56.721515+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 362.563,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "707944cebeff570a",
+              "queue_s": 0.062,
+              "preparation_s": 0.307,
+              "process_s": 362.563,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 363.472
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 269.426,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "9db8c776603251ca",
+              "queue_s": null,
+              "preparation_s": 0.522,
+              "process_s": 269.427,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 269.641
+        }
+      },
+      {
+        "pair": 6,
+        "sha": "99408cad57b399bf4a287c8676743ce8cd6dbccc",
+        "invocation": "2c0dd42e-125d-4ad9-8fe6-e2377c1043dd",
+        "submitted": "2026-11-20T03:20:20.964067+00:00",
+        "client_finished": "2026-11-20T03:44:31.332709+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 710.08,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 403.585,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "701ce65289fd6ec6",
+              "queue_s": 0.063,
+              "preparation_s": 0.324,
+              "process_s": 710.081,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "c930b1b3723bcd75",
+              "queue_s": 0.062,
+              "preparation_s": 0.33,
+              "process_s": 277.533,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "2c37fa8d783a53f5",
+              "queue_s": 20.537,
+              "preparation_s": 3.729,
+              "process_s": 403.585,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1417.664
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 188.82,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6ed66ad2cb0c187c",
+              "queue_s": 3.517,
+              "preparation_s": 0.941,
+              "process_s": 188.821,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 194.183
+        }
+      },
+      {
+        "pair": 7,
+        "sha": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
+        "invocation": "850df048-1331-4bad-84e6-0564124fdd31",
+        "submitted": "2026-11-20T03:21:13.000345+00:00",
+        "client_finished": "2026-11-20T03:34:24.297523+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 767.014,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "986f071510c8d044",
+              "queue_s": 0.098,
+              "preparation_s": 5.627,
+              "process_s": 767.015,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 773.242
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 291.582,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "bd7a9d3c9fe25bdc",
+              "queue_s": 107.03,
+              "preparation_s": 70.921,
+              "process_s": 291.582,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 470.398
+        }
+      },
+      {
+        "pair": 8,
+        "sha": "1db44cb90105bee992511850e862edc9e33a3c92",
+        "invocation": "654d9a9c-945b-43cc-afe6-faa85bf26adc",
+        "submitted": "2026-11-20T03:22:11.040308+00:00",
+        "client_finished": "2026-11-20T03:29:28.423937+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 361.221,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a3c2612f6a098241",
+              "queue_s": 0.096,
+              "preparation_s": 2.026,
+              "process_s": 361.222,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 363.806
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 304.52,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "0a7b4768fad0b3a0",
+              "queue_s": 57.46,
+              "preparation_s": 54.227,
+              "process_s": 304.52,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 417.05
+        }
+      },
+      {
+        "pair": 9,
+        "sha": "91ca340b267d81eee40bdf27a4ba231ceed8071e",
+        "invocation": "38f3465c-ba41-4189-a924-a93b3532fe56",
+        "submitted": "2026-11-20T03:26:59.417453+00:00",
+        "client_finished": "2026-11-20T03:33:43.854479+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 357.653,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f158a094a3012ee2",
+              "queue_s": 4.035,
+              "preparation_s": 0.297,
+              "process_s": 357.653,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 362.551
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 180.693,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6c1c42f09938b292",
+              "queue_s": null,
+              "preparation_s": 0.803,
+              "process_s": 180.694,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 181.7
+        }
+      },
+      {
+        "pair": 10,
+        "sha": "22cd5dd706987734a73605fa1092387b60ec3a92",
+        "invocation": "9e213f65-b018-4240-b721-b3c4c6ffe307",
+        "submitted": "2026-11-20T03:29:31.187407+00:00",
+        "client_finished": "2026-11-20T03:56:47.795592+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 867.008,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 719.029,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a29cabebe5baff1c",
+              "queue_s": 0.059,
+              "preparation_s": 0.409,
+              "process_s": 867.009,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "6e40485cfec10c9c",
+              "queue_s": 0.097,
+              "preparation_s": 2.162,
+              "process_s": 719.03,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1589.947
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 177.972,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ed130f1291629ed1",
+              "queue_s": null,
+              "preparation_s": 0.425,
+              "process_s": 177.973,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 178.137
+        }
+      },
+      {
+        "pair": 11,
+        "sha": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
+        "invocation": "c290f81f-938b-49df-b04f-6cf4b1f7501d",
+        "submitted": "2026-11-20T03:33:46.650482+00:00",
+        "client_finished": "2026-11-20T03:43:38.300125+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 507.864,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f475fa9af62c25c7",
+              "queue_s": 0.096,
+              "preparation_s": 2.641,
+              "process_s": 507.864,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 510.974
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 196.676,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "adf86eb1041fec09",
+              "queue_s": 3.16,
+              "preparation_s": 0.507,
+              "process_s": 196.676,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 201.103
+        }
+      },
+      {
+        "pair": 12,
+        "sha": "330b05be784bfcf19b4dee7b1dad9864c8fd9579",
+        "invocation": "02b7f06e-c8de-4539-8be1-6c38be33826d",
+        "submitted": "2026-11-20T03:34:25.734862+00:00",
+        "client_finished": "2026-11-20T03:42:44.079399+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 453.752,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "7bc4bff2f01e486b",
+              "queue_s": 1.795,
+              "preparation_s": 1.913,
+              "process_s": 453.752,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 457.94
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 188.629,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "967059c2c528e2f5",
+              "queue_s": null,
+              "preparation_s": 0.516,
+              "process_s": 188.629,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 188.913
+        }
+      },
+      {
+        "pair": 13,
+        "sha": "7d5509059fcbfa993259c3caced44f9d9b797a2a",
+        "invocation": "8a1c17e8-01a1-49d9-bfe1-5aa080a1380a",
+        "submitted": "2026-11-20T03:35:25.515993+00:00",
+        "client_finished": "2026-11-20T03:51:12.233879+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 889.079,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "43ed3d4d29fe6ff3",
+              "queue_s": 0.132,
+              "preparation_s": 8.111,
+              "process_s": 889.08,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 897.871
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 188.825,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c51fe95898c37c19",
+              "queue_s": 3.552,
+              "preparation_s": 0.752,
+              "process_s": 188.825,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 194.017
+        }
+      },
+      {
+        "pair": 14,
+        "sha": "8eab96c5915b04ab46f8d0557ce0c2c40be0192a",
+        "invocation": "2c50fc3f-ca20-4039-aa95-43829c05b708",
+        "submitted": "2026-11-20T03:42:47.097746+00:00",
+        "client_finished": "2026-11-20T03:49:51.343118+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 384.174,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "53c79276a4cc45b7",
+              "queue_s": 0.06,
+              "preparation_s": 0.206,
+              "process_s": 384.174,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 384.815
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 206.873,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e0cc8c7c8bf13ac1",
+              "queue_s": null,
+              "preparation_s": 0.597,
+              "process_s": 206.874,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 207.333
+        }
+      },
+      {
+        "pair": 15,
+        "sha": "4038cb310dcaa118b0b1196b9a8f12671563571a",
+        "invocation": "7cfebda5-7e99-4fc0-859c-e5b1d1221fde",
+        "submitted": "2026-11-20T03:43:40.976520+00:00",
+        "client_finished": "2026-11-20T03:51:00.728161+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 388.502,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "53a440eee7dba3a0",
+              "queue_s": 0.058,
+              "preparation_s": 0.278,
+              "process_s": 388.503,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 389.329
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 178.307,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8c813e09b55e1628",
+              "queue_s": 3.756,
+              "preparation_s": 1.111,
+              "process_s": 178.308,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 183.965
+        }
+      },
+      {
+        "pair": 16,
+        "sha": "4e8f20b00e35b3b3ecf6f86e04a7918548e79aec",
+        "invocation": "62e929b4-778d-41a6-8c01-165d2cf1b808",
+        "submitted": "2026-11-20T03:44:33.742392+00:00",
+        "client_finished": "2026-11-20T04:04:57.728688+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 728.769,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "session setup interrupted with setup-stderr"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 438.55,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d6579f263dcd35d5",
+              "queue_s": 0.094,
+              "preparation_s": 2.563,
+              "process_s": 728.769,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "4d82b4fcb8b9ac2d",
+              "queue_s": 0.098,
+              "preparation_s": 3.099,
+              "process_s": 438.55,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1174.28
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 289.662,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2babbe2a513c2df0",
+              "queue_s": 4.336,
+              "preparation_s": 0.773,
+              "process_s": 289.662,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 295.731
+        }
+      },
+      {
+        "pair": 17,
+        "sha": "37e76f32187196b4fb10448745ee252de677ac35",
+        "invocation": "06601cae-0c9e-4005-adc4-f8cee2b94b05",
+        "submitted": "2026-11-20T03:46:56.558545+00:00",
+        "client_finished": "2026-11-20T03:55:26.118035+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 461.673,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b12c590961793d37",
+              "queue_s": 0.1,
+              "preparation_s": 0.242,
+              "process_s": 461.674,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 462.578
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 203.984,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c571b8e0eeff43cd",
+              "queue_s": null,
+              "preparation_s": 0.407,
+              "process_s": 203.985,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 203.909
+        }
+      },
+      {
+        "pair": 18,
+        "sha": "a186a29c816b5dc3d4715fddf351eb8df1502dd0",
+        "invocation": "e2092c45-5f43-45bd-b572-e6582b195755",
+        "submitted": "2026-11-20T03:49:55.802982+00:00",
+        "client_finished": "2026-11-20T03:58:09.074841+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 422.103,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "42bc5dc9f730308a",
+              "queue_s": 0.059,
+              "preparation_s": 0.62,
+              "process_s": 422.103,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 423.233
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 435.609,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "afc53627b46cf69a",
+              "queue_s": 0.742,
+              "preparation_s": 12.642,
+              "process_s": 435.61,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 449.911
+        }
+      },
+      {
+        "pair": 19,
+        "sha": "1883ea011000bbaf50d4a6137d0c5f2cc1da43db",
+        "invocation": "9f3139bd-efec-4160-be46-75a4eead8c78",
+        "submitted": "2026-11-20T03:51:02.692904+00:00",
+        "client_finished": "2026-11-20T04:00:32.739099+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 521.863,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d1b059bf1d00f042",
+              "queue_s": 0.06,
+              "preparation_s": 0.549,
+              "process_s": 521.863,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 522.967
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 254.987,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "cc9eacb8c6a06890",
+              "queue_s": null,
+              "preparation_s": 0.561,
+              "process_s": 254.988,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 256.861
+        }
+      },
+      {
+        "pair": 20,
+        "sha": "8a2a60610dbc791aaac40af049775465eb0a45d8",
+        "invocation": "b52c25e3-e2c1-4da9-aa48-9bf92f791873",
+        "submitted": "2026-11-20T03:51:14.010729+00:00",
+        "client_finished": "2026-11-20T04:14:07.197682+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 750.333,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 567.486,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b74cb62879995e96",
+              "queue_s": 0.604,
+              "preparation_s": 3.894,
+              "process_s": 750.333,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "3b8e095b39df316d",
+              "queue_s": 0.095,
+              "preparation_s": 2.012,
+              "process_s": 567.487,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1325.696
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 254.261,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "15ee092e7e9f6c59",
+              "queue_s": 3.821,
+              "preparation_s": 0.571,
+              "process_s": 254.261,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 259.727
+        }
+      },
+      {
+        "pair": 21,
+        "sha": "4f3fcd07e7c482f130af2f93e4b061883b913702",
+        "invocation": "42b7a001-61d1-48fb-b593-4fbf343c1ff5",
+        "submitted": "2026-11-20T03:55:30.244365+00:00",
+        "client_finished": "2026-11-20T04:03:33.737294+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 433.99,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "07f08a4754415d2a",
+              "queue_s": 0.064,
+              "preparation_s": 0.227,
+              "process_s": 433.991,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 434.778
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 225.633,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "77fdbfa5b1ca6f9c",
+              "queue_s": 3.853,
+              "preparation_s": 0.58,
+              "process_s": 225.633,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 231.1
+        }
+      },
+      {
+        "pair": 22,
+        "sha": "765c7fd985195e463edf1c2ca71450a28be95caa",
+        "invocation": "a38a3a1d-c67f-40d9-a431-306b6eb56cb2",
+        "submitted": "2026-11-20T03:56:49.472050+00:00",
+        "client_finished": "2026-11-20T04:05:43.983634+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 464.478,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "58b2fdec096d5c10",
+              "queue_s": 0.059,
+              "preparation_s": 0.223,
+              "process_s": 464.479,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 465.232
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 217.361,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "465eda56d34ff4b9",
+              "queue_s": 16.156,
+              "preparation_s": 0.477,
+              "process_s": 217.362,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 234.938
+        }
+      },
+      {
+        "pair": 23,
+        "sha": "a8bfedbdfd105398df83181f9ef1fbcce47a1c6d",
+        "invocation": "24001e47-c607-4204-b0d5-bea7109a598a",
+        "submitted": "2026-11-20T03:58:11.697938+00:00",
+        "client_finished": "2026-11-20T04:07:03.286610+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 488.641,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "4ade21593af2a6e4",
+              "queue_s": 0.06,
+              "preparation_s": 0.224,
+              "process_s": 488.641,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 489.394
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 257.495,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "38b3182b8b16daf8",
+              "queue_s": 16.747,
+              "preparation_s": 0.523,
+              "process_s": 257.496,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 275.659
+        }
+      },
+      {
+        "pair": 24,
+        "sha": "4d3adf3940ae1be7c21d9ec7464144bcf8ae8cfe",
+        "invocation": "d289a38d-2c90-4fea-bb9a-840644d324cf",
+        "submitted": "2026-11-20T04:00:36.575295+00:00",
+        "client_finished": "2026-11-20T04:10:34.982724+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 516.109,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "780a8cff5868e127",
+              "queue_s": 0.095,
+              "preparation_s": 1.676,
+              "process_s": 516.109,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 518.353
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 261.879,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6a017d0cee3caa75",
+              "queue_s": null,
+              "preparation_s": 1.163,
+              "process_s": 261.879,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 262.633
+        }
+      },
+      {
+        "pair": 25,
+        "sha": "b73907b5ec42b18646111930c3a39d4336053529",
+        "invocation": "20ff544c-5ede-44d2-8671-e394dbffd8e8",
+        "submitted": "2026-11-20T04:03:37.350527+00:00",
+        "client_finished": "2026-11-20T04:13:11.915696+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 531.65,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "4f10938a5913da9e",
+              "queue_s": 0.099,
+              "preparation_s": 1.992,
+              "process_s": 531.65,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 534.122
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 186.013,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8340834bfa1466ed",
+              "queue_s": null,
+              "preparation_s": 0.483,
+              "process_s": 186.014,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 186.799
+        }
+      },
+      {
+        "pair": 26,
+        "sha": "cc50097bb2f550b67546f69a6366f26ee46bd4bc",
+        "invocation": "ba41ee0e-9147-423f-b572-ebfdb43d72b6",
+        "submitted": "2026-11-20T04:04:59.355636+00:00",
+        "client_finished": "2026-11-20T04:14:13.157986+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 513.232,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c5101c43819365bc",
+              "queue_s": 0.062,
+              "preparation_s": 0.699,
+              "process_s": 513.232,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 514.435
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 219.608,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1a0db886c1564b93",
+              "queue_s": 14.035,
+              "preparation_s": 1.544,
+              "process_s": 219.608,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 236.025
+        }
+      },
+      {
+        "pair": 27,
+        "sha": "3cac288343ea10c99877b0ea01b4dd69a61239ec",
+        "invocation": "7ea6d4aa-0076-4a9c-9b71-9d3be2715612",
+        "submitted": "2026-11-20T04:05:46.725893+00:00",
+        "client_finished": "2026-11-20T04:14:24.127803+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 469.306,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a690061f1fa9a10e",
+              "queue_s": 0.097,
+              "preparation_s": 1.286,
+              "process_s": 469.306,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 471.191
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 224.568,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d2e0a834996bb851",
+              "queue_s": null,
+              "preparation_s": 0.457,
+              "process_s": 224.568,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 224.56
+        }
+      },
+      {
+        "pair": 28,
+        "sha": "c1ba0a304b5252977d46bf73366607242215bc5e",
+        "invocation": "c113847b-eeda-40e4-86b7-c5135d74c6fc",
+        "submitted": "2026-11-20T04:07:07.452190+00:00",
+        "client_finished": "2026-11-20T04:13:35.910301+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 344.328,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "bd56732da6b273cc",
+              "queue_s": 0.133,
+              "preparation_s": 0.232,
+              "process_s": 344.329,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 345.095
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 171.858,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1436b0d840bdbc12",
+              "queue_s": null,
+              "preparation_s": 0.773,
+              "process_s": 171.858,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 172.836
+        }
+      },
+      {
+        "pair": 29,
+        "sha": "4d6f9f982a1c7994e3ae5f3d9c97d09638ef5465",
+        "invocation": "531d5130-3dfa-44d4-b282-d1dc2261fe21",
+        "submitted": "2026-11-20T04:10:40.996575+00:00",
+        "client_finished": "2026-11-20T04:18:11.937835+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 404.394,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "7710d3f53f2b6a02",
+              "queue_s": 0.06,
+              "preparation_s": 0.253,
+              "process_s": 404.395,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 405.204
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 170.544,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ce8af684988f2fc2",
+              "queue_s": null,
+              "preparation_s": 0.476,
+              "process_s": 170.545,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 172.908
+        }
+      },
+      {
+        "pair": 30,
+        "sha": "d914f63b060955b2b1c6b161ec53b934335a02e5",
+        "invocation": "0b4b7430-795e-4df3-bc3f-d7d4f0adbdf6",
+        "submitted": "2026-11-20T04:13:14.604433+00:00",
+        "client_finished": "2026-11-20T04:23:16.504672+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 500.85,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "4946b21ec090c496",
+              "queue_s": 0.097,
+              "preparation_s": 1.933,
+              "process_s": 500.851,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 503.329
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 201.943,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ce347fae98c7c815",
+              "queue_s": 1.471,
+              "preparation_s": 1.362,
+              "process_s": 201.944,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 205.56
+        }
+      },
+      {
+        "pair": 31,
+        "sha": "a2e2f180124ab353a7920eb0d011453886a4b135",
+        "invocation": "b3bcfc49-3df2-429e-879f-93f8c36adefb",
+        "submitted": "2026-11-20T04:13:37.445522+00:00",
+        "client_finished": "2026-11-20T04:23:38.190423+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 555.217,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f8e1e90367ccfdb9",
+              "queue_s": 0.099,
+              "preparation_s": 3.352,
+              "process_s": 555.217,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 559.062
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 201.003,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2b8d6b090506ab6a",
+              "queue_s": 0.944,
+              "preparation_s": 1.098,
+              "process_s": 201.004,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 203.944
+        }
+      },
+      {
+        "pair": 32,
+        "sha": "f4b67a596ce656acf748196c542fde00f70ae17f",
+        "invocation": "49fea843-48ef-49b8-a432-6e858b1996c1",
+        "submitted": "2026-11-20T04:14:09.236150+00:00",
+        "client_finished": "2026-11-20T04:35:55.104963+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 938.451,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 321.98,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d96ce38c98cbfc5d",
+              "queue_s": 0.101,
+              "preparation_s": 2.809,
+              "process_s": 938.452,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "81553925a76806c9",
+              "queue_s": 0.06,
+              "preparation_s": 0.232,
+              "process_s": 321.981,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1265.037
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 235.438,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a7588ffec2efd544",
+              "queue_s": 1.373,
+              "preparation_s": 0.689,
+              "process_s": 235.438,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 238.338
+        }
+      },
+      {
+        "pair": 33,
+        "sha": "42ae017d2ee6d4da62d21a97a48f6f020057d8dc",
+        "invocation": "b199692c-c102-402b-a84c-0da1c3aecb45",
+        "submitted": "2026-11-20T04:14:14.593439+00:00",
+        "client_finished": "2026-11-20T04:24:38.418192+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 582.919,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b5c0c1781f18eae0",
+              "queue_s": 0.062,
+              "preparation_s": 0.232,
+              "process_s": 582.919,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 583.603
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 238.427,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2b90e93e4d9b0f50",
+              "queue_s": null,
+              "preparation_s": 0.683,
+              "process_s": 238.427,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 239.227
+        }
+      },
+      {
+        "pair": 34,
+        "sha": "b6190905235b3cdff69ad2deee98a366d5049f22",
+        "invocation": "eba219ea-e864-45ef-b67c-5c189dedc130",
+        "submitted": "2026-11-20T04:14:26.287256+00:00",
+        "client_finished": "2026-11-20T04:24:55.350566+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 583.95,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ae471e3434c3fac9",
+              "queue_s": 0.061,
+              "preparation_s": 0.245,
+              "process_s": 583.951,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 584.685
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 214.178,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e6513454ad6a559f",
+              "queue_s": 3.108,
+              "preparation_s": 0.946,
+              "process_s": 214.179,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 219.472
+        }
+      },
+      {
+        "pair": 35,
+        "sha": "ebadb7518f23b1edc068a8d2dff3090e9aaeea8d",
+        "invocation": "0dff1085-13a2-4565-8279-d32bb00faa0b",
+        "submitted": "2026-11-20T04:18:15.239942+00:00",
+        "client_finished": "2026-11-20T04:28:32.390129+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 522.607,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "27ec08715797feec",
+              "queue_s": 0.06,
+              "preparation_s": 0.494,
+              "process_s": 522.608,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 523.644
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 180.108,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8b5accc8a06ab853",
+              "queue_s": 2.704,
+              "preparation_s": 1.131,
+              "process_s": 180.109,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 184.79
+        }
+      },
+      {
+        "pair": 36,
+        "sha": "12f8ad976c9ec548f58515f353cd454f1768ba0b",
+        "invocation": "fb3f25d2-613c-4d2c-8076-3ac7862309c2",
+        "submitted": "2026-11-20T04:23:19.879109+00:00",
+        "client_finished": "2026-11-20T04:45:52.699549+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 562.011,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 558.825,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "9d1bee3611e6fa88",
+              "queue_s": 0.098,
+              "preparation_s": 2.287,
+              "process_s": 562.011,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "acd69609bdfbe4bc",
+              "queue_s": 185.052,
+              "preparation_s": 1.791,
+              "process_s": 558.826,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1311.423
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 179.817,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "88dbdee84548ab39",
+              "queue_s": null,
+              "preparation_s": 1.052,
+              "process_s": 179.818,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 180.911
+        }
+      },
+      {
+        "pair": 37,
+        "sha": "97ca496a0a7270b5b81d5a728aaa9d114384088e",
+        "invocation": "8702b365-c463-4ce6-af54-3eda06adb071",
+        "submitted": "2026-11-20T04:23:39.613979+00:00",
+        "client_finished": "2026-11-20T04:31:39.209515+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 434.813,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a77e849b576b5f7c",
+              "queue_s": 0.124,
+              "preparation_s": 2.56,
+              "process_s": 434.814,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 437.949
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 219.3,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "726f9f774de93b2c",
+              "queue_s": null,
+              "preparation_s": 1.486,
+              "process_s": 219.301,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 220.978
+        }
+      },
+      {
+        "pair": 38,
+        "sha": "17d9fbf23bb9fce87fa6bf93668cda364bdb163d",
+        "invocation": "e38e650a-3ffb-4ef0-9563-7150fefc25c5",
+        "submitted": "2026-11-20T04:24:40.237368+00:00",
+        "client_finished": "2026-11-20T04:32:48.436902+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 435.025,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6689129a91d58fa9",
+              "queue_s": 0.133,
+              "preparation_s": 2.278,
+              "process_s": 435.026,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 437.871
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 268.674,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e0bcacbba39eebfc",
+              "queue_s": 0.959,
+              "preparation_s": 1.176,
+              "process_s": 268.675,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 271.696
+        }
+      },
+      {
+        "pair": 39,
+        "sha": "d1ec682cb9f0b11d71da9b1e11d2c270971efebe",
+        "invocation": "c803f962-9298-4ba5-9203-8c936916c4eb",
+        "submitted": "2026-11-20T04:24:57.179159+00:00",
+        "client_finished": "2026-11-20T04:37:36.381170+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 700.832,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "64435fb6c6be3179",
+              "queue_s": 0.101,
+              "preparation_s": 4.479,
+              "process_s": 700.833,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 705.987
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 234.871,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "efacb62e39296336",
+              "queue_s": null,
+              "preparation_s": 0.614,
+              "process_s": 234.872,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 235.652
+        }
+      },
+      {
+        "pair": 40,
+        "sha": "b8a4541f93ef23f8c850ac9bedd901c37ea2ac21",
+        "invocation": "1e3b6f0a-37ae-4002-98f4-ea630ae667db",
+        "submitted": "2026-11-20T04:28:35.396590+00:00",
+        "client_finished": "2026-11-20T04:49:43.159115+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 752.654,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 492.499,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "677a214ab4d953d4",
+              "queue_s": 0.648,
+              "preparation_s": 3.336,
+              "process_s": 752.655,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "2ad0733f7a7e0fa0",
+              "queue_s": 0.061,
+              "preparation_s": 0.327,
+              "process_s": 492.5,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1250.758
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 194.554,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "184ca8403310fb40",
+              "queue_s": null,
+              "preparation_s": 1.08,
+              "process_s": 194.554,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 195.319
+        }
+      },
+      {
+        "pair": 41,
+        "sha": "80b6edd2778202fd681de0337fb1af1c0030981d",
+        "invocation": "60cf43b8-43fc-4f70-bebc-c0a5ebeecd57",
+        "submitted": "2026-11-20T04:31:41.899819+00:00",
+        "client_finished": "2026-11-20T04:38:21.923414+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 381.29,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "44207146a498a1e1",
+              "queue_s": 0.062,
+              "preparation_s": 0.231,
+              "process_s": 381.29,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 382.349
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 213.216,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "caa50ba7ccbd27b6",
+              "queue_s": null,
+              "preparation_s": 1.459,
+              "process_s": 213.217,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 214.322
+        }
+      },
+      {
+        "pair": 42,
+        "sha": "12d7379583d97c3a103d97c15ea4844c91e8f3e6",
+        "invocation": "76a83cdd-2632-45d9-96e3-70c9b4444642",
+        "submitted": "2026-11-20T04:32:50.168753+00:00",
+        "client_finished": "2026-11-20T04:42:58.258625+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 590.253,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "4d4eeea9383d2e21",
+              "queue_s": 0.058,
+              "preparation_s": 0.716,
+              "process_s": 590.254,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 591.48
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 225.736,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "cc18e8a7012c4e80",
+              "queue_s": null,
+              "preparation_s": 0.659,
+              "process_s": 225.737,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 226.194
+        }
+      },
+      {
+        "pair": 43,
+        "sha": "5bc393a1b7f315cd1cb61cb36fc140e5cf1c6f57",
+        "invocation": "c9ab6652-6107-4a53-8a22-0ae10243cd79",
+        "submitted": "2026-11-20T04:35:59.245245+00:00",
+        "client_finished": "2026-11-20T04:43:40.628134+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 443.94,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "04f3bc0ea0456af8",
+              "queue_s": 0.058,
+              "preparation_s": 0.547,
+              "process_s": 443.941,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 445.03
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 201.599,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "4938f83f17c7bf71",
+              "queue_s": null,
+              "preparation_s": 0.618,
+              "process_s": 201.599,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 201.834
+        }
+      },
+      {
+        "pair": 44,
+        "sha": "931c9f8fa4311073ee0ac8a39d764de129832393",
+        "invocation": "4e1ab225-2930-477c-b262-dfdb807e682c",
+        "submitted": "2026-11-20T04:37:37.834229+00:00",
+        "client_finished": "2026-11-20T04:46:08.117244+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 459.674,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6a43d3b5f8c38364",
+              "queue_s": 0.06,
+              "preparation_s": 0.23,
+              "process_s": 459.674,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 460.409
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 204.907,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ecc00bcb24ab3b2a",
+              "queue_s": null,
+              "preparation_s": 0.66,
+              "process_s": 204.908,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 205.218
+        }
+      },
+      {
+        "pair": 45,
+        "sha": "299bf700819003e8d5e5939d7c64dffb0774834f",
+        "invocation": "d7096272-f913-4422-995a-74b27eda40e7",
+        "submitted": "2026-11-20T04:38:24.509298+00:00",
+        "client_finished": "2026-11-20T05:02:16.627589+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 875.42,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 517.799,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6ced235119d136fd",
+              "queue_s": 0.094,
+              "preparation_s": 2.351,
+              "process_s": 875.42,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "c1486d8ef0631516",
+              "queue_s": 0.095,
+              "preparation_s": 5.007,
+              "process_s": 517.799,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1401.816
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 198.71,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "7545dd923cec8c7a",
+              "queue_s": 4.486,
+              "preparation_s": 1.104,
+              "process_s": 198.711,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 205.262
+        }
+      },
+      {
+        "pair": 46,
+        "sha": "8170f724ecc672253d7426f13f19a09d3489caec",
+        "invocation": "3d6ee694-3f39-4787-881a-130f83aeb6a5",
+        "submitted": "2026-11-20T04:43:00.860038+00:00",
+        "client_finished": "2026-11-20T04:53:20.883802+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 602.123,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a98fa770d42cd7ed",
+              "queue_s": 0.06,
+              "preparation_s": 0.317,
+              "process_s": 602.124,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 602.939
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 172.742,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "05eaa29ade012c69",
+              "queue_s": null,
+              "preparation_s": 1.399,
+              "process_s": 172.742,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 174.37
+        }
+      },
+      {
+        "pair": 47,
+        "sha": "8e7c3b5997156871f79bbadb126400682fc0bebd",
+        "invocation": "9e8cb1d0-d33d-4b08-a91d-a42cf4eed120",
+        "submitted": "2026-11-20T04:43:42.227319+00:00",
+        "client_finished": "2026-11-20T04:52:57.070595+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 382.865,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b511008bdbdab356",
+              "queue_s": 0.097,
+              "preparation_s": 0.824,
+              "process_s": 382.865,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 384.248
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 286.956,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "594cba139827cc2c",
+              "queue_s": 239.278,
+              "preparation_s": 9.893,
+              "process_s": 286.957,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 537.037
+        }
+      },
+      {
+        "pair": 48,
+        "sha": "5670e69a1fca2af4e21c72bed4da630afd1874fa",
+        "invocation": "96ac87d2-1db8-4c17-a5c9-1c14fef2885b",
+        "submitted": "2026-11-20T04:45:55.671688+00:00",
+        "client_finished": "2026-11-20T04:55:15.370995+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 540.898,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "993c68f102170c87",
+              "queue_s": 0.064,
+              "preparation_s": 0.227,
+              "process_s": 540.899,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 541.689
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 177.159,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3aee3eb29ced2152",
+              "queue_s": null,
+              "preparation_s": 1.062,
+              "process_s": 177.159,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 178.645
+        }
+      },
+      {
+        "pair": 49,
+        "sha": "691c50d0d2012d76d5eba627b54906f5f38c3b2c",
+        "invocation": "e442e98a-3ebf-4be0-bfff-387314ceee4f",
+        "submitted": "2026-11-20T04:46:09.703053+00:00",
+        "client_finished": "2026-11-20T04:55:55.590103+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 542.737,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ef07854e214e7a3e",
+              "queue_s": 0.061,
+              "preparation_s": 0.267,
+              "process_s": 542.738,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 543.493
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 199.486,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "60e43da74d4ee211",
+              "queue_s": 111.836,
+              "preparation_s": 0.911,
+              "process_s": 199.487,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 313.339
+        }
+      },
+      {
+        "pair": 50,
+        "sha": "b321e27c49054ef56a0d1b629f5d289460b7bfb0",
+        "invocation": "37055f63-5bf9-4226-9897-eff2186bca35",
+        "submitted": "2026-11-20T04:49:45.894785+00:00",
+        "client_finished": "2026-11-20T04:58:13.432522+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 479.841,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d66ed31a7ad27191",
+              "queue_s": 0.065,
+              "preparation_s": 0.541,
+              "process_s": 479.841,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 480.866
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 197.14,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c5fd4dd6f9296397",
+              "queue_s": null,
+              "preparation_s": 1.751,
+              "process_s": 197.14,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 199.17
+        }
+      },
+      {
+        "pair": 51,
+        "sha": "d8373c06b0287ea1b80f1f67839582afaac8a3d7",
+        "invocation": "88dc2501-3e77-4f51-910f-c201d3502a27",
+        "submitted": "2026-11-20T04:52:59.749527+00:00",
+        "client_finished": "2026-11-20T05:04:12.193489+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 640.589,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "23c9f79a28193654",
+              "queue_s": 0.129,
+              "preparation_s": 2.457,
+              "process_s": 640.589,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 643.689
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 190.201,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "33829079647ac19c",
+              "queue_s": null,
+              "preparation_s": 1.488,
+              "process_s": 190.201,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 191.758
+        }
+      },
+      {
+        "pair": 52,
+        "sha": "dad71322148655b9a7cade298e1ec28ab92259e6",
+        "invocation": "46123995-f4c6-46f5-a85e-ece04554531d",
+        "submitted": "2026-11-20T04:53:22.348034+00:00",
+        "client_finished": "2026-11-20T05:01:44.784843+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 471.516,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "44f867dd68719163",
+              "queue_s": 0.133,
+              "preparation_s": 3.868,
+              "process_s": 471.516,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 476.04
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 178.756,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "419a62247d222b2e",
+              "queue_s": null,
+              "preparation_s": 0.74,
+              "process_s": 178.756,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 179.758
+        }
+      },
+      {
+        "pair": 53,
+        "sha": "1c4d85e4432601beb637c6ad9d7b3c6daeeb0688",
+        "invocation": "85d2925e-516d-4237-bfb5-755568a6ebc7",
+        "submitted": "2026-11-20T04:55:18.057208+00:00",
+        "client_finished": "2026-11-20T05:15:45.719596+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 530.042,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 411.043,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "cb8a59ab50f88a45",
+              "queue_s": 0.131,
+              "preparation_s": 2.204,
+              "process_s": 530.042,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "7f1c73c122604b3f",
+              "queue_s": 0.094,
+              "preparation_s": 2.303,
+              "process_s": 252.48,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "3b674d441e816f99",
+              "queue_s": 0.061,
+              "preparation_s": 0.232,
+              "process_s": 411.044,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1200.188
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 231.171,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e44a0e6bed748635",
+              "queue_s": 3.895,
+              "preparation_s": 2.16,
+              "process_s": 231.172,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 238.11
+        }
+      },
+      {
+        "pair": 54,
+        "sha": "0b219a8392d2f49aceac36341fab144e9d15d27d",
+        "invocation": "bb2c462a-eca8-455c-9c36-e8ea2af2ddc5",
+        "submitted": "2026-11-20T04:55:57.185952+00:00",
+        "client_finished": "2026-11-20T05:04:52.822834+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 486.757,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "84e6fd9e9db43283",
+              "queue_s": 0.062,
+              "preparation_s": 0.273,
+              "process_s": 486.757,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 487.606
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 220.582,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "71b17bc9fd672aab",
+              "queue_s": null,
+              "preparation_s": 0.53,
+              "process_s": 220.583,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 221.147
+        }
+      },
+      {
+        "pair": 55,
+        "sha": "78888f837b47138bd713fb4d9dcf703eab3aec1e",
+        "invocation": "9cd4f8ec-126a-455f-bebd-d1b2fbbf06df",
+        "submitted": "2026-11-20T04:58:15.887754+00:00",
+        "client_finished": "2026-11-20T05:22:50.167485+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 852.152,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 589.325,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8d4b351e096ed4da",
+              "queue_s": 0.062,
+              "preparation_s": 0.791,
+              "process_s": 852.152,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "ca986c1a301a6f8c",
+              "queue_s": 0.276,
+              "preparation_s": 3.253,
+              "process_s": 589.325,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1447.024
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 175.763,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c7cdc4f584147762",
+              "queue_s": null,
+              "preparation_s": 0.995,
+              "process_s": 175.764,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 176.993
+        }
+      },
+      {
+        "pair": 56,
+        "sha": "1070b2337000fa6173f6fa5f34bceb0134aacb13",
+        "invocation": "e461156c-0aa1-4054-b598-b2cb237b58af",
+        "submitted": "2026-11-20T05:01:47.389935+00:00",
+        "client_finished": "2026-11-20T05:11:06.185288+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 521.911,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "dea0053d2be15782",
+              "queue_s": 8.669,
+              "preparation_s": 2.48,
+              "process_s": 521.911,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 533.447
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 212.806,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a4751e7506b53119",
+              "queue_s": null,
+              "preparation_s": 0.626,
+              "process_s": 212.806,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 213.855
+        }
+      },
+      {
+        "pair": 57,
+        "sha": "a11a72b272531a1123a1fe2f9b120d26df035d38",
+        "invocation": "b2504e2c-1e2c-4f68-9210-4ac1e9339a35",
+        "submitted": "2026-11-20T05:02:18.213303+00:00",
+        "client_finished": "2026-11-20T05:10:41.001269+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 474.474,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "28cd025de0409014",
+              "queue_s": 0.097,
+              "preparation_s": 1.75,
+              "process_s": 474.475,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 476.788
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 212.994,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "92ab0a93dac56e3f",
+              "queue_s": 4.231,
+              "preparation_s": 1.279,
+              "process_s": 212.995,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 219.526
+        }
+      },
+      {
+        "pair": 58,
+        "sha": "cfd1c8cee898572e089f12ea8afff94a4151ecc8",
+        "invocation": "db2e2c4d-f6a5-4dbf-9126-348f0ca0b3df",
+        "submitted": "2026-11-20T05:04:15.284969+00:00",
+        "client_finished": "2026-11-20T05:13:22.473854+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 516.906,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c53389dc784226cf",
+              "queue_s": 0.099,
+              "preparation_s": 0.278,
+              "process_s": 516.906,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 517.792
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 296.526,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3e92ffe3b121b1dc",
+              "queue_s": 3.521,
+              "preparation_s": 47.853,
+              "process_s": 296.526,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 348.935
+        }
+      },
+      {
+        "pair": 59,
+        "sha": "90e980efa448a170c8bd9cfc7bc8940dab377713",
+        "invocation": "02e0781e-b16b-481a-8c1c-8051fa816332",
+        "submitted": "2026-11-20T05:04:55.024585+00:00",
+        "client_finished": "2026-11-20T05:30:34.700616+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 939.824,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 548.561,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "88dcddfc4dedf85f",
+              "queue_s": 0.132,
+              "preparation_s": 3.245,
+              "process_s": 939.825,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "97f9f8e9a6380e5d",
+              "queue_s": 0.057,
+              "preparation_s": 2.238,
+              "process_s": 548.562,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1495.207
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 182.018,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "367c2376e8655f3c",
+              "queue_s": 8.508,
+              "preparation_s": 0.565,
+              "process_s": 182.018,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 194.769
+        }
+      },
+      {
+        "pair": 60,
+        "sha": "1a9179df10c408cc8de80b591f83920e6e21abf0",
+        "invocation": "67183b0a-d989-43a3-b742-0053f185c6f6",
+        "submitted": "2026-11-20T05:10:44.249926+00:00",
+        "client_finished": "2026-11-20T05:20:21.690916+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 519.721,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "47402d4ee3bbc41a",
+              "queue_s": 0.057,
+              "preparation_s": 0.352,
+              "process_s": 519.722,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 520.993
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 253.78,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f99dd6bc5fae54b6",
+              "queue_s": null,
+              "preparation_s": 1.285,
+              "process_s": 253.78,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 254.631
+        }
+      },
+      {
+        "pair": 61,
+        "sha": "b073c2318c097dd12b8ec87bd46461bc78d70686",
+        "invocation": "79041efa-2a61-4509-a52d-c277b9ab5ea7",
+        "submitted": "2026-11-20T05:11:07.926160+00:00",
+        "client_finished": "2026-11-20T05:20:50.872095+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 526.581,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8b899aed45b1b92c",
+              "queue_s": 0.059,
+              "preparation_s": 0.469,
+              "process_s": 526.581,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 527.522
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 292.418,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b624a72ca59c33d2",
+              "queue_s": 4.178,
+              "preparation_s": 2.679,
+              "process_s": 292.418,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 300.414
+        }
+      },
+      {
+        "pair": 62,
+        "sha": "8cb4f6e56fc8dd96d408e1700ac2298e1394267a",
+        "invocation": "1587847f-d57b-4c30-88c7-e25bfe81d693",
+        "submitted": "2026-11-20T05:13:25.236581+00:00",
+        "client_finished": "2026-11-20T05:21:55.570846+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 470.8,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3d2c0263f385c31b",
+              "queue_s": 0.06,
+              "preparation_s": 0.627,
+              "process_s": 470.8,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 471.934
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 189.857,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b9756376b19d5e66",
+              "queue_s": 4.461,
+              "preparation_s": 1.853,
+              "process_s": 189.857,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 197.062
+        }
+      },
+      {
+        "pair": 63,
+        "sha": "8a5f1d12c94f014b15cafb550d5dfc4973270b25",
+        "invocation": "da604463-5ad5-4696-bffc-5c4cd6ede1a4",
+        "submitted": "2026-11-20T05:15:48.745696+00:00",
+        "client_finished": "2026-11-20T05:23:24.079443+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 391.963,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "111490a578995828",
+              "queue_s": 0.061,
+              "preparation_s": 0.953,
+              "process_s": 391.964,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 393.41
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 210.149,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a61209a472120ada",
+              "queue_s": null,
+              "preparation_s": 1.955,
+              "process_s": 210.15,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 211.395
+        }
+      },
+      {
+        "pair": 64,
+        "sha": "f7a736f560c8221ccc34b365850f027c407b050d",
+        "invocation": "2de8e501-a373-4c7c-908b-cabd1681e04a",
+        "submitted": "2026-11-20T05:20:24.332756+00:00",
+        "client_finished": "2026-11-20T05:34:27.837846+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 427.152,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "55e4035b0bd4eefd",
+              "queue_s": 0.095,
+              "preparation_s": 2.871,
+              "process_s": 427.152,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 430.715
+        },
+        "kvm": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 522.57,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "VMI lookup failed during launcher topology check"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "session remained in its current state until timeout"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Kubernetes API connection refused during teardown"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 253.682,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "02cdcda5bbe0a77c",
+              "queue_s": 0.961,
+              "preparation_s": 1.923,
+              "process_s": 522.571,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "68100d8fb63fb1aa",
+              "queue_s": null,
+              "preparation_s": 1.957,
+              "process_s": 253.683,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 783.708
+        }
+      },
+      {
+        "pair": 65,
+        "sha": "5566521743b82ba4915194b4ce967b65aba261c6",
+        "invocation": "516bcc47-d27c-4a12-96b1-e2d48ee435bf",
+        "submitted": "2026-11-20T05:20:52.237184+00:00",
+        "client_finished": "2026-11-20T05:33:09.932705+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 485.636,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8f87d8f072a8d6e9",
+              "queue_s": 0.056,
+              "preparation_s": 0.821,
+              "process_s": 485.636,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 486.882
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 248.907,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "76789d03898ea52b",
+              "queue_s": 458.351,
+              "preparation_s": 0.787,
+              "process_s": 248.907,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 709.127
+        }
+      },
+      {
+        "pair": 66,
+        "sha": "3bc3a9a293d460fed8559f641afc4e2a3378ac30",
+        "invocation": "474cadc6-23a1-41fe-8b39-28a5861eb640",
+        "submitted": "2026-11-20T05:21:57.293296+00:00",
+        "client_finished": "2026-11-20T05:30:25.533551+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 480.214,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3e082b7600b1d097",
+              "queue_s": 0.059,
+              "preparation_s": 0.598,
+              "process_s": 480.215,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 481.252
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 268.385,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "7efbdf1abd8ffc54",
+              "queue_s": 4.525,
+              "preparation_s": 1.622,
+              "process_s": 268.386,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 275.851
+        }
+      },
+      {
+        "pair": 67,
+        "sha": "f06123ce5d357cee389472ad482cc96dc2aeb9a6",
+        "invocation": "216c8c33-1f61-440c-ab16-2771cf74524b",
+        "submitted": "2026-11-20T05:22:52.883447+00:00",
+        "client_finished": "2026-11-20T05:29:46.374025+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 370.465,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "10976ba17ad65389",
+              "queue_s": 0.059,
+              "preparation_s": 0.591,
+              "process_s": 370.466,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 371.549
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 198.17,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "704674a4b092810d",
+              "queue_s": 137.515,
+              "preparation_s": 1.417,
+              "process_s": 198.171,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 337.915
+        }
+      },
+      {
+        "pair": 68,
+        "sha": "5dbf5d0bd7df97d89803dd6de33c6dbde65f39b1",
+        "invocation": "4749e481-479c-429a-9a00-503d533a79dd",
+        "submitted": "2026-11-20T05:23:25.421814+00:00",
+        "client_finished": "2026-11-20T05:47:26.338122+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 587.216,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 495.383,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "761a302381c45b96",
+              "queue_s": 0.095,
+              "preparation_s": 1.779,
+              "process_s": 587.217,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "969145e105c5a41f",
+              "queue_s": 0.094,
+              "preparation_s": 0.493,
+              "process_s": 323.859,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "7da824eb57e2ac78",
+              "queue_s": 0.096,
+              "preparation_s": 1.948,
+              "process_s": 495.384,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1412.572
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 441.086,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "5a16f34418263c8c",
+              "queue_s": 4.254,
+              "preparation_s": 2.8,
+              "process_s": 441.087,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 449.886
+        }
+      },
+      {
+        "pair": 69,
+        "sha": "df36b1da50bd3a2a01ea889546a927d6235dd545",
+        "invocation": "da6e5dba-39db-408f-9d2b-f84f31761f7d",
+        "submitted": "2026-11-20T05:29:48.905663+00:00",
+        "client_finished": "2026-11-20T05:41:14.598622+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 653.269,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3d5ee071330765e7",
+              "queue_s": 0.096,
+              "preparation_s": 2.228,
+              "process_s": 653.27,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 656.05
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 629.273,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "987399304398fe13",
+              "queue_s": 1.667,
+              "preparation_s": 1.346,
+              "process_s": 629.273,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 633.381
+        }
+      },
+      {
+        "pair": 70,
+        "sha": "4a06f9f1601b4e225d19b131f10ae2c320dd194b",
+        "invocation": "0bd88e4f-cb27-471a-8fa4-b403a385d9d0",
+        "submitted": "2026-11-20T05:30:26.901610+00:00",
+        "client_finished": "2026-11-20T06:01:42.337442+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 979.112,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 452.934,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "47b7a8a531c74491",
+              "queue_s": 0.098,
+              "preparation_s": 6.183,
+              "process_s": 405.576,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "ba984286683d822f",
+              "queue_s": 0.094,
+              "preparation_s": 0.548,
+              "process_s": 979.112,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "2bb8a1fca6cf335e",
+              "queue_s": 0.059,
+              "preparation_s": 0.619,
+              "process_s": 452.934,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1847.107
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 640.699,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8d0a0ac428f82e08",
+              "queue_s": 3.515,
+              "preparation_s": 0.525,
+              "process_s": 640.7,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 645.882
+        }
+      },
+      {
+        "pair": 71,
+        "sha": "b968de15fb3630a1cf2e27b38552487c902eba6e",
+        "invocation": "f3c0165b-7257-4a5c-b40f-40ac905bdc4e",
+        "submitted": "2026-11-20T05:30:36.432640+00:00",
+        "client_finished": "2026-11-20T06:01:19.419414+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 952.406,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 564.547,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "adb21f94599c5664",
+              "queue_s": 0.096,
+              "preparation_s": 2.618,
+              "process_s": 285.041,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "548ecbf6b3371935",
+              "queue_s": 0.092,
+              "preparation_s": 3.911,
+              "process_s": 952.407,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "adfe463289cafc0f",
+              "queue_s": 0.096,
+              "preparation_s": 2.594,
+              "process_s": 564.548,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1813.045
+        },
+        "kvm": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 424.747,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 278.286,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "9796803a8761c90d",
+              "queue_s": 23.43,
+              "preparation_s": 3.185,
+              "process_s": 424.747,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "8e2e88c84ceddd30",
+              "queue_s": 188.434,
+              "preparation_s": 2.038,
+              "process_s": 278.287,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 923.891
+        }
+      },
+      {
+        "pair": 72,
+        "sha": "62823958347d6700c85796d4d2cc102d6c144a97",
+        "invocation": "e089f809-68ae-4c66-aa5d-7fd07336774e",
+        "submitted": "2026-11-20T05:33:12.552603+00:00",
+        "client_finished": "2026-11-20T05:48:25.557737+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 477.786,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c254852a61cea892",
+              "queue_s": 0.094,
+              "preparation_s": 3.296,
+              "process_s": 477.786,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 481.559
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 582.215,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "6aa595914e6a88fa",
+              "queue_s": 298.914,
+              "preparation_s": 1.856,
+              "process_s": 582.215,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 884.123
+        }
+      },
+      {
+        "pair": 73,
+        "sha": "37bd2fd770816410c6d0ac30eb8ddcb81b0650eb",
+        "invocation": "9f3ba564-e33f-4acc-88b1-7b46f91f7974",
+        "submitted": "2026-11-20T05:34:29.428843+00:00",
+        "client_finished": "2026-11-20T05:56:15.340710+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 792.413,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "other test issue"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 458.653,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c0008f9bff53338a",
+              "queue_s": 11.657,
+              "preparation_s": 2.043,
+              "process_s": 792.413,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "584fa2aee2298762",
+              "queue_s": 0.06,
+              "preparation_s": 0.226,
+              "process_s": 458.654,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1266.137
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 378.933,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "221e96bb5713faca",
+              "queue_s": 392.914,
+              "preparation_s": 2.838,
+              "process_s": 378.933,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 775.775
+        }
+      },
+      {
+        "pair": 74,
+        "sha": "0974968529037b4c660b99c9c301d8fc3830f67b",
+        "invocation": "e1c84e55-ee2b-4681-a960-d04f9d4ae350",
+        "submitted": "2026-11-20T05:41:17.313396+00:00",
+        "client_finished": "2026-11-20T05:52:25.009430+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 604.423,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3f14f423a3882828",
+              "queue_s": 0.095,
+              "preparation_s": 3.344,
+              "process_s": 604.423,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 608.354
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 248.619,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "9de7d0da061b31b4",
+              "queue_s": 7.812,
+              "preparation_s": 2.476,
+              "process_s": 248.619,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 260.314
+        }
+      },
+      {
+        "pair": 75,
+        "sha": "0d136010e7f9dd925af89501c8d452593fdc6590",
+        "invocation": "18765aba-66ea-4c7d-bef8-3f216755c171",
+        "submitted": "2026-11-20T05:47:29.070270+00:00",
+        "client_finished": "2026-11-20T05:55:39.710314+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 445.189,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "99ec85a403bf642a",
+              "queue_s": 0.062,
+              "preparation_s": 0.541,
+              "process_s": 445.189,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 446.216
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 272.519,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d21db6d55bc6431f",
+              "queue_s": null,
+              "preparation_s": 0.675,
+              "process_s": 272.52,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 272.839
+        }
+      },
+      {
+        "pair": 76,
+        "sha": "891ddd96961e8dfb9a74dee491607c199a1574cd",
+        "invocation": "496fa9f4-e772-42f4-806d-737043163e10",
+        "submitted": "2026-11-20T05:48:26.952523+00:00",
+        "client_finished": "2026-11-20T06:01:46.903033+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 490.129,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b8921493856af197",
+              "queue_s": 0.065,
+              "preparation_s": 0.292,
+              "process_s": 265.217,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "60cb9f71e4a8d41d",
+              "queue_s": 0.133,
+              "preparation_s": 1.797,
+              "process_s": 490.129,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 758.389
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 271.959,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c952d7e3c3c3edc9",
+              "queue_s": null,
+              "preparation_s": 1.289,
+              "process_s": 271.96,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 273.466
+        }
+      },
+      {
+        "pair": 77,
+        "sha": "585e02b062736f947e7ac25cee04ee4896fd39d2",
+        "invocation": "685d0f58-50c6-47ea-b109-a99a072d2a21",
+        "submitted": "2026-11-20T05:52:27.700752+00:00",
+        "client_finished": "2026-11-20T06:01:47.648893+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 498.866,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e0e1f56c59517b8d",
+              "queue_s": 0.121,
+              "preparation_s": 4.213,
+              "process_s": 0.102,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "f6dc3858da2aa331",
+              "queue_s": 0.1,
+              "preparation_s": 2.82,
+              "process_s": 498.867,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 507.034
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 242.148,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "164b3b54d0edd948",
+              "queue_s": null,
+              "preparation_s": 0.84,
+              "process_s": 242.149,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 242.704
+        }
+      },
+      {
+        "pair": 78,
+        "sha": "bfa65c0f1b9570826f7059ca2931060fcea8a2ab",
+        "invocation": "c6e3efbc-aae4-42de-af1e-d074b8970dfa",
+        "submitted": "2026-11-20T05:55:42.277249+00:00",
+        "client_finished": "2026-11-20T06:03:26.029577+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 422.972,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a774a78af6e4a459",
+              "queue_s": 0.061,
+              "preparation_s": 0.534,
+              "process_s": 422.973,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 423.971
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 237.814,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "13c04716a69d7274",
+              "queue_s": null,
+              "preparation_s": 0.736,
+              "process_s": 237.814,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 238.694
+        }
+      },
+      {
+        "pair": 79,
+        "sha": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
+        "invocation": "53683a17-7830-44c8-bf9a-e5bedaee0901",
+        "submitted": "2026-11-20T05:56:16.949520+00:00",
+        "client_finished": "2026-11-20T06:03:55.396128+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 417.118,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "eb8126c4a997a726",
+              "queue_s": 0.061,
+              "preparation_s": 0.222,
+              "process_s": 417.118,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 417.781
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 188.272,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "343c5ffabc5f4eb3",
+              "queue_s": 4.274,
+              "preparation_s": 1.389,
+              "process_s": 188.273,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 194.822
+        }
+      },
+      {
+        "pair": 80,
+        "sha": "aab3e9ccb2cce96fcefd6e328957cfb9b07a611c",
+        "invocation": "60194de7-7603-4756-9dea-44c477e6ee0d",
+        "submitted": "2026-11-20T06:01:22.376133+00:00",
+        "client_finished": "2026-11-20T06:10:49.971095+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 524.975,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "774ddcf8b425f942",
+              "queue_s": 0.059,
+              "preparation_s": 0.737,
+              "process_s": 524.975,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 527.513
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 380.885,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c60aaf29775f56fe",
+              "queue_s": null,
+              "preparation_s": 0.624,
+              "process_s": 380.886,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 382.239
+        }
+      },
+      {
+        "pair": 81,
+        "sha": "8ab916f16d04cf38f52912580f7568a4120cc220",
+        "invocation": "c635680a-1a07-4fb0-b085-fdfa7f3cf17c",
+        "submitted": "2026-11-20T06:01:44.002074+00:00",
+        "client_finished": "2026-11-20T06:11:21.345636+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 534.763,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1048eea1701f9fa7",
+              "queue_s": 0.097,
+              "preparation_s": 2.409,
+              "process_s": 534.764,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 537.682
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 388.722,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "56d881720606efd9",
+              "queue_s": null,
+              "preparation_s": 2.766,
+              "process_s": 388.722,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 392.484
+        }
+      },
+      {
+        "pair": 82,
+        "sha": "01811a9f1f451e6b65bdcb97b9a66968e35deb52",
+        "invocation": "fe067c7b-9d63-4198-aa4f-b9b0d81b0d21",
+        "submitted": "2026-11-20T06:01:48.260754+00:00",
+        "client_finished": "2026-11-20T06:24:56.180579+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 609.991,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 731.302,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c988a791238a29a8",
+              "queue_s": 0.097,
+              "preparation_s": 2.312,
+              "process_s": 609.991,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "e06f7477d3cb0bfa",
+              "queue_s": 0.137,
+              "preparation_s": 0.763,
+              "process_s": 731.302,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1345.668
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 357.858,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "51562030e9035bab",
+              "queue_s": 3.553,
+              "preparation_s": 1.913,
+              "process_s": 357.858,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 364.381
+        }
+      },
+      {
+        "pair": 83,
+        "sha": "55a117c219b8e56f4f4de32ecd79d9cf074434d4",
+        "invocation": "3dc61c5a-681e-4669-8fee-07eec30238c6",
+        "submitted": "2026-11-20T06:01:49.035560+00:00",
+        "client_finished": "2026-11-20T06:21:37.309061+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 685.13,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "session setup interrupted with setup-stderr"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 456.177,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c52bb04336b513e5",
+              "queue_s": 0.13,
+              "preparation_s": 2.075,
+              "process_s": 685.13,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "f62d1bb837ef464e",
+              "queue_s": 0.062,
+              "preparation_s": 0.233,
+              "process_s": 456.177,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1144.986
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 195.175,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "891b199294b8b244",
+              "queue_s": 0.84,
+              "preparation_s": 0.494,
+              "process_s": 195.176,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 197.471
+        }
+      },
+      {
+        "pair": 84,
+        "sha": "ee5dd4958c12560056125f56518e4cf542af93ca",
+        "invocation": "bca26b10-56a2-445b-b6bf-685d6aa81fe0",
+        "submitted": "2026-11-20T06:03:28.871976+00:00",
+        "client_finished": "2026-11-20T06:11:42.220873+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 452.552,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e473f535704175bd",
+              "queue_s": 0.064,
+              "preparation_s": 0.357,
+              "process_s": 452.552,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 453.417
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 217.087,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "cb91ed5e0d940acf",
+              "queue_s": 4.53,
+              "preparation_s": 1.433,
+              "process_s": 217.087,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 224.182
+        }
+      },
+      {
+        "pair": 85,
+        "sha": "e375b7f32d9943f40d24c24571a833dc9ca5d8b6",
+        "invocation": "5783312a-afc5-4ccd-8a2d-68cb9f0a7e32",
+        "submitted": "2026-11-20T06:03:57.028020+00:00",
+        "client_finished": "2026-11-20T06:33:23.908018+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 876.396,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 553.286,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "91465af49d19116e",
+              "queue_s": 0.098,
+              "preparation_s": 3.085,
+              "process_s": 288.048,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "6621757815820211",
+              "queue_s": 0.097,
+              "preparation_s": 3.167,
+              "process_s": 876.397,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "d5cbf5f861e4614e",
+              "queue_s": 0.061,
+              "preparation_s": 0.272,
+              "process_s": 553.287,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1725.886
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 200.646,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "d4d9d79131729554",
+              "queue_s": 80.568,
+              "preparation_s": 0.684,
+              "process_s": 200.646,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 282.928
+        }
+      },
+      {
+        "pair": 86,
+        "sha": "9ae7ea6aec6ea17951799fffe11713d2e2d2e0b2",
+        "invocation": "17ff52ff-923a-49be-a777-0c477cd5afef",
+        "submitted": "2026-11-20T06:10:52.645099+00:00",
+        "client_finished": "2026-11-20T06:21:51.613311+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 617.785,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2b4a30cddd749977",
+              "queue_s": 0.061,
+              "preparation_s": 0.224,
+              "process_s": 617.786,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 618.515
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 230.596,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "2bf44c5517d3f748",
+              "queue_s": null,
+              "preparation_s": 0.569,
+              "process_s": 230.596,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 231.656
+        }
+      },
+      {
+        "pair": 87,
+        "sha": "6fedad03b3b3941b355fe81b92e90d2cf0741eb1",
+        "invocation": "d560f26e-61cb-4797-838e-61210947ab09",
+        "submitted": "2026-11-20T06:11:22.705455+00:00",
+        "client_finished": "2026-11-20T06:21:04.896708+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 529.884,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1f5db0c1795fab72",
+              "queue_s": 0.062,
+              "preparation_s": 0.66,
+              "process_s": 529.885,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 531.033
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 233.68,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "1db456898cb0cd5e",
+              "queue_s": 3.98,
+              "preparation_s": 0.732,
+              "process_s": 233.681,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 239.672
+        }
+      },
+      {
+        "pair": 88,
+        "sha": "87b2e35f7d7db3b932a46ce1c031b3216bcfbd3c",
+        "invocation": "cbbf81ae-8f48-4176-9c75-54768154ceff",
+        "submitted": "2026-11-20T06:11:43.624895+00:00",
+        "client_finished": "2026-11-20T06:19:26.167166+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 409.126,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "56207c7cc66699d4",
+              "queue_s": 0.096,
+              "preparation_s": 0.468,
+              "process_s": 409.127,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 410.104
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 234.835,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ea2fecbca11fc6d4",
+              "queue_s": 4.526,
+              "preparation_s": 0.7,
+              "process_s": 234.836,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 241.019
+        }
+      },
+      {
+        "pair": 89,
+        "sha": "d7adde084d21b78579da6ce6518c746127ac4301",
+        "invocation": "1d386571-6399-4b9e-b4d1-0517d0e00f94",
+        "submitted": "2026-11-20T06:19:28.769698+00:00",
+        "client_finished": "2026-11-20T06:29:20.361409+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 542.695,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "44299e5a0b91e429",
+              "queue_s": 0.06,
+              "preparation_s": 0.199,
+              "process_s": 542.696,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 543.329
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 182.018,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e1f2ccbeeed4cbd2",
+              "queue_s": null,
+              "preparation_s": 0.973,
+              "process_s": 182.018,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 183.462
+        }
+      },
+      {
+        "pair": 90,
+        "sha": "8170f724ecc672253d7426f13f19a09d3489caec",
+        "invocation": "4010a8ce-3b6a-4902-b254-d577ccaf32c5",
+        "submitted": "2026-11-20T06:21:06.346941+00:00",
+        "client_finished": "2026-11-20T06:32:10.897182+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 612.776,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "49c801381e1945a1",
+              "queue_s": 0.413,
+              "preparation_s": 2.41,
+              "process_s": 612.777,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 616.123
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 343.068,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "eb74c3158d1f236a",
+              "queue_s": 4.772,
+              "preparation_s": 0.961,
+              "process_s": 343.068,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 349.595
+        }
+      },
+      {
+        "pair": 91,
+        "sha": "8e7c3b5997156871f79bbadb126400682fc0bebd",
+        "invocation": "06e2afad-744a-44a2-94b8-27ffbdb93302",
+        "submitted": "2026-11-20T06:21:40.171810+00:00",
+        "client_finished": "2026-11-20T06:32:09.971863+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 576.709,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "bd55ffdda706cd03",
+              "queue_s": 0.061,
+              "preparation_s": 1.016,
+              "process_s": 576.709,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 578.211
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 351.342,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "503f118b55b70c99",
+              "queue_s": 3.749,
+              "preparation_s": 0.64,
+              "process_s": 351.343,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 356.617
+        }
+      },
+      {
+        "pair": 92,
+        "sha": "5670e69a1fca2af4e21c72bed4da630afd1874fa",
+        "invocation": "527b9195-93b4-4701-a11e-e776a89d0562",
+        "submitted": "2026-11-20T06:21:53.617438+00:00",
+        "client_finished": "2026-11-20T06:33:24.818129+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 640.253,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "10db24645c1eabd2",
+              "queue_s": 0.094,
+              "preparation_s": 4.249,
+              "process_s": 640.253,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 645.131
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 381.626,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "34408be95dc1e173",
+              "queue_s": 1.401,
+              "preparation_s": 1.438,
+              "process_s": 381.626,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 385.939
+        }
+      },
+      {
+        "pair": 93,
+        "sha": "5bc393a1b7f315cd1cb61cb36fc140e5cf1c6f57",
+        "invocation": "c14dc7f6-3891-4889-954a-622da45a0534",
+        "submitted": "2026-11-20T06:24:58.971602+00:00",
+        "client_finished": "2026-11-20T06:46:10.344569+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 534.264,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 335.95,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "84e807bf8d0f984c",
+              "queue_s": 0.096,
+              "preparation_s": 2.48,
+              "process_s": 347.113,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "9fd20c3698c431d4",
+              "queue_s": 0.06,
+              "preparation_s": 0.258,
+              "process_s": 534.264,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "c3b80c0369b17b5a",
+              "queue_s": 0.06,
+              "preparation_s": 2.098,
+              "process_s": 335.95,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1223.791
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 220.462,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "034be0fcee06e361",
+              "queue_s": 214.249,
+              "preparation_s": 0.501,
+              "process_s": 220.463,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 436.059
+        }
+      },
+      {
+        "pair": 94,
+        "sha": "80b6edd2778202fd681de0337fb1af1c0030981d",
+        "invocation": "3d7f6748-f211-40fc-a13d-165b540701ea",
+        "submitted": "2026-11-20T06:29:23.014520+00:00",
+        "client_finished": "2026-11-20T06:38:47.408830+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 511.646,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "283dc6f42d78b534",
+              "queue_s": 0.058,
+              "preparation_s": 0.389,
+              "process_s": 511.646,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 512.526
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 239.173,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3fa4294841bc2e34",
+              "queue_s": 34.352,
+              "preparation_s": 1.118,
+              "process_s": 239.173,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 275.854
+        }
+      },
+      {
+        "pair": 95,
+        "sha": "12d7379583d97c3a103d97c15ea4844c91e8f3e6",
+        "invocation": "ca92cd5c-0a39-4a77-bc3e-f23428543b97",
+        "submitted": "2026-11-20T06:32:12.502397+00:00",
+        "client_finished": "2026-11-20T06:56:23.777102+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 509.502,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "fe8c17ba7117efaf",
+              "queue_s": 0.095,
+              "preparation_s": 1.591,
+              "process_s": 887.445,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "77e83758b8fbf0d1",
+              "queue_s": 0.06,
+              "preparation_s": 0.228,
+              "process_s": 509.503,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1399.692
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 205.023,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8245a6ceabb0241d",
+              "queue_s": null,
+              "preparation_s": 0.636,
+              "process_s": 205.024,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 205.775
+        }
+      },
+      {
+        "pair": 96,
+        "sha": "931c9f8fa4311073ee0ac8a39d764de129832393",
+        "invocation": "484db2ab-9131-440c-911d-1e7d01db77c4",
+        "submitted": "2026-11-20T06:32:12.535014+00:00",
+        "client_finished": "2026-11-20T06:50:47.941112+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 563.78,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 493.114,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ff29dac5b1f8b294",
+              "queue_s": 0.059,
+              "preparation_s": 0.523,
+              "process_s": 563.78,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "56c360797adb5f2e",
+              "queue_s": 0.061,
+              "preparation_s": 1.405,
+              "process_s": 493.115,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1064.424
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 224.467,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "ef1f25bc52b48622",
+              "queue_s": 3.615,
+              "preparation_s": 2.268,
+              "process_s": 224.468,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 231.184
+        }
+      },
+      {
+        "pair": 97,
+        "sha": "b8a4541f93ef23f8c850ac9bedd901c37ea2ac21",
+        "invocation": "c24ec85c-ea67-4ca9-b77a-83bf8f3a72ed",
+        "submitted": "2026-11-20T06:33:25.445204+00:00",
+        "client_finished": "2026-11-20T06:43:49.241578+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 571.64,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "14e8fb143c36ac40",
+              "queue_s": 0.056,
+              "preparation_s": 0.828,
+              "process_s": 571.641,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 572.904
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 229.512,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8ea807c34ff12e1c",
+              "queue_s": 4.331,
+              "preparation_s": 0.739,
+              "process_s": 229.513,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 235.519
+        }
+      },
+      {
+        "pair": 98,
+        "sha": "12f8ad976c9ec548f58515f353cd454f1768ba0b",
+        "invocation": "d3c1a341-ddbf-4c63-8479-c0454f8f0afc",
+        "submitted": "2026-11-20T06:33:26.166592+00:00",
+        "client_finished": "2026-11-20T06:42:58.206664+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 517.86,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c69d87d372ce1221",
+              "queue_s": 0.093,
+              "preparation_s": 2.353,
+              "process_s": 517.86,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 520.706
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 234.297,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "67a22e33b11a4057",
+              "queue_s": 3.519,
+              "preparation_s": 1.09,
+              "process_s": 234.297,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 239.69
+        }
+      },
+      {
+        "pair": 99,
+        "sha": "ebadb7518f23b1edc068a8d2dff3090e9aaeea8d",
+        "invocation": "669de417-1532-485d-a8a6-c32ce6006f3f",
+        "submitted": "2026-11-20T06:38:50.234093+00:00",
+        "client_finished": "2026-11-20T07:05:20.808512+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 834.835,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 704.322,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "aa8572d7792056a6",
+              "queue_s": 0.093,
+              "preparation_s": 1.611,
+              "process_s": 834.836,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "7c098d7db2b7a20d",
+              "queue_s": 0.082,
+              "preparation_s": 0.33,
+              "process_s": 704.323,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1542.434
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 207.971,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b50baff3bf8808f3",
+              "queue_s": null,
+              "preparation_s": 1.151,
+              "process_s": 207.972,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 209.554
+        }
+      },
+      {
+        "pair": 100,
+        "sha": "97ca496a0a7270b5b81d5a728aaa9d114384088e",
+        "invocation": "ee936ae9-49f1-4a75-b93b-25a4f6052690",
+        "submitted": "2026-11-20T06:43:00.904663+00:00",
+        "client_finished": "2026-11-20T06:51:38.848047+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 448.347,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "0ca0a1136d67fb0e",
+              "queue_s": 0.056,
+              "preparation_s": 0.282,
+              "process_s": 448.348,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 449.192
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 256.501,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "34a2e0b94fb78a08",
+              "queue_s": 200.556,
+              "preparation_s": 0.789,
+              "process_s": 256.502,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 458.735
+        }
+      }
+    ],
+    "max_concurrent_pairs": 6,
+    "protocol": "Managed TCG and recycled cluster KVM run concurrently in one invocation at the same SHA. One run per target, test-result caching disabled, at most two Bazel attempts, target tracking disabled. Completed records observed at the cutoff form an interim convenience sample.",
+    "summary": {
+      "n": 100,
+      "different_shas": 89,
+      "first": {
+        "managed": [23, 100, [15.17, 32.49]],
+        "kvm": [2, 100, [0.24, 7.04]]
+      },
+      "final": {
+        "managed": {
+          "PASSED": 77,
+          "FLAKY": 18,
+          "FAILED": 5
+        },
+        "kvm": {
+          "PASSED": 98,
+          "FLAKY": 2
+        }
+      },
+      "cells": {
+        "both_passed": 76,
+        "managed_only_failed": 22,
+        "kvm_only_failed": 1,
+        "both_failed": 1
+      },
+      "faster": [97, 100, [91.48, 99.38]],
+      "median": 268.29200000000003,
+      "median_ci": [252.13299999999998, 304.47900000000004],
+      "coverage": 0.9647997997822951,
+      "arm_medians": [521.1015, 225.1005],
+      "discordant": [22, 23, [78.05, 99.89]],
+      "paired_p": 5.7220458984375e-6,
+      "final_cis": [
+        [5, 100, [1.64, 11.28]],
+        [0, 100, [0.0, 3.62]]
+      ],
+      "delta_pp": 21.0,
+      "conservative_paired_diff_ci": [7.2, 33.81]
+    },
+    "started_at_utc": "2026-11-20T03:11:54.242090+00:00",
+    "last_client_finished_at_utc": "2026-11-20T07:05:20.808512+00:00"
+  },
+  "shadow_retirement": {
+    "disabled_confirmed_at_utc": "2026-11-20T07:36:33Z",
+    "new_admissions_disabled": true,
+    "required_route": "kvm",
+    "source_removal_pr": "https://github.com/agentydragon/ducktape/pull/18079"
+  },
+  "post_cutover_devel_census": {
+    "window_start_utc": "2026-11-20T05:41:07Z",
+    "created_through_utc": "2026-11-20T07:36:33Z",
+    "artifacts_reviewed_at_utc": "2026-11-20T07:40:47.511010+00:00",
+    "attempts": [
+      {
+        "run": 44695701920,
+        "attempt": 1,
+        "sha": "c41ea8f7db6c7a53ebcf216c346a593e1496a710",
+        "workflow": "in_progress",
+        "created_at": "2026-11-20T07:32:24Z",
+        "selection": "cached",
+        "collector": "success",
+        "collector_job": 136151812285,
+        "artifact_id": 14610174978,
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "9afafda3-6f74-54fd-9681-3dfb61a06560"
+      },
+      {
+        "run": 44695478792,
+        "attempt": 1,
+        "sha": "f50bf96595bc19cd510728d44085a3d3c4a9a131",
+        "workflow": "pending",
+        "created_at": "2026-11-20T07:30:37Z",
+        "artifact_id": 14609909798,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "999e7184-c480-5b0a-9f15-f9a609bafa08"
+      },
+      {
+        "run": 44695282502,
+        "attempt": 1,
+        "sha": "9c27350c325d37df2f2954b1736f8c726e1fa863",
+        "workflow": "in_progress",
+        "created_at": "2026-11-20T07:29:02Z",
+        "artifact_id": 14610078371,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "3bc53aeb-b371-5b25-a86e-02e06012d003"
+      },
+      {
+        "run": 44694997569,
+        "attempt": 1,
+        "sha": "7ba74be22cba4411819c09d250ef3a5efbfa2c4a",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T07:26:39Z",
+        "artifact_id": 14610173206,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44694543062,
+        "attempt": 1,
+        "sha": "5200ef4ad714e303ffc0bd20ffaefae598790f4b",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:22:56Z",
+        "artifact_id": 14610745992,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "afed4272-1cfd-55a3-a415-9b96f4440971"
+      },
+      {
+        "run": 44694341354,
+        "attempt": 1,
+        "sha": "146d1a65b02f80b19372f09ecf4e185a5d41bbd5",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:21:16Z",
+        "artifact_id": 14610266943,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "a28bac1c-5796-569d-a07f-e2d5f739f388"
+      },
+      {
+        "run": 44694108964,
+        "attempt": 1,
+        "sha": "76834897e7c6f5d7050f72f698773fbd3a422f1e",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:19:24Z",
+        "artifact_id": 14610545286,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "e02b37ab-57eb-50f9-a01b-b177827554ee"
+      },
+      {
+        "run": 44693528694,
+        "attempt": 1,
+        "sha": "9b5dc1565be44e03821343af9566d80102be532d",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:14:41Z",
+        "artifact_id": 14610385135,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "b65a8f5d-03d1-5a77-959d-251c630ff8ed"
+      },
+      {
+        "run": 44693279081,
+        "attempt": 1,
+        "sha": "4f33d34374a440f04bdeac0c52a7956b8149a914",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T07:12:39Z",
+        "artifact_id": 14609238521,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44693210139,
+        "attempt": 1,
+        "sha": "3eff5f3d718e10ed27eee3dbb4067050e921fef5",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T07:12:07Z",
+        "artifact_id": 14609750658,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44693090589,
+        "attempt": 1,
+        "sha": "066411995295cff1875aa829972991cf59610696",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:11:09Z",
+        "artifact_id": 14608959380,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "cf43c876-0d8f-5c37-be9b-f88307775230"
+      },
+      {
+        "run": 44692759864,
+        "attempt": 1,
+        "sha": "5175e9df31c8a0c4202b95b5bde86826cada883f",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:08:25Z",
+        "artifact_id": 14609875189,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "848abdcf-ef2e-5170-a923-2f9effb0cb25"
+      },
+      {
+        "run": 44691989779,
+        "attempt": 1,
+        "sha": "eac3f821b2c7d86a6bc51f136a522cab39c80b5b",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:02:07Z",
+        "artifact_id": 14608659360,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "2c2e2d58-1836-5345-9c04-8054cb2970be"
+      },
+      {
+        "run": 44691780260,
+        "attempt": 1,
+        "sha": "628a651e380f16a5797f8ce980d2a878661c29ad",
+        "workflow": "success",
+        "created_at": "2026-11-20T07:00:27Z",
+        "artifact_id": 14608753692,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "2634dcc7-516b-5086-b348-ac1bbe3817b9"
+      },
+      {
+        "run": 44691085935,
+        "attempt": 1,
+        "sha": "4f193cebd41eac91255b14ee2698689b466622df",
+        "workflow": "failure",
+        "created_at": "2026-11-20T06:54:17Z",
+        "artifact_id": 14608153941,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "57ce3e88-c57a-5807-b0c5-5baee4337a4c"
+      },
+      {
+        "run": 44690439920,
+        "attempt": 1,
+        "sha": "414a2304804d7fef65155b6ccf668e1da15dace9",
+        "workflow": "failure",
+        "created_at": "2026-11-20T06:48:43Z",
+        "artifact_id": 14607859539,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "17f15daf-3e3a-5133-9179-296f01cedee7"
+      },
+      {
+        "run": 44690414827,
+        "attempt": 1,
+        "sha": "274ca516b9cc3e8da4e66279f5b0c424769abad8",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:48:29Z",
+        "artifact_id": 14608775884,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44689808357,
+        "attempt": 1,
+        "sha": "9b65192c4fedadeec4d8077fca1134544f59cd5e",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:43:25Z",
+        "artifact_id": 14608002896,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44689273408,
+        "attempt": 1,
+        "sha": "3dc7d1dcd3fcfd67e5c6aa8100e322a1e2a2e66c",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:38:52Z",
+        "artifact_id": 14607583479,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44689185775,
+        "attempt": 1,
+        "sha": "70fa35a5a51bcdf008529cce2a9ba37b27df86b6",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:38:06Z",
+        "artifact_id": 14607797566,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44688973875,
+        "attempt": 1,
+        "sha": "339bcf68d07f8938f4dc242fbacdc310f20dde33",
+        "workflow": "failure",
+        "created_at": "2026-11-20T06:36:16Z",
+        "artifact_id": 14607984419,
+        "selection": "fresh",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "kvm": {
+          "invocation": "cc157c1b-5080-522e-b377-c8f9c26e1503",
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 216.639,
+              "cases": [
+                {
+                  "name": "test_vm_scenarios[claude]",
+                  "status": "PASSED"
+                },
+                {
+                  "name": "test_vm_scenarios[codex]",
+                  "status": "PASSED"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "57661ed74d409735",
+              "queue_s": 4.33,
+              "preparation_s": 1.738,
+              "process_s": 216.64
+            }
+          ]
+        },
+        "managed": {
+          "invocation": "668825fd-4b6a-5b03-89ce-1991735c3206",
+          "label": "//agentplane/system_tests/suites:test_vm_tcg",
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 439.15,
+              "cases": [
+                {
+                  "name": "test_vm_scenarios[claude]",
+                  "status": "PASSED"
+                },
+                {
+                  "name": "test_vm_scenarios[codex]",
+                  "status": "PASSED"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "43b926c8cc0b85e0",
+              "queue_s": 0.062,
+              "preparation_s": 0.801,
+              "process_s": 439.15
+            }
+          ]
+        },
+        "workflow_job_verdicts": {
+          "vm-shadow / compare": "success",
+          "bazel-ci / Test & Build": "success",
+          "push-images / Push agentplane-app / publish": "failure"
+        }
+      },
+      {
+        "run": 44688943174,
+        "attempt": 1,
+        "sha": "29f30f1b527f1b9a811d9d60945b3d2ced5ad435",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:36:01Z",
+        "artifact_id": 14607189395,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44688918437,
+        "attempt": 1,
+        "sha": "07f483d57bc5d2f85ee1135ac93e0347a0fd7ff0",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:35:49Z",
+        "artifact_id": 14607637461,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44688086354,
+        "attempt": 1,
+        "sha": "5bca2af79b748cbca5f3b94d033ec0ce7a27707e",
+        "workflow": "failure",
+        "created_at": "2026-11-20T06:28:52Z",
+        "artifact_id": 14607781822,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "7f533e68-9ea9-5ea3-b4b5-36a201d9753d"
+      },
+      {
+        "run": 44687937976,
+        "attempt": 1,
+        "sha": "b3013e0ca062f7f47704c31882c68836972553ba",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T06:27:34Z",
+        "artifact_id": 14607427338,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44687842387,
+        "attempt": 1,
+        "sha": "ad102c79c9ce5e79ed1726782146c373797e5c13",
+        "workflow": "success",
+        "created_at": "2026-11-20T06:26:43Z",
+        "artifact_id": 14607805599,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "d1bf16e0-9cc3-5572-b7ee-404143e92180"
+      },
+      {
+        "run": 44686445515,
+        "attempt": 1,
+        "sha": "6b2209f142ab6e0a863168ea056f06fe7ed20119",
+        "workflow": "success",
+        "created_at": "2026-11-20T06:14:53Z",
+        "artifact_id": 14607145707,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "95c9107d-3382-596f-a4d9-a114cb7426e7"
+      },
+      {
+        "run": 44685721803,
+        "attempt": 1,
+        "sha": "4e81a971dfad4f342efcbfe6a74112436d8309ea",
+        "workflow": "success",
+        "created_at": "2026-11-20T06:08:43Z",
+        "artifact_id": 14606267362,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "aa1591e8-02d5-59b8-8229-a6e280023f83"
+      },
+      {
+        "run": 44682958856,
+        "attempt": 1,
+        "sha": "52687212b78d35015edaef36d423e77bd43c5823",
+        "workflow": "success",
+        "created_at": "2026-11-20T05:43:52Z",
+        "artifact_id": 14605387294,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "f4e3d69c-8a3f-52de-abbd-a834ba34a14f"
+      },
+      {
+        "run": 44682689152,
+        "attempt": 1,
+        "sha": "6531244e9158b60a4fe3f46c2dae007dc183cc78",
+        "workflow": "cancelled",
+        "created_at": "2026-11-20T05:41:26Z",
+        "artifact_id": 14605007975,
+        "selection": "no-invocation",
+        "collection_errors": true,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed"
+      },
+      {
+        "run": 44682660742,
+        "attempt": 1,
+        "sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
+        "workflow": "success",
+        "created_at": "2026-11-20T05:41:10Z",
+        "artifact_id": 14605351862,
+        "selection": "cached",
+        "collection_errors": false,
+        "schema_version": 2,
+        "required_route": "kvm",
+        "shadow_route": "managed",
+        "required_invocation": "0e75c61c-8a2b-5bb5-93e7-d3e3d81a3412"
+      }
+    ]
   }
 }
