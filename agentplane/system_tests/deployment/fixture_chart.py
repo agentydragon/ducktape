@@ -345,6 +345,7 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
             model.id: ModelConfig(
                 connection="llm-ingress",
                 provider_model=model.id,
+                response_header_timeout_seconds=360,
                 reasoning_efforts={"", *model.reasoning_efforts},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),

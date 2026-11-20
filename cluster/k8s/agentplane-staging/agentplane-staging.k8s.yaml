@@ -3140,6 +3140,7 @@ data:
         "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
           "connection": "llm-ingress",
           "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "response_header_timeout_seconds": 360,
           "api": "responses",
           "responses": {
             "dialect": "standard"
@@ -3327,6 +3328,7 @@ data:
         "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions": {
           "connection": "llm-ingress",
           "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "response_header_timeout_seconds": 360,
           "api": "chat_completions",
           "chat_compaction": {
             "max_tokens": 8192,
@@ -3344,6 +3346,7 @@ data:
         "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated": {
           "connection": "llm-ingress",
           "provider_model": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
+          "response_header_timeout_seconds": 360,
           "api": "chat_completions",
           "chat_compaction": {
             "max_tokens": 8192,
