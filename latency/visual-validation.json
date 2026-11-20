@@ -1,146 +1,29 @@
 {
-  "validated_at_utc": "2026-11-18T11:19:06.933839+00:00",
-  "validation_scope": "Exact-artifact RBE preview. Canonical live deployment is checked separately after publication.",
-  "invocation": "add9483d-b376-44d8-9e98-718b0fc6bda0",
-  "invocation_url": "https://app.buildbuddy.io/invocation/add9483d-b376-44d8-9e98-718b0fc6bda0",
-  "execution": "Uncached RBE Chromium with deterministic_browser_context and VisualPage.capture",
-  "target": "//devinfra/ci/x/latency_preview:test_preview",
-  "browser_cases": 4,
-  "passed": 4,
-  "failed": 0,
-  "errors": 0,
-  "skipped": 0,
-  "viewports": [
-    [1440, 960],
-    [390, 844]
+  "validated_at_utc": "2026-11-20T21:36:33.306026+00:00",
+  "validation_scope": "RBE preview of the posted report HTML, reviewed evidence, shared UI, and report navigation",
+  "invocation": "e661146d-aa34-4f42-a720-271ca842d711",
+  "invocation_url": "https://app.buildbuddy.io/invocation/e661146d-aa34-4f42-a720-271ca842d711",
+  "target": "//devinfra/ci/x/latency_report_preview:test_preview",
+  "cases": [
+    "test_preview[desktop-light]",
+    "test_preview[desktop-dark]",
+    "test_preview[mobile-light]",
+    "test_preview[mobile-dark]"
   ],
-  "initial_color_schemes": ["light", "dark"],
-  "screenshots_captured": 112,
-  "screenshots_byte_verified": 16,
-  "screenshots_published": 12,
+  "screenshots_digest_verified": 20,
   "rendered_sha256": {
-    "latency/index.html": "bc79dd8fee3c8a2b969561967cc05571b7a8405ed4e0e1c433cb300d7440626f",
-    "latency/evidence.json": "4722fb10d702fe9bbaf2cd0f3ba4aad6bef78afd092d3522ad9daf285aeea2d4",
-    "latency/evidence.md": "deb7cf4472f5dc00d270defd7fe527adf7e7cfad019d70062f7ebda9a7ee2822",
-    "index.html": "bc5e98998ebce72c459da983b9e4bcb5abac09a58b02d407ebc8394abb162b46",
-    "README.md": "77bf9fad57fd7f9733e6c7edebb97a2d700d0f140e588e9319d4ccb431c9f4ca",
+    "index.html": "2987c5439c10535f614c0dda64a6f8f621da242b2c466de03bab71212e1427d2",
+    "latency/index.html": "a28b1150f740f1e102c74ba262fe09e14a227f12b8cdd512951da0e3e3ddacd7",
+    "latency/evidence.json": "4adbcd997e99fba2f5fbc44cf9f420511f87f9d2d31c70a7213783f34d8afa92",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
-  "harness_sha256": "d517c9c268d62cb01849d88aff29a1c9e01918146c2ceae15fd31cd6f3e14cf0",
   "checks": [
-    "Exact HTML/evidence hashes and inspected source stamp",
-    "Both rollout links and merge times; measurement disclosure opens and closes",
-    "Retained historical graphs, tables and disclosures",
-    "Older evidence and JavaScript-disabled fallback",
-    "Real pinned CDN loading; desktop/mobile in both themes and live preference change",
-    "No document overflow; root navigation summary matches current checkpoint",
-    "All selected PNGs match exact native digest/size and join screenshot records by output path"
-  ],
-  "manual_review": {
-    "approved_for_publication": true,
-    "reviewed_initial_invocation": "db507317-98be-4d62-a4f1-ca6bc4935b05",
-    "rollout_and_methods_unchanged_pngs": 8,
-    "final_header_and_navigation_review": "Current inspected source is labeled devel; final screenshots reviewed separately before publication.",
-    "limits": "Mobile tables use Mantine horizontal scrolling; screenshots show the left edge. Navigation is captured after a live preference toggle, so its color scheme is opposite the case's initial theme. The full-page and retained-chart screenshots were not all manually reviewed."
-  },
-  "previous_validation_url": "https://github.com/agentydragon/ducktape/blob/df20865667f8763ed90432479fcad38335439849/latency/visual-validation.json",
-  "selected_screenshots": [
-    {
-      "file": "visuals/ci-rollout-mobile-dark-ci-config-rollout.png",
-      "case": "mobile-dark",
-      "checkpoint": "ci-config-rollout",
-      "sha256": "3e0ef0b8c6594d30ab4499b95ac14434a151712abbfee9225128424eb1fa200a",
-      "bytes": 128443,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/3e0ef0b8c6594d30ab4499b95ac14434a151712abbfee9225128424eb1fa200a/128443"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-light-navigation.png",
-      "case": "desktop-light",
-      "checkpoint": "navigation",
-      "sha256": "6a27f08a7667848a1eecd9172ed2fcad8518516a134db07ce1026cf240c1d31f",
-      "bytes": 25390,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/6a27f08a7667848a1eecd9172ed2fcad8518516a134db07ce1026cf240c1d31f/25390"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-dark-header.png",
-      "case": "desktop-dark",
-      "checkpoint": "header",
-      "sha256": "ed319b4111eb6107a9ec31d93143e298f5ec9906599008a77759a36dd3e5e969",
-      "bytes": 43073,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/ed319b4111eb6107a9ec31d93143e298f5ec9906599008a77759a36dd3e5e969/43073"
-    },
-    {
-      "file": "visuals/ci-rollout-mobile-light-ci-config-rollout.png",
-      "case": "mobile-light",
-      "checkpoint": "ci-config-rollout",
-      "sha256": "eba200e0e67e1167ce8c87c22f13be79e18c065c0d8f3b9c1a6a812c0749503a",
-      "bytes": 131146,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/eba200e0e67e1167ce8c87c22f13be79e18c065c0d8f3b9c1a6a812c0749503a/131146"
-    },
-    {
-      "file": "visuals/ci-rollout-mobile-dark-header.png",
-      "case": "mobile-dark",
-      "checkpoint": "header",
-      "sha256": "7eb580536e71fb0bee30062e0fe5d7eed1cdacaa13289c7d953467cd21eea0a2",
-      "bytes": 43822,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/7eb580536e71fb0bee30062e0fe5d7eed1cdacaa13289c7d953467cd21eea0a2/43822"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-dark-ci-config-rollout.png",
-      "case": "desktop-dark",
-      "checkpoint": "ci-config-rollout",
-      "sha256": "a284476ebe255fc6f48a64571aea0df9e97fa435cf30e1ab573cb6f56df31f4a",
-      "bytes": 162802,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/a284476ebe255fc6f48a64571aea0df9e97fa435cf30e1ab573cb6f56df31f4a/162802"
-    },
-    {
-      "file": "visuals/ci-rollout-mobile-light-navigation.png",
-      "case": "mobile-light",
-      "checkpoint": "navigation",
-      "sha256": "3567bd30013de7decc8bdbeb6ff3ba27834f9e41260387d9145e81a09e7cd5ff",
-      "bytes": 24447,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/3567bd30013de7decc8bdbeb6ff3ba27834f9e41260387d9145e81a09e7cd5ff/24447"
-    },
-    {
-      "file": "visuals/ci-rollout-mobile-light-header.png",
-      "case": "mobile-light",
-      "checkpoint": "header",
-      "sha256": "255f970218a7751a58151ac6fe0a0d2842d1390ccb8232a11391bbb7139c2f4d",
-      "bytes": 47186,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/255f970218a7751a58151ac6fe0a0d2842d1390ccb8232a11391bbb7139c2f4d/47186"
-    },
-    {
-      "file": "visuals/ci-rollout-mobile-dark-navigation.png",
-      "case": "mobile-dark",
-      "checkpoint": "navigation",
-      "sha256": "73a3123a9872e12851e9bfa4cd405c977ade6c6e64eccc130918881416bf44d1",
-      "bytes": 24637,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/73a3123a9872e12851e9bfa4cd405c977ade6c6e64eccc130918881416bf44d1/24637"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-dark-navigation.png",
-      "case": "desktop-dark",
-      "checkpoint": "navigation",
-      "sha256": "21eb5a4729435b0a36faa3dc8c2c5667fa030b7edf9b6b949fed7881bac7210e",
-      "bytes": 25598,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/21eb5a4729435b0a36faa3dc8c2c5667fa030b7edf9b6b949fed7881bac7210e/25598"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-light-header.png",
-      "case": "desktop-light",
-      "checkpoint": "header",
-      "sha256": "2993b71e07df38ef5473ae71e5273d1ad420889221ce13196639bb1ce35daf3c",
-      "bytes": 47203,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/2993b71e07df38ef5473ae71e5273d1ad420889221ce13196639bb1ce35daf3c/47203"
-    },
-    {
-      "file": "visuals/ci-rollout-desktop-light-ci-config-rollout.png",
-      "case": "desktop-light",
-      "checkpoint": "ci-config-rollout",
-      "sha256": "9926326f77b7c03092c1b364b0a4b83a30860bb54ca9fc7fd811db7abeaebb75",
-      "bytes": 169371,
-      "native_uri": "bytestream://remote.buildbuddy.io/blobs/9926326f77b7c03092c1b364b0a4b83a30860bb54ca9fc7fd811db7abeaebb75/169371"
-    }
+    "Canonical manifest hashes from the exact preview bytes",
+    "Pinned CDN framework loaded, both charts populated",
+    "Four combinations of desktop/mobile and initial browser theme",
+    "Live scheme change and disclosure toggles",
+    "Document width and report navigation summary",
+    "Visual review of charts and wrapping at desktop/mobile widths"
   ]
 }
