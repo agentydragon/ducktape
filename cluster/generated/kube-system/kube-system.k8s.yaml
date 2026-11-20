@@ -29,6 +29,44 @@ spec:
       io.cilium/app: operator
       name: cilium-operator
 ---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: audit-direct-workload-writes
+spec:
+  failurePolicy: Ignore
+  matchConditions:
+    - expression: "!(request.namespace in ['kube-system', 'kyverno', 'flux-system', 'kube-public', 'kube-node-lease'])"
+      name: application-namespace
+    - expression: "!(request.userInfo.username in ['system:serviceaccount:flux-system:kustomize-controller', 'system:serviceaccount:flux-system:helm-controller', 'system:serviceaccount:flux-system:source-controller', 'system:serviceaccount:flux-system:haku-state-reconciler', 'system:serviceaccount:kyverno:kyverno-admission-controller', 'system:serviceaccount:monitoring:monitoring-operator', 'system:serviceaccount:monitoring:grafana-operator', 'system:serviceaccount:seaweedfs:seaweedfs-operator', 'system:serviceaccount:authentik:authentik', 'system:serviceaccount:kube-system:reloader-reloader']) && !(request.namespace == 'crossplane-system' && request.userInfo.username == 'system:serviceaccount:crossplane-system:crossplane') && !('system:nodes' in request.userInfo.?groups.orValue([]))"
+      name: direct-writer
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - daemonsets
+          - deployments
+          - statefulsets
+        scope: Namespaced
+  validations:
+    - expression: "false"
+      message: Workload write outside the known GitOps and operator paths.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: audit-direct-workload-writes
+spec:
+  policyName: audit-direct-workload-writes
+  validationActions:
+    - Audit
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
