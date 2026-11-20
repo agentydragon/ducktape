@@ -44,6 +44,9 @@ spec:
   values:
     nodeSelector:
       topology.kubernetes.io/region: hil
+    podDisruptionBudget:
+      webhooks:
+        minAvailable: 1
     resources:
       metricServer:
         limits:
@@ -67,3 +70,12 @@ spec:
           cpu: 25m
           memory: 64Mi
     watchNamespace: haku-ci,buildbuddy-executor
+    webhooks:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: keda-admission-webhooks
+              topologyKey: kubernetes.io/hostname
+      replicaCount: 2

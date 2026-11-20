@@ -86,6 +86,20 @@ def chart(app: App) -> Chart:
             # namespaced RoleBindings in each watched namespace and the KEDA namespace.
             "watchNamespace": f"{runner.NAMESPACE},buildbuddy-executor",
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "webhooks": {
+                "replicaCount": 2,
+                "affinity": {
+                    "podAntiAffinity": {
+                        "requiredDuringSchedulingIgnoredDuringExecution": [
+                            {
+                                "labelSelector": {"matchLabels": {"app": "keda-admission-webhooks"}},
+                                "topologyKey": "kubernetes.io/hostname",
+                            }
+                        ]
+                    }
+                },
+            },
+            "podDisruptionBudget": {"webhooks": {"minAvailable": 1}},
             "resources": {
                 "operator": operator_resources,
                 "metricServer": metrics_resources,
