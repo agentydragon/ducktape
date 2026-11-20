@@ -8,6 +8,7 @@ root=${1:-/games/llm-models}
 target="$root/$model"
 staging="$root/.$model.partial"
 
+# hf locks individual files. Serialize the shared staging directory through the final rename.
 exec 9>"$root/.$model.lock"
 flock 9
 if [[ -L "$target" || -L "$staging" ]]; then
