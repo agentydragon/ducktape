@@ -23,9 +23,7 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
 )
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
-from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId, SnapshotSlug
-from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 
 # gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
@@ -67,29 +65,10 @@ async def test_build_critic_sh_via_agent(
         logger.info(f"build_critic.sh produced digest: {new_digest}")
         assert new_digest.startswith("sha256:"), f"Expected sha256 digest, got: {new_digest!r}"
 
-        # Start the custom critic image
-        example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        start_output: StartCriticResponse = yield from m.start_critic_roundtrip(
-            RunCriticRequest(
-                definition_id=DefinitionId(new_digest),
-                example=example,
-                timeout_seconds=120,
-                budget_usd=1.0,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-            )
+        # Run the custom critic image and wait until it is graded
+        yield from m.evaluate_critic_roundtrip(
+            definition_id=DefinitionId(new_digest), snapshot_slug=snapshot_slug, critic_model=ORCHESTRATION_CRITIC_MODEL
         )
-        critic_run_id = start_output.critic_run_id
-        logger.info(f"Custom critic run: {critic_run_id}")
-
-        # Wait for critic to finish
-        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
-            critic_run_id, timeout_seconds=120
-        )
-        logger.info(f"Critic completed: status={completed.status}")
-
-        # Wait for grading
-        wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
-        logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
 
         yield m.report_success()
 

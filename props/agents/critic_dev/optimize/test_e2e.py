@@ -33,9 +33,7 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import AgentType, TargetMetric
-from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 
@@ -71,34 +69,11 @@ async def test_optimizer_orchestrates_critic(
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Start critic (non-blocking, returns immediately with critic_run_id)
-        example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        start_response: StartCriticResponse = yield from m.start_critic_roundtrip(
-            RunCriticRequest(
-                definition_id=DefinitionId(digests["critic"]),
-                example=example,
-                timeout_seconds=120,
-                budget_usd=1.0,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-            )
+        yield from m.evaluate_critic_roundtrip(
+            definition_id=DefinitionId(digests["critic"]),
+            snapshot_slug=snapshot_slug,
+            critic_model=ORCHESTRATION_CRITIC_MODEL,
         )
-        critic_run_id = start_response.critic_run_id
-        logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
-
-        # Wait for critic container to finish
-        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
-            critic_run_id, timeout_seconds=120
-        )
-        logger.info(f"Critic completed: status={completed.status}")
-
-        # Wait for grading (polls database directly inside container)
-        grading_response: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(
-            critic_run_id, timeout_seconds=60
-        )
-        total_credit = grading_response.total_credit or 0.0
-        max_credit = grading_response.max_credit or 0
-        recall = total_credit / max_credit if max_credit > 0 else 0.0
-        logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
 
         # Report success
         yield m.report_success()
