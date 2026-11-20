@@ -17,7 +17,7 @@ from pydantic import SecretStr
 
 from agentplane.proto import event_pb2
 from agentplane.sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
-from agentplane.sampler.testing import METADATA, create_request, service, settings, submit
+from agentplane.sampler.testing import create_request, service, settings, submit
 from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.sqlalchemy_engines import postgres_async_engine
@@ -62,7 +62,7 @@ async def test_agent_runs_a_nested_command_and_continues(
     request.spec.model = model
     request.spec.reasoning_effort = EFFORT
     async with service(config) as stub:
-        await stub.CreateSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, timeout=10)
         first = await submit(
             stub,
             request.session_id,

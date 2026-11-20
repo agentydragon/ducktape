@@ -193,7 +193,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     "printf 'gateway setup stderr\\n' >&2\n"
                 )
                 session_id = request.session_id
-                sampler_metadata = ()
                 async with (
                     go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint,
                     capture_sampler_failure(store, session_id),
@@ -209,18 +208,13 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     assert bearer_rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
                     assert not await store.events(session_id, 0, limit=1000)
                     with pytest.raises(grpc.aio.AioRpcError) as absent_session:
-                        await admin.GetSession(
-                            sampler_admin_pb2.GetSessionRequest(session_id=session_id),
-                            metadata=sampler_metadata,
-                            timeout=10,
-                        )
+                        await admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10)
                     assert absent_session.value.code() == grpc.StatusCode.NOT_FOUND
-                    await stub.CreateSession(request, metadata=sampler_metadata, timeout=10)
+                    await stub.CreateSession(request, timeout=10)
                     await stub.SubmitInput(
                         harness_host_pb2.SubmitInputRequest(
                             session_id=session_id, command_id="shell-and-patch", text="Write, patch and read the file."
                         ),
-                        metadata=sampler_metadata,
                         timeout=10,
                     )
                     code = (
@@ -259,8 +253,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             *response_stream([Message("Patched artifact: after")], model="test-model").events
                         )
                     event_stream = admin.FollowEvents(
-                        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True),
-                        metadata=sampler_metadata,
+                        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True)
                     )
                     try:
                         async with asyncio.timeout(20):
@@ -305,7 +298,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             command_id=outage_command_id,
                             text="Complete this input while History is unavailable.",
                         ),
-                        metadata=sampler_metadata,
                         timeout=10,
                     )
                     outage_request = await endpoint.next()
@@ -314,8 +306,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         event_stream = admin.FollowEvents(
                             sampler_admin_pb2.FollowEventsRequest(
                                 session_id=session_id, after_cursor=after_cursor, follow=True
-                            ),
-                            metadata=sampler_metadata,
+                            )
                         )
                         try:
                             async with asyncio.timeout(20):
@@ -374,7 +365,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             command_id=next_command_id,
                             text="Complete a fresh input after History recovery.",
                         ),
-                        metadata=sampler_metadata,
                         timeout=10,
                     )
                     next_request = await endpoint.next()

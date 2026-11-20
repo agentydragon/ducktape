@@ -25,7 +25,6 @@ from agentplane.testing.go_process import go_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from util.net import listen_tcp
 
-METADATA = ()
 # The Session `create_request` creates.
 SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 
@@ -238,9 +237,7 @@ async def turn_completed(
     stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float = 15
 ) -> event_pb2.TurnCompleted:
     """Follow the Session's events until `turn_id` completes."""
-    stream = stub.admin.FollowEvents(
-        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
-    )
+    stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
@@ -263,9 +260,7 @@ async def follow_turn(stub: SamplerTestClient, session_id: str, turn_id: str, *,
     texts: dict[str, str] = {}
     assistant_items: set[str] = set()
     active = False
-    stream = stub.admin.FollowEvents(
-        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
-    )
+    stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
@@ -293,7 +288,7 @@ async def submit_input(
 ) -> harness_host_pb2.SubmitInputResponse:
     """Admit one input and return its receipt without following the resulting turn."""
     request = harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
-    return await stub.harness_host.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+    return await stub.harness_host.SubmitInput(request, timeout=timeout_s)
 
 
 async def submit(stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float) -> Turn:
