@@ -58,8 +58,11 @@ The following broader generator and syntax work remains open.
       evidence, not as a proof of a validator bug or a successful proof.
 - [ ] Preserve seed, case index, source, assignment, emitted files, observations,
       verdict and relevant runtime versions for failures and interesting differences.
-      Add automatic shrinking of both program and split, retaining the exact failure
-      predicate, and promote minimized bugs to regression tests.
+      Automatically minimize unmutated proved-versus-Node counterexamples by
+      removing statements, calls, empty modules and imports while preserving that
+      predicate; extend shrinking to mutated cases and other failure categories,
+      expression subtrees and more split transformations, and promote minimized
+      bugs to regression tests.
 - [ ] Track grammar, split, verdict and observation coverage, including refusal
       and timeout rates. Support deterministic sharding and replay; run a bounded
       representative suite in CI and a configurable larger campaign separately.

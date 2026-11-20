@@ -7,11 +7,27 @@ if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
-const { execute, makeCase, runFuzz } = await import("./fuzz.mjs");
+const { execute, makeCase, minimizeCase, runFuzz } = await import("./fuzz.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
+const shrinkInput = makeCase(123, 0);
+const keptNode = JSON.stringify(shrinkInput.ast.body[0]);
+const keptCall = shrinkInput.calls[0];
+const shrunk = await minimizeCase(
+  shrinkInput,
+  async (candidate) =>
+    candidate.ast.body.some((node) => JSON.stringify(node) === keptNode) && candidate.calls.includes(keptCall)
+);
+assert.equal(shrunk.ast.body.filter((node) => node.type !== "ExportNamedDeclaration").length, 1);
+assert.deepEqual(shrunk.calls, [keptCall]);
+assert.equal(Object.values(shrunk.spec.modules).flatMap((module) => module.statements).length, 1);
+assert.deepEqual(
+  Object.values(shrunk.spec.modules).flatMap((module) => module.statements),
+  [0]
+);
+assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
 const throwing = join(process.env.TEST_TMPDIR, `throwing-${shard}.mjs`);
 await writeFile(throwing, "export function first() { return 42; } export function fail() { throw new Error(); }");
 assert.deepEqual(execute(throwing, ["first", "fail"]), {

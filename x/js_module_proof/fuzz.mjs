@@ -485,6 +485,128 @@ try{
   return JSON.parse(child.stdout);
 }
 
+// Reduce top-level statements, call sequence, and module graph while retaining a
+// caller-supplied failure predicate. Candidates are rebuilt from AST and split
+// together, so statement indices remain meaningful after removals.
+export async function minimizeCase(input, fails) {
+  let current = structuredClone(input);
+  if (!(await fails(current))) throw new Error("initial case does not satisfy the failure predicate");
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const statements = current.ast.body.filter((node) => node.type !== "ExportNamedDeclaration");
+    for (let index = 0; index < statements.length; index++) {
+      const candidate = structuredClone(current);
+      let seen = 0;
+      candidate.ast.body = candidate.ast.body.filter(
+        (node) => node.type === "ExportNamedDeclaration" || seen++ !== index
+      );
+      for (const module of Object.values(candidate.spec.modules))
+        module.statements = module.statements.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i));
+      candidate.source = print(candidate.ast);
+      if (await fails(candidate)) {
+        current = candidate;
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
+    for (let index = 0; index < current.calls.length; index++) {
+      const candidate = structuredClone(current);
+      candidate.calls.splice(index, 1);
+      if (await fails(candidate)) {
+        current = candidate;
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
+    for (const name of Object.keys(current.spec.modules)) {
+      if (name === current.spec.entry || current.spec.modules[name].statements.length) continue;
+      const candidate = structuredClone(current);
+      delete candidate.spec.modules[name];
+      for (const module of Object.values(candidate.spec.modules))
+        module.imports = module.imports.filter((dep) => dep !== name);
+      if (await fails(candidate)) {
+        current = candidate;
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
+    for (const [name, module] of Object.entries(current.spec.modules)) {
+      for (let index = 0; index < module.imports.length; index++) {
+        const candidate = structuredClone(current);
+        candidate.spec.modules[name].imports.splice(index, 1);
+        if (await fails(candidate)) {
+          current = candidate;
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+  }
+  return current;
+}
+
+async function minimizeProvedDifference(input, root) {
+  const scratch = join(root, "shrink-attempt");
+  const fails = async (candidate) => {
+    await rm(scratch, { recursive: true, force: true });
+    await mkdir(scratch, { recursive: true });
+    const source = join(scratch, "source.mjs"),
+      spec = join(scratch, "spec.json"),
+      out = join(scratch, "out");
+    await writeFile(source, candidate.source);
+    await writeFile(spec, JSON.stringify(candidate.spec));
+    try {
+      await generateBindings(source, spec, out);
+      const before = execute(source, candidate.calls),
+        after = execute(join(out, candidate.spec.entry), candidate.calls);
+      if (
+        before.inconclusive ||
+        after.inconclusive ||
+        before.error?.thrown?.kind === "opaque" ||
+        after.error?.thrown?.kind === "opaque" ||
+        JSON.stringify(before) === JSON.stringify(after)
+      )
+        return false;
+      return (await validateBindings(source, spec, out)).result === "proved under assumptions";
+    } catch {
+      return false;
+    }
+  };
+  const minimized = await minimizeCase(input, fails);
+  const destination = join(root, "minimized");
+  await rm(destination, { recursive: true, force: true });
+  await mkdir(destination, { recursive: true });
+  await writeFile(join(destination, "source.mjs"), minimized.source);
+  await writeFile(join(destination, "spec.json"), JSON.stringify(minimized.spec, null, 2) + "\n");
+  await writeFile(join(destination, "calls.json"), JSON.stringify(minimized.calls, null, 2) + "\n");
+  const minimizedSource = join(destination, "source.mjs"),
+    minimizedSpec = join(destination, "spec.json"),
+    minimizedOut = join(destination, "out");
+  await generateBindings(minimizedSource, minimizedSpec, minimizedOut);
+  await writeFile(
+    join(destination, "node.json"),
+    JSON.stringify(
+      {
+        before: execute(minimizedSource, minimized.calls),
+        after: execute(join(minimizedOut, minimized.spec.entry), minimized.calls),
+        nodeVersion: process.version,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  await writeFile(
+    join(destination, "verdict.json"),
+    JSON.stringify(await validateBindings(minimizedSource, minimizedSpec, minimizedOut), null, 2) + "\n"
+  );
+  await rm(scratch, { recursive: true, force: true });
+}
+
 // Every generated case is reproducible independently from seed and index.
 // Results and all emitted modules are retained on an invariant failure.
 export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery = 1, shard = 0, shards = 1 }) {
@@ -656,8 +778,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
-          if (!equal || ((before.error || after.error) && !input.expectThrow))
+          if (!equal || ((before.error || after.error) && !input.expectThrow)) {
+            if (!equal && !mutated) await minimizeProvedDifference(input, root);
             throw new Error("proved case differs or fails in Node");
+          }
         } else if (verdict.result === "unsafe") {
           summary.unsafe++;
           const witnessCalls = verdict.calls ?? [];
