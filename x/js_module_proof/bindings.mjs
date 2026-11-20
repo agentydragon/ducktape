@@ -199,10 +199,14 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         left: expression(node.left),
         right: expression(node.right),
       };
-    if (node?.type === "BinaryExpression" && node.operator === "!==")
+    if (node?.type === "BinaryExpression" && ["!==", ">="].includes(node.operator))
       return {
         kind: "conditional",
-        test: { kind: "equal", left: expression(node.left), right: expression(node.right) },
+        test: {
+          kind: node.operator === "!==" ? "equal" : "less",
+          left: expression(node.left),
+          right: expression(node.right),
+        },
         consequent: { kind: "literal", value: 0 },
         alternative: { kind: "literal", value: 1 },
       };

@@ -108,7 +108,7 @@ recursive calls remain unsupported. Function bodies may introduce initialized lo
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
 `*=` or `++`, and use `if`/`else` when both branches end in a supported return
 or throw. A no-`else` `if` may return or throw early before the remaining
-statements. Conditions may use numeric `===`, `!==` and `<`, boolean literals, `!`,
+statements. Conditions may use numeric `===`, `!==`, `<` and `>=`, boolean literals, `!`,
 `&&`, and `||`, including short-circuiting calls. Comparison and logical
 results are supported only as conditions, not as returned boolean values.
 Guards conservatively reject references to lexical declarations later in the same
