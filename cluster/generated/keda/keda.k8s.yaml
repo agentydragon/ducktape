@@ -50,6 +50,16 @@ spec:
             target:
               kind: Deployment
               name: keda-admission-webhooks
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: keda-operator-metrics-apiserver
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: keda-operator-metrics-apiserver
   upgrade:
     crds: CreateReplace
     remediation:
