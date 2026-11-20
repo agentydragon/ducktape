@@ -78,7 +78,10 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
   | some (.closure _ _) => true
   | _ => false
 
-def closureCell (name : String) : String := "#closure:" ++ name
+/- A closure declaration owns this name, and source declarations are unique.
+   Closure bindings occupy no separate numeric slot, so the same key denotes
+   the private captured cell without relying on string concatenation. -/
+def closureCell (name : String) : String := name
 
 def localDefinition (module : BindingModule) (name : String) : Bool :=
   module.statements.any (fun statement => declaredName statement == some name)
