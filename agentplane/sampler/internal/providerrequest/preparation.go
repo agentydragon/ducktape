@@ -113,6 +113,12 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 			if err != nil {
 				return Recipe{}, err
 			}
+		} else {
+			var err error
+			profile, err = chatcompletions.WithStreamUsage(store, profile)
+			if err != nil {
+				return Recipe{}, err
+			}
 		}
 		if system == "" {
 			return Recipe{}, protocol.ErrInvalid

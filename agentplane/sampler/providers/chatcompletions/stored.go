@@ -64,6 +64,32 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 	return profileID, systemID, err
 }
 
+// WithStreamUsage upgrades a retained sampling profile for new requests. Already
+// committed attempts still render their original profile on retry or inspection.
+func WithStreamUsage(store interface {
+	content.ContentReader
+	content.ContentWriter
+}, id content.ContentID,
+) (content.ContentID, error) {
+	raw, err := load(store, id, profileKind)
+	if err != nil {
+		return "", err
+	}
+	var profile requestProfile
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		return "", err
+	}
+	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage {
+		return id, nil
+	}
+	profile.StreamOptions = &streamOptions{IncludeUsage: true}
+	raw, err = json.Marshal(profile)
+	if err != nil {
+		return "", err
+	}
+	return store.PutContent(profileKind, raw)
+}
+
 func StoreRecord(store content.ContentWriter, raw json.RawMessage) (content.ContentID, error) {
 	return store.PutContent(messageKind, raw)
 }

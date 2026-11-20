@@ -134,3 +134,49 @@ func TestAnthropicCompactionCarriesCompleteNativeContext(t *testing.T) {
 		t.Fatal("preparation mutated the compaction input")
 	}
 }
+
+func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T) {
+	memory := memoryContent{}
+	config := samplersettings.ModelConfig{
+		API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON,
+	}
+	preparation := Preparation{ModelConfig: config}
+	snapshot := Snapshot{API: config.API}
+	first, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := memory.GetContent(first.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal(profile.Payload, &settings); err != nil {
+		t.Fatal(err)
+	}
+	delete(settings, "stream_options")
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID, err := memory.PutContent(profile.Kind, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.PreviousProfileID = legacyID
+	snapshot.PreviousFirstID = first.PrefixIDs[0]
+	upgraded, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.ProfileID != first.ProfileID || upgraded.PrefixIDs[0] != first.PrefixIDs[0] {
+		t.Fatal("upgrade did not preserve the original instructions and tools")
+	}
+	legacy, err := Render(memory, config.API, legacyID, first.PrefixIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacy), "stream_options") {
+		t.Fatal("upgrade rewrote a previously committed request")
+	}
+}
