@@ -49,7 +49,7 @@
   "current_inventory_collection_started_utc": "2026-11-20T22:26:44Z",
   "current_inventory_collection_finished_utc": "2026-11-20T22:26:56Z",
   "flux_source_observed_at_utc": "2026-11-20T22:26:45Z",
-  "inventory_sha256": "5d275b88d6665f3f64495ed43e31db2bb7d8cef05c6f79b64a05f2ca966383a9",
+  "inventory_sha256": "55320b300fc2daf89ec5dcd0908c6ba82579dc158b1dd94be2d8611f4c392190",
   "inventory_collector_sha256": "cb2ee428c50a95fc1ed4509bd54c1dd40bfe7ffe4e6c421577a0e5da83360a1b",
   "current_inventory_flux_source_devel_commit": "3f734ef8a5f6b81f2d5d041603e7529cf671369a",
   "secret_store_hourly_scan_verified_at_utc": "2026-11-20T21:17:28Z",
