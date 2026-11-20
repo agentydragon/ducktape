@@ -212,19 +212,13 @@ func defaultConfig() Config {
 			LoginTokenProfile: "authentik",
 			Target:            OperatorOIDCConfig{TokenProfile: "authentik"},
 		},
-		NotificationsTokenFile:              "/var/run/secrets/agentplane-notifications/token",
 		NotificationsRequestTimeoutSeconds:  5,
-		RunnerGatewayTokenFile:              "/var/run/secrets/agentplane-runner-gateway/token",
-		SessionDispatcherTokenFile:          "/var/run/secrets/agentplane-session-dispatcher/token",
-		PolicyServiceTokenFile:              "/var/run/secrets/agentplane-policy/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
-		HistoryServiceTokenFile:             "/var/run/secrets/agentplane-history-service/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
 		RunnerGatewayRequestTimeoutSeconds:  20,
 		RunnerGatewayLifecycleTimeoutSecs:   310,
 		LogLevels:                           map[string]string{},
 		ListenAddress:                       "127.0.0.1:8080",
-		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
 	}
@@ -255,7 +249,6 @@ func Load() (Config, error) {
 		}
 	}
 	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
-	c.clearImplicitServiceTokensForSVID(rawSettings)
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
@@ -505,27 +498,6 @@ func (c Config) validate() error {
 		return errors.New("action_federation.token_endpoint must be null in direct mode")
 	}
 	return validateCatalog(c.Models, c.ThreadPresets, c.SandboxPresets)
-}
-
-// clearImplicitServiceTokensForSVID preserves legacy default token paths while allowing an
-// SVID-configured caller to omit its former projected token-file setting entirely.
-func (c *Config) clearImplicitServiceTokensForSVID(raw map[string]any) {
-	for _, caller := range []struct {
-		field string
-		tls   *peertls.ClientTLS
-		value *string
-	}{
-		{"session_dispatcher_token_file", c.SessionDispatcherTLS, &c.SessionDispatcherTokenFile},
-		{"runner_gateway_token_file", c.RunnerGatewayTLS, &c.RunnerGatewayTokenFile},
-		{"history_service_token_file", c.HistoryServiceTLS, &c.HistoryServiceTokenFile},
-		{"policy_service_token_file", c.PolicyServiceTLS, &c.PolicyServiceTokenFile},
-		{"egress_admin_token_file", c.EgressAdminTLS, &c.EgressAdminTokenFile},
-		{"notifications_token_file", c.NotificationsTLS, &c.NotificationsTokenFile},
-	} {
-		if caller.tls != nil && caller.tls.UsesSVID() && !rawHasKey(raw, caller.field) {
-			*caller.value = ""
-		}
-	}
 }
 
 func validateAppServiceCaller(name string, tls *peertls.ClientTLS, tokenFile string, serverURIs []string) error {

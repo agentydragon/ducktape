@@ -28,16 +28,7 @@ from constructs import Construct
 
 from agentplane.app.settings import EnvironmentServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import (
-    ACTIONS_URI,
-    APP_URI,
-    EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
-    MCP_EDGE_URI,
-    NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
-)
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, SANDBOX_CONTROLLER_URI
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
@@ -120,25 +111,16 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         settings = self.props.config.model_copy()
-        settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
-        settings.egress_admin_token_file = None
-        settings.runner_gateway_tls = workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI)
-        settings.runner_gateway_token_file = None
-        settings.session_dispatcher_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
-        settings.session_dispatcher_token_file = None
         if environment_service_endpoint is not None:
             settings.environment_service = EnvironmentServicePeer(
                 target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
                 request_timeout_s=settings.session_dispatcher_request_timeout_s,
                 tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             )
-        settings.history_service_tls = workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI)
-        settings.history_service_token_file = None
-        settings.notifications_tls = workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI)
-        settings.notifications_token_file = None
+        # These operator-token facades are optional in the settings model, so the workload mounts
+        # decide them here rather than in each environment's authored config.
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
         settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
-        settings.policy_service_token_file = None
         config = SettingsFile(
             self,
             "config",

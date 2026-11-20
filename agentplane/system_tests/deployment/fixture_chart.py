@@ -71,9 +71,14 @@ from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
+    EGRESS_PROXY_URI,
     GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
+    NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
     TLS,
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -289,19 +294,24 @@ def app_props(
             thread_presets=thread_presets,
             sandbox_presets=sandbox_presets,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+            egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
             sandbox_namespace=NAMESPACE,
             runner_gateway_target=(
                 f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
             ),
+            runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             session_dispatcher_target=(
                 f"{runner_gateway.sessions_service(NAMESPACE).fqdn}:{runner_gateway.sessions_service(NAMESPACE).port.number}"
             ),
+            session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
                 f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
             ),
+            history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
+            notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
             listen_address="0.0.0.0:8080",
             log_levels={},
             oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)

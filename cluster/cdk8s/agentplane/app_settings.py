@@ -18,7 +18,15 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import FrontendConfig, Settings
 from agentplane.env.runtime.harness import Harness
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
+from agentplane.net.peertls.config import (
+    APP_URI,
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import (
     WORKSPACE_ROOT,
     Catalog,
@@ -217,10 +225,17 @@ def settings(
         ),
         policy_service_target=policy_controller.tls_target(namespace),
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
+        # Every in-cluster caller uses the app's mounted service SVID, so no peer names a bearer
+        # token file. Stated here because the settings model has no implicit projected-token path.
+        egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
+        runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
+        session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
         ),
+        history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),
+        notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
         listen_address="0.0.0.0:8080",
         electric_url=electric_url,
         oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),

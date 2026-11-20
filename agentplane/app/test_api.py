@@ -41,6 +41,7 @@ async def test_go_app_serves_a_parent_owned_listener(
             "sandbox_namespace": sandbox.namespace,
             "policy_service_target": "127.0.0.1:1",
             "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
+            "policy_service_token_file": "/test-unused-token",
         }
         async with spawn_go_app(config, listener=listener) as app:
             assert app.url == f"http://{listener.host}:{listener.port}"

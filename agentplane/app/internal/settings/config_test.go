@@ -54,10 +54,17 @@ policy_service_tls:
   key_file: /run/agentplane/app/tls.key
   client_uri: spiffe://agentplane/app
 history_service_target: history:9090
+history_service_token_file: /run/history/token
 notifications_url: http://notifications:9090
-listen_address: 0.0.0.0:8080
+notifications_token_file: /run/notifications/token
+runner_gateway_token_file: /run/runner/token
+egress_admin_token_file: /run/egress/token
+` + dispatcherTokenSetting + `listen_address: 0.0.0.0:8080
 log_levels: {}
 `
+
+// dispatcherTokenSetting is the explicit bearer setting that SVID tests remove.
+const dispatcherTokenSetting = "session_dispatcher_token_file: /run/dispatcher/token\n"
 
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
@@ -310,7 +317,23 @@ func TestOperatorFacadesKeepOperatorBearerWhenAppSVIDIsConfigured(t *testing.T) 
 	}
 }
 
-func TestLoadConfigDoesNotRestoreAnImplicitTokenInSVIDMode(t *testing.T) {
+func TestLoadConfigUsesOnlyStatedCallerTokens(t *testing.T) {
+	writeConfig(t, validSettingsYAML)
+	config, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SessionDispatcherTokenFile != "/run/dispatcher/token" ||
+		config.HistoryServiceTokenFile != "/run/history/token" ||
+		config.NotificationsTokenFile != "/run/notifications/token" ||
+		config.RunnerGatewayTokenFile != "/run/runner/token" ||
+		config.EgressAdminTokenFile != "/run/egress/token" {
+		t.Fatalf("stated caller token files changed: %+v", config)
+	}
+	if config.PolicyServiceTokenFile != "" {
+		t.Fatalf("SVID caller gained a bearer token: %q", config.PolicyServiceTokenFile)
+	}
+
 	tlsSettings := `session_dispatcher_tls:
   ca_file: /run/agentplane/workload-trust/ca.pem
   server_uri: spiffe://agentplane/session-dispatcher
@@ -318,18 +341,24 @@ func TestLoadConfigDoesNotRestoreAnImplicitTokenInSVIDMode(t *testing.T) {
   key_file: /run/agentplane/app/tls.key
   client_uri: spiffe://agentplane/app
 `
-	writeConfig(t, validSettingsYAML+tlsSettings)
-	config, err := Load()
+	svidSettings := strings.Replace(validSettingsYAML, dispatcherTokenSetting, "", 1) + tlsSettings
+	writeConfig(t, svidSettings)
+	config, err = Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if config.SessionDispatcherTokenFile != "" {
-		t.Fatalf("implicit dispatcher token path = %q, want empty for SVID mode", config.SessionDispatcherTokenFile)
+		t.Fatalf("dispatcher token path = %q, want unset for SVID mode", config.SessionDispatcherTokenFile)
 	}
 
-	writeConfig(t, validSettingsYAML+tlsSettings+"session_dispatcher_token_file: /run/legacy/token\n")
+	writeConfig(t, svidSettings+"session_dispatcher_token_file: /run/legacy/token\n")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
-		t.Fatalf("explicit legacy token with SVID error = %v", err)
+		t.Fatalf("explicit bearer token with SVID error = %v, want caller-authentication error", err)
+	}
+
+	writeConfig(t, strings.Replace(validSettingsYAML, dispatcherTokenSetting, "", 1))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
+		t.Fatalf("omitted bearer token error = %v, want caller-authentication error", err)
 	}
 }
 
