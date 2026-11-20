@@ -119,8 +119,9 @@ its veto was decorative.
 - **Log before answering.** The hook's request and the client's decision are session-log events
   written before the harness gets its answer, so the thread shows what was asked and decided.
 - **Webhooks sit above the runner.** HTTP callback registration belongs to the app, which holds
-  the client side of the capability and fans out; the runner asks only the Runner Gateway, its one
-  caller.
+  the client side of the capability and fans out; the runner asks only the Environments Runtime
+  proxy, its one command caller ([runner control](runner_control.md); the Controller's peer is
+  observe-only).
 
 The first hook worth wiring is `PreToolUse` for credentialed egress: a deny with a reason is a
 far better signal to the agent than a 403 from the proxy.

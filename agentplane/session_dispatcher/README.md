@@ -53,7 +53,7 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `internal/store/`: Session and dispatch persistence, leases, retention and notification reads.
 - `migrations/`: Goose migrations for the Dispatcher database.
-- `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
+- `client.py`: the Python Environments Runtime proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
 `rpc.listen_address` accepts a TCP address or an inherited `fd:N` as documented by

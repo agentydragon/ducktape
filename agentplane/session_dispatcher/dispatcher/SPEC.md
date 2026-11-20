@@ -111,7 +111,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   retained Sessions keep their recorded Identity and fail their next command after a rebind.
   `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
   `Session.execution_identity`, the execution ServiceAccount.
-- An Identity caller (a workload SVID naming an Identity, admitted under the Gateway's configured
+- An Identity caller (a workload SVID naming an Identity, admitted under the configured
   `policy_namespace`) is never privileged. A native `CreateSession` requires an explicit `bind_session`
   grant even on a Sandbox acting as the caller; acting as the Identity alone does not authorize lifecycle control.
   It reads, writes, cancels and watches only Sessions whose recorded execution
@@ -204,8 +204,8 @@ storage, Get/List/Watch and `sessions__observe_input`. A changed assessment is a
 when delivery state and reason are unchanged. An absent stored assessment reads as
 `WAKE_STATE_NOT_EVALUATED`; this does not claim a wake request was authorized or attempted.
 
-Automatic wake is assessed and requested through the shared lifecycle manager by the Gateway's
-in-process DeliveryWorker. The worker preserves row attribution and records the manager's typed
+Automatic wake is assessed and requested through the shared lifecycle manager by the Sessions
+binary's in-process DeliveryWorker. The worker preserves row attribution and records the manager's typed
 assessment; Action proof selects the actor's service broker grant for wake. See the lifecycle manager
 SPEC for its policy and mutation contract.
 
@@ -235,7 +235,7 @@ new live environment omitted by the earlier snapshot cannot be permanently fence
 confirm absence aborts cleanup. This is not an atomic commit with Kubernetes deletion: if a removed environment has no stored work, a first admission
 using stale inventory can still commit before cleanup observes its row. The next reconciliation
 removes it and closes admission permanently. During a rolling upgrade, the fence applies only after
-all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not
+all admitting/cleanup Sessions replicas use this protocol; the additive migration alone does not
 fence old writers.
 
 ## Opening outcomes and dependent commands

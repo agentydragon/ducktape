@@ -1,4 +1,4 @@
-"""gRPC client for the Runner proxy reached through the stable Runner Gateway Service."""
+"""gRPC client for the Environments Runtime proxy reached through the stable Environments Service."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -157,7 +157,7 @@ class SandboxControlClient:
 
 
 class SandboxRunner:
-    """One Sandbox's runner, reached through the shared Runner Gateway Service."""
+    """One Sandbox's runner, reached through the shared Environments Service."""
 
     def __init__(
         self,
