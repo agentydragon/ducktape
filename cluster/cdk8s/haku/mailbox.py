@@ -452,10 +452,9 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     # Mirror the rotator-published mailbox JWT into haku-sandbox, where Haku reads it to
-    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). Same ESO pattern as the
-    # grocy-sf token (haku/managed-agent/grocy-token-eso.yaml): it sources the flux-system Secret
-    # the rotator writes (k8s_secret output) and refreshes continuously, so the rotated token
-    # propagates without any rotator-side distribution config.
+    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). It sources the
+    # flux-system Secret the rotator writes (k8s_secret output) and refreshes continuously, so
+    # the rotated token propagates without any rotator-side distribution config.
     ClusterExternalSecret(
         chart,
         "mail-token",

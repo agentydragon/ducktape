@@ -65,8 +65,6 @@ def _namespace(scope: Construct) -> None:
         "namespace",
         name=_NAMESPACE,
         vpa=Vpa.AUTO,
-        # Lets the approved agent identities read workload metadata and pod logs here,
-        # so a crashlooping sidecar can be diagnosed without an operator grant.
         labels={
             "pod-security.kubernetes.io/enforce": "privileged",
             "pod-security.kubernetes.io/audit": "privileged",
