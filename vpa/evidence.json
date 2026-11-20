@@ -18301,5 +18301,250 @@
       "synced": 6,
       "total": 6
     }
+  },
+  "latest_rollout_followup": {
+    "observed_at_utc": "2026-11-20T10:04:21+00:00",
+    "source_devel_commit": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
+    "prs": [
+      {
+        "number": 18125,
+        "title": "Protect Kubernetes API proxy availability during disruption",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18125",
+        "merged_at": "2026-11-20T09:53:50Z",
+        "merge_commit_sha": "6ff4ad2a27b02e4743fcb48d575cf928fbf67766"
+      },
+      {
+        "number": 18126,
+        "title": "Allow VPA to resize GitLab Shell requests",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18126",
+        "merged_at": "2026-11-20T09:56:35Z",
+        "merge_commit_sha": "f80b0951f242eb5f3b8aa70953fd81bae6521d03"
+      },
+      {
+        "number": 18127,
+        "title": "Size selected MCP and Plaid service memory requests at admission",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18127",
+        "merged_at": "2026-11-20T10:00:52Z",
+        "merge_commit_sha": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856"
+      }
+    ],
+    "kubeapi_proxy": {
+      "namespace": "default",
+      "name": "kubeapi-proxy",
+      "mode": "Initial",
+      "ready": 2,
+      "replicas": 2,
+      "ready_endpoints": 2,
+      "disruptions_allowed": 1,
+      "disruption_budget": {
+        "minAvailable": 1
+      },
+      "tcp_readiness_port": 8080,
+      "pods": [
+        {
+          "resources": {
+            "limits": {
+              "memory": "64Mi"
+            },
+            "requests": {
+              "cpu": "10m",
+              "memory": "24Mi"
+            }
+          },
+          "created_at_utc": "2026-11-20T09:54:34Z"
+        },
+        {
+          "resources": {
+            "limits": {
+              "memory": "64Mi"
+            },
+            "requests": {
+              "cpu": "10m",
+              "memory": "24Mi"
+            }
+          },
+          "created_at_utc": "2026-11-20T09:54:40Z"
+        }
+      ],
+      "distinct_pod_nodes": 2,
+      "route_check": {
+        "kind": "Authenticated GET through public proxy",
+        "observed_after_flux_ready_utc": "2026-11-20T09:54:45Z",
+        "kubernetes_git_version": "v1.35.1",
+        "deployment_ready": 2
+      }
+    },
+    "gitlab_shell": {
+      "namespace": "gitlab-spike",
+      "name": "gitlab-spike-gitlab-shell",
+      "mode": "Recreate",
+      "ready": 2,
+      "replicas": 2,
+      "ready_endpoints": 2,
+      "disruptions_allowed": 1,
+      "disruption_budget": {
+        "maxUnavailable": 1
+      },
+      "tcp_readiness_port": 2222,
+      "pods": [
+        {
+          "resources": {
+            "requests": {
+              "cpu": "23m",
+              "memory": "100Mi"
+            }
+          },
+          "created_at_utc": "2026-11-20T09:59:28Z"
+        },
+        {
+          "resources": {
+            "requests": {
+              "cpu": "23m",
+              "memory": "126805489"
+            }
+          },
+          "created_at_utc": "2026-11-20T10:00:28Z"
+        }
+      ],
+      "distinct_pod_nodes": 2,
+      "eviction_events": [
+        {
+          "observed_at_utc": "2026-11-20T09:59:28Z"
+        },
+        {
+          "observed_at_utc": "2026-11-20T10:00:28Z"
+        }
+      ],
+      "ssh_check": {
+        "pinned_host_key_handshake_passed": true,
+        "authenticated_clone_verified": false,
+        "detail": "GitLab rejected the available client key."
+      },
+      "connections_check": "The before and after TCP samples had zero connections. The samples do not establish continuous connection availability."
+    },
+    "mcp_plaid": [
+      {
+        "namespace": "google-mcp",
+        "reconcile_annotation": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
+        "targets": [
+          {
+            "namespace": "google-mcp",
+            "name": "google-mcp",
+            "kind": "Deployment",
+            "mode": "Initial",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          }
+        ]
+      },
+      {
+        "namespace": "ha-mcp",
+        "reconcile_annotation": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
+        "targets": [
+          {
+            "namespace": "ha-mcp",
+            "name": "ha-mcp",
+            "kind": "Deployment",
+            "mode": "Initial",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          }
+        ]
+      },
+      {
+        "namespace": "ssh-mcp",
+        "reconcile_annotation": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
+        "targets": [
+          {
+            "namespace": "ssh-mcp",
+            "name": "ssh-mcp",
+            "kind": "Deployment",
+            "mode": "Initial",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          }
+        ]
+      },
+      {
+        "namespace": "plaid-mcp",
+        "reconcile_annotation": "1ea2fccb5a9a99f062af0de2fc3a3bea081d5856",
+        "targets": [
+          {
+            "namespace": "plaid-mcp",
+            "name": "db-readonly-provisioner",
+            "kind": "Job",
+            "mode": "Off",
+            "has_recommendation": false
+          },
+          {
+            "namespace": "plaid-mcp",
+            "name": "plaid-mcp",
+            "kind": "Deployment",
+            "mode": "Off",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          },
+          {
+            "namespace": "plaid-mcp",
+            "name": "plaid-pgweb",
+            "kind": "Deployment",
+            "mode": "Initial",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          },
+          {
+            "namespace": "plaid-mcp",
+            "name": "plaid-spend",
+            "kind": "Deployment",
+            "mode": "Initial",
+            "has_recommendation": false,
+            "ready": 1,
+            "replicas": 1
+          },
+          {
+            "namespace": "plaid-mcp",
+            "name": "sync",
+            "kind": "CronJob",
+            "mode": "Off",
+            "has_recommendation": false
+          }
+        ]
+      }
+    ],
+    "recommendations_provided": 0,
+    "admission_check": "No recommendation-backed request sizing verified at this observation.",
+    "mcp_plaid_admission_dry_run": {
+      "observed_at_utc": "2026-11-20T10:04Z",
+      "method": "Server-side Pod CREATE dry runs used real ReplicaSet owners. Included containers were marked as observed by VPA. Requests and limits matched the templates while recommendations were absent.",
+      "included_requests": {
+        "google-mcp/server": {
+          "cpu": "50m",
+          "memory": "128Mi"
+        },
+        "ha-mcp/ha-mcp": {
+          "cpu": "50m",
+          "memory": "256Mi"
+        },
+        "ssh-mcp/server": {
+          "cpu": "50m",
+          "memory": "128Mi"
+        },
+        "plaid-pgweb/pgweb": {
+          "cpu": "25m",
+          "memory": "64Mi"
+        },
+        "plaid-spend/plaid-spend": {
+          "cpu": "50m",
+          "memory": "128Mi"
+        }
+      },
+      "ha_facade_resources_preserved": true,
+      "excluded_plaid_web_received_vpa_annotations": false
+    }
   }
 }

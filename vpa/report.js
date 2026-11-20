@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=cohort-20261120-rollouts")
+    fetch("./evidence.json?v=rollout-20261120-1004")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -223,6 +223,8 @@ function Report() {
     return html`<${Container} py="xl"><${Text}>Loading VPA evidence…<//><//>`;
   const counts = data.counts;
   const latest = data.third_cohort;
+  const followup = data.latest_rollout_followup;
+  const followupTime = followup.observed_at_utc.slice(11, 16);
   const latestTime = latest.observed_at_utc.slice(11, 16);
   const verifiedCount = latest.workloads.filter(
     (row) => row.dry_run_admitted_resources,
@@ -254,7 +256,7 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21 and ${latestTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime} and ${followupTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -1016,6 +1018,52 @@ function Report() {
             The singleton Redis operator stays recommendation-only. Reducing its
             500 MiB memory request below its limit would move it from Guaranteed
             to Burstable.
+          <//>
+        <//>
+        <${Paper} id="rollout-follow-up" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4">
+            API proxy, GitLab Shell and MCP follow-up
+          <//>
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${followupTime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>Kubernetes API proxy.</strong>${" "} Both replacements were
+            Ready with two Ready Service endpoints and 10m CPU and 24 MiB memory
+            requests. VPA stays Initial. The TCP readiness probe gates new
+            endpoints, and the new disruption budget permits one disruption. An
+            authenticated GET through the public proxy returned the Kubernetes
+            version and the Ready Deployment. ${" "}<${Anchor}
+              href=${followup.prs[0].html_url}
+              >PR #18125<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>GitLab Shell.</strong>${" "} VPA Recreate evicted the two
+            old Pods at 09:59:28 and 10:00:28 UTC. Both replacements were Ready
+            on separate nodes with 23m CPU and about 100 and 121 MiB of memory
+            requested, respectively. The Service had two Ready endpoints, and
+            its disruption budget permitted one disruption. The SSH handshake
+            passed with the pinned host key. An authenticated clone remains
+            unverified because GitLab rejected the available client key. Two TCP
+            samples showed zero connections. ${" "}<${Anchor}
+              href=${followup.prs[1].html_url}
+              >PR #18126<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <strong
+              >Google MCP, HA MCP, SSH MCP, Plaid pgweb and Plaid Spend.</strong
+            >${" "} All five Deployments were Ready with their original Pods.
+            After namespace reconciliation, all five VPAs were Initial. Plaid
+            web, sync and database provisioning remained recommendation-only.
+            The webhook recognized the five selected containers in server dry
+            runs and retained their existing requests and limits. At this
+            observation none of the five VPAs had a recommendation, so request
+            sizing remains unverified. ${" "}<${Anchor}
+              href=${followup.prs[2].html_url}
+              >PR #18127<//
+            >
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
