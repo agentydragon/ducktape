@@ -246,8 +246,11 @@ function Report() {
   const crossplaneHA = controllerHA.crossplane;
   const metricsHA = controllerHA.metrics_server;
   const sidekiq = controllerHA.sidekiq;
+  const crossplaneSiteSpread = data.crossplane_site_spread;
   const stagingInitial = data.agentplane_staging_initial;
   const stagingInitialTime = stagingInitial.observed_at_utc.slice(11, 16);
+  const stagingControllers = data.agentplane_staging_controllers;
+  const secretStoreRecovery = data.secret_store_background_recovery;
   const webFrontendHA = data.web_frontend_ha;
   const webFrontendHATime = webFrontendHA.observed_at_utc.slice(11, 16);
   const clickhouseExporter = data.clickhouse_exporter_initial;
@@ -647,22 +650,60 @@ function Report() {
         The native GitOps Audit draft keeps Kyverno reporting and the existing
         exemptions. It waits for an accessible API audit consumer that can
         retrieve workload CREATE and UPDATE events. The three API servers have
-        bounded local logs, while Kyverno currently records 120 failed results
-        in 304 namespaced PolicyReports. The launcher relay and both cleanup
-        policies still need parity. ${" "}<${Anchor}
+        bounded local logs; the 11:24 review recorded 120 failed results in 304
+        namespaced PolicyReports. It also identified launcher relay and cleanup
+        parity work. ${" "}<${Anchor}
           href=${remainingPolicies.native_gitops_audit.html_url}
           >Gated native GitOps audit<//
         >
       <//>
       <${Text} component="p">
         The separate ClusterSecretStore audit proposal closed at
-        ${secretStoreDecisionTime} UTC. Kyverno still enforces the existing
-        admission rule and scans stored objects in the background. Both stay in
-        place unless an existing, simpler solution preserves the required
-        coverage. A custom background scanner is not the intended replacement.
-        ${" "}<${Anchor} href=${secretStoreDecision.html_url}
+        ${secretStoreDecisionTime} UTC. Kyverno continues to enforce the rule
+        and scan stored objects in the background. Both stay in place unless an
+        existing, simpler solution preserves the required coverage. A custom
+        background scanner is not the intended replacement. ${" "}<${Anchor}
+          href=${secretStoreDecision.html_url}
           >Closed audit proposal<//
         >
+      <//>
+      <${Paper}
+        id="secret-store-background-recovery"
+        withBorder
+        p="md"
+        radius="md"
+      >
+        <${Title} order=${3} size="h4"
+          >ClusterSecretStore background reporting<//
+        >
+        <${Text} size="sm" c="dimmed" mt="xs">
+          Observed 20 November 2026 at 20:16 UTC
+        <//>
+        <${Text} component="p" mt="sm" mb=${0}>
+          The legacy rule moved to a Kyverno ValidatingPolicy in
+          ${" "}<${Anchor} href=${secretStoreRecovery.migration_pr}>PR #18199<//
+          >. Only two of 60 stores retained policy reports while Kyverno's
+          background resource discovery failed on the wildcard API version.
+          ${" "}<${Anchor} href=${secretStoreRecovery.fix_pr}>PR #18249<//>
+          ${" "}pinned the only served version, v1. Generation 2 was Ready and
+          all 60 current store UIDs had fresh background pass results at
+          20:16:00–01 UTC. The latest wildcard error was at 20:01, before the
+          fix. A separate native admission policy denied an unfenced store in a
+          server-side dry run; that does not establish which policy would deny
+          it independently. The obsolete retirement draft ${" "}<${Anchor}
+            href=${secretStoreRecovery.closed_draft_pr}
+            >#18172<//
+          >${" "}was closed without merging. The next hourly scan remains to be
+          observed.
+        <//>
+      <//>
+      <${Text} component="p">
+        The 11:24 launcher review is historical. ${" "}<${Anchor}
+          href="https://github.com/agentydragon/ducktape/pull/18231"
+          >PR #18231<//
+        >${" "}moved launcher validation to a Kyverno ValidatingPolicy, observed
+        Ready; three mutation rules remain in the legacy ClusterPolicy. This
+        snapshot does not establish fresh end-to-end launcher parity.
       <//>
       <${Text} component="p">
         The API server is v1.35.1 and already advertises native
@@ -1383,6 +1424,19 @@ function Report() {
               >PR #18154<//
             >
           <//>
+          <${Text} component="p" mt="sm">
+            At 20:21 UTC, after ${" "}<${Anchor}
+              href=${crossplaneSiteSpread.pr_url}
+              >PR #18253<//
+            >, Crossplane had three Ready webhook endpoints on optiplex, wyrm2
+            and ovh-ns103711 in three zones. Its budget required two replicas
+            and allowed one disruption; the core leader lease was renewing. Each
+            Pod requested
+            ${" "}${quantityMiB(crossplaneSiteSpread.memory_request)} ${" "}of
+            memory with a 1 GiB limit. Sidekiq was 1/1 available. This
+            observation is not a fault-injection test or a durable capacity
+            guarantee.
+          <//>
           <${Text} component="p" mt="sm" mb=${0}>
             <strong>Sidekiq capacity.</strong>${" "}Sidekiq was${" "}
             ${sidekiq.available_replicas}/${sidekiq.desired_replicas} available.
@@ -1413,7 +1467,7 @@ function Report() {
             requests only. The namespace remains opted out of Goldilocks.
             ${" "}<${Anchor} href=${stagingInitial.pr_url}>PR #18195<//>
           <//>
-          <${Text} component="p" mt="sm" mb=${0}>
+          <${Text} component="p" mt="sm">
             The ${stagingInitial.ready_pods} existing service Pods were Ready
             and older than the merge. Recommendations appeared at 18:00 UTC.
             Server-side Pod CREATE dry runs at ${stagingAdmissionTime} UTC,
@@ -1421,6 +1475,15 @@ function Report() {
             256 MiB for sessions and 128 MiB for each other selected container.
             All eight kept their CPU requests and limits. The dry runs created
             no Pods. Verify resources and scheduling on actual replacements.
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <${Anchor} href=${stagingControllers.pr_url}>PR #18245<//>
+            ${" "}added environments and policy-controller to Initial
+            memory-request sizing. Both Deployments remained 2/2 Ready, and both
+            recommend 100 MiB. ReplicaSet-owner Pod CREATE dry runs admitted 10m
+            CPU and 100 MiB memory with limits preserved. The four existing Pods
+            predate the change; natural admission and scheduling remain
+            unverified.
           <//>
         <//>
         <${Paper} id="web-frontend-ha" withBorder p="md" radius="md">
