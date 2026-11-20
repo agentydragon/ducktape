@@ -114,15 +114,7 @@ type authorityPeers struct {
 // Neither workload Identity inherits the component's authority from its ServiceAccount name.
 func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
 	t.Helper()
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	sameNamed := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	other := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-stranger")
 	svids, err := auth.NewSVIDResolver(sameNamed.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
@@ -278,15 +270,7 @@ func requireRejectedLeavesAndMixedAuthentication(t *testing.T, server authorityS
 }
 
 func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -328,15 +312,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 }
 
 func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, caller.Name, caller.Namespace).Workload
 	foreign := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "test-foreign-caller", caller.Namespace).Workload
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
@@ -348,7 +324,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	requireRejectedLeavesAndMixedAuthentication(t, authority, owner.URI)
 	ownerClient := authority.client(t, owner.URI, authority.ca.Issue(t, owner.URI))
 	sessionID := uuid.NewString()
-	_, err = ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
+	_, err := ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
 		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{

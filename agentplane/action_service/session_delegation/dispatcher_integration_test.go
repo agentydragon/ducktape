@@ -88,15 +88,7 @@ func (s *recordingDispatcher) SubmitInput(ctx context.Context, request *dispatch
 // Action Service acting for it, and cancellable; another Identity's Session and opening a
 // Session are refused.
 func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-delegation-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, integrationNamespace, "test-delegating-identity", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}

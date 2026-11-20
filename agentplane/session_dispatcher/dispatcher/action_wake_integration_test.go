@@ -29,15 +29,7 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 		{name: "broker absent", wantWake: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			api, err := kubeapiserver.Start()
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				if err := api.Stop(); err != nil {
-					t.Error(err)
-				}
-			})
+			api := kubeapiserver.StartForTest(t)
 
 			scheme := runtime.NewScheme()
 			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme} {

@@ -45,6 +45,22 @@ func (c TestClient) Get(namespace, name string, object client.Object) {
 	}
 }
 
+// StartForTest runs a control plane that t stops when it ends. It fails t if the control plane
+// cannot start, and reports an error if it cannot stop.
+func StartForTest(t testing.TB, options ...Option) *Server {
+	t.Helper()
+	server, err := Start(options...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := server.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	return server
+}
+
 func RunUntilCleanup(t testing.TB, fn func(context.Context)) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

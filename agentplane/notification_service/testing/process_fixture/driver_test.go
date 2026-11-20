@@ -92,15 +92,7 @@ func TestProductionNotificationProcessListsOwnedSubscription(t *testing.T) {
 	})
 	databaseURL := database.Clone(t)
 
-	apiServer, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := apiServer.Stop(); err != nil {
-			t.Errorf("stop envtest API server: %v", err)
-		}
-	})
+	apiServer := kubeapiserver.StartForTest(t)
 
 	workload := workloadauthtesting.NewIdentityWorkload(t, apiServer, testNamespace, "notification-owner", testNamespace)
 	sandbox := workload.Sandbox.DeepCopy()

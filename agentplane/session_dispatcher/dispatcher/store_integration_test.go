@@ -1940,15 +1940,7 @@ func (i *deletingSessionInventory) GetExecutionIdentity(ctx context.Context, _ S
 }
 
 func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "interrupt-recheck-policies"
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "interrupt-recheck", policyNamespace)
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})

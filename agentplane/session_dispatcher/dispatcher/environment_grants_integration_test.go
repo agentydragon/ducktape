@@ -104,15 +104,7 @@ func waitForCreateSessionBlockedBySandboxLock(t *testing.T, queueStore *store.St
 }
 
 func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-owner", environmentGrantPolicyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -213,15 +205,7 @@ func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
 }
 
 func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-lock-owner", environmentGrantPolicyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -259,15 +243,7 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 }
 
 func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-deleted-owner", environmentGrantPolicyNamespace)
 	identity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}

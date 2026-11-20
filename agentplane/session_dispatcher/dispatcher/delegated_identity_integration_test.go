@@ -35,15 +35,7 @@ import (
 // Identity's own workload would, and opens none. The actor being a privileged Dispatcher caller
 // widens nothing.
 func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-delegated-identity-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "delegated-identity-owner", policyNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "delegated-identity-other", policyNamespace)

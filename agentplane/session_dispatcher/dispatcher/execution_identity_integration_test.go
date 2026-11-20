@@ -175,15 +175,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 // incarnation, and on no other: not another Identity's, nor one its own Sandbox's ServiceAccount owns.
 // It creates none, even on a Sandbox acting as it.
 func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-identity-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-owner", policyNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-other", policyNamespace)
@@ -276,15 +268,7 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 // Identity alone: its Identity writes to them, the Dispatcher places and delivers them
 // recording no ServiceAccount, and strands them once the Sandbox names another Identity.
 func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-identity-run-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-run", policyNamespace)
 	named := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}

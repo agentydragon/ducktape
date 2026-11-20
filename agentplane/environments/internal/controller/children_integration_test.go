@@ -144,15 +144,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 
 func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	const ns = "sandbox-controller-watch-contract"
-	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t, kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
 	ctx := context.Background()
 	if _, err := kube.Clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
@@ -226,17 +218,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	kube, err := kubeapiserver.Start(
-		withCertificateCRD(t),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t, withCertificateCRD(t))
 	config := kube.Config
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
