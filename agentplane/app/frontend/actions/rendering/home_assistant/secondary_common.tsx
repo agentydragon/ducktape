@@ -205,12 +205,20 @@ function rowTitle(entry: HaRecord): string | undefined {
 function simpleFields(entry: HaRecord, keys: readonly string[]): JSX.Element[] {
   return keys.flatMap((key) => {
     const value = entry[key];
+    const interval = ["period", "time_range", "timestamp"].includes(key) ? asRecord(value) : undefined;
+    const intervalText =
+      typeof interval?.start === "string"
+        ? [interval.start, interval.end ?? interval.finish]
+            .filter((part): part is string => typeof part === "string")
+            .join(" – ")
+        : undefined;
     const printableValue =
-      (key === "action" || key === "status" || key === "mode") &&
+      intervalText ??
+      ((key === "action" || key === "status" || key === "mode") &&
       typeof value === "string" &&
       /^[a-z][a-z_ -]*$/.test(value)
         ? humanField(value)
-        : printable(value);
+        : printable(value));
     if (printableValue !== undefined && printableValue !== "")
       return [
         <HaField key={key} name={humanField(key)}>
@@ -261,6 +269,11 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
         )}
         {fields}
         {error && simpleFields(error, ["message", "code"])}
+        {entry.has_more === true && (
+          <Text size="xs" c="dimmed">
+            More results are available.
+          </Text>
+        )}
         {nested.map((key) => (
           <ResultRows key={key} heading={humanField(key)} value={entry[key]} />
         ))}
@@ -447,7 +460,9 @@ export function haAction(spec: HaActionSpec): ActionPresentation {
     outcome: (value) => {
       const response = asRecord(value);
       if (response?.success === false) return { label: "Provider reported failure", failed: true };
+      if (response?.partial === true) return { label: "Partial result", failed: false };
       if (spec.result?.reportsPhase) {
+        if (response?.long_running === true) return { label: "Operation started", failed: false };
         const reported = phase(response?.status);
         if (reported !== undefined) return reported;
       }

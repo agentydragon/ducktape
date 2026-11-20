@@ -381,8 +381,13 @@ EXAMPLES = (
         "home_assistant",
         "ha_manage_app",
         {"slug": "weather_bridge", "action": "start"},
-        {"success": True, "message": "App start requested", "action": "start", "slug": "weather_bridge"},
-        "start requested",
+        {
+            "success": True,
+            "message": "App (add-on) weather_bridge start completed.",
+            "action": "start",
+            "slug": "weather_bridge",
+        },
+        "start completed",
     ),
     ActionExample(
         "home_assistant",
@@ -706,7 +711,7 @@ EXAMPLES = (
         {"resource_id": "resource-study"},
         {
             "success": True,
-            "message": "Dashboard resource deleted successfully",
+            "message": "Resource deleted successfully",
             "action": "delete",
             "resource_id": "resource-study",
         },
@@ -1012,7 +1017,7 @@ EXAMPLES = (
     ActionExample(
         "home_assistant",
         "ha_get_system_health",
-        {"include": ["config_check"]},
+        {"include": "config_check"},
         {
             "success": True,
             "component_count": 1,

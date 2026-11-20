@@ -292,7 +292,7 @@ export const homeAssistantOperationsRenderers: ReadonlyMap<string, ActionPresent
       fields: ["action", "confirm", "device_id", "entity_id", "params", "radio"],
       required: ["radio", "action"],
       result: {
-        fields: ["action", "radio", "status", "warnings", "device_id"],
+        fields: ["action", "radio", "status", "warnings", "device_id", "long_running"],
         rows: ["supported_actions", "devices", "nodes"],
         objects: ["data", "result", "diagnostics"],
         reportsPhase: true,
