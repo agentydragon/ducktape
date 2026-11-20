@@ -724,7 +724,7 @@ py_library(
 
 py_test(
     name = "test_prompt_instructions",
-    # Reads the agentplane_manifests fixture, which synthesizes the chart.
+    # Reads the staging_manifests fixture, which synthesizes the chart.
     size = "medium",
     srcs = ["test_prompt_instructions.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],

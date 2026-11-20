@@ -2347,7 +2347,6 @@ def generate_manifests(root: Path) -> None:
     )
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
-    # The retired devbox artifact is intentionally empty so its existing inventory can be pruned.
     write_artifact_generators(
         root,
         ducktape=[

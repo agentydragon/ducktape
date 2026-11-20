@@ -227,7 +227,7 @@ helper, class or indirection.
   `cluster/k8s/flux/kustomizations.k8s.yaml`) equals the committed one, and that
   `cluster/generated` holds nothing else. No keep-lists: data deps carry both trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
-  (`agentplane/conftest.py`'s `agentplane_manifests`) or fleet rules (`fleet_rules.py`,
+  (`agentplane/testing/fixtures.py`'s `staging_manifests`) or fleet rules (`fleet_rules.py`,
   attached to every App `generation.write_app` writes, seeing all its charts). Every object
   of a kind → fleet rule; one construct's shape → test in its package; a relation holding
   by construction (selector is the Deployment, ConfigMap rendered from `Settings`) → no
