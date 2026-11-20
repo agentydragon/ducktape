@@ -19622,6 +19622,70 @@
     "ready_pods": 16,
     "existing_pods_predate_merge": true,
     "existing_pod_restarts": 0,
-    "vpas_with_recommendations": 0
+    "vpas_with_recommendations": 0,
+    "recommendations_available_at_utc": "2026-11-20T18:00:17Z",
+    "admission_verification": {
+      "observed_at_utc": "2026-11-20T18:03:02Z",
+      "kind": "server-side Pod CREATE dry runs with real ReplicaSet owners",
+      "pods_created": 0,
+      "results": {
+        "actions": {
+          "replicaset_owner": "actions-9c7597967",
+          "observed_container": "actions",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "app": {
+          "replicaset_owner": "app-658895f4f9",
+          "observed_container": "app",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "frontend": {
+          "replicaset_owner": "frontend-56c9f48fdf",
+          "observed_container": "frontend",
+          "admitted_memory_request": "40Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "history-service": {
+          "replicaset_owner": "history-service-58c4f46686",
+          "observed_container": "history-service",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "llm-ingress": {
+          "replicaset_owner": "llm-ingress-bc8d48644",
+          "observed_container": "ingress",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "mcp-edge": {
+          "replicaset_owner": "mcp-edge-64767dd985",
+          "observed_container": "mcp-edge",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "notifications": {
+          "replicaset_owner": "notifications-78b7655499",
+          "observed_container": "notifications",
+          "admitted_memory_request": "128Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        },
+        "sessions": {
+          "replicaset_owner": "sessions-57644d457f",
+          "observed_container": "sessions",
+          "admitted_memory_request": "256Mi",
+          "cpu_requests_preserved": true,
+          "limits_preserved": true
+        }
+      }
+    }
   }
 }

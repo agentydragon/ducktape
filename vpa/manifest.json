@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "12621c735e78dcd5418ad2665b757c2fe2ec4bbd75d265d49375d2337afa6e8f",
-  "evidence_sha256": "c31086f6ef25d1250d30c38192f41a5faebe686d3695db7ffd4387c1827b1306",
+  "report_script_sha256": "47596ceb3a53e13a5c7d7556d8dd34aef9c88dce2309e3a24fe3f013b842c505",
+  "evidence_sha256": "7f014a6125a7a12c500275e07b1a38925b423e16f80b562efcf3b14a5c6f7faa",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -36,5 +36,6 @@
   "policy_direction_reviewed_at_utc": "2026-11-20T17:45:00Z",
   "followup_coverage_observed_at_utc": "2026-11-20T17:40:00Z",
   "controller_ha_followup_at_utc": "2026-11-20T17:57:47Z",
-  "agentplane_staging_initial_at_utc": "2026-11-20T17:59:43Z"
+  "agentplane_staging_initial_at_utc": "2026-11-20T17:59:43Z",
+  "agentplane_staging_admission_at_utc": "2026-11-20T18:03:02Z"
 }

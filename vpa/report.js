@@ -248,6 +248,8 @@ function Report() {
   const sidekiq = controllerHA.sidekiq;
   const stagingInitial = data.agentplane_staging_initial;
   const stagingInitialTime = stagingInitial.observed_at_utc.slice(11, 16);
+  const stagingAdmissionTime =
+    stagingInitial.admission_verification.observed_at_utc.slice(11, 16);
   const revisionHistoryCutover = data.revision_history_cutover;
   const revisionHistoryTime = revisionHistoryCutover.observed_at_utc.slice(
     11,
@@ -1408,9 +1410,12 @@ function Report() {
           <//>
           <${Text} component="p" mt="sm" mb=${0}>
             The ${stagingInitial.ready_pods} existing service Pods were Ready
-            and older than the merge. The VPAs had no recommendations yet. Check
-            admitted resources on the first replacement Pods after
-            recommendations appear.
+            and older than the merge. Recommendations appeared at 18:00 UTC.
+            Server-side Pod CREATE dry runs at ${stagingAdmissionTime} UTC,
+            using the existing ReplicaSet owners, admitted 40 MiB for frontend,
+            256 MiB for sessions and 128 MiB for each other selected container.
+            All eight kept their CPU requests and limits. The dry runs created
+            no Pods. Verify resources and scheduling on actual replacements.
           <//>
         <//>
       <//>
