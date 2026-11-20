@@ -1,0 +1,73 @@
+# Module-splitting fuzzer follow-ups
+
+The aim is to test the real splitter and validator against Node on a much wider
+range of programs and splits. The fuzzer supplies test inputs and observations;
+it is not another formal JavaScript model. A finite test run cannot prove
+correctness for all JavaScript.
+
+## 1. Generate broader valid programs
+
+- [ ] Replace the fixed collection of supported statement shapes and injected
+      unsupported nodes with a compositional, scope-aware ESTree generator. Track
+      declarations, references, initialization and control-flow context so generated
+      programs parse and run, while varying nesting, expression depth, names and
+      declaration order. Report generated construct coverage.
+- [ ] Add productions incrementally for lexical and function scopes, closures,
+      parameters and returns; expressions and control flow; objects, arrays and
+      property access; mutation and aliases; exceptions and `try`/`finally`; and
+      imports, exports and module cycles. Include asynchronous features only once
+      the harness can observe their completion deterministically. Exercise both
+      supported and unsupported syntax without treating refusal as a comparison.
+- [ ] Bound recursion, loops, allocations and execution time. Generate host
+      interactions through a deterministic harness, and classify timeouts, resource
+      exhaustion and unsupported host behavior as inconclusive rather than equal.
+      Test the generator by parsing and executing its output independently of the
+      splitter.
+
+## 2. Explore splits independently of program generation
+
+- [ ] Generate varied statement and binding partitions, module graphs and import
+      orderings, including empty modules, cycles, missing edges and cross-module
+      writes. Include both plausible valid inputs and deliberately invalid specs;
+      record which category was requested and what was actually exercised.
+- [ ] Separate unsupported syntax, invalid assignments, splitter failures and
+      validator `unknown` results in the report. Unsupported or invalid inputs must
+      never be reported as proved; do not require refusal for a construct merely
+      because it was unsupported when the test was written.
+- [ ] Keep exercising altered emitted modules, including changed bindings,
+      imports, exports, effects and function bodies. Report their results separately
+      from unmodified splitter outputs.
+
+## 3. Make the differential oracle useful at scale
+
+- [ ] Run source and actual splitter output in isolated Node processes with the
+      same controlled inputs and module-loading assumptions. Compare initialization
+      traces, exports, return values, thrown values and later observable effects;
+      preserve the trace prefix on failure. Define how exceptions and asynchronous
+      observations are normalized and how nondeterministic programs are excluded.
+- [ ] For each validated pair, fail on a Node counterexample to a proved result
+      within the proof's assumptions; independently reproduce every reported unsafe
+      witness. Record Node differences for `unknown` or unvalidated cases as test
+      evidence, not as a proof of a validator bug or a successful proof.
+- [ ] Preserve seed, case index, source, assignment, emitted files, observations,
+      verdict and relevant runtime versions for failures and interesting differences.
+      Add automatic shrinking of both program and split, retaining the exact failure
+      predicate, and promote minimized bugs to regression tests.
+- [ ] Track grammar, split, verdict and observation coverage, including refusal
+      and timeout rates. Support deterministic sharding and replay; run a bounded
+      representative suite in CI and a configurable larger campaign separately.
+      Keep Node-only and Lean-validated counts distinct.
+
+## 4. Grow the proof-supported subset in vertical slices
+
+- [ ] Pick constructs from the generated corpus, extend the existing shared
+      semantics and frontend together, and test each slice end to end against Node
+      on accepted, unsafe and unsupported examples. Avoid adding independent formal
+      models for the fuzzer or for individual syntax features.
+- [ ] State and test each slice's observation boundary and assumptions, including
+      module loading, host behavior, numeric semantics and termination. Keep
+      `unknown` when the checker cannot justify its claim, and document that Node
+      fuzzing tests but does not prove the model's correspondence to ECMAScript.
+- [ ] Add real-world JavaScript fixtures as they become useful, alongside
+      generated cases, and measure how often real assignments can be checked. Do not
+      weaken the proof claim simply to increase the acceptance rate.

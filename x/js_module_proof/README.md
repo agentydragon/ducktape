@@ -126,6 +126,9 @@ certificate can be replayed by concatenating `Semantics.lean`, `Effects.lean`,
 
 ## Differential fuzzer
 
+The [fuzzer follow-ups](TODO.md) track broader JavaScript generation, split
+coverage, oracle improvements, and extensions to the proof-supported subset.
+
 `fuzz.mjs` constructs seeded ESTree programs and module assignments, invokes the
 actual multiple-bindings splitter, and executes the source and generated entry
 in separate fresh Node processes. It compares recorded events, public exports,
