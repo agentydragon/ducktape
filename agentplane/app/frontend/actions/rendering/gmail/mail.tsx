@@ -21,21 +21,38 @@ import {
   wrap,
 } from "./common";
 
-const messageHeaders = z.array(z.object({ name: z.string(), value: z.string() }));
-const partFields = z.object({
+type MessageHeader = { name: string; value: string };
+const messageHeaders: z.ZodType<MessageHeader[]> = z.array(z.object({ name: z.string(), value: z.string() }));
+
+interface MessagePart {
+  mimeType?: string | null;
+  filename?: string | null;
+  headers?: MessageHeader[] | null;
+  body?: { data?: string | null; attachmentId?: string | null } | null;
+  parts?: MessagePart[] | null;
+}
+
+const part: z.ZodType<MessagePart> = z.object({
   mimeType: z.string().nullish(),
   filename: z.string().nullish(),
   headers: messageHeaders.nullish(),
   body: z.object({ data: z.string().nullish(), attachmentId: z.string().nullish() }).nullish(),
-});
-type MessagePart = z.infer<typeof partFields> & { parts?: MessagePart[] | null };
-const part: z.ZodType<MessagePart> = partFields.extend({
   get parts() {
     return z.array(part).nullish();
   },
 });
 
-const messageResult = z.object({
+interface Message {
+  id: string;
+  threadId?: string | null;
+  snippet?: string | null;
+  internalDate?: string | null;
+  labelIds?: string[] | null;
+  payload?: MessagePart | null;
+  raw?: string | null;
+}
+
+const messageResult: z.ZodType<Message> = z.object({
   id: z.string().min(1),
   threadId: z.string().nullish(),
   snippet: z.string().nullish(),
@@ -44,7 +61,6 @@ const messageResult = z.object({
   payload: part.nullish(),
   raw: z.string().nullish(),
 });
-type Message = z.infer<typeof messageResult>;
 export const draftResult: z.ZodType<{ id: string; message?: Message | null }> = z.object({
   id: z.string().min(1),
   message: messageResult.nullish(),
@@ -56,13 +72,13 @@ const threadResult = z.object({
 });
 
 export function messageHeader(
-  message: { payload?: { headers?: z.infer<typeof messageHeaders> | null } | null } | null | undefined,
+  message: { payload?: { headers?: MessageHeader[] | null } | null } | null | undefined,
   name: string
 ): string | undefined {
   return findHeader(message?.payload, name);
 }
 
-function findHeader(part: { headers?: z.infer<typeof messageHeaders> | null } | null | undefined, name: string) {
+function findHeader(part: { headers?: MessageHeader[] | null } | null | undefined, name: string) {
   return part?.headers?.find((item) => item.name.toLowerCase() === name)?.value;
 }
 
@@ -94,7 +110,7 @@ function messageText(payload: MessagePart | null | undefined): string | undefine
   while (pending.length) {
     const part = pending.pop();
     if (!part || part.filename) continue;
-    if (part.parts) pending.push(...part.parts.toReversed());
+    if (part.parts) pending.push(...[...part.parts].reverse());
     if (!part.body?.data || (part.mimeType !== "text/plain" && part.mimeType !== "text/html")) continue;
     const charset = /charset\s*=\s*"?([a-z0-9_-]+)/i.exec(findHeader(part, "content-type") ?? "")?.[1];
     const decoded = decodeBase64Url(part.body.data, charset);
