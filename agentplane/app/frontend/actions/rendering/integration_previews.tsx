@@ -18,17 +18,29 @@ export function useIntegrationPreviewNames(
   return query.data;
 }
 
-export function LiveResourceLink({ id, name, href }: { id: string; name?: string; href: string }): JSX.Element {
+export function LiveResourceLink({
+  id,
+  name,
+  href,
+  showResolvedId = false,
+}: {
+  id: string;
+  name?: string;
+  href: string;
+  showResolvedId?: boolean;
+}): JSX.Element {
+  if (!name) return <Code>{id}</Code>;
   return (
     <>
-      {name && (
+      <Anchor href={href} target="_blank" rel="noreferrer" inherit>
+        {name}
+      </Anchor>
+      {showResolvedId && (
         <>
-          <Anchor href={href} target="_blank" rel="noreferrer" inherit>
-            {name}
-          </Anchor>{" "}
+          {" "}
+          <Code>{id}</Code>
         </>
       )}
-      <Code>{id}</Code>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
-import { Code, Stack, Text } from "@mantine/core";
+import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
@@ -61,31 +61,27 @@ const moveNode = definePreview(
   moveNodeArguments,
   function MoveNode({ args, requestId }: PreviewProps<z.infer<typeof moveNodeArguments>>): JSX.Element {
     const names = useIntegrationPreviewNames("tana", requestId);
-    const rows = [
-      ["Node", args.nodeId],
-      ["Destination", args.targetNodeId],
-      ["Source parent", args.sourceParentId],
-      ["Reference node", args.referenceNodeId],
-    ] as const;
+    const node = (id: string) => (
+      <LiveResourceLink id={id} name={names?.get(id)} href={`https://app.tana.inc?nodeid=${encodeURIComponent(id)}`} />
+    );
+    const atEdge = args.position === "start" || args.position === "end";
+    const reference = args.referenceNodeId ? node(args.referenceNodeId) : null;
     return (
-      <Stack gap={4}>
-        {rows.map(([label, id]) =>
-          id === undefined ? null : (
-            <Text key={label} size="sm" style={{ overflowWrap: "anywhere" }}>
-              {label}{" "}
-              <LiveResourceLink
-                id={id}
-                name={names?.get(id)}
-                href={`https://app.tana.inc?nodeid=${encodeURIComponent(id)}`}
-              />
-            </Text>
-          )
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        Move {node(args.nodeId)}
+        {args.sourceParentId && <> from {node(args.sourceParentId)}</>}
+        {atEdge ? (
+          ` to the ${args.position} of `
+        ) : (
+          <>
+            {" "}
+            {args.position} {reference ?? "(reference node missing)"} in{" "}
+          </>
         )}
-        <Text size="sm">
-          Position <Code>{args.position}</Code>
-        </Text>
-        <Text size="sm">{args.keepSourceReference ? "Keep the source reference" : "Remove the source reference"}</Text>
-      </Stack>
+        {node(args.targetNodeId)}
+        {atEdge && reference && <>, with reference {reference}</>}
+        {args.keepSourceReference ? ", keeping the source reference." : ", removing the source reference."}
+      </Text>
     );
   }
 );

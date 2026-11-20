@@ -324,7 +324,7 @@ const threadLabels = definePreview(
         {args.remove?.length ? <Text size="sm">Remove labels {args.remove.join(", ")}</Text> : null}
         {args.thread_ids.map((id, index) => (
           <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
-            <LiveResourceLink id={id} name={names?.get(id)} href={gmailThreadHref(id)} />
+            <LiveResourceLink id={id} name={names?.get(id)} href={gmailThreadHref(id)} showResolvedId />
           </Text>
         ))}
       </Stack>
