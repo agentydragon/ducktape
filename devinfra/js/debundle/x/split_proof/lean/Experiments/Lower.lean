@@ -499,9 +499,9 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
   -- A result captured by deferred code may be read by an earlier-escaped callback.
   -- An inert initializer that reads it may also create an alias for such a callback.
-  -- In both cases do not commute the call past an unknown effect.
+  -- Unknown syntax may hide deferred behavior; treat the whole statement conservatively.
   let indirect : Std.HashSet String := tops.foldl (fun seen t =>
-    let refs := t.rawLazy ++ (if t.inert then t.rawEager else #[])
+    let refs := t.rawLazy ++ (if t.inert || !t.fallback.isEmpty then t.rawEager else #[])
     refs.foldl (fun seen n => seen.insert n) seen)
       (externallyVisible.foldl (fun seen n => seen.insert n) {})
   let footprints := tops.map fun t =>
