@@ -42,11 +42,9 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
     round_minor_units,
 )
-from finance.plaid.spend.configuration import SpendConfiguration
+from finance.plaid.spend.configuration import SpendConfiguration, configuration_view
 from finance.plaid.spend.models import (
     AlertState,
-    AllowanceConfigurationView,
-    CardConfigurationView,
     CardView,
     PlaidTransactionDetails,
     ProvisionalCardPeriod,
@@ -146,34 +144,7 @@ class SpendService:
         return queue
 
     def read_configuration(self) -> SpendConfigurationView:
-        configuration = self._configuration
-        policy = configuration.allowance
-        allowance = None
-        if policy is not None:
-            allowance = AllowanceConfigurationView(
-                monthly_minor_units=policy.monthly_minor_units,
-                activation_at=policy.activation_at,
-                currency=policy.currency,
-                spending_account_count=len(policy.spending_account_ids),
-                max_sync_age_hours=policy.max_sync_age_hours,
-                forecast_basis_period_id=policy.forecast_basis_period_id,
-                rules=policy.rules,
-                reversal_pairs=policy.reversal_pairs,
-                analysis_categories=policy.analysis_categories,
-            )
-        return SpendConfigurationView(
-            time_zone=configuration.time_zone.key,
-            cards=[
-                CardConfigurationView(
-                    label=card.label,
-                    enabled=card.enabled,
-                    limit_minor_units=card.limit_minor_units,
-                    alert_threshold_percent=card.alert_threshold_percent,
-                )
-                for card in configuration.cards
-            ],
-            allowance=allowance,
-        )
+        return configuration_view(self._configuration)
 
     def unsubscribe(self, queue: asyncio.Queue[None]) -> None:
         self._subscribers.discard(queue)

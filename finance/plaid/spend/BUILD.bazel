@@ -487,6 +487,7 @@ py_library(
     deps = [
         ":account_history",
         ":allowance",
+        ":models",
         ":sustainability",
         "//finance:yaml_decimal",
         "@pypi//pydantic",
