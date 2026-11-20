@@ -37,6 +37,23 @@ inspected devel SHA. Record repository, branches, workflow filters, collection t
 and missing coverage. Keep mainline invocations, PR runs, and selected retry examples
 as separate populations. Expand the window when low counts limit conclusions.
 
+Use the `action_report` skill to plan and edit the dashboard.
+Apply the [CI dashboard contract](references/reporting.md) to its PR sample and publication.
+Count each eligible PR head once. Reconstruct required-check attempts to show
+how many heads went green on the first attempt, and how many initially red heads
+recovered on a retry of the same tested revision. Give each rate its denominator
+and show cancelled, superseded, incomplete and unknown outcomes separately.
+Graph first-pass outcomes over time or by PR class.
+
+Report the number of distinct test targets with confirmed intermittent failures
+in the sampled PRs and how many heads they affected. Identify the counting unit
+when case-level evidence is available. Verify fresh conflicting verdicts for the
+same tested inputs and configuration, and separate test failures from runner or
+service failures. Use a bounded PR sample if complete attempt histories are too
+costly. State what was inspected and which counts remain unknown. Mainline target
+statistics, latest workflow outcomes and red-at-merge counts answer different
+questions and belong in the supporting breakdowns.
+
 Use the `buildbuddy_api` skill for API/log/artifact recipes and the current `bbapi`
 CLI help for filters. GitHub Actions supplies workflow attempts, jobs, and tested
 revisions; BuildBuddy supplies invocation, target, shard, and attempt outcomes.

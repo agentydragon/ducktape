@@ -1,6 +1,12 @@
 # Shared CI report publishing contract
 
-Read this reference when authoring or publishing either CI report.
+## PR dashboard scope
+
+Refresh the broad PR sample even when the newest work concerns one incident or
+rollout. Open with PR health and a relevant graph. If collection is incomplete,
+show the gap and date any retained baseline. Quantify the impact of a driver or
+proposed fix in PR terms, such as minutes per affected head or reruns per week.
+Check recommendations against current source, routing and landed fixes.
 
 ## Presentation
 
@@ -17,14 +23,10 @@ visualizations during refreshes and inspect the rendered screenshots: a passing
 test can still show empty bars, clipped labels or lost distinctions. Keep original
 chart windows, units and denominators when retaining historical measurements.
 Author standalone HTML; do not wrap Markdown in a preformatted block.
-Verify actual CDN loading, desktop and mobile layouts, both
+Use semantic headings, accessible controls and chart labels that work without color.
+Review the full page on desktop and mobile with disclosures closed. Verify actual CDN loading, both
 initial color schemes and a live OS or browser preference change. Keep
 styling-only work distinct from measurement or source updates.
-
-Let the findings determine the report structure; keep conclusions and decisions
-easy to find, with semantic headings, accessible controls and useful tables or
-visualizations. Label units, populations and sample sizes, and place important
-limitations by the claims they qualify.
 
 ## Evidence and privacy
 

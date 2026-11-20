@@ -17,9 +17,9 @@ an existing investigation to continue, with historical measurements and conclusi
 checked against current CI. Keep working reports and measurement snapshots out of
 `devel`; publish each reviewed
 run as the latest snapshot in that namespace (below). `cihealth` covers
-release/pin currency and failed CI more broadly. No Mimir metric, Shapley
-calculation, or dashboard is required for a useful report; propose
-instrumentation only when it closes a decision-relevant evidence gap.
+release/pin currency and failed CI more broadly. Use the `action_report` skill to plan and edit the dashboard.
+Apply the [CI dashboard contract](references/reporting.md) to its PR sample and publication.
+Propose instrumentation only when it closes a decision-relevant evidence gap.
 
 Test implementations, execution architecture and infrastructure are part of the
 optimization scope. Treat target boundaries, environment lifetimes, executor
@@ -591,43 +591,15 @@ recipe on mixed clocks.
 
 ## Refresh the artifact
 
-### Design for a busy reader
+### Lead with PR feedback time
 
-The reader opens `index.html` in a browser to quickly understand **how CI is
-doing, what matters, and what decisions or actions follow**. Author actual,
-standalone HTML using your judgment about the findings. Do not wrap raw Markdown
-in HTML. There is no prescribed template, section order, dashboard, or mandatory
-chart collection: let the diagnosis determine the presentation. Inspect the existing
-report's structure and retain useful explanations, comparisons and evidence navigation
-as you revise it. Reorganization must preserve the reader's ability to understand and
-follow up on still-relevant prior work.
-
-Apply the shared [reporting and publication contract](references/reporting.md)
-when authoring or publishing this report.
-
-A prolonged failure caused by an exhausted quota should lead with the incident,
-its impact, the evidence for the cause, and the decision needed to restore service.
-A healthy system with modest optimization opportunities may benefit from a time
-breakdown and a short comparison of worthwhile improvements. These warrant
-different presentations; do not force either into the other's structure.
-
-- Make the main conclusion and any recommended decision easy to find on the first
-  screen. Distinguish urgent action, optional improvements, and no action needed.
-  Explain expected benefit, cost or tradeoffs, and uncertainty when recommending work.
-- Respect attention: prioritize the few findings that change the reader's judgment.
-  Give enough context to understand them, with supporting detail available farther
-  down or through expandable sections and direct evidence links. Do not make the
-  reader reconstruct the conclusion from a dump of metrics or logs.
-- Use visualizations where they clarify a comparison, distribution, sequence or
-  bottleneck. Choose the form for the evidence; plain prose may be better. Label
-  units, populations and sample sizes, and keep material limitations near claims.
-  Use readable tables when precise comparisons are useful.
-- Make the report pleasant and usable in a browser: clear visual hierarchy,
-  readable typography, useful clickable links, semantic headings and accessible
-  labels, adequate contrast, and layouts that work on desktop and mobile. Avoid
-  decorative noise and reliance on color alone. Inspect the actual rendered page
-  at desktop and mobile widths before publication; successful packaging is not
-  visual review.
+Show median and p90 time to required green for the recent PR heads. Name both
+clock endpoints and show how many heads reached green, failed, were cancelled
+or remained unresolved. If sampling balances PR classes,
+lead with typical and tail times by class and show each class's sample size.
+A pooled percentile needs a representative PR mix. Graph the class differences
+or a comparable trend, then show which gate finished last and how often. Tie a
+proposed speedup to the wall time it could save before another gate becomes last.
 
 ### Preserve the evidence behind the presentation
 
@@ -643,16 +615,11 @@ supports that diagnosis. Generate `evidence.json` with `evidence.sh` as
 before publishing the report and evidence together as the latest history snapshot.
 Publish small relevant excerpts and direct job/invocation URLs in the report.
 
-Before publishing, compare the proposed report against the prior-work inventory.
-Account for each substantive prior finding, experiment and open follow-up: updated
-with new evidence, retained as relevant historical context, resolved or superseded
-with evidence, or explicitly deferred with a reason and next step. Keep a concise
-explanation of still-relevant results and unresolved work in the current report,
-with commit-pinned links to earlier reports and evidence for the detail. Git history
-alone is not sufficient continuity if readers must rediscover what was learned or
-what remains to do. Label retained measurements with their original window and
-source; keep them distinct from the new sample. Remove obsolete detail once its
-disposition is clear, rather than accumulating every earlier report verbatim.
+Use the prior-work inventory to check that the refresh keeps decisions traceable.
+Carry open work into the dashboard when it still merits action. For a resolved
+or superseded finding that explains today's choice, link to the dated result
+with its original window and source. The inventory belongs in working notes or
+supporting evidence. Showing every disposition would turn the page into a log.
 
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
 changes leave the recommendation list. If ongoing monitoring is warranted,

@@ -134,6 +134,12 @@
       "filename": "debundle_stabilize.skill"
     },
     {
+      "name": "action_report",
+      "pkg": "skill-action_report",
+      "target": "//skills/action_report:action_report_skill",
+      "filename": "action_report.skill"
+    },
+    {
       "name": "backtrace",
       "pkg": "skill-backtrace",
       "target": "//skills/backtrace:backtrace_skill",
