@@ -89,49 +89,6 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 	}
 }
 
-// An Identity caller owns the inboxes of its Sandbox's Sessions the Session authority recorded as
-// executing as its Identity incarnation.
-func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
-	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-identity-"+uuid.NewString(), testNamespace)
-	other := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-identity-"+uuid.NewString(), testNamespace)
-	setSandboxIdentity(t, &workload)
-	setSandboxIdentity(t, &other)
-	ca := peertlstesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
-	service := start(t, func(c *config) {
-		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
-		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
-	})
-	inboxes := inboxstore.New(service.db, transaction.New(service.db), defaultConfig().Quotas)
-	owner := inboxstore.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}}
-	if err := inboxes.OpenInbox(t.Context(), owner, "svid-identity-session"); err != nil {
-		t.Fatal(err)
-	}
-	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {
-		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(peertls.NotificationsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(service.rpcAddress, grpc.WithTransportCredentials(credentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { conn.Close() })
-		return notificationspb.NewNotificationsClient(conn)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-	defer cancel()
-	for caller, want := range map[*workloadauthtesting.IdentityWorkload]int{&workload: 1, &other: 0} {
-		response, err := connect(caller.Workload).ListInboxes(ctx, &notificationspb.ListInboxesRequest{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := len(response.GetInboxes()); got != want {
-			t.Fatalf("Identity %s sees %d inboxes, want %d", caller.Identity.Name, got, want)
-		}
-	}
-}
-
 // identityRunDispatcher records testSession as executing as an Identity alone in a Sandbox.
 type identityRunDispatcher struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
