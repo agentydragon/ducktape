@@ -41,4 +41,5 @@ in the inference run record.
   against the same cold prompt. Force eviction and verify hits and
   recurrent-state replay after both a pod restart and a checkpoint switch
   away and back. Measure SSD writes and pinned RAM alongside latency.
-  See [TabbyAPI memory options](https://github.com/theroyallab/tabbyAPI/wiki/02.-Server-options#memory-options).
+  See the [experiment runbook](prefix-cache-probe.md) and
+  [TabbyAPI memory options](https://github.com/theroyallab/tabbyAPI/wiki/02.-Server-options#memory-options).
