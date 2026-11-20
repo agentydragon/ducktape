@@ -350,7 +350,7 @@ py_visual_test(
         ":visual_harness_css",
     ],
     harness = ":visual_harness_js",
-    shard_count = 2,
+    shard_count = 4,
     test_deps = [
         "//testing/frontend_visual:capture",
         "//testing/frontend_visual:page_capture",
