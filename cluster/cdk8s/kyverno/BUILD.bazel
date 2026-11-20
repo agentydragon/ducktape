@@ -1,8 +1,8 @@
 # gazelle:ignore
 
-# gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
 # gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
 # gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
+# gazelle:resolve py kyverno_namespaceddeletingpolicy_crds //cluster/cdk8s/providers/kyverno:namespaceddeletingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -26,7 +26,7 @@ py_library(
     srcs = ["janitor.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//cluster/cdk8s/providers/kyverno:cleanuppolicy",
+        "//cluster/cdk8s/providers/kyverno:namespaceddeletingpolicy",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],
@@ -85,6 +85,25 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_janitor",
+    srcs = ["test_janitor.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":janitor",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
