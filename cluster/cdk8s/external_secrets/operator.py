@@ -78,6 +78,23 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # cert-controller is off.
         "webhook": {
             "create": True,
+            "replicaCount": 2,
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+            "affinity": {
+                "podAntiAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": [
+                        {
+                            "labelSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/instance": NAME,
+                                    "app.kubernetes.io/name": f"{NAME}-webhook",
+                                }
+                            },
+                            "topologyKey": "kubernetes.io/hostname",
+                        }
+                    ]
+                }
+            },
             "port": 9443,
             "priorityClassName": "system-cluster-critical",
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
