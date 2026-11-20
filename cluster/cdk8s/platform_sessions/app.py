@@ -37,7 +37,7 @@ def _claim(chart: Chart, name: str, namespace: str) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.DISABLED)
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
     namespaces.namespace(chart, "retired-namespace", name="openai-platform-session", vpa=Vpa.DISABLED)
     _claim(chart, NAME, NAMESPACE)
     _claim(chart, "openai-platform-session", "openai-platform-session")
