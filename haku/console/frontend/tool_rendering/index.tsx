@@ -15,8 +15,6 @@ import type { z } from "zod";
 
 import { renderCallPreview, type ToolCallPreview } from "./call_entry";
 import { renderPreview, type ToolPreview } from "./entry";
-import { gmailPreviews } from "./gmail/requests";
-import { gmailResultPreviews } from "./gmail/responses";
 import { googleCalendarCallPreviews } from "./google_calendar/calls";
 import { googleCalendarPreviews } from "./google_calendar/requests";
 import { googleCalendarResultPreviews } from "./google_calendar/responses";
@@ -24,33 +22,22 @@ import { grocyPreviews } from "./grocy/requests";
 import { grocyResultPreviews } from "./grocy/responses";
 import { hakuRoutinePreviews } from "./haku_routine/requests";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry";
-import {
-  GMAIL_SERVER_ID,
-  GOOGLE_CALENDAR_SERVER_ID,
-  GROCY_SERVER_ID,
-  HAKU_ROUTINE_SERVER_ID,
-  TANA_SERVER_ID,
-} from "./server_ids";
-import { tanaPreviews } from "./tana/requests";
+import { GOOGLE_CALENDAR_SERVER_ID, GROCY_SERVER_ID, HAKU_ROUTINE_SERVER_ID } from "./server_ids";
 import type { PreviewVariant } from "./vocabulary";
 
 // isolatedDeclarations cannot infer a computed-key object literal's type, so the shape is spelled
 // out once here; REGISTRY's explicit annotation makes `typeof REGISTRY` below resolve to exactly
 // this (still-literal, per-server) type instead of forcing a widened one.
 type PreviewRegistryShape = {
-  [GMAIL_SERVER_ID]: typeof gmailPreviews;
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarPreviews;
   [GROCY_SERVER_ID]: typeof grocyPreviews;
   [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
-  [TANA_SERVER_ID]: typeof tanaPreviews;
 };
 
 const REGISTRY: PreviewRegistryShape = {
-  [GMAIL_SERVER_ID]: gmailPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
-  [TANA_SERVER_ID]: tanaPreviews,
 } satisfies Record<string, Record<string, ToolPreview>>;
 
 type PreviewRegistry = typeof REGISTRY;
@@ -59,13 +46,11 @@ const RUNTIME_REGISTRY: Record<string, Record<string, ToolPreview>> = REGISTRY;
 // `as const` (like REGISTRY) so RegisteredResultPayload below can resolve each tool's literal
 // result schema; RUNTIME_RESULT_REGISTRY is the widened twin toolResultPreview indexes by string.
 type ResultRegistryShape = {
-  [GMAIL_SERVER_ID]: typeof gmailResultPreviews;
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarResultPreviews;
   [GROCY_SERVER_ID]: typeof grocyResultPreviews;
 };
 
 const RESULT_REGISTRY: ResultRegistryShape = {
-  [GMAIL_SERVER_ID]: gmailResultPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
 } satisfies Record<string, Record<string, ToolResultPreview>>;
