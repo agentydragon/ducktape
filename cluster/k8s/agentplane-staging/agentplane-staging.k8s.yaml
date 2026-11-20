@@ -5603,7 +5603,7 @@ spec:
       name: virtiofsNames
     - expression: variables.vmiVolumes.filter(v, (has(v.persistentVolumeClaim) || has(v.secret) || has(v.configMap)) && v.name in variables.virtiofsNames).map(v, v.name)
       name: eligibleVirtiofs
-    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'sandboxtemplates', request.namespace, 'runner-template').spec.pod.spec
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'sandboxtemplates', request.namespace, 'environment-tools').spec.pod.spec
       name: templatePod
     - expression: variables.templatePod.initContainers.filter(c, c.name == 'egress-sidecar')[0]
       name: templateRelay
