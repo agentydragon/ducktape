@@ -3,23 +3,20 @@
 # Succeeded/Failed pods after 3 days — recent failures stay inspectable, and
 # agent traces live in the database regardless. Running pods never match.
 # Delete RBAC: the kyverno-cleanup-controller-workloads ClusterRole in cluster/cdk8s/kyverno/policies.py.
-apiVersion: kyverno.io/v2
-kind: CleanupPolicy
+apiVersion: policies.kyverno.io/v1
+kind: NamespacedDeletingPolicy
 metadata:
   name: reap-finished-pods
   namespace: props
 spec:
   schedule: "10 * * * *"
-  match:
-    any:
-      - resources:
-          kinds:
-            - Pod
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        resources: [pods]
   conditions:
-    all:
-      - key: "{{ target.status.phase }}"
-        operator: AnyIn
-        value: [Succeeded, Failed]
-      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
-        operator: GreaterThan
-        value: 72h
+    - name: finished
+      expression: has(object.status.phase) && object.status.phase in ['Succeeded', 'Failed']
+    - name: older-than-3-days
+      expression: time.now() - timestamp(object.metadata.creationTimestamp) > duration('72h')
