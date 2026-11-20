@@ -13,13 +13,7 @@ report snapshots. The CI reports are:
 
 - **Latency:** [current report](latency/index.html): Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured. The [paired VM comparison](latency/index.html#vm-shadow) found KVM first attempts were a median 4m28s shorter across 100 manual pairs. KVM also ran faster in all four fresh devel pairs collected before the shadow was retired. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
-- **Reliability (10–16 November UTC):** [report](reliability/index.html),
-  [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).
-  Mainline: 32 failures / 883 completed test invocations, plus six disconnected.
-  VM cache and physical-attempt audit, a full 375-second setup breakdown, the
-  interim 380-fresh-result baseline census for #16027, three
-  red-at-merge devel PRs, and current dispositions of earlier interventions.
-  The 17 November follow-up records merged case accounting, a pre-Runtime kernel stall and cleanup fence, native profiles around 25 cold imports, bounded browser snapshot controls, and a focused VM topology control. The [paired VM comparison](reliability/index.html#vm-shadow) found 23 managed and two KVM first-attempt failures across 100 manual pairs. Both routes passed all four fresh devel pairs collected before the shadow was retired. Provider snapshot decisions remain unavailable. Historical measurements retain their original windows.
+- **Reliability (13–19 November UTC):** [report](reliability/index.html), [evidence](reliability/evidence.json), [manifest](reliability/manifest.json). 242 of 350 sampled PR heads passed all three required checks on their first attempt. Nineteen of 63 mainline failures share a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry. The failed attempt reached the baseline rebuild guard in an already-prepared Docker cgroup.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),

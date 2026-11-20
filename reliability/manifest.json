@@ -1,88 +1,10 @@
 {
-  "vm_shadow_review": {
-    "cutoff_utc": "2026-11-20T05:41:06Z",
-    "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
-    "evidence_key": "vm_shadow_review",
-    "manual_test_source": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
-    "paired_evidence": "../vm-pairs.json",
-    "paired_evidence_sha256": "092faa7783548735a4e7216998c9f7da911e1971fb51189ebe133e9be5922aef",
-    "manual_interim_snapshot_utc": "2026-11-20T05:43:00.234065+00:00",
-    "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
-    "routing_merge_sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
-    "routing_merged_at_utc": "2026-11-20T05:41:07Z",
-    "manual_final_completed_at_utc": "2026-11-20T07:05:20.808512+00:00",
-    "shadow_disabled_confirmed_at_utc": "2026-11-20T07:36:33Z"
-  },
-  "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
-  "window_start_utc": "2026-11-10T00:00:00Z",
-  "window_end_utc": "2026-11-17T00:00:00Z",
-  "published_at_utc": "2026-11-17T13:07:38.778394+00:00",
+  "source_devel_commit": "1cc6bc03be1a1932a219e79fd987eb74ac92bcbc",
+  "window_start_utc": "2026-11-13T00:00:00Z",
+  "window_end_utc": "2026-11-20T00:00:00Z",
+  "published_at_utc": "2026-11-20T21:30:52.482306+00:00",
   "attribution": "not collected",
-  "supplemental_source_devel_commit": "4e56f0735934c9689d83e1f4f2967a68fab64977",
-  "supplemental_window_utc": {
-    "start": "2026-11-13T03:27:02Z",
-    "end": "2026-11-17T07:00:00Z"
-  },
-  "supplemental_collected_at_utc": "2026-11-17T07:29:42.989933+00:00",
-  "previous_report_commit": "ec4566873d11172a1ff1f4f578852a259e98a651",
-  "forensic_source_devel_commit": "d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca",
-  "forensic_sample_invocations": [
-    "7ba9c250-4568-467b-9ab6-8496e2e2a795",
-    "3efe5700-2b96-55a4-b733-784c672a3a09",
-    "95e444be-2b63-40c0-a51f-4f89cfa582db"
-  ],
-  "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
-  "visual_validation": "visual-validation.json",
-  "validation_invocation_url": "https://app.buildbuddy.io/invocation/82469e16-ba0c-484c-b9f4-60f53a96c9e8",
-  "report_sha256": "8d4021c52a36dbc8799469d73235d7a9d7c08b10eaf9353f18d2e1826eaf9196",
-  "evidence_sha256": "a7ba5c58fbd5e71d769fb177f82aedd1bf34d26559d4914cc0632aaffa267fc1",
-  "visual_validation_sha256": "3d5f1095779859d8952436ad98508a166c376bcd1001cbf6320725b4a5d69228",
-  "selected_experiments_collected_at_utc": "2026-11-17T13:06:40.684966+00:00",
-  "selected_experiment_invocations": [
-    "1a8d57e8-08c4-44d8-8058-c97994132fbf",
-    "1585db6a-8bb1-4aee-9056-10650ca8a7c9",
-    "18f973d1-e647-4b1a-9964-c4ef4d6cd027",
-    "14831492-2683-472c-9e75-4e454b71570b",
-    "3ca84157-a445-4ff2-b36a-b4b71da0d046",
-    "26964de2-6865-4659-a4f9-06e6eea6dcad"
-  ],
-  "selected_experiment_sources": {
-    "cold_vm_sync": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
-    "cold_working_diff": {
-      "cold-import-experiment/BUILD.patch": "27da82276e9fbd5aa835cd8475106c0f272b66c004253fc965776cd5c065ee52",
-      "cold-import-experiment/cold_content_precondition.py": "ef4f5cce6c1fd55f4d865659eba0ff92ff6229cc6812e4e06168d1c7c543b4ee"
-    },
-    "browser_renderer_control_sync": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
-    "browser_renderer_patch_sha256": "0f57c303efbb7e21eb7fbaec6922d76e9a4c19f0b0b58079da813449b5632d91",
-    "corrected_boot_head": "0c267381152728502db26e14134255df232a7393"
-  },
-  "experiment_attachment_sha256": {
-    "browser-renderer-control.patch": "0f57c303efbb7e21eb7fbaec6922d76e9a4c19f0b0b58079da813449b5632d91",
-    "cold-import-experiment/BUILD.patch": "27da82276e9fbd5aa835cd8475106c0f272b66c004253fc965776cd5c065ee52",
-    "cold-import-experiment/cold_content_precondition.py": "ef4f5cce6c1fd55f4d865659eba0ff92ff6229cc6812e4e06168d1c7c543b4ee"
-  },
-  "preview_source_commit": "9c932fb95f1a280f03ca26c9533e8be18d3f1974",
-  "published_review_images": [
-    {
-      "path": "reliability/review/cold-control-desktop.png",
-      "sha256": "075bf368f0cfb01cb5a484261d06a3725f20fa6aeb792de20782f2d37bde636c",
-      "source_checkpoint": "light-desktop-cold-content-control"
-    },
-    {
-      "path": "reliability/review/cold-control-mobile.png",
-      "sha256": "3f968f09158fec1715050b778551f0b5cf801b37abb5b3f419cca0340bb229ee",
-      "source_checkpoint": "dark-mobile-cold-content-control"
-    },
-    {
-      "path": "reliability/review/boot-control-mobile.png",
-      "sha256": "1a27cd70c1a57a656f4a2399eb11a25ae899640cede30b8dfc26c08bcb98b86b",
-      "source_checkpoint": "dark-mobile-boot-reproduction-control"
-    },
-    {
-      "path": "reliability/review/browser-controls-desktop.png",
-      "sha256": "6723c8f1d0eb5d0c344cbaf84698b8cad3b61649a86f088162abf8b0a7fd734d",
-      "source_checkpoint": "light-desktop-browser-snapshot-controls"
-    }
-  ]
+  "previous_report_commit": "5e85f6fb5bdbae5a04b9f719d9ea932496e3ccbb",
+  "report_sha256": "9a6e3c76eea4016fae98e52d2dc789e33c7a80e9c76feb217cebdeb407735e4f",
+  "evidence_sha256": "8873394735143bd7450d7d11cac78b72f1feb77b77dce112546751ed9b58d799"
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI reliability · 10–16 November 2026</title>
+    <title>CI reliability · 13–19 November 2026</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -52,9 +52,7 @@
       import { useState } from "react";
       import {
         Accordion,
-        Alert,
         Anchor,
-        Badge,
         Code,
         Container,
         Group,
@@ -68,7 +66,6 @@
       } from "@mantine/core";
       import { BarChart } from "@mantine/charts";
       import { html, mount, ManifestStamp } from "../report.js";
-      import { DailyVmChart } from "./charts.js";
       const response = await fetch("./evidence.json");
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const e = await response.json();
@@ -76,189 +73,202 @@
       const bb = "https://app.buildbuddy.io/invocation/";
       const link = (url, label) => html`<${Anchor} href=${url}>${label}<//>`;
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
-      const percent = (n, d) => `${((100 * n) / d).toFixed(1)}%`;
-      const rows = (heads, values, minWidth = 660) =>
+      const inv = (id, label = id.slice(0, 8)) => link(bb + id, label);
+      const table = (heads, rows, width = 620) =>
         html`<${Table.ScrollContainer}
-          minWidth=${minWidth}
-          type="native"
-          maw="100%"
-          ><${Table} striped verticalSpacing="sm"
-            ><${Table.Thead}
-              ><${Table.Tr}
-                >${heads.map((h) => html`<${Table.Th} key=${h}>${h}<//>`)}<//
-              ><//
-            ><${Table.Tbody}
-              >${values.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((cell, j) => html`<${Table.Td} key=${j}>${cell}<//>`)}<//>`)}<//
-            ><//
-          ><//
-        >`;
-      function Metric({ value, label, detail }) {
-        return html`<${Paper} withBorder p="md"
-          ><${Text} size="xl" fw=${700}>${value}<//
-          ><${Text} fw=${600}>${label}<//
-          ><${Text} size="sm" c="dimmed" mt="xs">${detail}<//><//
-        >`;
-      }
-      function SetupTimeline() {
-        const d = e.setup_breakdown;
-        const lanes = [
-          {
-            label: "Open cold K3s",
-            color: "#1971c2",
-            spans: d.spans.filter(
-              (s) => s.name === "system_test.k3s.baseline.open",
-            ),
-          },
-          ...Object.keys(d.image_groups_seconds).map((g, i) => ({
-            label: g,
-            color: ["#e67700", "#7048e8", "#0b7285", "#c2255c"][i],
-            spans: d.images.filter((s) => s.group === g),
-          })),
-          {
-            label: "Controllers / apply (overlap)",
-            color: "#2b8a3e",
-            spans: d.spans.filter((s) =>
-              [
-                "system_test.virtualization.install",
-                "system_test.pki.controllers",
-                "system_test.crds.apply",
-                "system_test.virtualization.apis",
-                "system_test.manifests.apply",
-                "system_test.pki.issuance",
-                "system_test.virtualization.ready",
-              ].includes(s.name),
-            ),
-          },
-        ];
-        const x = (seconds) => 276 + (660 * seconds) / d.setup_seconds;
-        return html`<${Table.ScrollContainer}
-          minWidth=${960}
+          minWidth=${width}
           type="native"
           maw="100%"
         >
-          <svg
-            viewBox="0 0 970 260"
-            role="img"
-            aria-label="375-second VM setup timeline: serial image imports overlap controller and manifest work"
-            style=${{ width: "100%", display: "block", color: "var(--mantine-color-text)" }}
-          >
-            <text x="276" y="18" fill="currentColor" fontSize="13">
-              Seconds since fixture setup began (UTC 12:40:46.778)
-            </text>
-            ${[0, 60, 120, 180, 240, 300, 375].map((t) => html`<g key=${t}><line x1=${x(t)} x2=${x(t)} y1="42" y2="250" stroke="currentColor" opacity="0.15" /><text x=${x(t)} y="37" textAnchor="middle" fill="currentColor" fontSize="12">${t}</text></g>`)}
-            ${lanes.map((lane, i) => html`<g key=${lane.label}><text x="4" y=${66 + i * 33} fill="currentColor" fontSize="13">${lane.label}</text>${lane.spans.map((span, j) => html`<rect key=${j} x=${x(span.start_offset_seconds)} y=${51 + i * 33} width=${Math.max(1, x(span.end_offset_seconds) - x(span.start_offset_seconds))} height="21" rx="2" fill=${lane.color}><title>${span.image ?? span.name}: ${span.seconds.toFixed(3)} seconds</title></rect>`)}</g>`)}
-          </svg>
+          <${Table} striped verticalSpacing="sm">
+            <${Table.Thead}
+              ><${Table.Tr}
+                >${heads.map((head) => html`<${Table.Th} key=${head}>${head}<//>`)}<//
+              ><//
+            >
+            <${Table.Tbody}
+              >${rows.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((c, j) => html`<${Table.Td} key=${j}>${c}<//>`)}<//>`)}<//
+            >
+          <//>
+        <//>`;
+      const links = (items) =>
+        html`<${Group} gap="md"
+          >${items.map(({ url, label }) => html`<span key=${url}>${link(url, label)}</span>`)}<//
+        >`;
+      const percentage = (n, d) => ((100 * n) / d).toFixed(1) + "%";
+      function Metric({ value, label, detail }) {
+        return html`<${Paper} withBorder p="md">
+          <${Text} size="xl" fw=${700}>${value}<//>
+          <${Text} fw=${600}>${label}<//>
+          <${Text} size="sm" c="dimmed" mt="xs">${detail}<//>
         <//>`;
       }
+      const series = [
+        { name: "green", label: "First-pass green", color: "teal.7" },
+        { name: "red", label: "First-pass red", color: "red.7" },
+        { name: "superseded", label: "Superseded", color: "gray.6" },
+        { name: "cancelled", label: "Cancelled", color: "orange.7" },
+        { name: "incomplete", label: "Incomplete", color: "violet.6" },
+        { name: "unknown", label: "Unknown", color: "blue.6" },
+      ];
       function Report() {
         const [query, setQuery] = useState("");
         const findings = e.findings.filter((f) =>
-          `${f.id} ${f.title} ${f.classification}`
+          [f.title, f.classification, ...f.paragraphs]
+            .join(" ")
             .toLowerCase()
-            .includes(query.toLowerCase()),
+            .includes(query.trim().toLowerCase()),
         );
-        const v = e.vm_exposure;
+        const p = e.pull_requests;
+        const m = e.mainline;
+        const k = e.kvm_cutover;
         return html`<${Container}
           component="main"
-          size="76rem"
+          size="73rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
-          ><${Stack} gap="xl">
+        >
+          <${Stack} gap="xl">
             <header>
               ${link("../", "Ducktape reports")}
-              <${Text} c="dimmed" mt="md"
-                >CI reliability · 10–16 November 2026 UTC<//
-              >
               <${Title} order=${1} my="sm"
-                >VM setup and infrastructure remain the main reliability work<//
+                >CI reliability · 13–19 November 2026<//
               >
-              <${Text} size="lg"
-                >32 of 883 completed mainline test invocations failed (3.6%).
-                They include test failures, sustained build regressions and
-                remote failures. This is an invocation failure frequency; a
-                repository flake rate is not established.<//
-              >
+              <${Text} size="lg">${e.lede}<//>
               <${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json"
               /><//>
-              <${Text} size="sm"
-                >Inspected source
-                ${link(`${gh}/commit/${e.source_devel_commit}`, html`<${Code}>${e.source_devel_commit}<//>`)}.
-                Exact window: 2026-11-10 00:00 UTC (inclusive) to 2026-11-17
-                00:00 UTC (exclusive), using invocation creation or PR merge
-                time. Collected ${e.collected_at_utc}.${" "}
-                ${link("./evidence.json", "Reviewed evidence")} ·
-                ${link("./manifest.json", "Manifest")}<//
+              <${Text} size="sm" mt="xs"
+                >Seven complete UTC days from 13 November 00:00 through 20
+                November 00:00 exclusive. Inspected devel commit${" "}
+                ${link(gh + "/commit/" + e.source_devel_commit, html`<${Code}>${e.source_devel_commit}<//>`)}.<//
               >
             </header>
-            <section id="vm-shadow">
-              <${Title} order=${2}>Managed TCG and cluster KVM · paired VM runs<//>
-              <${Text} size="sm" mt="sm">${e.vm_shadow_review.sample_note}<//>
-              ${e.vm_shadow_review.sections.map(
-                ({ heading, text }) =>
-                  html`<div key=${heading}>
-                    <${Title} order=${3} mt="md">${heading}<//>
-                    <${Text} mt="xs">${text}<//>
-                  </div>`,
-              )}
-              <${Text} size="sm" mt="sm">${e.vm_shadow_review.selection_note}<//>
-              <${Text} size="sm" mt="xs">
-                ${link(e.vm_shadow_review.run_url, "Fresh pre-cutover pair")}${" · "}
-                ${link(e.vm_shadow_review.paired_evidence, "Per-pair measurements")}${" · "}
-                ${link(e.vm_shadow_review.routing_url, "Merged routing change")}${" · "}
-                ${link(e.vm_shadow_review.required_pr_invocation_url, "Required PR VM execution")}${" · "}
-                ${link(e.vm_shadow_review.post_cutover_url, "First post-cutover run")}${" · "}
-                ${link(e.vm_shadow_review.fresh_post_cutover_artifact_url, "Fresh post-cutover archive")}${" · "}
-                ${link("https://app.buildbuddy.io/invocation/2de8e501-a373-4c7c-908b-cabd1681e04a", "Manual pair 64")}${" · "}
-                ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "Archive reference")}
-              <//>
-            </section>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Metric}
-                value="32 / 883"
-                label="Failed completed test invocations"
-                detail="851 succeeded. Six disconnected invocations are separate. Unit: unique child Bazel test invocation with canonical repo, CI role and devel branch."
+                value=${`${p.outcomes.green} / ${p.sample_size}`}
+                label="PR heads green on the first attempt"
+                detail=${`${percentage(p.outcomes.green, p.sample_size)} in the seven-day sample. ${p.outcomes.red} first-pass red, ${p.outcomes.superseded} superseded and ${p.outcomes.cancelled} cancelled.`}
               />
               <${Metric}
-                value="10 / 149"
-                label="Failed non-cached VM test runs"
-                detail="6.7% observed frequency in this target/configuration. 704 cached passes and two failures before TestResult are excluded from this denominator."
+                value=${`${p.same_commit_recoveries.length} / ${p.outcomes.red}`}
+                label="Initially red PR heads recovered on the same tested SHA"
+                detail=${`${p.comparable_red_heads} red heads had a comparable retry and a known outcome. ${p.same_commit_recoveries.length} recovered in that subset.`}
               />
               <${Metric}
-                value="3 / 1,487"
-                label="Devel PRs merged with a visible red gate"
-                detail="Seven additional PRs had a check crossing merge time; two have unknown merge-time state. This measures operator friction, not flaky tests or proven overrides."
+                value=${`${m.failures} / ${m.completed}`}
+                label="Failed mainline Bazel test invocations"
+                detail=${`${percentage(m.failures, m.completed)} of completed test commands. ${m.disconnected} disconnected invocations outside this denominator.`}
               />
             <//>
-            <${Alert}
-              color="blue"
-              title="Prior repairs and coverage changed during this window"
-            >
-              The old and new seven-day windows overlap. The earlier 28/88 VM
-              API count and current 12/151 count have different source and
-              exposure; they do not establish an improvement.${" "}${pr(15897)}
-              moved unsupported Codex OOM-survival coverage to manual on 12
-              November. ${" "}${pr(17117)} moved a memory benchmark to manual
-              after this window. Both policy changes are explicit below; neither
-              repairs runtime behavior.
-            <//>
-            <${Group} component="nav" aria-label="Report sections">
-              ${link("#selected-experiments", "Latest experiments")}${link("#vm-forensics", "Accounting and kernel stall")}${link("#priorities", "Priorities")}${link("#populations", "Counts and cache")}${link("#vm-phases", "VM causal timeline")}${link("#baseline-census", "Baseline census")}${link("#merges", "Merge-time checks")}${link("#continuity", "Prior interventions")}${link("#limits", "Coverage limits")}
-            <//>
+            <section id="pr-health">
+              <${Title} order=${2}>First-pass PR health<//>
+              <${Text} my="sm"
+                >${`50 heads per UTC day, selected by stable SHA-based ranking from ${p.frame_size.toLocaleString()} associated devel PR heads. The pooled figure weights each day equally. Daily cancellation counts and both denominators are below.`}<//
+              >
+              <div
+                role="img"
+                aria-label="Stacked bars of first-pass required check outcomes by UTC day. Exact counts appear below."
+              >
+                <${BarChart}
+                  h=${265}
+                  data=${p.daily}
+                  dataKey="day"
+                  type="stacked"
+                  series=${series.filter((item) => p.outcomes[item.name] > 0)}
+                  withLegend
+                  tickLine="y"
+                  yAxisProps=${{ width: 30, allowDecimals: false }}
+                />
+              </div>
+              <${Accordion} variant="contained" mt="md">
+                <${Accordion.Item} value="daily"
+                  ><${Accordion.Control}>Daily counts and denominators<//>
+                  <${Accordion.Panel}
+                    >${table(
+                      [
+                        "UTC day",
+                        "Eligible",
+                        "Sampled",
+                        "Green",
+                        "Red",
+                        "Superseded",
+                        "Cancelled",
+                        "Incomplete",
+                        "Unknown",
+                      ],
+                      p.daily.map((d) => [
+                        d.day,
+                        d.eligible,
+                        d.sampled,
+                        d.green,
+                        d.red,
+                        d.superseded,
+                        d.cancelled,
+                        d.incomplete,
+                        d.unknown,
+                      ]),
+                    )}<//
+                  >
+                <//>
+                <${Accordion.Item} value="heads"
+                  ><${Accordion.Control}
+                    >Same-tested-SHA recoveries in the PR sample<//
+                  >
+                  <${Accordion.Panel}
+                    >${table(
+                      [
+                        "PR",
+                        "Tested SHA",
+                        "First invocation",
+                        "Retry invocation",
+                      ],
+                      p.same_commit_recoveries.map((r) => [
+                        pr(r.pr),
+                        html`<${Code}>${r.tested}<//>`,
+                        inv(r.first),
+                        inv(r.retry),
+                      ]),
+                    )}<//
+                  >
+                <//>
+              <//>
+              <${Text} size="sm" mt="md"
+                >The five recoveries took 3m 30s to 19m 49s from the first red
+                check completing to the retry completing. Median 7m 35s. These
+                intervals include the wait before starting the retry.<//
+              >
+              <${Text} size="sm" mt="sm">${p.method}<//>
+            </section>
+            <section id="vm-cutover">
+              <${Title} order=${2}>Required VM CI on KVM<//>
+              <${Text} my="sm">${k.summary}<//>
+              ${table(["Post-cutover devel", "Count", "Unit"], k.counts, 340)}
+              <${Title} order=${3} mt="md"
+                >A recycled runner rebuild failed before either case started<//
+              >
+              <${Stack} gap="sm" mt="sm"
+                >${k.mechanism.map((s) => html`<${Text} key=${s}>${s}<//>`)}${links(k.links)}<//
+              >
+              <${Accordion} variant="contained" mt="md">
+                <${Accordion.Item} value="vm-shadow" id="vm-shadow">
+                  <${Accordion.Control}
+                    >Earlier paired TCG and KVM measurements<//
+                  >
+                  <${Accordion.Panel}
+                    >${k.history.map((x) => html`<${Text} mb="sm" key=${x}>${x}<//>`)}${links(k.history_links)}<//
+                  >
+                <//>
+              <//>
+            </section>
             <section id="priorities">
-              <${Title} order=${2} mb="sm"
-                >Ranked findings and next decisions<//
-              >
-              <${Text} mb="md"
-                >Order weighs recurrence, retry/operator cost, mechanism
-                confidence and repair cost. The original-window findings remain below. The 17 November follow-up records the separately merged accounting repair and new forensic evidence; it does not remeasure the historical population.<//
-              >
+              <${Title} order=${2}>Failure mechanisms and priorities<//>
               <${TextInput}
                 label="Filter findings"
-                placeholder="Search title or classification"
+                placeholder="Search failure mechanisms"
                 value=${query}
                 onChange=${(event) => setQuery(event.currentTarget.value)}
-                mb="md"
+                my="md"
               />
               <${Text} size="sm" c="dimmed" mb="sm" aria-live="polite"
                 >${findings.length} of ${e.findings.length} findings<//
@@ -267,801 +277,129 @@
                 ${findings.map(
                   (f) =>
                     html`<${Paper}
-                      key=${f.id}
                       withBorder
                       p="lg"
+                      key=${f.id}
                       data-finding=${f.id}
-                      ><${Stack} gap="sm">
-                        <${Group} justify="space-between"
-                          ><${Title} order=${3}>${f.id}. ${f.title}<//
-                          ><${Badge} variant="light"
-                            >${f.status ?? (f.id === "D" || f.id === "F" ? "Historical / changed" : "Open")}<//
-                          ><//
-                        >
-                        <${Text} size="sm" c="dimmed">${f.classification}<//
-                        ><${Text} fw=${600}>${f.frequency}<//>
-                        <${Text}>${f.observation}<//
-                        ><${Text}>${f.comparator}<//>
-                        <${Text} fw=${600}
-                          >Repair or next discriminating observation<//
-                        ><${Text}>${f.repair}<//>
-                        <${Text} size="sm" c="dimmed">${f.limit}<//
-                        ><${Group} gap="md"
-                          >${f.links.map((l) => html`<span key=${l.url}>${link(l.url, l.label)}</span>`)}<//
-                        >
-                      <//><//
-                    >`,
+                    >
+                      <${Stack} gap="sm">
+                        <${Title} order=${3}>${f.title}<//>
+                        <${Text} fw=${600}>${f.frequency}<//>
+                        ${f.paragraphs.map((x) => html`<${Text} key=${x}>${x}<//>`)}
+                        ${links(f.links)}
+                      <//>
+                    <//>`,
                 )}
                 ${findings.length ? null : html`<${Text}>No findings match this filter.<//>`}
               <//>
             </section>
-            <section id="vm-forensics">
-              <${Title} order=${2} mb="sm">17 November: accounting verified; the failed guest never reached Runtime<//>
-              <${Alert} color="blue" title="Selected forensic samples outside the original seven-day population" mb="md">
-                ${pr(17261)} merged at 09:10:46 UTC as <${Code}>db353034c0bc1e8d4a044f9e2c542ebf8a4caf36<//>. All three required checks passed on head <${Code}>3bbb9a307818dfc2171be8df2cb03db69fdfc3d9<//>. Its CI tested synthetic merge <${Code}>705e62f414eaee959b3d011142bc31cbc77ec6a4<//>, including one fresh remote VM result in 441.176 seconds. That is validation of this run, not a measured reduction in flakiness.
+            <section id="intermittent-targets">
+              <${Title} order=${2}>PR target recoveries with fresh results<//>
+              <${Text} my="sm">${e.pr_targets.summary}<//>
+              <${Text} my="sm">${e.pr_targets.scope}<//>
+              <${Accordion} variant="contained">
+                <${Accordion.Item} value="retry-targets"
+                  ><${Accordion.Control}>Verified target and head pairs<//>
+                  <${Accordion.Panel}
+                    >${table(
+                      [
+                        "PR",
+                        "Target",
+                        "Failed attempt",
+                        "Passing attempt",
+                        "Observed phase",
+                      ],
+                      e.pr_targets.pairs.map((r) => [
+                        pr(r.pr),
+                        html`<${Code}>${r.label}<//>`,
+                        inv(r.first),
+                        inv(r.retry),
+                        r.phase,
+                      ]),
+                      760,
+                    )}<//
+                  >
+                <//>
               <//>
-              <${Text}>The case clock now begins after shared setup. Native pytest phase timings and <${Code}>junit_duration_report=call<//> separate callback durations from shared setup/teardown. Five focused regressions cover slow setup, selection, blocked case, setup failure and teardown failure; the old-policy control fails during its 1.2-second shared setup against a one-second item deadline. Bazel's total process watchdog remains in place. ${link(bb + "b432a3f9-397b-41d5-8a01-1171fa5b34be", "Focused regressions")}${" · "}${link(bb + "d01b5f9c-efc7-401d-854f-a54303c31402", "old-policy negative control")}<//>
-              ${rows(
-                [
-                  "Sample / seconds",
-                  "Shared setup",
-                  "Claude call",
-                  "Codex call",
-                  "Shared teardown",
-                  "JUnit suite wall",
-                  "TestRunner",
-                ],
-                e.vm_forensics.timings.map((t) => [
-                  t.sample,
-                  t.setup_seconds.toFixed(2),
-                  t.claude_call_seconds.toFixed(3),
-                  t.codex_call_seconds.toFixed(3),
-                  t.teardown_seconds.toFixed(2),
-                  t.junit_suite_seconds.toFixed(3),
-                  t.test_runner_seconds.toFixed(3),
-                ]),
-              )}
-              <${Text} size="sm" mt="sm">Cases overlap, so their times are not additive. TestRunner includes work outside pytest. The warm failed manual candidate and cold rebased CI pass differ in source, configuration and retained state; their elapsed difference is not a causal speedup. JUnit's failed sample contains two callbacks plus a separate zero-call-time Codex teardown-error row, preserving the shared failure without inventing a third scenario. ${link(bb + "7ba9c250-4568-467b-9ab6-8496e2e2a795", "Manual failure")}${" · "}${link(bb + "3efe5700-2b96-55a4-b733-784c672a3a09", "rebased CI pass")}<//>
-              <${Alert} color="green" mt="md" title="Two bounded uncached repetitions pass at pinned source">
-                ${link(bb + "95e444be-2b63-40c0-a51f-4f89cfa582db", "Repetition invocation 95e444be")} tests source <${Code}>d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca<//>. Both runs are cold and exercise Claude and Codex; all four guest serials contain shutdown-complete receipts and neither has an RCU-stall warning. One suite takes 687.555s with 362.72s shared setup while both callbacks remain below 289s: the intended accounting boundary is exercised by a real cold run longer than the former item deadline. Three physical TestRunner IDs produced two passing results plus one separate provider UNAVAILABLE pause-socket refusal before a native retry. These passes do not reproduce or repair the kernel stall, and do not establish a fleet rate.
-              <//>
-              <${Title} order=${3} mt="lg" mb="sm">Startup: kernel timer/RCU progress stops before userspace<//>
-              <${Text}>The failed Codex guest runs QEMU 10.1.0-10.el9 with TCG and two vCPUs, using Debian kernel 6.12.115-2. Independent serial reaches early device initialization, then reports repeated RCU stalls: CPU 0 has zero timer ticks in the grace period, and NMI backtraces repeatedly show <${Code}>pv_native_safe_halt<//>. No systemd or Runtime startup output follows. This places the first observed failure before Runtime authentication; <${Code}>NeverConnected<//> and unreachable Runtime RPCs are downstream symptoms.<//>
-              <${Text} mt="sm">The existing APIC monitor records CPU 0's timer vector 236 in service, pending further delivery and raising processor priority to 0xe0. A pending timer or one sampled ISR236 also occurs transiently in passing guests; persistence and the covered replay distinguish this sample. The APIC capture starts before that transition and retains independent return-vector and EOI-register events. A source-based replay finds 641 accepted timer vectors but 640 timer-clearing EOIs; after the last acceptance at native host-mono 682.536071 seconds, later EOIs clear higher-priority vectors 251/253 while 236 remains. This agrees with the monitor state; the guest instruction path between acceptance and acknowledgement is absent. Its interrupt stream reaches the 16 MiB cap at 08:30:04 UTC; monitor samples continue to 08:32:53. The QEMU source RPM for this exact build was inspected. Source and records narrow the delivery/acknowledgement boundary; they do not identify the guest instruction or emulator mutation that first lost progress. Both monitor queries and uprobes perturb timing; no QEMU or kernel repair is claimed.<//>
-              <${Title} order=${3} mt="lg" mb="sm">Cleanup: accepted delete waits at the quiescence fence<//>
-              ${rows(
-                ["UTC", "Observed transition"],
-                [
-                  [
-                    "08:32:23.175",
-                    "Readiness wait fails after 300.118s; Runtime has never connected.",
-                  ],
-                  [
-                    "08:32:23.539 → 08:32:23.625",
-                    "Suspend accepted, Suspended observed, then deletion of the exact Sandbox UID accepted.",
-                  ],
-                  [
-                    "08:37:23",
-                    "The same Sandbox retains deletionTimestamp and state-volume finalizer, stopStage=Quiescing, and no quiesce receipt; the same VM/Pod remains alive.",
-                  ],
-                  [
-                    "08:37:23.797",
-                    "Cancellation-safe cleanup reports its 300.275s timeout; baseline certification subsequently refuses the remaining Sandbox.",
-                  ],
-                ],
-              )}
-              <${Text} mt="sm">The controller deliberately seals every published Runtime incarnation before deleting its workload and state. A lost or absent controller observation does not prove that no Session was admitted. <${Code}>TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot<//> defends that invariant. Here, the never-booted Runtime cannot provide the receipt, so cleanup remains fenced; the successful comparator completes delete in 18.671s. Removing the finalizer or relaxing baseline certification would discard the safety proof. ${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller.go#L259-L361", "Controller ownership and finalizer")}${" · "}${link(gh + "/blob/d16ba5c2b1d7e93efe812d4c6a9d9a2143913aca/agentplane/environments/internal/controller/controller_test.go#L805-L820", "existing regression guard")}<//>
-              <${Text} size="sm" mt="sm">The first Quiesce RPC result predates the captured controller log window. Later no-route failures, the final retry state and the guest serial are retained. No missing-delete or cancellation race was found. A safe alternative would need a durable incarnation-scoped no-admission proof or a recovered Runtime that supplies its seal; neither contract was implemented here.<//>
-            </section>
-            <section id="selected-experiments">
-              <${Title} order=${2} mb="sm">17 November: cold profiles captured; startup triggers remain open<//>
-              <${Alert} color="blue" title="Selected experiments, separate from the historical census" mb="md">
-                These manual controls and implementation checks do not change the 32/883 or 10/149 denominators. A passing control validates its configuration and coverage; it does not measure a fleet improvement.
-              <//>
-              ${rows(
-                ["PR", "Change", "Verified disposition"],
-                e.lane_experiments.interventions.map((p) => [
-                  pr(p.pr),
-                  p.change,
-                  p.state,
-                ]),
-              )}
-              <${Title} order=${3} mt="lg" mb="sm">Cold content: 25 actual imports, with native profiling<//>
-              <${Text}>${link(bb + e.lane_experiments.cold_import.invocation, "Fresh cold-content control")} passed both normal Claude/Codex cases. Before collection, the baseline marker/root and a task-owned K3s directory/containerd store were absent. The pre-import image list was empty. Native Action properties confirm the unique recycling family/data path and normal Firecracker placement; all 25 import spans record <${Code}>skipped=false<//>. The sync source is <${Code}>5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed<//> plus the attached ${link("./cold-import-experiment/BUILD.patch", "temporary target patch")} and ${link("./cold-import-experiment/cold_content_precondition.py", "read-only precollection guard")}. Neither experiment changes production retention or deletes a shared cache.<//>
-              ${rows(
-                ["Measurement clock", "Seconds / interpretation"],
-                [
-                  [
-                    "Native pytest shared setup",
-                    e.lane_experiments.cold_import.pytest_setup_seconds_rounded.toFixed(
-                      2,
-                    ),
-                  ],
-                  [
-                    "Driver stack.setup span",
-                    e.lane_experiments.cold_import.stack_setup_seconds.toFixed(
-                      3,
-                    ),
-                  ],
-                  [
-                    "Inside 25 serial import spans",
-                    e.lane_experiments.cold_import.image_span_seconds.toFixed(
-                      3,
-                    ),
-                  ],
-                  [
-                    "First image start → last image end",
-                    e.lane_experiments.cold_import.image_envelope_seconds.toFixed(
-                      3,
-                    ),
-                  ],
-                  [
-                    "Claude / Codex callback",
-                    e.lane_experiments.cold_import.case_calls
-                      .map((c) => c.seconds.toFixed(3))
-                      .join(" / "),
-                  ],
-                  [
-                    "Native pytest shared teardown",
-                    e.lane_experiments.cold_import.pytest_teardown_seconds_rounded.toFixed(
-                      2,
-                    ),
-                  ],
-                  [
-                    "JUnit suite wall / TestRunner",
-                    e.lane_experiments.cold_import.junit_suite_seconds.toFixed(
-                      3,
-                    ) +
-                      " / " +
-                      e.lane_experiments.cold_import.test_runner_seconds.toFixed(
-                        3,
-                      ),
-                  ],
-                ],
-                340,
-              )}
-              <${Text} size="sm" mt="sm">The 216.209s import envelope includes 3.440s outside the image spans. The sidecar's 225.324s “queue” marker window also includes Deployment availability after the last image. Controller installation and manifest work overlap imports; cases overlap each other. These rows are not additive. Different source and retained state prevent interpreting the earlier 375s setup as an unprofiled performance control.<//>
-              <${Accordion} variant="contained" mt="sm"><${Accordion.Item} value="cold-profile-images"><${Accordion.Control}>All 25 cold-control image spans</${Accordion.Control}><${Accordion.Panel}>
-                ${rows(
-                  ["Image", "Import span seconds"],
-                  e.lane_experiments.cold_import.image_spans.map((s) => [
-                    s.image,
-                    s.seconds.toFixed(3),
-                  ]),
-                )}
-              <//><//><//>
-              ${rows(
-                [
-                  "Native artifact",
-                  "Bytes / cap",
-                  "Sidecar / native parser",
-                  "Process wait at context exit",
-                ],
-                e.lane_experiments.cold_import.profiles.map((p) => [
-                  p.artifact,
-                  p.bytes.toLocaleString("en-US") +
-                    " / " +
-                    p.output_limit_bytes.toLocaleString("en-US"),
-                  p.status +
-                    " / " +
-                    e.lane_experiments.cold_import.native_parser_status,
-                  p.process_wait_at_context_exit_seconds.toFixed(6) + "s",
-                ]),
-              )}
-              <${Text} mt="sm">The native CPU profile contains 171.08 CPU-seconds over its reported 420s window: unpack's <${Code}>fsApplier.Apply<//> accounts for 63.10 cumulative CPU-seconds and transfer's <${Code}>importStream<//> for 25.28. The native runtime trace spans 420.001s. Its syscall profile sums 554.11 aggregate seconds across goroutines, including 260.53s in the profiler reader and 116.79s in FIFO open; those background durations are not import I/O attribution. ${link(bb + "26964de2-6865-4659-a4f9-06e6eea6dcad", "Go 1.27.3 native validation")}<//>
-              <${Text} mt="sm">${e.lane_experiments.cold_import.attribution_limit} The sidecars' roughly 438.9s client-elapsed fields observe process exit at context teardown; they do not measure sampling duration. ${pr(17342)} labels that clock explicitly. The tiny process waits exclude output drain and metadata writes and do not establish total instrumentation overhead. Server sampling start is not acknowledged by the client; queue coverage is launch-relative.<//>
-              <${Title} order=${3} mt="lg" mb="sm">Browser startup: the await includes the after-action trace snapshot<//>
-              <${Text}>In ${link(bb + "5699ac4c-baa3-5d54-a7b0-8ea9ad0f7136", "the historical failure")}, Node's <${Code}>goto<//> action <${Code}>call@13<//> completed successfully at trace time 13.901s, while its after-action snapshot appeared at 40.934s. The failed source pins Playwright 1.62.0. Its dispatcher awaits tracing's post-action snapshot before returning the protocol response, so Python's <${Code}>page.goto<//> can remain pending after document navigation succeeds. The captured boundary is before the snapshot's JS collection; Node scheduling or VM pause is still possible.<//>
-              ${rows(
-                [
-                  "Selected control",
-                  "Outcome",
-                  "Action end → after snapshot",
-                  "Proxy request → upstream headers",
-                ],
-                [
-                  [
-                    link(
-                      bb + e.lane_experiments.browser.cpu_control.invocation,
-                      "8× Chromium CPU slowdown",
-                    ),
-                    "Passed, one fresh shard",
-                    "1.392s",
-                    "99ms maximum",
-                  ],
-                  [
-                    link(
-                      bb +
-                        e.lane_experiments.browser.renderer_control.invocation,
-                      "32s injected renderer task",
-                    ),
-                    "Expected injected timeout",
-                    "32.378s",
-                    "69ms maximum",
-                  ],
-                ],
-              )}
-              <${Text} mt="sm">Renderer blocking can reproduce the late snapshot and Python cancellation, but neither control reproduces the historical roughly 23s API-header delay. The ${link("./browser-renderer-control.patch", "temporary injection")} was removed; ${pr(17353)} records its source, controls and visibility boundary. Upstream Go Date headers alone do not prove when the proxy received headers: the server may stamp them before flushing. The merged proxy phases now distinguish receipt, upstream headers and downstream send for the next natural failure. No timeout increase or new runtime repair follows from these controls.<//>
-              <${Title} order=${3} mt="lg" mb="sm">Early boot: a focused device-topology control<//>
-              <${Text}>${pr(17350)} adds an opt-in direct-VM preset with the four virtiofs tags/source kinds, loop-backed Block workspace, CPU shape and supported kernel options of the failing suite. ${pr(17339)} starts the exact observer before creation. The experiment retains normal shutdown and ownership cleanup checks. It omits the full Agentplane services and masks Runtime; the emitted configuration audit records those differences.<//>
-              <${Text} mt="sm">The ${link(bb + "14831492-2683-472c-9e75-4e454b71570b", "initial arm")} never reached QEMU: explicitly selecting the observed runtime model <${Code}>EPYC<//> added an unsatisfiable node selector. The full suite leaves that VMI field unspecified. ${pr(17357)} corrects the preset while retaining the actual QEMU model audit. The initial failure has zero guest/probe exposure and is not a kernel recurrence. ${link(bb + e.lane_experiments.boot_reproduction.corrected_invocation, "Corrected-arm result")}: ${e.lane_experiments.boot_reproduction.state}.<//>
-              ${rows([html`<${Text} w=${100} fw=${700} size="sm">Evidence<//>`, "Verified result / limit"], e.lane_experiments.boot_reproduction.result_rows, 340)}
-              <${Text} size="sm" mt="sm">${pr(17361)} records the negative control and its retained CPU0 acceptance → dispatch → EOI sequence. A successful boot alone is not a reproduction or repair of the timer stall. QEMU dispatch-helper return does not by itself prove that Linux's interrupt handler executed.<//>
-              <${Text} mt="sm">Provider snapshot version/read/publication decisions remain unavailable. Compatibility and cleanup fences remain enabled. The seven-complete-day baseline cutoff is still 21 November 00:00 UTC; no new census or scheduled collection is claimed. BuildBuddy CLI repair remains parked.<//>
             </section>
             <section id="populations">
-              <${Title} order=${2} mb="sm"
-                >Counts measure distinct populations<//
+              <${Title} order=${2}>Mainline and merge-time evidence<//>
+              <${Text} my="sm">${m.method}<//>
+              ${table(["Bazel test exit", "Invocations"], Object.entries(m.exit_counts), 335)}
+              <${Title} order=${3} mt="md"
+                >BuildBuddy target-tracking candidates<//
               >
-              <${Text} my="sm"
-                >The mainline population contains 889 unique child test
-                invocations: 883 completed and six disconnected. Failures
-                comprise 21 TESTS_FAILED, seven BUILD_FAILURE, three
-                REMOTE_ERROR and one REMOTE_CACHE_EVICTED. Separate build (823)
-                and run (15) commands are not additional test builds. Remote
-                parent runners are not counted twice.<//
-              >
-              <${Paper}
-                withBorder
-                p="md"
-                my="md"
-                data-chart="mainline-daily-failures"
-              >
-                <${Title} order=${3}
-                  >Non-green mainline test invocations by UTC creation day<//
-                >
-                <${Text} size="sm" c="dimmed"
-                  >Counts of invocation outcomes, including cached target
-                  results; disconnected is separate from completed failures.
-                  Daily total denominators follow in the table.<//
-                >
-                <${BarChart}
-                  h=${320}
-                  mt="md"
-                  data=${e.mainline.daily.map((d) => ({ ...d, day: d.day.slice(5) }))}
-                  dataKey="day"
-                  type="stacked"
-                  withLegend
-                  series=${[
-                    { name: "Tests failed", color: "red.6" },
-                    { name: "Build failed", color: "orange.6" },
-                    { name: "Remote/cache", color: "violet.6" },
-                    { name: "Disconnected", color: "gray.6" },
-                  ]}
-                  yAxisLabel="Invocations"
-                  barProps=${{ isAnimationActive: false }}
-                />
-              <//>
-              ${rows(
-                [
-                  "UTC day",
-                  "Passed",
-                  "Test failure",
-                  "Build failure",
-                  "Remote/cache",
-                  "Disconnected",
-                  "All",
-                ],
-                e.mainline.daily.map((d) => [
-                  d.day,
-                  d.Passed,
-                  d["Tests failed"],
-                  d["Build failed"],
-                  d["Remote/cache"],
-                  d.Disconnected,
-                  d.all_invocations,
-                ]),
-              )}
-              <${Title} order=${3} mt="lg" mb="sm"
-                >VM exposure: verdicts, cache and physical IDs<//
-              >
-              ${rows(
-                ["Measure", "Count / interpretation"],
-                [
-                  [
-                    "Indexed rows joined to the mainline population",
-                    "855: 843 passed, 10 failed tests, 2 failures to build",
-                  ],
-                  [
-                    "Cached test runs",
-                    "704 passes; recorded verdicts without fresh execution exposure",
-                  ],
-                  [
-                    "Non-cached test-result runs",
-                    "149: 139 passed, 10 failed; one configuration, one run/shard/attempt per verdict",
-                  ],
-                  [
-                    "Linked physical execution IDs",
-                    "161 unique IDs: 145 NEW links and 16 action-sharing links; this count includes infrastructure attempts",
-                  ],
-                  [
-                    "Remote execution outcomes",
-                    "12 UNAVAILABLE rows (7 pause refusals, 3 health deadlines, 2 restore failures), 1 cancelled row, 10 test-exit-1 rows and 138 OK/zero rows",
-                  ],
-                  [
-                    "Mapping boundary",
-                    "One PASSED target, 8450920c, has only a cancelled linked execution. Its successful physical producer remains unknown. Two FTB rows have no test summary; cache/physical exposure unknown.",
-                  ],
-                ],
-              )}
-              <${Text} size="sm" c="dimmed" mt="sm"
-                >The 10/149 figure is a non-cached result frequency, not 10/161
-                and not an intrinsic flake probability. IDs were deduplicated;
-                action-sharing links may originate outside this cohort. No new
-                same-full-SHA fresh recovery pair was established. A
-                cache-served pass or a different-source pass is not that
-                recovery.<//
-              >
-              <${Title} order=${3} mt="lg" mb="sm"
-                >BuildBuddy Flakes API leads<//
-              >
-              <${Text} mb="sm"
-                >Explicit canonical repository, devel branch and exact UTC
-                dates. All candidate sample pages were followed. For VM, the
-                API's 12/151 reconciles to ten failed tests plus two failures to
-                build among 149 non-cached results plus those two FTB rows. Keep
-                its five likely-flaky heuristic runs separate from verified
-                recoveries. Other API rows are leads; their complete physical
-                exposure was not audited.<//
-              >
-              ${rows(
-                ["Target", "API failed / total", "Likely-flaky heuristic"],
+              <${Text} my="sm">${e.target_stats.method}<//>
+              ${table(
+                ["Target", "Indexed runs", "Failed runs", "Likely flaky runs"],
                 e.target_stats.rows.map((r) => [
                   html`<${Code}>${r.label}<//>`,
-                  `${r.data.failedRuns ?? 0} / ${r.data.totalRuns}`,
-                  r.data.likelyFlakyRuns ?? 0,
+                  r.runs,
+                  r.failed,
+                  r.likely,
                 ]),
               )}
-              <${Accordion} variant="contained" mt="md">
-                <${Accordion.Item} value="bad-targets"
-                  ><${Accordion.Control}
-                    >24 bad target verdicts in 22 mainline invocations, with
-                    source and attempt identity<//
-                  ><${Accordion.Panel}>
-                    <${Text} size="sm" mb="sm"
-                      >Failures can co-occur: one build-failure invocation also
-                      produced a VM test failure. All matching result events
-                      report strategy=remote; omitted cache counts are zero with
-                      full event coverage. Raw shard failures do not multiply
-                      final target verdicts.<//
-                    >
-                    ${rows(
+              <${Title} order=${3} mt="md" id="merges"
+                >Required checks visible at merge time<//
+              >
+              <${Text} my="sm">${e.merges.summary}<//>
+              <${Accordion} variant="contained">
+                <${Accordion.Item} value="merge-candidates"
+                  ><${Accordion.Control}>PRs with a red check at merge<//>
+                  <${Accordion.Panel}
+                    >${table(
                       [
-                        "Target / verdict",
-                        "Invocation / tested full SHA",
-                        "Non-cached runs / bad shards",
-                        "Cluster",
+                        "PR",
+                        "Merged UTC",
+                        "Red job",
+                        "Bazel child",
+                        "Failure evidence",
                       ],
-                      e.failed_targets.map((r) => [
-                        html`<${Stack} gap=${4}
-                          ><${Code}>${r.target}<//
-                          ><${Text} size="sm">${r.verdict}<//><//
-                        >`,
-                        html`<${Stack} gap=${4}
-                          >${link(bb + r.invocation, r.invocation.slice(0, 8))}<${Code}
-                            >${r.tested_sha}<//
-                          ><${Text} size="xs">${r.created_at_utc}<//><//
-                        >`,
-                        `${r.noncached_runs} / ${r.result_events.length}`,
-                        r.cluster ?? "Separate target mechanism; see evidence",
+                      e.merges.red.map((r) => [
+                        pr(r.pr),
+                        r.merged,
+                        link(r.job, "Bazel gate"),
+                        inv(r.inv),
+                        r.diagnosis,
                       ]),
-                    )}
-                  <//><//
-                >
-                <${Accordion.Item} value="github"
-                  ><${Accordion.Control}
-                    >17,897 GitHub workflow run IDs: separate PR, fork and push
-                    populations<//
-                  ><${Accordion.Panel}>
-                    <${Text} mb="sm"
-                      >Seven daily partitions per workflow, each below the
-                      1,000-result cap and paginated to its reported count.
-                      Latest attempt per run ID; selected historical
-                      merge-candidate attempts were reconstructed. Push CI has
-                      774 success, 55 failure and 792 cancellation outcomes, but
-                      also contains release/image jobs, so 55/829 is not the
-                      Bazel failure frequency. Cancelling superseded queued work
-                      is not a flaky test. Fork PR execution uses its trusted
-                      workflow.<//
-                    >
-                    ${rows(
-                      [
-                        "Workflow / event",
-                        "Run IDs",
-                        "Latest visible outcomes",
-                      ],
-                      e.github_workflow_populations.rows.map((r) => [
-                        `${r.workflow.split("/").at(-1)} · ${r.event}`,
-                        r.run_ids,
-                        JSON.stringify(r.latest_attempt_outcomes),
-                      ]),
-                    )}
-                    <${Text} size="sm" mt="sm"
-                      >${e.github_workflow_populations.missing_coverage}<//
-                    >
-                  <//><//
-                >
+                      710,
+                    )}<//
+                  >
+                <//>
               <//>
-            </section>
-            <section id="vm-phases">
-              <${Title} order=${2} mb="sm"
-                >The cold VM timeout has a measurable causal timeline<//
-              >
-              <${Text}
-                >Failed physical attempt
-                ${link(bb + "54d9f029-3e3c-55e3-8fa7-4f38d48461a0", "54d9f029")}
-                tested full source
-                <${Code}>2a207f39a1f624879631e078ab139f66ef368793<//>,
-                configuration 6db61594, shard 1, run 1, attempt 1; one
-                non-cached result and one unique TestRunner. Existing driver and
-                service traces were inspected before proposing diagnostics.<//
-              >
-              ${rows(
-                ["UTC / interval", "Evidence and implication"],
-                [
-                  [
-                    "12:40:46.778 → 12:47:01.797",
-                    "Setup lasts 375.019s. Retained baseline reason is missing_marker (cold), not an asserted reuse success.",
-                  ],
-                  [
-                    "12:41:33.435 → 12:46:58.337",
-                    "25 serial image imports occupy a 324.902s elapsed envelope; virt-launcher alone is 69.481s and guest root 58.035s. This interval overlaps other setup work and is not added to setup duration.",
-                  ],
-                  [
-                    "12:47:05.844 → 12:50:55.684",
-                    "Claude case envelope is 229.839s. Its final turn wait ends at 12:50:22.260; the later timeout interrupts remaining case work. Codex completes in 183.026s.",
-                  ],
-                  [
-                    "600s outer pytest deadline",
-                    "Fixture setup plus the Claude envelope exceeds the shared deadline. The wrapper remains failed even though later cleanup completes; no lost-turn cause is established for this attempt.",
-                  ],
-                  [
-                    "Fresh following pass 26a37e83",
-                    "Same retained-baseline fingerprint, warm reason reused. Setup 51.405s, Claude 138.281s, Codex 124.111s, two JUnit passes. Source/action inputs differ; no same-source recovery or causal speedup is claimed.",
-                  ],
-                ],
-              )}
-              <${Title} order=${3} mt="lg" mb="sm">What used the 375 seconds?<//>
-              <${Text} mb="sm">The setup was doing active cold-start work. Its baseline marker was absent, so K3s bootstrapped and the single import worker loaded all 25 images. Every image reports <${Code}>image.import.skipped=false<//>. The import worker is intentionally serial to retain blob deduplication; this observation does not validate parallel imports.<//>
-              <${Text} fw=${600} mt="sm">Setup budget: 43.111s K3s + 321.248s image imports + 10.660s remaining work = 375.019s.<//>
-              ${rows(
-                [
-                  "Non-overlapping wall-time budget",
-                  "Seconds",
-                  "Share of setup",
-                ],
-                [
-                  [
-                    "Open cold K3s baseline (includes 41.598s K3s start)",
-                    "43.111",
-                    "11.5%",
-                  ],
-                  [
-                    "Time inside 25 serial image-import spans",
-                    "321.248",
-                    "85.7%",
-                  ],
-                  [
-                    "Remaining setup time and gaps between imports",
-                    "10.660",
-                    "2.8%",
-                  ],
-                  ["Total fixture setup", "375.019", "100%"],
-                ],
-              )}
-              <${Text} size="sm" mt="sm">The imports' 324.902s first-start-to-last-end envelope contains 3.653s of gaps. Controller installation, CRD/manifests and certificate work overlap that envelope; adding those spans again would overstate the total.<//>
-              <${SetupTimeline} />
-              ${rows(
-                [
-                  "Image group (serial span time)",
-                  "Seconds",
-                  "Largest contributors",
-                ],
-                [
-                  [
-                    "KubeVirt + Kyverno · 7 images",
-                    "144.651",
-                    "virt-launcher 69.481; virt-handler 29.963; virt-operator 14.141",
-                  ],
-                  [
-                    "PKI · 4 images",
-                    "14.631",
-                    "cert-manager controller 5.656; cainjector 3.768",
-                  ],
-                  [
-                    "Application / runner / PostgreSQL · 12 images",
-                    "102.622",
-                    "PostgreSQL 23.393; runner-disk 13.651; notifications 11.387",
-                  ],
-                  [
-                    "Guest · 2 images",
-                    "59.344",
-                    "guest-root 58.035; guest-boot 1.310",
-                  ],
-                ],
-              )}
-              <${Accordion} variant="contained" mt="sm"><${Accordion.Item} value="all-imports"><${Accordion.Control}>All 25 image imports and overlapping setup spans</${Accordion.Control}><${Accordion.Panel}>
-                ${rows(
-                  ["Image", "Seconds", "Offset from setup start (s)"],
-                  e.setup_breakdown.images.map((i) => [
-                    i.image.replace("git.allegedly.works/ducktape-ci/", ""),
-                    i.seconds.toFixed(3),
-                    `${i.start_offset_seconds.toFixed(3)} → ${i.end_offset_seconds.toFixed(3)}`,
-                  ]),
-                )}
-                ${rows(
-                  ["Overlapping span (do not add to total)", "Seconds"],
-                  e.setup_breakdown.spans
-                    .filter(
-                      (s) =>
-                        ![
-                          "system_test.k3s.start",
-                          "system_test.k3s.bootstrap",
-                          "system_test.k3s.baseline.open",
-                        ].includes(s.name),
-                    )
-                    .map((s) => [s.name, s.seconds.toFixed(3)]),
-                )}
-              </${Accordion.Panel}></${Accordion.Item}><//>
-              <${Text} mt="sm">After the last import, the remaining 3.460s includes 2.389s between the “images imported” and “Deployments Available” events and a 0.697s virtualization-readiness check. The 25.313s PKI-controller wait and 12.978s manifest apply were already hidden beneath imports.<//>
-              <${Text} mt="sm">Existing native profiling covers only UTC 12:45:58–12:46:13: 8.43 CPU-seconds sampled during 15 wall-seconds. The five-second runtime trace includes 1.90s of aggregate syscall delay (1.34s in writes), with containerd content-copy/write stacks present. This confirms import activity in that sample; it does not establish why the whole import queue was slow or prove a storage bottleneck. No whole-import CPU or I/O attribution is claimed.<//>
-              <${Text} mt="sm">The following warm pass used the same baseline fingerprint but different source/action inputs. Its 51.405s setup is a phase comparator, not a measured 324s saving. The cold reason here is <${Code}>missing_marker<//>; determining whether retention could have avoided it is the separate baseline census below.<//>
-              <${Text} size="sm" c="dimmed" mt="sm"
-                >Driver spans are wall-time intervals, with inclusive and
-                parallel work; unfinished spans may be absent. Service export
-                batching can lose final spans. Host and guest clocks are not
-                assumed synchronized. The trace explains this timeout's budget,
-                while JUnit/TestResult establishes the failed verdict.
-                Independent guest stalls, supervision and shutdown faults stay
-                open.<//
-              >
-            </section>
-            <section id="baseline-census">
-              <${Title} order=${2} mb="sm">Baseline rebuild census · interim follow-up for #16027<//>
-              <${Alert} color="blue" mb="md" title="Separate supplemental window: 13 November 03:27:02 to 17 November 07:00 UTC">
-                This is 4.15 elapsed days after instrumentation #16042 merged, including three complete UTC days. All 573 tested sources include that merge. It does not replace the report's original seven-day population or source pin. The 50-fresh-result threshold is exceeded; seven complete post-merge UTC days are still pending.
-              <//>
-              <${Text} mb="sm">Inspected source <${Code}>4e56f0735934c9689d83e1f4f2967a68fab64977<//>. The canonical-repository census uses ROLE=CI, devel child Bazel test invocations and exact-label result lookups. It includes 572 completed invocations and one disconnected invocation; each target opportunity remains separate from the invocation verdict. Unit tests, PR runs and manual experiments are excluded. ${link(gh + "/issues/16027", "Issue #16027")} owns the follow-up.<//>
-              ${rows(
-                [
-                  "Suite",
-                  "Cached runs",
-                  "Fresh results",
-                  "Cold / warm / unknown",
-                  "Absent / no verdict",
-                ],
-                e.baseline_followup.suites.map((s) => [
-                  s.label.split(":").at(-1),
-                  s.cached_runs,
-                  s.fresh_runs,
-                  `${s.cold_warm_unknown.cold ?? 0} / ${s.cold_warm_unknown.warm ?? 0} / ${s.cold_warm_unknown.unknown ?? 0}`,
-                  `${s.target_status_counts.absent ?? 0} / ${s.unknown_cache_rows}`,
-                ]),
-              )}
-              <${Text} size="sm" mt="sm">2,292 target opportunities reconcile to 1,547 cached runs, 380 fresh result events, 364 explicitly absent targets and one built target without a test summary. The new Pod-platform partition is a separate stratum. These are not 2,292 independent executions.<//>
-              <${SimpleGrid} cols=${{ base: 1, sm: 3 }} mt="md">
-                <${Metric} value="166 warm · 48 cold" label="214 known baseline outcomes" detail="166 of 380 fresh results remain unknown. Missing artifacts are never counted as cold." />
-                <${Metric} value="23 mismatch · 14 missing" label="37 explicit cold reasons" detail="11 additional cold outcomes have identity evidence but no retained reason span." />
-                <${Metric} value="157 complete · 2 refused" label="Cleanup evidence" detail="161 identity artifacts: 157 explicitly complete and four lack completion. Two traces show Sandbox cleanup refusal." />
-              <//>
-              <${Title} order=${3} mt="lg" mb="sm">What the rebuild reasons support<//>
-              <${Text}>All 23 explicit fingerprint mismatches had a clean previous marker. Thirteen can be joined to an earlier observed fingerprint/source; each pair changes fingerprinted inputs: baseline helper code, certificate or VM infrastructure helpers, or checked-in CRDs. Those are supported compatibility invalidations. The other ten lack an earlier matching observation, so their input changes remain unverified. None of the 155 available baseline-open traces reports dirty, unhealthy, identity_changed or invalid_marker; 225 results lack a reason span, so this is not proof those reasons never occurred.<//>
-              <${Text} mt="sm">The fresh results' tested sources declare two stable recycling-key families: one VM family and one shared Pod / Pod-platform / MCP family. All 154 readable native Actions agree with those source-derived keys, covering 155 result events; native metadata is unavailable for the rest. The Actions request newest snapshot reads and allow snapshots, with no forced remote-save policy.<//>
-              <${Text} mt="sm">Worker + source key + fingerprint grouping yields 82 observed cells, including 16 with both cold and warm outcomes and five with both warm reuse and missing markers. A worker can run different VM/snapshot instances, so those mixed cells do not establish loss of a previously certified baseline.<//>
-              <${Text} mt="sm">Native ExecuteResponses were recovered for 150 of 385 linked physical executions. They report 36 versioned snapshot-key tuples across eight platform/configuration combinations. Eleven of the 14 missing-marker results have native VM metadata: all eleven are first-task runners with no last-executed task. All 102 warm results with metadata have a last-executed task. This is consistent with a fresh VM or base state being selected, rather than a clean attached K3s baseline failing its identity check. The missing read/admission/fallback decision is still needed to explain why a compatible retained snapshot was not used.<//>
-              <${Text} size="sm" mt="sm">Fifteen of the 150 responses flag remote snapshot saving. That flag is set before the save and expresses intent; it does not prove successful admission. Snapshot keys in this metadata describe the write family, not a full history of attempted reads. ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/proto/firecracker.proto#L173-L224", "Upstream metadata definitions")}${" "}and ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/containers/firecracker/firecracker.go#L3035-L3039", "save-flag assignment")} explain the interpretation; the hosted executor build itself was not pinned.<//>
-              <${Text} mt="sm">Two VM traces explicitly refuse certification because one or two Sandboxes remain: ${link(bb + "76be72fb-c63f-5f20-a630-77e3c50ba474", "76be72fb")}${" "}and ${link(bb + "b144fcec-660d-565b-9b6a-8ca97c905344", "b144fcec")}. The source invalidates the executor snapshot on a persistent stack lifecycle error. Keep that fence: a later cold start after invalidation can be correct. Four present VM identity artifacts lack cleanup completion; two contain these refusal traces, while the other two do not establish a cleanup failure. Across all 161 identity artifacts, namespace, PostgreSQL Pod and root Secret UIDs are each unique.<//>
-              <${Title} order=${3} mt="lg" mb="sm">Setup distributions are observational, with missing coverage<//>
-              ${rows(
-                [
-                  "Suite",
-                  "State",
-                  "Observed n",
-                  "Median seconds",
-                  "Min → max seconds",
-                ],
-                e.baseline_followup.setup_distributions.map((s) => [
-                  s.label.split(":").at(-1),
-                  s.outcome,
-                  s.n,
-                  s.median.toFixed(1),
-                  `${s.min.toFixed(1)} → ${s.max.toFixed(1)}`,
-                ]),
-              )}
-              <${Text} size="sm" mt="sm">Only 155 setup traces are readable. These are unpaired fixture wall times on changing sources and workers; subtraction is not a causal saving, CPU saving or complete required-gate improvement.<//>
-              <${Accordion} variant="contained" mt="md">
-                <${Accordion.Item} value="baseline-provenance"><${Accordion.Control}>Baseline sample coverage, source witnesses and physical executions</${Accordion.Control}><${Accordion.Panel}>
-                  <${Text}>380 non-cached result events link 385 unique TestRunner IDs: 352 NEW and 33 shared links. The physical rows include 373 exit-zero executions, five test failures and seven infrastructure failures before verdicts. Two fresh PASSED results in invocation 9af6d1b2 have no matching producer row. No duplicate physical ID is counted twice. A shared link may originate outside this cohort.<//>
-                  <${Text} mt="sm">155 traces and 161 identity artifacts are available, with 102 results having both. The 166 results with neither are outcome-unknown. Artifact loss may be biased; 48 cold out of 214 known is not a fleet cold-start rate. Full reviewed invocation, source, configuration, shard/run/attempt, cache and physical provenance is in evidence.json.<//>
-                  ${rows(
-                    [
-                      "Input-change witness",
-                      "Suite",
-                      "Changed fingerprinted files",
-                    ],
-                    e.baseline_followup.input_change_witnesses.map((w) => [
-                      link(bb + w.invocation, w.invocation.slice(0, 8)),
-                      w.label.split(":").at(-1),
-                      w.changed_fingerprinted_files.join(", "),
-                    ]),
-                  )}
-                </${Accordion.Panel}></${Accordion.Item}>
-              <//>
-              <${Alert} color="yellow" mt="md" title="Decision: no avoidable compatibility-key miss established">
-                Keep #16027 open. Collect through 21 November 00:00 UTC for seven complete days (14–20 November), retaining 13 November's partial stratum. The next discriminating evidence is the provider's snapshot lookup/admission/fallback decision for exact missing-marker executions and their snapshot families. Preserve paired input manifests for future mismatches and investigate the two Sandbox cleanup refusals separately. Do not force snapshot saves or weaken compatibility / cleanup guards. No scheduled collection or source repair was configured.
-              <//>
-              <${Title} order=${3} mt="lg" mb="sm">17 November provider follow-up: snapshot versions changed<//>
-              <${Text}>All 11 missing-marker results with native metadata are first-task runners; ten readable Actions match the source recycling-key family and one Action is unavailable. For nine of those 11, the closest earlier recovered response with the same platform and VM configuration hashes has a different snapshot version ID. The other two are concurrent cases in a newly observed version. Both non-VM configurations acquire new observed versions around 07:23, 07:39 and 07:49 UTC on 16 November; the 07:49 main non-VM version later has 28 readable warm results. Five observed platform/configuration/version groups include both warm and cold outcomes, so rotation alone is insufficient. This is a new analysis of the existing incomplete response sample, not a new census or proof of an avoidable miss.<//>
-              <${Text} mt="sm">In inspected upstream BuildBuddy source, a missing version-cache record or explicit snapshot invalidation writes a new random version; manifest reads use that version. Hosted source and effective flags are unverified. Live GetExecution, the exact retained ExecuteResponse, its server-log inventory and the full Bazel build log expose neither version-mutation cause nor attempted manifest reads/admission nor completed snapshot publication. Save flags remain intent. ${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L133-L165", "Version selection source")}${" · "}${link("https://github.com/buildbuddy-io/buildbuddy/blob/a398894f6eb7a4ebbdfb7085843470f8c20f64c1/enterprise/server/remote_execution/snaploader/snaploader.go#L1530-L1570", "invalidation source")}<//>
-              <${Text} mt="sm">One VM chain supports the safety-invalidation mechanism: ${link(bb + "76be72fb-c63f-5f20-a630-77e3c50ba474", "cleanup refusal at 04:25 UTC on 17 November")} escapes the stack guard that writes BuildBuddy's invalidation marker. A concurrent action had already reused the old version; ${link(bb + "b273c841-8191-55bd-958d-b7e4f732569f", "the next observed action at 04:31 UTC")} uses a new version and missing marker on the same worker with the same fingerprint and platform/configuration hashes. Relevant source/policy files are byte-identical. This fits appropriate invalidation after an unsafe cleanup; the provider mutation record is missing, so a concurrent invalidation or lost version record cannot be excluded.<//>
-              <${Text} mt="sm">The retained provider packet identifies all 11 physical executions and the missing hosted revision/settings, version-record reads and mutations, local/remote candidate lookup and admission results, and prior producer publication outcomes. This is the proven provider visibility boundary. A clean or failed suite can intentionally invalidate snapshots; version churn alone does not establish a defect. No decision records, monitoring schedule, forced save or compatibility change are available from this follow-up.<//>
-            </section>
-            <section id="merges">
-              <${Title} order=${2} mb="sm"
-                >Reconstruct required checks at merge time<//
-              >
-              <${Text} mb="sm"
-                >The daily search/list census covers 1,664 merged PRs across all
-                bases; 1,487 target devel. Of those, 1,475 have all three
-                latest-visible gates complete and green by merge, three have a
-                red gate, seven have a latest check crossing merge, one has only
-                post-merge checks, and one lacks rollup records. Missing-rollup
-                candidates include 102 gh-pages PRs and two other stack-base
-                PRs; those are separate from devel's required-gate
-                population.<//
-              >
-              <${Text} mb="md"
-                >Exact merged heads were queried with check-runs filter=all,
-                statuses and workflow jobs filter=all for the temporal/red
-                candidates; timelines and owner comments were inspected. This
-                establishes the visible red and in-flight intervals without
-                allowing later green attempts to erase them. The missing-head
-                case #15191 still has no check records; #15246 has only
-                post-merge starts. History and organization audit coverage
-                remain incomplete. No explicit override is claimed.<//
-              >
-              ${rows(
-                [
-                  "PR / merged UTC",
-                  "Head / base",
-                  "Merge-time gates",
-                  "Diagnosis / boundary",
-                ],
-                e.merged_prs.devel_candidates.map((r) => [
-                  html`<${Stack} gap=${4}
-                    >${pr(r.number)}<${Text}
-                      size="xs"
-                      style=${{ whiteSpace: "nowrap" }}
-                      >${r.merged_at}<//
-                    ><//
-                  >`,
-                  html`<${Code}>${r.head_sha}<//>`,
-                  html`<${Stack} gap=${4}
-                    >${Object.entries(r.reconstructed ?? r.gates).map(([name, state]) => html`<${Text} key=${name} size="sm">${link(state.job_url ?? state.url ?? r.url, `${name}: ${state.at_merge}`)}<//>`)}<//
-                  >`,
-                  r.diagnosis,
-                ]),
-              )}
-              <${Text} size="sm" c="dimmed" mt="sm"
-                >Current ${link(`${gh}/rules/15894562`, "ruleset")} requires
-                Bazel, Pre-commit and artifact/import checks on devel/main;
-                up-to-date checking is non-strict. This current policy does not
-                reconstruct historical rule decisions. The three red checks have
-                complete pre-merge start/end times; they are not automatic proof
-                of flaky failures or force-merges.<//
-              >
             </section>
             <section id="continuity">
-              <${Title} order=${2} mb="sm"
-                >Prior interventions: landed is distinct from measured<//
+              <${Title} order=${2}
+                >Earlier interventions and open measurements<//
               >
-              <${Text} mb="sm"
-                >The complete
-                ${link(e.historical.report_url, "previous report")} and
-                ${link(e.historical.evidence_url, "evidence")} retain their
-                original 5 November 07:20–12 November 07:20 UTC populations and
-                source pins. Their focused controls and architecture iterations
-                are historical measurements. No open gh-pages report PR was
-                found at this investigation's start.<//
-              >
-              ${rows(
-                ["Intervention", "Current disposition / next evidence"],
-                [
-                  [
-                    html`Browser ${pr(15960)}, ${pr(16045)}, ${pr(16051)}`,
-                    "Merged. Cursor readiness, immutable ingress evidence and route-lifetime changes are in source. New projection recurrence precedes the route change; complete post-fix physical recurrence has not been measured.",
-                  ],
-                  [
-                    html`VM ${pr(15957)}, quiescence ${pr(16344)}`,
-                    "Merged. Independent final-proof context and bounded fresh-connection retry preserve proof and incarnation guards. New cold deadline and readiness failures are distinct; do not call all VM failures repaired.",
-                  ],
-                  [
-                    html`TLS cleanup ${pr(15193)}, evidence ${pr(15839)}`,
-                    "Merged. The earlier dispatcher/MCP artifacts showed old-intermediate/new-root mismatch. This window found no matching dispatcher verdict, but no matched fresh TLS denominator or certificate-generation effect was measured.",
-                  ],
-                  [
-                    html`Port ${pr(16233)}, storage ${pr(16299)}`,
-                    "Merged; no redispatch. Storage follow-up window remains 14 Nov 00:50:49–21 Nov 00:50:49 UTC. Keep controller restarts/previous stderr even after recovery; its original exit cause is unknown.",
-                  ],
-                  [
-                    html`KVM alert ${pr(15806)}`,
-                    "Merged. Registration-aware alert improves visibility, not capacity or provider reliability. No new sustained-empty firing test or matched rollout sample was collected.",
-                  ],
-                  [
-                    html`OOM policy ${pr(15897)}`,
-                    "Unsupported bundled Codex exec-server survival assertion is manual. Shared-cgroup OOM/no-replay boundary remains; ordinary Codex and Claude cases remain required. No memory-isolation repair.",
-                  ],
-                  [
-                    html`Memory policy ${pr(17117)}`,
-                    "Merged after the window. Benchmark moved to a manual target with its resource assertion retained; required behavioral tests continue. This is a coverage/scheduling decision, not a memory repair.",
-                  ],
-                  [
-                    html`Build wiring ${pr(16405)}, ${pr(16218)}`,
-                    "Merged and present at the inspected source. Historical compile/analysis failures are not flaky tests.",
-                  ],
-                ],
-              )}
-              <${Accordion} variant="contained" mt="md">
-                <${Accordion.Item} value="prior-lanes"
-                  ><${Accordion.Control}
-                    >Carry forward unresolved lanes and original experimental
-                    conclusions<//
-                  ><${Accordion.Panel}>
-                    <${Stack} gap="md"
-                      >${e.historical.prior_lanes.map((l) => html`<${Paper} key=${l.id} withBorder p="md"><${Text} fw=${600}>${l.id}. ${l.topic}<//><${Text} size="sm" my="sm">${l.prior_observation}<//><${Text} size="sm" c="dimmed">Next measurement: ${l.next_measurement}<//>${link(l.issue_url, "Tracking issue")}<//>`)}<//
-                    >
-                    <${Text} mt="md" size="sm"
-                      >These retain the prior experiment conditions and windows.
-                      Current PR states are separately recorded in evidence;
-                      unchanged results are not a new effect measurement. No
-                      scheduled monitoring was configured.<//
-                    >
-                  <//><//
-                >
-                <${Accordion.Item} value="historical-chart"
-                  ><${Accordion.Control}
-                    >Historical chart: 3–10 November VM indexed outcomes
-                    (original units and cutoff)<//
-                  ><${Accordion.Panel}><${DailyVmChart} /><//
-                ><//>
-                <${Accordion.Item} value="pr-states"
-                  ><${Accordion.Control}
-                    >Verified current intervention PR states<//
-                  ><${Accordion.Panel}
-                    >${rows(
-                      ["PR", "State / merged UTC", "Title"],
-                      e.prior_intervention_states.map((p) => [
-                        pr(p.number),
-                        `${p.state} ${p.mergedAt ?? ""}`,
-                        p.title,
-                      ]),
-                    )}<//
-                  ><//
-                >
+              <${Accordion} variant="contained" mt="sm">
+                ${e.continuity.map(
+                  (r) =>
+                    html`<${Accordion.Item} key=${r.title} value=${r.title}>
+                      <${Accordion.Control}>${r.title}<//>
+                      <${Accordion.Panel}
+                        ><${Text} mb="sm">${r.body}<//>${links(r.links)}<//
+                      >
+                    <//>`,
+                )}
               <//>
             </section>
             <section id="limits">
-              <${Title} order=${2} mb="sm">Coverage and uncertainty<//
-              ><${Stack} gap="sm"
-                >${e.limitations.map((s, i) => html`<${Text} key=${i}>${s}<//>`)}<//
-              >
-              <${Text} mt="md"
-                >Next useful work: capture the first timer delivery/acknowledgement divergence before the guest stalls; obtain provider snapshot version/read/publication decisions; capture provider pre-pause/restore evidence;
-                capture the next natural browser stall with the merged proxy boundaries; finish the
-                existing fresh-exposure windows. Shutdown/reconciliation ownership was mapped;
-                the quiescence fence is required. No cleanup race or safe path simplification was established.<//
+              <${Title} order=${2}>Coverage<//>
+              <${Stack} gap="sm" mt="sm"
+                >${e.limits.map((s) => html`<${Text} key=${s}>${s}<//>`)}<//
               >
             </section>
             <footer>
-              <${Group}
-                >${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}${link("../latency/", "CI latency")}${link("../agentplane-test-architecture/", "Test architecture")}${link("../", "All reports")}<//
-              ><${Text} size="sm" c="dimmed" mt="sm"
-                >Latest snapshot. GitHub Pages redeploys when this report PR
-                merges. This follow-up records the separately merged accounting repair and forensic findings. Guest boot and provider selection causes remain bounded by the stated evidence.<//
-              >
+              ${links([
+                { url: "./evidence.json", label: "Reviewed evidence" },
+                { url: "./manifest.json", label: "Publication manifest" },
+                { url: "../latency/", label: "CI latency" },
+                { url: "../", label: "All reports" },
+              ])}
             </footer>
-          <//><//
-        >`;
+          <//>
+        <//>`;
       }
       mount(Report);
     </script>
