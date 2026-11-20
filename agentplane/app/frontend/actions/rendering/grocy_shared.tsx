@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { getGrocyReferenceSummaries } from "../client";
-import { type CallPreview, definePreview, type PreviewProps } from "./entry";
+import { definePreview, type PreviewProps } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import type { ResultPreview } from "./result_entry";
 
@@ -75,19 +75,6 @@ export function batchOutcome(rows: { kind: "ok" | "error" }[]): ActionOutcome | 
   return failures === 0
     ? undefined
     : { label: failures === rows.length ? "All items failed" : "Partially completed", failed: true };
-}
-
-// Returning null before mounting keeps the normal pending arguments visible.
-export function grocyCompletedCall<Args extends z.ZodType, Result extends z.ZodType>(
-  argumentSchema: Args,
-  resultSchema: Result,
-  Widget: (props: { args: z.infer<Args>; result: z.infer<Result> }) => ReactNode
-): CallPreview<Args, Result> {
-  return {
-    argumentSchema,
-    resultSchema,
-    render: (args, result) => (result === undefined ? null : <Widget args={args} result={result} />),
-  };
 }
 
 export function grocyRequest<S extends z.ZodType>(

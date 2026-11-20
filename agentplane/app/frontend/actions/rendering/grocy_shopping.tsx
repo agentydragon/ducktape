@@ -2,12 +2,11 @@ import { Stack } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { defineCallPreview } from "./entry";
+import { defineCallPreview, defineReceiptPreview } from "./entry";
 import {
   batchError,
   batchOutcome,
   displayRef,
-  grocyCompletedCall,
   grocyRequest,
   Line,
   objectLink,
@@ -184,7 +183,7 @@ function itemBatchOutcome(value: unknown) {
 }
 
 const editedItem = defineResultPreview(itemOutcome, ({ result }) => itemReceipt("updated", [result]));
-const editShoppingItemCall = grocyCompletedCall(editItem, itemOutcome, ({ args, result }) => {
+const editShoppingItemCall = defineReceiptPreview(editItem, itemOutcome, ({ args, result }) => {
   const matching = result.kind === "ok" && result.item_id === args.item_id ? result : undefined;
   return (
     <Stack gap="xs">
@@ -197,7 +196,7 @@ const editShoppingItemCall = grocyCompletedCall(editItem, itemOutcome, ({ args, 
     </Stack>
   );
 });
-const removeShoppingItemsCall = grocyCompletedCall(removeItems, itemOutcomes, ({ args, result }) => {
+const removeShoppingItemsCall = defineReceiptPreview(removeItems, itemOutcomes, ({ args, result }) => {
   const named = new Set(result.flatMap((row) => (row.kind === "ok" && row.product_name ? [row.item_id] : [])));
   return (
     <Stack gap={4}>
