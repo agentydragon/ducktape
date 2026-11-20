@@ -1245,9 +1245,15 @@ function Report() {
             same webhook applied 15m CPU and about 105 MiB memory to the second
             Pod. API server fail-open counters stayed at zero. Check actual
             requests on the first Pods from a new ReplicaSet, even when an
-            existing owner passed admission dry runs. ${" "}<${Anchor}
+            existing owner passed admission dry runs. Upstream investigation
+            remains open on how admission should handle an owner absent from the
+            cache. ${" "}<${Anchor}
               href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.source}
               >VPA owner lookup<//
+            >
+            ${" · "}<${Anchor}
+              href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.matcher_source}
+              >Admission matcher<//
             >
           <//>
         <//>

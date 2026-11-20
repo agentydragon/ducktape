@@ -19191,7 +19191,9 @@
           },
           "apiserver_fail_open_counters_increased": false,
           "per_request_apiserver_audit_available": false,
-          "source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/controller_fetcher/controller_fetcher.go#L163-L198"
+          "source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/controller_fetcher/controller_fetcher.go#L163-L198",
+          "matcher_source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/admission-controller/resource/vpa/matcher.go#L54-L62",
+          "upstream_followup": "Determine whether the admission matcher can recover when a just-created owner is missing from its informer cache."
         }
       }
     },
