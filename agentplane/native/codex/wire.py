@@ -1,4 +1,4 @@
-"""Codex 0.162.1 app-server JSON-RPC frames (serde `camelCase`).
+"""Codex app-server JSON-RPC frames (serde `camelCase`).
 
 Inbound frames are what the app-server writes to stdout: responses to our requests, requests of its
 own that block a turn until answered, and notifications. Only the notifications and items a consumer

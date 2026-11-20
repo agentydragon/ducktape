@@ -95,7 +95,7 @@ Session configuration cannot override template resource ceilings or executor sel
   fails before admission with `UNAVAILABLE`.
   `Executor.OpenSession` holds one local Codex
   connection per server stream, with typed unary process and file RPCs bound to its session ID.
-  Each Environment Runtime retains the old relay's budget of eight open or opening adapter connections;
+  Each Environment Runtime admits at most eight open or opening adapter connections;
   this is an Agentplane resource guard, not a Codex session limit. Native frames are bounded to 1 MiB;
   notifications wait for bounded send capacity, so a brief output burst does not close the session.
   JSON-RPC initialization, framing and notifications stay in the Environment Runtime adapter. Native frames
@@ -193,10 +193,10 @@ Session configuration cannot override template resource ceilings or executor sel
   script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
-- Every persisted seal names the nonempty incarnation UID from the authenticated `Welcome`; a seal
-  without that UID is invalid. An unsealed journal has no seal state.
+- Every persisted seal names the nonempty incarnation UID adopted from the Controller's authenticated
+  `WatchState`; a seal without that UID is invalid. An unsealed journal has no seal state.
 - An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
   incarnation of the session's history.
-- The state volume outlives incarnations, so on each `Welcome` the Environment Runtime drops a lameduck recorded under
-  another incarnation UID before it serves any call: a new incarnation starts out of lameduck. Journals
-  sealed by the earlier incarnation stay sealed.
+- The state volume outlives incarnations, so when `WatchState` adopts an incarnation UID the Environment Runtime
+  drops a lameduck recorded under another incarnation UID before it serves any call: a new incarnation
+  starts out of lameduck. Journals sealed by the earlier incarnation stay sealed.

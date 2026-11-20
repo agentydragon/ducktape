@@ -49,12 +49,11 @@ The manual queue, replica and wake probes are documented in the
   expose SessionSpec or instructions. `status` reports owner materialization, not harness readiness
   ([contract](SPEC.md#session-resource)).
   `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
-  `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
-  existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its
-  executor environment is fixed for the Session; it is not an optional attachment, and the central
-  Session cannot yet open without an environment. Both placements resolve the named environment to
-  the current Sandbox and reject a same-name replacement with `FAILED_PRECONDITION` before storing
-  anything. The request is keyed by the caller-minted canonical lowercase UUID `session_id`.
+  `central_sampler_v1` carries one exact `executor_environment`; its identity, admission, notification,
+  wake and deletion behavior stay Sandbox-backed ([binding rules](SPEC.md#session-binding)). Both
+  placements resolve the named environment to the current Sandbox and reject a same-name replacement
+  with `FAILED_PRECONDITION` before storing anything. The request is keyed by the caller-minted
+  canonical lowercase UUID `session_id`.
   An exact retry uses retained Session-read authority and returns the same Session without reading live
   Sandbox or execution-account inventory. It compares the same immutable placement, exact target, spec and
   optional `setup_script` as transactional creation; a mismatch is `ALREADY_EXISTS` only for an authorized
@@ -89,15 +88,6 @@ The manual queue, replica and wake probes are documented in the
   snapshot. The generated JSON route is `GET /v1/sessions:watch`; see the
   [watch contract](SPEC.md#session-watch). Materialization and required-Environment state do not
   assert running or idle status.
-- **Wire and data cutover**: this cutover moves placement into the `SessionSpec` oneof; the flat
-  harness field and Dispatcher-level placement fields are retired. Coordinate the Dispatcher,
-  sampler, app/CLI and other logical Session callers with the matching environment/runtime images.
-  The logical creation/read APIs are `CreateSession`, `GetSession` and `ListSessions` across Dispatcher,
-  App, Environment Runtime and central Sampler; old opening RPCs and resource projections have no
-  compatibility route. The Runner's distinct streaming `Executor.OpenSession` remains the transport
-  that opens an execution connection. Old callers and old Sandbox binaries are not supported in an
-  overlap window. The in-place migrations convert retained session and sampler request records and
-  preserve Session/History data; they do not requeue commands or replay effects.
 - **Caller authority**: live workload Identity SVIDs retain exact Identity ownership checks; configured
   service SVIDs carry the separate component role. Typed service delegation preserves the effective
   Identity independently of its service actor. Kubernetes bearers grant no admission. Historical

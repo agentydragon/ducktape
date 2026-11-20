@@ -204,10 +204,10 @@ The health service is always mounted. `EgressAdmin` is mounted only when
 
 ## ServiceAccount permissions
 
-In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets` and `policybindings`, and `patch` on
+In the rules namespace (`rules_namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets` and `policybindings`, and `patch` on
 `policybindings/status`. Each admitted Sandbox namespace grants only `get`, `list` and `watch` on Sandboxes. The proxy
 uses the Sandbox's own ServiceAccount name without reading ServiceAccount or Pod objects. In the credentials namespace
-(required `--credentials-namespace`): `get`, `list`, `watch` on
+(`credentials_namespace`): `get`, `list`, `watch` on
 `secrets`, and nothing else. The proxy has no TokenReview grant. There is no leader election: every replica applies the same `EgressReady` under one field manager, and
 writes only when the condition it decides differs from the one the binding carries.
 

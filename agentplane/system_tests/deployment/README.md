@@ -130,8 +130,9 @@ Direct native fixture clients reuse the fixture's `app-workload-tls` certificate
 without bearer metadata and do not start or call the App, request an App login, or change production
 listeners or settings.
 
-A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites:mcp_manifests.json`
-rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
+A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites:mcp_manifests.json` rendering (or
+`mcp_services_manifests.json`, the same stack without the central sampler) and also imports and runs Dex,
+`mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
 OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
@@ -176,13 +177,14 @@ Actions and Notifications apply Goose migrations from their serving processes be
 listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
 separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
-The `probe_manifests`, `real_model_manifests`, `history_manifests` and `mcp_manifests` recipes add
-the standalone MCP edge because the app's Connection Service endpoint targets it. The edge's
+The `probe_manifests`, `real_model_manifests`, `history_manifests`, `mcp_manifests` and `mcp_services_manifests`
+recipes add the standalone MCP edge because the app's Connection Service endpoint targets it. The edge's
 PostgreSQL database, embedded Goose migrations, caller-token RBAC and startup/readiness probes use
-the shared construct. The Pod and deletion (`pod_manifests`), recovery (`recovery_manifests`), VM and
+the shared construct. The Pod and deletion (`pod_manifests`), VM and
 Firecracker recipes omit the edge because their scenarios do not exercise external Connections; the
-app retains its unused Connection routes and reports the service unavailable. The MCP recipe also
-adds the edge's OAuth Secret and Dex trust.
+app retains its unused Connection routes and reports the service unavailable. The native Pod
+(`pod_native_manifests`) and recovery (`recovery_manifests`) recipes deploy neither the app nor the edge.
+The MCP recipes also add the edge's OAuth Secret and Dex trust.
 One PostgreSQL 18 Deployment uses the pinned published CNPG minimal image and an emptyDir data
 volume. [`postgres_entrypoint.sh`](postgres_entrypoint.sh) runs bootstrap SQL assembled by
 [`fixture_database.py`](fixture_database.py) to create the service-owned databases. Unsupported
@@ -248,8 +250,9 @@ Probed 2026-10-21 with `bb execute` on the managed executor under the k3s target
 (`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. That managed stack ran KubeVirt with software emulation and used kube-proxy with ClusterIP Services.
 The required VM suite now uses the [hosted KVM pool](../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
-The earlier RBE precompile failure no longer reproduces with `rules_python` 2.4.3: a target using
-`pyc_collection = "include_pyc"` passes and Python loads the generated `.pyc` files. The
+The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3 (`MODULE.bazel` now
+pins 2.5.0-rc4): a target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc`
+files. The
 [current experiment](../k3s/debug/pyc_precompilation.md) shows the large compile action graph and the
 observed warm-run difference, so the suites do not enable collection yet. With the chart rendered at
 build time, imports still took 10–13 s before pytest in the October 21 measurements
@@ -267,7 +270,7 @@ The controller gates Ready on workload readiness, runner connection and bootstra
 Exact bootstrap and seal-before-stop ordering belongs in deterministic
 [controller tests](../../environments/internal/controller/controller_test.go), including
 `TestReadyWaitsForTheBootstrapAndStopsOnItsFailure` and
-`TestSuspensionWaitsForTheRunnerToQuiesce`.
+`TestSuspensionWaitsForRuntimeToQuiesce`.
 
 ## VM Sandboxes
 

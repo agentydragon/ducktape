@@ -208,7 +208,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   between the check and the connect. A dial for a target the gate did not admit is not made. An
   upstream connection is reused only for a request whose admission pinned the same authority and
   address.
-- The operator may exempt networks from the reachability rule (`--exempt-networks`); production
+- The operator may exempt networks from the reachability rule (`exempt_networks`); production
   exempts none.
 
 ## Resources and status

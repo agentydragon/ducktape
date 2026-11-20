@@ -3,8 +3,7 @@
 What each harness binary exposes on its stdio protocol, against what the scripted tests in
 `agentplane/native/{claude,codex}/` exercise. Pinned builds: Claude Code 2.1.252
 (`--input-format stream-json --output-format stream-json --permission-prompt-tool stdio`) and
-Codex app-server 0.157.0 (`codex app-server --listen stdio://`, JSON-RPC v2 protocol), matching the
-runner image's Codex version from the locked nixpkgs-unstable input. Codex rows
+Codex app-server 0.166.0 (`codex app-server --listen stdio://`, JSON-RPC v2 protocol). Codex rows
 come from `codex-rs/app-server-protocol/src/protocol/v2/` and the generated schema bundle; Claude
 Code ships no source, so rows marked "(inferred)" come from `strings`/JS fragments in the binary
 rather than `--help`. `Covered` names the test; "partial" means the harness uses the surface but no
