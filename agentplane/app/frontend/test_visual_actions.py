@@ -870,8 +870,9 @@ async def test_action_presentations(
 
     if example.key == "google_calendar.delete_event":
         await expect(receipt.get_by_role("link", name="Facilities coordination", exact=True)).to_have_count(0)
-        await receipt.get_by_text("Raw", exact=True).click()
-        await expect(receipt.get_by_role("switch", name="Raw", exact=True)).to_be_checked()
+        raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
+        await raw_switch.press("Space")
+        await expect(raw_switch).to_be_checked()
         await expect(receipt).to_contain_text('"event_id": "facilities-series_20261130T170000Z"')
         await expect(receipt).to_contain_text('"content": []')
         await expect(receipt).to_contain_text('"result": null')
