@@ -7,10 +7,6 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 py_library(
     name = "kubernetes_audience",
     srcs = ["kubernetes_audience.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
 )
 
 py_library(
@@ -18,10 +14,8 @@ py_library(
     srcs = ["resources.py"],
     visibility = [
         "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
-        "//cluster/validation:__pkg__",
     ],
 )
 
@@ -105,7 +99,6 @@ py_library(
     srcs = ["sidecar_config.py"],
     visibility = [
         "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
