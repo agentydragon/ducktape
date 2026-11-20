@@ -1383,8 +1383,7 @@ function Report() {
             >
             ${" · "}<${Anchor} href=${github + "pull/18154"}
               >Metrics-server HA PR<//
-            >
-            ${" "}CDviz and ntfy stay non-evicting pending delivery and
+            >. CDviz and ntfy stay non-evicting pending delivery and
             availability proof. Review every VPA in a namespace before lowering
             its minimum replica count.
           <//>
