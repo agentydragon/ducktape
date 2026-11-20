@@ -765,6 +765,8 @@ const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 const ARCHIVED_THREAD = "5f1c4a2e-0000-4000-8000-000000000006";
 
 const ACTION_REQUEST_ID = "d49b85b5-849f-4e7d-a644-d4a8b8c16127";
+const inboxOverrides = new Map<string, JsonValue>();
+const requiredEnvironmentOverrides = new Map<string, SessionStatus_RequiredEnvironment>();
 
 // Each fake watch emits the actual generated resource and watch messages.
 function notificationFrames(session: string, kind: string, delta: boolean): unknown[] {
@@ -781,7 +783,7 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
   const second = session === UNNAMED_STOPPED_THREAD;
   const third = session === RUNNING_THREAD;
   if (kind === "inbox:watch") {
-    const inbox = first
+    const defaultInbox = first
       ? {
           id: "inbox-one",
           sessionId: session,
@@ -832,6 +834,7 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
                   : { latestNotice: { confirmed: true } }),
               }
             : undefined;
+    const inbox = inboxOverrides.has(session) ? inboxOverrides.get(session) : defaultInbox;
     return [
       toJson(
         WatchInboxResponseSchema,
@@ -3681,7 +3684,8 @@ function sessionInventoryFrames() {
       },
       status: {
         materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED,
-        requiredEnvironment: SessionStatus_RequiredEnvironment.AVAILABLE,
+        requiredEnvironment:
+          requiredEnvironmentOverrides.get(thread.metadata.threadId) ?? SessionStatus_RequiredEnvironment.AVAILABLE,
         activity: defaultSessionActivity(thread.metadata.threadId),
       },
     })
@@ -4136,6 +4140,23 @@ const visualHarness = {
     const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
     if (!sandbox) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
     sandbox.identityName = identityName;
+  },
+  setThreadArchived(threadId: string, archived: boolean): void {
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
+    if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
+    thread.metadata.archived = archived;
+    publishStreams("/upstream/app/v1/threads:watch");
+  },
+  setRequiredEnvironment(threadId: string, deleted: boolean): void {
+    requiredEnvironmentOverrides.set(
+      threadId,
+      deleted ? SessionStatus_RequiredEnvironment.DELETED : SessionStatus_RequiredEnvironment.AVAILABLE
+    );
+    publishStreams("/upstream/dispatcher/v1/sessions:watch");
+  },
+  setInboxSnapshot(sessionId: string, inbox: JsonValue): void {
+    inboxOverrides.set(sessionId, inbox);
+    publishStreams(`/upstream/notifications/v1/sessions/${sessionId}/inbox:watch`);
   },
   nameThread(threadId: string, name: string): void {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);

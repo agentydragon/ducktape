@@ -122,6 +122,23 @@ class AgentplaneFixture:
     async def environment_identity(self, name: str | None) -> None:
         await self.page.evaluate("name => window.agentplaneVisual.environmentIdentity(name)", name)
 
+    async def set_thread_archived(self, thread_id: str, archived: bool) -> None:
+        await self.page.evaluate(
+            "([threadId, archived]) => window.agentplaneVisual.setThreadArchived(threadId, archived)",
+            [thread_id, archived],
+        )
+
+    async def set_required_environment(self, thread_id: str, deleted: bool) -> None:
+        await self.page.evaluate(
+            "([threadId, deleted]) => window.agentplaneVisual.setRequiredEnvironment(threadId, deleted)",
+            [thread_id, deleted],
+        )
+
+    async def set_inbox_snapshot(self, session_id: str, inbox: dict[str, object]) -> None:
+        await self.page.evaluate(
+            "([sessionId, inbox]) => window.agentplaneVisual.setInboxSnapshot(sessionId, inbox)", [session_id, inbox]
+        )
+
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
 
