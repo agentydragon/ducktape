@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/78cef4c59145f5a4152374e9aec967ed47dcea35/";
+const currentSource = github + "blob/028c3835a75e180bda6ba47090cc529194e25680/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2134`).then((r) => {
+        fetch(`${url}?v=20261120-2156`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -227,7 +227,7 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; policy and Study Casino were checked at 21:16 and 21:31 UTC, respectively. This is a snapshot, not a live dashboard.`}<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; SecretStore reporting and the availability checks below were observed at the times stated. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
@@ -252,9 +252,9 @@ function Report() {
           detail="Includes targets other than active controllers."
         />
         <${Stat}
-          value="10"
+          value="11"
           label="Staging service VPAs"
-          detail="Initial, memory requests only; every one has a recommendation."
+          detail="Initial, memory requests only; Electric awaits its first recommendation."
         />
       <//>
       <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
@@ -303,6 +303,15 @@ function Report() {
             Haku static each have two Ready replicas on different hosts and PDBs
             allowing one disruption. Metrics-server is also 2/2 Ready.<//
           >
+          <${Text} component="p"
+            >At 21:56 UTC, the ${" "}<${Anchor} href=${github + "pull/18294"}
+              >cert-manager CA injector<//
+            >${" "}had two Ready replicas on separate nodes and a PDB allowing
+            one disruption. Its VPA uses Recreate with memory requests bounded
+            to 224–512 MiB. Leader handoff can delay CA injection; readiness
+            does not prove informer sync, and no eviction or handoff was
+            tested.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
@@ -313,11 +322,13 @@ function Report() {
         <${Paper} id="agentplane-staging-initial" withBorder p="md" radius="md"
           ><${Title} order=${4}>Singletons and staging<//>
           <${Text} component="p"
-            >Staging has ten explicitly targeted Initial VPAs while
+            >Staging has eleven explicitly targeted Initial VPAs while
             namespace-wide Goldilocks remains disabled for dynamic Sandboxes.
-            The two newest targets were tested with server-side admission dry
-            runs; no natural replacement or scheduling has been proved for those
-            changes.<//
+            ${" "}<${Anchor} href=${github + "pull/18293"}>Electric<//>${" "}has
+            a 448–576 MiB memory-request range; its first recommendation was
+            pending at collection and its singleton stayed Ready. A second
+            Electric on the same stream can pass health checks while refusing
+            new shapes, so VPA must not evict the running Pod.<//
           >
           <${Text} component="p" mb=${0}
             >Loki read-proxy is Initial with a 128–160 MiB memory request range
@@ -336,8 +347,9 @@ function Report() {
           >
           <${Text} component="p" mb=${0}
             >The roaming-node controller has an Initial memory-request VPA
-            bounded to 64–80 MiB; its recommendation was pending and its
-            existing singleton remained Ready.<//
+            bounded to 64–80 MiB. A server-side admission dry run applied an 80
+            MiB request while preserving its 10m CPU request and 128 MiB memory
+            limit; its existing singleton remained Ready.<//
           >
         <//>
         <${Paper} withBorder p="md" radius="md">
@@ -390,7 +402,6 @@ function Report() {
             These are admitted Pod specs, including defaults and mutations, and
             exclude init and ephemeral containers. Missing fields alone do not
             show usage or an OOM cause.<//
-          >
           >
           <${Text} component="p" mb=${0}
             >The largest request gaps are Piraeus (63 containers) and SeaweedFS
@@ -479,9 +490,10 @@ function Report() {
       <${Title} order=${2} mt="xl">Sources and limits<//>
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
-        was observed at 20:28–20:30 UTC. The Flux source at 21:34 UTC was
-        ${" "}<${Anchor} href=${currentSource}>devel at 78cef4c591<//>${" "};
-        Git source and observed running state are distinct. The initial
+        was observed at 20:28–20:30 UTC except where stated. The Flux source at
+        21:56 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at 028c3835a7<//
+        >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
           href="./evidence.json"

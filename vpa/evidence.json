@@ -20008,9 +20008,47 @@
     "controlled_values": "RequestsOnly",
     "min_memory": "64Mi",
     "max_memory": "80Mi",
-    "recommendation_available": false,
+    "recommendation_available": true,
     "existing_pod_ready": true,
     "existing_pod_restarts": 0,
-    "note": "No replacement triggered by this Initial VPA change."
+    "note": "No replacement triggered by this Initial VPA change.",
+    "recommendation_observed_at_utc": "2026-11-20T21:45:17Z",
+    "target_memory": "80Mi",
+    "dry_run_requests": {
+      "cpu": "10m",
+      "memory": "80Mi"
+    },
+    "dry_run_memory_limit": "128Mi"
+  },
+  "electric_initial": {
+    "observed_at_utc": "2026-11-20T21:56:14Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18293",
+    "namespace": "agentplane-staging",
+    "target": "electric",
+    "mode": "Initial",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "448Mi",
+    "max_memory": "576Mi",
+    "recommendation_available": false,
+    "existing_pod_ready": true,
+    "note": "The Deployment remains a singleton; Goldilocks is disabled in the namespace."
+  },
+  "cainjector_recreate": {
+    "observed_at_utc": "2026-11-20T21:56:14Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18294",
+    "namespace": "cert-manager",
+    "target": "cert-manager-cainjector",
+    "mode": "Recreate",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "224Mi",
+    "max_memory": "512Mi",
+    "ready_replicas": 2,
+    "pdb_allowed_disruptions": 1,
+    "lease_duration_seconds": 60,
+    "observed_generation": 2,
+    "generation": 3,
+    "note": "Readiness does not establish leader or informer synchronization; no eviction or failover was tested."
   }
 }
