@@ -86,10 +86,6 @@ durable user data and uncertain-effect handling in any accepted change.
   [lifecycle status](runtime/session/resources.go) coordinate the same work; Codex app-server has a
   related pattern. Keep durable journal authority, admission guards, completion ordering and no replay.
   Prototype one operation before deciding whether a broader change actually saves code.
-- **Admission accounting:** Consider one mutex-protected count plus a COSI wakeup, instead of mirroring
-  the count in both Runtime and a live COSI resource
-  ([accounting](runtime/internal/coordinator/session_lifecycle_inputs.go)). Preserve the accepted-generation
-  wakeup, atomic admission/close, idle detection, diagnostics and fail-closed behavior; test their races.
 - **Bootstrap output:** COSI retains every output chunk and loads it on restart, although no production
   reader of the output bytes was found. `OpenLog` validates the sequence without cloning each payload
   again. Decide whether full retained output is needed before changing the contract. A bounded/indexed
@@ -172,7 +168,11 @@ teardown contracts rather than treating every controller as a simple resource tr
   `cosi.Write` caller uses those persisted protobuf specs.
 - Keep the retryable _mutations_ and their outer barriers: Session input publication increments
   demand inside `StateModify` while `publishMu` serializes snapshots; Runtime admission accounting
-  updates a delta under the admission lock; retained Session field updates patch an existing record
+  updates a delta under the admission lock and advances its local count only after successful COSI
+  publication. The observed count gates shutdown, and a missing resource fails closed; its updates also
+  wake controllers when a Running generation is accepted. A wakeup-only resource would retain the
+  synchronous publication and failure path, while COSI-only accounting changes ambiguous-write
+  behavior. Retained Session field updates patch an existing record
   with `StateUpdateWithConflicts`. Execution's `inputMu` also orders demand and completion against
   native handle registration; its completion callback has side effects and cannot simply move
   inside a retryable updater. COSI retries update conflicts, but its absent-resource Modify path can
