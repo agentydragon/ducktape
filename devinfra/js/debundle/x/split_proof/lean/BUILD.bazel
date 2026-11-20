@@ -297,3 +297,29 @@ lean_axiom_test(
         "IdentityFixture.crossing_preserves",
     ],
 )
+
+lean_axiom_test(
+    name = "identity_scan_axioms_test",
+    srcs = [
+        "Experiments/IdentityScan.lean",
+        "Experiments/Lower.lean",
+    ],
+    imports = ["Experiments.IdentityScan"],
+    theorems = [
+        "IdentityScan.declaration_found",
+        "IdentityScan.malformed_binder_rejected",
+        "IdentityScan.different_binder_rejected",
+        "IdentityScan.call_found",
+        "IdentityScan.candidate_inferred",
+        "IdentityScan.candidate_extra_use_rejected",
+        "IdentityScan.candidate_eval_rejected",
+        "IdentityScan.no_candidate",
+        "IdentityScan.candidate_fuel_exhaustion",
+        "IdentityScan.count_two",
+        "IdentityScan.count_extra",
+        "IdentityScan.counts_saturate",
+        "IdentityScan.finds_eval",
+        "IdentityScan.exhaustion_refused",
+        "IdentityScan.no_candidate_needed",
+    ],
+)

@@ -22,6 +22,8 @@ The source analyzer infers that a `const` initialized by `f(1)` is inert only fo
 
 The checker prints the unit and binding whenever it uses this inference. It is part of the **trusted source-to-footprint analysis**, not an automatically kernel-proved JavaScript semantic certificate: Acorn, scope resolution, and correspondence between the inferred footprint and actual JavaScript semantics remain trusted. The Lean plan theorem is conditional on those footprints. The old `lowersplit` emitter consumes unannotated AST, so it still rejects this crossing; `identity_emission_test` force-emits only a provisional tree, then requires the translation checker to accept it before running the original and emitted JavaScript in Node. This is not an accepted standalone `lowersplit` emission.
 
+The identity name and `eval` scan is a total Lean function with a 256-level JSON depth budget; if it runs out, it infers no identities. Kernel-checked examples exercise the production scan and its inference decision, including an extra use, `eval`, and exhaustion. They do not prove that the scan accurately models JavaScript or connect the frontend decision to the separate MiniJS plan proof. The other source traversal (`visit`) is still partial and trusted.
+
 ## What Lean checks
 
 A _unit_ is one top-level statement of the bundle, or one declarator of a variable list.

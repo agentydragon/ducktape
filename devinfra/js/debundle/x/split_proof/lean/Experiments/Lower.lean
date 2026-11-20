@@ -5,7 +5,8 @@ import Std.Data.HashSet
 # Footprints from raw ESTree, in Lean
 
 The lowering is `Lean.Json`: acorn's ESTree, untyped, so every node type of JavaScript is
-representable. The analysis is a total function on it.
+representable. Several syntax traversals are partial Lean definitions; their
+termination and correspondence to JavaScript are not kernel-proved.
 
 Soundness is by construction and monotone:
 
@@ -295,15 +296,32 @@ def isHoisted (s : Json) : Bool :=
 
 /-- Count only candidate spellings and `eval`, including shadowed occurrences and
 deferred bodies. Counts saturate at three: only exactly two or no occurrences matter. -/
-partial def countIdentifiers (wanted : Std.HashSet String) (j : Json)
-    (counts : Std.HashMap String Nat) : Std.HashMap String Nat := Id.run do
-  let mut counts := counts
-  if typ j == "Identifier" then
-    let n := str (fld j "name")
-    if n == "eval" || wanted.contains n then
-      counts := counts.insert n (min 3 (counts.getD n 0 + 1))
-  for c in children j do counts := countIdentifiers wanted c counts
-  return counts
+abbrev IdentityNames := Std.TreeMap.Raw String Unit
+abbrev IdentityCounts := Std.TreeMap.Raw String Nat
+
+def identityCount (counts : IdentityCounts) (name : String) : Nat :=
+  counts.getD name 0
+
+def countIdentifiers (fuel : Nat) (wanted : IdentityNames) (j : Json)
+    (counts : IdentityCounts) : Option IdentityCounts := do
+  match fuel with
+  | 0 => none
+  | fuel + 1 =>
+    let counts := if typ j == "Identifier" then
+        let n := str (fld j "name")
+        if n == "eval" || wanted.contains n then
+          counts.insert n (min 3 (identityCount counts n + 1))
+        else counts
+      else counts
+    (children j).foldlM (fun counts c => countIdentifiers fuel wanted c counts) counts
+
+/-- Depth budget for the complete annotated tree. Exhaustion refuses every
+identity inference; it never treats a partially scanned tree as safe. -/
+def identityScanFuel : Nat := 256
+
+def scanIdentifiers (fuel : Nat) (wanted : IdentityNames) (sources : Array Json) :
+    Option IdentityCounts :=
+  sources.foldlM (fun counts source => countIdentifiers fuel wanted source counts) {}
 
 /-- A module-scoped, hoisted function whose whole body returns its only parameter.
 The frontend's binder IDs must agree; raw, unannotated ESTree does not qualify. -/
@@ -319,7 +337,9 @@ def identityDeclaration (s : Json) : Option String := do
   guard (typ p == "Identifier" && str (fld p "k") == "L" && !isNull (fld p "b"))
   guard (typ body == "BlockStatement" && stmts.size == 1 && typ stmts[0]! == "ReturnStatement")
   let result := fld stmts[0]! "argument"
-  guard (typ result == "Identifier" && str (fld result "k") == "L" && fld p "b" == fld result "b")
+  let pb ← (fld p "b").getNat?.toOption
+  let rb ← (fld result "b").getNat?.toOption
+  guard (typ result == "Identifier" && str (fld result "k") == "L" && pb == rb)
   some (str (fld id "name"))
 
 /-- Only one plain direct call with a single-digit numeric literal is supported. -/
@@ -384,32 +404,40 @@ partial def reachWrites (mentions lazyW : Std.HashMap String (Array String)) :
       reachWrites mentions lazyW ((mentions.getD u #[]).toList ++ work) (seen.insert u)
         ((lazyW.getD u #[]).foldl (·.insert ·) out)
 
+/-- Determine stable identity names from the exact annotated trees used by the
+frontend. `none` means the scan did not finish, never a partial result. -/
+def inferredIdentities (fuel : Nat) (tops : Array Top) : Option IdentityNames := do
+  let definitions : IdentityNames := tops.foldl (fun seen t =>
+    match t.identityDef with
+    | some n => seen.insert n ()
+    | none => seen) {}
+  let candidates : IdentityNames := tops.foldl (fun seen t =>
+    match t.identityCall with
+    | some n => if definitions.contains n then seen.insert n () else seen
+    | none => seen) {}
+  let identifiers ← if candidates.isEmpty then some ({} : IdentityCounts) else
+    scanIdentifiers fuel candidates (tops.map (·.source))
+  if identityCount identifiers "eval" != 0 then return {}
+  let identities : IdentityNames := tops.foldl (fun seen t =>
+    match t.identityDef with
+    | some n => if identityCount identifiers n == 2 then seen.insert n () else seen
+    | none => seen) {}
+  return identities
+
 /-- The footprint the checker needs. Two rules make a statement an effect: it is not in the allow-list of
 inert shapes, or it reads an undeclared name. A statement with effects counts everything it mentions as eager
 (a call may run any function it can reach), and the names it may assign are those assigned by the statement
 itself and by every function body it can reach. -/
-def finalize (tops : Array Top) : Array Footprint :=
-  let definitions : Std.HashSet String := tops.foldl (fun seen t =>
-    match t.identityDef with
-    | some n => seen.insert n
-    | none => seen) {}
-  let candidates : Std.HashSet String := tops.foldl (fun seen t =>
-    match t.identityCall with
-    | some n => if definitions.contains n then seen.insert n else seen
-    | none => seen) {}
-  let identifiers := if candidates.isEmpty then ({} : Std.HashMap String Nat) else
-    tops.foldl (fun counts t => countIdentifiers candidates t.source counts) ({} : Std.HashMap String Nat)
-  let identities : Std.HashSet String := tops.foldl (fun seen t =>
-    match t.identityDef with
-    | some n => if identifiers.getD n 0 == 2 then seen.insert n else seen
-    | none => seen) {}
+def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
+  let scan := inferredIdentities identityScanFuel tops
+  let identities := scan.getD {}
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
   let mentions : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.rawEager ++ t.rawLazy)) m) {}
   let lazyW : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
-  tops.map fun t =>
-    let identityInert := !identifiers.contains "eval" && t.identityCall.any identities.contains
+  let footprints := tops.map fun t =>
+    let identityInert := t.identityCall.any identities.contains
     let effect := !(t.inert || identityInert) || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
@@ -419,6 +447,9 @@ def finalize (tops : Array Top) : Array Footprint :=
       fallback := dedupe t.fallback,
       rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
       inferredIdentity := if identityInert && !effect then t.identityCall else none }
+  (footprints, scan.isNone)
+
+def finalize (tops : Array Top) : Array Footprint := (finalizeWithScanStatus tops).1
 
 def Footprint.toJson (f : Footprint) : Json :=
   Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),
