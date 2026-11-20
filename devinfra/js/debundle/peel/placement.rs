@@ -350,11 +350,11 @@ fn initial_partition(problem: &AssignmentProblem<'_>, scope: &Scope) -> Partitio
     let mut owners = scope.baseline_owners.clone();
     owners.insert(scope.target.clone());
     let mut fixed_units = BTreeMap::<Owner, BTreeSet<usize>>::new();
-    for unit in 0..problem.baseline.len() {
+    for (unit, baseline_owner) in problem.baseline.iter().enumerate() {
         if scope.movable_units.contains(&unit) {
             continue;
         }
-        let owner = owner_for_path(problem.baseline[unit].as_ref());
+        let owner = owner_for_path(baseline_owner.as_ref());
         fixed_units.entry(owner).or_default().insert(unit);
     }
     for owner in owners {

@@ -3,6 +3,7 @@
   pkgsUnstable,
   ducktapePkgs,
   ruffLatest,
+  rustToolchain,
 }:
 
 let
@@ -45,11 +46,7 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
-    # TODO: Consider a rustfmt-only package here, preserving cargo-fmt in
-    # developer shells. Deferred: the container spike did not show enough
-    # setup-time benefit to justify the extra packaging complexity.
-    # Evidence and prototype: https://github.com/agentydragon/ducktape/pull/9220
-    pkgs.rustfmt
+    rustToolchain.rustfmt
     pkgs.ansible
   ];
 
@@ -63,6 +60,8 @@ let
   # See devinfra/claude/docs/devtools-closure-size.md for details.
   # Packages only needed by local development or cluster operations.
   localOnlyPackages = [
+    # cargo-fmt is included with rustfmt but requires cargo on PATH.
+    rustToolchain.cargo
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
     # running `ant beta:*` (haku/runtime/x/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli

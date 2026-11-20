@@ -744,8 +744,7 @@ fn source_unit_claim_locations(
             "projected member claims do not match module {}",
             module.path.display()
         );
-        for member_index in 0..doc.members.len() {
-            let projected_member = &projected.members[member_index];
+        for (member_index, projected_member) in projected.members.iter().enumerate() {
             if matches!(projected_member.kind, ProjectedBindingKind::ImportSpecifier) {
                 continue;
             }
