@@ -95,7 +95,7 @@ sequenceDiagram
   H->>I: final entries and seals
   I->>H: exact sealed cursor acknowledgement
   H->>H: persist IngressAcks
-  C->>C: publish per-Session sealed and delivered status
+  C->>C: publish per-Session seal and acknowledgement facts
   C->>R: exact aggregate completion
 ```
 
@@ -118,10 +118,10 @@ that fence succeeds.
 
 A seal request waits for native cleanup and the exact Execution fence before journals seal. The
 Session lifecycle controller closes the final admission gate, settles accepted commands, commits
-the seal and observes the exact durable acknowledgement. Its generation-qualified status reports
-those Session boundaries to the environment aggregate. Retained COSI Session records define the
-drain membership; a missing owner or lifecycle status blocks completion.
-Under-cursor, unsealed or non-durable acknowledgements cannot satisfy the sealed delivery barrier.
+the seal and reads the durable acknowledgement. The environment aggregate derives delivery from
+the seal and acknowledgement in each Session's generation-qualified status. Retained COSI Session
+records define the drain membership. A missing owner or lifecycle status blocks completion.
+Delivery requires a durable sealed acknowledgement at the exact seal cursor.
 Quiesce acceptance and Close completion are separate boundaries. Repeated Quiesce preserves a
 healthy desired generation; only an error for that current generation may request a retry.
 
