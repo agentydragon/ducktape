@@ -161,7 +161,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 				request.ResumeToken = lifecycle.NewResumeToken(target, 3)
 			}
 			response, err := environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, peertls.ActionsURI)).ResumeEnvironment(
-				serviceDelegationContext(t, auth.Identity{Name: caller.Name, UID: string(caller.UID)}), request,
+				grpcmethods.WithActionDelegation(t, t.Context(), auth.Identity{Name: caller.Name, UID: string(caller.UID)}), request,
 			)
 			if status.Code(err) != tc.wantCode {
 				t.Fatalf("ResumeEnvironment = %v, %v; want %v", response, err, tc.wantCode)

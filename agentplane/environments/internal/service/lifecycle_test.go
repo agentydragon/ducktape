@@ -17,17 +17,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
@@ -262,15 +259,7 @@ func delegatedContext(t *testing.T) context.Context {
 
 func delegatedContextFor(t *testing.T, identity auth.Identity) context.Context {
 	t.Helper()
-	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
-	}
-	encoded, err := auth.MarshalDelegation(envelope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.AppendToOutgoingContext(grpcmethods.Caller(t.Context(), peertls.ActionsURI), auth.DelegationMetadataKey, string(encoded))
+	return grpcmethods.WithActionDelegation(t, grpcmethods.Caller(t.Context(), peertls.ActionsURI), identity)
 }
 
 func resumeRequest(uid string, generation int64) *environmentpb.ResumeEnvironmentRequest {

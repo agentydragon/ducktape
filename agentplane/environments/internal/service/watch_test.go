@@ -16,16 +16,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -226,20 +223,13 @@ func newWatchFixtureWithReadHook(t *testing.T, afterRead func(context.Context, c
 	connection := grpcmethods.ServeTLS(t, peertls.SandboxControllerURI, methods, func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, service)
 	}, peertls.ActionsURI, peertls.CentralSamplerURI)
-	envelope, err := auth.MarshalDelegation(&delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}},
-		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	return watchFixture{
 		identities: revalidation,
 		readerCtx:  grpcmethods.Caller(ctx, peertls.CentralSamplerURI),
 		objects:    objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
 		target:       &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
 		identityName: identity.Name, identityUID: string(identity.UID),
-		ctx:          metadata.AppendToOutgoingContext(grpcmethods.Caller(ctx, peertls.ActionsURI), auth.DelegationMetadataKey, string(envelope)),
+		ctx:          grpcmethods.WithActionDelegation(t, grpcmethods.Caller(ctx, peertls.ActionsURI), auth.Identity{Name: identity.Name, UID: string(identity.UID)}),
 		metadataRead: metadataRead,
 	}
 }
