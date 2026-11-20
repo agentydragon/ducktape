@@ -25,6 +25,7 @@ theorem unsupported_number : sourceStmt "const x = 9007199254740993;" = none := 
 theorem unsupported_escape : sourceStmt "const x = \\u0061;" = none := by decide +kernel
 theorem unsupported_keyword : sourceStmt "const x = true;" = none := by decide +kernel
 theorem unsupported_reserved_name : sourceStmt "const new = 1;" = none := by decide +kernel
+theorem unsupported_strict_name : sourceStmt "const eval = 1;" = none := by decide +kernel
 
 /-- `src` is rendered verbatim; MiniJS footprints intentionally contain no source text. -/
 theorem extracted_footprints : Example.bundle.map (fun s => { s with src := "" }) = toBundle program := by

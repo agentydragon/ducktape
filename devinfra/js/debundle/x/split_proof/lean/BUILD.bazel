@@ -141,6 +141,7 @@ lean_axiom_test(
         "ProofFixture.unsupported_escape",
         "ProofFixture.unsupported_keyword",
         "ProofFixture.unsupported_reserved_name",
+        "ProofFixture.unsupported_strict_name",
         "ProofFixture.execution_order",
         "ProofFixture.preserves_model",
         "ProofFixture.rendered_base",
