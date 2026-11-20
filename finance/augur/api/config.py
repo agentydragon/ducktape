@@ -16,14 +16,13 @@ container reads).
 from __future__ import annotations
 
 import os
-from collections import Counter
 from pathlib import Path
 
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validator
 
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
-from finance.augur.api.schemas import ApiModel
+from finance.augur.api.schemas import ID_PATTERN, ApiModel, duplicates
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
@@ -39,18 +38,13 @@ AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
 
 
-def _duplicates(values) -> list[str]:
-    counts = Counter(values)
-    return sorted(value for value, count in counts.items() if count > 1)
-
-
 class AgentDefinition(ApiModel):
     """An economic actor the simulator can attribute state to.
 
     Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
-    actor_id: AgentId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    actor_id: AgentId = Field(pattern=ID_PATTERN)
     label: str
     role: ActorRole
 
@@ -76,7 +70,7 @@ class PropertySourceConfig(ApiModel):
 
     @model_validator(mode="after")
     def _validate_property_assets(self) -> PropertySourceConfig:
-        duplicate_property_ids = _duplicates(asset.property_id for asset in self.property_assets)
+        duplicate_property_ids = duplicates(asset.property_id for asset in self.property_assets)
         if duplicate_property_ids:
             raise ValueError(f"duplicate property asset property_ids: {duplicate_property_ids}")
         return self
@@ -158,7 +152,7 @@ class LocationConfig(ApiModel):
     core enums.
     """
 
-    location_id: LocationId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    location_id: LocationId = Field(pattern=ID_PATTERN)
     label: str
     city: str
     state: str
@@ -246,7 +240,7 @@ class Config(ApiModel):
 
     @model_validator(mode="after")
     def _validate_security_distributions(self) -> Config:
-        duplicate_symbols = _duplicates(str(entry.symbol) for entry in self.security_distributions)
+        duplicate_symbols = duplicates(str(entry.symbol) for entry in self.security_distributions)
         if duplicate_symbols:
             raise ValueError(f"security_distributions must name each symbol once: {duplicate_symbols}")
         return self

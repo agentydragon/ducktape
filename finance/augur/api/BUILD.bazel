@@ -11,6 +11,7 @@ py_library(
     srcs = ["schemas.py"],
     deps = [
         "//finance/augur/sim:fixed_point",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )

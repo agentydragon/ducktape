@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Annotated
 
+from more_itertools import duplicates_everseen
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, NonNegativeFloat
 
 from finance.augur.sim.fixed_point import validate_currency_amount
@@ -10,6 +12,15 @@ from finance.augur.sim.fixed_point import validate_currency_amount
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+# The shape of an identity a deployment authors: an agent, account, lot, bond, position or location.
+ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
+
+
+def duplicates(values: Iterable[str]) -> list[str]:
+    """The values that occur more than once, sorted."""
+    return sorted(set(duplicates_everseen(values)))
 
 
 Percentage = Annotated[NonNegativeFloat, Field(le=100)]
