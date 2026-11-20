@@ -1,4 +1,5 @@
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
+import { SessionStatus_RequiredEnvironment } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { LangfuseSearchSettings, ModelOption, TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
@@ -422,6 +423,11 @@ function ConversationBody({
             <NotificationStatus
               sandbox={sandboxName}
               sessionIds={[thread.metadata.threadId]}
+              deletedEnvironmentSessionIds={
+                thread.session?.status?.requiredEnvironment === SessionStatus_RequiredEnvironment.DELETED
+                  ? [thread.metadata.threadId]
+                  : []
+              }
               opened={notificationsOpen}
               onClose={() => setNotificationsOpen(false)}
             />
