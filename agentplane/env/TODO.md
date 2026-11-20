@@ -237,6 +237,27 @@ shows that retained history items need not remain in the model context. Keep the
 until real-binary evidence covers automatic compaction, interruption or process loss during
 compaction, compaction outside the observed recovery window, and external rollback.
 
+## Decide whether a journal failure may stop only its Session
+
+A Session journal failure reaches the shared Runtime fail-stop: admission closes and cleanup starts for every
+Session. Two failures on 2026-11-15 in Sandbox `codex-cleanup-tls` did this. Both causes are fixed (cleanup no longer
+stalls on a failed journal, and a delayed `turn/started` notification no longer re-inserts a known turn boundary),
+but the policy is unchanged. Decide whether a Session-local storage failure may leave the other Sessions running.
+The answer must cover the shared app-server readers, History supervision and admission and fence ownership.
+The lock holder of the first failure (`SQLITE_BUSY`) was never observed. A diagnostic reader holding an open
+`SELECT` is the leading candidate; [retained state](runtime/docs/retained_state.md) lists what to capture if it
+recurs.
+
+## Define overlapping Codex turn boundaries
+
+A Codex `turn/start` reply can name a new turn while an earlier turn is still active, and the earlier turn's boundary
+stays open. `agentplane sessions read-turns` then returns a `DataLoss` error ("retained History contains an
+incomplete turn projection"); Session `551f2a33-886b-4fd8-bdf1-9857058435c7` in Sandbox `codex-cleanup-tls` showed
+this on 2026-11-15. Define how accepted future work is told apart from the executing turn and when the earlier turn
+completes; suppressing duplicate starts alone does not supply the missing completions. Repairing an affected
+Session's retained History needs an explicit operator decision: keep it as evidence, or rebuild it from retained
+native events once the ordering is defined. Never delete it as a side effect.
+
 ## Codex reconcile edge cases
 
 - Tools other than `commandExecution` remain unknown until their API history can be compared with

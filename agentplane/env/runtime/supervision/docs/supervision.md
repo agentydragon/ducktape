@@ -31,6 +31,15 @@ facts, not evidence that a process domain is fenced. Pod processes have no syste
 Embedded VM Execution registers its exec-server with the Runtime process controller as well.
 Execution's managed fence timeout is 90 seconds, independent of the unit's 5-second systemd stop grace.
 
+One COSI lifecycle owner serves each native launch. The process controller owns the attempt phase and
+finalizer; the systemd backend owns manager interaction and publishes typed facts. A separate `SystemdUnit`
+controller would add a second desired state, status and teardown barrier to every VM launch, so add one only for a
+consumer that owns units independently of a supervised process. Secrets and stream descriptors stay in the
+process-owned registry, never in COSI resources. Do not pool manager connections without re-checking the failure
+and `AddRef` blast radius. A change to the shared controller or the shutdown contract runs the PID 1 process
+tests, the Pod and VM system suites and the real-systemd kernel fixture: a clean application shutdown never stands
+in for an empty cgroup.
+
 Runtime's Session aggregate observes exact-generation native cleanup before Execution is fenced
 and journals seal. Exact durable History acknowledgements remain a separate barrier. See the
 [Runtime contract](../../SPEC.md) and [lifecycle ordering](../../docs/lifecycle.md). Component failure
