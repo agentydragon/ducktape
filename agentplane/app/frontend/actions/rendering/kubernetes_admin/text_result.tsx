@@ -6,7 +6,7 @@ import { defineResultPreview, type ResultPreview } from "../result_entry";
 
 const textEnvelope = z.object({
   content: z.array(z.object({ type: z.literal("text"), text: z.string() })).length(1),
-  structuredContent: z.undefined(),
+  structuredContent: z.never().optional(),
 });
 
 export function kubernetesTextResult(title: string, empty: string, sentinels?: RegExp): ResultPreview {

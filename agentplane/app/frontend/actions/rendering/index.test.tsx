@@ -669,7 +669,9 @@ describe("details result rendering", () => {
     if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     const container = await mount(renderDetailsResult(action, result));
-    expect(container.textContent).toContain("Resource · ConfigMap apps/settings");
+    expect(container.textContent).toContain("ConfigMap apps/settings");
+    expect(container.querySelector(".cm-editor")).toBeNull();
+    await act(async () => button(container, "Resource YAML").click());
     expect(container.textContent?.match(/kind: ConfigMap/g)).toHaveLength(1);
     expect(container.textContent).not.toContain("Structured content");
     expect(container.querySelector(".cm-editor")).not.toBeNull();
