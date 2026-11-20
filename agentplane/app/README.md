@@ -98,7 +98,7 @@ keep working. Browser History watches reconnect and refresh summaries when the s
 
 ## Implementation and testing
 
-- `internal/server/`: Huma REST routes, raw HTTP streams and service composition. The generated
+- `internal/server/`: route registration, the HTTP server and service composition. The generated
   frontend API comes from `//agentplane/app/cmd:export_schema_bin`.
 - `cmd/`: process signal handling, CLI selection and the `agentplane-app` executable.
 - `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
