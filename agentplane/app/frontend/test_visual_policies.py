@@ -1360,7 +1360,10 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
     page = view.page
-    await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]:visible')).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_have_count(1)
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor")).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
     await view.check(context="Kubernetes YAML and its equivalent structured result shown once")
     await view.capture(target=page.locator("#app"))
@@ -1400,7 +1403,8 @@ async def test_kubernetes_pods_delete_success_receipt(
     await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
-    await expect(page.get_by_text("Exact arguments", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+    await expect(page.get_by_text("managed Service", exact=False)).to_be_visible()
     await view.check(context="successful pod deletion shown as an accepted request")
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 
