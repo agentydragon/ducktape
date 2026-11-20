@@ -105,7 +105,7 @@ func newSession(deps sessionDependencies, id string, record *retained.Record, jo
 		send:       func(ctx context.Context, frame json.RawMessage) error { return s.sendNative(ctx, deps.ctx, frame) },
 		afterBatch: s.wake,
 		stderr: func(ctx context.Context, text string) error {
-			return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
+			return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil)
 		},
 		ended: s.harnessEnded, fail: deps.fail,
 	}}
@@ -225,12 +225,12 @@ func (s *Session) recover(ctx context.Context) error {
 	setup := s.setup
 	s.mu.Unlock()
 	if setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
-		if err := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 			return err
 		}
 	}
 	if s.journal.RecoveryState().HarnessRunning {
-		if err := s.Emit(ctx, observation(&eventpb.HarnessLost{}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessLost{}), nil); err != nil {
 			return err
 		}
 	}

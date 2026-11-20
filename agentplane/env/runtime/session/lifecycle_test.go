@@ -32,7 +32,7 @@ func TestCloseStopsNativeProcessAfterJournalFailure(t *testing.T) {
 		setLifecycleStatusReady(t, manager, s)
 		failure := errors.New("injected journal transaction failure")
 		err := s.journal.WithBatch(t.Context(), func(ctx context.Context) error {
-			if _, err := s.journal.Append(ctx, observation(&eventpb.HarnessStderr{Text: "uncommitted"}), journal.AppendOptions{}); err != nil {
+			if _, err := s.journal.Append(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "uncommitted"}), journal.AppendOptions{}); err != nil {
 				return err
 			}
 			return failure
@@ -56,7 +56,7 @@ func TestCloseStopsNativeProcessAfterJournalFailure(t *testing.T) {
 	if s.journal.SealState() != nil {
 		t.Fatal("failed-journal cleanup manufactured a seal")
 	}
-	if _, err := s.journal.Append(t.Context(), observation(&eventpb.HarnessStderr{Text: "after cleanup"}), journal.AppendOptions{}); !errors.Is(err, journal.ErrFailed) {
+	if _, err := s.journal.Append(t.Context(), harness.Observation(&eventpb.HarnessStderr{Text: "after cleanup"}), journal.AppendOptions{}); !errors.Is(err, journal.ErrFailed) {
 		t.Fatalf("cleanup cleared journal failure: %v", err)
 	}
 }
@@ -77,7 +77,7 @@ func (a preparationDuringQuiesceAdapter) Handshake(context.Context) (string, err
 func (a preparationDuringQuiesceAdapter) Recover(ctx context.Context) error {
 	close(a.started)
 	<-a.release
-	return a.session.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "replayed response"}), nil)
+	return a.session.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "replayed response"}), nil)
 }
 
 func waitSession(t *testing.T, s *Session, predicate func(LifecycleStatus) bool, label string) {

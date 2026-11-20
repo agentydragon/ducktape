@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
@@ -351,7 +352,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 	waitResult := make(chan error, 1)
 	go func() { waitResult <- fresh.waitSetup(ctx) }()
-	if err := fresh.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
+	if err := fresh.Emit(ctx, harness.Observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 		t.Fatal(err)
 	}
 	m.publishSession(fresh, false)
