@@ -19699,6 +19699,8 @@
       "ready_endpoints": 2,
       "allowed_disruptions": 1,
       "request_mib": 50,
+      "vpa_mode": "Recreate",
+      "vpa_controlled_values": "RequestsOnly",
       "direct_paths_http_200": ["/", "/health"],
       "public_url": "https://www.agentydragon.com/",
       "public_http_status": 200
@@ -19712,6 +19714,8 @@
       "ready_endpoints": 2,
       "allowed_disruptions": 1,
       "request_mib": 100,
+      "vpa_mode": "Recreate",
+      "vpa_controlled_values": "RequestsOnly",
       "direct_paths_http_200": ["/"],
       "public_url": "https://haku.allegedly.works/",
       "public_http_status": 200

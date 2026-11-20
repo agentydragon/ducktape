@@ -1432,7 +1432,8 @@ function Report() {
             <code>/</code> and <code>/health</code>; both Haku static Pods
             returned 200 for <code>/</code>. The website Pods each requested
             ${" "}${webFrontendHA.website.request_mib} MiB and Haku static
-            ${" "}${webFrontendHA.haku_static.request_mib} MiB. ${" "}<${Anchor}
+            ${" "}${webFrontendHA.haku_static.request_mib} MiB. Both VPAs remain
+            in Recreate mode and manage requests only. ${" "}<${Anchor}
               href=${webFrontendHA.website.pr_url}
               >Website PR #18210<//
             >${" · "}<${Anchor} href=${webFrontendHA.haku_static.pr_url}
