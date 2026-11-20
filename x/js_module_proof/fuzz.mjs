@@ -447,7 +447,10 @@ function parameterCase(seed, index) {
             ? {
                 type: "LogicalExpression",
                 operator: "&&",
-                left: { type: "BinaryExpression", operator: "<", left: literal(0), right: id("y") },
+                left:
+                  Math.floor(index / 64) % 2 === 0
+                    ? { type: "BinaryExpression", operator: "<", left: literal(0), right: id("y") }
+                    : { type: "BinaryExpression", operator: "!==", left: id("y"), right: literal(0) },
                 right: literal(true),
               }
             : id("y"),

@@ -199,6 +199,13 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         left: expression(node.left),
         right: expression(node.right),
       };
+    if (node?.type === "BinaryExpression" && node.operator === "!==")
+      return {
+        kind: "conditional",
+        test: { kind: "equal", left: expression(node.left), right: expression(node.right) },
+        consequent: { kind: "literal", value: 0 },
+        alternative: { kind: "literal", value: 1 },
+      };
     if (node?.type === "UnaryExpression" && node.operator === "!")
       return {
         kind: "conditional",

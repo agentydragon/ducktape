@@ -978,7 +978,7 @@ if (shard === 14) {
   await writeFile(
     source,
     `function maybe(value) { if (value) throw 7; return value; }
-function select(x, y) { if (x < y && y === 4) return 9; return 1; }
+function select(x, y) { if (x < y && y === 4 && x !== 3) return 9; return 1; }
 function short(x) { if (x === 0 || maybe(x)) return 3; return 4; }
 function invert(x) { if (!x) return 8; return 2; }
 function conjunction(x) { if (x && maybe(1)) return 1; return 2; }
@@ -1004,14 +1004,23 @@ export { select, short, invert, conjunction };
     { name: "select", args: [2, 4] },
     { name: "select", args: [5, 4] },
     { name: "select", args: [2, 3] },
+    { name: "select", args: [3, 4] },
     { name: "invert", args: [0] },
     { name: "invert", args: [2] },
     { name: "short", args: [0] },
     { name: "short", args: [1] },
   ];
   const trace = execute(source, calls);
-  assert.deepEqual(trace.results, [{ value: 9 }, { value: 1 }, { value: 1 }, { value: 8 }, { value: 2 }, { value: 3 }]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 6, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(trace.results, [
+    { value: 9 },
+    { value: 1 },
+    { value: 1 },
+    { value: 1 },
+    { value: 8 },
+    { value: 2 },
+    { value: 3 },
+  ]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 7, thrown: { kind: "number", value: 7 } });
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const conjunctionCalls = [
     { name: "conjunction", args: [0] },
