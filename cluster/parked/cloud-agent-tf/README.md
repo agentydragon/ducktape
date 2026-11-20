@@ -1,6 +1,6 @@
 # Haku cloud agent (parked)
 
-The Flux Kustomization and Terraform resource remain suspended. The Anthropic-hosted
+Its Flux registration and artifact generation are removed from the cluster. The Anthropic-hosted
 Managed Agent's environment, agent, deployment, vault, and four MCP credentials were
 deleted at Anthropic on 2026-09-30. This tree preserves only the cluster-side wiring
 and historical Terraform root; it does not represent live Anthropic state.
@@ -27,7 +27,7 @@ reactivation.
 
 ## Reactivation requirements
 
-Do not resume this Kustomization by itself. A reviewed reactivation must first choose
+Do not re-register this Kustomization by itself. A reviewed reactivation must first choose
 whether to keep or replace the Terraform provider, repair the root for fresh state,
 recreate the Anthropic objects and vault credentials, and restore the cluster token
 input if the cloud agent still uses `kubectl-machine-mcp`. Only then should the

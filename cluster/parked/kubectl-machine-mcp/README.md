@@ -39,8 +39,8 @@ credentials (its ServiceAccount has no RBAC bindings).
 
 ## Dependencies
 
-Its central Flux chart entry depends on `gateway` (HTTPRoute needs
-`cluster-gateway`) and `authentik-tf` (creates the
+Its central Flux chart entry, removed from the active bundle, depended on `gateway`
+(HTTPRoute needs `cluster-gateway`) and `authentik-tf` (creates the
 `kubectl-sandbox-client-credentials` Authentik provider this server
 validates tokens against).
 
