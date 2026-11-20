@@ -8,7 +8,7 @@ import {
   type GoogleCalendarEventTime,
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { getGoogleCalendarPreview } from "../client";
-import { defineCallPreview, definePreview, type PreviewProps } from "./entry";
+import { definePreview, defineReceiptPreview, type PreviewProps } from "./entry";
 import {
   eventTime,
   formatDateBound,
@@ -552,47 +552,39 @@ function namesEvent(id: string, result: z.infer<typeof event>): boolean {
   return result.event_id === id && Boolean(result.summary?.trim());
 }
 
-const getEventCall = defineCallPreview(eventTarget, event, ({ args, result }) =>
-  result ? (
-    <CalendarReceipt
-      review={
-        <Target
-          id={args.event_id}
-          calendarId={args.calendar_id}
-          kind="read"
-          showEvent={!namesEvent(args.event_id, result)}
-        />
-      }
-    >
-      <EventCard value={result} />
-    </CalendarReceipt>
-  ) : null
-);
+const getEventCall = defineReceiptPreview(eventTarget, event, ({ args, result }) => (
+  <CalendarReceipt
+    review={
+      <Target
+        id={args.event_id}
+        calendarId={args.calendar_id}
+        kind="read"
+        showEvent={!namesEvent(args.event_id, result)}
+      />
+    }
+  >
+    <EventCard value={result} />
+  </CalendarReceipt>
+));
 
-const updateEventCall = defineCallPreview(updateArguments, event, ({ args, result }) =>
-  result ? (
-    <CalendarReceipt review={<Update args={args} showEvent={!namesEvent(args.event_id, result)} />}>
-      <EventCard value={result} />
-    </CalendarReceipt>
-  ) : null
-);
+const updateEventCall = defineReceiptPreview(updateArguments, event, ({ args, result }) => (
+  <CalendarReceipt review={<Update args={args} showEvent={!namesEvent(args.event_id, result)} />}>
+    <EventCard value={result} />
+  </CalendarReceipt>
+));
 
 const namedEventPage = eventPage.refine((page) => Boolean(page.summary?.trim()));
-const listEventsCall = defineCallPreview(listArguments, namedEventPage, ({ args, result }) =>
-  result ? (
-    <CalendarReceipt review={<ListDetails args={args} recordedCalendarName={result.summary} />}>
-      <Agenda result={result} />
-    </CalendarReceipt>
-  ) : null
-);
+const listEventsCall = defineReceiptPreview(listArguments, namedEventPage, ({ args, result }) => (
+  <CalendarReceipt review={<ListDetails args={args} recordedCalendarName={result.summary} />}>
+    <Agenda result={result} />
+  </CalendarReceipt>
+));
 
-const listInstancesCall = defineCallPreview(instanceArguments, namedEventPage, ({ args, result }) =>
-  result ? (
-    <CalendarReceipt review={<InstanceDetails args={args} recordedCalendarName={result.summary} />}>
-      <Agenda result={result} />
-    </CalendarReceipt>
-  ) : null
-);
+const listInstancesCall = defineReceiptPreview(instanceArguments, namedEventPage, ({ args, result }) => (
+  <CalendarReceipt review={<InstanceDetails args={args} recordedCalendarName={result.summary} />}>
+    <Agenda result={result} />
+  </CalendarReceipt>
+));
 
 const updateDetails = definePreview(updateArguments, Update);
 const eventDetails = definePreview(eventTarget, EventTarget);

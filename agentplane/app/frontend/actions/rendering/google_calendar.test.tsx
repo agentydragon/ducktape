@@ -131,6 +131,11 @@ describe("Calendar Action review", () => {
 });
 
 describe("Calendar Action results", () => {
+  it("keeps the ordinary argument view available before an event result exists", () => {
+    const action = identity("get_event");
+    expect(renderActionCall(action, target, undefined, "pending")).toEqual({ content: null, includesResult: false });
+  });
+
   it("keeps the requested event ID when the result names a different event", async () => {
     const call = renderActionCall(
       identity("get_event"),
