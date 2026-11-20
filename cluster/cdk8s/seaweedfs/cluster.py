@@ -134,18 +134,10 @@ def _component_labels(component: str) -> dict[str, str]:
 
 
 def _volume_topology(
-    *,
-    rack: str,
-    storage: str,
-    storage_class: str,
-    disk: str,
-    replicas: int,
-    max_volume_counts: int,
-    node_selector: dict[str, str] | None = None,
-    anti_affinity_labels: dict[str, str] | None = None,
+    *, rack: str, storage: str, storage_class: str, disk: str, max_volume_counts: int, node_selector: dict[str, str]
 ) -> SeaweedSpecVolumeTopology:
     return SeaweedSpecVolumeTopology(
-        replicas=replicas,
+        replicas=1,
         data_center="hil",
         rack=rack,
         priority_class_name=stateful_infra.NAME,
@@ -190,16 +182,13 @@ def _volume_topology(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
             )
         ],
+        # Keep each volume server separate from every other Seaweed volume server on its node.
         affinity=SeaweedSpecVolumeTopologyAffinity(
             pod_anti_affinity=SeaweedSpecVolumeTopologyAffinityPodAntiAffinity(
                 required_during_scheduling_ignored_during_execution=[
                     SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
                         label_selector=SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                            match_labels=(
-                                anti_affinity_labels
-                                if anti_affinity_labels is not None
-                                else {"app.kubernetes.io/instance": NAME, "seaweedfs/topology": disk}
-                            )
+                            match_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")}
                         ),
                         topology_key=_HOSTNAME,
                     )
@@ -336,43 +325,36 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage="1700Gi",
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
-                    replicas=1,
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103656",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
-                    # Keep this server separate from every other Seaweed volume server on its node.
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "hdd-piraeus-103711": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="1700Gi",
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
-                    replicas=1,
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns103711",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "hdd-piraeus-102453": _volume_topology(
                     rack="hil-ovh-h109b04",
                     storage="2500Gi",  # This node has a larger HDD pool.
                     storage_class="piraeus-hdd-local",
                     disk="hdd",
-                    replicas=1,
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         _HOSTNAME: "ovh-ns102453",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 # The OVH NVMe groups serve Forgejo git via the seaweedfs-ovh-ssd
                 # StorageClass (diskType=ssd -> -disk=ssd).
@@ -382,31 +364,24 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage="250Gi",
                     storage_class="piraeus-ssd-local",
                     disk="ssd",
-                    replicas=1,
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns1001419"},
-                    # Keep this server separate from every other Seaweed volume server on its node.
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "ssd-piraeus-104952": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
                     storage_class="piraeus-ssd-local",
                     disk="ssd",
-                    replicas=1,
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104952", "storage.allegedly.works/piraeus-ready": "true"},
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
                 "ssd-piraeus-104963": _volume_topology(
                     rack="hil-ovh-h108b01",
                     storage="250Gi",
                     storage_class="piraeus-ssd-local",
                     disk="ssd",
-                    replicas=1,
                     max_volume_counts=200,
                     node_selector={_HOSTNAME: "ovh-ns104963", "storage.allegedly.works/piraeus-ready": "true"},
-                    anti_affinity_labels={"app.kubernetes.io/instance": NAME, **_component_labels("volume")},
                 ),
             },
             filer=SeaweedSpecFiler(
