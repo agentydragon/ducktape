@@ -18,7 +18,7 @@ Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and r
 
 ## Escaped callbacks and initialization
 
-A callback can escape before a later `const`, `let`, class, or other non-hoisted binding initializes, and an unrelated effect can invoke it indirectly. An otherwise inert initializer is therefore kept effectful when its binding is exported, used in deferred code, read by an inert initializer that can form an alias, or mentioned in a fallback-containing statement. This deliberately conservative rule preserves ordering against unknown effects. Hoisted function declarations remain available from instantiation. The source footprint analysis and its correspondence to JavaScript are still trusted rather than proved.
+A callback can escape before a later `const`, `let`, class, or other non-hoisted binding initializes, and an unrelated effect can invoke it indirectly. An otherwise inert initializer is therefore kept effectful when its binding is exported, used in deferred code, read by an inert initializer that can form an alias, or mentioned in a fallback-containing statement. This deliberately conservative rule preserves ordering against unknown effects. A single `const` initialized with a direct primitive literal is modeled separately: its initialization remains ordered against unknown effects, while two independent such initializers may commute. The rule assumes synchronous module evaluation and a trusted source-to-footprint analysis; binding reads and TDZ dependencies remain ordering constraints. Hoisted function declarations remain available from instantiation. The source footprint analysis and its correspondence to JavaScript are still trusted rather than proved.
 
 ## Local identity calls
 

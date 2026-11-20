@@ -40,7 +40,7 @@ def QuietCertificates (M : Meaning V W) (quiet : Nat → Bool) : Prop :=
 /-- No proposed certificates means no extra crossing is permitted. -/
 theorem Bundle.conditionalConflict_none (B : Bundle) (i j : Nat) :
     B.conditionalConflict (fun _ => false) i j = B.conflict i j := by
-  simp [Bundle.conditionalConflict, Bundle.bindingConflict, Bundle.conflict, Bool.or_comm, Bool.or_assoc]
+  simp [Bundle.conditionalConflict, Bundle.bindingConflict, Bundle.conflict, Bool.or_comm, Bool.or_left_comm, Bool.or_assoc]
 
 /-- A certified quiet statement may cross another statement if their binding
 footprints do not conflict. This is a strong all-worlds condition. -/

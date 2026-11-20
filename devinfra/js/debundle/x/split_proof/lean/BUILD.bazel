@@ -391,3 +391,19 @@ lean_axiom_test(
         "FreshClosure.Examples.other_allocation_changes_identity",
     ],
 )
+
+lean_axiom_test(
+    name = "observed_initializer_axioms_test",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Semantics.lean",
+        "Experiments/ObservedInitializer.lean",
+    ],
+    imports = ["Experiments.ObservedInitializer"],
+    theorems = [
+        "ObservedInitializer.independent_constants_do_not_conflict",
+        "ObservedInitializer.independent_constants_commute",
+        "ObservedInitializer.unknown_effect_remains_ordered",
+        "ObservedInitializer.binding_read_remains_ordered",
+    ],
+)

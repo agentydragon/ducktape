@@ -281,9 +281,10 @@ def primitiveConstant (s : Json) : Bool :=
   let ds := items (fld s "declarations")
   let d := ds[0]?.getD Json.null
   let init := fld d "init"
+  let lit := str (fld init "lit")
   typ s == "VariableDeclaration" && str (fld s "kind") == "const" && ds.size == 1 &&
     typ (fld d "id") == "Identifier" && typ init == "Literal" &&
-    isNull (fld init "regex") && isNull (fld init "bigint")
+    (lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:")
 
 /-! ## Top-level statements -/
 
