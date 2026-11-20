@@ -2,13 +2,16 @@ package bootstrap
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -246,6 +249,14 @@ func TestBootstrapLogFailsClosedAfterUncertainTerminalWrite(t *testing.T) {
 	}
 }
 
+type reverseBootstrapEventList struct{ state.State }
+
+func (s reverseBootstrapEventList) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
+	rows, err := s.State.List(ctx, kind, opts...)
+	slices.Reverse(rows.Items)
+	return rows, err
+}
+
 func TestBootstrapLogOrdersReplayBySequenceNotListOrder(t *testing.T) {
 	store, closer, err := openTestState(t.TempDir())
 	if err != nil {
@@ -263,7 +274,7 @@ func TestBootstrapLogOrdersReplayBySequenceNotListOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	log, err := OpenLog(t.Context(), store)
+	log, err := OpenLog(t.Context(), reverseBootstrapEventList{State: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,4 +444,24 @@ func eventSequences(events []*sessionpb.InitializationEvent) []uint64 {
 		result[i] = event.GetSequence()
 	}
 	return result
+}
+
+func readEvents(ctx context.Context, store state.State) ([]*sessionpb.InitializationEvent, error) {
+	rows, err := safe.ReaderListAll[*EventResource](ctx, store)
+	if err != nil {
+		return nil, err
+	}
+	events, err := safe.Map(rows, func(row *EventResource) (*sessionpb.InitializationEvent, error) {
+		if err := validateEventResource(row); err != nil {
+			return nil, err
+		}
+		return row.TypedSpec().Value.Event, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(events, func(a, b *sessionpb.InitializationEvent) int {
+		return cmp.Compare(a.GetSequence(), b.GetSequence())
+	})
+	return events, nil
 }
