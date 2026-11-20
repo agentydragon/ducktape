@@ -376,10 +376,12 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
            extraExports := extraExports }
 
 /-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`. -/
-def bundleOf (units : Array Json) : Bundle :=
-  let fps := Lower.finalize (units.map Lower.analyzeTop)
+def bundleOfFootprints (fps : Array Lower.Footprint) : Bundle :=
   fps.toList.map fun f =>
     { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
+
+def bundleOf (units : Array Json) : Bundle :=
+  bundleOfFootprints (Lower.finalize (units.map Lower.analyzeTop))
 
 /-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle: what `OrderOk` rejects. -/
 def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id.run do
@@ -422,7 +424,12 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("urls", Json.arr (res.metaUrls.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
       IO.println s!"  wrote the premise table to {t}"
     let t2 ← IO.monoMsNow
-    let B ← IO.lazyPure fun _ => bundleOf units
+    let fps ← IO.lazyPure fun _ => Lower.finalize (units.map Lower.analyzeTop)
+    let B := bundleOfFootprints fps
+    for i in [:fps.size] do
+      if let some f := fps[i]? then
+        if let some name := f.inferredIdentity then
+          IO.println s!"  inferred identity call: unit {i}, binding `{name}` (trusted source analysis)"
     IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units are effects"
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder

@@ -293,6 +293,48 @@ def isHoisted (s : Json) : Bool :=
     || ((typ s == "ExportNamedDeclaration" || typ s == "ExportDefaultDeclaration")
         && typ (fld s "declaration") == "FunctionDeclaration")
 
+/-- Count only candidate spellings and `eval`, including shadowed occurrences and
+deferred bodies. Counts saturate at three: only exactly two or no occurrences matter. -/
+partial def countIdentifiers (wanted : Std.HashSet String) (j : Json)
+    (counts : Std.HashMap String Nat) : Std.HashMap String Nat := Id.run do
+  let mut counts := counts
+  if typ j == "Identifier" then
+    let n := str (fld j "name")
+    if n == "eval" || wanted.contains n then
+      counts := counts.insert n (min 3 (counts.getD n 0 + 1))
+  for c in children j do counts := countIdentifiers wanted c counts
+  return counts
+
+/-- A module-scoped, hoisted function whose whole body returns its only parameter.
+The frontend's binder IDs must agree; raw, unannotated ESTree does not qualify. -/
+def identityDeclaration (s : Json) : Option String := do
+  guard (typ s == "FunctionDeclaration" && !flag s "async" && !flag s "generator")
+  let id := fld s "id"
+  guard (typ id == "Identifier" && str (fld id "k") == "T" && !isNull (fld id "d"))
+  let params := items (fld s "params")
+  guard (params.size == 1)
+  let p := params[0]!
+  let body := fld s "body"
+  let stmts := items (fld body "body")
+  guard (typ p == "Identifier" && str (fld p "k") == "L" && !isNull (fld p "b"))
+  guard (typ body == "BlockStatement" && stmts.size == 1 && typ stmts[0]! == "ReturnStatement")
+  let result := fld stmts[0]! "argument"
+  guard (typ result == "Identifier" && str (fld result "k") == "L" && fld p "b" == fld result "b")
+  some (str (fld id "name"))
+
+/-- Only one plain direct call with a single-digit numeric literal is supported. -/
+def identityCall (s : Json) : Option String := do
+  guard (typ s == "VariableDeclaration" && str (fld s "kind") == "const")
+  let ds := items (fld s "declarations")
+  guard (ds.size == 1 && typ (fld ds[0]! "id") == "Identifier")
+  let call := fld ds[0]! "init"
+  let callee := fld call "callee"
+  let args := items (fld call "arguments")
+  guard (typ call == "CallExpression" && !flag call "optional" && typ callee == "Identifier")
+  guard (str (fld callee "k") == "T" && args.size == 1 && typ args[0]! == "Literal")
+  guard ((["n:0", "n:1", "n:2", "n:3", "n:4", "n:5", "n:6", "n:7", "n:8", "n:9"] : List String).contains (str (fld args[0]! "lit")))
+  some (str (fld callee "name"))
+
 structure Top where
   defs     : List String
   rawEager : Array String
@@ -302,11 +344,16 @@ structure Top where
   fallback : Array String
   hoisted  : Bool
   inert    : Bool
+  identityDef : Option String
+  identityCall : Option String
+  source : Json
 
 def analyzeTop (s : Json) : Top :=
   let acc := (visit [] false s).run {} |>.2
   { defs := topDefs s, rawEager := acc.eager, rawLazy := acc.lazy, assignedEager := acc.assignedEager, assignedLazy := acc.assignedLazy,
-    fallback := acc.fallback, hoisted := isHoisted s, inert := inertTop s }
+    fallback := acc.fallback, hoisted := isHoisted s, inert := inertTop s,
+    identityDef := identityDeclaration s, identityCall := identityCall s,
+    source := s }
 
 structure Footprint where
   defs     : List String
@@ -321,6 +368,8 @@ structure Footprint where
   fallback : List String
   rawEager : List String
   rawLazy  : List String
+  /-- A source-derived trusted identity-call inference, if used for this unit. -/
+  inferredIdentity : Option String := none
 
 def dedupe (a : Array String) : List String := a.toList.eraseDups
 
@@ -340,20 +389,36 @@ inert shapes, or it reads an undeclared name. A statement with effects counts ev
 (a call may run any function it can reach), and the names it may assign are those assigned by the statement
 itself and by every function body it can reach. -/
 def finalize (tops : Array Top) : Array Footprint :=
+  let definitions : Std.HashSet String := tops.foldl (fun seen t =>
+    match t.identityDef with
+    | some n => seen.insert n
+    | none => seen) {}
+  let candidates : Std.HashSet String := tops.foldl (fun seen t =>
+    match t.identityCall with
+    | some n => if definitions.contains n then seen.insert n else seen
+    | none => seen) {}
+  let identifiers := if candidates.isEmpty then ({} : Std.HashMap String Nat) else
+    tops.foldl (fun counts t => countIdentifiers candidates t.source counts) ({} : Std.HashMap String Nat)
+  let identities : Std.HashSet String := tops.foldl (fun seen t =>
+    match t.identityDef with
+    | some n => if identifiers.getD n 0 == 2 then seen.insert n else seen
+    | none => seen) {}
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
   let mentions : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.rawEager ++ t.rawLazy)) m) {}
   let lazyW : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
   tops.map fun t =>
-    let effect := !t.inert || t.rawEager.any (!declared.contains ·)
+    let identityInert := !identifiers.contains "eval" && t.identityCall.any identities.contains
+    let effect := !(t.inert || identityInert) || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
     { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, writes,
       assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
       fallback := dedupe t.fallback,
-      rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy }
+      rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
+      inferredIdentity := if identityInert && !effect then t.identityCall else none }
 
 def Footprint.toJson (f : Footprint) : Json :=
   Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),

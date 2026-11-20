@@ -16,6 +16,12 @@ node pair.mjs bundle.json output.json --out cert.json
 
 Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and reshuffled. `4` the translation is faithful, but the output runs some effectful units in a different order, and nothing justifies it yet (a list of **obligations**).
 
+## Local identity calls
+
+The source analyzer infers that a `const` initialized by `f(1)` is inert only for a deliberately narrow case: `f` is a unique module-scope, non-async, non-generator function declaration whose sole statement returns its one plain parameter; the call has exactly one single-digit numeric literal argument; and the entire bundle contains exactly two identifier occurrences named `f` (the declaration and the call), with no identifier named `eval`. The parameter and return reference must have the same frontend-resolved binder. Any extra occurrence, including a shadow, alias, exported reference or assignment even inside a deferred body, disables the inference. The read of `f` and all binding-order checks remain. Unsupported syntax falls back to effectful.
+
+The checker prints the unit and binding whenever it uses this inference. It is part of the **trusted source-to-footprint analysis**, not an automatically kernel-proved JavaScript semantic certificate: Acorn, scope resolution, and correspondence between the inferred footprint and actual JavaScript semantics remain trusted. The Lean plan theorem is conditional on those footprints. The old `lowersplit` emitter consumes unannotated AST, so it still rejects this crossing; `identity_emission_test` force-emits only a provisional tree, then requires the translation checker to accept it before running the original and emitted JavaScript in Node. This is not an accepted standalone `lowersplit` emission.
+
 ## What Lean checks
 
 A _unit_ is one top-level statement of the bundle, or one declarator of a variable list.

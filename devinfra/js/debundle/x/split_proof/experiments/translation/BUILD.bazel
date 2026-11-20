@@ -26,6 +26,20 @@ js_test(
 )
 
 js_test(
+    name = "identity_emission_test",
+    data = _CHECKER_RUNFILES + [
+        "fixtures/local_identity/bundle.js",
+        "pair.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "identity_emission_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
     name = "fuzz_test",
     size = "small",
     args = [
