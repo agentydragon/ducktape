@@ -23,7 +23,7 @@ function details(label: string, args: ArgumentsPreview, result: ResultPreview): 
 function onlyResult(label: string, result: ResultPreview): ActionPresentation {
   return {
     fallbackLabel: label,
-    details: { arguments: definePreview(empty, () => null), nativeResult: result },
+    details: { arguments: { schema: empty, render: () => null }, nativeResult: result },
     compactCardExpands: expandsForRejectedArguments(empty),
   };
 }
