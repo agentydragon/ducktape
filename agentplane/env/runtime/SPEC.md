@@ -164,9 +164,9 @@ cannot complete the environment barrier.
 The journal remains the durable seal authority, so recovery rechecks it and the fresh cleanup
 proofs before publishing status. History sends final entries and seals, persists the
 acknowledgements, and satisfies delivery only at each exact sealed cursor. The Session lifecycle
-controller observes the retained acknowledgement and reports `Delivered` for the matching committed
-seal UID, cursor and environment generation. The environment aggregate completes only when every
-Session in the inventory reports delivery for that generation.
+controller reports the retained acknowledgement alongside the seal in its generation-qualified
+status. The environment aggregate completes only when that status proves a sealed acknowledgement
+at the exact cursor of each Session's current seal.
 
 Ordinary Close without a seal drains local work and creates no seal. Close preserving a seal waits
 for exact durable acknowledgements. Runtime first settles any accepted transition and fence before

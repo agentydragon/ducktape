@@ -103,7 +103,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
-		current.Delivered = false
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
@@ -327,7 +326,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
-		current.Delivered = false
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
@@ -342,7 +340,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			current.AcknowledgementPresent = found
 			current.AcknowledgementSealed = ack.Sealed
 			current.AcknowledgementCursor = ack.Cursor
-			current.Delivered = found && ack.Sealed && ack.Cursor == seal.Cursor
 		}
 		return write()
 	}

@@ -359,5 +359,6 @@ func sessionSealComplete(status session.LifecycleStatus, found bool, desired lif
 }
 
 func sessionDeliveryComplete(status session.LifecycleStatus, found bool, desired lifecycle.EnvironmentDesired) bool {
-	return sessionSealComplete(status, found, desired) && status.Delivered
+	return sessionSealComplete(status, found, desired) && status.AcknowledgementPresent &&
+		status.AcknowledgementSealed && status.AcknowledgementCursor == status.SealCursor
 }
