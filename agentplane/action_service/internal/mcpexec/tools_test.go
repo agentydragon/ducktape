@@ -87,3 +87,30 @@ func TestUnsupportedLookaheadRemainsDiscoverable(t *testing.T) {
 		t.Fatalf("corrected schema still has a warning = %v, %v", tools, err)
 	}
 }
+
+// A Tana-style search schema with a lookahead must be discoverable and checked the same way at admission and execution.
+func TestSearchNodesPatternIsOfferedAndChecked(t *testing.T) {
+	const schema = `{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"query":{"type":"object","properties":{"edited":{"type":"object","properties":{"by":{"type":"string","pattern":"^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"}}}}}}}`
+	tools, skipped, err := mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: json.RawMessage(schema)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 0 || len(tools) != 1 {
+		t.Fatalf("tools %v skipped %v", tools, skipped)
+	}
+	tool := tools["search_nodes"]
+	for raw, want := range map[string]bool{
+		`{"query":{"edited":{"by":"first.last@example.org"}}}`:  true,
+		`{"query":{"edited":{"by":"first..last@example.org"}}}`: false,
+	} {
+		value, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(raw)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		admitted := tool.definition.CheckArguments(value) == nil
+		executed := tool.matches(json.RawMessage(raw))
+		if admitted != want || executed != want {
+			t.Errorf("%s admitted=%v executed=%v want=%v", raw, admitted, executed, want)
+		}
+	}
+}

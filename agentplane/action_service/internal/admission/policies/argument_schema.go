@@ -21,7 +21,7 @@ import (
 type ArgumentSchema struct {
 	// Schema is the JSON Schema as the rule writes it.
 	Schema   *structpb.Struct
-	compiled *jsonschema.Schema
+	compiled *catalog.CompiledSchema
 }
 
 func (ArgumentSchema) Type() store.PolicyKind { return store.PolicyArgumentSchema }

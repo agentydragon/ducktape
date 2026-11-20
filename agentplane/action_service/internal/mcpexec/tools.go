@@ -23,7 +23,7 @@ const maxDescription = 20_000
 type tool struct {
 	definition catalog.ActionDefinition
 	// arguments is definition's input schema, compiled.
-	arguments *jsonschema.Schema
+	arguments *catalog.CompiledSchema
 }
 
 // invalidCatalogError is a tool list the group cannot offer: every tool in it is one the catalog cannot hold.
@@ -83,7 +83,7 @@ func mirror(listed []*mcp.Tool) (map[string]tool, skipped, error) {
 }
 
 // mirrorOne is one listed tool as an ActionDefinition and its compiled input schema.
-func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *jsonschema.Schema, error) {
+func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *catalog.CompiledSchema, error) {
 	schema, err := json.Marshal(listed.InputSchema)
 	if err != nil {
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
@@ -138,7 +138,7 @@ func optional[T comparable](v T) *T {
 }
 
 // compileSchema compiles an input schema, which must be a JSON object, as catalog.CompileSchema does.
-func compileSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
+func compileSchema(schema json.RawMessage) (*catalog.CompiledSchema, error) {
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
 	if err != nil {
 		return nil, err

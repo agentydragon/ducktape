@@ -28,7 +28,7 @@ type InputOptions struct {
 type Input[T any] struct {
 	name       string
 	definition ActionDefinition
-	validator  *validator.Schema
+	validator  *CompiledSchema
 }
 
 // NewInput reflects T as a closed JSON object, applies binding constraints, and compiles the

@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"sync"
+	"time"
+
+	"github.com/dlclark/regexp2/v2"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -25,12 +30,84 @@ var annotatedFormats = []string{
 	"period", "relative-json-pointer", "semver", "time", "uri", "uri-reference", "uri-template", "uuid",
 }
 
+// ErrPatternEvaluation means a fallback regular expression exceeded its budget or failed. The result is not a
+// mismatch: a mismatch may be negated by `not`, select a branch, or ignore a patternProperties entry.
+var ErrPatternEvaluation = errors.New("argument schema regular expression could not be evaluated")
+
+// patternBudget sets a shared approximate deadline for backtracking matches during one validation.
+// RE2 remains the default for every pattern it accepts. Backtracking is needed for standard lookahead and backreferences.
+const patternBudget = 250 * time.Millisecond
+
+type patternState struct {
+	mu       sync.Mutex
+	deadline time.Time
+	failed   bool
+}
+
+// CompiledSchema keeps regexp evaluation errors associated with the right validation. jsonschema's Regexp interface
+// exposes only a bool, so a per-schema mutex serializes its validations while the adapter records any match error.
+// Distinct compiled schemas do not share the mutex or state.
+type CompiledSchema struct {
+	schema *jsonschema.Schema
+	state  *patternState
+}
+
+// Validate rejects the whole validation when a regexp evaluation fails, even if `not`, `anyOf`, `if`, or
+// patternProperties would otherwise turn that match failure into acceptance.
+func (s *CompiledSchema) Validate(value any) error {
+	s.state.mu.Lock()
+	defer s.state.mu.Unlock()
+	s.state.failed = false
+	s.state.deadline = time.Now().Add(patternBudget)
+	err := s.schema.Validate(value)
+	if s.state.failed {
+		return ErrPatternEvaluation
+	}
+	return err
+}
+
+type boundedRegexp struct {
+	re    *regexp2.Regexp
+	state *patternState
+}
+
+func (r boundedRegexp) String() string { return r.re.String() }
+func (r boundedRegexp) MatchString(value string) bool {
+	remaining := time.Until(r.state.deadline)
+	if remaining <= 0 {
+		r.state.failed = true
+		return false
+	}
+	r.re.MatchTimeout = remaining
+	matched, err := r.re.MatchString(value)
+	if err != nil {
+		r.state.failed = true
+		return false
+	}
+	return matched
+}
+
+func patternEngine(state *patternState) func(string) (jsonschema.Regexp, error) {
+	return func(expr string) (jsonschema.Regexp, error) {
+		if re, err := regexp.Compile(expr); err == nil {
+			return re, nil
+		}
+		re, err := regexp2.Compile(expr, regexp2.ECMAScript)
+		if err != nil {
+			return nil, err
+		}
+		return boundedRegexp{re: re, state: state}, nil
+	}
+}
+
 // CompileSchema compiles document, a JSON Schema of an Action's arguments decoded as jsonschema.UnmarshalJSON decodes
 // JSON, checking it against its draft's metaschema, so that it validates as Python's jsonschema.validate does. A
 // schema without `$schema` is read as draft 2020-12, and one that refers to any document but itself and the drafts'
 // metaschemas is not valid.
-func CompileSchema(document any) (*jsonschema.Schema, error) {
+func CompileSchema(document any) (*CompiledSchema, error) {
+	state := &patternState{}
 	compiler := jsonschema.NewCompiler()
+	compiler.UseRegexpEngine(patternEngine(state))
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noDocuments{})
 	for _, name := range annotatedFormats {
@@ -39,7 +116,15 @@ func CompileSchema(document any) (*jsonschema.Schema, error) {
 	if err := compiler.AddResource(schemaURL, document); err != nil {
 		return nil, err
 	}
-	return compiler.Compile(schemaURL)
+	state.deadline = time.Now().Add(patternBudget)
+	schema, err := compiler.Compile(schemaURL)
+	if state.failed {
+		return nil, ErrPatternEvaluation
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &CompiledSchema{schema: schema, state: state}, nil
 }
 
 // noDocuments loads no document a schema refers to; the library's default loader reads local files.
@@ -84,7 +169,7 @@ func InspectSchema(raw json.RawMessage) *action_servicepb.InputSchemaValidation 
 
 // DecodeArguments reads arguments into args once they satisfy schema, a schema CompileSchema compiled; it returns
 // ErrInvalidArguments when they do not.
-func DecodeArguments(schema *jsonschema.Schema, arguments json.RawMessage, args any) error {
+func DecodeArguments(schema *CompiledSchema, arguments json.RawMessage, args any) error {
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
 	if err == nil {
 		err = schema.Validate(value)
