@@ -275,7 +275,6 @@ func TestNotificationProcessDriver(t *testing.T) {
 		},
 	}
 	c.Actions = actionPeer{URL: "http://127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
-	c.RunnerGateway = runnerGateway{ControlTarget: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	if err := c.validate(); err != nil {

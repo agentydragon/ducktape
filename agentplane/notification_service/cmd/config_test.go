@@ -29,9 +29,6 @@ namespace: test-agentplane
 actions:
   url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
-runner_gateway:
-  control_target: "runner-gateway.{namespace}.svc:8080"
-  token_file: /test/tokens/gateway
 history_service:
   target: test-history.invalid:8080
   token_file: /test/tokens/history
@@ -107,7 +104,8 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" ||
 		len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != peertls.AppURI || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
-		c.RunnerGateway.ControlTarget != "runner-gateway.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
+		c.RunnerGateway == nil || c.RunnerGateway.ControlTarget != "runner-gateway.{namespace}.svc:8080" ||
+		c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
 		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" ||
 		c.RequestTimeoutSeconds != 15 || c.MessageBodyLimitBytes != 32768 || c.GitHub.APIVersion != "2022-11-28" {
@@ -117,7 +115,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		t.Errorf("the GitHub App was not read from the file and the environment: %+v", c.GitHub)
 	}
 	if c.Actions.TLS == nil || c.Actions.TLS.ServerURI != "spiffe://agentplane/actions" ||
-		c.RunnerGateway.TLS == nil || c.HistoryService.TLS == nil || c.SessionDispatcher.TLS == nil ||
+		c.RunnerGateway == nil || c.RunnerGateway.TLS == nil || c.HistoryService.TLS == nil || c.SessionDispatcher.TLS == nil ||
 		c.RPC.TLS == nil || !c.RPC.Has(listener.SPIFFE) {
 		t.Errorf("the peer or listener TLS and authentication settings were not read: %+v", c)
 	}
@@ -137,7 +135,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 7) {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
-	if c.RunnerGateway.RequestTimeoutSeconds != 5 || c.HistoryService.RequestTimeoutSeconds != 20 ||
+	if c.RunnerGateway != nil || c.HistoryService.RequestTimeoutSeconds != 20 ||
 		c.SessionDispatcher.RequestTimeoutSeconds != 15 || c.Actions.RequestTimeoutSeconds != 5 {
 		t.Errorf("request timeout defaults: %+v", c)
 	}
@@ -196,29 +194,27 @@ func TestOutboundPeersAcceptNotificationsSVIDWithoutBearerFallback(t *testing.T)
 			CertFile: "/test/notifications.crt", KeyFile: "/test/notifications.key", ClientURI: peertls.NotificationsURI,
 		}
 	}
-	c.Actions.TokenFile, c.RunnerGateway.TokenFile = "", ""
+	c.Actions.TokenFile = ""
 	c.HistoryService.TokenFile, c.SessionDispatcher.TokenFile = "", ""
 	c.Actions.TLS = clientTLS(peertls.ActionsURI)
-	c.RunnerGateway.TLS = clientTLS(peertls.SessionDispatcherURI)
 	c.HistoryService.TLS = clientTLS(peertls.HistoryIngressURI)
 	c.SessionDispatcher.TLS = clientTLS(peertls.SessionDispatcherURI)
 	if err := c.validate(); err != nil {
 		t.Fatalf("tokenless SVID caller settings were rejected: %v", err)
 	}
 
-	t.Run("Runtime proxy accepts Environments", func(t *testing.T) {
-		migrated := c
-		migrated.RunnerGateway.TLS = clientTLS(peertls.SandboxControllerURI)
-		if err := migrated.validate(); err != nil {
-			t.Fatal(err)
+	t.Run("a supplied Runtime proxy block keeps its own server identities", func(t *testing.T) {
+		supplied := c
+		supplied.RunnerGateway = &runnerGateway{
+			ControlTarget:         "environments.{namespace}.svc:8082",
+			TLS:                   clientTLS(peertls.SandboxControllerURI),
+			RequestTimeoutSeconds: 5,
 		}
-		migrated.SessionDispatcher.TLS = clientTLS(peertls.SandboxControllerURI)
-		if err := migrated.validate(); err == nil {
-			t.Fatal("accepted Environments as Session Dispatcher")
+		if err := supplied.validate(); err != nil {
+			t.Fatalf("supplied Runtime proxy block rejected: %v", err)
 		}
-		migrated.SessionDispatcher.TLS = c.SessionDispatcher.TLS
-		migrated.RunnerGateway.TLS = clientTLS(peertls.ActionsURI)
-		if err := migrated.validate(); err == nil {
+		supplied.RunnerGateway.TLS = clientTLS(peertls.ActionsURI)
+		if err := supplied.validate(); err == nil {
 			t.Fatal("accepted unrelated Runtime proxy server identity")
 		}
 	})
@@ -263,25 +259,32 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"GitHub webhook secret is not a file setting": {
 			file: requiredFile + "github:\n  app_id: 1234\n  webhook_secret: never-print-me\n",
 		},
-		"unknown nested key":           {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
-		"no namespace":                 {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
-		"no Actions URL":               {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
-		"Actions URL path":             {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080/v1", 1)},
-		"Actions URL query":            {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080?", 1)},
-		"Actions URL credentials":      {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
-		"Actions URL invalid port":     {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
-		"no Actions token file":        {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
-		"no control target":            {file: strings.Replace(requiredFile, "  control_target: \"runner-gateway.{namespace}.svc:8080\"\n", "", 1)},
-		"no Runner Gateway token file": {file: strings.Replace(requiredFile, "  token_file: /test/tokens/gateway\n", "", 1)},
-		"no History token file":        {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
-		"no Dispatcher target":         {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
-		"no Dispatcher token file":     {file: strings.Replace(requiredFile, "  token_file: /test/tokens/dispatcher\n", "", 1)},
-		"HTTP port out of range":       {file: requiredFile + "http_port: 70000\n"},
-		"quota of none":                {file: requiredFile + "quotas:\n  inboxes_per_account: 0\n"},
-		"debounce without a max wait":  {file: requiredFile + "notice_debounce:\n  max_wait_seconds: 0\n"},
-		"request timeout of none":      {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},
-		"Action timeout of none":       {file: requiredFile + "actions:\n  request_timeout_s: 0\n"},
-		"GitHub App without secrets":   {file: requiredFile + "github:\n  app_id: 1234\n"},
+		"unknown nested key":       {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
+		"no namespace":             {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
+		"no Actions URL":           {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
+		"Actions URL path":         {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080/v1", 1)},
+		"Actions URL query":        {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080?", 1)},
+		"Actions URL credentials":  {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
+		"Actions URL invalid port": {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
+		"no Actions token file":    {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
+		"retired Runtime proxy block without a target": {
+			file: requiredFile + "runner_gateway:\n  token_file: /test/tokens/gateway\n",
+		},
+		"retired Runtime proxy block without caller credentials": {
+			file: requiredFile + "runner_gateway:\n  control_target: environments.{namespace}.svc:8082\n",
+		},
+		"retired Runtime proxy timeout below zero": {
+			file: requiredFile + "runner_gateway:\n  control_target: environments.{namespace}.svc:8082\n  token_file: /test/tokens/gateway\n  request_timeout_s: -1\n",
+		},
+		"no History token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
+		"no Dispatcher target":        {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
+		"no Dispatcher token file":    {file: strings.Replace(requiredFile, "  token_file: /test/tokens/dispatcher\n", "", 1)},
+		"HTTP port out of range":      {file: requiredFile + "http_port: 70000\n"},
+		"quota of none":               {file: requiredFile + "quotas:\n  inboxes_per_account: 0\n"},
+		"debounce without a max wait": {file: requiredFile + "notice_debounce:\n  max_wait_seconds: 0\n"},
+		"request timeout of none":     {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},
+		"Action timeout of none":      {file: requiredFile + "actions:\n  request_timeout_s: 0\n"},
+		"GitHub App without secrets":  {file: requiredFile + "github:\n  app_id: 1234\n"},
 		"GitHub secrets without a static App setting": {
 			file: requiredFile, environ: []string{webhookSecretEnv, privateKeyEnv},
 		},

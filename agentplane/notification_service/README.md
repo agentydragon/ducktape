@@ -184,8 +184,9 @@ The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, us
 and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA.
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
 requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
-`runner_gateway` remains in the settings for rollback compatibility; the Session-keyed image no
-longer makes Runtime-proxy calls and holds no Runtime-proxy reader grant. The separate
+`runner_gateway` is retired and optional: the Session-keyed image makes no Runtime-proxy call and holds no
+Runtime-proxy reader grant, so omitting the block is the intended state. A supplied block still validates
+completely, which keeps a ConfigMap from before the cutover loadable during a rollback. The separate
 `session_dispatcher` connection pins
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`

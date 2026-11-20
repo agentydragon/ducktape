@@ -33,7 +33,6 @@ def static_values() -> dict[str, object]:
         },
         "namespace": "test",
         "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-        "runner_gateway": {"control_target": "runner-gateway.{namespace}.test:8080", "token_file": "/tokens/gateway"},
         "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
         "session_dispatcher": {"target": "dispatcher:8080", "token_file": "/tokens/dispatcher"},
     }
@@ -73,17 +72,13 @@ def test_outbound_service_svid_authentication_needs_no_token_file() -> None:
         }
 
     values["actions"] = {"url": "http://actions", "tls": client_tls(ACTIONS_URI)}
-    values["runner_gateway"] = {
-        "control_target": "runner-gateway.{namespace}.test:8080",
-        "tls": client_tls(SESSION_DISPATCHER_URI),
-    }
     values["history_service"] = {"target": "history:8080", "tls": client_tls(HISTORY_SERVICE_URI)}
     values["session_dispatcher"] = {"target": "dispatcher:8080", "tls": client_tls(SESSION_DISPATCHER_URI)}
 
     settings = Settings.model_validate(values)
 
     assert settings.actions.token_file is None
-    assert settings.runner_gateway.token_file is None
+    assert settings.runner_gateway is None
     assert settings.history_service.token_file is None
     assert settings.session_dispatcher.token_file is None
 
