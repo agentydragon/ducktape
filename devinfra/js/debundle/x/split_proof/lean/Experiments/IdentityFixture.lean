@@ -18,7 +18,7 @@ theorem program_value : program = [
   ] := by decide +kernel
 
 theorem extracted_footprints : IdentityExample.bundle.map (fun s => { s with src := "" }) = toBundle program := by
-  decide +kernel
+  rfl
 
 theorem automatically_discovered : (deriveIdentity program 1).isSome = true := by decide +kernel
 

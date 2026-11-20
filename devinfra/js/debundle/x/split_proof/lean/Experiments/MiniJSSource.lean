@@ -57,9 +57,9 @@ private def sourceIdentity (cs : List Char) : Option MStmt := do
   let (name, rest) := takeWord rest
   let '(' :: rest := rest | none
   let (param, rest) := takeWord rest
-  let ')' :: ' ' :: '{' :: ' ' :: 'r' :: 'e' :: 't' :: 'u' :: 'r' :: 'n' :: ' ' :: rest := rest | none
+  let ')' :: ' ' :: '{' :: '\n' :: ' ' :: ' ' :: 'r' :: 'e' :: 't' :: 'u' :: 'r' :: 'n' :: ' ' :: rest := rest | none
   let (returned, rest) := takeWord rest
-  let [';', ' ', '}'] := rest | none
+  let [';', '\n', '}'] := rest | none
   if ident name && ident param && returned == param then
     some ⟨[String.ofList name], .lam (String.ofList param) (.lvar (String.ofList param)), true⟩
   else none
