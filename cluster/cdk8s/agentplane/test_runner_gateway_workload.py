@@ -144,7 +144,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "protocol": "TCP",
         "targetPort": listener_ports["grpc"],
     }
-    policy = find_resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
+    policy = find_resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"]
     ingress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), port["port"])
         for rule in policy["ingress"]
@@ -165,7 +165,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
     assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) not in runner_egress
-    role = find_resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
+    role = find_resource(docs, "Role", runner_gateway.NAME)
     resources = {resource for rule in role["rules"] for resource in rule["resources"]}
     assert resources >= {
         "serviceaccounts",

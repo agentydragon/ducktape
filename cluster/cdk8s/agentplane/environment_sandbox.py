@@ -453,7 +453,7 @@ class EnvironmentSandboxTemplate(Construct):
         NetworkPolicy(
             scope,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=isolate_ingress(),
             egress=proxy_egress,
@@ -462,7 +462,7 @@ class EnvironmentSandboxTemplate(Construct):
         NetworkPolicy(
             scope,
             "environment-runtime-listener",
-            metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-listener", namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=[
                 IngressRule.from_endpoints(

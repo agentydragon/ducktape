@@ -669,7 +669,7 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 notifications.service(namespace).pods.admit(self.service.pod_port),

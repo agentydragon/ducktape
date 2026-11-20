@@ -142,7 +142,7 @@ class App(Construct):
         role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 # The app lists names to present in the operator's create form.
@@ -170,10 +170,7 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            role=role,
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -264,7 +261,7 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[IngressRule.from_gateway(self.service.pod_port)],
             egress=[

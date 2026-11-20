@@ -117,9 +117,7 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
         assert tls["key_file"]
         assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
 
-    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))[
-        "spec"
-    ]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")
         for rule in policy["egress"]

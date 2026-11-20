@@ -36,7 +36,7 @@ class PolicyControllerRbac(Construct):
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
-        role_name = NAME.removeprefix("agentplane-")
+        role_name = NAME
         own_roles = sorted(
             {
                 grant.role_ref.name
