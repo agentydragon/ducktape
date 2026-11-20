@@ -18,7 +18,6 @@ from agentplane.notification_service.settings import (
     GitHubSettings,
     NoticeDebounceSettings,
     QuotaSettings,
-    RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
 )
@@ -78,32 +77,33 @@ def test_outbound_service_svid_authentication_needs_no_token_file() -> None:
     settings = Settings.model_validate(values)
 
     assert settings.actions.token_file is None
-    assert settings.runner_gateway is None
     assert settings.history_service.token_file is None
     assert settings.session_dispatcher.token_file is None
 
 
-@pytest.mark.parametrize("server_uri", [SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI])
-def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
+def test_dispatcher_peer_pins_only_the_session_dispatcher_identity() -> None:
     tls = {
         "ca_file": "/test/ca.pem",
-        "server_uri": server_uri,
+        "server_uri": SESSION_DISPATCHER_URI,
         "cert_file": "/test/tls.crt",
         "key_file": "/test/tls.key",
         "client_uri": NOTIFICATIONS_URI,
     }
-    configured = RunnerGatewaySettings.model_validate({"control_target": "proxy.test:8082", "tls": tls})
+    configured = SessionDispatcherSettings.model_validate({"target": "dispatcher.test:8080", "tls": tls})
     assert configured.token_file is None
     assert configured.tls is not None
-    assert configured.tls.server_uri == server_uri
+    assert configured.tls.server_uri == SESSION_DISPATCHER_URI
+    for server_uri in (SANDBOX_CONTROLLER_URI, ACTIONS_URI):
+        wrong = {**tls, "server_uri": server_uri}
+        with pytest.raises(ValidationError):
+            SessionDispatcherSettings.model_validate({"target": "dispatcher.test:8080", "tls": wrong})
+
+
+def test_the_retired_runtime_proxy_peer_is_rejected() -> None:
+    values = static_values()
+    values["runner_gateway"] = {"control_target": "environments.test.svc:8082", "token_file": "/tokens/gateway"}
     with pytest.raises(ValidationError):
-        SessionDispatcherSettings.model_validate(
-            {"target": "dispatcher.test:8080", "tls": {**tls, "server_uri": SANDBOX_CONTROLLER_URI}}
-        )
-    with pytest.raises(ValidationError):
-        RunnerGatewaySettings.model_validate(
-            {"control_target": "proxy.test:8082", "tls": {**tls, "server_uri": ACTIONS_URI}}
-        )
+        Settings.model_validate(values)
 
 
 def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -> None:
