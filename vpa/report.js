@@ -120,9 +120,7 @@ function Inventory({ workloads }) {
       />
     <//>
     <${Text} size="sm" c="dimmed" aria-live="polite"
-      >Showing ${Math.min(shown, filtered.length)} of ${filtered.length}
-      matching controller templates. Omitted fields are labeled unset; they are
-      not zero usage.<//
+      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching controller templates. Omitted fields are labeled unset; they are not zero usage.`}<//
     >
     <${Table.ScrollContainer}
       minWidth=${1040}
@@ -225,10 +223,7 @@ function Report() {
         policies unless evidence justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >Cluster snapshot around 20 November 2026, 02:58 UTC · seven-day metrics
-        end ${data.history_end_utc} · inspected devel
-        ${data.source_devel_commit}. Cluster state may have moved since
-        collection.<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Cluster state may have moved since collection.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -310,21 +305,15 @@ function Report() {
           <${Title} order=${3} size="h4">Policy and disruption<//>
           <${Text} component="p"
             ><strong>Recommend / Off (${counts.vpa_modes.Off}):</strong>
-            observations only; neither requests nor limits are changed.<//
+            ${" observations only; neither requests nor limits are changed."}<//
           >
           <${Text} component="p"
-            ><strong>Initial (${counts.vpa_modes.Initial}):</strong> changes
-            apply at pod creation, with no VPA eviction.
-            ${data.vpa_policies.Initial.noContainerPolicies} have no explicit
-            container policy and therefore use the VPA default of requests and
-            limits; 4 contain an explicit request-only policy.<//
+            ><strong>Initial (${counts.vpa_modes.Initial}):</strong>
+            ${` changes apply at pod creation, with no VPA eviction. ${data.vpa_policies.Initial.noContainerPolicies} have no explicit container policy and therefore use the VPA default of requests and limits; 4 contain an explicit request-only policy.`}<//
           >
           <${Text} component="p" mb=${0}
-            ><strong>Recreate (${counts.vpa_modes.Recreate}):</strong> all 51
-            have at least one request-only policy. VPA may evict and recreate;
-            the installed updater defaults to a minimum of 2 replicas unless a
-            VPA overrides it. A singleton can still be resized on ordinary pod
-            creation.<//
+            ><strong>Recreate (${counts.vpa_modes.Recreate}):</strong>
+            ${" all 51 have at least one request-only policy. VPA may evict and recreate; the installed updater defaults to a minimum of 2 replicas unless a VPA overrides it. A singleton can still be resized on ordinary pod creation."}<//
           >
         <//>
       <//>
@@ -334,7 +323,7 @@ function Report() {
         namespaces. Request-only leaves existing limits as declared; the default
         requests-and-limits policy scales existing limits proportionally.
         Missing limits stay a separate policy decision, not an instruction to
-        create a hard cap.
+        create a hard cap. ${" "}
         <${Anchor} href=${source + "cluster/cdk8s/kyverno/policies.py#L267"}
           >Local policy and incident context<//
         >
@@ -349,28 +338,10 @@ function Report() {
     <section id="coverage">
       <${Title} order=${2} mt="xl">Where requests are missing or misleading<//>
       <${Text} component="p"
-        >Among ${counts.template_containers} regular containers in
-        ${counts.controller_templates} Deployment, StatefulSet and DaemonSet
-        templates, ${counts.template_resource_missing.requests_memory_missing}
-        omit memory requests,
-        ${counts.template_resource_missing.limits_memory_missing} omit memory
-        limits, and ${counts.template_resource_missing.limits_cpu_missing} omit
-        CPU limits. These are template fields, not admitted-pod settings; a
-        missing CPU limit is often intentional.<//
+        >${`Among ${counts.template_containers} regular containers in ${counts.controller_templates} Deployment, StatefulSet and DaemonSet templates, ${counts.template_resource_missing.requests_memory_missing} omit memory requests, ${counts.template_resource_missing.limits_memory_missing} omit memory limits, and ${counts.template_resource_missing.limits_cpu_missing} omit CPU limits. These are template fields, not admitted-pod settings; a missing CPU limit is often intentional.`}<//
       >
       <${Text} component="p"
-        >Among ${counts.active_pod_containers} regular containers in
-        ${counts.active_pods} Running or Pending pods,
-        ${counts.active_pod_resource_missing.requests_memory_missing} have no
-        admitted memory request and
-        ${counts.active_pod_resource_missing.limits_memory_missing} have no
-        memory limit. This includes
-        ${data.cnpg.instance_containers_without_request} CNPG instance
-        containers and 63 Piraeus containers; the classes are not a count of
-        independently fixable services. Init/ephemeral containers are excluded.
-        Metrics were available for
-        ${counts.metrics_covered_active_pods}/${counts.active_pods} active
-        pods.<//
+        >${`Among ${counts.active_pod_containers} regular containers in ${counts.active_pods} Running or Pending pods, ${counts.active_pod_resource_missing.requests_memory_missing} have no admitted memory request and ${counts.active_pod_resource_missing.limits_memory_missing} have no memory limit. This includes ${data.cnpg.instance_containers_without_request} CNPG instance containers and 63 Piraeus containers; the classes are not a count of independently fixable services. Init/ephemeral containers are excluded. Metrics were available for ${counts.metrics_covered_active_pods}/${counts.active_pods} active pods.`}<//
       >
       <${Text} component="p"
         >Examples at the snapshot: the Piraeus LINSTOR controller had no request
@@ -386,7 +357,7 @@ function Report() {
         namespace mode change therefore does not automatically cover PostgreSQL.
         Pilot an explicitly owned VPA in recommendation mode and verify
         admission and CNPG reconciliation; use operator-managed explicit
-        requests where that interaction is unsuitable.
+        requests where that interaction is unsuitable. ${" "}
         <${Anchor}
           href="https://github.com/cloudnative-pg/cloudnative-pg/issues/2574"
           >Upstream scale-selector feature<//
@@ -424,7 +395,7 @@ function Report() {
         reservations. This does not establish that their headroom is usable by a
         particular pod. A previous Grocy scheduling investigation recorded 97%
         of HIL worker memory requested against 65–78% usage; that is historical,
-        not the current snapshot.
+        not the current snapshot. ${" "}
         <${Anchor} href=${source + "cluster/docs/plan.md#L166"}
           >Recorded investigation<//
         ><//
@@ -442,7 +413,7 @@ function Report() {
             failed startup for six hours. The policy now defaults auto
             namespaces to request-only. This is evidence for a targeted
             exception, not a reason to replace every existing
-            requests-and-limits policy.
+            requests-and-limits policy. ${" "}
             <${Anchor} href=${source + "cluster/cdk8s/kyverno/policies.py#L267"}
               >Policy rationale<//
             ><//
@@ -455,7 +426,7 @@ function Report() {
             observed use; the configured limit was subsequently raised. Changing
             an existing policy to request-only can restore a lower template
             limit at the next creation. Preserve existing control unless usage,
-            startup and recovery evidence supports a change.
+            startup and recovery evidence supports a change. ${" "}
             <${Anchor} href=${source + "cluster/cdk8s/forgejo/app.py#L287"}
               >Forgejo sizing note<//
             ><//
@@ -467,7 +438,7 @@ function Report() {
             >VPA replacement of Forgejo pods refreshed stale SeaweedFS mounts
             during a past incident. It was an effective recovery, not evidence
             that periodic or concurrent evictions are safe. Replica topology,
-            PDBs and storage behavior need review.
+            PDBs and storage behavior need review. ${" "}
             <${Anchor}
               href=${source + "cluster/docs/lessons_learned/2026_08_31_forgejo_seaweedfs_fuse_coherence_recurrence.md#recovery-and-current-limitation"}
               >Incident<//
@@ -480,7 +451,7 @@ function Report() {
             >After an OOM at 256 MiB, its limit rose to 768 MiB. Its previous
             observed working-set peak was 425 MiB against a 128 MiB request.
             Request-only VPA now sizes the request and is allowed to restart its
-            single replica; mirroring can pause during replacement.
+            single replica; mirroring can pause during replacement. ${" "}
             <${Anchor} href=${github + "pull/17979"}>Deployed change<//><//
           ><//
         >
@@ -522,6 +493,7 @@ function Report() {
             individually, including node fit, startup and rollback. GitHub does
             not automatically redeliver failed webhook deliveries, so do not
             make CDviz auto-evictable until delivery recovery is verified.
+            ${" "}
             <${Anchor}
               href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks"
               >GitHub delivery behavior<//
@@ -589,7 +561,7 @@ function Report() {
             memory-only VPA for those workloads, leaving CPU to HPA, and test
             any CPU-based combination against upstream guidance. The separate
             KEDA VM pool uses an external metric and needs its own
-            operator-specific assessment.
+            operator-specific assessment. ${" "}
             <${Anchor}
               href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/known-limitations.md"
               >VPA limitations<//
@@ -644,26 +616,22 @@ function Report() {
         constraints, not today’s usage. No cluster resources were changed to
         produce this report.<//
       >
-      <${Text} component="p"
+      <${Group} gap="md" my="sm"
         ><${Anchor}
           href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/quickstart.md"
           >VPA v1.7.1 modes<//
         >
-        ·
         <${Anchor}
           href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/known-limitations.md"
           >Known limitations<//
         >
-        ·
         <${Anchor}
           href="https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/"
           >Pod QoS and eviction<//
         >
-        ·
         <${Anchor} href=${source + "cluster/cdk8s/namespaces.py"}
           >Namespace configuration<//
         >
-        ·
         <${Anchor} href=${github + "issues/17987"}>ntfy replica follow-up<//><//
       >
       <${Text} size="sm" c="dimmed"
