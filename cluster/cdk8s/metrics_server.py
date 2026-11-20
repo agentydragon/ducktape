@@ -27,6 +27,20 @@ def chart(app: App) -> Chart:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         values={
+            "replicas": 2,
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+            "affinity": {
+                "podAntiAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": [
+                        {
+                            "labelSelector": {
+                                "matchLabels": {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": NAME}
+                            },
+                            "topologyKey": "kubernetes.io/hostname",
+                        }
+                    ]
+                }
+            },
             # Talos-specific configuration
             "args": ["--kubelet-insecure-tls", "--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname"],
             "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},

@@ -27,9 +27,21 @@ spec:
       retries: 3
   interval: 30m
   values:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: metrics-server
+                app.kubernetes.io/name: metrics-server
+            topologyKey: kubernetes.io/hostname
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    replicas: 2
     resources:
       limits:
         cpu: 100m
