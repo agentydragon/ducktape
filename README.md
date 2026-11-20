@@ -75,6 +75,9 @@ controls. Inspect the screenshots for meaningful bars, readable labels and retai
 visual distinctions; successful browser assertions alone are insufficient.
 A presentation refresh must retain the original measurement/source
 window and must not imply that old findings were remeasured.
+For reliability snapshots, set the HTML’s `evidenceSha` to the final
+`evidence.json` SHA-256 in `manifest.json`. The report uses it in the
+request URL and verifies the response before rendering.
 
 ## Reviewing paired VM runs
 
