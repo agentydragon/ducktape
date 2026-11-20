@@ -84,7 +84,7 @@ const cutoverProof = {
   "require-gitops":
     "It is audit-only today. Decide whether to retain its signals and verify subject and operator exemptions.",
   "restrict-agent-gateway-routes":
-    "Prove every served kind and version is denied by native admission in both sandboxes and accepted in the operator namespace.",
+    "After pruning Kyverno, native admission denied all 20 sandbox dry runs and allowed all 10 operator creates and the operator update.",
   "require-secret-store-conditions":
     "Preserve enforced admission for private and public sources and separately replace the existing-object background scan.",
   "agentplane-staging-launcher-relay":
@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=retirement-20261120-1100")
+    fetch("./evidence.json?v=retirement-20261120-1115")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -229,8 +229,11 @@ function Report() {
   const waveTime = wave.observed_at_utc.slice(11, 16);
   const progress = data.retirement_progress;
   const progressTime = progress.observed_at_utc.slice(11, 16);
+  const cutover = data.gateway_cutover;
+  const cutoverTime = cutover.observed_at_utc.slice(11, 16);
+  const nativeGatewayPolicy = "restrict-agent-gateway-routes";
   const policyState = {
-    "restrict-agent-gateway-routes": progress.retirement.gateway.state,
+    [nativeGatewayPolicy]: "Retired",
     "default-revision-history-limit":
       progress.retirement.revision_history.state,
   };
@@ -265,12 +268,13 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime}, ${waveTime} and ${progressTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime}, ${waveTime}, ${progressTime} and ${cutoverTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
         ><${Anchor} href="#architecture">Policy refactor<//
+        ><${Anchor} href="#kyverno-retirement">Kyverno retirement<//
         ><${Anchor} href="#remaining-work">Remaining work<//
         ><${Anchor} href="#batches">Rollout evidence<//
         ><${Anchor} href="#inventory">Search inventory<//><//
@@ -503,13 +507,15 @@ function Report() {
           <//>
         <//>
       <//>
-      <${Title} order=${3} size="h4" mt="lg">What Kyverno still owns<//>
+      <${Title} id="kyverno-retirement" order=${3} size="h4" mt="lg"
+        >Kyverno retirement status<//
+      >
       <${Text} component="p">
         The 03:36 UTC inventory found seven ClusterPolicies and two namespaced
-        CleanupPolicies. At ${progressTime} UTC the cluster still had six
-        ClusterPolicies and two CleanupPolicies after the VPA default removal.
-        The table tracks the cutover status of those live policies.
-        Operator-created Pods need coverage from their owner or admission.
+        CleanupPolicies. Removing the VPA default left six ClusterPolicies at
+        11:00 UTC. After the Gateway cutover, five ClusterPolicies and two
+        CleanupPolicies were live at ${cutoverTime} UTC. Operator-created Pods
+        still need coverage from their owner or admission.
       <//>
       <${Table.ScrollContainer}
         minWidth=${980}
@@ -520,10 +526,10 @@ function Report() {
         <${Table} striped withTableBorder verticalSpacing="sm">
           <${Table.Thead}
             ><${Table.Tr}
-              ><${Table.Th}>Live policy<//><${Table.Th}>State<//
+              ><${Table.Th}>Policy<//><${Table.Th}>State<//
               ><${Table.Th}>Current responsibility<//
               ><${Table.Th}>Candidate direction<//
-              ><${Table.Th}>Before removal<//><//
+              ><${Table.Th}>Proof or remaining gate<//><//
             ><//
           >
           <${Table.Tbody}>
@@ -534,7 +540,9 @@ function Report() {
                   html`<${Table.Tr} key=${p.name}>
                     <${Table.Td}><${Code}>${p.name}<//><//
                     ><${Table.Td}>${policyState[p.name] ?? "Open"}<//
-                    ><${Table.Td}>${p.role}<//><${Table.Td}>${p.direction}<//
+                    ><${Table.Td}>${p.role}<//
+                    ><${Table.Td}
+                      >${p.name === nativeGatewayPolicy ? "Native ValidatingAdmissionPolicy and Deny binding." : p.direction}<//
                     ><${Table.Td}>${cutoverProof[p.name]}<//>
                   <//>`,
               )}
@@ -560,17 +568,15 @@ function Report() {
         <//>
       <//>
       <${Text} component="p">
-        The native Gateway policy is ready for review. It adds a Kubernetes Deny
-        binding while Kyverno stays in place. The baseline dry runs returned 20
-        Kyverno denials in the two sandbox namespaces and 10 accepts in the
-        operator namespace across all served kind/version pairs. The retirement
-        draft waits for the native policy to deny those same requests in
-        production with both operator admission and route updates working.
+        The Gateway cutover completed at ${cutoverTime} UTC. Flux pruned the
+        Kyverno rule and the native Deny binding covered all ten served
+        kind/version pairs in both sandbox namespaces. Operator creates and an
+        update dry run passed. Both sandboxes held zero matching objects.
         ${" "}<${Anchor} href=${progress.prs[18153].html_url}
           >Native Gateway policy<//
         >
         ${" · "}<${Anchor} href=${progress.prs[18156].html_url}
-          >Gated Kyverno removal<//
+          >Kyverno removal<//
         >
       <//>
       <${Text} component="p">

@@ -19223,5 +19223,34 @@
         "live_writes_performed": false
       }
     }
+  },
+  "gateway_cutover": {
+    "observed_at_utc": "2026-11-20T11:15:36.941613+00:00",
+    "source_devel_commit": "81d951883be6e596018a9f890d2393a0eb23238d",
+    "native_pr_merged_at_utc": "2026-11-20T11:10:27Z",
+    "kyverno_removal_pr_merged_at_utc": "2026-11-20T11:13:59Z",
+    "native_policy_status": "Ready; observed generation 1 with no type-check warnings",
+    "native_binding_action": "Deny",
+    "kyverno_policies_flux_ready": true,
+    "kyverno_policies_flux_digest": "7d6a2f748057f287aab276396f88f0b3f75ecd5315e508d820712fcade7be796",
+    "pruned_policy": "restrict-agent-gateway-routes",
+    "native_denials_after_prune": 20,
+    "allowed_operator_creates_after_prune": 10,
+    "allowed_operator_update_after_prune": true,
+    "stored_sandbox_objects": {
+      "claude-sandbox": 0,
+      "haku-sandbox": 0
+    },
+    "other_live_cluster_policies": [
+      "agentplane-staging-launcher-relay",
+      "default-disable-service-links",
+      "default-revision-history-limit",
+      "require-gitops",
+      "require-secret-store-conditions"
+    ],
+    "live_cleanup_policies": [
+      "claude-sandbox/sandbox-janitor",
+      "thrive-scraper/reap-wedged-jobs"
+    ]
   }
 }
