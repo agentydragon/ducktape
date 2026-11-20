@@ -16,6 +16,9 @@ inductive Operation where
   | declareBinding (name : String) (value : Nat)
   | addBinding (target source : String)
   | observeBinding (name : String)
+  | readBinding (name : String)
+  | returnBinding (name : String)
+  | returnUndefined
   deriving DecidableEq, Repr
 
 structure ExecutionState (α : Type) where
@@ -23,6 +26,7 @@ structure ExecutionState (α : Type) where
   events : List Observation
   replies : List (Option α)
   error : Option α
+  returns : List (Option Nat)
   deriving DecidableEq, Repr
 
 def lookupBinding : List (String × Nat) → String → Option Nat
@@ -80,6 +84,13 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
     | .observeBinding name => do
       let value ← lookupBinding state.bindings name
       pure (recordObservation state (.number value))
+    | .readBinding name => do
+      let _ ← lookupBinding state.bindings name
+      pure state
+    | .returnBinding name => do
+      let value ← lookupBinding state.bindings name
+      pure { state with returns := state.returns ++ [some value] }
+    | .returnUndefined => some { state with returns := state.returns ++ [none] }
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

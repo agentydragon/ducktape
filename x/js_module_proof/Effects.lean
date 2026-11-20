@@ -74,7 +74,7 @@ theorem checked_trace_sound (modules : List EffectModule) (entry : Nat) (events 
 /- Replies are supplied by the host in call order. `some error` throws; an
    exhausted reply list means subsequent calls return normally. -/
 def runEffects {α : Type} (events : List String) (replies : List (Option α)) : List String × Option α :=
-  match runExecution ⟨[], [], replies, none⟩ (events.map Operation.recordText) with
+  match runExecution ⟨[], [], replies, none, []⟩ (events.map Operation.recordText) with
   | some state => (state.events.filterMap (fun event => match event with | .text value => some value | .number _ => none), state.error)
   | none => ([], none)
 

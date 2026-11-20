@@ -91,7 +91,7 @@ actual output imports and reexports, rather than assuming those in the spec.
 
 This subset supports up to 20 statements and 12 modules: `let` declarations
 initialized with nonnegative safe integers, parameterless functions with a
-single `target += source` statement, calls to those functions, and
+single `target += source` or `return binding` statement, calls to those functions, and
 `globalThis.record(binding)`. Public exports must be functions. Imports and
 exports use unaliased names, source declarations have unique names, function
 writes must target a local binding, and each module preserves its assigned
@@ -109,8 +109,10 @@ accepted graph. This is a checked sufficient condition on the restricted AST,
 not a proof of the Acorn conversion or ECMAScript's linking rules. The module
 scheduler and the shared named-cell
 execution state then model initialization and future exported calls. A safe
-result proves equal modeled initialization and matching execution for any
-finite sequence of subsequent calls. An unsafe result includes a Lean proof of
+result proves equal modeled initialization and matching return values and
+state for any finite sequence of subsequent calls. Function return values are
+modeled separately from host-recorded events; ignored top-level call results
+are not included in the return trace. An unsafe result includes a Lean proof of
 different modeled initialization and a Node witness. Semantically equivalent
 rewrites beyond this AST subset can return `unknown`.
 
@@ -189,12 +191,13 @@ modified output.
 The multiple-binding test exercises the safe and unsafe assignments, replays
 their certificates, rejects wrong imports, changed bodies and missing statements,
 and accepts another program with more declarations, functions and calls.
-An additional 30-case sharded corpus constructs emitted files independently of
+An additional 36-case sharded corpus constructs emitted files independently of
 the generator and varies declaration and import order, values, initialization
 order and malformed outputs. It compares proved cases and unsafe witnesses with
-Node, and checks that unsupported aliases, cycles, temporal dead zone reads,
-and writes through imports are not proved safe. Exported calls in this subset
-return no values and cannot expose later cell values without a reader function.
+Node, including return values after calls, and checks that unsupported aliases,
+cycles, temporal dead zone reads, and writes through imports are not proved
+safe. For safe and unsafe cases, Lean also checks the concrete Node-observed
+event and return traces directly.
 
 BuildBuddy includes untracked files in its patch. Use a clean or sparse
 checkout if the working checkout contains unrelated untracked material.

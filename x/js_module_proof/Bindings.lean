@@ -2,6 +2,7 @@
 inductive BindingStmt where
   | variable (name : String) (initial : Nat)
   | function (name target source : String)
+  | reader (name source : String)
   | call (name : String)
   | record (name : String)
   deriving DecidableEq, Repr
@@ -22,6 +23,7 @@ structure BindingModule where
 def declaredName : BindingStmt → Option String
   | .variable name _ => some name
   | .function name _ _ => some name
+  | .reader name _ => some name
   | .call _ => none
   | .record _ => none
 
@@ -36,6 +38,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
   | some statement => match statement with
     | .variable _ _ => true
     | .function _ _ _ => false
+    | .reader _ _ => false
     | .call _ => false
     | .record _ => false
 
@@ -45,6 +48,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
   | some statement => match statement with
     | .variable _ _ => false
     | .function _ _ _ => true
+    | .reader _ _ => true
     | .call _ => false
     | .record _ => false
 
@@ -69,6 +73,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
     isVariable source target && isVariable source sourceName &&
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
+  | .reader _ sourceName => isVariable source sourceName && visible modules index sourceName
   | .call name => isFunction source name && visible modules index name
   | .record name => isVariable source name && visible modules index name
 
@@ -109,6 +114,7 @@ def resolveReference (modules : List BindingModule) (index : Nat) (name : String
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []
   | .function _ target source => [target, source]
+  | .reader _ source => [source]
   | .call name => [name]
   | .record name => [name]
 
@@ -206,23 +212,30 @@ def asEffectModules (modules : List BindingModule) : List EffectModule :=
   modules.map (fun module =>
     ⟨module.imports.map BindingImport.dependency, [], [], module.assignment.map toString⟩)
 
+/- Top-level calls discard the result, while exported calls record either a
+   returned number or undefined separately from host-recorded events. -/
+def functionOperations (source : List BindingStmt) (name : String) (observeReturn : Bool) : Option (List Operation) :=
+  match findDefinition source name with
+  | none => none
+  | some statement => match statement with
+    | .function _ target sourceName =>
+      some (if observeReturn then [.addBinding target sourceName, .returnUndefined] else [.addBinding target sourceName])
+    | .reader _ sourceName => some [if observeReturn then .returnBinding sourceName else .readBinding sourceName]
+    | .variable _ _ => none
+    | .call _ => none
+    | .record _ => none
+
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
   match statement with
   | .variable name initial => some [.declareBinding name initial]
   | .function _ _ _ => some []
+  | .reader _ _ => some []
   | .record name => some [.observeBinding name]
-  | .call name =>
-    match findDefinition source name with
-    | none => none
-    | some statement => match statement with
-      | .function _ target sourceName => some [.addBinding target sourceName]
-      | .variable _ _ => none
-      | .call _ => none
-      | .record _ => none
+  | .call name => functionOperations source name false
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do
   let operations ← statements.mapM (bindingOperations source)
-  runExecution ⟨[], [], [], none⟩ operations.flatten
+  runExecution ⟨[], [], [], none, []⟩ operations.flatten
 
 /- Binding allocation order is not observable in this subset. Compare cells
    in source declaration order, so independent module ordering is permitted. -/
@@ -230,6 +243,7 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
   let names := source.filterMap (fun statement => match statement with
     | .variable name _ => some name
     | .function _ _ _ => none
+    | .reader _ _ => none
     | .call _ => none
     | .record _ => none)
   let bindings ← names.mapM (fun name => (lookupBinding state.bindings name).map (fun value => (name, value)))
@@ -253,7 +267,7 @@ def outputBindingState (source : List BindingStmt) (modules : List BindingModule
   canonicalBindingState source state
 
 def publicFunctionTable (statements : List BindingStmt) (names : List String) : Option (List (String × List Operation)) :=
-  names.mapM (fun name => (bindingOperations statements (.call name)).map (fun ops => (name, ops)))
+  names.mapM (fun name => (functionOperations statements name true).map (fun ops => (name, ops)))
 
 def runExportedCalls (table : List (String × List Operation)) (state : ExecutionState Unit) (calls : List String) : Option (ExecutionState Unit) := do
   let operations ← calls.mapM (fun name => (table.find? (fun entry => entry.1 == name)).map Prod.snd)

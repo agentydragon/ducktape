@@ -7,7 +7,7 @@ def decodeCombined (initial : Nat) (operation : String) : Option Operation :=
 
 def sourceCombined (initial : Nat) (operations : List String) : Option (ExecutionState Unit) := do
   let operations ← operations.mapM (decodeCombined initial)
-  runExecution ⟨[], [], [], none⟩ operations
+  runExecution ⟨[], [], [], none, []⟩ operations
 
 def outputCombined (initial : Nat) (modules : List EffectModule) (entry : Nat) : Option (ExecutionState Unit) := do
   let operations ← effectTrace modules entry
