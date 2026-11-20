@@ -775,9 +775,9 @@ http_file(
 )
 
 # Gmail's and Google Calendar's official multicolor product icon SVGs — Google's own versioned
-# gstatic-hosted assets, the same ones Google itself serves for these apps' icons. haku-console's
-# tool-call preview widgets embed them (as build-time-generated data URIs; see
-# haku/console/frontend/BUILD.bazel) to mark a link that opens in that app. Versioned URL, so
+# gstatic-hosted assets, the same ones Google itself serves for these apps' icons. Agentplane's
+# Gmail and Calendar Action views embed them (as build-time-generated data URIs; see
+# agentplane/app/frontend/ui/BUILD.bazel) before a link that opens in that app. Versioned URL, so
 # content is expected stable; bump the version path + sha256 if Google revises the mark.
 http_file(
     name = "gmail_icon_svg",

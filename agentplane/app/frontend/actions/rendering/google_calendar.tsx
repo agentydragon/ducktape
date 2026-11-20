@@ -7,6 +7,7 @@ import {
   GoogleCalendarEventScope,
   type GoogleCalendarEventTime,
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
+import { GoogleCalendarIcon } from "../../ui/brand_icons";
 import { getGoogleCalendarPreview } from "../client";
 import { definePreview, defineReceiptPreview, type PreviewProps } from "./entry";
 import {
@@ -116,6 +117,7 @@ function CalendarName({ id, name }: { id?: string; name?: string | null }): JSX.
   url.searchParams.set("cid", btoa(String.fromCharCode(...bytes)).replace(/=+$/, ""));
   return (
     <Anchor href={url.href} target="_blank" rel="noreferrer" inherit>
+      <GoogleCalendarIcon />
       {name}
     </Anchor>
   );
@@ -168,6 +170,7 @@ function EventName({ id, name, link }: { id: string; name?: string | null; link?
   const title = name?.trim() ? name : <Code>{id}</Code>;
   return href ? (
     <Anchor href={href} target="_blank" rel="noreferrer" inherit>
+      <GoogleCalendarIcon />
       {title}
     </Anchor>
   ) : (
