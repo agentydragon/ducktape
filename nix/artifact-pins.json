@@ -65,8 +65,8 @@
       "sha256": "tUbJrs5va37UPYm1Ni+hoZlltTXymyjVkix/H9Qdp4o="
     },
     "skill-cluster_health": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-caba92a66e7a/cluster_health.skill",
-      "sha256": "yrqSpm56ltNQ9HNLZUM9ZEMgOWXei/sABb1OrgpUomA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-a7f98120a8a1/cluster_health.skill",
+      "sha256": "p/mBIKihJYghnsgd+uFEN9lGpGCiUb6YopI6hepdfe8="
     },
     "skill-cnpg_region_switch": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cnpg_region_switch-72b8d76d3f10/cnpg_region_switch.skill",
