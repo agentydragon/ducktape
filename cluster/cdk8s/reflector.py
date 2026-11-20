@@ -30,7 +30,19 @@ def mirror_annotations(namespaces: Sequence[str]) -> dict[str, str]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=Vpa.AUTO,
+        annotations={
+            namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
+                '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+            ),
+            # Allow the updater to restart Reflector's single replica when its recommendation changes.
+            "goldilocks.fairwinds.com/vpa-min-replicas": "1",
+        },
+    )
     helm_release(
         chart,
         NAME,
