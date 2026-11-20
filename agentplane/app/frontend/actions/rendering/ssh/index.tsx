@@ -1,7 +1,6 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { definePreview } from "../entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { defineResultPreview } from "../result_entry";
 import { execPresentation } from "./exec";
@@ -42,7 +41,7 @@ export const sshRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     "list_targets",
     {
       fallbackLabel: "List SSH targets",
-      details: { arguments: definePreview(listArguments, () => null), result: listTargets },
+      details: { arguments: { schema: listArguments, render: () => null }, result: listTargets },
       compactCardExpands: expandsForRejectedArguments(listArguments),
     },
   ],

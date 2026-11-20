@@ -258,7 +258,7 @@ const sandboxTemplatePresentation: ActionPresentation = {
     </Text>
   )),
   details: {
-    arguments: definePreview(templateArgs, () => null),
+    arguments: { schema: templateArgs, render: () => null },
     nativeResult: defineResultPreview(podTemplate, ({ result }) => (
       <Stack gap="xs">
         {result.spec.containers.map((container) => (
