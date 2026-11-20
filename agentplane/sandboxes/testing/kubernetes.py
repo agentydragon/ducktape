@@ -17,7 +17,6 @@ from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
 from agentplane.sandboxes.testing.identity import SandboxIdentity
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import workload_uri
@@ -50,11 +49,6 @@ class SandboxCluster:
         return SandboxIdentity(namespace=self.namespace, name=self.name, uid=self.uid)
 
     @property
-    def owner(self) -> ServiceAccountRef:
-        """The Sandbox's own ServiceAccount, which its runner Pod runs as."""
-        return ServiceAccountRef(namespace=self.namespace, name=self.name)
-
-    @property
     def destination(self) -> SandboxDestination:
         return SandboxDestination(
             owner=ServiceAccount(namespace=self.namespace, name=self.name),
@@ -77,17 +71,6 @@ class SandboxCluster:
         """The Sandbox as stored."""
         return await self.custom_objects.get_namespaced_custom_object(
             GROUP, VERSION, self.namespace, sandbox_resource.SANDBOXES_PLURAL, self.name
-        )
-
-    async def patch_sandbox(self, patch: dict[str, Any]) -> None:
-        await self.custom_objects.patch_namespaced_custom_object(
-            GROUP,
-            VERSION,
-            self.namespace,
-            sandbox_resource.SANDBOXES_PLURAL,
-            self.name,
-            patch,
-            _content_type=_MERGE_PATCH,
         )
 
     async def patch_sandbox_status(self, patch: dict[str, Any]) -> None:
