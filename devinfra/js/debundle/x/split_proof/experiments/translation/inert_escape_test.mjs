@@ -439,13 +439,56 @@ for (const [name, code] of [
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 }
 
-// Nested operations are not classified from an apparently simple outer record.
+// A literal array may cross an observed primitive initializer. Both the
+// emitted program and the independent translation checker must agree.
+{
+  const code = `const x = 1;\nconst a = ["v",, true];\nfunction see() { return [x, a]; }\nconsole.log(see()[0], see()[1][0], 1 in see()[1]);`;
+  const dir = path.join(temp, "literal_array");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "literal_array.mjs");
+  const input = path.join(temp, "literal_array-ast.json");
+  const spec = path.join(temp, "literal_array-spec.json");
+  const certificate = path.join(temp, "literal_array-generated.lean");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const emitted = run(process.env.LOWERSPLIT, [input, spec, dir, "--lean", certificate]);
+  assert.equal(emitted.status, 0, `${emitted.stdout}\n${emitted.stderr}`);
+  assert.match(readFileSync(certificate, "utf8"), /nonReentrant := true/);
+  const before = run(process.execPath, [source]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.equal(after.status, 0, after.stderr);
+  assert.equal(after.stdout, before.stdout);
+  const bundle = path.join(temp, "literal_array-bundle.json");
+  const tree = path.join(temp, "literal_array-tree.json");
+  const cert = path.join(temp, "literal_array-cert.json");
+  for (const args of [
+    [frontend, "bundle", source, "--out", bundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
+    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
+  ]) {
+    const result = run(process.execPath, args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+  assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+}
+
+// Nested operations are not classified from an apparently simple outer record or array.
 for (const [name, code] of [
   ["record_identifier", `const v = 1;\nconst obj = { value: v };\nconsole.log(obj);`],
   ["record_computed", `const obj = { [String(1)]: 2 };\nconsole.log(obj);`],
   ["record_spread", `const obj = { ...{x:1} };\nconsole.log(obj);`],
   ["record_getter", `const obj = { get x() { return 1; } };\nconsole.log(obj);`],
   ["record_proto", `const obj = { __proto__: null };\nconsole.log(obj);`],
+  ["array_identifier", `const v = 1;\nconst arr = [v];\nconsole.log(arr);`],
+  ["array_spread", `const arr = [...[]];\nconsole.log(arr);`],
+  ["array_call", `const arr = [Number(1)];\nconsole.log(arr);`],
+  ["array_regex", `const arr = [/x/];\nconsole.log(arr);`],
 ]) {
   const dir = path.join(temp, name);
   mkdirSync(dir, { recursive: true });

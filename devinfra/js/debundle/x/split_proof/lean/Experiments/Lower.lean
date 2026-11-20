@@ -324,6 +324,20 @@ def literalRecordConstant (s : Json) : Bool :=
         (validName || validLiteral) && typ value == "Literal" &&
         (lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:")
 
+/-- A fresh array containing only primitive literals and holes does not invoke
+user code or throw, excluding resource exhaustion. Its allocation still counts
+as an effect, and the frontend's source representation remains trusted. -/
+def literalArrayConstant (s : Json) : Bool :=
+  let ds := items (fld s "declarations")
+  let d := ds[0]?.getD Json.null
+  let init := fld d "init"
+  typ s == "VariableDeclaration" && str (fld s "kind") == "const" && ds.size == 1 &&
+    typ (fld d "id") == "Identifier" && typ init == "ArrayExpression" &&
+    (items (fld init "elements")).all fun e =>
+      let lit := str (fld e "lit")
+      isNull e || (typ e == "Literal" &&
+        (lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:"))
+
 /-! ## Top-level statements -/
 
 partial def topDefs (s : Json) : List String :=
@@ -569,7 +583,7 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     -- that escaped earlier and runs indirectly before this binding initializes.
     let observedInert := t.inert && !t.hoisted && !unobserved
     let observedInit := observedInert && primitiveConstant t.source
-    let nonReentrant := directArrowConstant t.source || literalRecordConstant t.source
+    let nonReentrant := directArrowConstant t.source || literalRecordConstant t.source || literalArrayConstant t.source
     -- Even a syntactically inert eager identifier read can throw (for
     -- example by reading a lexical binding in its temporal dead zone). If it
     -- throws, an escaped observer may see which earlier bindings initialized.
