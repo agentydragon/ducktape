@@ -40,7 +40,7 @@ from agentplane.egress.platform_routes import (
     PlatformRoutes,
     TLSConnectRouteTransport,
 )
-from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
+from agentplane.egress.resources import CREDENTIALS_PLURAL, placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
@@ -210,7 +210,7 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
             "spec": {
                 "source": {"secretRef": {"name": _CONTRACT_CREDENTIAL, "key": "key"}},
                 "description": "a test credential",
-                "targets": [{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+                "targets": [{"header": "x-buildbuddy-api-key", "method": "wholeValue"}],
             },
         },
         POLICY_SETS_PLURAL: {

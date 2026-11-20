@@ -16,7 +16,6 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import CREDENTIALS_PLURAL
 from agentplane.policy_sets import FLUX_KUSTOMIZATION_LABEL, POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
@@ -74,19 +73,6 @@ class SandboxNamespace:
         """The ServiceAccount of this name here, which a Sandbox of the name runs as."""
         return ServiceAccountRef(namespace=self.name, name=name)
 
-    async def read(self, plural: str, name: str) -> dict[str, Any]:
-        return await self.custom_objects.get_namespaced_custom_object(GROUP, VERSION, self.name, plural, name)
-
-    async def objects(self, plural: str) -> list[dict[str, Any]]:
-        listed = await self.custom_objects.list_namespaced_custom_object(GROUP, VERSION, self.name, plural)
-        return cast(list[dict[str, Any]], listed["items"])
-
-    async def names(self, plural: str) -> set[str]:
-        return {item["metadata"]["name"] for item in await self.objects(plural)}
-
-    async def pods(self) -> list[k8s_client.V1Pod]:
-        return cast(list[k8s_client.V1Pod], (await self.core_v1.list_namespaced_pod(self.name)).items)
-
     async def patch(self, plural: str, name: str, body: dict[str, Any]) -> dict[str, Any]:
         """A merge patch of the object; its `status` is the status subresource's, which this leaves alone."""
         return cast(
@@ -103,11 +89,6 @@ class SandboxNamespace:
             await self.custom_objects.patch_namespaced_custom_object_status(
                 GROUP, VERSION, self.name, plural, name, {"status": status}, _content_type=_MERGE_PATCH
             ),
-        )
-
-    async def delete(self, plural: str, name: str) -> None:
-        await self.custom_objects.delete_namespaced_custom_object(
-            GROUP, VERSION, self.name, plural, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def _create(self, plural: str, kind: str, name: str, spec: dict[str, Any], **metadata: Any) -> dict[str, Any]:
@@ -239,20 +220,6 @@ class SandboxNamespace:
     async def egress_policy_set(self, name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
         """A PolicySet holding only `egress` rules, given without their `type`."""
         return await self.policy_set(name, [{"type": "egress", **rule} for rule in rules])
-
-    async def action_policy_set(self, name: str, policies: list[dict[str, Any]]) -> dict[str, Any]:
-        """A PolicySet holding one `action_auto_approve` rule per policy."""
-        return await self.policy_set(name, [{"type": "action_auto_approve", "policy": policy} for policy in policies])
-
-    async def egress_credential(
-        self, name: str, *, source: dict[str, Any], description: str, targets: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        return await self._create(
-            CREDENTIALS_PLURAL,
-            "EgressCredential",
-            name,
-            {"source": source, "description": description, "targets": targets},
-        )
 
     async def policy_binding(
         self,
