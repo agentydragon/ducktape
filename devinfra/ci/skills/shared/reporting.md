@@ -8,6 +8,15 @@ show the gap and date any retained baseline. Quantify the impact of a driver or
 proposed fix in PR terms, such as minutes per affected head or reruns per week.
 Check recommendations against current source, routing and landed fixes.
 
+A landed change can still be an open measurement question. Keep a compact view
+after the PR overview while the reader needs to judge its benefit, recurrence
+or rollout safety. Show the affected PRs or tests, the baseline, and comparable
+post-change observations so far. For a flake fix, for example, report failures
+per fresh execution on both sides. Include the exposure or observation window
+needed for a decision and what result would warrant action. Update that view
+in place. Once the question is answered or ceases to affect a decision, fold
+the result into the current findings and move supporting history into disclosure.
+
 ## Presentation
 
 Before changing a report, read the current `gh-pages` root `README.md`, shared
