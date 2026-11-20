@@ -422,7 +422,7 @@ async def _proxy_request(
     # Parse response
     try:
         response_body = upstream_response.json()
-    except Exception:
+    except ValueError:
         response_body = None
 
     # Log the request/response
