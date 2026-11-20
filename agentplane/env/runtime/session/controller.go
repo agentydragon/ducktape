@@ -94,7 +94,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		for _, slot := range []**oneoff.Operation{&s.halting, &s.sealing} {
 			s.takeOperation(slot)
 		}
-		current = LifecycleStatus{EnvironmentGeneration: desiredState.Generation, SetupOperationID: current.SetupOperationID}
+		current = LifecycleStatus{EnvironmentGeneration: desiredState.Generation}
 	} else if current.EnvironmentGeneration != desiredState.Generation {
 		// A shutdown retry keeps its settled halt and process stop. Only the
 		// seal proof must be reconstructed for the new generation.
@@ -109,36 +109,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.PreFenceSettled = false
 	}
 	current.AdmissionClosed = s.admissionClosed()
-	if op, done := s.takeOperation(&s.setupJob); done {
-		if current.SetupOperationID == "" {
-			current.SetupOperationID = op.ID()
+	if setupErr := s.advanceSetup(); setupErr != nil {
+		current.Error = setupErr.Error()
+		if err := write(); err != nil {
+			return err
 		}
-		if op.Err() != nil {
-			current.Error = op.Err().Error()
-			s.deps.fail(op.Err())
-			if err := write(); err != nil {
-				return err
-			}
-			return op.Err()
-		}
-	}
-	if input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING && current.SetupOperationID == "" {
-		s.mu.Lock()
-		script, job := string(s.record.SetupScript), s.setupJob
-		s.mu.Unlock()
-		if script != "" && job == nil {
-			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
-			if op != nil {
-				current.SetupOperationID = op.ID()
-			}
-			if startErr != nil {
-				current.Error = startErr.Error()
-				return write()
-			}
-			if err := write(); err != nil {
-				return err
-			}
-		}
+		return setupErr
 	}
 	if op, done := s.takeOperation(&s.preparation); done {
 		// The operation revision can arrive before the worker refreshes the snapshot.

@@ -5,11 +5,38 @@ import (
 	"errors"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"go.uber.org/zap"
 )
 
-// runSetup performs one claimed script operation. The Session controller owns
-// whether it runs; cancellation of an admission or preparation cannot cancel it.
+// The retained reservation admits setup before lifecycle reconciliation. Keep
+// the claim for the lifetime of this owner, even if setup cannot journal an outcome.
+func (s *Session) advanceSetup() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.setupDone == nil && s.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		script := string(s.record.SetupScript)
+		done := make(chan struct{})
+		s.setupDone = done
+		s.work.Go(func() {
+			defer close(done)
+			if err := s.runSetup(s.deps.ctx, script); err != nil {
+				s.deps.fail(err)
+				s.mu.Lock()
+				s.setupErr = err
+				// Without a committed outcome, the setup snapshot may be unchanged.
+				publishErr := s.deps.signalOperation(s.id)
+				s.mu.Unlock()
+				s.deps.fail(publishErr)
+			}
+			s.wake()
+		})
+	}
+	err := s.setupErr
+	s.setupErr = nil
+	return err
+}
+
 func (s *Session) runSetup(ctx context.Context, script string) error {
 	err := s.deps.waitBootstrap(ctx)
 	if err == nil {

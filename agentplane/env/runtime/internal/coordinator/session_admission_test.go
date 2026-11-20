@@ -249,6 +249,14 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 	if err != nil || string(output) != "setup" {
 		t.Fatalf("setup execution marker = %q, err=%v; want exactly one setup run", output, err)
 	}
+	if err := watchSessionResource(ctx, r.lifecycleState, s.ID(), func(input session.ReconcileSnapshot) (bool, error) {
+		if input.OperationRevision != 0 {
+			return false, fmt.Errorf("setup published an operation revision: %d", input.OperationRevision)
+		}
+		return input.Setup == sessionpb.SetupState_SETUP_STATE_SUCCEEDED, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
@@ -470,6 +478,8 @@ func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
 			r := newSessionTestRuntimeWithState(t, config, resources)
 			resources.armed.Store(true)
 			request := openLifecycleSession("publication-failure", filepath.Join(workspace, "project"))
+			marker := filepath.Join(workspace, "setup-ran")
+			request.SetupScript = proto.String(fmt.Sprintf("touch %s", shellQuote(marker)))
 			if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request); status.Code(err) != codes.Unavailable {
 				t.Fatalf("OpenSession error = %v, want Unavailable", err)
 			}
@@ -480,6 +490,12 @@ func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
 				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("Session publication failure did not fail Runtime")
+			}
+			if err := closeRuntimeForTest(t, r); !errors.Is(err, failure) {
+				t.Fatalf("Close error = %v, want publication failure", err)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("setup started after publication failure: %v", err)
 			}
 		})
 	}

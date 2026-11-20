@@ -59,9 +59,8 @@ type LifecycleStatus struct {
 	// AdmissionClosed reports that the cutoff is enforced and accepted commands
 	// are settled for EnvironmentGeneration. Identical committed command IDs may
 	// still return their original receipt.
-	AdmissionClosed  bool
-	SetupOperationID string
-	ProcessStopped   bool
+	AdmissionClosed bool
+	ProcessStopped  bool
 	// PreFenceSettled is the generation-qualified local shutdown barrier. It
 	// becomes true only after halt, native exit callbacks and every resulting
 	// inspection have settled. It does not wait for the global Execution fence.

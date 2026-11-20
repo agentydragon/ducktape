@@ -53,7 +53,9 @@ type Session struct {
 	launch                                                 sessionpb.LaunchOutcome
 	failure                                                *uint64
 	harnessFailure                                         *uint64
-	setupJob, stopping                                     *oneoff.Operation
+	setupDone                                              <-chan struct{}
+	setupErr                                               error
+	stopping                                               *oneoff.Operation
 	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
 	operationStartFailed                                   bool
@@ -276,7 +278,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	s.mu.Lock()
 	preparation := s.preparation
 	dispatching := s.dispatching
-	setupJob := s.setupJob
+	setupDone := s.setupDone
 	s.mu.Unlock()
 	s.admitMu.Unlock()
 	if preparation != nil {
@@ -286,8 +288,8 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	if dispatching != nil {
 		<-dispatching.Done()
 	}
-	if setupJob != nil {
-		<-setupJob.Done()
+	if setupDone != nil {
+		<-setupDone
 	}
 	s.mu.Lock()
 	controls := make([]chan struct{}, 0, len(s.controlDispatches))

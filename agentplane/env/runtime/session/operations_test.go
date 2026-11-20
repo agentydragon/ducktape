@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -9,12 +11,51 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
+
+func TestSetupOutcomeWriteFailureReportsAndRetainsClaim(t *testing.T) {
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
+	s := reserveTestSession(t, ctx, manager, store, "failed-setup", filepath.Join(root, "project"), "exit 0")
+	if _, err := s.journal.Seal(ctx, "test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	failures := make(chan error, 2)
+	s.deps.fail = func(err error) {
+		if err != nil {
+			failures <- err
+		}
+	}
+	if err := s.advanceSetup(); err != nil {
+		t.Fatal(err)
+	}
+	s.work.Wait()
+	select {
+	case err := <-failures:
+		if !errors.Is(err, journal.ErrSealed) {
+			t.Fatalf("Runtime error = %v, want sealed journal", err)
+		}
+	default:
+		t.Fatal("setup outcome write failure did not fail Runtime")
+	}
+	if err := s.advanceSetup(); !errors.Is(err, journal.ErrSealed) {
+		t.Fatalf("Session lifecycle error = %v, want sealed journal", err)
+	}
+	if err := s.advanceSetup(); err != nil {
+		t.Fatalf("setup failure was delivered twice: %v", err)
+	}
+	s.work.Wait()
+	input, _, err := ReadReconcileSnapshot(ctx, resources, s.id)
+	if err != nil || input.Setup != sessionpb.SetupState_SETUP_STATE_RUNNING || input.OperationRevision != 1 {
+		t.Fatalf("setup snapshot after journal failure and retry = %+v, err = %v", input, err)
+	}
+}
 
 // Intercept the candidate snapshot inside COSI's retrying update, before commit.
 type interceptedSnapshotState struct {
