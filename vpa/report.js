@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/1c87503942dd7bc79c0010a50b38cbbb8bc0d56a/";
+const currentSource = github + "blob/78cef4c59145f5a4152374e9aec967ed47dcea35/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2105`).then((r) => {
+        fetch(`${url}?v=20261120-2134`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -227,7 +227,7 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability and policy checks below were observed at 20:16–20:30 UTC. This is a snapshot, not a live dashboard.`}<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; policy and Study Casino were checked at 21:16 and 21:31 UTC, respectively. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
@@ -288,9 +288,7 @@ function Report() {
             when extending a VPA.<//
           >
           <${Text} component="p" mb=${0}
-            >The 41 active controllers without a direct VPA in this snapshot are
-            in namespaces explicitly disabling Goldilocks; this is an audit
-            queue, not an automatic enablement list.<//
+            >${`The ${counts.active_controllers - counts.active_direct_vpa} active controllers without a direct VPA in this snapshot are in namespaces explicitly disabling Goldilocks; this is an audit queue, not an automatic enablement list.`}<//
           >
         <//>
       <//>
@@ -328,6 +326,30 @@ function Report() {
             Its existing singleton remains Ready and has not been replaced. Ntfy
             and CDviz also need a non-evicting approach while singletons.<//
           >
+          <${Text} component="p" mb=${0}
+            >At 21:31 UTC, ${" "}<${Anchor} href=${github + "pull/18274"}
+              >Study Casino<//
+            >${" "} had an Initial memory-request VPA bounded to 224–240 MiB.
+            Its target was 224 MiB; an owner-matched admission dry run applied
+            25m CPU and 224 MiB memory while preserving the 256 MiB limit. Its
+            existing singleton remained Ready.<//
+          >
+          <${Text} component="p" mb=${0}
+            >The roaming-node controller has an Initial memory-request VPA
+            bounded to 64–80 MiB; its recommendation was pending and its
+            existing singleton remained Ready.<//
+          >
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Title} order=${4}>Platform Sessions providers<//>
+          <${Text} component="p" mb=${0}
+            >${" "}<${Anchor} href=${github + "pull/18282"}
+              >ChatGPT and OpenAI providers<//
+            >${" "} each have an Initial, memory-request-only VPA bounded to
+            128–192 MiB. Owner-matched admission dry runs preserved the 50m CPU
+            request and 1 GiB limit; the existing singleton Pods remained Ready
+            and were not replaced.<//
+          >
         <//>
         <${Paper}
           id="secret-store-background-recovery"
@@ -339,9 +361,9 @@ function Report() {
           <${Text} component="p" mb=${0}
             >Kyverno remains in use where it is the simpler owner. Its
             SecretStore validating policy now matches the sole served API
-            version, v1. At 20:16 UTC, all 60 current ClusterSecretStore UIDs
-            had fresh background pass reports after the version fix. A separate
-            native admission policy enforced the tested unfenced-store
+            version, v1. At 21:16 UTC, a subsequent hourly background scan
+            produced pass reports for all 60 current ClusterSecretStore UIDs. A
+            separate native admission policy enforced the tested unfenced-store
             rejection.<//
           >
         <//>
@@ -387,9 +409,9 @@ function Report() {
           ><${Title} order=${3} size="h4"
             >1. Expand coverage in useful batches<//
           ><${Text} component="p" mb=${0}
-            >Review the 41 uncovered active controllers by owner and workload
-            class. Prioritize safe static, replicated services and explicit
-            bounded memory requests; check startup usage, template floors, HPA
+            >${`Review the ${counts.active_controllers - counts.active_direct_vpa} uncovered active controllers by owner and workload class.`}${" "}
+            Prioritize safe static, replicated services and explicit bounded
+            memory requests; check startup usage, template floors, HPA
             interactions, placement and the actual VPA policy. Treat
             Goldilocks-disabled operator and dynamic workloads individually.
             Refresh counts and recommendations before choosing each batch.<//
@@ -423,12 +445,10 @@ function Report() {
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${3} size="h4">4. Keep policy reporting effective<//
           ><${Text} component="p" mb=${0}
-            >Observe the next recurring SecretStore background scan and keep
-            coverage across all current store UIDs. Continue supported Kyverno
-            policy API migrations with their own behavior and reporting checks.
-            Replace Kyverno only for a specific case where the alternative is
-            simpler and preserves the required behavior; building a separate
-            scanner is not that simplification.<//
+            >Continue supported Kyverno policy API migrations with their own
+            behavior and reporting checks. Replace Kyverno only for a specific
+            case where the alternative is simpler and preserves the required
+            behavior; building a separate scanner is not that simplification.<//
           ><//
         >
       <//>
@@ -459,8 +479,8 @@ function Report() {
       <${Title} order=${2} mt="xl">Sources and limits<//>
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
-        was observed at 20:28–20:30 UTC. The Flux source at 21:05 UTC was
-        ${" "}<${Anchor} href=${currentSource}>devel at 1c87503942<//>${" "};
+        was observed at 20:28–20:30 UTC. The Flux source at 21:34 UTC was
+        ${" "}<${Anchor} href=${currentSource}>devel at 78cef4c591<//>${" "};
         Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}

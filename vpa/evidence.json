@@ -19936,5 +19936,81 @@
       "cnpg_clusters": 21,
       "notes": "Admitted Pod specs reflect defaults and VPA mutation; direct Pod owner resolved through ReplicaSet to Deployment. Init, restartable init and ephemeral containers excluded."
     }
+  },
+  "secret_store_hourly_scan": {
+    "observed_at_utc": "2026-11-20T21:17:28Z",
+    "report_result_timestamp_utc": "2026-11-20T21:16:45Z",
+    "current_cluster_secret_store_uids": 60,
+    "current_uids_with_background_pass": 60,
+    "policy": "require-secret-store-conditions",
+    "policy_api": "policies.kyverno.io/v1",
+    "matched_resource_api": "external-secrets.io/v1",
+    "policy_ready": true,
+    "report_source": "KyvernoValidatingPolicy",
+    "report_process": "background scan",
+    "configured_background_scan_interval": "1h",
+    "prior_recovery_scan_at_utc": "2026-11-20T20:16:01Z",
+    "scope": "Current ClusterSecretStore UIDs joined to ClusterPolicyReport scope UIDs; passes must match the policy, source, background process and result."
+  },
+  "study_casino_initial": {
+    "observed_at_utc": "2026-11-20T21:20:49Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18274",
+    "flux_ready": true,
+    "target": "study-casino/study-casino",
+    "update_mode": "Initial",
+    "container": "app",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "224Mi",
+    "max_memory": "240Mi",
+    "recommendation_available": true,
+    "existing_pod_ready": true,
+    "existing_pod_created_at_utc": "2026-11-19T21:01:55Z",
+    "inventory_precedes_vpa": false,
+    "recommender_interval": "15m",
+    "inventory_observed_at_utc": "2026-11-20T21:34:02Z",
+    "recommendation_observed_at_utc": "2026-11-20T21:31:31Z",
+    "target_memory": "224Mi",
+    "dry_run_requests": {
+      "cpu": "25m",
+      "memory": "224Mi"
+    },
+    "dry_run_memory_limit": "256Mi"
+  },
+  "platform_sessions_provider_initial": {
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18282",
+    "observed_at_utc": "2026-11-20T21:30:27Z",
+    "namespace": "platform-sessions",
+    "targets": ["chatgpt", "openai"],
+    "mode": "Initial",
+    "container": "provider",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "128Mi",
+    "max_memory": "192Mi",
+    "dry_run_cpu_request": "50m",
+    "dry_run_memory_limit": "1Gi",
+    "dry_run_provider_memory_requests_bytes": {
+      "chatgpt": 144645763,
+      "openai": 163378051
+    },
+    "existing_pods_ready": true,
+    "existing_pods_replaced": false,
+    "dry_run_scope": "owner-backed server-side Pod dry runs; init and recorder resources unchanged"
+  },
+  "roaming_node_controller_initial": {
+    "observed_at_utc": "2026-11-20T21:34:02Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18285",
+    "namespace": "roaming-node-controller",
+    "target": "roaming-node-controller",
+    "mode": "Initial",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "min_memory": "64Mi",
+    "max_memory": "80Mi",
+    "recommendation_available": false,
+    "existing_pod_ready": true,
+    "existing_pod_restarts": 0,
+    "note": "No replacement triggered by this Initial VPA change."
   }
 }
