@@ -89,7 +89,8 @@ attempts, records retries, and reports missing results, failed results, and coll
 Different images from repeated runs are shown as unstable, with each variant and its
 provenance. An incomplete or unstable target never advances its devel pointer and
 cannot establish that a screenshot was removed. Pointer-resolved comparisons are
-labelled stale because their changes can include devel drift.
+labelled stale because their changes can include devel drift. When a parent PR's review serves as the
+baseline, its removal entries are excluded from the parent commit's screenshot set.
 
 Discovery starts with targets that expose at least one output record. A target
 that publishes no records at all cannot be identified as a visual producer from

@@ -224,7 +224,12 @@ def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -
         if body is None:
             return None
         metadata = BaselineMetadata.model_validate_json(body)
-        return metadata if metadata.baseline_eligible else None
+        if not metadata.baseline_eligible:
+            return None
+        # A parent PR's review can include removals relative to its own baseline.
+        # Those entries have no candidate image at the parent commit.
+        metadata.assets = [asset for asset in metadata.assets if asset.classification != "removed"]
+        return metadata
 
     if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
         return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
