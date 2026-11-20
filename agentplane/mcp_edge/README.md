@@ -104,10 +104,13 @@ uses the same lifecycle for explicit initialization; both modes read `AGENTPLANE
 ## Connection and OAuth storage
 
 The MCP edge owns Connection and external OAuth state in its `mcp_edge` database. Its serving
-tables are independent of the Action Service database. Actions migration 9 retires the old copies
-after the operator approved deleting their eight historical records. See the
-[staging investigation](debug/staging_handoff_20261023.md) for the pre-retirement inventory.
-Actions still owns upstream MCP server linkage and OAuth token state for configured Actions.
+tables are independent of the Action Service database. Actions migration 9 retired the old copies
+after the operator approved deleting their eight historical records, and the Actions baseline refuses a
+database that still holds them. Reverting the Actions image cannot restore the deleted rows: recover
+only by restoring a pre-drop Actions backup into an isolated database and copying out the needed state.
+Never overwrite new writes in either live database, and never restart the retired integrated
+Connection/OAuth writer. Actions still owns upstream MCP server linkage and OAuth token state for
+configured Actions.
 
 The operator accepts database-stored secrets without application-level encryption; issued opaque
 tokens are stored only as hashes.

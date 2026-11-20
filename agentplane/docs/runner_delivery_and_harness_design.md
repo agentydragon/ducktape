@@ -543,60 +543,7 @@ not wake a Sandbox. Identify any retained snapshot as stale. Status fields and e
 provisional information model and may change; clients must not use them to authorize, route or
 coordinate lifecycle operations. The runner remains authoritative at execution boundaries.
 
-### Scope and acceptance
-
-V1 covers admission-before-startup, runner-managed readiness/reconciliation, exact-turn interruption,
-removal of explicit harness lifecycle controls, and Sandbox-page introspection. Validate both Claude
-and Codex for concurrent sends, startup failure, caller disconnect/retry, runner restart, ambiguous
-native outcomes, stale interrupts and turn-transition races. Prove context retention with a follow-up
-input after restart. Cover send/quiesce races and identity/wake denial boundaries. Review desktop and
-phone screenshots of Sandbox diagnostics and the updated Session controls. Archive checks unfinished
-Session work rather than harness process existence; an idle live Session can be archived without a
-shutdown button.
-
-**V2, deferred:** idle Claude process reclamation to reduce memory. Measure idle RAM and define safe
-eligibility and thresholds first. Reaping must not end active turns, pending commands, dependent
-children, background work or another hosted Session. Startup on send provides the recovery path;
-V1 does not implement automatic idle reaping or depend on it. Shared-process placement and store
-concurrency remain separate decisions.
-
 ### Rollout and rollback
-
-The implementation changes protocol and callers together; publish a staging image-promotion hold
-before merging it. Testing receives the release first. The held staging image families are the app,
-Gateway/Dispatcher, Notification and History services (with migrations embedded in those images), `runner`,
-`environment-tools` and the runner VM. Testing acceptance must identify the exact tested tags rather
-than assuming every image shares a build SHA.
-
-1. Validate the release on fresh Claude and Codex Sessions in testing, including Pod and VM paths.
-   Test retained state created by the old runner as well as new state. Cover automatic startup on
-   input, context retention, startup failure, interruption, retry/reconnect and suspend/wake. Review
-   Sandbox diagnostics and the controls on desktop and phone.
-2. Inventory staging Sessions, pending Dispatches, historical receipts, journals/native histories,
-   workspace and state volumes. Settle outstanding old stop commands before removing their wire
-   variant; keep settled historical receipt readers. Hold Sandbox starts and automatic wake through
-   cutover so no old runner can execute work against the changing service stack. Preserve admitted work and
-   all person-authored data. Back up at a consistent boundary and verify restore in isolation before
-   any persistent-format migration; do not restore an old snapshot over post-cutover writes.
-3. Keep staging Sandbox starts disabled, quiesce any remaining runners with the old stack, and verify
-   no runner workloads remain. The operator suspended all four staging Sandboxes and agreed to hold
-   new starts (2026-10-17); recheck this condition immediately before cutover. Testing Sandboxes may
-   be deleted/recreated under the operator's authorization. Staging Sandbox CRs, UIDs and retained
-   PVCs must survive.
-4. With zero staging runner workloads and starts held, promote the exact tested service and template
-   tags together through GitOps and restore their Flux Image Automation markers in the same PR
-   (operator, 2026-10-17). Flux manages the pins once that promotion merges. Normal Deployment
-   rollouts are sufficient; no separate service stop or Flux suspension is needed (operator,
-   2026-10-17). Upgrade every template, including suspended-only and VM templates. Verify all new
-   service replicas, image revisions and migration gates, and wait for old service Pods to disappear
-   before allowing any Sandbox start. If runners reappear, stop promotion and quiesce them first;
-   updating a template alone does not upgrade a running Sandbox.
-5. Activate retained Sessions with the new runner and verify native continuation, reconciliation,
-   unchanged archived history and retained storage. Testing's follow-up model turns prove context
-   recall on both harnesses. Check exact-turn rejection and process/Session status. Keep the rollout
-   incomplete until behavior is observed, not just Flux or Deployment readiness. Record the actual
-   deployed revisions as Flux continues managing the pins. The human staging UI drive follows
-   lifecycle rollout; record operator-reported acceptance separately from automated coverage.
 
 **Lifecycle rollout accepted (2026-10-17 PDT).** Implementation #10950, promotion #10961
 and explicit Claude `bypassPermissions` #10965 are deployed. Flux Image Automation owns all service
