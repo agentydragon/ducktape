@@ -33,6 +33,12 @@ filegroup(
 )
 
 filegroup(
+    name = "parked_yaml_manifests",
+    srcs = glob(["parked/**/*.yaml"]),
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
+filegroup(
     name = "haku_openclaw_spike_backup_sources",
     srcs = [
         "parked/haku-openclaw-spike/backup/README.md",

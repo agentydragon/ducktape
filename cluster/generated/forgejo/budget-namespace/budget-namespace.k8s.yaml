@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
