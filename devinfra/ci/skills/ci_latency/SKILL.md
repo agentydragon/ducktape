@@ -615,16 +615,11 @@ supports that diagnosis. Generate `evidence.json` with `evidence.sh` as
 before publishing the report and evidence together as the latest history snapshot.
 Publish small relevant excerpts and direct job/invocation URLs in the report.
 
-Before publishing, compare the proposed report against the prior-work inventory.
-Account for each substantive prior finding, experiment and open follow-up: updated
-with new evidence, retained as relevant historical context, resolved or superseded
-with evidence, or explicitly deferred with a reason and next step. Keep a concise
-explanation of still-relevant results and unresolved work in the current report,
-with commit-pinned links to earlier reports and evidence for the detail. Git history
-alone is not sufficient continuity if readers must rediscover what was learned or
-what remains to do. Label retained measurements with their original window and
-source; keep them distinct from the new sample. Remove obsolete detail once its
-disposition is clear, rather than accumulating every earlier report verbatim.
+Use the prior-work inventory to check that the refresh keeps decisions traceable.
+Carry open work into the dashboard when it still merits action. For a resolved
+or superseded finding that explains today's choice, link to the dated result
+with its original window and source. The inventory belongs in working notes or
+supporting evidence. Showing every disposition would turn the page into a log.
 
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
 changes leave the recommendation list. If ongoing monitoring is warranted,

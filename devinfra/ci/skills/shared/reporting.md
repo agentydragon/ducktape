@@ -32,13 +32,28 @@ can show where failures concentrate. Omit a chart if it adds no information.
 4. **What changed?** Put useful history last, collapsed by default. Keep a past
    intervention when its measured effect, unresolved outcome or failed experiment
    informs a decision today. Link to dated evidence for the rest. On each refresh,
-   edit the relevant sections in place and retire superseded advice.
+   retire superseded advice.
 
-Review the rendered desktop and mobile pages from the top with disclosures closed.
-Can a reader see PR health and its graph on opening, then find the biggest evidenced
-driver and the next action by scrolling, without reading a rollout chronology?
-Keep important limits visible beside the numbers they qualify. Use semantic
-headings and accessible controls. Label chart series so color alone carries no meaning.
+## Edit the whole report on every update
+
+Even for a one-result follow-up, read the existing page and ask what this result
+changes for a PR author. Revise the headline, driver breakdown or ranked actions
+where the answer changes. A result that only documents an experiment can live in
+linked evidence. When one experiment informs both dashboards, give each page the
+conclusion relevant to its question and link the shared method and results once.
+
+Read the complete rendered page in order on desktop and mobile with disclosures
+closed. Can a reader see PR health and its graph on opening, then find the main
+driver and a worthwhile next action by scrolling? For each visible section, ask
+what the reader learns there that affects that judgment. Combine repeated claims,
+shorten explanations the graph already supplies, and move background into a
+disclosure or a dated evidence link. Preserve a useful deep link when moving detail.
+
+Check the title, summary, charts, captions and recommendations against the same
+current facts. When a fix lands or routing changes, look for every place the old
+assumption shaped the advice. Keep measurement windows and material limits visible.
+Use semantic headings and accessible controls. Distinguish chart series by more
+than color.
 
 ## Presentation
 
