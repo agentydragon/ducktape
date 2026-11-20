@@ -209,7 +209,12 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
     {
       fallbackLabel: "Merge Grocy products",
       pane: { opened: mergeReview },
-      details: { arguments: mergeReview, result: merged, emptyResult: <Line>Products merged</Line> },
+      details: {
+        arguments: mergeReview,
+        pendingPreviewOnly: true,
+        result: merged,
+        emptyResult: <Line>Products merged</Line>,
+      },
     },
   ],
   [

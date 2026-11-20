@@ -348,7 +348,7 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
       fallbackLabel: "Edit Grocy products",
       call: editProductCall,
       pane: { opened: edits },
-      details: { arguments: edits, result: editProductReceipt },
+      details: { arguments: edits, pendingPreviewOnly: true, result: editProductReceipt },
       outcome: (result) => {
         const parsed = editProductResult.safeParse(result);
         return parsed.success ? batchOutcome(parsed.data) : undefined;
@@ -360,7 +360,7 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     {
       fallbackLabel: "View Grocy stock on hand",
       pane: { collapsed: scopedStock },
-      details: { arguments: scopedStock, result: stockGetResult },
+      details: { arguments: scopedStock, pendingPreviewOnly: true, result: stockGetResult },
       compactCardExpands: expandsForRejectedArguments(stockGetArguments),
     },
   ],

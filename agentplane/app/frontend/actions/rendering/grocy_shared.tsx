@@ -84,5 +84,9 @@ export function grocyRequest<S extends z.ZodType>(
       <Preview args={args} requestId={requestId} />
     </GrocyReview>
   ));
-  return { fallbackLabel: label, pane: { opened: argumentsPreview }, details: { arguments: argumentsPreview, result } };
+  return {
+    fallbackLabel: label,
+    pane: { opened: argumentsPreview },
+    details: { arguments: argumentsPreview, result, pendingPreviewOnly: true },
+  };
 }

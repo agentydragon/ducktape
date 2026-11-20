@@ -1671,7 +1671,16 @@ EXAMPLES = (
         "Deleted Old coffee and its stock entries",
     ),
     ActionExample(
-        "grocy_sf", "products_merge", {"productIdToKeep": 16, "productIdToRemove": 15}, "null", "Products merged"
+        "grocy_sf",
+        "products_merge",
+        {"productIdToKeep": 16, "productIdToRemove": 15},
+        "null",
+        "Products merged",
+        live_preview=(
+            "grocy-reference-summaries",
+            {"references": [{"key": "products/16", "name": "Ground coffee"}]},
+            "Ground coffee",
+        ),
     ),
     ActionExample(
         "grocy_sf",
@@ -2166,6 +2175,8 @@ async def test_action_presentations(
     summaries: dict[str, object] | None = (
         {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
     )
+    if example.group == "grocy_sf" and summaries is None:
+        summaries = {"grocy-reference-summaries": {"references": []}}
     # Native results are stored directly. MCP results use the actual wire envelope.
     mcp = example.group not in {"environments", "orchestration_v1", "sandbox", "sessions"}
     result = (
@@ -2234,6 +2245,11 @@ async def test_action_presentations(
             await expect(node_link).to_have_attribute("href", f"https://app.tana.inc?nodeid={node_id}")
             await expect(node_link).to_have_attribute("target", "_blank")
             await expect(pending.get_by_text(node_id, exact=True)).to_have_count(0)
+    if example.key == "grocy_sf.products_merge":
+        await expect(pending.get_by_role("link", name="Ground coffee", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/product/16"
+        )
+        await expect(pending.get_by_role("link", name="Product #15", exact=True)).to_be_visible()
     if example.key == "google_calendar.delete_event":
         await expect(pending).to_contain_text("Only this occurrence")
         event_link = pending.get_by_role("link", name="Facilities coordination", exact=True)
@@ -2253,7 +2269,7 @@ async def test_action_presentations(
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
-    if example.group != "google_calendar":
+    if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
     if example.key == "tana.get_or_create_calendar_node":
         node_link = receipt.get_by_role("link", name=example.result_text)
@@ -2282,7 +2298,7 @@ async def test_action_presentations(
     await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
-    if example.group != "google_calendar":
+    if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
