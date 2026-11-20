@@ -424,7 +424,9 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile t (Json.mkObj [("vendor", Json.arr rows), ("dynamic", Json.arr (res.dynamic.map fun (a, b) => Json.mkObj [("from", a), ("to", b)])), ("workers", Json.arr (res.workers.map Json.str)), ("urls", Json.arr (res.metaUrls.map Json.str)), ("extraExports", Json.num res.extraExports)]).pretty
       IO.println s!"  wrote the premise table to {t}"
     let t2 ← IO.monoMsNow
-    let (fps, identityScanExhausted) ← IO.lazyPure fun _ => Lower.finalizeWithScanStatus (units.map Lower.analyzeTop)
+    -- Exports are removed from `units` by the frontend but may be observed by external modules.
+    let exported := (arr (fld bundleJ "exports")).map fun e => str (fld e "local")
+    let (fps, identityScanExhausted) ← IO.lazyPure fun _ => Lower.finalizeWithScanStatus (units.map Lower.analyzeTop) exported
     if identityScanExhausted then
       IO.println "  identity inference disabled: annotated JSON exceeds scan depth limit"
     let B := bundleOfFootprints fps

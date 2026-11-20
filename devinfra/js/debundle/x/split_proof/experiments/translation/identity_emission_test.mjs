@@ -140,3 +140,166 @@ for (const [name, unsafe] of [
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
   assert(!existsSync(path.join(unsafeOut, "entry.mjs")), `${name} must not emit a module`);
 }
+
+// An escaped callback may read the result before a reordered initializer. The
+// alias case must also be refused, even though only `alias` is read lazily.
+for (const [name, unsafe, side, suppress = true] of [
+  [
+    "deferred_result",
+    `function identity(x) { return x; }
+globalThis.cb = () => result;
+const result = identity(1);
+globalThis.cb();`,
+    [1, 3],
+  ],
+  [
+    "deferred_alias",
+    `function identity(x) { return x; }
+globalThis.cb = () => alias;
+const result = identity(1);
+const alias = result;
+globalThis.cb();`,
+    [1, 4],
+  ],
+  [
+    "deferred_object_alias",
+    `function identity(x) { return x; }
+globalThis.cb = () => alias.value;
+const result = identity(1);
+const alias = {value: result};
+globalThis.cb();`,
+    [1, 4],
+  ],
+  [
+    "deferred_array_alias",
+    `function identity(x) { return x; }
+globalThis.cb = () => alias[0];
+const result = identity(1);
+const alias = [result];
+globalThis.cb();`,
+    [1, 4],
+  ],
+  [
+    "assignment_alias",
+    `function identity(x) { return x; }
+let alias;
+globalThis.cb = () => alias;
+const result = identity(1);
+alias = result;
+globalThis.cb();`,
+    [1, 2, 4, 5],
+    false,
+  ],
+  [
+    "destructuring_alias",
+    `function identity(x) { return x; }
+let alias;
+globalThis.cb = () => alias;
+const result = identity(1);
+({x: alias} = {x: result});
+globalThis.cb();`,
+    [1, 2, 4, 5],
+    false,
+  ],
+  [
+    "effectful_store",
+    `function identity(x) { return x; }
+function store(value) { globalThis.value = value; }
+globalThis.cb = () => globalThis.value;
+const result = identity(1);
+store(result);
+globalThis.cb();`,
+    [2, 4, 5],
+    false,
+  ],
+]) {
+  const dir = path.join(temp, name);
+  mkdirSync(dir, { recursive: true });
+  const original = path.join(temp, `${name}.mjs`);
+  const input = path.join(temp, `${name}-ast.json`);
+  const split = path.join(temp, `${name}-spec.json`);
+  const sourceBundle = path.join(temp, `${name}-bundle.json`);
+  const outputTree = path.join(temp, `${name}-tree.json`);
+  const pairing = path.join(temp, `${name}-pairing.json`);
+  const parsed = acorn.parse(unsafe, { sourceType: "module", ecmaVersion: "latest" });
+  writeFileSync(original, unsafe);
+  writeFileSync(input, JSON.stringify(lowerDump(unsafe, acorn, eslintScope)));
+  writeFileSync(
+    split,
+    JSON.stringify({
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": parsed.body.map((_, i) => `#${i}`).filter((_, i) => !side.includes(i)),
+        "side.mjs": side.map((i) => `#${i}`),
+      },
+    })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, split, dir]);
+  assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  if (suppress) assert.doesNotMatch(rejected.stdout, /inferred identity call/);
+  else assert.match(rejected.stdout, /inferred identity call/);
+  assert(!existsSync(path.join(dir, "entry.mjs")), name);
+  const emitted = run(process.env.LOWERSPLIT, [input, split, dir, "--force"]);
+  assert.equal(emitted.status, 1, `${name}: ${emitted.stdout}\n${emitted.stderr}`);
+  assert.match(emitted.stdout, /FAIL\s+OrderOk/);
+  const before = run(process.execPath, [original]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.notEqual(after.status, 0, name);
+  assert.match(after.stderr, /ReferenceError/);
+  for (const args of [
+    [frontend, "bundle", original, "--out", sourceBundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", outputTree],
+    [path.join(here, "pair.mjs"), sourceBundle, outputTree, "--out", pairing],
+  ]) {
+    const p = run(process.execPath, args);
+    assert.equal(p.status, 0, p.stderr);
+  }
+  const checkedUnsafe = run(process.env.TRANSLATE, [sourceBundle, outputTree, pairing]);
+  assert.equal(checkedUnsafe.status, 4, `${name}: ${checkedUnsafe.stdout}\n${checkedUnsafe.stderr}`);
+  assert.match(checkedUnsafe.stdout, /FAIL\s+OrderOk/);
+  if (suppress) assert.doesNotMatch(checkedUnsafe.stdout, /inferred identity call/);
+  else assert.match(checkedUnsafe.stdout, /inferred identity call/);
+}
+
+// Export metadata is separate from bundle units, but an external module can
+// observe an exported binding. Do not infer the call as inert in that case.
+{
+  const name = "exported_result";
+  const unsafe = `${code}\nexport { result };\n`;
+  const dir = path.join(temp, name);
+  mkdirSync(dir, { recursive: true });
+  const original = path.join(temp, `${name}.mjs`);
+  const input = path.join(temp, `${name}-ast.json`);
+  const split = path.join(temp, `${name}-spec.json`);
+  const sourceBundle = path.join(temp, `${name}-bundle.json`);
+  const outputTree = path.join(temp, `${name}-tree.json`);
+  const pairing = path.join(temp, `${name}-pairing.json`);
+  const parsed = acorn.parse(unsafe, { sourceType: "module", ecmaVersion: "latest" });
+  writeFileSync(original, unsafe);
+  writeFileSync(input, JSON.stringify(lowerDump(unsafe, acorn, eslintScope)));
+  writeFileSync(
+    split,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#3", "#4"], "side.mjs": ["#2"] } })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, split, dir]);
+  assert.equal(rejected.status, 1, rejected.stdout);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  assert.doesNotMatch(rejected.stdout, /inferred identity call/);
+  assert(!existsSync(path.join(dir, "entry.mjs")));
+  const emitted = run(process.env.LOWERSPLIT, [input, split, dir, "--force"]);
+  assert.equal(emitted.status, 1, emitted.stdout);
+  for (const args of [
+    [frontend, "bundle", original, "--out", sourceBundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", outputTree],
+    [path.join(here, "pair.mjs"), sourceBundle, outputTree, "--out", pairing],
+  ]) {
+    const p = run(process.execPath, args);
+    assert.equal(p.status, 0, p.stderr);
+  }
+  const checkedExport = run(process.env.TRANSLATE, [sourceBundle, outputTree, pairing]);
+  assert.equal(checkedExport.status, 4, `${checkedExport.stdout}\n${checkedExport.stderr}`);
+  assert.doesNotMatch(checkedExport.stdout, /inferred identity call/);
+  assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
+}

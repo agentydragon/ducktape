@@ -16,7 +16,7 @@ function callback() { console.log("callback"); }
 const result = factory(callback);
 console.log("side");
 result();`;
-function emit(name, code, selectedSide) {
+function emit(name, code, selectedSide, force = false) {
   const dir = path.join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const ast = path.join(dir, "ast.json");
@@ -34,7 +34,17 @@ function emit(name, code, selectedSide) {
       },
     })
   );
-  return { dir, result: run(process.env.LOWERSPLIT, [ast, spec, dir, "--lean", path.join(dir, "certificate.lean")]) };
+  return {
+    dir,
+    result: run(process.env.LOWERSPLIT, [
+      ast,
+      spec,
+      dir,
+      "--lean",
+      path.join(dir, "certificate.lean"),
+      ...(force ? ["--force"] : []),
+    ]),
+  };
 }
 const goodResult = emit("good", good);
 assert.equal(goodResult.result.status, 0, `${goodResult.result.stdout}\n${goodResult.result.stderr}`);
@@ -140,4 +150,114 @@ for (const [name, bad] of [
   assert.equal(result.status, 1, `${name}: ${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
+}
+
+// A callback saved before the factory call may reach its result later through
+// host state, a module-local mutable cell, or an inert alias.
+const base = `function callback() {}
+function factory(f) { return () => f(); }
+`;
+for (const [name, code, side] of [
+  [
+    "deferred_result",
+    `${base}globalThis.cb = () => result();
+const result = factory(callback);
+globalThis.cb();`,
+    [2, 4],
+  ],
+  [
+    "deferred_alias",
+    `${base}globalThis.cb = () => alias();
+const result = factory(callback);
+const alias = result;
+globalThis.cb();`,
+    [2, 5],
+  ],
+  [
+    "deferred_object_alias",
+    `${base}globalThis.cb = () => alias.value();
+const result = factory(callback);
+const alias = {value: result};
+globalThis.cb();`,
+    [2, 5],
+  ],
+  [
+    "instance_field",
+    `${base}globalThis.Klass = class { x = result(); };
+const result = factory(callback);
+new globalThis.Klass();`,
+    [2, 4],
+  ],
+  [
+    "mutable_slot",
+    `let slot;
+function register(f) { slot = f; }
+function trigger() { slot(); }
+function callback() {}
+function factory(f) { return () => f(); }
+function later() { result(); }
+register(later);
+const result = factory(callback);
+trigger();`,
+    [0, 1, 2, 6, 8],
+  ],
+]) {
+  const rejected = emit(name, code, side);
+  assert.equal(rejected.result.status, 1, `${name}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
+  assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, name);
+  assert.doesNotMatch(rejected.result.stdout, /inferred closure factory/, name);
+  assert(!existsSync(path.join(rejected.dir, "entry.mjs")), name);
+  const sourceFile = path.join(tmp, `${name}-source.mjs`);
+  writeFileSync(sourceFile, code);
+  const forced = emit(`${name}-forced`, code, side, true);
+  assert.equal(forced.result.status, 1, name);
+  const original = run(process.execPath, [sourceFile]);
+  const emitted = run(process.execPath, [path.join(forced.dir, "entry.mjs")]);
+  assert.equal(original.status, 0, original.stderr);
+  assert.notEqual(emitted.status, 0, name);
+  assert.match(emitted.stderr, /ReferenceError/, name);
+  const originalBundle = path.join(tmp, `${name}-bundle.json`);
+  const outputTree = path.join(tmp, `${name}-tree.json`);
+  const pairing = path.join(tmp, `${name}-pairing.json`);
+  for (const args of [
+    [frontend, "bundle", sourceFile, "--out", originalBundle],
+    [frontend, "tree", forced.dir, "--entry", "entry.mjs", "--out", outputTree],
+    [path.join(here, "pair.mjs"), originalBundle, outputTree, "--out", pairing],
+  ]) {
+    const r = run(process.execPath, args);
+    assert.equal(r.status, 0, r.stderr);
+  }
+  const checkedForced = run(process.env.TRANSLATE, [originalBundle, outputTree, pairing]);
+  assert.equal(checkedForced.status, 4, `${name}: ${checkedForced.stdout}\n${checkedForced.stderr}`);
+  assert.match(checkedForced.stdout, /FAIL\s+OrderOk/, name);
+  assert.doesNotMatch(checkedForced.stdout, /inferred closure factory/, name);
+}
+
+// Frontend exports are stored outside the unit list, so the translator must
+// explicitly treat the result as externally observable.
+{
+  const code = `${good}\nexport { result };\n`;
+  const rejected = emit("exported", code, [3]);
+  assert.equal(rejected.result.status, 1, rejected.result.stdout);
+  assert.match(rejected.result.stdout, /FAIL\s+OrderOk/);
+  assert.doesNotMatch(rejected.result.stdout, /inferred closure factory/);
+  const sourceFile = path.join(tmp, "factory-export-source.mjs");
+  writeFileSync(sourceFile, code);
+  const forced = emit("exported-forced", code, [3], true);
+  assert.equal(forced.result.status, 1, forced.result.stdout);
+  const originalBundle = path.join(tmp, "factory-export-bundle.json");
+  const outputTree = path.join(tmp, "factory-export-tree.json");
+  const pairing = path.join(tmp, "factory-export-pairing.json");
+  for (const args of [
+    [frontend, "bundle", sourceFile, "--out", originalBundle],
+    [frontend, "tree", forced.dir, "--entry", "entry.mjs", "--out", outputTree],
+    [path.join(here, "pair.mjs"), originalBundle, outputTree, "--out", pairing],
+  ]) {
+    const r = run(process.execPath, args);
+    assert.equal(r.status, 0, r.stderr);
+  }
+  const checkedExport = run(process.env.TRANSLATE, [originalBundle, outputTree, pairing]);
+  assert.equal(checkedExport.status, 4, checkedExport.stdout);
+  assert.doesNotMatch(checkedExport.stdout, /inferred closure factory/);
+  assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
 }
