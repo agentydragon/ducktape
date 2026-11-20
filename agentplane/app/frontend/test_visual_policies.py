@@ -223,7 +223,7 @@ ARGUMENT_LAYOUTS = [
             "previous": True,
             "tail": -1,
         },
-        ["container sidecar-", "previous run", "tail -1"],
+        ["container sidecar-", "previous run", "last 100 lines (default)"],
         "previous run",
         id="previous-pod-logs",
     ),
@@ -398,7 +398,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "pods_log",
             {"name": "web-0", "previous": True, "tail": -1},
-            "previous run, tail -1",
+            "previous run, last 100 lines (default)",
             id="pod-log",
         ),
         pytest.param(
@@ -1325,11 +1325,11 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     page = view.page
     await expect(page.get_by_text("Apply ConfigMap apps/settings", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]:visible')).to_be_visible()
-    await expect(
-        page.locator('[data-operation-heading="Resource 1 · ConfigMap apps/settings"]:visible')
-    ).to_be_visible()
-    await expect(page.locator('[data-operation-heading="Resource 2 · Secret apps/token"]:visible')).to_be_visible()
-    await expect(page.locator(".cm-editor").first).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(receipt.get_by_text("Secret apps/token", exact=True)).to_be_visible()
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor").last).to_be_visible()
     await view.check(context="Kubernetes apply summary with formatted manifest and returned resources")
     await view.capture(target=page.locator("#app"))
 
@@ -1360,7 +1360,10 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
     page = view.page
-    await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]:visible')).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_have_count(1)
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor")).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
     await view.check(context="Kubernetes YAML and its equivalent structured result shown once")
     await view.capture(target=page.locator("#app"))
@@ -1400,7 +1403,8 @@ async def test_kubernetes_pods_delete_success_receipt(
     await expect(page.get_by_text("Delete Pod apps/web-0", exact=True)).to_be_visible()
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
-    await expect(page.get_by_text("Exact arguments", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+    await expect(page.get_by_text("matching Services and OpenShift Routes", exact=False)).to_be_visible()
     await view.check(context="successful pod deletion shown as an accepted request")
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 

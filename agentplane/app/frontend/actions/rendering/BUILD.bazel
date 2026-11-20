@@ -220,6 +220,7 @@ ts_library(
     srcs = [
         "kubernetes_admin/events_list.tsx",
         "kubernetes_admin/index.ts",
+        "kubernetes_admin/list_result.tsx",
         "kubernetes_admin/pods_exec.tsx",
         "kubernetes_admin/pods_get.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
@@ -230,6 +231,7 @@ ts_library(
         "kubernetes_admin/resources_delete.tsx",
         "kubernetes_admin/resources_get.tsx",
         "kubernetes_admin/resources_list.tsx",
+        "kubernetes_admin/text_result.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -246,6 +248,7 @@ ts_library(
         "//agentplane/app/frontend/ui:shell_command_view",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -319,6 +322,7 @@ agentplane_vitest_test(
         ":index",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions:call_tool_result",

@@ -6,6 +6,7 @@ import { type ActionPresentation, expandsForRejectedArguments } from "../present
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { podsLogOptions } from "../../schemas/kubernetes_admin/pods_log";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
+import { kubernetesTextResult } from "./text_result";
 
 const podsLogArguments = z.strictObject({
   name: z.string().min(1),
@@ -36,7 +37,14 @@ export const podsLogPreview: ArgumentsPreview = { schema: podsLogArguments, rend
 
 export const podsLogPresentation: ActionPresentation = {
   label: podsLogLabel,
-  details: { arguments: podsLogPreview },
+  details: {
+    arguments: podsLogPreview,
+    envelopeResult: kubernetesTextResult(
+      "Container logs",
+      "The provider reported no container logs.",
+      /^The pod \S+ in namespace \S+ has not logged any message yet$/
+    ),
+  },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
   compactCardExpands: expandsForRejectedArguments(podsLogArguments),
 };

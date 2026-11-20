@@ -28,6 +28,7 @@ class ActionExample:
     # False where the closed compact card already shows every argument, so it has no expanded version.
     compact_card_expands: bool = True
     live_preview: tuple[str, dict[str, object], str] | None = None
+    mcp_text: str | None = None
 
     @property
     def key(self) -> str:
@@ -40,7 +41,40 @@ CONFIG_MAP = {
     "metadata": {"name": "settings", "namespace": "apps"},
     "data": {"mode": "safe"},
 }
-POD = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "web-0", "namespace": "apps"}}
+POD_YAML = """apiVersion: v1
+kind: Pod
+metadata:
+  name: web-0
+  namespace: apps
+status:
+  phase: Running
+  conditions:
+  - type: Ready
+    status: "False"
+  containerStatuses:
+  - name: main
+    ready: true
+    restartCount: 0
+  - name: worker
+    ready: false
+    restartCount: 2
+    state:
+      waiting:
+        reason: CrashLoopBackOff
+"""
+POD_TABLE = (
+    "NAMESPACE   APIVERSION   KIND   NAME    READY   STATUS             RESTARTS   AGE   LABELS\n"
+    "apps        v1           Pod    web-0   1/2     CrashLoopBackOff   2          4m    app=web\n"
+)
+CONFIG_MAP_YAML = "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: settings, namespace: apps}\ndata: {mode: safe}\n"
+EVENTS_YAML = """# The following events (YAML format) were found:
+- InvolvedObject: {Kind: Pod, Name: web-0, apiVersion: v1}
+  Namespace: apps
+  Timestamp: 2026-10-12 03:01:00 +0000 UTC
+  Type: Warning
+  Reason: BackOff
+  Message: Back-off restarting failed container
+"""
 SANDBOX = {"name": "review-sandbox", "template": "python", "phase": "Running", "conditions": []}
 
 CALENDAR_ID = "facilities@example.test"
@@ -402,12 +436,17 @@ EXAMPLES = (
         "kubernetes_admin",
         "pods_list_in_namespace",
         {"namespace": "apps", "labelSelector": "app=web", "fieldSelector": "status.phase=Running"},
-        [POD],
-        "web-0",
+        POD_TABLE,
+        "1/2 ready",
         compact_card_expands=False,
     ),
     ActionExample(
-        "kubernetes_admin", "resources_create_or_update", {"resource": json.dumps(CONFIG_MAP)}, CONFIG_MAP, "settings"
+        "kubernetes_admin",
+        "resources_create_or_update",
+        {"resource": json.dumps(CONFIG_MAP)},
+        "# The following resources (YAML) have been created or updated successfully\n"
+        "- " + CONFIG_MAP_YAML.strip().replace("\n", "\n  ") + "\n",
+        "Resources applied",
     ),
     ActionExample(
         "kubernetes_admin",
@@ -429,14 +468,20 @@ EXAMPLES = (
         "resources_get",
         {"apiVersion": "v1", "kind": "ConfigMap", "name": "settings", "namespace": "apps"},
         CONFIG_MAP,
-        "safe",
+        "ConfigMap apps/settings",
+        mcp_text=CONFIG_MAP_YAML,
     ),
     ActionExample(
         "kubernetes_admin",
         "resources_list",
         {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
-        [POD],
-        "web-0",
+        {
+            "items": [
+                {"Name": "web-0", "Namespace": "apps", "Ready": "1/2", "Status": "CrashLoopBackOff", "Restarts": 2}
+            ]
+        },
+        "CrashLoopBackOff",
+        mcp_text=POD_TABLE,
     ),
     ActionExample(
         "kubernetes_admin",
@@ -449,8 +494,8 @@ EXAMPLES = (
         "kubernetes_admin",
         "pods_get",
         {"name": "web-0", "namespace": "apps"},
-        POD,
-        "apiVersion",
+        POD_YAML,
+        "Not ready",
         compact_card_expands=False,
     ),
     ActionExample(
@@ -465,7 +510,7 @@ EXAMPLES = (
         "kubernetes_admin",
         "events_list",
         {"namespace": "apps", "fieldSelector": "type=Warning"},
-        [{"reason": "BackOff", "message": "Back-off restarting failed container"}],
+        EVENTS_YAML,
         "BackOff",
         compact_card_expands=False,
     ),
@@ -1149,7 +1194,11 @@ async def test_action_presentations(
             "content": [
                 {
                     "type": "text",
-                    "text": example.result if isinstance(example.result, str) else json.dumps(example.result),
+                    "text": example.mcp_text
+                    if example.mcp_text is not None
+                    else example.result
+                    if isinstance(example.result, str)
+                    else json.dumps(example.result),
                 }
             ],
             **({"structuredContent": example.result} if isinstance(example.result, dict) else {}),

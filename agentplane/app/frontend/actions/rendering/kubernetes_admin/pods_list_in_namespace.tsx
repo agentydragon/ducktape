@@ -1,3 +1,4 @@
+import { resourceListResult } from "./list_result";
 import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
@@ -109,7 +110,7 @@ export const podsInNamespacePresentation: ActionPresentation = {
     collapsed: podsInNamespaceCollapsed,
     requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
   },
-  details: { arguments: podsInNamespaceDetails },
+  details: { arguments: podsInNamespaceDetails, envelopeResult: resourceListResult },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
   compactCardExpands: expandsForRejectedArguments(zPodsInNamespaceArguments),
 };
