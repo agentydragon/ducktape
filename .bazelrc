@@ -58,7 +58,12 @@ build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-
 build --nobuild_runfile_links
 build --nolegacy_external_runfiles
 
-# Reuse Bazel's validated module resolutions across CI jobs; see devinfra/debug/bazel_module_lockfile.md.
+# Reuse Bazel's validated module resolutions across CI jobs. The generated MODULE.bazel.lock stays out of
+# Git: devinfra/ci/bazel_ci.py restores and saves it under ${XDG_CACHE_HOME:-~/.cache}/ducktape/bazel/,
+# because BuildBuddy runs `git clean -xfd` between checkouts. It is a performance cache, not a dependency
+# lock, so keep Bazel's own input validation (no revision-only key, no hand-edited repository specs). A
+# maintained 13.9 MB lockfile, mostly APT metadata, was rejected: about 16 s gained, against regeneration
+# and parallel-PR conflicts.
 common --lockfile_mode=update
 
 # Bazel cancels in-flight Skyframe computations when the heap is under pressure
