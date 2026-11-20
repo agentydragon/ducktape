@@ -34,6 +34,8 @@ assert.deepEqual(
   [0]
 );
 assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
+const captureTargets = new Set(Array.from({ length: 32 }, (_, i) => makeCase(123, 28 + 128 * i).captureTarget));
+assert.deepEqual(captureTargets, new Set(["value", "start"]));
 const expressionInput = makeCase(123, 28);
 const expressionShrunk = await minimizeCase(
   expressionInput,
@@ -90,6 +92,16 @@ if (shards === 4 && shard === 0) {
   const captured = await runFuzz({ seed: 123, start: 28, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(captured.capturedCompared, 1);
   assert.equal(captured.capturedProved, 1);
+  const parameterIndex = Array.from({ length: 32 }, (_, i) => 28 + 128 * i).find(
+    (index) => makeCase(123, index).captureTarget === "start"
+  );
+  const capturedParameter = await runFuzz({
+    seed: 123,
+    start: parameterIndex,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+  });
+  assert.equal(capturedParameter.capturedProved, 1);
   const capturedUnsafe = await runFuzz({ seed: 123, start: 92, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(capturedUnsafe.capturedCompared, 1);
   assert.equal(capturedUnsafe.capturedUnsafe, 1);

@@ -474,6 +474,7 @@ function capturedCase(seed, index) {
   const rand = random(seed ^ 0xcafe, index);
   const count = 2 + rand(2);
   const unsafe = index % 128 === 92;
+  const target = unsafe || rand(2) === 0 ? "value" : "start";
   const factory = functionNode(
     "make",
     ["start"],
@@ -483,7 +484,7 @@ function capturedCase(seed, index) {
         type: "ArrowFunctionExpression",
         params: [id("step")],
         async: false,
-        body: { type: "BlockStatement", body: [add("value", "step"), returnNode(id("value"))] },
+        body: { type: "BlockStatement", body: [add(target, "step"), returnNode(id(target))] },
       }),
     ]
   );
@@ -532,6 +533,7 @@ function capturedCase(seed, index) {
     spec: { kind: "bindings", entry: "entry.mjs", modules },
     calls,
     grammar: "captured",
+    captureTarget: target,
     expectUnsafe: unsafe,
     unsupported: false,
     cyclic: false,
