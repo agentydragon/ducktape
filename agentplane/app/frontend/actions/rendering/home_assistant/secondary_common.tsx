@@ -66,17 +66,47 @@ const codeFields = new Set(["python_transform", "template", "content", "config"]
 const pagination = new Set(["offset", "config_hash", "diagnostics_data_offset", "message_offset"]);
 
 function Argument({ field, value }: { field: string; value: unknown }): ReactNode {
-  const name = humanField(field);
+  const name =
+    (
+      {
+        wait: "Wait for verification",
+        require_admin: "Require administrator access",
+        show_in_sidebar: "Show in sidebar",
+      } as Record<string, string>
+    )[field] ?? humanField(field);
+  if (value === null) return <HaField name={name}>Null</HaField>;
+  if (field === "config_hash" && typeof value === "string") {
+    return <Text size="sm">Require the saved configuration version to match.</Text>;
+  }
   if (pagination.has(field) && value === 0) return null;
   if (codeFields.has(field)) {
-    return typeof value === "string" ? (
-      <TextBlock
-        heading={name}
-        text={value}
-        language={field === "python_transform" ? "python" : field === "config" ? "yaml" : undefined}
-      />
+    const exact =
+      typeof value === "string" ? (
+        <TextBlock
+          heading={name}
+          text={value}
+          language={field === "python_transform" ? "python" : field === "config" ? "yaml" : undefined}
+        />
+      ) : (
+        <JsonBlock heading={name} value={value} />
+      );
+    const config = field === "config" ? asRecord(value) : undefined;
+    if (!config) return exact;
+    const sections = [
+      ["Triggers", config.triggers ?? config.trigger],
+      ["Conditions", config.conditions ?? config.condition],
+      ["Actions", config.actions ?? config.action ?? config.sequence],
+      ["Views", config.views],
+    ].flatMap(([label, entries]) =>
+      Array.isArray(entries) ? [`${entries.length} ${String(label).toLowerCase()}`] : []
+    );
+    return sections.length ? (
+      <Stack gap={4}>
+        <HaField name="Configuration">{sections.join(" · ")}</HaField>
+        {exact}
+      </Stack>
     ) : (
-      <JsonBlock heading={name} value={value} />
+      exact
     );
   }
   const plain = printable(value);
@@ -122,6 +152,14 @@ const rowFields = [
   "timestamp",
   "when",
   "trigger",
+  "condition",
+  "action",
+  "radius",
+  "latitude",
+  "longitude",
+  "floor_id",
+  "updated_fields",
+  "result",
   "message",
   "description",
   "level",
@@ -160,7 +198,12 @@ function rowTitle(entry: HaRecord): string | undefined {
 function simpleFields(entry: HaRecord, keys: readonly string[]): JSX.Element[] {
   return keys.flatMap((key) => {
     const value = entry[key];
-    const printableValue = printable(value);
+    const printableValue =
+      (key === "action" || key === "status" || key === "mode") &&
+      typeof value === "string" &&
+      /^[a-z][a-z_ -]*$/.test(value)
+        ? humanField(value)
+        : printable(value);
     if (printableValue !== undefined && printableValue !== "")
       return [
         <HaField key={key} name={humanField(key)}>
@@ -184,9 +227,18 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
     entry,
     rowFields.filter((key) => key !== title)
   );
-  const nested = ["states", "statistics", "values", "entries", "actions", "conditions"].filter((key) =>
-    Array.isArray(entry[key])
-  );
+  const nested = [
+    "states",
+    "statistics",
+    "values",
+    "entries",
+    "actions",
+    "triggers",
+    "conditions",
+    "sequence",
+    "views",
+    "cards",
+  ].filter((key) => Array.isArray(entry[key]));
   const error = asRecord(entry.error);
   const details = fields.length > 0 || nested.length > 0 || error !== undefined;
   return (
@@ -202,7 +254,13 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
         {nested.map((key) => (
           <ResultRows key={key} heading={humanField(key)} value={entry[key]} />
         ))}
-        {!title && !details && <JsonBlock value={entry} />}
+        {!title && !details && (
+          <Disclosure summary={<Text size="sm">Recorded entry</Text>}>
+            <DisclosureBody>
+              <JsonBlock value={entry} />
+            </DisclosureBody>
+          </Disclosure>
+        )}
       </Stack>
     </Paper>
   );
@@ -336,9 +394,7 @@ export function haAction(spec: HaActionSpec): ActionPresentation {
     (value) => Object.keys(value).every((key) => known.has(key)) && required.every((key) => value[key] != null)
   );
   const requestFields = (args: HaRecord) =>
-    spec.fields.filter(
-      (field) => args[field] != null && (!target.includes(field) || printable(args[field]) === undefined)
-    );
+    spec.fields.filter((field) => field in args && (!target.includes(field) || printable(args[field]) === undefined));
   const preview = definePreview(schema, ({ args }) => {
     const fields = requestFields(args);
     return fields.length ? (
