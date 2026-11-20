@@ -90,10 +90,11 @@ durable user data and uncertain-effect handling in any accepted change.
   the count in both Runtime and a live COSI resource
   ([accounting](runtime/internal/coordinator/session_lifecycle_inputs.go)). Preserve the accepted-generation
   wakeup, atomic admission/close, idle detection, diagnostics and fail-closed behavior; test their races.
-- **Bootstrap output:** [COSI events](runtime/internal/bootstrap/log.go) retain every output chunk and
-  load them on restart, although no production reader of the output bytes was found. Decide whether
-  full retained output is needed before changing the contract. A bounded/indexed store preserves output
-  but needs data-preserving migration and rollback; bounded diagnostics would discard future output.
+- **Bootstrap output:** COSI retains every output chunk and loads it on restart, although no production
+  reader of the output bytes was found. `OpenLog` validates the sequence without cloning each payload
+  again. Decide whether full retained output is needed before changing the contract. A bounded/indexed
+  store preserves output but needs data-preserving migration and rollback; bounded diagnostics would
+  discard future output.
   The [storage comparison](runtime/debug/2026_11_04_bootstrap_event_storage_comparison.md) has synthetic
   measurements, not production output distributions. Preserve existing evidence and one-shot outcomes.
 
