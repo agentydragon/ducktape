@@ -399,14 +399,25 @@ function parameterCase(seed, index) {
   const initial = 1 + rand(8);
   const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
   const left = { type: "BinaryExpression", operator: "+", left: id(parameters[0]), right: id(parameters[1]) };
-  const value = { type: "BinaryExpression", operator: "+", left, right: id("base") };
+  const value = call(id("helper"), [left]);
   const thrownValue = ["generated", false, null, 1 + rand(8)][Math.floor(index / 32) % 4];
-  const expectedThrown = thrownValue === null ? { kind: "null" } : { kind: typeof thrownValue, value: thrownValue };
+  const firstArgument = 1 + rand(8),
+    secondArgument = 1 + rand(8),
+    condition = 1 + rand(8);
+  const observedThrow =
+    typeof thrownValue === "number" ? secondArgument + condition + initial + condition : thrownValue;
+  const expectedThrown =
+    observedThrow === null ? { kind: "null" } : { kind: typeof observedThrow, value: observedThrow };
   const ast = {
     type: "Program",
     sourceType: "module",
     body: [
       variable("base", initial),
+      functionNode(
+        "helper",
+        ["value"],
+        [returnNode({ type: "BinaryExpression", operator: "+", left: id("value"), right: id("base") })]
+      ),
       functionNode("calculate", parameters, [
         {
           type: "IfStatement",
@@ -416,7 +427,7 @@ function parameterCase(seed, index) {
             body: [
               declaration("temp", value),
               add("temp", "y"),
-              { type: "ThrowStatement", argument: literal(thrownValue) },
+              { type: "ThrowStatement", argument: typeof thrownValue === "number" ? id("temp") : literal(thrownValue) },
             ],
           },
           alternate: {
@@ -435,8 +446,8 @@ function parameterCase(seed, index) {
     ],
   };
   const modules = {
-    "state.mjs": { imports: [], statements: [0] },
-    "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+    "state.mjs": { imports: [], statements: [0, 1] },
+    "logic.mjs": { imports: ["state.mjs"], statements: [2] },
     "entry.mjs": { imports: ["logic.mjs"], statements: [] },
   };
   return {
@@ -444,8 +455,8 @@ function parameterCase(seed, index) {
     source: print(ast),
     spec: { kind: "bindings", entry: "entry.mjs", modules },
     calls: [
-      { name: "calculate", args: [1 + rand(8), 0] },
-      { name: "calculate", args: [1 + rand(8), 1 + rand(8)] },
+      { name: "calculate", args: [firstArgument, 0] },
+      { name: "calculate", args: [secondArgument, condition] },
     ],
     grammar: "parameter",
     expectThrow: true,

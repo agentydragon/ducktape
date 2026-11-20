@@ -26,7 +26,7 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
-if (shard !== 2) {
+if (shard < 2) {
   await writeFile(
     source,
     `let seed = 1;
@@ -305,13 +305,8 @@ function shadow(seed, delta) { return seed + delta; }
 function add(a, b) { return (a + b) + seed; }
 function choose(flag, value) { if (flag) { return value + seed; } else { return value + 1; } }
 function local(flag, value) { let total = value + seed; if (flag) { let value = 2; return total + value; } else { return total + value; } }
-function maybe(flag) { if (flag) { throw seed + flag; } else { return seed; } }
-function text(flag) { if (flag) { throw "oops"; } else { return seed; } }
-function boolean(flag) { if (flag) { throw false; } else { return seed; } }
-function nil(flag) { if (flag) { throw null; } else { return seed; } }
-function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
 function update(value) { let total = value; total += seed; total++; return total; }
-export { shadow, add, choose, local, maybe, text, boolean, nil, undef, update };
+export { shadow, add, choose, local, update };
 `
   );
   await writeFile(
@@ -321,7 +316,7 @@ export { shadow, add, choose, local, maybe, text, boolean, nil, undef, update };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -351,30 +346,6 @@ export { shadow, add, choose, local, maybe, text, boolean, nil, undef, update };
     { value: 8 },
   ]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
-  const throwingCalls = [
-    { name: "maybe", args: [0] },
-    { name: "maybe", args: [1] },
-    { name: "maybe", args: [0] },
-  ];
-  const throwingTrace = execute(parameterSource, throwingCalls);
-  assert.deepEqual(throwingTrace.results, [{ value: 4 }]);
-  assert.deepEqual(throwingTrace.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 5 } });
-  assert.deepEqual(execute(join(parameterOut, "entry.mjs"), throwingCalls), throwingTrace);
-  for (const [name, thrown] of [
-    ["text", { kind: "string", value: "oops" }],
-    ["boolean", { kind: "boolean", value: false }],
-    ["nil", { kind: "null" }],
-    ["undef", { kind: "undefined" }],
-  ]) {
-    const primitiveCalls = [
-      { name, args: [0] },
-      { name, args: [1] },
-    ];
-    const primitiveTrace = execute(parameterSource, primitiveCalls);
-    assert.deepEqual(primitiveTrace.results, [{ value: 4 }]);
-    assert.deepEqual(primitiveTrace.error, { name: null, phase: "call", index: 1, thrown });
-    assert.deepEqual(execute(join(parameterOut, "entry.mjs"), primitiveCalls), primitiveTrace);
-  }
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
@@ -433,4 +404,134 @@ export { broken };
   await writeFile(logic, (await readFile(logic, "utf8")).replace("(a + b) + seed", "(a + b) + a"));
   assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unknown");
   assert.notDeepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
+}
+
+if (shard === 3) {
+  const primitiveSource = join(root, "primitive-source.mjs");
+  const primitiveSpec = join(root, "primitive-spec.json");
+  const primitiveOut = join(root, "primitive-out");
+  await writeFile(
+    primitiveSource,
+    `let seed = 4;
+function maybe(flag) { if (flag) { throw seed + flag; } else { return seed; } }
+function text(flag) { if (flag) { throw "oops"; } else { return seed; } }
+function boolean(flag) { if (flag) { throw false; } else { return seed; } }
+function nil(flag) { if (flag) { throw null; } else { return seed; } }
+function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
+export { maybe, text, boolean, nil, undef };
+`
+  );
+  await writeFile(
+    primitiveSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", primitiveSource, primitiveSpec, primitiveOut).result, "generated");
+  const proof = cli("validate", primitiveSource, primitiveSpec, primitiveOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const throwingCalls = [
+    { name: "maybe", args: [0] },
+    { name: "maybe", args: [1] },
+    { name: "maybe", args: [0] },
+  ];
+  const throwingTrace = execute(primitiveSource, throwingCalls);
+  assert.deepEqual(throwingTrace.results, [{ value: 4 }]);
+  assert.deepEqual(throwingTrace.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 5 } });
+  assert.deepEqual(execute(join(primitiveOut, "entry.mjs"), throwingCalls), throwingTrace);
+  for (const [name, thrown] of [
+    ["text", { kind: "string", value: "oops" }],
+    ["boolean", { kind: "boolean", value: false }],
+    ["nil", { kind: "null" }],
+    ["undef", { kind: "undefined" }],
+  ]) {
+    const primitiveCalls = [
+      { name, args: [0] },
+      { name, args: [1] },
+    ];
+    const primitiveTrace = execute(primitiveSource, primitiveCalls);
+    assert.deepEqual(primitiveTrace.results, [{ value: 4 }]);
+    assert.deepEqual(primitiveTrace.error, { name: null, phase: "call", index: 1, thrown });
+    assert.deepEqual(execute(join(primitiveOut, "entry.mjs"), primitiveCalls), primitiveTrace);
+  }
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_throw_values' does not depend on any axioms/);
+}
+
+if (shard === 4) {
+  const callSource = join(root, "call-source.mjs");
+  const callSpec = join(root, "call-spec.json");
+  const callOut = join(root, "call-out");
+  await writeFile(
+    callSource,
+    `let seed = 4;
+function helper(value) { return value + seed; }
+function call(value) { return helper(value) + 1; }
+export { call };
+`
+  );
+  await writeFile(
+    callSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", callSource, callSpec, callOut).result, "generated");
+  const proof = cli("validate", callSource, callSpec, callOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "call", args: [3] },
+    { name: "call", args: [7] },
+  ];
+  const sourceTrace = execute(callSource, calls);
+  assert.deepEqual(sourceTrace.results, [{ value: 8 }, { value: 12 }]);
+  assert.deepEqual(execute(join(callOut, "entry.mjs"), calls), sourceTrace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const state = join(callOut, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")).replace("return value + seed", "return value + 1"));
+  assert.equal(cli("validate", callSource, callSpec, callOut).result, "unknown");
+  assert.notDeepEqual(execute(join(callOut, "entry.mjs"), calls), sourceTrace);
+  const recursiveSource = join(root, "recursive-source.mjs");
+  const recursiveSpec = join(root, "recursive-spec.json");
+  const recursiveOut = join(root, "recursive-out");
+  await writeFile(
+    recursiveSource,
+    `function first(value) { return second(value); }
+function second(value) { return first(value); }
+export { first };
+`
+  );
+  await writeFile(
+    recursiveSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": { imports: [], statements: [0, 1] },
+      },
+    })
+  );
+  assert.equal(cli("generate", recursiveSource, recursiveSpec, recursiveOut).result, "generated");
+  assert.equal(cli("validate", recursiveSource, recursiveSpec, recursiveOut).result, "unknown");
 }

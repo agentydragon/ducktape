@@ -131,14 +131,27 @@ function scopedFunction(node) {
 // A compositional expression grammar for functions with numeric parameters.
 // This is also emitted into the Lean AST; the generator's free-name list is
 // only used to construct imports, while Lean recomputes it for validation.
-function expressionFunction(node) {
+function expressionFunction(node, functions, stack = [], budget = { remaining: 500 }) {
   check(node.type === "FunctionDeclaration" && !node.async && !node.generator, "unsupported function");
   const name = identifier(node.id);
+  check(!stack.includes(name), "recursive calls are unsupported");
   const parameters = node.params.map(identifier);
+  const localNames = new Set(parameters);
+  const scanLocals = (item) => {
+    if (!item || typeof item !== "object") return;
+    if (item.type === "VariableDeclarator") localNames.add(identifier(item.id));
+    if (item.type === "FunctionDeclaration" && item !== node) localNames.add(identifier(item.id));
+    for (const child of Object.values(item)) {
+      if (Array.isArray(child)) child.forEach(scanLocals);
+      else if (child && typeof child === "object") scanLocals(child);
+    }
+  };
+  scanLocals(node.body);
   check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
   check(new Set(parameters).size === parameters.length, "duplicate parameters");
   check(node.body.body.length > 0, "expected a returning function body");
   const expression = (node) => {
+    check(--budget.remaining >= 0, "expression expansion limit exceeded");
     if (node?.type === "Literal") {
       check(Number.isSafeInteger(node.value) && node.value >= 0, "expected a nonnegative safe integer");
       return { kind: "literal", value: node.value };
@@ -150,6 +163,16 @@ function expressionFunction(node) {
     }
     if (node?.type === "BinaryExpression" && node.operator === "+")
       return { kind: "add", left: expression(node.left), right: expression(node.right) };
+    if (node?.type === "CallExpression" && !node.optional) {
+      const target = identifier(node.callee);
+      check(!localNames.has(target), "calls through local bindings are unsupported");
+      const declaration = functions?.get(target);
+      check(declaration, "unknown function call target");
+      const callee = expressionFunction(declaration, functions, [...stack, name], budget);
+      const args = node.arguments.map(expression);
+      check(args.length === callee.parameters.length, "call argument count differs from parameters");
+      return { kind: "invoke", name: target, parameters: callee.parameters, arguments: args, body: callee.expression };
+    }
     if (node?.type === "ConditionalExpression")
       return {
         kind: "conditional",
@@ -160,6 +183,7 @@ function expressionFunction(node) {
     check(false, "unsupported numeric expression");
   };
   const sequence = (statements) => {
+    check(--budget.remaining >= 0, "expression expansion limit exceeded");
     check(statements.length > 0, "expected a returning statement");
     const [first, ...rest] = statements;
     if (first.type === "VariableDeclaration") {
@@ -250,6 +274,8 @@ function expressionFunction(node) {
         return free(item.value, bound);
       case "raisePrimitive":
         return [];
+      case "invoke":
+        return [item.name, ...item.arguments.flatMap((argument) => free(argument, bound))];
     }
     throw new Error("unknown numeric expression");
   };
@@ -263,13 +289,21 @@ function expressionFunction(node) {
   };
 }
 
-function candidateStatement(node) {
+function candidateStatement(node, functions) {
   try {
-    return statement(node);
+    const recognized = statement(node);
+    if (recognized.kind === "wrapper" && functions?.has(recognized.target)) {
+      try {
+        return expressionFunction(node, functions);
+      } catch (error) {
+        if (!String(error).includes("unknown:")) throw error;
+      }
+    }
+    return recognized;
   } catch (error) {
     if (node.type !== "FunctionDeclaration" || !String(error).includes("unknown:")) throw error;
     try {
-      return expressionFunction(node);
+      return expressionFunction(node, functions);
     } catch (expressionError) {
       if (!String(expressionError).includes("unknown:")) throw expressionError;
       return scopedFunction(node);
@@ -375,17 +409,32 @@ function exportNames(node) {
   return node.specifiers.map((s) => identifier(s.local));
 }
 
+function functionDeclarations(bodies) {
+  const functions = new Map();
+  for (const body of bodies)
+    for (const node of body) {
+      const declaration = node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node;
+      if (declaration.type !== "FunctionDeclaration") continue;
+      const name = identifier(declaration.id);
+      check(!functions.has(name), "duplicate function declaration across modules");
+      functions.set(name, declaration);
+    }
+  return functions;
+}
+
 function sourceAst(text) {
   const statements = [];
   const exports = [];
-  for (const node of parseModule(text)) {
+  const body = parseModule(text);
+  const functions = functionDeclarations([body]);
+  for (const node of body) {
     if (node.type === "ExportNamedDeclaration" && !node.declaration && !node.source) exports.push(...exportNames(node));
     else if (node.type === "ExportNamedDeclaration" && node.declaration && !node.source) {
-      const item = candidateStatement(node.declaration);
+      const item = candidateStatement(node.declaration, functions);
       check(declarationName(item), "expected an exported declaration");
       exports.push(declarationName(item));
       statements.push({ ast: item, source: text.slice(node.declaration.start, node.declaration.end) });
-    } else statements.push({ ast: candidateStatement(node), source: text.slice(node.start, node.end) });
+    } else statements.push({ ast: candidateStatement(node, functions), source: text.slice(node.start, node.end) });
   }
   check(
     statements.length > 0 && statements.length <= 20 && exports.length > 0,
@@ -521,7 +570,7 @@ function generateFiles(source, spec, names) {
   return result;
 }
 
-function outputAst(text, names) {
+function outputAst(text, names, functions) {
   const imports = [];
   const exports = [];
   const statements = [];
@@ -544,13 +593,13 @@ function outputAst(text, names) {
       imports.push({ dep, locals, reexports: [] });
     } else if (node.type === "ExportNamedDeclaration") {
       if (node.declaration) {
-        const ast = candidateStatement(node.declaration);
+        const ast = candidateStatement(node.declaration, functions);
         check(declarationName(ast), "unsupported exported declaration");
         exports.push(declarationName(ast));
         statements.push(ast);
       } else if (node.source) imports.push({ dep: dependency(node), locals: [], reexports: exportNames(node) });
       else exports.push(...exportNames(node));
-    } else statements.push(candidateStatement(node));
+    } else statements.push(candidateStatement(node, functions));
   }
   return { imports, exports, statements };
 }
@@ -572,6 +621,13 @@ function leanExpression(expression) {
       return `.assign ${str(expression.name)} (${leanExpression(expression.value)}) (${leanExpression(expression.body)})`;
     case "raise":
       return `.raise (${leanExpression(expression.value)})`;
+    case "invoke": {
+      const argumentsTerm = expression.arguments.reduceRight(
+        (tail, argument) => `.argumentsCons (${leanExpression(argument)}) (${tail})`,
+        ".argumentsNil"
+      );
+      return `.invoke ${str(expression.name)} ${leanStrings(expression.parameters)} (${argumentsTerm}) (${leanExpression(expression.body)})`;
+    }
     case "raisePrimitive": {
       const value = expression.value;
       const primitive =
@@ -651,7 +707,8 @@ export async function validateBindings(sourcePath, specPath, out) {
   if (source.statements.some((item) => item.ast.kind === "scopedFunction"))
     return { result: "unknown", reason: "scoped function execution is not modeled" };
   const files = await Promise.all(names.map((name) => readFile(resolve(out, name), "utf8")));
-  const actual = files.map((text) => outputAst(text, names));
+  const functions = functionDeclarations(files.map(parseModule));
+  const actual = files.map((text) => outputAst(text, names, functions));
   if (actual.some((module) => module.statements.some((item) => item.kind === "scopedFunction")))
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
@@ -829,6 +886,12 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     }
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
     if (expression.kind === "raisePrimitive") return 0n;
+    if (expression.kind === "invoke") {
+      const args = expression.arguments.map((argument) => expressionBound(argument, bound));
+      const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);
+      const body = expressionBound(expression.body, callBound);
+      return body > callBound ? body : callBound;
+    }
     throw new Error("unknown expression");
   };
   for (const calls of candidates.slice(0, 64)) {

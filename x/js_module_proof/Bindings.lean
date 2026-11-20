@@ -214,6 +214,9 @@ def expressionNames : NumericExpr → List String
   | .assign name value body => [name] ++ expressionNames value ++ expressionNames body
   | .raise value => expressionNames value
   | .raisePrimitive _ => []
+  | .argumentsNil => []
+  | .argumentsCons head tail => expressionNames head ++ expressionNames tail
+  | .invoke name _ arguments _ => [name] ++ expressionNames arguments
 
 def laterExpressionNames : NumericExpr → List String
   | .local name _ _ body => name :: laterExpressionNames body
@@ -224,10 +227,27 @@ def laterExpressionNames : NumericExpr → List String
   | .conditional _ _ _ => []
   | .raise _ => []
   | .raisePrimitive _ => []
+  | .argumentsNil => []
+  | .argumentsCons _ _ => []
+  | .invoke _ _ _ _ => []
 
 /- Reject a read of a local before its initialization, including a later
    declaration in the same lowered sequence. Nested blocks can be treated
    conservatively as part of the surrounding lowered sequence. -/
+def argumentCount : NumericExpr → Option Nat
+  | .argumentsNil => some 0
+  | .argumentsCons _ tail => (argumentCount tail).map (· + 1)
+  | .literal _ => none
+  | .name _ => none
+  | .add _ _ => none
+  | .conditional _ _ _ => none
+  | .local _ _ _ _ => none
+  | .assign _ _ _ => none
+  | .raise _ => none
+  | .raisePrimitive _ => none
+  | .invoke _ _ _ _ => none
+
+mutual
 def validNumericExpression : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
@@ -241,6 +261,24 @@ def validNumericExpression : NumericExpr → Bool
   | .assign name value body =>
     !(name :: expressionNames value).any (fun reference => (laterExpressionNames body).contains reference) &&
       validNumericExpression value && validNumericExpression body
+  | .argumentsNil => false
+  | .argumentsCons _ _ => false
+  | .invoke _ parameters arguments body =>
+    validNumericArguments arguments && argumentCount arguments == some parameters.length && validNumericExpression body
+
+def validNumericArguments : NumericExpr → Bool
+  | .argumentsNil => true
+  | .argumentsCons head tail => validNumericExpression head && validNumericArguments tail
+  | .literal _ => false
+  | .name _ => false
+  | .add _ _ => false
+  | .conditional _ _ _ => false
+  | .local _ _ _ _ => false
+  | .assign _ _ _ => false
+  | .raise _ => false
+  | .raisePrimitive _ => false
+  | .invoke _ _ _ _ => false
+end
 
 def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .literal _ => []
@@ -251,6 +289,9 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .assign name value body => (if bound.contains name then [] else [name]) ++ expressionFreeNames bound value ++ expressionFreeNames bound body
   | .raise value => expressionFreeNames bound value
   | .raisePrimitive _ => []
+  | .argumentsNil => []
+  | .argumentsCons head tail => expressionFreeNames bound head ++ expressionFreeNames bound tail
+  | .invoke _ _ arguments _ => expressionFreeNames bound arguments
 
 def mutableLocal (bound : List (String × Bool)) (name : String) : Bool :=
   match bound.find? (fun binding => binding.1 == name) with
@@ -266,9 +307,62 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .assign name value body => mutableLocal bound name && validLocalWrites bound value && validLocalWrites bound body
   | .raise value => validLocalWrites bound value
   | .raisePrimitive _ => true
+  | .argumentsNil => true
+  | .argumentsCons head tail => validLocalWrites bound head && validLocalWrites bound tail
+  | .invoke name parameters arguments body =>
+    !(bound.any (fun binding => binding.1 == name)) && validLocalWrites bound arguments &&
+      validLocalWrites (parameters.map (fun parameter => (parameter, true))) body
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
   expressionFreeNames parameters expression
+
+/- Each embedded callee is checked against its source declaration. This makes
+   call expansion part of the checked graph instead of trusting an inlined
+   body chosen by the frontend. -/
+def callableSyntax (source : List BindingStmt) (name : String) : Option (List String × NumericExpr) :=
+  match findDefinition source name with
+  | none => none
+  | some statement => match statement with
+    | .expressionFunction _ parameters body => some (parameters, body)
+    | .reader _ binding => some ([], .name binding)
+    | .variable _ _ => none
+    | .constant _ _ => none
+    | .function _ _ _ => none
+    | .thrower _ _ => none
+    | .factory _ _ _ => none
+    | .closure _ _ => none
+    | .wrapper _ _ => none
+    | .recordCall _ => none
+    | .call _ => none
+    | .record _ => none
+
+def expressionCalls : NumericExpr → List String
+  | .literal _ => []
+  | .name _ => []
+  | .add left right => expressionCalls left ++ expressionCalls right
+  | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
+  | .local _ _ initial body => expressionCalls initial ++ expressionCalls body
+  | .assign _ value body => expressionCalls value ++ expressionCalls body
+  | .raise value => expressionCalls value
+  | .raisePrimitive _ => []
+  | .argumentsNil => []
+  | .argumentsCons head tail => expressionCalls head ++ expressionCalls tail
+  | .invoke name _ arguments _ => name :: expressionCalls arguments
+
+def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
+  | .literal _ => true
+  | .name _ => true
+  | .add left right => matchingInvocations source left && matchingInvocations source right
+  | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
+  | .local _ _ initial body => matchingInvocations source initial && matchingInvocations source body
+  | .assign _ value body => matchingInvocations source value && matchingInvocations source body
+  | .raise value => matchingInvocations source value
+  | .raisePrimitive _ => true
+  | .argumentsNil => true
+  | .argumentsCons head tail => matchingInvocations source head && matchingInvocations source tail
+  | .invoke name parameters arguments body =>
+    decide (callableSyntax source name = some (parameters, body)) &&
+      matchingInvocations source arguments && matchingInvocations source body
 
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
@@ -281,9 +375,10 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
   | .thrower _ _ => true
   | .expressionFunction _ parameters expression =>
     parameters.all (fun name => parameters.count name == 1) && validNumericExpression expression &&
-      validLocalWrites (parameters.map (fun name => (name, true))) expression &&
+      validLocalWrites (parameters.map (fun name => (name, true))) expression && matchingInvocations source expression &&
       (freeExpressionNames parameters expression).all (fun name =>
-        isReadableBinding source name && visible modules index name)
+        isReadableBinding source name && visible modules index name) &&
+      (expressionCalls expression).all (fun name => isFunction source name && visible modules index name)
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
   | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
@@ -331,7 +426,7 @@ def referenceNames : BindingStmt → List String
   | .constant _ _ => []
   | .function _ target source => [target, source]
   | .thrower _ _ => []
-  | .expressionFunction _ parameters expression => freeExpressionNames parameters expression
+  | .expressionFunction _ parameters expression => freeExpressionNames parameters expression ++ expressionCalls expression
   | .reader _ source => [source]
   | .factory _ _ source => [source]
   | .closure _ factory => [factory]

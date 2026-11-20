@@ -24,6 +24,9 @@ inductive NumericExpr where
   | assign (name : String) (value body : NumericExpr)
   | raise (value : NumericExpr)
   | raisePrimitive (value : ThrownValue)
+  | argumentsNil
+  | argumentsCons (head tail : NumericExpr)
+  | invoke (name : String) (parameters : List String) (arguments body : NumericExpr)
   deriving DecidableEq, Repr
 
 inductive Operation where
@@ -68,6 +71,7 @@ def updateBinding : List (String × Nat) → String → Nat → Option (List (St
 
 /- `Except.error` is a JavaScript throw, while `none` means the model could
    not evaluate an unsupported or uninitialized operation. -/
+mutual
 def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue Nat)
   | .literal value => some (.ok value)
   | .name name => match lookupBinding locals name with
@@ -101,6 +105,35 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
     | .error value => pure (.error value)
     | .ok value => pure (.error (.number value))
   | .raisePrimitive value => some (.error value)
+  | .argumentsNil => none
+  | .argumentsCons _ _ => none
+  | .invoke _ parameters arguments body => do
+    match ← evaluateArguments locals globals arguments with
+    | .error value => pure (.error value)
+    | .ok values =>
+      if parameters.length == values.length then
+        evaluateExpression (parameters.zip values) globals body
+      else none
+
+def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue (List Nat))
+  | .argumentsNil => some (.ok [])
+  | .argumentsCons head tail => do
+    match ← evaluateExpression locals globals head with
+    | .error value => pure (.error value)
+    | .ok value =>
+      match ← evaluateArguments locals globals tail with
+      | .error error => pure (.error error)
+      | .ok values => pure (.ok (value :: values))
+  | .literal _ => none
+  | .name _ => none
+  | .add _ _ => none
+  | .conditional _ _ _ => none
+  | .local _ _ _ _ => none
+  | .assign _ _ _ => none
+  | .raise _ => none
+  | .raisePrimitive _ => none
+  | .invoke _ _ _ _ => none
+end
 
 def ExecutionState.cell (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$live"
 def ExecutionState.snapshot (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$snapshot"
