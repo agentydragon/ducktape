@@ -262,10 +262,10 @@ function Report() {
         <${Paper} withBorder p="md" radius="md">
           <${Title} order=${3} size="h4">How to read the modes<//>
           <${Text} component="p"
-            ><strong>Off</strong> recommends without changing Pods.
-            <strong>Initial</strong> applies at creation without VPA eviction.
-            <strong>Recreate</strong> can evict running Pods to apply
-            recommendations.<//
+            ><strong>Off</strong> recommends without changing Pods.${" "}
+            <strong>Initial</strong> applies at creation without VPA
+            eviction.${" "} <strong>Recreate</strong> can evict running Pods to
+            apply recommendations.<//
           >
           <${Text} component="p"
             >The effective per-container policy determines whether requests,
