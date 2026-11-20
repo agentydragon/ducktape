@@ -38,8 +38,8 @@ one deployment go here; reusable service scripts live with the workload
   Also: <runs/2026-10-13_rugged_model_speed/README.md> (model speed/memory) and
   <rugged_npu_driver.md> (NPU driver research).
 - <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
-  vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
-  and migration path. Decision document for picking what to run on wyrm2.
+  vLLM, SGLang, TensorRT-LLM, and the rest. Records the earlier Ollama baseline
+  and the proposed vLLM migration.
 - <vllm_history.md> — distilled lessons from the prior wyrm2-host vLLM work
   (Qwen3-Coder OOM saga, AWQ + FP8 KV cache + `--max-num-seqs 32` fix). Read
   before re-attempting vLLM in cluster.
@@ -64,22 +64,23 @@ one deployment go here; reusable service scripts live with the workload
 
 ## Current state
 
-The [November refresh](runs/2026-11-18_ollama_refresh/README.md) remeasured the
-live Ollama routes, compares current runtime and quantization candidates, and
-records SSD placement for the trial. The
-[matched SSD run](runs/2026-11-18_dual_5090_exl3/README.md) measures IQ4_XS
-and EXL3 on the two 5090s using the same prompt and filesystem.
+TabbyAPI serves Qwen3.8 Flash-Next EXL3 on both RTX 5090s on `wyrm2`.
+The existing LiteLLM aliases select the stock 2.68 bpw checkpoint. The
+abliterated 2.50 bpw route switches the same server to a second checkpoint.
+The server runs one generation at a time with a 262,144-token window and
+8 GiB RAM and 16 GiB NVMe prefix caches. Ollama is scaled to zero and its
+volumes are retained for rollback. Checkpoint pins, routes, and rollback
+steps are in the [workload README](../../cdk8s/ollama/README.md).
 
-As checked September 27, cluster **Ollama 0.34.4 / GGUF on wyrm2** serves
-Qwen3.8-Flash-Next IQ4_XS from the SSD-backed PV while retaining its HDD registry
-and other models. The [September 27 run](runs/2026-09-27_ollama_ssd/README.md)
-records 128K and 256K serving checks, including a successful 145K history; full
-256K input and concurrent serving remain untested. Host experiment containers have
-been stopped. Pause Ollama through GitOps before resuming exclusive GPU experiments;
-retain its PVC. The [September SSD run](runs/2026-09-24_qwen38_ssd/README.md)
-records the earlier host Qwen3.8 experiments and launch commands. The July
-`runs/` records include Kubernetes vLLM experiments, while host launchers live
-in `x/local_llm/`. The dated backend matrix is in <backend_comparison.md>.
+- The [matched SSD run](runs/2026-11-18_dual_5090_exl3/README.md) compares
+  IQ4_XS and EXL3, records the near-limit live 256K check, and describes
+  the Agentplane staging tool and compaction probes.
+- The [prefix-cache run](runs/2026-11-19_tabby_prefix_cache/README.md)
+  measures reuse after GPU eviction, checkpoint switching, and pod replacement.
+- The [November Ollama refresh](runs/2026-11-18_ollama_refresh/README.md) and
+  [September SSD run](runs/2026-09-27_ollama_ssd/README.md) record the previous
+  cluster baseline. The [September host run](runs/2026-09-24_qwen38_ssd/README.md)
+  includes the earlier launch commands.
 
 ## Tracking
 
@@ -96,6 +97,6 @@ individual tasks remain in <TODO.md>.
 
 ## See also
 
-- <../../cdk8s/ollama/> — current cluster Ollama deployment
+- <../../cdk8s/ollama/> — TabbyAPI deployment and retained Ollama configuration
 - <../../../x/local_llm/> — wyrm2 host scripts (vLLM/Ollama/comfyui)
 - <../gpu.md> — GPU/CDI runtime stack on wyrm2
