@@ -1,5 +1,6 @@
 # The retained and cold targets share the source through firecracker_test.
 # gazelle:exclude test_firecracker.py
+# gazelle:exclude test_vm.py
 load("//agentplane/system_tests/firecracker:defs.bzl", "firecracker_test")
 load(
     "//agentplane/system_tests/k3s:defs.bzl",
@@ -25,6 +26,7 @@ load(
     "image_manifest",
     "k3s_recycling_key",
 )
+load("//agentplane/system_tests/vm:defs.bzl", "vm_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(
@@ -323,65 +325,16 @@ py_test(
 )
 
 # Every VM scenario boots independently on the same stack and runs concurrently.
-py_test(
+vm_test(
     name = "test_vm",
-    size = "enormous",
-    srcs = ["test_vm.py"],
-    args = [
-        "-o",
-        "junit_duration_report=call",
-        "--durations=0",
-    ],
-    data = [
-        "//agentplane/crds",
-        K3S_BINARY,
-        ":vm_image_manifest",
-        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests.json",
-        "@cert_manager_v1_21_2_release//file",
-        "@kubevirt_operator_bundle//file",
-        "@kyverno_install//file",
-    ],
-    env = {
-        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
-        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
-        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
-        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
-        "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
-        "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-        "AGENTPLANE_K3S_REQUIRE_KVM": "0",
-        "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
-        "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
-        "K3S_PROFILE_GUEST_ROOT": "0",
-    },
-    exec_properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"} | K3S_PERSISTENCE_PROPERTIES | {
-        "test.runner-recycling-key": k3s_recycling_key(vm = True),
-    },
-    tags = K3S_TAGS,
-    deps = [
-        "//:conftest",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:pytest_plugin",
-        "//agentplane/system_tests/driver:case_batch",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:dispatcher_transport",
-        "//agentplane/system_tests/driver:offered_models",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scenario",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
-        "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
-        "//devinfra/testing:undeclared_outputs",
-        "//util:net",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
+    recycle = True,
+)
+
+# Same scenarios on managed BuildBuddy for the devel shadow comparison.
+vm_test(
+    name = "test_vm_tcg",
+    pool = None,
+    tags = ["manual"],
 )
 
 # One real guest exercises ordinary Sandbox deletion and ACPI shutdown.

@@ -14,21 +14,21 @@ jobs:
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
       PAIR_DIR: ${{ github.workspace }}/vm-pair
-      MANAGED_LABEL: //agentplane/system_tests/suites:test_vm
-      SHADOW_LABEL: //agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled
+      REQUIRED_LABEL: //agentplane/system_tests/suites:test_vm
+      SHADOW_LABEL: //agentplane/system_tests/suites:test_vm_tcg
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-nix-devtools
         with:
           installables: ".#bb .#bbapi"
 
-      - name: Select a fresh managed VM result
+      - name: Select a fresh hosted KVM result
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -m devinfra.buildbuddy.ci.vm_shadow select
 
-      - name: Run the KVM suite on the same commit
+      - name: Run the managed QEMU suite on the same commit
         id: shadow
         if: steps.select.outputs.selection == 'fresh'
         uses: ./.github/actions/bb-remote
@@ -36,7 +36,7 @@ jobs:
           run_from_commit: ${{ github.sha }}
           linkage_roles: vm-shadow
           bazel_invocation_ids: ${{ steps.select.outputs.shadow_id }}
-          # The KVM variant is manual, so override the CI manual-tag exclusion.
+          # The managed variant is manual, so override the CI manual-tag exclusion.
           args: >-
             test --test_tag_filters=manual --nocache_test_results --flaky_test_attempts=2
             --invocation_id=${{ steps.select.outputs.shadow_id }}

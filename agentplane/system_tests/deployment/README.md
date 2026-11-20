@@ -242,9 +242,9 @@ selector is removed; environment kind does not select an auth mode. This is the 
 
 ## RBE executor constraints
 
-Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`
-(`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. So the stack runs no Cilium, KubeVirt only with
-software emulation, and kube-proxy with ClusterIP Services.
+Probed 2026-10-21 with `bb execute` on the managed executor under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`
+(`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. That managed stack ran KubeVirt with software emulation and used kube-proxy with ClusterIP Services.
+The required VM suite now uses the [hosted KVM pool](../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
 The earlier RBE precompile failure no longer reproduces with `rules_python` 2.4.3: a target using
 `pyc_collection = "include_pyc"` passes and Python loads the generated `.pyc` files. The
@@ -272,8 +272,9 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`//agentplane/system_tests/suites:vm_manifests.json`), so [`sandboxes.py`](../vm/sandboxes.py)
-installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
-and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
+installs production's KubeVirt release and Kyverno's admission controller. The required `test_vm`
+uses nested KVM on the hosted workers. The manual `test_vm_tcg` comparison and managed diagnostics
+use QEMU software emulation. Kyverno adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
 looks for it only at start. The stack writes KubeVirt's and Kyverno's view of the VMs, each guest's
 serial console and any image a Pod pulled from a registry to `test.outputs/vm-sandboxes.txt`.

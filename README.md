@@ -29,7 +29,7 @@ bb run //devinfra/lint:buildifier
 
 ## CI
 
-GitHub Actions run `bazel {build,test}` (including lint) via `bb remote` on a BuildBuddy remote runner — bazel-diff selects affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See `.github/workflows/`.
+GitHub Actions run `bazel {build,test}` (including lint) via `bb remote` on a BuildBuddy remote runner — bazel-diff selects affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See [where Bazel CI runs tests and why](devinfra/ci/README.md#where-bazel-ci-runs-tests) and [the workflows](.github/workflows/).
 
 ## Conventions
 

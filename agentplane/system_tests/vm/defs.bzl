@@ -1,14 +1,16 @@
-"""Manual VM scenarios on the KVM pool, with optional Docker fixture recycling."""
+"""VM Sandbox scenarios on hosted KVM or managed QEMU emulation."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def vm_kvm_test(
+def vm_test(
         name,
         pool = "kvm-vm",
         recycle = False,
+        tags = [],
         suite = "//agentplane/system_tests/suites:test_vm.py",
         extra_deps = []):
+    """Use a hosted pool for hardware acceleration, or pool=None for the managed TCG control."""
     recycling_properties = {}
     recycling_environment = {}
     if recycle:
@@ -21,6 +23,23 @@ def vm_kvm_test(
         recycling_environment = {
             "PYTEST_PLUGINS": "agentplane.system_tests.k3s.recycling_probe",
             "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s:recycling_data_disk)",
+        }
+
+    if pool:
+        properties = {
+            "dockerNetwork": "bridge",
+            "test.EstimatedCPU": "4",
+            "test.EstimatedFreeDiskBytes": "50GB",
+            "test.EstimatedMemory": "7GiB",
+        } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties
+    else:
+        # The two routes share one PyCompile output. Scope VM sizing to TestRunner
+        # so the compiler sees identical execution properties for both targets.
+        properties = K3S_PERSISTENCE_PROPERTIES | {
+            "dockerNetwork": "bridge",
+            "test.EstimatedComputeUnits": "8",
+            "test.EstimatedFreeDiskBytes": "50GB",
+            "test.runner-recycling-key": k3s_recycling_key(vm = True),
         }
 
     py_test(
@@ -50,19 +69,14 @@ def vm_kvm_test(
             "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_image_manifest)",
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
             "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-            "AGENTPLANE_K3S_REQUIRE_KVM": "1",
+            "AGENTPLANE_K3S_REQUIRE_KVM": "1" if pool else "0",
             "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
             "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
             "K3S_PROFILE_GUEST_ROOT": "0",
         } | recycling_environment,
-        exec_properties = {
-            "dockerNetwork": "bridge",
-            "test.EstimatedCPU": "4",
-            "test.EstimatedFreeDiskBytes": "50GB",
-            "test.EstimatedMemory": "7GiB",
-        } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties,
+        exec_properties = properties,
         main = suite,
-        tags = K3S_TAGS + ["manual"] + (["bench"] if recycle else []),
+        tags = K3S_TAGS + tags,
         deps = [
             "//:conftest",
             "//agentplane/proto:session_pb2",
