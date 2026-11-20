@@ -262,65 +262,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
     )
 
 
-def restrict_agent_gateway_routes_chart(app: App) -> Chart:
-    return _cluster_policy_chart(
-        app,
-        "restrict-agent-gateway-routes",
-        annotations=_annotations(
-            title="Restrict Agent Gateway API Routes",
-            category="Access Control",
-            severity="high",
-            subject="HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway",
-            description=(
-                "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, "
-                "UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, "
-                "haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, "
-                "so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route "
-                "that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents "
-                "have no legitimate need to create routes — their sandbox Roles already omit these resources — "
-                "so a blanket deny in those namespaces closes the latent hole structurally without touching any "
-                "existing route (none live in a sandbox namespace). This denylist is preferred over "
-                "per-listener `allowedRoutes` selectors because the public gateway's listener-level "
-                "`allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector "
-                "approach would require labeling the built-in `default` and `flux-system` namespaces that host "
-                "critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
-            ),
-        ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            # background: false because the policy scopes by namespace only (no subject
-            # match), so it does not need request.userInfo; admission-time enforcement is
-            # what matters for the GitOps + agent threat model.
-            background=False,
-            validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="deny-routes-in-agent-namespaces",
-                    match=match_resources(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            # Bare kind names (not Group/Version/Kind-pinned) so the deny matches
-                            # every served apiVersion — an agent can't evade by submitting a route
-                            # at v1beta1/v1alpha2 instead of v1. These kind names are unique to the
-                            # gateway.networking.k8s.io group, so no disambiguation is needed.
-                            kinds=["HTTPRoute", "GRPCRoute", "TLSRoute", "TCPRoute", "UDPRoute", "Gateway"],
-                            operations=[_CREATE, _UPDATE],
-                            namespaces=["claude-sandbox", "haku-sandbox"],
-                        )
-                    ),
-                    validate=Validate.deny(
-                        message=(
-                            "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public "
-                            "ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the "
-                            "`authentik` namespace) instead. "
-                            "Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
-                        )
-                    ),
-                )
-            ],
-        ),
-    )
-
-
 def require_secret_store_conditions_chart(app: App) -> Chart:
     return _cluster_policy_chart(
         app,
@@ -444,7 +385,6 @@ CHARTS = (
     require_gitops_chart,
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
-    restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
     cleanup_controller_jobs_chart,
     cleanup_controller_workloads_chart,

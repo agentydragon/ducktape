@@ -180,7 +180,7 @@ that pokes Grocy's `/login` endpoint before the MCP server starts.
 Agent self-exposure — an HTTPRoute in any namespace attaching to the public gateway and
 bypassing Authentik (`cluster/cdk8s/gateway.py`'s listeners are all `allowedRoutes:
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
-Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
+ValidatingAdmissionPolicy denies route and Gateway writes in the agent namespaces, and
 `haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
 hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies on
 staying closed is closed. What's left is the gateway-layer belt-and-suspenders:

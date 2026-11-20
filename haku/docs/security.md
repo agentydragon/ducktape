@@ -77,10 +77,10 @@ Cluster-wide read-only object/status; logs+configmaps only in infra namespaces v
 per-namespace bindings (no secrets, no app-content namespaces).
 Source of truth: <../../cluster/docs/agent_rbac.md>.
 
-### Kyverno `restrict-agent-gateway-routes`
+### Native admission policy `restrict-agent-gateway-routes`
 
-Agents cannot create public routes even if RBAC ever drifted.
-Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
+Kubernetes denies Gateway API writes in the agent sandbox namespaces even if RBAC drifts.
+Source of truth: <../../cluster/cdk8s/gateway.py>.
 
 ### Agentplane egress fence
 
@@ -285,7 +285,7 @@ bulk channels.
   still work (Haku item `haku-ui-browser-exfil-csp-gap-2026` tracks the initial
   verification).
 - **Gateway `allowedRoutes` still `from: All`** — belt-and-suspenders tightening deferred,
-  fenced meanwhile by the Kyverno `restrict-agent-gateway-routes` policy; see
+  fenced meanwhile by the native `restrict-agent-gateway-routes` policy; see
   `cluster/k8s/TODO.md`.
 - **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
   location — inherent to using hosted models; acknowledged in
