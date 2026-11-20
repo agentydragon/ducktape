@@ -72,7 +72,6 @@ type LifecycleStatus struct {
 	Sealed                 bool
 	SealUID                string
 	SealCursor             uint64
-	Delivered              bool
 	AcknowledgementPresent bool
 	AcknowledgementSealed  bool
 	AcknowledgementCursor  uint64

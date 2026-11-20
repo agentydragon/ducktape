@@ -100,9 +100,6 @@ durable user data and uncertain-effect handling in any accepted change.
   [Runtime forwarding](runtime/internal/coordinator/forward.go) and the
   [embedded service](runtime/execution/service/service.go). Keep peer authorization and verified
   incarnation-change details at their boundaries; reconcile differences such as Session ID length first.
-- **Delivery status:** Consider deriving `Delivered` from the generation-qualified seal and ACK fields
-  in [Session status](runtime/session/resources.go), rather than storing the derived boolean too.
-  Retain detailed blockers and tests for missing, unsealed, wrong-cursor and stale-generation ACKs.
 - **Possible admission cleanup defect:** In [Execution admission](runtime/internal/coordinator/forward.go),
   `execCalls` is populated before admission-count publication; on publication failure the error path
   appears to leave the entry and cancel function until teardown. Confirm with fault injection before
