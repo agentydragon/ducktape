@@ -262,7 +262,7 @@ export function eventMonthIndex(event: RolloutEvent | null | undefined) {
   return Number.isFinite(monthIndex) ? monthIndex : null;
 }
 
-export function eventStateMonthIndex(event: RolloutEvent | null | undefined) {
+function eventStateMonthIndex(event: RolloutEvent | null | undefined) {
   const monthIndex = eventMonthIndex(event);
   return monthIndex == null ? null : monthIndex + 1;
 }
@@ -293,28 +293,24 @@ export function eventAmount(event: RolloutEvent | null | undefined) {
   return event?.amount_quanta ?? null;
 }
 
-export function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdiction_id"] | null | undefined) {
+function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdiction_id"] | null | undefined) {
   if (jurisdictionId === "federal_us") return "federal";
   if (jurisdictionId === "california") return "California";
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
-export function formatDueWithShortfall(
-  amountDueQuanta: unknown,
-  shortfallQuanta: unknown,
-  currencyMeta: CurrencyMetadata
-) {
+function formatDueWithShortfall(amountDueQuanta: unknown, shortfallQuanta: unknown, currencyMeta: CurrencyMetadata) {
   const base = `due ${fmtQuanta(amountDueQuanta, currencyMeta)}`;
   return currencyQuantaIsPositive(shortfallQuanta)
     ? `${base}; shortfall ${fmtQuanta(shortfallQuanta, currencyMeta)}`
     : base;
 }
 
-export function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
+function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
   return currencyQuantaIsPositive(event.shortfall_quanta) ? shortfall : ok;
 }
 
-export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
+function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
   const isShortfall = currencyQuantaIsPositive(event.shortfall_quanta);
   if (event.obligation_type === "estimated_tax")
     return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
@@ -322,7 +318,7 @@ export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
-export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
+function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   const gain = currencyQuantaAdd(event.ltcg_quanta, event.stcg_quanta);
   const parts = [
     `ordinary tax ${fmtQuanta(event.ordinary_tax_quanta, event._currency)}`,
@@ -341,7 +337,7 @@ export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   return parts.join("; ");
 }
 
-export function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
+function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
   const parts = [`down ${fmtQuanta(event.down_payment_quanta, event._currency)}`];
   if (currencyQuantaIsPositive(event.mortgage_principal_quanta)) {
     parts.push(`mortgage ${fmtQuanta(event.mortgage_principal_quanta, event._currency)}`);

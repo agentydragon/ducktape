@@ -6,15 +6,15 @@ type MetricScale = "linear" | "log";
 type FanChartAxis = { min: number; max: number; range: number; ticks: number[]; scale: MetricScale };
 type CurrencyFormat = { currencyCode?: string };
 
-export function normalizeMetricScale(metricScale: string): MetricScale {
+function normalizeMetricScale(metricScale: string): MetricScale {
   return metricScale === "log" ? "log" : "linear";
 }
 
-export function metricIsCurrency(metricName: string | null | undefined) {
+function metricIsCurrency(metricName: string | null | undefined) {
   return metricName?.endsWith("_quanta") || metricName?.includes("_value") || metricName?.includes("_cash_flow");
 }
 
-export function fmtMetricValue(
+function fmtMetricValue(
   metricName: string | null | undefined,
   value: unknown,
   _currencyDisplay = "exact",
@@ -33,7 +33,7 @@ export function fmtAxisMetricValue(metricName: string | null | undefined, value:
   return fmtMetricValue(metricName, value, "compact", currency);
 }
 
-export function niceCurrencyTickStep(rawStep: number) {
+function niceCurrencyTickStep(rawStep: number) {
   if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
   const normalized = rawStep / magnitude;
@@ -41,7 +41,7 @@ export function niceCurrencyTickStep(rawStep: number) {
   return Math.max(1, niceNormalized * magnitude);
 }
 
-export function transformMetricValue(value: number, metricScale: string) {
+function transformMetricValue(value: number, metricScale: string) {
   if (!Number.isFinite(value)) return NaN;
   if (normalizeMetricScale(metricScale) !== "log") return value;
   return Math.sign(value) * Math.log1p(Math.abs(value) / LOG_SCALE_UNIT);
@@ -51,7 +51,7 @@ export function axisCoordinate(axis: Pick<FanChartAxis, "scale"> | null | undefi
   return transformMetricValue(value, axis?.scale ?? "linear");
 }
 
-export function currencyFanChartAxis(values: number[], targetTickCount = 5): FanChartAxis {
+function currencyFanChartAxis(values: number[], targetTickCount = 5): FanChartAxis {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min;

@@ -66,12 +66,12 @@ type ProjectionShared = {
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
-export const DEFAULT_ROLLOUT_COUNT = 500;
-export const DEFAULT_FIRST_SEED = 1;
+const DEFAULT_ROLLOUT_COUNT = 500;
+const DEFAULT_FIRST_SEED = 1;
 // Likewise not a product-input field: the app shell owns the horizon (see `horizonMonthsDefault`).
 const DEFAULT_HORIZON_MONTHS = 48;
 
-export const DEFAULT_PRODUCT_INPUT_BASE = {
+const DEFAULT_PRODUCT_INPUT_BASE = {
   monthlySpend: 1400,
   spendIndex: "inflation",
   sleeveWeights: null,
@@ -271,7 +271,7 @@ export function metricScaleFromSearch(searchString: string): "linear" | "log" {
 // drops it before the `?scenarios=` blob is serialized, and decode mints a fresh one so base and
 // variants never share a (colliding) key.
 let _nextLifecycleEventId = 0;
-export function nextLifecycleEventId(): string {
+function nextLifecycleEventId(): string {
   _nextLifecycleEventId += 1;
   return `lc-${_nextLifecycleEventId}`;
 }
@@ -285,7 +285,7 @@ export function defaultLifecycleEvent(kind: LifecycleInputEvent["kind"], suggest
   throw new Error(`unknown lifecycle event kind ${kind}`);
 }
 
-export function buildPropertyFinancing(input: ProductInput): ProductPropertyFinancing {
+function buildPropertyFinancing(input: ProductInput): ProductPropertyFinancing {
   if (input.financingKind !== "mortgage") return { kind: "cash" };
   return {
     kind: "mortgage",
@@ -295,9 +295,7 @@ export function buildPropertyFinancing(input: ProductInput): ProductPropertyFina
   };
 }
 
-export function buildRentalIncomePlan(
-  input: ProductInput
-): NonNullable<ProductPropertyPurchase["initial_rental"]> | null {
+function buildRentalIncomePlan(input: ProductInput): NonNullable<ProductPropertyPurchase["initial_rental"]> | null {
   // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
   const fractionPct = Number(input.rentalFractionRentedPct) || 0;
   if (fractionPct <= 0) return null;
@@ -309,9 +307,7 @@ export function buildRentalIncomePlan(
   return { full_property_monthly_rent: fullPropertyMonthlyRent, fraction_rented: fraction, vacancy_pct: vacancyPct };
 }
 
-export function buildRentalManagement(
-  input: ProductInput
-): NonNullable<ProductPropertyPurchase["rental_management"]> | null {
+function buildRentalManagement(input: ProductInput): NonNullable<ProductPropertyPurchase["rental_management"]> | null {
   // Management agency only makes sense when there's something to rent.
   if (!input.useRentalManagement || (Number(input.rentalFractionRentedPct) || 0) <= 0) return null;
   return {
@@ -321,7 +317,7 @@ export function buildRentalManagement(
   };
 }
 
-export function buildPropertyPurchase(input: ProductInput): ProductPropertyPurchase | null {
+function buildPropertyPurchase(input: ProductInput): ProductPropertyPurchase | null {
   if (!input.propertyId) return null;
   const initialRental = buildRentalIncomePlan(input);
   // Wire enforces is_primary_residence=False when fraction_rented=1.0; mirror that here
@@ -338,7 +334,7 @@ export function buildPropertyPurchase(input: ProductInput): ProductPropertyPurch
   };
 }
 
-export function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLifecycleEvent[] {
+function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLifecycleEvent[] {
   if (!Array.isArray(events) || events.length === 0) return [];
   return events
     .slice()
@@ -376,7 +372,7 @@ export function buildLifecycleEvents(events: LifecycleInputEvent[]): ProductLife
 // A sleeve is a held security, named by the series symbol the sim prices it by, or a managed TLH
 // portfolio, named by its id: the portfolio tracks an index but is not a holding of it, so lots of
 // that index are a separate sleeve. `null` for anything else, which is not a sleeve.
-export function sleeveIdentity(sleeve: Partial<SleeveWeight> | null | undefined): SleeveIdentity | null {
+function sleeveIdentity(sleeve: Partial<SleeveWeight> | null | undefined): SleeveIdentity | null {
   if (sleeve?.kind === "security" && sleeve.symbol) return { kind: "security", symbol: sleeve.symbol };
   if (sleeve?.kind === "managed_portfolio" && sleeve.portfolioId) {
     return { kind: "managed_portfolio", portfolioId: sleeve.portfolioId };
@@ -398,7 +394,7 @@ export function sleeveKey(sleeve: Partial<SleeveWeight> | null | undefined): str
 //
 // `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
 // outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
-export function seedSleeveWeights(sellable: readonly SellableRow[] | null | undefined): SleeveWeight[] {
+function seedSleeveWeights(sellable: readonly SellableRow[] | null | undefined): SleeveWeight[] {
   const held = (sellable ?? []).filter(
     (row): row is SellableRow & { valueQuanta: string } => row.valueQuanta != null && BigInt(row.valueQuanta) > 0n
   );
@@ -504,7 +500,7 @@ export function productProjectionSummaryRequest(
 // Per-scenario fan colors. Index 0 is the Base series (the existing single-scenario blue); variants
 // take the rest. Deliberately red-free: red (`FAILED_ROLLOUT_COLOR`) is reserved for failed
 // rollouts, so a red line never reads as a scenario hue. Blue / teal / violet / gold / cyan.
-export const SCENARIO_COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"] as const;
+const SCENARIO_COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"] as const;
 // Base is series 0; variants share the remaining colors.
 export const MAX_VARIANTS = SCENARIO_COLORS.length - 1;
 
@@ -520,7 +516,7 @@ export function defaultVariantLabel(index: number) {
 let _nextVariantId = 0;
 // Stable per-variant id used as the React key + the active-selection handle. UI-only — the URL
 // encodes variants positionally, so ids are minted fresh on every decode.
-export function nextVariantId(): string {
+function nextVariantId(): string {
   _nextVariantId += 1;
   return `var-${_nextVariantId}`;
 }
