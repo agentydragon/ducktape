@@ -177,9 +177,7 @@ def _rbe_flags() -> list[str]:
     return flags
 
 
-def _run_bazel(
-    command: str, *, role: str, targets: list[str], extra_flags: tuple[str, ...] = (), check: bool = True
-) -> subprocess.CompletedProcess[str]:
+def _run_bazel(command: str, *, role: str, targets: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run one named CI phase with its common Bazel flags."""
     _announce_bazel_command(role)
     return _run(
@@ -189,7 +187,6 @@ def _run_bazel(
             f"--invocation_id={os.environ[f'{role.upper()}_INVOCATION_ID']}",
             "--keep_going",
             *_rbe_flags(),
-            *extra_flags,
             *targets,
         ],
         check=check,

@@ -55,10 +55,10 @@ class Pending:
 
 
 class GitHubApi:
-    def __init__(self, *, repository: str, token: str, api_url: str | None = None) -> None:
+    def __init__(self, *, repository: str, token: str) -> None:
         self.repository = repository
         self.token = token
-        self.api_url = (api_url or os.environ.get("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
+        self.api_url = (os.environ.get("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
 
     def get(self, path: str) -> Any:
         request = Request(
