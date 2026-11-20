@@ -19252,5 +19252,52 @@
       "claude-sandbox/sandbox-janitor",
       "thrive-scraper/reap-wedged-jobs"
     ]
+  },
+  "remaining_policy_review": {
+    "reviewed_at_utc": "2026-11-20T11:24:35Z",
+    "native_gitops_audit": {
+      "pr": 18174,
+      "html_url": "https://github.com/agentydragon/ducktape/pull/18174",
+      "head_sha": "9709eefc72b82843e86b318a293c4e46566a147c",
+      "state": "draft",
+      "kyverno_policy_reports": 304,
+      "kyverno_failed_results": 120,
+      "api_servers_with_local_audit_sink": 3,
+      "configured_local_audit_max_age_days": 30,
+      "current_daemonset_logs_collected": ["journal", "Pod logs"],
+      "verified_apps_metadata_event_consumer": false,
+      "before_removal": "Prove native audit annotation and suitable retention while Kyverno reports are still available."
+    },
+    "service_links_server_create_dry_runs": {
+      "default": {
+        "omitted": false,
+        "true": false,
+        "false": false
+      },
+      "kube-system": {
+        "omitted": true,
+        "true": true,
+        "false": false
+      }
+    },
+    "cleanup_policy_contracts": {
+      "claude-sandbox/sandbox-janitor": {
+        "schedule": "20 * * * *",
+        "age_strictly_greater_than_hours": 168,
+        "kinds": [
+          "Pod",
+          "Deployment",
+          "StatefulSet",
+          "Job",
+          "CronJob",
+          "Service"
+        ]
+      },
+      "thrive-scraper/reap-wedged-jobs": {
+        "schedule": "*/30 * * * *",
+        "age_strictly_greater_than_hours": 6,
+        "active_jobs_only": true
+      }
+    }
   }
 }

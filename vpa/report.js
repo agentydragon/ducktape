@@ -80,9 +80,9 @@ const cutoverProof = {
   "default-revision-history-limit":
     "Confirm writers do not rely on the explicit −1 rewrite, then approve native negative-input behavior.",
   "default-disable-service-links":
-    "Account for every operator-created Pod, not only cdk8s templates; test explicit and absent fields.",
+    "Preserve the Pod CREATE behavior for raw and operator-created Pods, including explicit true and excluded namespaces.",
   "require-gitops":
-    "It is audit-only today. Decide whether to retain its signals and verify subject and operator exemptions.",
+    "Prove accessible native events and suitable retention before retiring the PolicyReport pipeline.",
   "restrict-agent-gateway-routes":
     "After pruning Kyverno, native admission denied all 20 sandbox dry runs and allowed all 10 operator creates and the operator update.",
   "require-secret-store-conditions":
@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=retirement-20261120-1115")
+    fetch("./evidence.json?v=retirement-20261120-1124")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -232,8 +232,11 @@ function Report() {
   const cutover = data.gateway_cutover;
   const cutoverTime = cutover.observed_at_utc.slice(11, 16);
   const nativeGatewayPolicy = "restrict-agent-gateway-routes";
+  const remainingPolicies = data.remaining_policy_review;
+  const remainingPoliciesTime = remainingPolicies.reviewed_at_utc.slice(11, 16);
   const policyState = {
     [nativeGatewayPolicy]: "Retired",
+    "require-gitops": "Audit delivery gate",
     "default-revision-history-limit":
       progress.retirement.revision_history.state,
   };
@@ -526,7 +529,7 @@ function Report() {
         <${Table} striped withTableBorder verticalSpacing="sm">
           <${Table.Thead}
             ><${Table.Tr}
-              ><${Table.Th}>Policy<//><${Table.Th}>State<//
+              ><${Table.Th}>Policy<//><${Table.Th} miw=${105}>State<//
               ><${Table.Th}>Current responsibility<//
               ><${Table.Th}>Candidate direction<//
               ><${Table.Th}>Proof or remaining gate<//><//
@@ -541,8 +544,7 @@ function Report() {
                     <${Table.Td}><${Code}>${p.name}<//><//
                     ><${Table.Td}>${policyState[p.name] ?? "Open"}<//
                     ><${Table.Td}>${p.role}<//
-                    ><${Table.Td}
-                      >${p.name === nativeGatewayPolicy ? "Native ValidatingAdmissionPolicy and Deny binding." : p.direction}<//
+                    ><${Table.Td}>${policyDirection[p.name] ?? p.direction}<//
                     ><${Table.Td}>${cutoverProof[p.name]}<//>
                   <//>`,
               )}
@@ -552,16 +554,16 @@ function Report() {
               >
               <${Table.Td}>Open<//>
               <${Table.Td}
-                >Scheduled cleanup in claude-sandbox and thrive-scraper.<//
+                >claude-sandbox reaps six resource kinds older than seven days
+                hourly. thrive-scraper reaps active Jobs older than six hours
+                every 30 minutes.<//
               >
               <${Table.Td}
-                >Use an appropriately scoped janitor or native TTL where it
-                actually applies.<//
+                >Use a janitor scoped to the affected namespace and kinds.<//
               >
               <${Table.Td}
-                >Preserve age, selection, permissions and schedule; Job TTL only
-                handles finished Jobs, not wedged active Jobs or other resource
-                kinds.<//
+                >Preserve the schedules, kinds, age thresholds, predicates and
+                delete permissions. Job TTL only handles finished Jobs.<//
               >
             <//>
           <//>
@@ -591,9 +593,23 @@ function Report() {
         >
       <//>
       <${Text} component="p">
-        Audit the GitOps reporting consumers and the Service links default
-        separately. The SecretStore background checks, launcher relay and both
-        cleanup policies still need replacement coverage.
+        At ${remainingPoliciesTime} UTC the remaining-policy review confirmed
+        that Service links are forced off on Pod CREATE in the default namespace
+        even when the caller explicitly requests true. In the excluded
+        kube-system namespace the default is true and explicit values survive.
+        Chart defaults cover their own Pod templates. Dynamic Pods still need
+        admission coverage.
+      <//>
+      <${Text} component="p">
+        The native GitOps Audit draft keeps Kyverno reporting and the existing
+        exemptions. It waits for an accessible API audit consumer that can
+        retrieve workload CREATE and UPDATE events. The three API servers have
+        bounded local logs, while Kyverno currently records 120 failed results
+        in 304 namespaced PolicyReports. The SecretStore background checks,
+        launcher relay and both cleanup policies still need parity.
+        ${" "}<${Anchor} href=${remainingPolicies.native_gitops_audit.html_url}
+          >Gated native GitOps audit<//
+        >
       <//>
       <${Text} component="p">
         The API server is v1.35.1 and already advertises native

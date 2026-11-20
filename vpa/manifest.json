@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "0d813b744dc7940a940622147e9028a5ece7a69c4d52f18ad8d4401d3d509ade",
-  "evidence_sha256": "6d003d6926f70e18c1be6438fab50800bc4927f166cd5b7854fd89ab314cbd5c",
+  "report_script_sha256": "5fb691fd3aff144e50bbcf239ef790a9700191b0df894e59c95c4ba4ab924bc6",
+  "evidence_sha256": "e3576fc0535ba66db320da9f5a9e52cbd17342c9d42e9034235c070bc4613983",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -26,5 +26,6 @@
   "retirement_progress_at_utc": "2026-11-20T11:00:13Z",
   "retirement_progress_source_devel_commit": "11255152640ec562060e995b13e269718d7b5603",
   "gateway_cutover_at_utc": "2026-11-20T11:15:36.941613+00:00",
-  "gateway_cutover_source_devel_commit": "81d951883be6e596018a9f890d2393a0eb23238d"
+  "gateway_cutover_source_devel_commit": "81d951883be6e596018a9f890d2393a0eb23238d",
+  "remaining_policy_review_at_utc": "2026-11-20T11:24:35Z"
 }
