@@ -24,8 +24,8 @@ function CreateBranchLabel({ args }: { args: CreateBranchArguments }): JSX.Eleme
 }
 
 // Nothing is left once the label has drawn every argument; the schema still gates the empty view.
-function NoFurtherArguments(): JSX.Element {
-  return <></>;
+function NoFurtherArguments(): null {
+  return null;
 }
 
 export const createBranchLabel: ArgumentsPreview = definePreview(zCreateBranchArguments, CreateBranchLabel);
