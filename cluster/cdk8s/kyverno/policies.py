@@ -32,7 +32,6 @@ from kyverno_validatingpolicy_crds.io.kyverno.policies import (
     ValidatingPolicySpecEvaluationBackground,
     ValidatingPolicySpecMatchConstraints,
     ValidatingPolicySpecMatchConstraintsResourceRules,
-    ValidatingPolicySpecMatchConstraintsResourceRulesOperations,
     ValidatingPolicySpecValidationActions,
     ValidatingPolicySpecValidations,
 )
@@ -259,10 +258,7 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
                     ValidatingPolicySpecMatchConstraintsResourceRules(
                         api_groups=["external-secrets.io"],
                         api_versions=["*"],
-                        operations=[
-                            ValidatingPolicySpecMatchConstraintsResourceRulesOperations.CREATE,
-                            ValidatingPolicySpecMatchConstraintsResourceRulesOperations.UPDATE,
-                        ],
+                        operations=["CREATE", "UPDATE"],
                         resources=["clustersecretstores"],
                     )
                 ]
