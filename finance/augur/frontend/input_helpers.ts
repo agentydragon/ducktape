@@ -119,8 +119,8 @@ export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_v
 
 // Ordered as distinct buckets first, then the sums that aggregate them: the liquid buckets
 // (public-equity holdings, private equity, cash) feed Liquid net worth; the property buckets
-// (value, mortgage, home equity) plus liquid net worth feed Net worth. Cash shortfall is a
-// diagnostic, kept last. This order drives the metric picker and both terminal tables.
+// (value, mortgage, home equity) plus liquid net worth feed Net worth. This order drives the
+// metric picker and both terminal tables.
 export const METRIC_OPTIONS = [
   { value: "holding_value", chartValue: "holding_value_quanta", label: "Holdings value" },
   {

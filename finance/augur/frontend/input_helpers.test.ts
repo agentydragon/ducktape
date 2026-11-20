@@ -1,5 +1,5 @@
 // Unit tests for the scenario-set URL codec (Base + per-variant overrides) and for the target
-// allocation the funding policy carries. Runs under vitest; see //augur/frontend:input_helpers_test.
+// allocation the funding policy carries. Runs under vitest; see //finance/augur/frontend:input_helpers_test.
 
 import { test, expect } from "vitest";
 
