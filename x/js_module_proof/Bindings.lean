@@ -14,6 +14,7 @@ inductive BindingStmt where
   | expressionFunction (name : String) (parameters : List String) (expression : NumericExpr)
   | capturedFactory (name : String) (parameters : List String) (locals : List CapturedLocal) (closureParameters : List String) (body : NumericExpr)
   | capturedClosure (name factory : String) (arguments : List Nat) (keys : List String)
+  | capturedAlias (name target : String)
   | factory (name localName source : String)
   | closure (name factory : String)
   | wrapper (name target : String)
@@ -44,6 +45,7 @@ def declaredName : BindingStmt → Option String
   | .expressionFunction name _ _ => some name
   | .capturedFactory name _ _ _ _ => some name
   | .capturedClosure name _ _ _ => some name
+  | .capturedAlias name _ => some name
   | .factory name _ _ => some name
   | .closure name _ => some name
   | .wrapper name _ => some name
@@ -68,6 +70,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => false
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -87,6 +90,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => false
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -106,6 +110,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => true
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => true
+    | .capturedAlias _ _ => true
     | .factory _ _ _ => false
     | .closure _ _ => true
     | .wrapper _ _ => true
@@ -121,6 +126,7 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => false
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
     | .variable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => false
@@ -145,6 +151,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => false
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
@@ -165,6 +172,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .expressionFunction _ _ _ => false
     | .capturedFactory _ _ _ _ _ => false
     | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
     | .call _ => false
@@ -348,6 +356,7 @@ def callableSyntax (source : List BindingStmt) (name : String) : Option (List St
     | .expressionFunction _ parameters body => some (parameters, body)
     | .capturedFactory _ _ _ _ _ => none
     | .capturedClosure _ _ _ _ => none
+    | .capturedAlias _ _ => none
     | .reader _ binding => some ([], .name binding)
     | .variable _ _ => none
     | .constant _ _ => none
@@ -407,12 +416,37 @@ def capturedFactoryData (source : List BindingStmt) (name : String) : Option (Li
     | .thrower _ _ => none
     | .expressionFunction _ _ _ => none
     | .capturedClosure _ _ _ _ => none
+    | .capturedAlias _ _ => none
     | .factory _ _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+
+def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Option (String × List Nat × List String)
+  | 0, _ => none
+  | fuel + 1, name => match findDefinition source name with
+    | none => none
+    | some statement => match statement with
+      | .capturedClosure _ factory arguments keys => some (factory, arguments, keys)
+      | .variable _ _ => none
+      | .constant _ _ => none
+      | .function _ _ _ => none
+      | .reader _ _ => none
+      | .thrower _ _ => none
+      | .expressionFunction _ _ _ => none
+      | .capturedFactory _ _ _ _ _ => none
+      | .capturedAlias _ target => capturedClosureDataFuel source fuel target
+      | .factory _ _ _ => none
+      | .closure _ _ => none
+      | .wrapper _ _ => none
+      | .recordCall _ => none
+      | .call _ => none
+      | .record _ => none
+
+def capturedClosureData (source : List BindingStmt) (name : String) : Option (String × List Nat × List String) :=
+  capturedClosureDataFuel source (source.length + 1) name
 
 def capturedInitializersValid (source : List BindingStmt) (modules : List BindingModule) (index : Nat)
     (bound : List (String × Bool)) : List CapturedLocal → Bool
@@ -459,6 +493,9 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       (match capturedFactoryData source factory with
        | some (parameters, locals, _, _) => parameters.length == arguments.length && keys.length == parameters.length + locals.length
        | none => false)
+  | .capturedAlias _ target =>
+    visible modules index target &&
+      (capturedClosureData source target).isSome
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
   | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
@@ -509,6 +546,7 @@ def referenceNames : BindingStmt → List String
   | .expressionFunction _ parameters expression => freeExpressionNames parameters expression ++ expressionCalls expression
   | .capturedFactory _ parameters locals closureParameters body => capturedFactoryReferences parameters locals closureParameters body
   | .capturedClosure _ factory _ _ => [factory]
+  | .capturedAlias _ target => [target]
   | .reader _ source => [source]
   | .factory _ _ source => [source]
   | .closure _ factory => [factory]
@@ -531,6 +569,7 @@ def allReferencesMatch (source : List BindingStmt) (modules : List BindingModule
 def capturedKeys (source : List BindingStmt) : List String :=
   source.flatMap (fun statement => match statement with
     | .capturedClosure _ _ _ keys => keys
+    | .capturedAlias _ _ => []
     | .variable _ _ => []
     | .constant _ _ => []
     | .function _ _ _ => []
@@ -642,6 +681,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .expressionFunction _ _ _ => none
     | .capturedFactory _ _ _ _ _ => none
     | .capturedClosure _ _ _ _ => none
+    | .capturedAlias _ _ => none
     | .closure closureName _ => some (if observeReturn then [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)] else [.incrementBinding (closureCell closureName)])
     | .wrapper _ target => if isClosure source target then some (if observeReturn then [.incrementBinding (closureCell target), .returnBinding (closureCell target)] else [.incrementBinding (closureCell target)]) else none
     | .factory _ _ _ => none
@@ -668,14 +708,15 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
   | .thrower _ _ => some []
   | .expressionFunction _ _ _ => some []
   | .capturedFactory _ _ _ _ _ => some []
-  | .capturedClosure _ factory arguments keys => do
+  | .capturedClosure name factory arguments keys => do
     let data ← capturedFactoryData source factory
     let (parameters, locals, _, _) := data
     if parameters.length != arguments.length || keys.length != parameters.length + locals.length then none else
       let parameterKeys := parameters.zip (keys.take parameters.length)
       let parameterOperations := (parameterKeys.zip arguments).map (fun pair => .declareBinding pair.1.2 pair.2)
       let localOperations ← capturedInitializers parameterKeys locals (keys.drop parameters.length)
-      pure (parameterOperations ++ localOperations)
+      pure (parameterOperations ++ localOperations ++ [.declareBinding name 0])
+  | .capturedAlias name target => some [.copyBinding name target]
   | .factory _ _ _ => some []
   | .closure name factory => do
     let definition ← findDefinition source factory
@@ -689,6 +730,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .expressionFunction _ _ _ => none
     | .capturedFactory _ _ _ _ _ => none
     | .capturedClosure _ _ _ _ => none
+    | .capturedAlias _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
     | .recordCall _ => none
@@ -710,6 +752,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .expressionFunction _ _ _ => none
       | .capturedFactory _ _ _ _ _ => none
       | .capturedClosure _ _ _ _ => none
+      | .capturedAlias _ _ => none
       | .recordCall _ => none
       | .call _ => none
       | .record _ => none
@@ -732,7 +775,8 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .thrower _ _ => []
     | .expressionFunction _ _ _ => []
     | .capturedFactory _ _ _ _ _ => []
-    | .capturedClosure _ _ _ keys => keys
+    | .capturedClosure name _ _ keys => keys ++ [name]
+    | .capturedAlias name _ => [name]
     | .factory _ _ _ => []
     | .closure name _ => [closureCell name]
     | .wrapper _ _ => []
@@ -790,6 +834,12 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
       | some (parameters, locals, closureParameters, body) =>
         let captures := (parameters ++ locals.map CapturedLocal.name).zip keys
         some (.captured captures closureParameters body)
+    | .capturedAlias _ target => match capturedClosureData statements target with
+      | some (factory, _, keys) => match capturedFactoryData statements factory with
+        | some (parameters, locals, closureParameters, body) =>
+          some (.captured ((parameters ++ locals.map CapturedLocal.name).zip keys) closureParameters body)
+        | none => none
+      | none => none
     | .variable _ _ => none
     | .constant _ _ => none
     | .factory _ _ _ => none

@@ -12,7 +12,8 @@ escaping closures in Node, including parameters, shadowing, captured writes,
 bounded loops and branches.
 Incrementing-counter closures and factories producing parameterized closures
 with independent captured numeric cells can also be split and validated against
-the shared Lean semantics; the fuzzer varies their inputs and module assignments.
+the shared Lean semantics. Immutable alias chains share those cells; the fuzzer
+varies inputs and module assignments for these cases.
 The following broader generator and syntax work remains open.
 
 - [ ] Replace the fixed collection of supported statement shapes and injected

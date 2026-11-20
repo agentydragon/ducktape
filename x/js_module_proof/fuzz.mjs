@@ -493,7 +493,12 @@ function capturedCase(seed, index) {
     node.kind = "const";
     return node;
   });
-  const names = closures.map((_, i) => `closure${i}`);
+  const alias = declaration("alias", id("closure0"));
+  alias.kind = "const";
+  const alias2 = declaration("alias2", id("alias"));
+  alias2.kind = "const";
+  const definitions = [...closures, alias, alias2];
+  const names = [...closures.map((_, i) => `closure${i}`), "alias", "alias2"];
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -502,7 +507,7 @@ function capturedCase(seed, index) {
       ...(unsafe ? [variable("amount", 1 + rand(3)), fn("bump", add("seed", "amount"))] : []),
       factory,
       ...(unsafe ? [expr(call(id("bump")))] : []),
-      ...closures,
+      ...definitions,
       {
         type: "ExportNamedDeclaration",
         specifiers: names.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
@@ -513,17 +518,17 @@ function capturedCase(seed, index) {
   const modules = unsafe
     ? {
         "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
-        "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 5) },
+        "closures.mjs": { imports: ["state.mjs"], statements: definitions.map((_, i) => i + 5) },
         "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
       }
     : combined
       ? {
-          "state.mjs": { imports: [], statements: [0, 1, ...closures.map((_, i) => i + 2)] },
+          "state.mjs": { imports: [], statements: [0, 1, ...definitions.map((_, i) => i + 2)] },
           "entry.mjs": { imports: ["state.mjs"], statements: [] },
         }
       : {
           "state.mjs": { imports: [], statements: [0, 1] },
-          "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 2) },
+          "closures.mjs": { imports: ["state.mjs"], statements: definitions.map((_, i) => i + 2) },
           "entry.mjs": { imports: ["closures.mjs"], statements: [] },
         };
   const calls = [...names, ...names.slice().reverse()].map((name) => ({ name, args: [1 + rand(5)] }));

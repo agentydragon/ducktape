@@ -122,9 +122,12 @@ parameters and initialized lexical locals that return a parameterized arrow
 function. The arrow can mutate captured `let` bindings and parameters through
 the supported numeric expression grammar. Top-level `const` declarations call
 these factories with numeric literals; each call receives independent captured
-cells. Reads of later or uninitialized factory locals and writes to captured
-`const` bindings are rejected. Arbitrary escaping and other closure shapes
-remain unsupported by the proof. The generator can also emit candidate splits
+cells. A chain of top-level `const` aliases can name one such closure, and
+calls through any export share its cells. Every alias must read an already
+initialized target; cyclic aliases and unsupported targets are rejected. Reads of
+later or uninitialized factory locals and writes to captured `const` bindings
+are rejected. Arbitrary escaping and other closure shapes remain unsupported
+by the proof. The generator can also emit candidate splits
 for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.

@@ -401,7 +401,15 @@ function candidateStatement(node, functions) {
     return recognized;
   } catch (error) {
     if (!String(error).includes("unknown:")) throw error;
-    if (node.type === "VariableDeclaration") return capturedClosure(node, functions);
+    if (node.type === "VariableDeclaration") {
+      const declaration = node.declarations[0];
+      if (node.kind === "const" && node.declarations.length === 1 && declaration.init?.type === "Identifier") {
+        const name = identifier(declaration.id);
+        check(name !== "globalThis", "globalThis cannot be locally declared");
+        return { kind: "capturedAlias", name, target: identifier(declaration.init) };
+      }
+      return capturedClosure(node, functions);
+    }
     if (node.type !== "FunctionDeclaration") throw error;
     try {
       return expressionFunction(node, functions);
@@ -594,6 +602,7 @@ const declarationName = (item) =>
     "expressionFunction",
     "capturedFactory",
     "capturedClosure",
+    "capturedAlias",
   ].includes(item.kind)
     ? item.name
     : null;
@@ -602,6 +611,7 @@ function references(item) {
   if (item.kind === "function") return [item.target, item.source];
   if (item.kind === "reader" || item.kind === "factory") return [item.source];
   if (item.kind === "closure" || item.kind === "capturedClosure") return [item.factory];
+  if (item.kind === "capturedAlias") return [item.target];
   if (item.kind === "wrapper") return [item.target];
   if (item.kind === "recordCall") return [item.name];
   if (item.kind === "call" || item.kind === "record") return [item.name];
@@ -774,6 +784,8 @@ function leanStatement(item) {
       );
       return `.capturedFactory ${str(item.name)} ${leanStrings(item.parameters)} ${locals} ${leanStrings(item.closureParameters)} (${leanExpression(item.body)})`;
     }
+    case "capturedAlias":
+      return `.capturedAlias ${str(item.name)} ${str(item.target)}`;
     case "capturedClosure":
       return `.capturedClosure ${str(item.name)} ${str(item.factory)} ${list(item.arguments.map(String))} ${leanStrings(item.keys)}`;
     case "factory":
@@ -835,7 +847,7 @@ export async function validateBindings(sourcePath, specPath, out) {
   const prefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_graph_valid\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
   const legacySame = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
   const hasExpressions = source.statements.some((item) =>
-    ["expressionFunction", "capturedFactory", "capturedClosure"].includes(item.ast.kind)
+    ["expressionFunction", "capturedFactory", "capturedClosure", "capturedAlias"].includes(item.ast.kind)
   );
   const expressionSame = `
 theorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide
@@ -991,9 +1003,19 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   const callable = source.exports.filter(
     (name) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === name)
   );
+  const resolveCapturedDefinition = (name) => {
+    const seen = new Set();
+    let definition = source.statements.find((item) => item.ast.name === name)?.ast;
+    while (definition?.kind === "capturedAlias") {
+      if (seen.has(definition.name)) return undefined;
+      seen.add(definition.name);
+      definition = source.statements.find((item) => item.ast.name === definition.target)?.ast;
+    }
+    return definition;
+  };
   const candidates = hasExpressions
     ? callable.flatMap((name) => {
-        const definition = source.statements.find((item) => item.ast.name === name)?.ast;
+        const definition = resolveCapturedDefinition(name);
         const factory =
           definition?.kind === "capturedClosure"
             ? source.statements.find((item) => item.ast.name === definition.factory)?.ast
@@ -1036,7 +1058,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   };
   for (const calls of candidates.slice(0, 64)) {
     if (hasExpressions) {
-      const definition = source.statements.find((item) => item.ast.name === calls[0].name)?.ast;
+      const definition = resolveCapturedDefinition(calls[0].name);
       const bound = BigInt(Math.max(maximum, 2)) << BigInt(initialCalls + 1);
       if (
         definition?.kind === "expressionFunction" &&
