@@ -67,6 +67,11 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/google-calendar-event-preview"};
   }
 
+  // Live names for exact references in a saved, pending Grocy SF Action request.
+  rpc GetGrocyReferenceSummaries(GetGrocyReferenceSummariesRequest) returns (GetGrocyReferenceSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/grocy-reference-summaries"};
+  }
+
   // The linkage of every configured MCP server, then each one again whenever it changes, including when its token
   // expires.
   rpc WatchMcpServers(WatchMcpServersRequest) returns (stream WatchMcpServersResponse) {
@@ -205,6 +210,20 @@ enum GoogleCalendarEventScope {
   GOOGLE_CALENDAR_EVENT_SCOPE_SINGLE_EVENT = 1;
   GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE = 2;
   GOOGLE_CALENDAR_EVENT_SCOPE_SERIES = 3;
+}
+
+message GetGrocyReferenceSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGrocyReferenceSummariesResponse {
+  repeated GrocyReferenceSummary references = 1;
+}
+
+message GrocyReferenceSummary {
+  // An entity type and exact ID, for example "products/42".
+  string key = 1;
+  string name = 2;
 }
 
 message WatchMcpServersRequest {}

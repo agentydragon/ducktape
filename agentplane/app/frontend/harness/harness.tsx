@@ -3002,7 +3002,7 @@ routes.push(
   ],
   [
     "GET",
-    /^\/upstream\/actions\/v1\/operator\/action-requests\/[^/]+\/(gmail-thread-summaries|gmail-resource-summaries|tana-node-summaries|google-calendar-event-preview)$/,
+    /^\/upstream\/actions\/v1\/operator\/action-requests\/[^/]+\/(gmail-thread-summaries|gmail-resource-summaries|tana-node-summaries|google-calendar-event-preview|grocy-reference-summaries)$/,
     (match) => actionIntegrationSummaries?.[match[1]!],
   ],
   [

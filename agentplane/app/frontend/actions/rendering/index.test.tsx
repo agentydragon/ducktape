@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { act } from "react";
 
@@ -9,7 +9,7 @@ import {
   type ActionIdentity,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
 import { executionResult } from "../presentation";
 import {
   actionCompactCardExpands,
@@ -439,6 +439,55 @@ describe("Action presentation slots", () => {
     expect(view.textContent).toContain("Kefir · 3 Bottle in Fridge");
     expect(view.textContent).toContain("1 opened");
     expect(view.textContent).toContain("Best before 2026-11-25");
+  });
+
+  it("shows unexpected Grocy entity types and fields as recorded text", async () => {
+    const action = identity("grocy_sf", "entity_update");
+    const view = await mount(
+      renderDetailsArguments(action, {
+        entity: "constructor",
+        objectId: 7,
+        body: { constructor: "Material value" },
+      })
+    );
+    expect(view.textContent).toContain("constructor #7");
+    expect(view.textContent).toContain("constructor · Material value");
+    expect(view.querySelector("a")).toBeNull();
+  });
+
+  it("resolves pending Grocy targets by saved request and keeps an unresolved ID link", async () => {
+    const id = "70000000-0000-4000-8000-000000000007";
+    const path = `/upstream/actions/v1/operator/action-requests/${id}/grocy-reference-summaries`;
+    const sent = answerApi((request) =>
+      request.path === path ? Response.json({ references: [{ key: "products/11", name: "Coffee" }] }) : undefined
+    );
+    const action = identity("grocy_sf", "products_merge");
+    const args = { productIdToKeep: 11, productIdToRemove: 22 };
+    const receipt = await mount(renderDetailsArguments(action, args, id));
+    expect(receipt.textContent).toContain("Product #11");
+    expect(sent).toEqual([]);
+
+    const view = await mount(renderDetailsArguments(action, args, id, true));
+    await vi.waitFor(() => {
+      expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/11"]')?.textContent).toBe("Coffee");
+    });
+    expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/22"]')?.textContent).toBe(
+      "Product #22"
+    );
+    expect(view.textContent).not.toContain("Product #11");
+    expect(sent.map((request) => [request.method, request.path, request.query.toString(), request.body])).toEqual([
+      ["GET", path, "", undefined],
+    ]);
+  });
+
+  it("shows Grocy 204 acknowledgements only for successful empty receipts", async () => {
+    const action = identity("grocy_sf", "transaction_undo");
+    const empty: CallToolResult = { content: [], isError: false };
+    expect((await mount(renderDetailsResult(action, empty))).textContent).toContain("Transaction undone");
+    expect(renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
+    expect(
+      renderDetailsResult(action, { content: [{ type: "text", text: "Unknown outcome" }], isError: false })
+    ).toBeUndefined();
   });
 
   it("falls back to the recorded Tana workspace ID when a name is unavailable", async () => {

@@ -1671,7 +1671,16 @@ EXAMPLES = (
         "Deleted Old coffee and its stock entries",
     ),
     ActionExample(
-        "grocy_sf", "products_merge", {"productIdToKeep": 16, "productIdToRemove": 15}, "null", "Products merged"
+        "grocy_sf",
+        "products_merge",
+        {"productIdToKeep": 16, "productIdToRemove": 15},
+        "null",
+        "Products merged",
+        live_preview=(
+            "grocy-reference-summaries",
+            {"references": [{"key": "products/16", "name": "Ground coffee"}]},
+            "Ground coffee",
+        ),
     ),
     ActionExample(
         "grocy_sf",
@@ -1709,6 +1718,75 @@ EXAMPLES = (
         {"items": [{"name": "Bottle", "name_plural": "Bottles"}]},
         [{"kind": "ok", "created_object_id": 6}],
         "Created Bottle",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "entities_create",
+        {"items": [{"entity_type": "tasks", "body": {"name": "Clean fridge", "due_date": "2026-11-22"}}]},
+        [{"kind": "ok", "created_object_id": 41}],
+        "Created Clean fridge",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "entities_get",
+        {"entity_type": "product_groups", "object_ids": [5]},
+        [
+            {
+                "kind": "ok",
+                "entity_type": "product_groups",
+                "object_id": 5,
+                "data": {"id": "5", "name": "Breakfast", "description": "Morning staples"},
+            }
+        ],
+        "Description · Morning staples",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "entities_list",
+        {"entity_types": ["quantity_units", "product_groups"]},
+        {
+            "quantity_units": [{"id": "6", "name": "Bottle", "name_plural": "Bottles"}],
+            "product_groups": [{"id": "5", "name": "Breakfast"}],
+        },
+        "Plural · Bottles",
+    ),
+    ActionExample("grocy_sf", "entity_delete", {"entity": "product_groups", "objectId": 5}, "null", "Record deleted"),
+    ActionExample(
+        "grocy_sf",
+        "entity_update",
+        {"entity": "product_groups", "objectId": 5, "body": {"description": "Pantry basics"}},
+        "null",
+        "Record updated",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "file_get",
+        {"group": "productpictures", "fileName": "a2VmaXIucG5n", "force_serve_as": "picture", "best_fit_width": 320},
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9iUAAAAASUVORK5CYII=",
+        "File contents returned",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "file_upload",
+        {"group": "productpictures", "fileName": "a2VmaXIucG5n", "body": "aW1hZ2UgYnl0ZXM="},
+        "null",
+        "File uploaded",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_current_user",
+        {},
+        {"id": 4, "display_name": "Casey Example", "username": "casey"},
+        "Casey Example · casey",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_db_changed_time",
+        {},
+        {"changed_time": "2026-11-19 18:20:13"},
+        "Grocy database last changed · 2026-11-19 18:20:13",
+        compact_card_expands=False,
     ),
     ActionExample(
         "tana",
@@ -2097,6 +2175,8 @@ async def test_action_presentations(
     summaries: dict[str, object] | None = (
         {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
     )
+    if example.group == "grocy_sf" and summaries is None:
+        summaries = {"grocy-reference-summaries": {"references": []}}
     # Native results are stored directly. MCP results use the actual wire envelope.
     mcp = example.group not in {"environments", "orchestration_v1", "sandbox", "sessions"}
     result = (
@@ -2165,6 +2245,11 @@ async def test_action_presentations(
             await expect(node_link).to_have_attribute("href", f"https://app.tana.inc?nodeid={node_id}")
             await expect(node_link).to_have_attribute("target", "_blank")
             await expect(pending.get_by_text(node_id, exact=True)).to_have_count(0)
+    if example.key == "grocy_sf.products_merge":
+        await expect(pending.get_by_role("link", name="Ground coffee", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/product/16"
+        )
+        await expect(pending.get_by_role("link", name="Product #15", exact=True)).to_be_visible()
     if example.key == "google_calendar.delete_event":
         await expect(pending).to_contain_text("Only this occurrence")
         event_link = pending.get_by_role("link", name="Facilities coordination", exact=True)
@@ -2184,7 +2269,7 @@ async def test_action_presentations(
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
-    if example.group != "google_calendar":
+    if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
     if example.key == "tana.get_or_create_calendar_node":
         node_link = receipt.get_by_role("link", name=example.result_text)
@@ -2213,7 +2298,7 @@ async def test_action_presentations(
     await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
-    if example.group != "google_calendar":
+    if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)

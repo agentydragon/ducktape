@@ -28,6 +28,7 @@ import {
   GetGmailThreadSummariesResponseSchema,
   GetGoogleCalendarEventPreviewResponseSchema,
   type GoogleCalendarEventPreview,
+  GetGrocyReferenceSummariesResponseSchema,
   GetTanaNodeSummariesResponseSchema,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
 
@@ -178,6 +179,20 @@ export async function getGmailResourceSummaries(
     GetGmailResourceSummariesResponseSchema,
     await fetchText(path, { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" }, fetch)
   );
+}
+
+export async function getGrocyReferenceNames(
+  requestId: string,
+  signal: AbortSignal
+): Promise<ReadonlyMap<string, string>> {
+  const timeout = AbortSignal.timeout(3000);
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  const options = { signal: AbortSignal.any([signal, timeout]), cache: "no-store" } as const;
+  const { references } = fromJsonString(
+    GetGrocyReferenceSummariesResponseSchema,
+    await fetchText(`${path}/grocy-reference-summaries`, options, fetch)
+  );
+  return new Map(references.map(({ key, name }) => [key, name]));
 }
 
 export async function actionHistory(

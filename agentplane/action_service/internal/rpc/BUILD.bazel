@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "catalog.go",
         "errors.go",
+        "grocy_previews.go",
         "integration_previews.go",
         "mcp_servers.go",
         "operator_service.go",
@@ -89,6 +90,7 @@ go_test(
         "fixture_test.go",
         "gate_policy_test.go",
         "gate_test.go",
+        "grocy_previews_test.go",
         "integration_previews_test.go",
         "integration_testmain_test.go",
         "mcp_servers_test.go",
