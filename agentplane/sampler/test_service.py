@@ -1130,6 +1130,11 @@ async def test_chat_completions_tool_round_trip(
                         "chunk",
                         b'data: {"id":"chat-done","choices":[{"index":0,"delta":{"content":"Done."},"finish_reason":"stop"}]}\n\n',
                     ),
+                    # LiteLLM 1.103.0 emits this usage chunk after the finish choice.
+                    SseEvent(
+                        "usage",
+                        b'data: {"id":"chat-done","choices":[{"index":0,"delta":{}}],"usage":{"total_tokens":251}}\n\n',
+                    ),
                     SseEvent("done", b"data: [DONE]\n\n"),
                 )
             assert (await turn_completed(stub, request.session_id, "chat")).status == event_pb2.TURN_STATUS_COMPLETED
