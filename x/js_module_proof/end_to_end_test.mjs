@@ -37,7 +37,7 @@ assert.equal(result.outputAst.importedName, "count");
 const shared = await readFile(join(here, "Semantics.lean"), "utf8");
 const effects = await readFile(join(here, "Effects.lean"), "utf8");
 const counter = await readFile(join(here, "Counter.lean"), "utf8");
-const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
   encoding: "utf8",
   input: `${shared}\n${effects}\n${counter}\n${result.certificate}`,
 });

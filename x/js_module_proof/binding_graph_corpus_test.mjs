@@ -162,7 +162,7 @@ for (let i = 0; i < 36; i++) {
     const run = (state, definitions) =>
       `((${state}).bind (fun state => (publicFunctionTable ${definitions} bindingExports).bind (fun table => runExportedCalls table state ${leanList(calls.map((name) => JSON.stringify(name)))}))).map (fun state => (state.events, state.returns))`;
     const comparison = `\ntheorem node_source_trace : ${run("sourceBindingState bindingSource", "bindingSource")} = ${expected(before)} := by decide\ntheorem node_output_trace : ${run("outputBindingState bindingSource bindingModules bindingEntry", "(outputDefinitions bindingModules)")} = ${expected(after)} := by decide\n#print axioms node_source_trace\n#print axioms node_output_trace\n`;
-    const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
       encoding: "utf8",
       input: models + result.certificate + comparison,
     });

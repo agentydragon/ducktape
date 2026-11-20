@@ -195,7 +195,7 @@ theorem effect_behavior {α : Type} (replies : List (Option α)) :
 #print axioms effect_behavior
 `;
   const lean = process.env.JS_MODULE_PROOF_LEAN ?? "lean";
-  const proof = spawnSync(lean, ["--trust=0", "--stdin"], { encoding: "utf8", input: model + certificate });
+  const proof = spawnSync(lean, ["-j", "1", "--trust=0", "--stdin"], { encoding: "utf8", input: model + certificate });
   if (proof.error || proof.status === null)
     return { result: "unknown", reason: "Lean could not be run", detail: String(proof.error) };
   const axiomFree = (name) => proof.stdout.includes(`'${name}' does not depend on any axioms`);
@@ -224,7 +224,7 @@ theorem effect_behavior {α : Type} (replies : List (Option α)) :
 theorem effect_trace_differs : effectTrace extractedModules extractedEntry ≠ some extractedEffects := by decide
 #print axioms effect_trace_differs
 `;
-    const mismatch = spawnSync(lean, ["--trust=0", "--stdin"], {
+    const mismatch = spawnSync(lean, ["-j", "1", "--trust=0", "--stdin"], {
       encoding: "utf8",
       input: model + mismatchCertificate,
     });

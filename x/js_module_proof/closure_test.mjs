@@ -60,7 +60,7 @@ globalThis.record(read());
     assert.deepEqual(result.output, { events: [2], exports: ["read"] });
   }
 
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input:
       models +
@@ -169,7 +169,7 @@ export { read };
   assert.deepEqual(witness.output, { events: [], exports: ["read"], results: [2] });
   assert.deepEqual(execute(laterSource, witness.calls).results, [{ value: 3 }]);
   assert.deepEqual(execute(join(laterOut, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
-  const witnessReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const witnessReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + witness.certificate,
   });
@@ -212,7 +212,7 @@ export { read, fail };
   assert.deepEqual(beforeThrow.results, [{ value: 1 }]);
   assert.deepEqual(beforeThrow.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 7 } });
   assert.deepEqual(execute(join(throwOut, "entry.mjs"), calls), beforeThrow);
-  const throwReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const throwReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
   });
@@ -314,7 +314,7 @@ export { shadow, add, choose, local, update };
     { value: 8 },
   ]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
   });
@@ -428,7 +428,7 @@ export { maybe, text, boolean, nil, undef };
     assert.deepEqual(primitiveTrace.error, { name: null, phase: "call", index: 1, thrown });
     assert.deepEqual(execute(join(primitiveOut, "entry.mjs"), primitiveCalls), primitiveTrace);
   }
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
   });
@@ -484,7 +484,7 @@ export { call };
     thrown: { kind: "string", value: "bad" },
   });
   assert.deepEqual(execute(join(callOut, "entry.mjs"), thrownCalls), thrownTrace);
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
   });
@@ -552,7 +552,7 @@ export { read, choose };
   assert.deepEqual(combinedWitness.calls, [{ name: "read", args: [] }]);
   assert.deepEqual(combinedWitness.original.results, [3]);
   assert.deepEqual(combinedWitness.output.results, [2]);
-  const combinedReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const combinedReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + combinedWitness.certificate,
   });
@@ -599,7 +599,7 @@ export { first, second };
   const trace = execute(source, calls);
   assert.deepEqual(trace.results, [{ value: 5 }, { value: 8 }, { value: 5 }]);
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
   });
@@ -652,7 +652,7 @@ export { first };
   assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
   assert.deepEqual(execute(source, witness.calls).results, [{ value: 4 }]);
   assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 3 }]);
-  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + witness.certificate,
   });

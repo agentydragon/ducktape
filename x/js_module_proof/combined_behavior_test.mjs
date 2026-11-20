@@ -34,7 +34,7 @@ for (const safe of [true, false]) {
     assert.deepEqual(checked.value.original, { events: [1], current: 1 });
     assert.deepEqual(checked.value.output, { events: [0], current: 1 });
   }
-  const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + checked.value.certificate,
   });

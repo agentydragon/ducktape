@@ -50,7 +50,7 @@ assert.match(rejected.certificate, /theorem effect_machine_trace/);
 assert.match(rejected.certificate, /theorem effect_trace_differs/);
 const model =
   (await readFile(join(here, "Semantics.lean"), "utf8")) + "\n" + (await readFile(join(here, "Effects.lean"), "utf8"));
-const replayedProof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+const replayedProof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
   encoding: "utf8",
   input: model + rejected.certificate,
 });

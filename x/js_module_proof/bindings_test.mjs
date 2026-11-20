@@ -66,7 +66,7 @@ theorem fixture_reference : ∃ owner declaration,
 #print axioms fixture_reference
 `
       : "";
-    const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
       encoding: "utf8",
       input: models + checked.value.certificate + application,
     });

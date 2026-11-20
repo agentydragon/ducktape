@@ -863,7 +863,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     )
   ).join("\n");
   const runLean = (certificate) =>
-    spawnSync(process.env.JS_MODULE_PROOF_LEAN ?? "lean", ["--trust=0", "--stdin"], {
+    spawnSync(process.env.JS_MODULE_PROOF_LEAN ?? "lean", ["-j", "1", "--trust=0", "--stdin"], {
       encoding: "utf8",
       input: model + certificate,
     });
@@ -873,7 +873,9 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     return {
       result: "unknown",
       reason: "Lean could not be run",
-      detail: proof.error ? String(proof.error) : `Lean terminated by ${proof.signal ?? "unknown signal"}`,
+      detail: proof.error
+        ? String(proof.error)
+        : `Lean terminated by ${proof.signal ?? "unknown signal"}: ${(proof.stderr || proof.stdout || "").slice(-4000)}`,
     };
   if (
     ![
@@ -962,7 +964,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       return prefix + different + witness;
     witnessFailure =
       checked.status === null
-        ? `Lean terminated by ${checked.signal ?? String(checked.error)}`
+        ? `Lean terminated by ${checked.signal ?? String(checked.error)}: ${(checked.stderr || checked.stdout || "").slice(-4000)}`
         : (checked.stdout || checked.stderr).slice(-6000);
     return null;
   };

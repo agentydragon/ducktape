@@ -209,7 +209,7 @@ export async function validateCombined(source, specPath, out) {
     (await readFile(new URL("./Combined.lean", import.meta.url), "utf8"));
   const lean = process.env.JS_MODULE_PROOF_LEAN ?? "lean";
   const runLean = (certificate) =>
-    spawnSync(lean, ["--trust=0", "--stdin"], { encoding: "utf8", input: model + certificate });
+    spawnSync(lean, ["-j", "1", "--trust=0", "--stdin"], { encoding: "utf8", input: model + certificate });
   const proof = runLean(prefix + same);
   if (proof.error || proof.status === null)
     return { result: "unknown", reason: "Lean could not be run", detail: String(proof.error) };

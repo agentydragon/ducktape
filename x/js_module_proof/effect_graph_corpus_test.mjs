@@ -105,7 +105,7 @@ for (let index = 0; index < 12; index++) {
     const error = result.error === null ? "none" : `some ${JSON.stringify(result.error)}`;
     proof += `theorem node_throw_${throwAt} : outputBehavior corpusModules 3 (${list(replies)} : List (Option String)) = some (${strings(result.events)}, ${error}) := by decide\n#print axioms node_throw_${throwAt}\n`;
   }
-  const lean = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+  const lean = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: model + proof,
   });

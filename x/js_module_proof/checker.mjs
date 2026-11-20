@@ -336,7 +336,7 @@ theorem extracted_state_certificate (calls : List Call) :
 #print axioms extracted_counter_certificate
 #print axioms extracted_state_certificate
 `;
-  const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN ?? "lean", ["--trust=0", "--stdin"], {
+  const proof = spawnSync(process.env.JS_MODULE_PROOF_LEAN ?? "lean", ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: model + certificate,
   });
