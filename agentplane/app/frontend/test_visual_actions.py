@@ -3246,11 +3246,23 @@ async def test_action_presentations(
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await capture("pending-detail", pending)
+    if example.key == "home_assistant.ha_config_set_automation":
+        await expect(pending.get_by_text("Study Lighting", exact=False)).to_be_visible()
+        config = pending.get_by_role("button", name="Show configuration", exact=True)
+        await expect(config).to_have_attribute("aria-expanded", "false")
+        await config.click()
+        await expect(pending.locator(".cm-editor").first).to_be_visible()
 
     receipt = page.locator("[data-action-visual=receipt]")
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
+    if example.key == "home_assistant.ha_get_state":
+        await expect(receipt.get_by_role("link", name="Greenhouse temperature", exact=True)).to_be_visible()
+        await expect(receipt.get_by_text("sensor.greenhouse_temperature", exact=True)).to_have_count(0)
+    if example.key == "home_assistant.ha_get_entity":
+        await expect(receipt.get_by_role("link", name="Greenhouse fan", exact=True)).to_be_visible()
+        await expect(receipt.get_by_text("fan.greenhouse", exact=True)).to_have_count(0)
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
     if example.key == "tana.get_or_create_calendar_node":

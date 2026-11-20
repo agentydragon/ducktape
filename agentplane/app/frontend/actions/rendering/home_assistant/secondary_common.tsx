@@ -100,17 +100,24 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
     ].flatMap(([label, entries]) =>
       Array.isArray(entries) ? [`${entries.length} ${String(label)}${entries.length === 1 ? "" : "s"}`] : []
     );
-    return sections.length ? (
+    const summary = [printable(config.alias) ?? printable(config.title), ...sections].filter(Boolean);
+    return summary.length ? (
       <Stack gap={4}>
-        <HaField name="Configuration">{sections.join(" · ")}</HaField>
-        {exact}
+        <HaField name="Configuration">{summary.join(" · ")}</HaField>
+        <Disclosure summary={<Text size="sm">Show configuration</Text>}>
+          <DisclosureBody>{exact}</DisclosureBody>
+        </Disclosure>
       </Stack>
     ) : (
       exact
     );
   }
   const plain = printable(value);
-  if (plain !== undefined) return <HaField name={name}>{plain === "" ? "Empty value" : plain}</HaField>;
+  if (plain !== undefined) {
+    return (
+      <HaField name={name}>{plain === "" ? "Empty value" : field === "action" ? humanField(plain) : plain}</HaField>
+    );
+  }
   if (Array.isArray(value) && value.every((item) => printable(item) !== undefined)) {
     return <HaField name={name}>{value.length === 0 ? "Empty list" : value.map(printable).join(", ")}</HaField>;
   }

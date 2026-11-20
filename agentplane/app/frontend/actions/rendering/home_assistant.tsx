@@ -2,9 +2,9 @@ import { Anchor, Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { definePreview, type ArgumentsPreview } from "./entry";
+import { defineCallPreview, definePreview, type ArgumentsPreview } from "./entry";
 import type { ActionPresentation } from "./presentation";
-import { defineResultPreview, type ResultPreview } from "./result_entry";
+import { defineResultPreview, renderResultPreview, type ResultPreview } from "./result_entry";
 import { JsonBlock } from "../../ui/text_block";
 import { Disclosure } from "../../../../../util/frontend/disclosure";
 
@@ -94,8 +94,12 @@ const entity = z.object({
 });
 type Entity = z.infer<typeof entity>;
 
+function entityName(value: Entity): string | null | undefined {
+  return value.friendly_name || value.attributes?.friendly_name || value.name || value.original_name;
+}
+
 function EntityRow({ value, id }: { value: Entity; id?: string }): ReactNode {
-  const name = value.friendly_name || value.attributes?.friendly_name || value.name || value.original_name;
+  const name = entityName(value);
   return (
     <Group gap="xs" wrap="wrap" style={{ overflowWrap: "anywhere" }}>
       <Text size="sm" fw={600}>
@@ -324,11 +328,17 @@ const controlResult = defineResultPreview(
   )
 );
 
-const entityRequest = definePreview(
-  z.object({ entity_id: strings.nullish(), domain: text, platform: text, unique_id: text }),
-  ({ args }) => (
+const entityRead = z.object({ entity_id: strings.nullish(), domain: text, platform: text, unique_id: text });
+type EntityRead = z.infer<typeof entityRead>;
+
+function entityIds(args: EntityRead): string[] {
+  return typeof args.entity_id === "string" ? [args.entity_id] : (args.entity_id ?? []);
+}
+
+function EntityRequest({ args }: { args: EntityRead }): ReactNode {
+  return (
     <Review>
-      {(typeof args.entity_id === "string" ? [args.entity_id] : args.entity_id)?.map((id) => (
+      {entityIds(args).map((id) => (
         <Text key={id} size="sm">
           <EntityName id={id} />
         </Text>
@@ -341,8 +351,35 @@ const entityRequest = definePreview(
         ]}
       />
     </Review>
-  )
+  );
+}
+
+const entityRequest = definePreview(entityRead, EntityRequest);
+
+function entityCall<S extends z.ZodType>(
+  resultView: ResultPreview<S>,
+  namedEntities: (value: z.infer<S>) => readonly (readonly [string | null | undefined, Entity])[]
+) {
+  return defineCallPreview(entityRead, resultView.schema, ({ args, result }) => {
+    if (result === undefined) return <EntityRequest args={args} />;
+    const named = new Set(
+      namedEntities(result)
+        .filter(([, value]) => entityName(value))
+        .map(([id]) => id)
+    );
+    return (
+      <Review>
+        <EntityRequest args={{ ...args, entity_id: entityIds(args).filter((id) => !named.has(id)) }} />
+        {renderResultPreview(resultView, result)}
+      </Review>
+    );
+  });
+}
+
+const readEntityState = entityCall(entityStates, (result) =>
+  "data" in result ? [[result.data.entity_id, result.data]] : Object.entries(result.states)
 );
+const inspectEntity = entityCall(entityDetails, (result) => [[result.entity_id, result.entity_entry]]);
 
 function readScope(keys: readonly (readonly [string, string])[]): ArgumentsPreview {
   return definePreview(values, ({ args }) => (
@@ -476,8 +513,11 @@ export const homeAssistantRenderers: ReadonlyMap<string, ActionPresentation> = n
   ["ha_call_service", presentation("Call Home Assistant service", servicePreview, controlResult)],
   ["ha_call_event", presentation("Fire Home Assistant event", eventPreview, controlResult)],
   ["ha_bulk_control", presentation("Control Home Assistant devices", bulkPreview, controlResult)],
-  ["ha_get_state", presentation("Read entity state", entityRequest, entityStates)],
-  ["ha_get_entity", presentation("Inspect Home Assistant entity", entityRequest, entityDetails)],
+  ["ha_get_state", { ...presentation("Read entity state", entityRequest, entityStates), call: readEntityState }],
+  [
+    "ha_get_entity",
+    { ...presentation("Inspect Home Assistant entity", entityRequest, entityDetails), call: inspectEntity },
+  ],
   [
     "ha_get_device",
     presentation(
