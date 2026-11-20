@@ -20597,5 +20597,392 @@
     "Target result cache hits and unique physical executions answer different questions. The post-cutover KVM table uses explicit result cache fields or complete remote result events. The party that scheduled a shared physical execution can fall outside the invocation sample.",
     "Mainline selection is bounded by the canonical repo, branch, role and update window. The merge audit reconstructs each candidate with visible check records up to its merge timestamp. The historical organization audit trail is unavailable.",
     "The review used existing executions, artifacts and source. No new CI executions or repair experiments were submitted."
-  ]
+  ],
+  "flake_trend": {
+    "definition": "Required Bazel gate red, other gates green, all gates later green on the same tested revision, with a fresh fail/timeout then pass on the same target, configuration, run and shard. Count each affected PR head once by UTC creation day. Observed lower bound.",
+    "daily": [
+      {
+        "day": "2026-11-13",
+        "confirmed": 0,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-14",
+        "confirmed": 0,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-15",
+        "confirmed": 0,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-16",
+        "confirmed": 0,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-17",
+        "confirmed": 0,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-18",
+        "confirmed": 4,
+        "sampled": 50
+      },
+      {
+        "day": "2026-11-19",
+        "confirmed": 0,
+        "sampled": 50
+      }
+    ],
+    "confirmed_heads": [
+      "6fd45d8da391dc7d283ab1034c339eff07428ec0",
+      "72d2431d7a7333e30157cbe13f5676b90a4dcbd7",
+      "95a0a0fe9901feaa249fbfdf02ee345eaeca4d6a",
+      "c4008e2da890127acaa10a0331f9391f8bf2840f"
+    ],
+    "post_shadow_vm": {
+      "policy_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+      "source": "https://github.com/agentydragon/ducktape/blob/6ee4d8ac33/latency/evidence.json",
+      "method": "Read the VM target for the test invocation corresponding to each visible required Bazel job attempt of the 67 post-shadow sample heads. Count fresh remote TestResult events only; cached or missing verdicts supply no exposure.",
+      "inspected_pr_heads": 67,
+      "inspected_jobs": 72,
+      "cached_verdicts": 11,
+      "fresh_verdicts": [
+        {
+          "pr": 18106,
+          "head": "7d6383fcfa307fbcb3c2220d62d0f96454b4ce8a",
+          "invocation": "3a0fd467-3e5f-5d50-b572-cf88338b1a09",
+          "job_conclusion": "failure",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18233,
+          "head": "a976b3c2f5db8a3ea623e4bad3027ba80c6b9856",
+          "invocation": "8963787d-ba18-57b7-8730-d7dd222bad0b",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18234,
+          "head": "515e61b206d2ca9c3ee88840a3937a2bb443d66f",
+          "invocation": "631bef55-72dc-5e32-86dd-915416b3afd9",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18240,
+          "head": "49c1e815b6a085d9c8df4133b0ac28983ead9667",
+          "invocation": "a88e8f1c-470f-5daf-96f4-a104f74f1188",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18244,
+          "head": "42b549c8e325bb110c54ceacb218e769c3ab7122",
+          "invocation": "9ad7ac6a-d2db-524d-8d74-059b8da6ea4c",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18246,
+          "head": "71330fb7f742772af00584d604f8d0130fd590ba",
+          "invocation": "7125131b-4e17-5c1c-ae1d-594ca9bb3b79",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18251,
+          "head": "d1f03d4b832884d5efb40d2b515ed929c7e57b0f",
+          "invocation": "9c289822-3ffa-5be5-9e2a-14c44628cf0b",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18254,
+          "head": "1460d495a11634b6755bcc9daea9f2300b59a1ba",
+          "invocation": "c6688f85-10a1-5f98-93a3-a6f248c0605c",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18255,
+          "head": "2262adac44520e81d73d0481205490c7e1c51bb3",
+          "invocation": "38254987-2dcd-5241-95fa-9aea0e9b5684",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18256,
+          "head": "096fd0c5f50edc5a3e61ffa193e7a7e9ccdba001",
+          "invocation": "7d073441-d605-5dbc-bb94-825c3b286d21",
+          "job_conclusion": "failure",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18263,
+          "head": "a5021ba71d96c33c8cff86a3a1bf1220360e2bd7",
+          "invocation": "6611f713-fa2f-553b-bbda-3a2f2b537281",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18265,
+          "head": "032fa54966a23b55352e09e37faea9b34c2b1680",
+          "invocation": "6e111092-663c-58b6-98b1-3368720d6d9f",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "FAILED",
+              "strategy": "remote",
+              "cached": false
+            },
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 2,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "FLAKY"
+        },
+        {
+          "pr": 18271,
+          "head": "96e6090927ff45b6d64e6462782a78ae3c340393",
+          "invocation": "c538b544-6e7c-5046-84f4-c575492c06b0",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18273,
+          "head": "e60b2baa8c5d2874899f8d2cb2833f810372e33b",
+          "invocation": "764a6b58-e87c-5e9f-8b1a-b2946bc8c52e",
+          "job_conclusion": "failure",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18235,
+          "head": "c075137abfa66bb06d88332dcf0386ee21cd94a7",
+          "invocation": "4481c054-9e9f-59df-b78d-c4b657dba750",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        },
+        {
+          "pr": 18241,
+          "head": "4d42d8d994db59482c346a232d0452fccfed50c5",
+          "invocation": "e2ea4f3b-0492-516b-b377-0d9e8ef71d33",
+          "job_conclusion": "success",
+          "events": [
+            {
+              "run": 1,
+              "shard": 1,
+              "attempt": 1,
+              "configuration": {
+                "id": "6db6159403cda3567e8b67a225a2165d7b8757876c17baf3d6bd091d2f7387cf"
+              },
+              "status": "PASSED",
+              "strategy": "remote",
+              "cached": false
+            }
+          ],
+          "summary": "PASSED"
+        }
+      ]
+    }
+  }
 }

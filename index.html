@@ -184,7 +184,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${"After the KVM cutover, 17 successful backend heads reached required green in 10m24s at the median and 23m27s at p90. Five needed a second Bazel attempt. The report links the long paths and the same-head recovery intervals."}
+                ${"Daily median and p90 time to green for 13–19 November. After the KVM cutover, 17 successful backend heads reached required green in 10m24s at the median and 23m27s at p90. Five needed a second Bazel attempt. The report links the long paths and the same-head recovery intervals."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
@@ -198,7 +198,7 @@
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${"13–19 November UTC: 242 of 350 PR heads passed all required checks on their first attempt. Nineteen of 63 mainline failures shared a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry because a recycled Docker runner could not rebuild its baseline."}
+                ${"13–19 November UTC: Four of 350 sampled heads had verified intermittent red CI. The report shows their daily frequency and VM flakes recovered inside Bazel. Nineteen of 63 mainline failures shared a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry because a recycled Docker runner could not rebuild its baseline."}
               <//>
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">

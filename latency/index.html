@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency after the VM routing cutover</title>
+    <title>PR time to green · CI latency</title>
 
     <meta name="color-scheme" content="light dark" />
     <link
@@ -61,12 +61,10 @@
         Title,
       } from "@mantine/core";
       import { BarChart, LineChart } from "@mantine/charts";
-      import {
-        html,
-        mount,
-        ManifestStamp,
-      } from "../report.js?v=ebc2503d323c1b76";
-      const response = await fetch("./evidence.json");
+      import { html, mount } from "../report.js?v=ebc2503d323c1b76";
+      const response = await fetch(
+        "./evidence.json?v=6319dd011142f35ead5e669e0a5235c722d1983053a42bee54d18404892b0a26",
+      );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const gh = "https://github.com/agentydragon/ducktape";
@@ -141,14 +139,36 @@
           <${Stack} gap="xl">
             <header>
               ${link("../", "Ducktape reports")}
-              <${Title} order=${1} mt="md" mb="xs">Backend PRs reached green in 10m24s at the median<//>
-              <${Text} size="lg">Five of 17 successful backend heads needed a second required Bazel attempt after the VM routing change. On successful first attempts, Pod and Firecracker each finished last more often than VM.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">20 November 2026 UTC · Post-shadow window 07:36:33–21:12:40 UTC · Inspected devel ${evidence.source_devel_commit}<//>
+              <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
+              <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · Backend cutover follow-up updated 20 November · Inspected devel ${evidence.source_devel_commit}<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
             </header>
+            <section id="weekly-trend">
+              <${Title} order=${2}>Daily time to green · 13–19 November<//>
+              <${Text} my="sm">50 sampled PR heads per UTC day across change classes. Time starts at CI workflow creation and ends when all three required checks pass. Failed or unfinished heads contribute to the sample count only. Changes in the daily PR mix can move both lines.<//>
+              <div role="img" aria-label="Median and 90th percentile minutes to required green by UTC day">
+                <${LineChart} h=${225} data=${evidence.weekly_feedback.daily.map((d) => ({ day: d.day.slice(8), median: d.median_s / 60, p90: d.p90_s / 60 }))} dataKey="day" series=${[
+                  { name: "median", label: "Median", color: "blue.6" },
+                  { name: "p90", label: "p90", color: "orange.6" },
+                ]} withLegend curveType="linear" yAxisLabel="Minutes" yAxisProps=${{ tickFormatter: (v) => String(v) }} valueFormatter=${(v) => time(v * 60)} />
+              </div>
+              <${Accordion} variant="contained"><${Accordion.Item} value="weekly-counts"><${Accordion.Control}>Daily times and included heads<//><${Accordion.Panel}>
+                ${table(
+                  ["November UTC", "Green / sampled", "Median", "p90"],
+                  evidence.weekly_feedback.daily.map((d) => [
+                    d.day,
+                    `${d.n} / ${d.sampled}`,
+                    time(d.median_s),
+                    time(d.p90_s),
+                  ]),
+                  330,
+                )}
+              <//><//><//>
+            </section>
             <section id="cohort">
-              <${Title} order=${2}>Time to required checks passing<//>
-              <${Text} my="sm">From the first observed CI workflow creation for the exact head to the last accepted required check. The 67 post-shadow heads include 60 green, one failed, five canceled and one incomplete. Green timing includes successful reruns. Push time, historical merge eligibility and agent receipt remain unobserved.<//>
+              <${Title} order=${2}>20 November follow-up · PR time by change class<//>
+              <${Text} my="sm">From the first observed CI workflow creation for the exact head to the last accepted required check. Backend heads took 10m24s at the median and 23m27s at p90. The 67 post-shadow heads include 60 green, one failed, five canceled and one incomplete. Green timing includes successful reruns. Push time, historical merge eligibility and agent receipt remain unobserved.<//>
               <${Box} role="img" data-chart="pr-feedback" aria-label="Median and p90 minutes to required checks passing by change class">
                 <${BarChart} h=${290} data=${groups.map((g) => ({ class: titles[g.group], Median: g.green.p50 / 60, p90: g.green.p90 / 60 }))}
                   dataKey="class" series=${[
