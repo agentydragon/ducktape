@@ -15,6 +15,8 @@ from model_catalog.catalog import (
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
+    TABBYAPI_QWEN_ABLITERATED,
+    Provider,
     Route,
 )
 
@@ -29,7 +31,7 @@ class HarnessRoutes:
     # Routes offered by the service-side central sampler. This is independent of Codex so
     # API-only models never become Codex models through the subscription-compatible wrapper.
     central_sampler: tuple[Route, ...] = ()
-    central_sampler_chat_canary: Route | None = None
+    central_sampler_chat: tuple[Route, ...] = ()
 
     @property
     def all(self) -> tuple[Route, ...]:
@@ -59,13 +61,14 @@ QWEN_CHAT_CANARY_ROUTE = OLLAMA_QWEN_IQ4XS_256K.openai
 
 
 def chat_completions_id(route: Route) -> str:
-    return route.id + "-chat-completions"
+    # Native Chat Completions routes can use their LiteLLM ID directly.
+    return route.id if route.upstream.provider == Provider.TABBYAPI else f"{route.id}-chat-completions"
 
 
 QWEN_CHAT_CANARY_ID = chat_completions_id(QWEN_CHAT_CANARY_ROUTE)
 
 STAGING_APP_MODELS = HarnessRoutes(
-    central_sampler_chat_canary=QWEN_CHAT_CANARY_ROUTE,
+    central_sampler_chat=(QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED),
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
     codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
     central_sampler=(

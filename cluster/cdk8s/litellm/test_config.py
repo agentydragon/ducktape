@@ -25,6 +25,7 @@ from model_catalog.catalog import (
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     RUGGED_LOCAL_OPENAI,
+    TABBYAPI_QWEN_ABLITERATED,
     TANA_ROUTES,
     Model,
     Route,
@@ -68,6 +69,20 @@ def test_existing_qwen_model_names_route_to_tabbyapi() -> None:
             assert params["allowed_openai_params"] == ["reasoning_effort"]
             assert params["use_chat_completions_api"] is True
             assert "extra_body" not in params
+
+
+def test_abliterated_qwen_routes_to_its_own_checkpoint() -> None:
+    [entry] = [
+        entry for entry in main_proxy_config()["model_list"] if entry["model_name"] == TABBYAPI_QWEN_ABLITERATED.id
+    ]
+    assert entry["model_info"] == {"mode": "chat", "supports_function_calling": True}
+    assert entry["litellm_params"] == {
+        "model": "hosted_vllm/qwen38-exl3-250-abliterated",
+        "api_base": "http://tabbyapi-model-switching.ollama.svc:5000/v1",
+        "api_key": "tabbyapi",
+        "allowed_openai_params": ["reasoning_effort"],
+        "use_chat_completions_api": True,
+    }
 
 
 def test_route_timeouts_are_projected_independently() -> None:

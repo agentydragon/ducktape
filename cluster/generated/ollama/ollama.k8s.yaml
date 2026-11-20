@@ -814,6 +814,25 @@ data:
     model:
       model_dir: /models
       model_name: qwen38-exl3-268
+      inline_model_loading: true
+      # Keep the same budgets on startup and when a request switches checkpoints.
+      use_as_default:
+        - backend
+        - max_seq_len
+        - cache_size
+        - cache_mode
+        - max_batch_size
+        - tensor_parallel
+        - gpu_split
+        - gpu_split_auto
+        - vision
+        - ngram_ram
+        - chunk_size
+        - output_chunking
+        - warmup
+        - draft_mode
+        - draft_num_tokens
+        - draft_cache_mode
       backend: exllamav3
       max_seq_len: 262144
       cache_size: 270336
@@ -832,6 +851,84 @@ data:
       draft_mode: mtp
       draft_num_tokens: 3
       draft_cache_mode: Q8
+  tabbyapi_serve.py: |
+    """Run the pinned TabbyAPI app with a request lock for its single generation slot."""
+
+    import asyncio
+    from collections.abc import Awaitable, Callable
+    from importlib import import_module
+    from typing import Protocol, cast
+
+    from starlette.applications import Starlette
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    _MODEL_REQUESTS = frozenset(
+        {
+            "/v1/chat/completions",
+            "/v1/completions",
+            "/v1/continuations",
+            "/v1/decisions",
+            "/v1/systemone",
+            "/v1/model/load",
+            "/v1/model/unload",
+            "/apply-template",
+            "/v1/apply-template",
+        }
+    )
+
+
+    class SerializeModelRequests:
+        """Protect the shared model from template rendering through the end of streaming."""
+
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+            self.lock = asyncio.Lock()
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http" or scope["method"] != "POST" or scope["path"].rstrip("/") not in _MODEL_REQUESTS:
+                await self.app(scope, receive, send)
+                return
+
+            # TabbyAPI's router releases its load lock before generation registers
+            # a job. Unload waits for registered jobs only. Hold this lock over the
+            # ASGI call so it also covers SSE iteration and disconnect cleanup.
+            async with self.lock:
+                await self.app(scope, receive, send)
+
+
+    class _TabbyMain(Protocol):
+        entrypoint_async: Callable[[], Awaitable[None]]
+
+        def entrypoint(self) -> None: ...
+
+
+    class _TabbyServer(Protocol):
+        setup_app: Callable[[str | None, int | None], Starlette]
+
+
+    def main() -> None:
+        tabby = cast(_TabbyMain, import_module("main"))
+        entrypoint_async = tabby.entrypoint_async
+
+        async def serve() -> None:
+            # Import here so TabbyAPI first configures the PyTorch CUDA allocator.
+            server = cast(_TabbyServer, import_module("endpoints.server"))
+            setup_app = server.setup_app
+
+            def setup_locked_app(host: str | None = None, port: int | None = None) -> Starlette:
+                app = setup_app(host, port)
+                app.add_middleware(SerializeModelRequests)
+                return app
+
+            server.setup_app = setup_locked_app
+            await entrypoint_async()
+
+        tabby.entrypoint_async = serve
+        tabby.entrypoint()
+
+
+    if __name__ == "__main__":
+        main()
 immutable: false
 ---
 apiVersion: v1
@@ -873,6 +970,45 @@ spec:
   storageClassName: ""
   volumeName: wyrm2-tabbyapi-flash-next
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wyrm2-tabbyapi-flash-next-abliterated
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 61Gi
+  claimRef:
+    name: tabbyapi-flash-next-abliterated
+    namespace: ollama
+  local:
+    path: /games/llm-models/qwen38-exl3-250-abliterated
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - wyrm2
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tabbyapi-flash-next-abliterated
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 61Gi
+  storageClassName: ""
+  volumeName: wyrm2-tabbyapi-flash-next-abliterated
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -891,10 +1027,15 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: tabbyapi
+        ducktape.org/tabbyapi-model-switching: "true"
     spec:
       automountServiceAccountToken: false
       containers:
-        - env:
+        - args:
+            - tabbyapi_serve.py
+            - --host
+            - 0.0.0.0
+          env:
             - name: CUDA_DEVICE_ORDER
               value: PCI_BUS_ID
           image: ghcr.io/theroyallab/tabbyapi@sha256:6daf422856272925b8fa0db0e697b9cc7b68e5c557b2789fcf84d6e54139dfd6
@@ -933,11 +1074,22 @@ spec:
             - mountPath: /models/qwen38-exl3-268
               name: weights
               readOnly: true
+            - mountPath: /models/qwen38-exl3-250-abliterated
+              name: abliterated-weights
+              readOnly: true
             - mountPath: /app/config.yml
               name: config
               readOnly: true
               subPath: config.yml
+            - mountPath: /app/tabbyapi_serve.py
+              name: config
+              readOnly: true
+              subPath: tabbyapi_serve.py
             - mountPath: /models/qwen38-exl3-268/chat_template.jinja
+              name: config
+              readOnly: true
+              subPath: chat_template.jinja
+            - mountPath: /models/qwen38-exl3-250-abliterated/chat_template.jinja
               name: config
               readOnly: true
               subPath: chat_template.jinja
@@ -953,6 +1105,10 @@ spec:
         - name: weights
           persistentVolumeClaim:
             claimName: tabbyapi-flash-next
+            readOnly: true
+        - name: abliterated-weights
+          persistentVolumeClaim:
+            claimName: tabbyapi-flash-next-abliterated
             readOnly: true
         - configMap:
             name: tabbyapi-config
@@ -977,6 +1133,23 @@ spec:
       targetPort: 5000
   selector:
     app.kubernetes.io/name: tabbyapi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: tabbyapi
+  name: tabbyapi-model-switching
+  namespace: ollama
+spec:
+  ports:
+    - name: http
+      port: 5000
+      protocol: TCP
+      targetPort: 5000
+  selector:
+    app.kubernetes.io/name: tabbyapi
+    ducktape.org/tabbyapi-model-switching: "true"
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

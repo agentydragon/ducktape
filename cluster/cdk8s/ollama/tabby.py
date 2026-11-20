@@ -1,37 +1,43 @@
-"""TabbyAPI serving the staged EXL3 Flash-Next checkpoint on wyrm2."""
+"""TabbyAPI serving the staged EXL3 Flash-Next checkpoints on wyrm2."""
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT
+from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED
 
 _NODE = "wyrm2"
 _IMAGE = "ghcr.io/theroyallab/tabbyapi@sha256:6daf422856272925b8fa0db0e697b9cc7b68e5c557b2789fcf84d6e54139dfd6"
-_MODEL_PATH = f"/models/{MODEL_NAME}"
-_VOLUME = "wyrm2-tabbyapi-flash-next"
-_CLAIM = "tabbyapi-flash-next"
+_ABLITERATED_MODEL = TABBYAPI_QWEN_ABLITERATED.upstream_model
+assert _ABLITERATED_MODEL is not None
+_CHECKPOINTS = (
+    ("weights", MODEL_NAME, "tabbyapi-flash-next", "100Gi"),
+    ("abliterated-weights", _ABLITERATED_MODEL, "tabbyapi-flash-next-abliterated", "61Gi"),
+)
 _HOSTNAME_LABEL = "kubernetes.io/hostname"
+_SWITCHING_LABEL = {"ducktape.org/tabbyapi-model-switching": "true"}
 _PODS = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
 SERVICE = ServiceRef(name=NAME, port=Port(name="http", number=PORT), pods=_PODS)
 MODELS_PATH = "/v1/models"
 _SOURCE_DIR = "ducktape/cluster/cdk8s/ollama"
 
 
-def _weights(scope: Construct) -> None:
-    size = k8s.Quantity.from_string("100Gi")
+def _weights(scope: Construct, model_name: str, claim: str, capacity: str) -> None:
+    size = k8s.Quantity.from_string(capacity)
+    volume = f"{_NODE}-{claim}"
     k8s.KubePersistentVolume(
         scope,
-        "tabbyapi-pv",
-        metadata=k8s.ObjectMeta(name=_VOLUME),
+        f"{claim}-pv",
+        metadata=k8s.ObjectMeta(name=volume),
         spec=k8s.PersistentVolumeSpec(
             access_modes=["ReadWriteOnce"],
             capacity={"storage": size},
-            claim_ref=k8s.ObjectReference(name=_CLAIM, namespace=NAMESPACE),
+            claim_ref=k8s.ObjectReference(name=claim, namespace=NAMESPACE),
             # The pre-staged checkpoint is a read-only cache on the wyrm2 NVMe filesystem.
-            local=k8s.LocalVolumeSource(path=f"/games/llm-models/{MODEL_NAME}"),
+            local=k8s.LocalVolumeSource(path=f"/games/llm-models/{model_name}"),
             node_affinity=k8s.VolumeNodeAffinity(
                 required=k8s.NodeSelector(
                     node_selector_terms=[
@@ -49,12 +55,12 @@ def _weights(scope: Construct) -> None:
     )
     k8s.KubePersistentVolumeClaim(
         scope,
-        "tabbyapi-pvc",
-        metadata=k8s.ObjectMeta(name=_CLAIM, namespace=NAMESPACE),
+        f"{claim}-pvc",
+        metadata=k8s.ObjectMeta(name=claim, namespace=NAMESPACE),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
             storage_class_name="",
-            volume_name=_VOLUME,
+            volume_name=volume,
             resources=k8s.VolumeResourceRequirements(requests={"storage": size}),
         ),
     )
@@ -71,7 +77,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_PODS.selector),
+                metadata=k8s.ObjectMeta(labels={**_PODS.selector, **_SWITCHING_LABEL}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
@@ -81,6 +87,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
+                            args=["tabbyapi_serve.py", "--host", "0.0.0.0"],
                             ports=[SERVICE.port.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
@@ -104,27 +111,42 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                                 http_get=models, period_seconds=10, timeout_seconds=2, failure_threshold=6
                             ),
                             volume_mounts=[
-                                k8s.VolumeMount(name="weights", mount_path=_MODEL_PATH, read_only=True),
+                                *[
+                                    k8s.VolumeMount(name=volume, mount_path=f"/models/{name}", read_only=True)
+                                    for volume, name, _, _ in _CHECKPOINTS
+                                ],
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.yml", sub_path="config.yml", read_only=True
                                 ),
                                 k8s.VolumeMount(
                                     name="config",
-                                    mount_path=f"{_MODEL_PATH}/chat_template.jinja",
-                                    sub_path="chat_template.jinja",
+                                    mount_path="/app/tabbyapi_serve.py",
+                                    sub_path="tabbyapi_serve.py",
                                     read_only=True,
                                 ),
+                                *[
+                                    k8s.VolumeMount(
+                                        name="config",
+                                        mount_path=f"/models/{name}/chat_template.jinja",
+                                        sub_path="chat_template.jinja",
+                                        read_only=True,
+                                    )
+                                    for _, name, _, _ in _CHECKPOINTS
+                                ],
                                 k8s.VolumeMount(name="shm", mount_path="/dev/shm"),
                             ],
                         )
                     ],
                     volumes=[
-                        k8s.Volume(
-                            name="weights",
-                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
-                                claim_name=_CLAIM, read_only=True
-                            ),
-                        ),
+                        *[
+                            k8s.Volume(
+                                name=volume,
+                                persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(
+                                    claim_name=claim, read_only=True
+                                ),
+                            )
+                            for volume, _, claim, _ in _CHECKPOINTS
+                        ],
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config.name)),
                         k8s.Volume(
                             name="shm",
@@ -147,16 +169,26 @@ def add_tabbyapi(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
             "config.yml": (sources / "tabbyapi-config.yml").read_text(),
+            "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
     )
-    _weights(scope)
+    for _, name, claim, capacity in _CHECKPOINTS:
+        _weights(scope, name, claim, capacity)
     _deploy(scope, config)
     k8s.KubeService(
         scope,
         "tabbyapi-service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels=_PODS.selector),
         spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.port.k8s_service_port()]),
+    )
+    # The older pod serves unknown model IDs with its loaded stock model. The
+    # candidate route must only reach the new pod, even if LiteLLM rolls first.
+    k8s.KubeService(
+        scope,
+        SWITCHING_SERVICE,
+        metadata=k8s.ObjectMeta(name=SWITCHING_SERVICE, namespace=NAMESPACE, labels=_PODS.selector),
+        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.port.k8s_service_port()]),
     )
     # LiteLLM authenticates client requests. Gatus only needs the model-list health check.
     k8s.KubeNetworkPolicy(

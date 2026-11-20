@@ -241,7 +241,11 @@ def chart(app: App) -> Chart:
         _DynamicKey(
             name="agentplane-staging",
             models=_lane_models(
-                "gpt6_oai_lane_models", "claude_client_models", "antigravity_client_models", "ollama_chat_client_models"
+                "gpt6_oai_lane_models",
+                "claude_client_models",
+                "antigravity_client_models",
+                "ollama_chat_client_models",
+                "tabbyapi_chat_client_models",
             ),
             consumer="agentplane-staging",
         ),

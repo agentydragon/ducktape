@@ -459,23 +459,27 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
     config = yaml.safe_load(_by_name(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
+    abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
+    chat_models = {QWEN_CHAT_CANARY_ID: QWEN_CHAT_CANARY_ROUTE.id, abliterated_id: abliterated_id}
     assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [
         *(route.id for route in STAGING_APP_MODELS.central_sampler),
-        QWEN_CHAT_CANARY_ID,
+        *chat_models,
     ]
-    assert QWEN_CHAT_CANARY_ID not in catalog["harnesses"]["HARNESS_CLAUDE"]
+    assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CLAUDE"])
+    assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CODEX"])
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
-    assert set(sampler["models"]) == {QWEN_CHAT_CANARY_ID, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
-    assert sampler["models"][QWEN_CHAT_CANARY_ID] == {
-        "api": "chat_completions",
-        "provider_model": QWEN_CHAT_CANARY_ROUTE.id,
-        "connection": "llm-ingress",
-        "exec_encoding": "json",
-        "reasoning_efforts": [""],
-        "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
-    }
+    assert set(sampler["models"]) == {*chat_models, *(route.id for route in STAGING_APP_MODELS.central_sampler)}
+    for model_id, provider_model in chat_models.items():
+        assert sampler["models"][model_id] == {
+            "api": "chat_completions",
+            "provider_model": provider_model,
+            "connection": "llm-ingress",
+            "exec_encoding": "json",
+            "reasoning_efforts": [""],
+            "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
+        }
     for route in STAGING_APP_MODELS.central_sampler:
         model = sampler["models"][route.id]
         if route.upstream.provider == Provider.ANTHROPIC_API:

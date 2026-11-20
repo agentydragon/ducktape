@@ -205,5 +205,8 @@ py_test(
 py_library(
     name = "upstreams",
     srcs = ["upstreams.py"],
-    deps = ["//model_catalog:catalog"],
+    deps = [
+        "//cluster/cdk8s/ollama:tabby_endpoint",
+        "//model_catalog:catalog",
+    ],
 )
