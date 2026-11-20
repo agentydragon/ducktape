@@ -14,3 +14,25 @@ patches:
       kind: Deployment
       name: virt-operator
       namespace: kubevirt
+  - patch: |
+      - op: add
+        path: /spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution
+        value:
+          - labelSelector:
+              matchLabels:
+                kubevirt.io: virt-operator
+            topologyKey: kubernetes.io/hostname
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: virt-operator
+      - op: add
+        path: /spec/template/spec/containers/0/startupProbe
+        value:
+          tcpSocket:
+            port: 8444
+          periodSeconds: 5
+          failureThreshold: 60
+    target:
+      kind: Deployment
+      name: virt-operator
+      namespace: kubevirt
