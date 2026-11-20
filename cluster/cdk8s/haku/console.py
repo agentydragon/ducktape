@@ -177,10 +177,10 @@ class Console(Construct):
             self._secrets[name] = Secret.from_secret_name(self, f"secret-{name}", name)
         return self._secrets[name]
 
-    def _from_secret(self, key: SecretKey, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
+    def _from_secret(self, key: SecretKey, *path: str) -> tuple[str, EnvValue]:
         """The env var for the settings leaf at `path`, read from `key`."""
         return env_name(Settings, *path), EnvValue.from_secret_value(
-            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=optional
+            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=False
         )
 
     def _container_env(self) -> dict[str, EnvValue]:
