@@ -47,7 +47,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import node_scheduling, pod_policy
+from cluster.cdk8s import disruption_budget, node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -378,7 +378,7 @@ class LiteLLMProxy(Construct):
     def _add_service(self, deployment: Deployment) -> None:
         ref = service(self.spec)
         if self.spec.replicas > 1:
-            ref.pods.add_disruption_budget(self, "disruption-budget", name=ref.name)
+            disruption_budget.add_disruption_budget(self, "disruption-budget", name=ref.name, pods=ref.pods)
         Service(
             self,
             "service",

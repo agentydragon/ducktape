@@ -40,7 +40,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
     S3PolicyBindingSpecSubjectsKind,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import disruption_budget, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -240,7 +240,7 @@ def _gateway(scope: Construct) -> None:
             ),
         ),
     )
-    _PODS.add_disruption_budget(scope, "disruption-budget", name=NAME)
+    disruption_budget.add_disruption_budget(scope, "disruption-budget", name=NAME, pods=_PODS)
     k8s.KubeService(
         scope,
         "service",

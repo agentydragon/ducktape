@@ -25,7 +25,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
 )
 
-from cluster.cdk8s import namespaces, pod_policy, probes
+from cluster.cdk8s import disruption_budget, namespaces, pod_policy, probes
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
@@ -93,7 +93,7 @@ def chart(app: App) -> Chart:
         liveness=probes.http_probe("/health", port=_SERVICE.pod_port, initial_delay_seconds=5, period_seconds=10),
     )
     pod_policy.harden(deployment)
-    _SERVICE.pods.add_disruption_budget(chart, "disruption-budget", name=_NAME)
+    disruption_budget.add_disruption_budget(chart, "disruption-budget", name=_NAME, pods=_SERVICE.pods)
     Service(
         chart,
         "service",
