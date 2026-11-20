@@ -967,9 +967,7 @@ def generate_manifests(root: Path) -> None:
     authentik_kustomization = authentik_flux_kustomizations.authentik(
         flux_chart, authentik_artifact, cnpg_kustomization, monitoring_crds_kustomization
     )
-    gaffer_private_source_flux_kustomizations.gaffer_private_bridge(
-        flux_chart, kyverno_kustomization, tofu_controller_kustomization
-    )
+    gaffer_private_source_flux_kustomizations.gaffer_private_bridge(flux_chart, kyverno_kustomization)
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
     dns_automation_kustomization = dns_automation.dns_automation(
         flux_chart,
@@ -1495,9 +1493,7 @@ def generate_manifests(root: Path) -> None:
         # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
         write_directory(root, forgejo_images_artifact, forgejo_images.chart, siblings=["registry-creds.sops.yaml"]),
         timeout="10m",
-        depends_on=flux.flux_kustomization_depends_on_many(
-            external_secrets_operator_kustomization, tofu_controller_kustomization
-        ),
+        depends_on=[flux.flux_kustomization_depends_on(external_secrets_operator_kustomization)],
         description=(
             "ducktape-ci Forgejo registry tenant — shared credential (read by consumers, "
             "including flux-system, via per-namespace ExternalSecrets against "
