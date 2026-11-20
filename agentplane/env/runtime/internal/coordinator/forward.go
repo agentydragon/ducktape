@@ -9,6 +9,7 @@ import (
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -88,27 +89,20 @@ func validateExecutionScope(scope *executorpb.ExecutionScope, sandbox configurat
 	if scope == nil || scope.Destination == nil || scope.Destination.Target == nil || scope.Destination.Owner == nil || scope.SessionId == "" || scope.ExpectedIncarnationUid == "" {
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")
 	}
-	destination := scope.Destination
-	if destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" ||
-		destination.Target.Namespace != sandbox.Namespace || destination.Target.Name != sandbox.Name || destination.Target.Uid != sandbox.UID ||
-		destination.Owner.Namespace != destination.Target.Namespace || destination.Owner.Name != sandbox.Name || sandboxUID != sandbox.UID {
+	if sandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
 	}
-	if scope.ExpectedIncarnationUid != incarnationUID {
-		if sandbox.UID != "" && sandboxUID == sandbox.UID && incarnationUID != "" {
-			changed, err := status.New(codes.FailedPrecondition, "Sandbox incarnation changed").WithDetails(
-				&executorpb.SandboxIncarnationChanged{
-					SandboxUid: sandbox.UID, IncarnationUid: incarnationUID,
-				},
-			)
-			if err != nil {
-				return err
-			}
-			return changed.Err()
-		}
-		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	err := service.ValidateScopeBinding(scope, sandbox.Namespace, sandbox.Name, sandbox.UID, incarnationUID)
+	if status.Code(err) != codes.FailedPrecondition || incarnationUID == "" {
+		return err
 	}
-	return nil
+	changed, err := status.Convert(err).WithDetails(&executorpb.SandboxIncarnationChanged{
+		SandboxUid: sandboxUID, IncarnationUid: incarnationUID,
+	})
+	if err != nil {
+		return err
+	}
+	return changed.Err()
 }
 
 type directExecutionStream struct {

@@ -195,17 +195,28 @@ func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ b
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")
 	}
-	destination := scope.Destination
-	if destination.Target == nil || destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" ||
-		destination.Target.Namespace != c.Namespace || destination.Target.Name != c.SandboxName || destination.Target.Uid != c.SandboxUID ||
-		destination.Owner == nil || destination.Owner.Namespace != destination.Target.Namespace || destination.Owner.Name != c.SandboxName {
-		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
-	}
-	if scope.ExpectedIncarnationUid != c.IncarnationUID {
-		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	if err := ValidateScopeBinding(scope, c.Namespace, c.SandboxName, c.SandboxUID, c.IncarnationUID); err != nil {
+		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
 	return accept(ctx)
+}
+
+// ValidateScopeBinding checks the request destination and expected incarnation
+// against one Sandbox. FailedPrecondition means the destination matched but
+// the incarnation differed. Each caller validates shape and proves its authority.
+func ValidateScopeBinding(scope *executorpb.ExecutionScope, namespace, name, sandboxUID, incarnationUID string) error {
+	destination := scope.GetDestination()
+	target, owner := destination.GetTarget(), destination.GetOwner()
+	if target.GetNamespace() == "" || target.GetName() == "" || target.GetUid() == "" ||
+		target.GetNamespace() != namespace || target.GetName() != name || target.GetUid() != sandboxUID ||
+		owner.GetNamespace() != namespace || owner.GetName() != name {
+		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
+	}
+	if scope.GetExpectedIncarnationUid() != incarnationUID {
+		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	}
+	return nil
 }
