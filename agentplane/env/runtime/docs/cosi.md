@@ -14,7 +14,8 @@ flowchart LR
   Op(["Go operation coordinator"])
   ED["EnvironmentRuntimeDesiredStates"]
   Count["EnvironmentAdmissionCounts"]
-  RC(["environment-runtime-lifecycle"])
+  Guard(["environment-runtime-lifecycle-guard"])
+  Close(["Runtime Close worker"])
   Agg(["environment-session-lifecycle"])
   Aggregate["EnvironmentSessionStatuses"]
   SC(["session-lifecycle"])
@@ -43,11 +44,11 @@ flowchart LR
 
   API --> ED & Count
   Op --> ED
-  ED --> RC
-  BI & BS --> RC
-  Aggregate --> RC
+  ED --> Guard
+  BI & BS & Aggregate --> Close
   API -.->|"typed transition request and completion"| Op
-  RC --> CloseStatus["EnvironmentRuntimeCloseStatuses"] --> API
+  API -.->|"shared Close result"| Close
+  Guard -.->|"lifecycle cancellation"| Op
   ED & Count & OwnerStatus & SS & AS & PS & EI --> Agg
   Agg --> Aggregate
   SR --> SOwner --> OwnerStatus
@@ -69,16 +70,16 @@ flowchart LR
 
 ## Writers and subscriptions
 
-| Controller                      | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                         |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-lifecycle` | Environment desired state, aggregate Session status, bootstrap request and status, and Close worker-completion channels                             | Live Runtime Close status; Runtime-owned workers perform blocking shutdown steps                                                                             |
-| `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                 |
-| `environment-session-lifecycle` | Environment desired state, admission accounting, Session lifecycle and owner statuses, app-server status, process desired/status, Execution signals | Aggregate Session status; global native cleanup, exact fence, and per-Session seal and delivery barriers                                                     |
-| `session-lifecycle`             | Session snapshot (primary); owner status, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped)                  | Session lifecycle status with generation-qualified pre-fence settlement, admission cutoff, seal UID/cursor and retained ACKs; guarded per-Session operations |
-| `codex-app-server-lifecycle`    | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check                                                       |
-| `execution-lifecycle`           | Execution signal (primary), Execution status (mapped)                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure                                                        |
-| `bootstrap-lifecycle`           | Bootstrap request (primary), status and operation state (mapped)                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                                                                      |
-| `process-lifecycle`             | Process desired state (primary), observation and systemd scope status (mapped)                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                                                                              |
+| Controller                            | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `environment-runtime-lifecycle-guard` | Environment desired state and controller lifetime                                                                                                   | Cancels Runtime's operation owner when COSI stops or the desired-state read fails                                                                            |
+| `session-owner`                       | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                 |
+| `environment-session-lifecycle`       | Environment desired state, admission accounting, Session lifecycle and owner statuses, app-server status, process desired/status, Execution signals | Aggregate Session status; global native cleanup, exact fence, and per-Session seal and delivery barriers                                                     |
+| `session-lifecycle`                   | Session snapshot (primary); owner status, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped)                  | Session lifecycle status with generation-qualified pre-fence settlement, admission cutoff, seal UID/cursor and retained ACKs; guarded per-Session operations |
+| `codex-app-server-lifecycle`          | App-server signal including operation revisions (primary); desired state, accepted admissions, aggregate status and Execution status (mapped)       | App-server status; guarded initialization, cleanup and a separate live Execution-owner readiness check                                                       |
+| `execution-lifecycle`                 | Execution signal (primary), Execution status (mapped)                                                                                               | Execution status; exact-attempt start/loss/fence observations, retaining an unfenced owner on failure                                                        |
+| `bootstrap-lifecycle`                 | Bootstrap request (primary), status and operation state (mapped)                                                                                    | Bootstrap status; selected bytes and durable event sequence govern one accepted attempt                                                                      |
+| `process-lifecycle`                   | Process desired state (primary), observation and systemd scope status (mapped)                                                                      | Process status; one attempt finalizer remains until its native domain is fenced                                                                              |
 
 The `systemd-scope` controller watches volatile `SystemdScopeDesiredStates` and exclusively writes
 `SystemdScopeStatuses`. Scope intent snapshots owner identity and containment configuration. Its
@@ -119,11 +120,9 @@ coordinator with the engine and joins it on engine exit. Each accepted operation
 adoption and Quiesce call their barriers sequentially and check caller and engine cancellation
 between effects. Interrupted Execution starts and fences settle before the caller can admit a
 successor. The coordinator wakes callers before joining its worker on
-exit and never replays accepted transition preparation after a COSI controller restart. Only Close
-reconciliation is a COSI controller; its workers do not take the transition mutex.
-The separate live Runtime Close status reports the Close worker's exact generation, stage and failure.
-Runtime watches it before reading it, and treats controller or engine exit before `ReadyToJoin` as
-failure. The status does not replace the Session aggregate's `Closed` or prove native owner release.
+exit and never replays accepted transition preparation after a COSI controller restart. The
+lifecycle guard propagates cancellation as COSI starts joining its controllers. One Close worker
+owns the shared result and reads the component statuses directly after publishing Closing.
 
 The process registry supplies one controller and globally unique attempt IDs. Runtime and harness
 scoped views share that registry but retain distinct domains, native supervisors and worker joins.
@@ -170,10 +169,10 @@ A successor generation cannot reuse an old status or Execution fence association
 
 ```mermaid
 flowchart LR
-  Preparing --> NativeStopping --> ExecutionFencing --> SessionFlushing --> SessionJoining --> BootstrapSettling --> ReadyToJoin
-  Preparing & NativeStopping & ExecutionFencing & SessionFlushing & SessionJoining & BootstrapSettling -->|"error"| Failed
+  NativeStopping --> ExecutionFencing --> SealedHistoryAck --> SessionJoining --> BootstrapSettling --> EngineJoin
 ```
 
-`ReadyToJoin` lets Runtime stop and join the engine, join component workers, close journals, fence the
-Pod namespace when applicable and release the owner. A canceled caller cannot cancel that accepted
-Close worker. See [lifecycle ownership](lifecycle.md) for admission and shutdown ordering.
+Close waits for History acknowledgement when preserving a seal. After the component barriers,
+Runtime joins the engine and component workers, closes journals, fences the Pod namespace when
+applicable and releases the owner. Caller cancellation ends only that caller's wait.
+See [lifecycle ownership](lifecycle.md) for admission and shutdown ordering.

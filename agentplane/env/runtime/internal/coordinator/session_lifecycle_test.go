@@ -717,6 +717,13 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 	if err != nil || response == nil || response.Admission == nil || response.Admission.Cursor <= before {
 		t.Fatalf("command admission = response %v, err %v; want durable admission", response, err)
 	}
+	store.statusReadMu.Lock()
+	pending := len(store.statusReadFailures)
+	store.statusReadFailures = nil
+	store.statusReadMu.Unlock()
+	if pending != 1 {
+		t.Fatal("command admission consumed the aggregate-status read failure")
+	}
 	select {
 	case failure := <-r.fatal:
 		t.Fatalf("command admission observed aggregate status failure: %v", failure)

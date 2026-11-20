@@ -96,8 +96,7 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(tc.status), err: tc.readErr}
-			c := &runtimeCloseController{r: r, generation: tc.generation, plan: closePlan{sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
-			settled, err := c.nativeStopSettled(ctx, probe)
+			settled, err := r.closeNativeStopSettled(ctx, probe, tc.generation, tc.sessionsStarted, tc.fenceCtx)
 			if settled != tc.wantSettled {
 				t.Fatalf("settled = %t, want %t; err=%v", settled, tc.wantSettled, err)
 			}
@@ -119,13 +118,12 @@ func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing
 	release := make(chan struct{})
 	probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(lifecycle.Status{Generation: generation})}
 	probe.onGet = func() { close(entered); <-release }
-	c := &runtimeCloseController{r: r, generation: generation, plan: closePlan{sessionsStarted: true, fenceCtx: expired}}
 	result := make(chan struct {
 		settled bool
 		err     error
 	}, 1)
 	go func() {
-		settled, err := c.nativeStopSettled(ctx, probe)
+		settled, err := r.closeNativeStopSettled(ctx, probe, generation, true, expired)
 		result <- struct {
 			settled bool
 			err     error
@@ -182,10 +180,6 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	}
 	if got := execution.fences.Load(); got != 1 {
 		t.Fatalf("Execution fence attempts = %d, want one", got)
-	}
-	progress := mustRuntimeCloseStatus(t, r)
-	if progress.Stage != runtimeCloseFailed {
-		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
 		_ = owner.Close()
@@ -363,10 +357,6 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T)
 	}
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("Session stop calls = %d, want one", got)
-	}
-	progress := mustRuntimeCloseStatus(t, r)
-	if progress.Stage != runtimeCloseFailed || !strings.Contains(progress.Failure.Error(), "injected Session join failure") {
-		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
 		_ = owner.Close()
@@ -648,7 +638,7 @@ func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T)
 		t.Fatalf("Close waiter during construction = %v", err)
 	}
 	close(release)
-	if err := r.Close(ctx); err != nil && !errors.Is(err, errSessionComponentLost) {
+	if err := r.Close(ctx); err != nil {
 		t.Fatalf("Close after Session construction = %v", err)
 	}
 	select {

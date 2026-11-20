@@ -6,7 +6,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "coordinator",
     srcs = [
-        "close_status.go",
+        "close.go",
         "coordinator_contracts.go",
         "environment_state.go",
         "execution_lifecycle.go",
@@ -15,7 +15,7 @@ go_library(
         "execution_service.go",
         "forward.go",
         "harness_host.go",
-        "lifecycle_controller.go",
+        "lifecycle_guard.go",
         "operation_coordinator.go",
         "protocol.go",
         "runtime.go",
@@ -132,6 +132,7 @@ pid1_go_test(
         "//agentplane/testing/eventually",
         "//agentplane/testing/grpcserver",
         "@com_github_coder_websocket//:websocket",
+        "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/typed",

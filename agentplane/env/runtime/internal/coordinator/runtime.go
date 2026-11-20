@@ -117,7 +117,6 @@ type Runtime struct {
 	lifecycleContext       context.Context
 	lifecycleWorkers       sync.WaitGroup
 	operationCoordinator   *runtimeOperationCoordinator
-	lifecycleCoordinator   *runtimeCloseController
 	lifecycleControllerErr error
 	processes              *supervision.Host
 	scripts                *scripts.Runner
@@ -363,8 +362,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	r.operationCoordinator = &runtimeOperationCoordinator{r: r, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{}), done: make(chan struct{})}
-	r.lifecycleCoordinator = &runtimeCloseController{r: r, stopped: make(chan struct{})}
-	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
+	if err := engine.RegisterController(&lifecycleGuard{runtime: r}); err != nil {
 		return err
 	}
 	if r.executionLifecycle != nil {
@@ -461,7 +459,16 @@ func (r *Runtime) finishClose() error {
 	priorFence := r.executionFence
 	r.mu.Unlock()
 	if priorFence != nil {
-		<-priorFence.done
+		select {
+		case <-priorFence.done:
+		case <-r.lifecycleContext.Done():
+			r.transitionMu.Unlock()
+			return r.coordinatorFailure("Close transition settlement")
+		}
+	}
+	if r.lifecycleContext.Err() != nil {
+		r.transitionMu.Unlock()
+		return r.coordinatorFailure("Close transition settlement")
 	}
 
 	r.mu.Lock()
@@ -486,67 +493,17 @@ func (r *Runtime) finishClose() error {
 	r.mu.Unlock()
 	r.transitionMu.Unlock()
 
-	if err := r.waitRuntimeCloseStatus(desired.Generation); err != nil {
+	sessionLossErr, err := r.closeComponents(desired)
+	if r.lifecycleContext.Err() != nil {
+		return r.coordinatorFailure("Close completion")
+	}
+	if err != nil {
 		return err
 	}
-	return r.joinClose()
+	return r.joinClose(sessionLossErr)
 }
 
-func (r *Runtime) waitRuntimeCloseStatus(generation uint64) error {
-	watchCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	events := make(chan state.Event, 1)
-	if err := r.lifecycleState.Watch(watchCtx, runtimeCloseStatusResource(RuntimeCloseStatus{}).Metadata(), events); err != nil {
-		return fmt.Errorf("watch Runtime Close status: %w", err)
-	}
-	// Register before reading so a terminal publication cannot be lost.
-	// ReadyToJoin only grants permission to join the engine and native owners.
-	seenCurrent := false
-	for {
-		status, found, err := readRuntimeCloseStatus(watchCtx, r.lifecycleState)
-		if err != nil {
-			return fmt.Errorf("read Runtime Close status: %w", err)
-		}
-		if !found && seenCurrent {
-			return errors.New("Runtime Close status was destroyed before completion")
-		}
-		if found {
-			if status.Generation > generation {
-				return fmt.Errorf("Runtime Close observed future generation %d, want %d", status.Generation, generation)
-			}
-			if status.Generation == generation {
-				seenCurrent = true
-				switch status.Stage {
-				case runtimeCloseReadyToJoin:
-					return nil
-				case runtimeCloseFailed:
-					if status.Failure == nil {
-						return errors.New("Runtime Close failed without a failure")
-					}
-					return status.Failure
-				}
-			}
-		}
-		select {
-		case event, ok := <-events:
-			if !ok {
-				return errors.New("Runtime Close status watch closed")
-			}
-			if event.Type == state.Errored {
-				if event.Error == nil {
-					return errors.New("Runtime Close status watch failed")
-				}
-				return fmt.Errorf("watch Runtime Close status: %w", event.Error)
-			}
-		case <-r.lifecycleCoordinator.stopped:
-			return r.coordinatorFailure("Close completion")
-		case <-r.lifecycleDone:
-			return r.coordinatorFailure("Close completion")
-		}
-	}
-}
-
-func (r *Runtime) joinClose() error {
+func (r *Runtime) joinClose(sessionLossErr error) error {
 	// The aggregate has stopped every component that can need the engine. Its
 	// completion means only that it is now safe to join that engine.
 	r.lifecycleCancel()
@@ -558,7 +515,6 @@ func (r *Runtime) joinClose() error {
 	if lifecycleRunErr != nil || lifecycleControllerErr != nil {
 		return errors.Join(lifecycleRunErr, lifecycleControllerErr)
 	}
-	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
 	if sessionLossErr != nil {
 		r.mu.Lock()
 		sessionLossErr = errors.Join(sessionLossErr, r.failureLocked())

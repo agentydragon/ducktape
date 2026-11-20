@@ -13,10 +13,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"go.uber.org/zap"
 )
 
 type heldSuccessorDemand struct {
@@ -34,7 +36,7 @@ type heldSuccessorDemand struct {
 
 func (s *heldSuccessorDemand) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
 	if ptr.Type() == lifecycle.EnvironmentDesiredStateType && s.failDesiredRead.Load() {
-		return nil, errors.New("injected Close controller desired read failure")
+		return nil, errors.New("injected Runtime desired read failure")
 	}
 	return s.State.Get(ctx, ptr, opts...)
 }
@@ -65,7 +67,7 @@ func (s *heldSuccessorDemand) WatchKindAggregated(ctx context.Context, kind reso
 	return nil
 }
 
-func (s *heldSuccessorDemand) failCloseDesiredRead(t *testing.T) {
+func (s *heldSuccessorDemand) failRuntimeDesiredRead(t *testing.T) {
 	t.Helper()
 	ptr := resource.NewMetadata(lifecycle.Namespace, lifecycle.EnvironmentDesiredStateType, lifecycle.EnvironmentResourceID, resource.VersionUndefined)
 	current, err := s.State.Get(t.Context(), ptr)
@@ -76,13 +78,13 @@ func (s *heldSuccessorDemand) failCloseDesiredRead(t *testing.T) {
 	ch := s.desiredWatch
 	s.watchMu.Unlock()
 	if ch == nil {
-		t.Fatal("Close controller desired watch was not registered")
+		t.Fatal("Runtime desired watch was not registered")
 	}
 	s.failDesiredRead.Store(true)
 	select {
 	case ch <- []state.Event{{Type: state.Updated, Resource: current}}:
 	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("failed to wake Close controller")
+		t.Fatal("failed to notify Runtime of desired state change")
 	}
 }
 
@@ -233,10 +235,37 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 	return &blockedSuccessorClose{Runtime: r, heldSuccessorDemand: store, adoptionDone: adoptionDone, closeDone: closeDone, release: release}
 }
 
+type heldControllerShutdown struct {
+	started chan struct{}
+	joining chan struct{}
+	release chan struct{}
+}
+
+func (*heldControllerShutdown) Name() string                 { return "test-held-controller-shutdown" }
+func (*heldControllerShutdown) Inputs() []controller.Input   { return nil }
+func (*heldControllerShutdown) Outputs() []controller.Output { return nil }
+func (c *heldControllerShutdown) Run(ctx context.Context, _ controller.Runtime, _ *zap.Logger) error {
+	close(c.started)
+	<-ctx.Done()
+	close(c.joining)
+	<-c.release
+	return nil
+}
+
 func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	failWatch := make(chan struct{})
 	scenario := startBlockedSuccessorClose(t, failWatch)
+	controller := &heldControllerShutdown{
+		started: make(chan struct{}), joining: make(chan struct{}), release: make(chan struct{}),
+	}
+	releaseController := sync.OnceFunc(func() { close(controller.release) })
+	t.Cleanup(releaseController)
+	if err := scenario.lifecycleEngine.RegisterController(controller); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, controller.started, "test controller did not start")
 	close(failWatch)
+	waitSignal(t, controller.joining, "engine watch failure did not cancel COSI before joining its controllers")
 	waitSignal(t, scenario.operationCoordinator.stopped, "engine watch failure did not stop operation owner")
 	if err := waitClose(t, scenario.adoptionDone); err == nil {
 		t.Fatal("adoption succeeded after engine watch failure")
@@ -250,6 +279,7 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	default:
 	}
 	scenario.release()
+	releaseController()
 	waitSignal(t, scenario.lifecycleDone, "engine did not join operation owner after blocked worker settled")
 	scenario.mu.Lock()
 	runErr := scenario.lifecycleRunErr
@@ -259,16 +289,15 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	}
 }
 
-func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing.T) {
+func TestDesiredStateReadFailureStopsBlockedOperationWithoutRuntimeRun(t *testing.T) {
 	scenario := startBlockedSuccessorClose(t, nil)
-	scenario.failCloseDesiredRead(t)
-	waitSignal(t, scenario.lifecycleCoordinator.stopped, "Close controller did not exit after desired read failure")
-	waitSignal(t, scenario.operationCoordinator.stopped, "Close controller exit did not stop operation owner")
+	scenario.failRuntimeDesiredRead(t)
+	waitSignal(t, scenario.operationCoordinator.stopped, "desired state read failure did not stop operation owner")
 	if err := waitClose(t, scenario.adoptionDone); err == nil {
-		t.Fatal("adoption succeeded after Close controller failure")
+		t.Fatal("adoption succeeded after desired state read failure")
 	}
-	if err := waitClose(t, scenario.closeDone); err == nil {
-		t.Fatal("Close released ownership after Close controller failure")
+	if err := waitClose(t, scenario.closeDone); err == nil || !strings.Contains(err.Error(), "injected Runtime desired read failure") {
+		t.Fatalf("Close error = %v, want injected desired read failure", err)
 	}
 	select {
 	case <-scenario.lifecycleDone:
@@ -276,11 +305,11 @@ func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing
 	default:
 	}
 	scenario.release()
-	waitSignal(t, scenario.lifecycleDone, "engine did not join operation owner after Close controller failure")
+	waitSignal(t, scenario.lifecycleDone, "engine did not join operation owner after desired state read failure")
 	scenario.mu.Lock()
 	controllerErr := scenario.lifecycleControllerErr
 	scenario.mu.Unlock()
-	if controllerErr == nil || !strings.Contains(controllerErr.Error(), "injected Close controller desired read failure") {
-		t.Fatalf("Close controller error = %v, want injected desired read failure", controllerErr)
+	if controllerErr == nil || !strings.Contains(controllerErr.Error(), "injected Runtime desired read failure") {
+		t.Fatalf("lifecycle guard error = %v, want injected desired read failure", controllerErr)
 	}
 }
