@@ -9,12 +9,7 @@ use tempfile::TempDir;
 fn run_json(command: &mut Command) -> Value {
     let output = debundle_e2e_support::process::debundle_output(command)
         .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     serde_json::from_slice(&output.stdout).expect("JSON invocation output")
 }
 
