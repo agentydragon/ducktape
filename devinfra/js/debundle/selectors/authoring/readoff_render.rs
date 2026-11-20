@@ -15,7 +15,7 @@
 //! closure) — there is no second serializer. The matcher proves the result
 //! (gate 1), exactly as the cover path does.
 //!
-//! ## Skeleton / arity anchors (W1 hand-off note #2)
+//! ## Skeleton / arity anchors
 //!
 //! When the discriminating feature is **structural** — a function/var skeleton,
 //! a member count, a param arity — it pins no literal, so it contributes **no
