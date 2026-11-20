@@ -78,7 +78,7 @@ const cutoverProof = {
   "default-vpa-requests-only":
     "Cover externally authored namespaces and workload overrides; compare effective policies before retiring the admission fallback.",
   "default-revision-history-limit":
-    "Confirm writers do not rely on the explicit −1 rewrite, then approve native negative-input behavior.",
+    "Post-prune dry runs confirmed the default of 10, rejection of negative Deployment and DaemonSet input, and unchanged negative StatefulSet input.",
   "default-disable-service-links":
     "Preserve the Pod CREATE behavior for raw and operator-created Pods, including explicit true and excluded namespaces.",
   "require-gitops":
@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=retirement-20261120-1129")
+    fetch("./evidence.json?v=retirement-20261120-1134")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -239,16 +239,24 @@ function Report() {
     11,
     16,
   );
+  const certManagerHA = data.cert_manager_ha;
+  const certManagerTime = certManagerHA.observed_at_utc.slice(11, 16);
+  const revisionHistoryCutover = data.revision_history_cutover;
+  const revisionHistoryTime = revisionHistoryCutover.observed_at_utc.slice(
+    11,
+    16,
+  );
   const policyState = {
     [nativeGatewayPolicy]: "Retired",
     "require-gitops": "Audit delivery gate",
     "require-secret-store-conditions": "Retain Kyverno",
-    "default-revision-history-limit":
-      progress.retirement.revision_history.state,
+    "default-revision-history-limit": "Retired",
   };
   const policyDirection = {
     [nativeGatewayPolicy]: "Native ValidatingAdmissionPolicy and Deny binding.",
     "require-gitops": "Native Audit-only shadow alongside PolicyReports.",
+    "default-revision-history-limit":
+      "Kubernetes built-in defaults and validation.",
     "require-secret-store-conditions":
       "Keep Kyverno admission and background scanning. Supported replacement undecided.",
   };
@@ -283,7 +291,7 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime}, ${waveTime}, ${progressTime} and ${cutoverTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime}, ${waveTime}, ${progressTime}, ${cutoverTime} and ${revisionHistoryTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -528,9 +536,10 @@ function Report() {
       <${Text} component="p">
         The 03:36 UTC inventory found seven ClusterPolicies and two namespaced
         CleanupPolicies. Removing the VPA default left six ClusterPolicies at
-        11:00 UTC. After the Gateway cutover, five ClusterPolicies and two
-        CleanupPolicies were live at ${cutoverTime} UTC. Operator-created Pods
-        still need coverage from their owner or admission.
+        11:00 UTC. The Gateway cutover left five at ${cutoverTime} UTC. After
+        revision-history retirement, four ClusterPolicies and two
+        CleanupPolicies were live at ${revisionHistoryTime} UTC.
+        Operator-created Pods still need coverage from their owner or admission.
       <//>
       <${Table.ScrollContainer}
         minWidth=${980}
@@ -595,14 +604,18 @@ function Report() {
         >
       <//>
       <${Text} component="p">
-        For Deployments, StatefulSets and DaemonSets, server dry runs confirmed
-        Kubernetes assigns 10 when revision history is omitted. The Kyverno rule
-        still rewrites an explicit −1 to 3. Without the rule Kubernetes rejects
-        that value for Deployments and DaemonSets and retains unlimited history
-        for StatefulSets. The draft waits for approval of that input contract
-        and confirmation that writers never depend on the rewrite.
-        ${" "}<${Anchor} href=${progress.prs[18158].html_url}
-          >Gated revision-history removal<//
+        Flux pruned the Kyverno revision-history rule. Post-prune dry runs at
+        ${revisionHistoryTime} UTC confirmed that omitted values still become 10
+        on create and update for Deployments, DaemonSets and StatefulSets.
+        Kubernetes now rejects an explicit −1 for Deployments and DaemonSets. It
+        accepts −1 for StatefulSets, whose controller retains unlimited history
+        with a negative limit. The removed rule had rewritten −1 to 3 for all
+        three kinds. ${" "}<${Anchor} href=${revisionHistoryCutover.html_url}
+          >Revision-history retirement<//
+        >
+        ${" · "}<${Anchor}
+          href=${revisionHistoryCutover.statefulset_negative_history_source}
+          >StatefulSet behavior<//
         >
       <//>
       <${Text} component="p">
@@ -1298,6 +1311,25 @@ function Report() {
             ${" · "}<${Anchor}
               href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.matcher_source}
               >Admission matcher<//
+            >
+          <//>
+        <//>
+        <${Paper} id="cert-manager-ha" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4"
+            >cert-manager controller and CA injector<//
+          >
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${certManagerTime} UTC
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            Both Deployments had two Ready replicas on separate hosts. Their
+            disruption budgets each permitted one disruption and both VPAs
+            stayed Initial. Observed leader lease transition gaps were about 6.8
+            seconds and 5.5 seconds. All 59 Certificates were Ready. The three
+            existing webhook endpoints and six CA digests were unchanged, and
+            Certificate and Bundle server dry runs passed. ${" "}<${Anchor}
+              href=${certManagerHA.html_url}
+              >PR #18177<//
             >
           <//>
         <//>

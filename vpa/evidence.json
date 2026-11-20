@@ -19308,5 +19308,229 @@
     "current_kyverno_admission": "Enforce",
     "current_kyverno_background": true,
     "replacement_status": "No supported replacement selected"
+  },
+  "revision_history_cutover": {
+    "observed_at_utc": "2026-11-20T11:34:50.260438+00:00",
+    "pr": 18158,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18158",
+    "merged_at_utc": "2026-11-20T11:17:22Z",
+    "source_devel_commit": "32d10c616e18f4573698f86e26a69d325c5abcb2",
+    "kyverno_policies_flux_ready": true,
+    "kyverno_policies_flux_digest": "e223f729e0a7d61cadb7a9436644bfee5af1a3c6168f9c62669d5438c88f07f8",
+    "pruned_policy": "default-revision-history-limit",
+    "live_cluster_policies": [
+      "agentplane-staging-launcher-relay",
+      "default-disable-service-links",
+      "require-gitops",
+      "require-secret-store-conditions"
+    ],
+    "live_cleanup_policies": [
+      "claude-sandbox/sandbox-janitor",
+      "thrive-scraper/reap-wedged-jobs"
+    ],
+    "ordinary_create_and_update_dry_runs": {
+      "observed_at_utc": "2026-11-20T11:34:50.260438+00:00",
+      "outcomes": [
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 0,
+          "admitted": 0
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 3,
+          "admitted": 3
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": 10,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": null,
+          "admitted": 10
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": null,
+          "admitted": 10
+        }
+      ]
+    },
+    "negative_create_and_update_dry_runs": {
+      "observed_at_utc": "2026-11-20T11:34:49.029911+00:00",
+      "outcomes": [
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "Deployment",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": -1,
+          "admitted": -1
+        },
+        {
+          "verb": "CREATE",
+          "kind": "StatefulSet",
+          "requested": -2,
+          "admitted": -2
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "CREATE",
+          "kind": "DaemonSet",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "Deployment",
+          "requested": -2,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": -1,
+          "admitted": -1
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "StatefulSet",
+          "requested": -2,
+          "admitted": -2
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": -1,
+          "admitted": "rejected"
+        },
+        {
+          "verb": "UPDATE",
+          "kind": "DaemonSet",
+          "requested": -2,
+          "admitted": "rejected"
+        }
+      ]
+    },
+    "live_writes_performed": false,
+    "statefulset_negative_history_source": "https://github.com/kubernetes/kubernetes/blob/v1.35.1/pkg/controller/statefulset/stateful_set_control.go#L185-L194"
+  },
+  "cert_manager_ha": {
+    "observed_at_utc": "2026-11-20T11:34:26Z",
+    "pr": 18177,
+    "html_url": "https://github.com/agentydragon/ducktape/pull/18177",
+    "merged_at_utc": "2026-11-20T11:32:52Z",
+    "source_devel_commit": "5e0bc267763d4c9adc0ef0492de91761decf8398",
+    "workloads": {
+      "cert-manager": {
+        "ready": 2,
+        "distinct_ready_nodes": 2,
+        "disruptions_allowed": 1,
+        "vpa_mode": "Initial",
+        "lease_transition_gap_seconds_approx": 6.8
+      },
+      "cert-manager-cainjector": {
+        "ready": 2,
+        "distinct_ready_nodes": 2,
+        "disruptions_allowed": 1,
+        "vpa_mode": "Initial",
+        "lease_transition_gap_seconds_approx": 5.5
+      }
+    },
+    "unchanged_ready_webhook_endpoint_uids": 3,
+    "unchanged_ca_digests": 6,
+    "certificates": {
+      "ready": 59,
+      "total": 59
+    },
+    "certificate_and_bundle_server_dry_runs_passed": true
   }
 }
