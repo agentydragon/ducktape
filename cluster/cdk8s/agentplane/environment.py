@@ -214,6 +214,8 @@ class Environment:
     vm_sandboxes: bool
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
+    # Static services that should retain replicas across hosts.
+    hostname_spread_services: frozenset[str] = frozenset()
     # Whether the policy catalog renders in the identity shapes: every Flux `PolicyBinding` names an
     # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and agents reach the API server only as
     # accounts (kubernetes_account_ref.py), not as the Sandbox's own ServiceAccount through `basic`.

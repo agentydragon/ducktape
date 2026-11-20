@@ -36,6 +36,17 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
     pod = find_resource(staging_manifests, "Deployment", frontend.NAME)["spec"]["template"]["spec"]
     account = find_resource(staging_manifests, "ServiceAccount", frontend.NAME)
     assert pod["automountServiceAccountToken"] is False
+    assert pod["topologySpreadConstraints"] == [
+        {
+            "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "frontend"}},
+            "matchLabelKeys": ["pod-template-hash"],
+            "maxSkew": 1,
+            "minDomains": 2,
+            "nodeTaintsPolicy": "Honor",
+            "topologyKey": "kubernetes.io/hostname",
+            "whenUnsatisfiable": "DoNotSchedule",
+        }
+    ]
     assert account["automountServiceAccountToken"] is False
     assert not pod.get("initContainers")
     container = one(pod["containers"])
