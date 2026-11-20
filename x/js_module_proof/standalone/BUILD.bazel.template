@@ -168,6 +168,7 @@ js_test(
         "ACORN_RLOCATION": "$(rlocationpath @acorn_dist//:dist/acorn.js)",
         "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
     },
+    exec_properties = {"test.EstimatedMemory": "1GiB"},
     no_copy_to_bin = [
         "@acorn_dist//:dist/acorn.js",
         "@lean_dist//:lean_bin",
