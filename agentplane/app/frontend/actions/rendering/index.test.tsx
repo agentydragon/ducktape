@@ -371,12 +371,6 @@ describe("Action presentation slots", () => {
     const excluded = [
       ["gmail", "threads_get"],
       ["gmail", "messages_get"],
-      ["google_calendar", "create_event"],
-      ["google_calendar", "update_event"],
-      ["google_calendar", "get_event"],
-      ["google_calendar", "list_events"],
-      ["google_calendar", "list_event_instances"],
-      ["google_calendar", "delete_event"],
       ["grocy_sf", "stock_add"],
       ["grocy_sf", "stock_consume"],
       ["grocy_sf", "stock_entry_edit"],
