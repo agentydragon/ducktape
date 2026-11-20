@@ -515,6 +515,105 @@ EXAMPLES = (
         compact_card_expands=False,
     ),
     ActionExample(
+        "kubernetes_admin",
+        "pods_list",
+        {"labelSelector": "app=web"},
+        POD_TABLE,
+        "1/2 ready",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "namespaces_list",
+        {"fieldSelector": "status.phase=Active"},
+        "APIVERSION   KIND        NAME       STATUS   AGE   LABELS\n"
+        "v1           Namespace   app-team   Active   4m    kubernetes.io/metadata.name=app-team\n",
+        "Active",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "projects_list",
+        {},
+        "- apiVersion: project.openshift.io/v1\n  kind: Project\n  metadata: {name: app-team}\n"
+        "  status: {phase: Active}\n",
+        "Project app-team",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "nodes_log",
+        {"name": "worker-1", "query": "kubelet", "tailLines": 80},
+        "2026-10-12T03:00:00Z Pod sync complete\n2026-10-12T03:00:01Z Node status reported\n",
+        "Node status reported",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "nodes_stats_summary",
+        {"name": "worker-1"},
+        json.dumps(
+            {
+                "node": {
+                    "nodeName": "worker-1",
+                    "cpu": {"time": "2026-10-12T03:00:00Z", "usageNanoCores": 280_000_000},
+                    "memory": {
+                        "time": "2026-10-12T03:00:00Z",
+                        "usageBytes": 536_870_912,
+                        "workingSetBytes": 268_435_456,
+                    },
+                }
+            }
+        ),
+        "0.28 cores",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "nodes_top",
+        {"label_selector": "pool=workers"},
+        "NAME       CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)\n"
+        "worker-1   280m         7%       512Mi           12%\n",
+        "Memory 512Mi (12%)",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_top",
+        {"namespace": "apps", "all_namespaces": False, "label_selector": "app=web"},
+        "NAMESPACE   NAME    CPU(cores)   MEMORY(bytes)\napps        web-0   40m          192Mi\n",
+        "Memory 192Mi",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "configuration_view",
+        {"minified": True},
+        "apiVersion: v1\nkind: Config\ncurrent-context: staging\n"
+        "contexts:\n- name: staging\n  context: {cluster: staging-cluster, namespace: apps}\n",
+        "staging-cluster",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "pods_run",
+        {"name": "preview-web", "namespace": "apps", "image": "registry.example.test/web:v1", "port": 8080},
+        "# The following resources (YAML) have been created or updated successfully\n"
+        "- apiVersion: v1\n  kind: Pod\n  metadata: {name: preview-web, namespace: apps}\n"
+        "  status: {phase: Pending}\n"
+        "- apiVersion: v1\n  kind: Service\n  metadata: {name: preview-web, namespace: apps}\n",
+        "Pod applied",
+    ),
+    ActionExample(
+        "kubernetes_admin",
+        "resources_scale",
+        {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "namespace": "apps", "scale": 0},
+        "# Current resource scale (YAML) is below\n"
+        "apiVersion: autoscaling/v1\nkind: Scale\nmetadata: {name: web, namespace: apps}\n"
+        "spec: {replicas: 0}\nstatus: {replicas: 2}\n",
+        "Observed replicas · 2",
+    ),
+    ActionExample(
         "github",
         "push_files",
         {

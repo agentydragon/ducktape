@@ -58,6 +58,24 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
   ],
 ];
 
+const fixedKubernetesNotificationCases: [string, { [key: string]: JsonValue }, string][] = [
+  ["pods_list", {}, "List Pods across namespaces"],
+  ["namespaces_list", {}, "List Kubernetes namespaces"],
+  ["projects_list", {}, "List OpenShift projects"],
+  ["nodes_log", { name: "worker-1", query: "kubelet" }, "View Kubernetes Node logs"],
+  ["nodes_stats_summary", { name: "worker-1" }, "Read Kubernetes Node statistics"],
+  ["nodes_top", {}, "Read Kubernetes Node metrics"],
+  ["pods_top", {}, "Read Kubernetes Pod metrics"],
+  ["pods_run", { image: "private-registry.example.test/app" }, "Run Kubernetes Pod"],
+  ["resources_scale", { apiVersion: "apps/v1", kind: "Deployment", name: "web" }, "Review Kubernetes resource scale"],
+  [
+    "resources_scale",
+    { apiVersion: "apps/v1", kind: "Deployment", name: "web", scale: 0 },
+    "Set Kubernetes replica count",
+  ],
+  ["configuration_view", {}, "Read Kubernetes configuration"],
+];
+
 const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue }][] = [
   ["resources_create_or_update", { resource: 123 }],
   ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: 7 }],
@@ -309,6 +327,18 @@ describe("action notification formatting", () => {
       });
     }
   );
+
+  it.each(fixedKubernetesNotificationCases)("formats the Kubernetes operation title for %s", (name, args, title) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+    });
+    expect(formatActionNotification(request)).toEqual({
+      title: `Review the cluster operation · ${title}`,
+      text: "Action requires approval",
+    });
+  });
 
   it.each(kubernetesNotificationCases)("falls back for %s when arguments contain an unknown field", (name, args) => {
     const request = actionRequest({
