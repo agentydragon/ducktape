@@ -114,10 +114,8 @@ def chart(app: App) -> Chart:
     )
     # Every namespace that pulls a private git.allegedly.works/ducktape-ci/* image reads
     # the source Secret through here via its own ExternalSecret (named
-    # forgejo-images-creds-eso.yaml, next to that namespace's other manifests) — this
-    # replaced the old emberstack-reflector fan-out on
-    # cluster/k8s/forgejo-images/registry-creds.sops.yaml, which required SOPS-decrypting a
-    # shared ciphertext file to add a namespace. Keep this list to genuine consumers.
+    # forgejo-images-creds-eso.yaml, next to that namespace's other manifests). Keep this
+    # list to genuine consumers.
     _store(
         chart,
         "kubernetes-forgejo-images-secret-store",

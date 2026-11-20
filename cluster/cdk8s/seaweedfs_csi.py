@@ -63,12 +63,9 @@ def _values() -> dict[str, object]:
         # Node label keys the driver reports as each node's CSI accessible_topology
         # (NodeGetInfo) and that csi-provisioner requires to honour StorageClass
         # allowedTopologies (--feature-gates=Topology=true, gated on this being non-empty).
-        # Picks up seaweedfs/seaweedfs-csi-driver#301 (merged to master 2026-08-26, released
-        # v1.4.30): before this, NodeGetInfo reported no topology at all and CSINode showed
-        # topologyKeys=null for every node, so nothing stopped the scheduler from placing a
-        # SeaweedFS CSI PVC pod on a non-OVH node (cluster/generated/kyverno/policies/ formerly
-        # carried a pin-seaweedfs-ovh-consumers ClusterPolicy working around exactly this, now
-        # removed in favor of the StorageClasses' own allowedTopologies).
+        # Needs seaweedfs/seaweedfs-csi-driver#301 (released v1.4.30): without it NodeGetInfo
+        # reports no topology, CSINode shows topologyKeys=null for every node, and nothing stops
+        # the scheduler from placing a SeaweedFS CSI PVC pod on a non-OVH node.
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels, value "hil-ovh") and what the
         # StorageClasses' allowedTopologies match on.

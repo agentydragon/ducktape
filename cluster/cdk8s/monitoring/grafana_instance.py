@@ -239,8 +239,6 @@ def _datasources(chart: Chart) -> None:
             type="loki",
             access="proxy",
             # SimpleScalable: reads go to the read Deployment's Service.
-            # The single-binary `loki` Service was removed when we switched
-            # off SingleBinary mode.
             url="http://loki-read.loki.svc.cluster.local:3100",
             is_default=False,
             editable=True,
