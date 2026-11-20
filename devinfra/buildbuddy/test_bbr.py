@@ -397,7 +397,7 @@ class TestCheckBaseBranchFreshness:
     def test_current_branch_tracked_but_ahead_falls_through_to_default_branch_check(self, tmp_path: Path) -> None:
         """Unpushed commits on a tracked branch still fall back to `<default>@{upstream}`.
 
-        Mirrors bb's own Phase 2 logic (bb_remote_internals.md): HEAD must be
+        Mirrors bb's own Phase 2 logic (devinfra/buildbuddy/docs/remote.md): HEAD must be
         an ancestor of (or equal to) the tracked commit for bb to use HEAD
         directly — merely having a tracking ref isn't enough.
         """
