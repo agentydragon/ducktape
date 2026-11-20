@@ -104,6 +104,7 @@ if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.cases);
   assert.equal(bulk.closureRefused, bulk.cases);
   assert.equal(bulk.controlFlowCases, bulk.cases / 2);
-  assert.ok(bulk.branchThen + bulk.branchElse >= bulk.controlFlowCases);
+  assert.ok(bulk.branchThen > 0);
+  assert.ok(bulk.branchElse > 0);
 }
 console.log(JSON.stringify(bulk));
