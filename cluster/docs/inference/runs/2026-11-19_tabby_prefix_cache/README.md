@@ -32,3 +32,12 @@ lowest sampled free VRAM during the cache arm was 5,668 MiB on GPU 0 and
 4,771 MiB on GPU 1. The results are one live pass. RAM hits were identified by
 allocation counters with both tiers enabled. The probe exercised checkpoint
 unload and reload within the running pod.
+
+## Replay after a pod replacement
+
+The [permanent GitOps rollout](https://github.com/agentydragon/ducktape/pull/18045)
+started a new pod with both caches enabled. After readiness, the exact same
+synthetic request reused 210,944 of 211,024 prompt tokens. TabbyAPI logged
+restoring 823 NVMe pages (210,688 tokens) and one recurrent checkpoint.
+First text arrived in 5.55 s, including page restore and 0.86 s of native
+prefill. Model load and warmup took 221.2 s before the replay began.
