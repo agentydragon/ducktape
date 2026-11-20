@@ -50,6 +50,21 @@ def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) ->
     )
 
 
+def _auto_vpa_patch(name: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # The chart lacks per-Deployment annotations; inherit the namespace's VPA policy.
+    return HelmReleaseSpecPostRenderersKustomizePatches(
+        target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=name),
+        patch=dedent(f"""\
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: {name}
+              annotations:
+                {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
+            """),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     operator_resources = _resources(cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi")
@@ -91,23 +106,7 @@ def chart(app: App) -> Chart:
         post_renderers=[
             HelmReleaseSpecPostRenderers(
                 kustomize=HelmReleaseSpecPostRenderersKustomize(
-                    patches=[
-                        HelmReleaseSpecPostRenderersKustomizePatches(
-                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
-                                kind="Deployment", name="keda-admission-webhooks"
-                            ),
-                            # The chart lacks per-Deployment annotations. Keep the Pod template
-                            # unchanged and inherit the namespace's memory-only VPA policy.
-                            patch=dedent(f"""\
-                                apiVersion: apps/v1
-                                kind: Deployment
-                                metadata:
-                                  name: keda-admission-webhooks
-                                  annotations:
-                                    {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
-                                """),
-                        )
-                    ]
+                    patches=[_auto_vpa_patch("keda-admission-webhooks"), _auto_vpa_patch(METRICS_SERVER_NAME)]
                 )
             )
         ],
