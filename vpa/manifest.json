@@ -4,8 +4,8 @@
   "snapshot_utc": "2026-11-20T02:58:40Z",
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
-  "report_html_sha256": "10c2056d3d89fc8b58c65df5af6209f9f489c7879d13768912c532d724dfbbc4",
-  "report_script_sha256": "51c6c134021a3c5cc7ea1280cf54e94155331fc91787910a523d2669c84464c4",
+  "report_html_sha256": "5f809c8e635c0c01fb6556af16a5c4f98470c4f9ad3516c97c9d94a84ead14da",
+  "report_script_sha256": "ac5efd3a34c1abe0a0a374ff8eab628a0b106f624a6f06a06aee34c59983d3ee",
   "evidence_sha256": "5472c8f43a8121bd7cdb99699770183ba8929f58210f293f1d46e7de5d3e3c13",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -45,5 +45,11 @@
   "crossplane_site_spread_at_utc": "2026-11-20T20:21:11Z",
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
-  "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z"
+  "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
+  "current_inventory_collection_started_utc": "2026-11-20T21:05:05Z",
+  "current_inventory_collection_finished_utc": "2026-11-20T21:05:16Z",
+  "flux_source_observed_at_utc": "2026-11-20T21:05:17Z",
+  "inventory_sha256": "5d34ad1d4077af92d0318c613523ad273ad49dc85e0ad2664121f716e24ed800",
+  "inventory_collector_sha256": "cb2ee428c50a95fc1ed4509bd54c1dd40bfe7ffe4e6c421577a0e5da83360a1b",
+  "current_inventory_flux_source_devel_commit": "1c87503942dd7bc79c0010a50b38cbbb8bc0d56a"
 }

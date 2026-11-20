@@ -1,11 +1,9 @@
 import {
-  Accordion,
   Alert,
   Anchor,
   Badge,
   Box,
   Button,
-  Code,
   Container,
   Group,
   NativeSelect,
@@ -24,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/7514082e13cff17faa64056a67b285c7e259f3e2/";
+const currentSource = github + "blob/1c87503942dd7bc79c0010a50b38cbbb8bc0d56a/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -52,18 +50,6 @@ function mode(row) {
     : "No direct VPA";
 }
 
-function policy(row) {
-  if (!row.vpas.length) return "No direct target";
-  const policies = row.vpas[0].containers;
-  if (!policies.length) return "Default: requests + limits";
-  return policies
-    .map(
-      (p) =>
-        `${p.containerName ?? "*"}: ${p.mode === "Off" ? "off" : (p.controlledValues ?? "requests + limits")}`,
-    )
-    .join("; ");
-}
-
 function Stat({ value, label, detail }) {
   return html`<${Paper} withBorder p="md" radius="md">
     <${Text} size="xl" fw=${700}>${value}<//>
@@ -78,31 +64,39 @@ function Inventory({ workloads }) {
   const [missing, setMissing] = useState("All");
   const [shown, setShown] = useState(30);
   const query = search.trim().toLowerCase();
+  const isMissing = (x) => x == null || Number.parseFloat(x) === 0;
   const filtered = workloads.filter((row) => {
     const text =
-      `${row.namespace} ${row.name} ${row.kind} ${row.containers.map((c) => c.name).join(" ")}`.toLowerCase();
-    const requestMissing = row.containers.some(
-      (c) => c.requests.memory == null || c.requests.cpu == null,
+      `${row.namespace} ${row.name} ${row.kind} ${row.containers.map((c) => `${c.name} ${c.admitted.map((p) => p.pod).join(" ")}`).join(" ")}`.toLowerCase();
+    const values = row.containers.flatMap((c) => c.admitted);
+    const templates = row.containers.flatMap((c) =>
+      c.template ? [c.template] : [],
     );
-    const limitMissing = row.containers.some(
-      (c) => c.limits.memory == null || c.limits.cpu == null,
-    );
+    const resourceMissing = (items, field) =>
+      items.some((p) => isMissing(p[field].cpu) || isMissing(p[field].memory));
     return (
       (!query || text.includes(query)) &&
       (chosenMode === "All" || mode(row) === chosenMode) &&
       (missing === "All" ||
-        (missing === "Missing request" && requestMissing) ||
-        (missing === "Missing limit" && limitMissing))
+        (missing === "Pod missing request" &&
+          resourceMissing(values, "requests")) ||
+        (missing === "Pod missing limit" &&
+          resourceMissing(values, "limits")) ||
+        (missing === "Template missing request" &&
+          resourceMissing(templates, "requests")) ||
+        (missing === "Template missing limit" &&
+          resourceMissing(templates, "limits")))
     );
   });
   const setFilter = (fn) => (event) => {
     fn(event.currentTarget.value);
     setShown(30);
   };
+  const fmt = (r) => `${r.cpu ?? "unset"} CPU / ${r.memory ?? "unset"} memory`;
   return html`<${Box}>
     <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" mb="md">
       <${TextInput}
-        label="Search namespace, workload or container"
+        label="Search namespace, workload, Pod or container"
         type="search"
         value=${search}
         onChange=${setFilter(setSearch)}
@@ -114,59 +108,73 @@ function Inventory({ workloads }) {
         data=${["All", "No direct VPA", "Recommend", "Initial", "Recreate"]}
       />
       <${NativeSelect}
-        label="Template resource fields"
+        label="Resource field filter"
         value=${missing}
         onChange=${setFilter(setMissing)}
-        data=${["All", "Missing request", "Missing limit"]}
+        data=${["All", "Pod missing request", "Pod missing limit", "Template missing request", "Template missing limit"]}
       />
     <//>
     <${Text} size="sm" c="dimmed" aria-live="polite"
-      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching controller templates. Omitted fields are labeled unset; they are not zero usage.`}<//
+      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. A missing filter matches either CPU or memory absent or zero. Filters distinguish templates from admitted active Pods; owner-only rows have no template and are not proof of direct VPA coverage.`}<//
     >
     <${Table.ScrollContainer}
-      minWidth=${1040}
+      minWidth=${1160}
       type="native"
       tabIndex=${0}
-      aria-label="Workload VPA inventory"
+      aria-label="Current workload VPA inventory"
     >
       <${Table} striped highlightOnHover withTableBorder verticalSpacing="sm">
         <${Table.Thead}
-          ><${Table.Tr}>
-            <${Table.Th}>Namespace / workload<//><${Table.Th}>VPA policy<//
-            ><${Table.Th}>Template requests / limits<//>
-            <${Table.Th}>Live memory and 7-day peak<//
-            ><${Table.Th}>Recommendation / HPA<//>
-          <//><//
+          ><${Table.Tr}
+            ><${Table.Th}>Namespace / owner<//><${Table.Th}>Direct VPA policy<//
+            ><${Table.Th}>Template and admitted resources<//
+            ><${Table.Th}>Memory observations<//
+            ><${Table.Th}>VPA recommendation / HPA<//><//
+          ><//
         >
         <${Table.Tbody}>
           ${filtered.slice(0, shown).map(
             (row) =>
               html`<${Table.Tr}
-                key=${`${row.namespace}/${row.kind}/${row.name}`}
+                key=${`${row.apiGroup}/${row.namespace}/${row.kind}/${row.name}`}
               >
                 <${Table.Td}
                   ><${Text} fw=${600} size="sm"
                     >${row.namespace} / ${row.name}<//
                   ><${Text} size="xs" c="dimmed"
-                    >${row.kind} · ${row.activePods} active
-                    pod(s)${row.desiredReplicas == null ? "" : ` · ${row.readyReplicas ?? 0}/${row.desiredReplicas} ready`}<//
+                    >${`${row.kind} · ${row.scope === "pod-owner" ? "Pod owner; no template" : "controller template"} · ${row.activePods} active Pod(s)${row.desiredReplicas == null ? "" : ` · ${row.readyReplicas}/${row.desiredReplicas} ready`}`}<//
                   ><//
                 >
                 <${Table.Td}
-                  ><${Badge}
-                    variant="light"
-                    color=${mode(row) === "No direct VPA" ? "gray" : mode(row) === "Recommend" ? "yellow" : "blue"}
-                    >${mode(row)}<//
-                  ><${Text} size="xs" mt="xs">${policy(row)}<//><//
+                  >${mode(row) === "No direct VPA" ? html`<${Text} size="xs" c="dimmed">No direct VPA<//>` : html`<${Badge} variant="light" color=${mode(row) === "Recommend" ? "yellow" : "blue"}>${mode(row)}<//>`}${row.vpas.map((v) => html`<${Box} key=${v.name} mt="xs"><${Text} size="xs" fw=${600}>${v.name} · ${v.mode}<//>${v.containers.length ? v.containers.map((c) => html`<${Text} size="xs" key=${c.containerName}>${`${c.containerName ?? "*"}: ${c.mode === "Off" ? "off" : `${(c.controlledResources ?? ["cpu", "memory"]).join(", ")} · ${c.controlledValues ?? "RequestsAndLimits"}`}${c.minAllowed ? ` · min ${fmt(c.minAllowed)}` : ""}${c.maxAllowed ? ` · max ${fmt(c.maxAllowed)}` : ""}`}<//>`) : html`<${Text} size="xs">Default: CPU and memory requests and limits<//>`}<//>`)}<//
                 >
                 <${Table.Td}
-                  >${row.containers.map((c) => html`<${Box} key=${c.name} mb="xs"><${Text} size="xs" fw=${600}>${c.name}<//><${Text} size="xs">req ${c.requests.cpu ?? "unset"} CPU / ${c.requests.memory ?? "unset"} memory<//><${Text} size="xs">limit ${c.limits.cpu ?? "unset"} CPU / ${c.limits.memory ?? "unset"} memory<//><//>`)}<//
+                  >${row.containers.map(
+                    (c) =>
+                      html`<${Box} key=${c.name} mb="xs"
+                        ><${Text} size="xs" fw=${600}>${c.name}<//
+                        ><${Text} size="xs"
+                          >${c.template ? `template req ${fmt(c.template.requests)}; limit ${fmt(c.template.limits)}` : "Template unavailable for this owner"}<//
+                        >${
+                          c.admitted.length
+                            ? html`<details>
+                                <summary>
+                                  ${`${c.admitted.length} admitted Pod container(s)`}
+                                </summary>
+                                ${c.admitted.map((a) => html`<${Text} size="xs" key=${a.pod}>${`${a.pod} · ${a.phase} · ${a.node ?? "unscheduled"}: req ${fmt(a.requests)}; limit ${fmt(a.limits)}`}<//>`)}
+                              </details>`
+                            : html`<${Text} size="xs" c="dimmed"
+                                >No active Pod container<//
+                              >`
+                        }<//
+                      >`,
+                  )}<//
                 >
                 <${Table.Td}
-                  >${row.containers.map((c) => html`<${Box} key=${c.name} mb="xs"><${Text} size="xs" fw=${600}>${c.name}<//><${Text} size="xs">now ${c.currentMemoryMaxMiB == null ? "unknown" : `${c.currentMemoryMaxMiB} MiB`} · peak ${c.peak7dCurrentPodMiB == null ? "unknown" : `${c.peak7dCurrentPodMiB} MiB`}<//><${Text} size="xs" c="dimmed">live request: ${c.liveMemoryRequests.length ? c.liveMemoryRequests.join(", ") : "no active pod"}<//><//>`)}<//
+                  >${row.containers.map((c) => html`<${Box} key=${c.name} mb="xs"><${Text} size="xs" fw=${600}>${c.name}<//><${Text} size="xs">${`current max ${c.currentMemoryMaxMiB == null ? "unknown" : `${c.currentMemoryMaxMiB} MiB`} (${c.sampledPods}/${c.admitted.length} Pods)`}<//><${Text} size="xs">${`7-day max ${c.peak7dCurrentPodMiB == null ? "unknown" : `${c.peak7dCurrentPodMiB} MiB`} (${c.peakSampledPods}/${c.admitted.length} current Pods)`}<//><//>`)}<//
                 >
                 <${Table.Td}
-                  >${row.vpas.flatMap((v) => v.recommendations).map((v) => html`<${Text} size="xs" key=${v.containerName}>${v.containerName}: ${v.target?.cpu ?? "—"} CPU / ${quantityMiB(v.target?.memory)}<//>`)}${row.hpas.map((h) => html`<${Text} size="xs" c="orange" key=${h.name}>HPA: ${h.name}<//>`)}${!row.vpas.length && !row.hpas.length ? html`<${Text} size="xs" c="dimmed">No direct VPA<//>` : null}<//
+                  >${row.vpas.flatMap((v) => v.recommendations.map((c) => html`<${Text} size="xs" key=${`${v.name}/${c.containerName}`}>${`${c.containerName}: ${c.target?.cpu ?? "unknown"} CPU / ${quantityMiB(c.target?.memory)}`}<//>`))}${row.hpas.map((h) => html`<${Text} size="xs" c="orange" key=${h.name}>HPA: ${h.name}<//>`)}${row.vpas.length && !row.vpas.some((v) => v.recommendations.length) ? html`<${Text} size="xs">Recommendation unavailable<//>` : null}<//
                 >
               <//>`,
           )}
@@ -181,11 +189,15 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=current-20261120-2030")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    Promise.all(
+      ["./evidence.json", "./inventory.json"].map((url) =>
+        fetch(`${url}?v=20261120-2105`).then((r) => {
+          if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+          return r.json();
+        }),
+      ),
+    )
+      .then(([evidence, inventory]) => ({ ...evidence, inventory }))
       .then(setData)
       .catch((e) => setError(String(e)));
   }, []);
@@ -201,8 +213,9 @@ function Report() {
     >`;
   if (!data)
     return html`<${Container} py="xl"><${Text}>Loading VPA evidence…<//><//>`;
-  const current = data.current_state;
-  const chart = Object.entries(current.vpa_modes).map(([mode, count]) => ({
+  const current = data.inventory;
+  const counts = current.counts;
+  const chart = Object.entries(counts.vpa_modes).map(([mode, count]) => ({
     mode,
     count,
   }));
@@ -214,13 +227,12 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >Cluster observations: 20 November 2026, 20:28–20:30 UTC. This page is a
-      snapshot, not a live dashboard.<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability and policy checks below were observed at 20:16–20:30 UTC. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
       ><${Anchor} href="#remaining-work">Remaining work<//
-      ><${Anchor} href="#inventory">Historical inventory<//
+      ><${Anchor} href="#inventory">Current inventory<//
       ><${Anchor} href="#sources">Sources<//><//
     >
     <section id="current-state">
@@ -230,12 +242,12 @@ function Report() {
       <${Title} order=${2} mt="xl">Current state<//>
       <${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md" my="md">
         <${Stat}
-          value="192 / 233"
+          value=${`${counts.active_direct_vpa} / ${counts.active_controllers}`}
           label="Active controllers with a direct VPA"
-          detail="Deployments, StatefulSets and DaemonSets; 41 have no direct target."
+          detail=${`Active Deployments, StatefulSets and DaemonSets; ${counts.active_controllers - counts.active_direct_vpa} have no direct target.`}
         />
         <${Stat}
-          value="226"
+          value=${String(counts.all_vpa_objects)}
           label="VPA objects"
           detail="Includes targets other than active controllers."
         />
@@ -257,9 +269,9 @@ function Report() {
             gridAxis="y"
           />
           <${Text} size="sm" c="dimmed"
-            >105 Initial · 67 Off · 54 Recreate. These are objects, not the
-            number of active controllers covered; Jobs and CronJobs are
-            included.<//
+            >${`${counts.vpa_modes.Initial ?? 0} Initial · ${counts.vpa_modes.Off ?? 0} Off · ${counts.vpa_modes.Recreate ?? 0} Recreate.`}
+            These are objects, not the number of active controllers covered;
+            Jobs and CronJobs are included.<//
           >
         <//>
         <${Paper} withBorder p="md" radius="md">
@@ -276,9 +288,9 @@ function Report() {
             when extending a VPA.<//
           >
           <${Text} component="p" mb=${0}
-            >All 41 active controllers without a direct VPA are in namespaces
-            explicitly disabling Goldilocks; this is an audit queue, not an
-            automatic enablement list.<//
+            >The 41 active controllers without a direct VPA in this snapshot are
+            in namespaces explicitly disabling Goldilocks; this is an audit
+            queue, not an automatic enablement list.<//
           >
         <//>
       <//>
@@ -352,18 +364,17 @@ function Report() {
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${4}>Resource evidence<//>
           <${Text} component="p" mb=${0}
-            >At 20:34 UTC, 132 of 578 regular containers in Running or Pending,
-            non-terminating Pods lacked both CPU and memory requests; 375 lacked
-            CPU limits and 254 lacked memory limits. These are admitted Pod
-            specs, including defaults and mutations, and exclude init and
-            ephemeral containers. Missing fields alone do not show usage or an
-            OOM cause.<//
+            >${`In this inventory, ${counts.missing_requests_cpu} of ${counts.regular_containers} regular containers in Running or Pending, non-terminating Pods lacked CPU requests and ${counts.missing_requests_memory} lacked memory requests; ${counts.missing_limits_cpu} lacked CPU limits and ${counts.missing_limits_memory} lacked memory limits.`}
+            These are admitted Pod specs, including defaults and mutations, and
+            exclude init and ephemeral containers. Missing fields alone do not
+            show usage or an OOM cause.<//
+          >
           >
           <${Text} component="p" mb=${0}
             >The largest request gaps are Piraeus (63 containers) and SeaweedFS
             CSI (16); another 42 PostgreSQL containers belong to 21 CNPG
-            clusters. Work through those with their operator owners. The earlier
-            02:58 inventory remains available below as historical evidence.<//
+            clusters. Work through those with their operator owners. Search the
+            current inventory below for individual owners and containers.<//
           >
         <//>
       <//>
@@ -423,32 +434,44 @@ function Report() {
       <//>
     </section>
     <section id="inventory">
-      <${Title} order=${2} mt="xl">Historical inventory<//>
+      <${Title} order=${2} mt="xl">Current searchable inventory<//>
       <${Text} component="p"
-        >The searchable inventory is an archival snapshot of 237 controller
-        templates at 02:58 UTC on 20 November, with seven-day queries ending at
-        03:03 UTC. Names, policies, recommendations and resources may have
-        changed; it is not the current 233-active-controller census.<//
+        >Each row is a Deployment, StatefulSet, DaemonSet or CronJob template,
+        or an active Pod owner whose template is outside that set. Deployment
+        attribution follows Pod → ReplicaSet → Deployment by UID; CronJobs
+        follow Pod → Job → CronJob by UID. Custom-owner rows show admitted Pods
+        only and do not imply that the owner supports VPA. VPA matching uses API
+        group, kind, namespace and target name.<//
       >
-      <${Accordion} variant="separated"
-        ><${Accordion.Item} value="inventory"
-          ><${Accordion.Control}>Open the 02:58 UTC inventory<//
-          ><${Accordion.Panel}
-            ><${Inventory} workloads=${data.workloads} /><//><//
-      ><//>
+      <${Text} component="p"
+        >Template values come from stored controller templates, which may
+        themselves be defaulted or mutated; admitted Pod values also include Pod
+        admission and VPA mutation. Pod filters apply to actual non-terminating
+        Running or Pending Pods and regular containers; template filters include
+        inactive controllers. Current memory is from metrics-server; seven-day
+        working-set maxima are sampled by Mimir for current Pod names, which may
+        cover less than seven days or be reused. Unknown means no sample, not
+        zero.<//
+      >
+      <${Inventory} workloads=${current.workloads} />
     </section>
     <section id="sources">
       <${Title} order=${2} mt="xl">Sources and limits<//>
       <${Text} component="p"
-        >The current census and placement were observed at 20:28–20:30 UTC. The
-        Flux source was ${" "}<${Anchor} href=${currentSource}
-          >devel at 7514082e13<//
-        >${" "}; Git source and observed running state are distinct. The initial
+        >The census was collected during the inventory window above; placement
+        was observed at 20:28–20:30 UTC. The Flux source at 21:05 UTC was
+        ${" "}<${Anchor} href=${currentSource}>devel at 1c87503942<//>${" "};
+        Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
           href="./evidence.json"
-          >evidence.json<//
-        >${" "}; hashes and timestamps are in ${" "}<${Anchor}
+          >historical evidence.json<//
+        >${" "}; current inventory is in ${" "}<${Anchor}
+          href="./inventory.json"
+          >inventory.json<//
+        >${" "}, with the ${" "}<${Anchor} href="./collect_inventory.py"
+          >collector<//
+        >${" "}. Hashes and timestamps are in ${" "}<${Anchor}
           href="./manifest.json"
           >manifest.json<//
         >.<//
