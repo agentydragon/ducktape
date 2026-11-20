@@ -429,8 +429,8 @@ esbuild(
 )
 
 # Tailwind v4 scans `@source`-declared files for class names. We concatenate
-# every .jsx/.js source whose classes we want to keep into a single text file
-# the stylesheet references.
+# every .ts/.tsx source and `index.html` whose classes we want to keep into a
+# single text file the stylesheet references.
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
