@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 
 use selector_outcome::Outcome;
 use selector_resolve::{
-    AnonymousStatement, Chunk, EntityIndex, FrozenImportAnchor, Member, MemberSelector, SpecModule,
+    AnonymousStatement, Chunk, EntityIndex, FrozenImportAnchor, Member, MemberSelector,
+    PlacementAnchors, SpecModule,
 };
 use source_identity::SourceUnitOrdinal;
 use source_match::{ParsedSourceMatchSelector, SelectorField};
@@ -84,6 +85,13 @@ fn with_source<T>(source: &str, test: impl FnOnce(&Chunk<'_>) -> T) -> T {
     })
 }
 
+fn frozen_anchors(chunk: &Chunk<'_>, base: &[SpecModule]) -> PlacementAnchors {
+    let base_resolution = chunk.resolve(base).unwrap();
+    chunk
+        .freeze_placement_anchors(base, &base_resolution)
+        .unwrap()
+}
+
 fn anonymous_statement(index: usize, match_source: &str) -> AnonymousStatement {
     let selector = AnonymousStatementSelector {
         match_source: match_source.to_string(),
@@ -155,10 +163,7 @@ fn overlay_uses_frozen_full_resolution_and_only_excludes_occupied_units() {
 fn occupied_candidate_is_removed_before_selector_uniqueness_is_decided() {
     with_chunk(|chunk| {
         let base = resolved_base_modules();
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         let overlay = [module(
             "new-owner",
             vec![source_match_member(
@@ -187,10 +192,7 @@ fn duplicate_export_names_are_ambiguous_even_when_anchors_share_a_source_unit() 
             module("first-owner", vec![binding_member("anchor", "anchor")]),
             module("second-owner", vec![binding_member("anchor", "anchor")]),
         ];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         let overlay = [module(
             "new-owner",
             vec![source_match_member(
@@ -217,10 +219,7 @@ fn grouped_source_match_rows_are_removed_as_whole_placements_when_occupied() {
     let source = "const a = 1, b = 2; const c = 1, d = 2; console.log(a, b, c, d);";
     with_source(source, |chunk| {
         let base = [];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         let overlay = [module(
             "new-owner",
             vec![
@@ -241,10 +240,7 @@ fn anonymous_source_match_obeys_occupied_units() {
     let source = "console.log(1); console.log(1);";
     with_source(source, |chunk| {
         let base = [];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         let overlay = [SpecModule {
             path: "new-owner".to_string(),
             members: Vec::new(),
@@ -271,10 +267,7 @@ fn relational_overlay_uses_a_frozen_source_unit_anchor() {
             "anchor-owner",
             vec![binding_member("anchor", "anchor")],
         )];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         let overlay = [module(
             "new-owner",
             vec![Member {
@@ -301,10 +294,7 @@ fn imported_base_anchor_keeps_binding_identity_without_a_source_unit() {
     let source = "import { value as imported } from './base.js'; const local = imported.x; console.log(local);";
     with_source(source, |chunk| {
         let base = [module("base-owner", Vec::new())];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let mut anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let mut anchors = frozen_anchors(chunk, &base);
         chunk
             .add_frozen_import_anchors(
                 &mut anchors,
@@ -335,10 +325,7 @@ fn import_anchor_rejects_relational_use_without_a_source_unit() {
     let source = "import { value as imported } from './base.js'; const local = imported.x;";
     with_source(source, |chunk| {
         let base = [module("base-owner", Vec::new())];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let mut anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let mut anchors = frozen_anchors(chunk, &base);
         chunk
             .add_frozen_import_anchors(
                 &mut anchors,
@@ -410,10 +397,7 @@ fn overlay_cannot_reuse_a_frozen_module_path() {
             "existing-owner",
             vec![binding_member("anchor", "anchor")],
         )];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         assert!(
             chunk
                 .resolve_placement(
@@ -433,10 +417,7 @@ fn placement_rejects_an_occupied_ordinal_outside_the_chunk() {
             "existing-owner",
             vec![binding_member("anchor", "anchor")],
         )];
-        let base_resolution = chunk.resolve(&base).unwrap();
-        let anchors = chunk
-            .freeze_placement_anchors(&base, &base_resolution)
-            .unwrap();
+        let anchors = frozen_anchors(chunk, &base);
         assert!(
             chunk
                 .resolve_placement(
