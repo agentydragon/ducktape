@@ -199,18 +199,33 @@ array allocation, indexed property reads and mutation through aliases in Node;
 the current proof frontend refuses these cases.
 More general closure programs are executed independently in Node; when candidate
 generation succeeds, the fuzzer also compares the emitted modules. The summary
-reports generated and compared closure cases separately from refusals.
+reports generated and compared closure cases separately from refusals. It
+separates refusals of cases designated with invalid assignments from refusals on
+broader-syntax cases, and records validator verdicts for mutated and unmodified
+output independently. A broader-syntax case can also have an invalid split, so
+its refusal does not by itself identify the cause.
 
 ```sh
 nix develop .#js-module-proof
 node x/js_module_proof/fuzz.mjs --seed 123 --cases 1000 --output-dir "$OUTPUT_DIR"
 ```
 
+The Bazel fuzzer test defaults to 128 bulk cases across its shards. For a
+larger deterministic Node-focused campaign, set a multiple of 64, for example
+`bbr test //x/js_module_proof:fuzz_test --test_env=JS_MODULE_PROOF_FUZZ_CASES=512`.
+The test still runs its fixed Lean-backed cases; the additional bulk cases use
+sparse independent validation sampling by default. Set
+`--test_env=JS_MODULE_PROOF_FUZZ_VALIDATE_EVERY=16` to sample about one in 16
+generated cases for Lean validation. Bulk summaries and retained differences
+are written to the Bazel undeclared outputs for each shard. Summary entries'
+`artifactPath` values are relative to the campaign output directory.
+
 The seed and case index determine each case independently; `--start N --cases 1`
 replays one case. `--shard I --shards N` selects the indices congruent to I
 modulo N, so independent workers cover the same range without overlap.
 Failure artifacts include source, assignment, generated files,
-Node observations and, if available, the validator verdict. Cases with a Node difference and an unknown or unvalidated verdict are retained
+Node observations and, if available, the validator verdict. Unexpected failures
+also include a phase and error record. Cases with a Node difference and an unknown or unvalidated verdict are retained
 for investigation; other non-failing cases are removed. An unmodified split that
 is proved but differs in Node is reduced by removing statements, calls, empty
 modules and imports while preserving that failure, with the result saved under

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { generateBindings, validateBindings } from "./bindings.mjs";
 
@@ -992,6 +992,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     branchElse: 0,
     generated: 0,
     refused: 0,
+    unsupportedCaseRefused: 0,
+    invalidAssignmentCaseRefused: 0,
     compared: 0,
     inconclusive: 0,
     inconclusiveCases: [],
@@ -1002,6 +1004,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     splitDifferent: 0,
     mutatedDifferent: 0,
     validated: 0,
+    mutatedVerdicts: { proved: 0, unsafe: 0, unknown: 0 },
+    unmodifiedVerdicts: { proved: 0, unsafe: 0, unknown: 0 },
     proved: 0,
     unsafe: 0,
     unknown: 0,
@@ -1013,12 +1017,15 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     if (index % shards !== shard) continue;
     summary.cases++;
     const root = await mkdtemp(join(outputDir, `case-${index}-`));
+    const artifactPath = relative(outputDir, root);
     const source = join(root, "source.mjs");
     const spec = join(root, "spec.json");
     const out = join(root, "out");
-    const input = makeCase(seed, index);
     let keep = true;
+    let phase = "generate-ast";
     try {
+      const input = makeCase(seed, index);
+      phase = "write-input";
       await writeFile(source, input.source);
       await writeFile(spec, JSON.stringify(input.spec, null, 2) + "\n");
       await writeFile(
@@ -1030,6 +1037,9 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
             calls: input.calls,
             grammar: input.grammar,
             unsupported: input.unsupported,
+            invalidAssignment: input.invalidAssignment,
+            cyclic: input.cyclic,
+            plannedMutation: index % 8 === 2,
             nodeVersion: process.version,
           },
           null,
@@ -1038,12 +1048,13 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       );
       if (input.useConstant) summary.constantCases++;
       if (input.grammar === "object") {
+        phase = "source-execution";
         summary.objectCases++;
         const observed = execute(source, input.calls);
         await writeFile(join(root, "node-source.json"), JSON.stringify(observed, null, 2) + "\n");
         if (observed.inconclusive) {
           summary.inconclusive++;
-          summary.inconclusiveCases.push({ index, reason: observed.inconclusive, artifacts: root });
+          summary.inconclusiveCases.push({ index, reason: observed.inconclusive, artifacts: root, artifactPath });
           continue;
         }
         if (
@@ -1062,6 +1073,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (input.crossModuleCapture) summary.modeledClosureCrossModule++;
       }
       if (input.grammar === "closure") {
+        phase = "source-execution";
         summary.closureCases++;
         summary.closureDepths[input.depth] = (summary.closureDepths[input.depth] ?? 0) + 1;
         if (input.shadowed) summary.closureShadowed++;
@@ -1074,6 +1086,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
             index,
             reason: observed.inconclusive ?? "opaque thrown value",
             artifacts: root,
+            artifactPath,
           });
           continue;
         }
@@ -1092,11 +1105,14 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
             throw new Error("generated control flow did not run");
         }
       }
+      phase = "split-generation";
       try {
         await generateBindings(source, spec, out);
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
+        if (input.invalidAssignment) summary.invalidAssignmentCaseRefused++;
+        else if (input.unsupported) summary.unsupportedCaseRefused++;
         if (input.grammar === "closure") summary.closureRefused++;
         if (input.grammar === "object") summary.objectRefused++;
         if (!input.unsupported && !input.invalidAssignment)
@@ -1109,6 +1125,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.grammar === "closure") summary.closureGenerated++;
       const mutated = index % 8 === 2;
       if (mutated) {
+        phase = "output-mutation";
         const file = join(out, input.cell0Owner);
         const original = await readFile(file, "utf8");
         const changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
@@ -1116,6 +1133,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         await writeFile(file, changed);
         summary.mutated++;
       }
+      phase = "node-comparison";
       const before = execute(source, input.calls);
       const after = execute(join(out, input.spec.entry), input.calls);
       if (
@@ -1130,6 +1148,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
           index,
           reason: before.inconclusive ?? after.inconclusive ?? "opaque thrown value",
           artifacts: root,
+          artifactPath,
         });
         continue;
       }
@@ -1174,9 +1193,13 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (!equal) summary[mutated ? "mutatedDifferent" : "splitDifferent"]++;
       let verdictName = "unvalidated";
       if (random(seed ^ 0xa5a5a5a5, index)(validateEvery) === 0) {
+        phase = "validation";
         const verdict = await validateBindings(source, spec, out);
         summary.validated++;
         verdictName = verdict.result;
+        const verdictKey = verdict.result === "proved under assumptions" ? "proved" : verdict.result;
+        const verdicts = mutated ? summary.mutatedVerdicts : summary.unmodifiedVerdicts;
+        if (Object.hasOwn(verdicts, verdictKey)) verdicts[verdictKey]++;
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (input.grammar === "captured") {
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
@@ -1228,8 +1251,17 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         } else throw new Error(`unexpected validator result: ${verdict.result}`);
       } else summary.unvalidated++;
       keep = !equal && (verdictName === "unknown" || verdictName === "unvalidated");
-      if (keep) summary.unexplainedDifferences.push({ index, mutated, verdict: verdictName, artifacts: root });
+      if (keep)
+        summary.unexplainedDifferences.push({ index, mutated, verdict: verdictName, artifacts: root, artifactPath });
     } catch (error) {
+      await writeFile(
+        join(root, "failure.json"),
+        JSON.stringify(
+          { seed, index, phase, nodeVersion: process.version, error: String(error), stack: error?.stack },
+          null,
+          2
+        ) + "\n"
+      ).catch(() => {});
       throw new Error(`seed=${seed} index=${index}; artifacts: ${root}\n${error.stack ?? error}`);
     } finally {
       if (!keep) await rm(root, { recursive: true, force: true });

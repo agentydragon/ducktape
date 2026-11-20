@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { access, writeFile } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 
 if (process.env.ACORN_RLOCATION)
@@ -145,29 +145,41 @@ if (shards === 4 && shard === 2) {
   assert.ok(result.different > 0);
 }
 assert.equal(result.generated, result.compared + result.inconclusive);
+assert.equal(result.refused, result.unsupportedCaseRefused + result.invalidAssignmentCaseRefused);
+assert.equal(
+  result.validated,
+  Object.values(result.mutatedVerdicts).reduce((a, b) => a + b, 0) +
+    Object.values(result.unmodifiedVerdicts).reduce((a, b) => a + b, 0)
+);
 
 // Exercise many additional programs against Node without paying for a Lean
 // invocation on every case. Validation is sampled independently by index.
+const bulkCases = Number(process.env.JS_MODULE_PROOF_FUZZ_CASES ?? "128");
+const bulkValidateEvery = Number(process.env.JS_MODULE_PROOF_FUZZ_VALIDATE_EVERY ?? "1000000000");
+assert.ok(Number.isSafeInteger(bulkCases) && bulkCases >= 128 && bulkCases % 64 === 0);
+assert.ok(Number.isSafeInteger(bulkValidateEvery) && bulkValidateEvery >= 1);
+const bulkOutput = join(process.env.TEST_UNDECLARED_OUTPUTS_DIR ?? process.env.TEST_TMPDIR, "bulk");
 const bulk = await runFuzz({
   seed: 456,
-  cases: 128,
-  outputDir: process.env.TEST_TMPDIR,
+  cases: bulkCases,
+  outputDir: bulkOutput,
   shard,
   shards,
-  validateEvery: 1000000000,
+  validateEvery: bulkValidateEvery,
 });
-assert.equal(bulk.cases, 128 / shards);
+assert.equal(bulk.cases, bulkCases / shards);
 assert.equal(bulk.generated, bulk.compared + bulk.inconclusive);
+assert.equal(bulk.refused, bulk.unsupportedCaseRefused + bulk.invalidAssignmentCaseRefused);
 if (shards === 4 && shard === 0) {
-  assert.equal(bulk.objectCases, 2);
-  assert.equal(bulk.objectSourceExecuted, 2);
-  assert.equal(bulk.objectRefused + bulk.objectCompared, 2);
+  assert.equal(bulk.objectCases, bulkCases / 64);
+  assert.equal(bulk.objectSourceExecuted, bulk.objectCases);
+  assert.equal(bulk.objectRefused + bulk.objectCompared, bulk.objectCases);
 }
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
-  assert.equal(bulk.modeledClosureCases, 8);
-  assert.equal(bulk.modeledClosureCompared, 8);
+  assert.equal(bulk.modeledClosureCases, bulk.cases / 4);
+  assert.equal(bulk.modeledClosureCompared, bulk.modeledClosureCases);
   assert.ok(bulk.modeledClosureCrossModule > 0);
   assert.equal(bulk.closureRefused + bulk.closureGenerated, bulk.closureCases);
   assert.ok(bulk.closureCompared > 0);
@@ -175,6 +187,11 @@ if (shards === 4 && shard === 3) {
   assert.ok(bulk.branchThen > 0);
   assert.ok(bulk.branchElse > 0);
 }
+for (const difference of bulk.unexplainedDifferences) {
+  assert.ok(!isAbsolute(difference.artifactPath));
+  await access(join(bulkOutput, difference.artifactPath, "node.json"));
+}
+await writeFile(join(bulkOutput, "summary.json"), JSON.stringify(bulk, null, 2) + "\n");
 console.log(JSON.stringify(bulk));
 
 // Run structural sampling after the Lean-backed cases to limit peak memory.
