@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: require-gitops-deployment
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: require-gitops-deployment
+  template:
+    metadata:
+      labels:
+        app: require-gitops-deployment
+    spec:
+      containers:
+        - name: app
+          image: busybox:latest
