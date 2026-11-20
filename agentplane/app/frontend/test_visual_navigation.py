@@ -108,6 +108,7 @@ async def test_unknown_materialization(view: VisualPage, app: AgentplaneFixture,
         await expect(view.page.locator("textarea")).to_be_disabled()
     else:
         await expect(view.page.locator("textarea")).to_have_count(0)
+    await view.check(context="Unconfirmed materialization and retained History readiness")
     await view.capture()
 
 
