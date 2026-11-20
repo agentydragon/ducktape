@@ -725,6 +725,7 @@ def generate_manifests(root: Path) -> None:
                     forgejo_crossplane_roots.HAKU_STATE_IDENTITY,
                     forgejo_crossplane_roots.BUDGET_LEDGER_IDENTITY,
                     forgejo_crossplane_roots.CPAP_DATA_IDENTITY,
+                    "opentofu-thrive-scrape",
                     forgejo_crossplane_roots.FINANCE_AGENT_IDENTITY,
                     forgejo_crossplane_roots.AGENTYDRAGON_REPOS_IDENTITY,
                     alloy_otlp_bearer_token.KUBERNETES_IDENTITY,
