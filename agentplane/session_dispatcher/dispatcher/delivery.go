@@ -15,6 +15,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -507,12 +508,15 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 	return store.FailedState, fmt.Sprintf("runner %s: %s", grpcStatus.Code(), grpcStatus.Message())
 }
 
-// Both placement owners validate arguments before reservation and report AlreadyExists for a
-// conflicting retained request. Other terminal codes do not prove rejection.
+// The central sampler may validate mutable configuration before checking an earlier reservation.
+// A later validation failure therefore cannot prove that an earlier timed-out attempt did not commit.
 func (w *DeliveryWorker) sessionFailure(session *store.Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
 	key := "session:" + session.SessionID
 	switch status.Code(err) {
 	case codes.InvalidArgument, codes.AlreadyExists:
+		if session.Placement == placement.CentralSampler {
+			return store.SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
+		}
 		rejection := status.Convert(err)
 		return store.SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
 	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:

@@ -1648,6 +1648,9 @@ func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 	for _, kind := range []string{"native", "central"} {
 		for _, test := range cases {
 			t.Run(kind+"/"+test.name, func(t *testing.T) {
+				if kind == "central" && (test.code == codes.InvalidArgument || test.code == codes.AlreadyExists) {
+					test.openingState, test.commandState = store.SessionUnknownState, store.QueueState
+				}
 				ctx := t.Context()
 				queueStore := testStore(t, 3)
 				sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
@@ -1667,6 +1670,18 @@ func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 				worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
 				worker.init()
 				defer worker.queue.ShutDown()
+				if kind == "central" && test.code == codes.InvalidArgument {
+					// An earlier request may have reserved the Session before its response was lost.
+					runtime.err = status.Error(codes.DeadlineExceeded, "lost reservation response")
+					if err := worker.processSession(ctx, sessionID); err != nil {
+						t.Fatal(err)
+					}
+					if len(runtime.calls) != 1 || <-runtime.calls != "opening:"+sessionID {
+						t.Fatal("first opening did not reach owner")
+					}
+					worker.clearRetry(sessionID)
+					runtime.err = status.Error(test.code, "test owner response")
+				}
 				if err := worker.reconcile(ctx); err != nil {
 					t.Fatal(err)
 				}

@@ -244,7 +244,7 @@ The Dispatcher retains logical existence and the immutable creation request afte
 rejects materialization. An exact opening retry reads that receipt; changing configuration requires
 a new Session UUID. Placement-owner admission reserves a Session, not a running harness.
 
-A placement owner `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
+A native Runtime `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
 `SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
 `session_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
@@ -262,7 +262,9 @@ or reach the placement owner. New queued commands are refused as above. Older `F
 rejection and receive the same hold without rewriting their stored outcome. Held commands remain
 cancellable. Automatic resolution of those held openings is not provided.
 
-These rules apply to both placements after all Dispatcher replicas run this protocol.
+For central openings, `INVALID_ARGUMENT` and `ALREADY_EXISTS` are also unconfirmed: the sampler
+may validate current configuration before checking a reservation from an earlier timed-out attempt.
+The command hold rules apply to both placements after all Dispatcher replicas run this protocol.
 
 ## Possible command forwarding and deletion outcomes
 
