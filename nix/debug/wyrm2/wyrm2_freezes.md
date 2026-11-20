@@ -60,7 +60,7 @@ running gnome-shell. The freezes come from QXL's broken TTM, not from NVIDIA.
 ## Fix Applied
 
 **Switched from QXL to VirtIO-GPU** (`vga: virtio`) in
-`terraform/nixos-dev-env/main.tf:150`. Eliminates the broken QXL TTM entirely.
+`terraform/nixos-dev-env/main.tf:150` (since removed). Eliminates the broken QXL TTM entirely.
 
 **Initial problem**: Proxmox console showed "Display output not active" with
 virtio-gpu. Root cause: `max_hostmem=16MB` (Proxmox default `memory=16`) was
@@ -167,9 +167,9 @@ nvidia.NVreg_OpenRmEnableUnsupportedGpus=1       ← duplicated
 Multiple NixOS config sources adding conflicting params. **Not harmless** —
 `modeset=1` (last wins) defeats the VFIO FLR workaround from
 `wyrm_gpu_lockup.md`. Source: `boot.kernelParams` adds `modeset=0`,
-`hardware.nvidia.modesetting.enable = true` adds `modeset=1`. Fix: set
-`hardware.nvidia.modesetting.enable = false` in
-`nix/nixos/hosts/wyrm2/default.nix`. Still unfixed as of 2026-04-17.
+`hardware.nvidia.modesetting.enable = true` adds `modeset=1`. Resolved: `modeset=1` is now the deliberate, required setting
+(`nix/nixos/hosts/wyrm2/default.nix`, "nvidia-drm modeset HISTORY"), and `boot.kernelParams`
+no longer adds `modeset=0`.
 
 ### Host diagnostics
 

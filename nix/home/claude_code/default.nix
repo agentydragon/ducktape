@@ -189,10 +189,6 @@ in
             type = lib.types.path;
             description = "Fetched source containing plugins/ subdirectory";
           };
-          rev = lib.mkOption {
-            type = lib.types.str;
-            description = "Git commit SHA for version tracking in installed_plugins.json";
-          };
         };
       }
     );
@@ -203,7 +199,7 @@ in
   # Named `installPlugins`, not `plugins`, to avoid colliding with home-manager
   # 26.05's built-in `programs.claude-code.plugins` (a different, HM-native plugin
   # system). Ducktape installs these from `pluginSources` into
-  # ~/.claude/plugins/cache/ and writes installed_plugins.json itself; HM's
+  # ~/.claude/plugins/cache/ and leaves installed_plugins.json to Claude; HM's
   # `plugins`/`marketplaces` options are left unused. (wyrm2 is on 26.05, where
   # the collision breaks eval — see TODO(nixpkgs-bump) in flake.nix.)
   #
@@ -225,10 +221,7 @@ in
 
     inherit commands;
 
-    pluginSources.claude-plugins-official = {
-      src = claude-plugins-official;
-      inherit (claude-plugins-official) rev;
-    };
+    pluginSources.claude-plugins-official.src = claude-plugins-official;
 
     installPlugins = [
       "frontend-design@claude-plugins-official"

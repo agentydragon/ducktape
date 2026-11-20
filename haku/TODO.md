@@ -121,7 +121,7 @@ the runtimes differ in where the sandbox runs — see
   `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
   parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
   back to the Loki events — see
-  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Raw API bodies_.
+  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Conditional coverage_.
   If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a
   `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
   `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys` optional) — docs:

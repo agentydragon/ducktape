@@ -113,7 +113,10 @@ typed_eslint_test(
         "//agentplane/app/frontend/actions/push/service_worker:typed_lint_tsconfigs",
         "//util/frontend:typed_lint_program_data",
     ],
-    source_data = ["//util/frontend:typed_lint_srcs"],
+    source_data = [
+        "//agentplane/app/frontend/ui:brand_icon_data.ts",
+        "//util/frontend:typed_lint_srcs",
+    ],
     tsconfig = "tsconfig.json",
 )
 
