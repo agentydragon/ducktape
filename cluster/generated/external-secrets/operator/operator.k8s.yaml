@@ -92,6 +92,8 @@ spec:
             name: external-secrets-selfsigned-issuer
         enabled: true
       create: true
+      deploymentAnnotations:
+        goldilocks.fairwinds.com/vpa-update-mode: auto
       podDisruptionBudget:
         enabled: true
         minAvailable: 1

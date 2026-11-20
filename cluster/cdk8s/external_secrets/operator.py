@@ -42,7 +42,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # the Pods, which Goldilocks watches to pick up the Deployment annotation.
         "readinessProbe": {"enabled": True},
         "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
-        # Keep the namespace's resource policy and the singleton webhook's Initial mode.
+        # Keep the namespace's resource policy for both components.
         "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
         "concurrent": 8,
         # Size the limit above heap + the mapped binary, not just the heap. This
@@ -82,6 +82,7 @@ def _values(webhook_issuer: str) -> dict[str, object]:
             "create": True,
             "replicaCount": 2,
             "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+            "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
             "affinity": {
                 "podAntiAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": [
