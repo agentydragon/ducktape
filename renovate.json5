@@ -143,6 +143,15 @@
       automerge: false,
     },
     {
+      // Kyverno 1.20 (chart 3.10) stops enforcing kyverno.io/v1 ClusterPolicy and CleanupPolicy,
+      // and its chart refuses to upgrade while any exist. Lift once cluster/cdk8s/kyverno is on
+      // policies.kyverno.io/v1 (cluster/cdk8s/TODO.md "Kyverno CEL policy migration").
+      description: "Hold Kyverno chart below 1.20 until policies are migrated to CEL kinds",
+      matchManagers: ["flux"],
+      matchPackageNames: ["kyverno"],
+      allowedVersions: "<3.10.0",
+    },
+    {
       description: "Keep deployed dependency patches isolated",
       matchManagers: ["flux", "kubernetes", "helm-values"],
       matchUpdateTypes: ["patch"],
