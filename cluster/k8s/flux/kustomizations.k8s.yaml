@@ -1658,8 +1658,6 @@ spec:
   dependsOn:
     - name: kyverno
       namespace: ducktape-flux
-    - name: tofu-controller
-      namespace: ducktape-flux
   interval: 10m
   path: ./k8s
   prune: true
@@ -3074,8 +3072,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo-images
