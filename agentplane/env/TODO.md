@@ -70,8 +70,8 @@ define parking and durable terminal release before promising indefinite process 
 
 ### Tentative review findings (2026-11-19)
 
-Proposals for owner review, not approved work. Estimates of net savings need prototypes and must
-include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
+Review candidates; validate each proposed change before burning it down. Estimates of net savings
+need prototypes and must include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
 durable user data and uncertain-effect handling in any accepted change.
 
 - **Close ownership:** Consider one Runtime-owned sequential Close worker observing component COSI
