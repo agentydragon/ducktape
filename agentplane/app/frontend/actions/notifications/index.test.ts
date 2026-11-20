@@ -72,6 +72,30 @@ const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue 
 ];
 
 describe("action notification formatting", () => {
+  it.each([
+    ["environments", "list", "List environments"],
+    ["environments", "get", "Inspect environment review-box"],
+    ["environments", "resume", "Resume environment review-box"],
+    ["sessions", "create", "Create Session"],
+    ["sessions", "get", "Inspect Session"],
+    ["sessions", "submit_input", "Submit Session input"],
+    ["sessions", "observe_input", "Observe Session input"],
+    ["sessions", "cancel_input", "Cancel Session input"],
+    ["sessions", "interrupt_turn", "Interrupt Session turn"],
+    ["sessions", "read_turns", "Read Session turns"],
+  ])("formats %s / %s", (group, name, title) => {
+    expect(
+      formatActionNotification(
+        actionRequest({
+          action: { group, name },
+          arguments: { target: { name: "review-box", uid: "target-1" }, text: "Private draft text" },
+          title: "",
+          description: "Requested from a Session.",
+        })
+      )
+    ).toEqual({ title, text: "Requested from a Session." });
+  });
+
   it("snapshots the fallback for an unhandled Action", () => {
     const request = actionRequest({
       action: { group: "finance", name: "transfer" },
