@@ -1,0 +1,13 @@
+# Conditional quiet crossings in the abstract checker
+
+`Experiments/QuietCrossing.lean` explores an explicitly conditional way to clear an effect/effect conflict in the existing plan model. It does not change `OrderOk`, the executable checker, or a translation verdict.
+
+A proposed Boolean mask marks statements as quiet. `ConditionalOrderOk` still rejects every binding read/write or write/write conflict, but permits an effect/effect crossing when at least one endpoint is masked. An empty mask is proved equivalent to the existing `OrderOk`. A mask alone is **not evidence**: `conditional_plan_preserves` additionally requires `QuietCertificates` for the supplied statement meaning. For each masked statement, the certificate says that, for every set of read values and every world state, the effectful execution preserves the whole world and returns the same value as its pure interpretation. Unknown statements cannot receive that certificate merely because no change was observed.
+
+Given the actual plan's `Permutes`, conditional order, and those certificates, Lean proves the existing `Bundle.exec` reaches the same modeled final state as bundle order. The statement is conditional on a particular `Meaning` and does not prove the unconditional `Correct` theorem. The generic reordering proof in `Semantics.lean` is shared with the unchanged `exec_reorder` theorem.
+
+The audited examples reverse two effect-flagged statements: without a mask the plan is rejected; with one quiet mask and a separately proved modeled certificate the result agrees. A meaning that writes the world refutes the same certificate. A read-before-declaration conflict is still rejected even with both statements masked; the extractor-generated unsafe cycle control also remains rejected with every statement masked.
+
+This is intentionally stronger than merely saying two statements commute at one sampled state. It does not infer the certificate from JavaScript, establish that browser prototype descriptors or call targets remain unchanged, or prove that the model's `World` covers them. It also rules out world-visible fresh allocation and ignores JavaScript exceptions and divergence, which this model does not represent. The browser observations and Tana call diagnostics do not supply these certificates; **no Tana obligation is discharged**. Future work must justify a less restrictive frame rule against a faithful semantics, including binding identity, descriptor state, exceptions, and all intervening operations in both schedules.
+
+Run `bbr test //devinfra/js/debundle/x/split_proof/lean:quiet_crossing_axioms_test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/debundle/x/split_proof/lean:example_test`.
