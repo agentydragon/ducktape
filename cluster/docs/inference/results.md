@@ -29,6 +29,22 @@ external candidate comparisons, and live SSD headroom. The
 with August IQ4_XS on current llama.cpp. At 240K the cold-prompt TTFT was
 40 vs 442 seconds (`local~`, one request per arm).
 
+## November cluster TabbyAPI baseline
+
+Stock EXL3 2.68 bpw on two RTX 5090s, one slot, with a 262,144-token sequence
+limit. Two fresh LiteLLM Responses requests reached 262,062 and 262,142 total
+tokens, took 37.42 and 36.12 s to first visible text, and decoded at 128.0 and
+144.8 tok/s (`local~`). Both retrieved the marker. With the desktop active,
+minimum free VRAM was 6,491 MiB on GPU 0 and 4,785 MiB on GPU 1.
+[Near-limit live check](runs/2026-11-18_dual_5090_exl3/README.md#live-256k-check-after-rebalancing-the-gpus).
+
+With both prefix-cache tiers active, a 211,024-token replay returned first
+text in 1.52 s from RAM after GPU eviction (37.52 s in the GPU-only control).
+NVMe reuse after switching back to stock took 37.41 s including a 30.1 s
+model reload (78.96 s in the control). A replay once the replacement pod was
+ready reused 210,944 tokens and took 5.55 s to first text (`local~`).
+[Cache trial and restart replay](runs/2026-11-19_tabby_prefix_cache/README.md).
+
 ## September agentic task completion
 
 | Model and configuration                                          | Task / agent                                           | Outcome                              | Agent time | Compactions | Trust |

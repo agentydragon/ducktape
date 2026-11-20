@@ -131,3 +131,25 @@ no cached prompt tokens, and ended on the 1,024-token output cap.
 `nvidia-smi` samples every 100 ms across both runs, including the desktop,
 showed a minimum of 6,491 MiB free on GPU 0 and 4,785 MiB on GPU 1.
 The TabbyAPI pod was ready with zero restarts after the checks.
+
+## Agentplane staging tool and compaction checks
+
+An early Codex turn ended after a prose preamble. The upstream TabbyAPI
+response reported `finish_reason: "stop"` with zero tool calls, and the
+Responses bridge emitted reasoning and prose. A preceding response in the
+same turn sent two tool calls through the bridge and Codex ran both.
+The rollout contained no compaction event at this stop. The trace did not
+capture the raw sampled stop token.
+
+On November 19 Pacific, a Chat Completions probe through staging LiteLLM
+used the abliterated checkpoint. It preserved the original messages,
+appended a user summary request, and set `tool_choice: "none"`. It reused
+13,824 of 14,041 input tokens and returned a text summary. The marker
+survived the summary and the next tool round trip. The central sampler's
+compaction integration fixture passed separately.
+[Staging compaction configuration](https://github.com/agentydragon/ducktape/pull/17943).
+
+A Codex CLI tool round trip through the staging LiteLLM Responses bridge
+passed on the already-loaded abliterated checkpoint. Full live
+Agentplane Session verification of automatic compaction still requires an
+operator-authenticated staging runner. [Codex picker wiring](https://github.com/agentydragon/ducktape/pull/18002).
