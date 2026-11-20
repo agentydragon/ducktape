@@ -797,6 +797,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       ],
     };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
+  let witnessFailure;
   const witnessed = (original, output, calls) => {
     const events = (trace) => {
       if (!trace.events.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
@@ -831,12 +832,18 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     }
     const witness = `\ntheorem binding_witness_original : ${left} = ${expectedLeft} := by decide\ntheorem binding_witness_output : ${right} = ${expectedRight} := by decide\ntheorem binding_witness_difference : ${left} ≠ ${right} := by decide\n#print axioms binding_witness_original\n#print axioms binding_witness_output\n#print axioms binding_witness_difference\n`;
     const checked = runLean(prefix + different + witness);
-    return checked.status === 0 &&
+    if (
+      checked.status === 0 &&
       ["binding_difference", "binding_witness_original", "binding_witness_output", "binding_witness_difference"].every(
         (name) => has(checked, name)
       )
-      ? prefix + different + witness
-      : null;
+    )
+      return prefix + different + witness;
+    witnessFailure =
+      checked.status === null
+        ? `Lean terminated by ${checked.signal ?? String(checked.error)}`
+        : (checked.stdout || checked.stderr).slice(-6000);
+    return null;
   };
   const original = execute(sourcePath);
   const output = execute(resolve(out, spec.entry));
@@ -919,5 +926,5 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       if (certificate) return { result: "unsafe", original: before, output: after, calls, certificate };
     }
   }
-  return { result: "unknown", reason: "no Lean-certified Node witness was found" };
+  return { result: "unknown", reason: "no Lean-certified Node witness was found", detail: witnessFailure };
 }
