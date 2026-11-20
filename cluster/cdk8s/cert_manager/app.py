@@ -88,6 +88,26 @@ def _readiness_patch(
     )
 
 
+def _auto_vpa_patch(deployment: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # Inherit the namespace's request policy without changing the Pod template.
+    return HelmReleaseSpecPostRenderersKustomizePatches(
+        target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+            kind="Deployment", name=deployment, namespace=NAMESPACE
+        ),
+        patch=Yaml.stringify(
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "name": deployment,
+                    "namespace": NAMESPACE,
+                    "annotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
+                },
+            }
+        ),
+    )
+
+
 def _values() -> dict[str, object]:
     return {
         **_availability("controller", replicas=2, min_available=1),
@@ -214,23 +234,9 @@ def chart(app: App) -> Chart:
                         _readiness_patch(
                             f"{NAME}-cainjector", f"{NAME}-cainjector", {"tcpSocket": {"port": "http-metrics"}}
                         ),
-                        # Keep the namespace's existing request policy; allow PDB-limited updates.
-                        HelmReleaseSpecPostRenderersKustomizePatches(
-                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
-                                kind="Deployment", name=f"{NAME}-cainjector", namespace=NAMESPACE
-                            ),
-                            patch=Yaml.stringify(
-                                {
-                                    "apiVersion": "apps/v1",
-                                    "kind": "Deployment",
-                                    "metadata": {
-                                        "name": f"{NAME}-cainjector",
-                                        "namespace": NAMESPACE,
-                                        "annotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
-                                    },
-                                }
-                            ),
-                        ),
+                        _auto_vpa_patch(f"{NAME}-cainjector"),
+                        _auto_vpa_patch(NAME),
+                        _auto_vpa_patch(f"{NAME}-webhook"),
                     ]
                 )
             )
