@@ -1,4 +1,12 @@
 {
+  "vm_shadow_review": {
+    "cutoff_utc": "2026-11-20T00:20:41Z",
+    "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+    "evidence_key": "vm_shadow_review",
+    "browser_preview_invocation": "5132a3f7-5744-4bd3-b22f-debb069d7fb8",
+    "browser_cases_passed": 4
+  },
   "source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",
   "window_start_utc": "2026-11-18T10:10:38.530145Z",
   "window_end_utc": "2026-11-18T11:06:42.495719+00:00",
@@ -11,8 +19,8 @@
   "history_base_gh_pages_commit": "df20865667f8763ed90432479fcad38335439849",
   "population": "18 November rollout checkpoint: two merged changes, live HPA configuration, three fresh acceptance executions / six scenario verdicts and exact-head PR CI attempts. No post-rollout production cohort.",
   "feedback_clock": "Acceptance action/setup clocks only. Historical cohort and graph clocks keep their original definitions. Production required-feedback effect is unmeasured.",
-  "report_sha256": "bc79dd8fee3c8a2b969561967cc05571b7a8405ed4e0e1c433cb300d7440626f",
-  "evidence_sha256": "4722fb10d702fe9bbaf2cd0f3ba4aad6bef78afd092d3522ad9daf285aeea2d4",
+  "report_sha256": "a551a1933723f0825acc461fb6d84127f4fe2019880e8b8ec778c5e2faf0fe1c",
+  "evidence_sha256": "cbebc754c3515716d0568be333e94cab0fecae85a6bbaeaf285ef129e8b8b336",
   "visual_validation": "visual-validation.json",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",

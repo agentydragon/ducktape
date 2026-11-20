@@ -11,7 +11,7 @@ report snapshots. The CI reports are:
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with a bounded fresh-execution sample and remaining test-selection, fixture-reuse, and setup investigations. [Evidence](ci-test-cost/evidence.json); [manifest](ci-test-cost/manifest.json).
 
-- **Latency:** [current report](latency/index.html): Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
+- **Latency:** [current report](latency/index.html): Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured. The [paired VM comparison](latency/index.html#vm-shadow) tracks managed TCG and cluster KVM on devel pushes. Earlier experiments retain their original windows. [Evidence](latency/evidence.json); [manifest](latency/manifest.json).
 
 - **Reliability (10–16 November UTC):** [report](reliability/index.html),
   [evidence](reliability/evidence.json), [manifest](reliability/manifest.json).
@@ -19,7 +19,7 @@ report snapshots. The CI reports are:
   VM cache and physical-attempt audit, a full 375-second setup breakdown, the
   interim 380-fresh-result baseline census for #16027, three
   red-at-merge devel PRs, and current dispositions of earlier interventions.
-  The 17 November follow-up records merged case accounting, a pre-Runtime kernel stall and cleanup fence, native profiles around 25 cold imports, bounded browser snapshot controls, and a focused VM topology control. Provider snapshot decisions remain unavailable. Historical measurements retain their original windows.
+  The 17 November follow-up records merged case accounting, a pre-Runtime kernel stall and cleanup fence, native profiles around 25 cold imports, bounded browser snapshot controls, and a focused VM topology control. The [paired VM comparison](reliability/index.html#vm-shadow) tracks first-attempt failures and retry recovery. Provider snapshot decisions remain unavailable. Historical measurements retain their original windows.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),
@@ -80,3 +80,13 @@ controls. Inspect the screenshots for meaningful bars, readable labels and retai
 visual distinctions; successful browser assertions alone are insufficient.
 A presentation refresh must retain the original measurement/source
 window and must not imply that old findings were remeasured.
+
+## Reviewing paired VM runs
+
+On every latency or reliability review, update the paired VM section from the latest available [main CI runs](https://github.com/agentydragon/ducktape/actions/workflows/ci.yml?query=branch%3Adevel+event%3Apush). The [collector](https://github.com/agentydragon/ducktape/pull/17940) runs on devel pushes. A fresh first result for the managed VM suite triggers the recycled KVM variant at the same SHA. Each suite gets at most two Bazel attempts. Publishing follows the regular report PR process.
+
+1. Enumerate devel push runs and their attempts since the last reviewed cutoff, including failed, cancelled and still-running jobs. Revisit previously incomplete pairs. Download each available artifact with `gh run download RUN_ID -R agentydragon/ducktape -n vm-pair-RUN_ID-RUN_ATTEMPT -D OUTPUT_DIR`. Archives request 90 days of retention. Record missing, expired, incomplete and cached selections explicitly.
+2. Join by GitHub run ID, run attempt and tested SHA in `pair.json`. Check both invocation SHAs, label and first-result cache evidence in each route's `invocation.json` and `target.json`. Verify Claude and Codex coverage in the per-attempt `cases.json`. Keep missing cases visible when a suite fails before JUnit is written. Check `executions.json` for infrastructure retries or shared executions, `fixture.json` for cold/warm state and `collection-errors.json` for partial archives. Deduplicate shared executions and identify repeated SHAs. Each eligible pair contributes once.
+3. For reliability, tabulate both passed, only managed failed, only KVM failed and both failed on **attempt one**. Report recovery among actual retries and final failure among complete pairs separately. Inspect failure signatures, including shared regressions. Report failures before a test result and shadow launch failures against all eligible opportunities. Include uncertainty and clustering by commit and day when revising the routing recommendation.
+4. For latency, compare within-pair queue, preparation, test execution and time through final verdict using valid timestamp pairs. Break out retries, cold/warm state and missing or inverted clocks. The shadow launches after the managed first result and shares pool capacity with required Firecracker tests. Measure contention and the required-check critical path before estimating a PR feedback benefit.
+5. In each report, refresh the reviewed cutoff, source revision, linked artifacts/runs, denominators, results and recommendation. Reconcile shared counts at the same cutoff. At 50 fresh pairs check selection and missingness; at 200 evaluate routing using paired outcomes, uncertainty, retry cost and pool contention. Earlier synthetic canaries and historical unpaired mainline observations retain their own denominators.

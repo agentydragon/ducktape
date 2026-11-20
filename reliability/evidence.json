@@ -1,4 +1,45 @@
 {
+  "vm_shadow_review": {
+    "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+    "merged_at_utc": "2026-11-20T00:16:49Z",
+    "cutoff_utc": "2026-11-20T00:20:41Z",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+    "observation": "The first devel push archived a cached managed VM pass. The collector correctly skipped the cluster KVM run, leaving zero fresh pairs at this review. Future uncached managed results trigger the same suite on cluster KVM at the same commit.",
+    "complete_fresh_pairs": 0,
+    "selections": {
+      "cached": 1
+    },
+    "workflow_attempts": [
+      {
+        "run_id": 44644577743,
+        "attempt": 1,
+        "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+        "collector_status": "completed",
+        "collector_conclusion": "success",
+        "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743/job/135983790115",
+        "artifact_id": 14587774242,
+        "pair": {
+          "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+          "run_id": "44644577743",
+          "run_attempt": "1",
+          "managed": "e6746ad0-ca61-54fa-af91-a009f69d5456",
+          "shadow": "41d9737f-82b5-5ee2-8bc9-043cd3924147",
+          "managed_label": "//agentplane/system_tests/suites:test_vm",
+          "shadow_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "selection": "cached"
+        },
+        "collection_errors": false,
+        "routes": {},
+        "managed_result": {
+          "status": "PASSED",
+          "cachedLocally": true,
+          "invocation_url": "https://app.buildbuddy.io/invocation/e6746ad0-ca61-54fa-af91-a009f69d5456"
+        }
+      }
+    ],
+    "recommendation": "Keep the required suite on its current route while outcomes accumulate. At each review, count pairs where only managed TCG failed and where only cluster KVM failed on attempt one. Compare recovery among retries and final failures, and inspect pairs that failed on both routes before attributing a difference to the executor. Check coverage at 50 fresh pairs and reassess routing at 200."
+  },
   "schema_version": 1,
   "repository": "https://github.com/agentydragon/ducktape",
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
