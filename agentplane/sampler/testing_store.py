@@ -3,6 +3,7 @@
 import gzip
 import json
 from dataclasses import dataclass
+from itertools import batched
 from typing import Any
 
 from sqlalchemy import bindparam, text
@@ -126,8 +127,7 @@ class Store:
         level = list(dict.fromkeys(content_id for content_id in root_ids if content_id))
         while level:
             missing = [content_id for content_id in level if content_id not in self._content_cache]
-            for start in range(0, len(missing), 500):
-                batch = missing[start : start + 500]
+            for batch in batched(missing, 500, strict=False):
                 query = text("SELECT id, kind, payload FROM sampler_content WHERE id IN :ids").bindparams(
                     bindparam("ids", expanding=True)
                 )
