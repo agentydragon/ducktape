@@ -509,7 +509,10 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     let identityInert := t.identityCall.any identities.contains && unobserved
     let factoryInert := unobserved && !factoryIdentifiers.contains "eval" &&
       t.factoryCall.any (fun (n, arg) => factories.contains n && stableArgs.contains arg && factoryIdentifiers.getD n 0 == factoryCalls.getD n 0 + 1)
-    let effect := !(t.inert || identityInert || factoryInert) || t.rawEager.any (!declared.contains ·)
+    -- An inert, non-hoisted initializer can still be observed by a callback
+    -- that escaped earlier and runs indirectly before this binding initializes.
+    let observedInert := t.inert && !t.hoisted && !unobserved
+    let effect := !(t.inert || identityInert || factoryInert) || observedInert || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own

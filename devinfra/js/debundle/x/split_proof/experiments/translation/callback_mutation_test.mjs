@@ -1,7 +1,7 @@
 // Verify that the generated callback corpus catches each real guard removal.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,11 +38,12 @@ function run(name, binary, seed, expectedWrongRounds) {
     assert(match, `${name} did not finish the corpus: ${output}`);
     const wrong = Number(match[1]);
     assert.equal(child.status, expectedWrongRounds.length ? 1 : 0, `${name} exited unexpectedly: ${output}`);
-    if (expectedWrongRounds.length === 0) assert.equal(wrong, 0, `baseline wrong accepts: ${output}`);
+    if (expectedWrongRounds.length === 0) assert.equal(wrong, 0, `${name} wrong accepts: ${output}`);
     else {
       assert(wrong > 0, `${name} survived: ${output}`);
       for (const round of expectedWrongRounds) {
         const file = path.join(artifacts, `wrong_accept_${round}_1`, "record.json");
+        assert(existsSync(file), `${name}: expected a wrong accept for round ${round}; ${output}`);
         const record = JSON.parse(readFileSync(file, "utf8"));
         assert.equal(record.verdict, "accept", `${name}, round ${round}: checker did not accept`);
         assert.equal(record.same, false, `${name}, round ${round}: behavior matched`);
@@ -80,8 +81,10 @@ function run(name, binary, seed, expectedWrongRounds) {
 // exercise both object and array aliases.
 for (const seed of [1, 2026]) {
   run("baseline", process.env.TRANSLATE, seed, []);
-  run("identity guard removed", process.env.IDENTITY_MUTANT, seed, [0, 1, 9]);
-  run("factory guard removed", process.env.FACTORY_MUTANT, seed, [2, 3, 11]);
+  run("identity guard removed", process.env.IDENTITY_MUTANT, seed, [0, 4]);
+  run("factory guard removed", process.env.FACTORY_MUTANT, seed, [2, 6]);
   run("deferred reads removed", process.env.NO_DEFERRED_MUTANT, seed, [0, 2]);
-  run("alias reads removed", process.env.NO_ALIAS_MUTANT, seed, [1, 3, 9, 11]);
+  // The inert-initializer guard independently protects these aliases.
+  run("alias reads removed, inert guard retained", process.env.NO_ALIAS_MUTANT, seed, []);
+  run("alias reads and inert guard removed", process.env.NO_ALIAS_AND_INERT_MUTANT, seed, [1, 3, 9, 11]);
 }

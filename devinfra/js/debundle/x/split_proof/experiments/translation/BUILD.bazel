@@ -68,6 +68,22 @@ js_test(
 )
 
 js_test(
+    name = "inert_escape_test",
+    data = _CHECKER_RUNFILES + [
+        "pair.mjs",
+        "testdata/inert_escape/seed2026_round3.js.txt",
+        "testdata/inert_escape/seed2026_round8.js.txt",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "inert_escape_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
     name = "factory_emission_test",
     data = _CHECKER_RUNFILES + [
         "pair.mjs",
@@ -225,6 +241,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate",
         "//devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate",
         "//devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_alias_and_inert:translate",
         "//devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate",
     ],
     entry_point = "callback_mutation_test.mjs",
@@ -232,6 +249,7 @@ js_test(
         "FACTORY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/factory:translate)",
         "IDENTITY_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/identity:translate)",
         "NO_ALIAS_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_alias:translate)",
+        "NO_ALIAS_AND_INERT_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_alias_and_inert:translate)",
         "NO_DEFERRED_MUTANT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_deferred:translate)",
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
