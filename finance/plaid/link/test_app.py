@@ -351,6 +351,17 @@ def _session_cookie(settings: PlaidWebSettings) -> str:
     return TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(encoded_session).decode("utf-8")
 
 
+def _async_client(app: FastAPI, settings: PlaidWebSettings) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url=settings.public_base_url,
+        headers={
+            "Origin": settings.public_base_url,
+            "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
+        },
+    )
+
+
 def test_only_health_and_the_signed_webhook_are_open_without_a_session() -> None:
     with _client(signed_in=False) as client:
         health = client.get("/healthz")
@@ -554,14 +565,7 @@ async def test_cancelled_public_token_exchange_persists_token_before_propagating
     await lifespan.__aenter__()
     shutdown: asyncio.Task[bool | None] | None = None
     try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
-            base_url=settings.public_base_url,
-            headers={
-                "Origin": settings.public_base_url,
-                "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
-            },
-        ) as client:
+        async with _async_client(app, settings) as client:
             request = asyncio.create_task(
                 client.post(
                     "/api/exchange-public-token",
@@ -600,17 +604,7 @@ async def test_cancelled_item_removal_purges_local_state_after_plaid_removes_ite
     secrets = _FakeSecrets()
     app = create_app(settings, storage=cast(PlaidLinkStorage, storage), secrets=secrets, client=PlaidClient(api=api))
 
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
-            base_url=settings.public_base_url,
-            headers={
-                "Origin": settings.public_base_url,
-                "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
-            },
-        ) as client,
-    ):
+    async with app.router.lifespan_context(app), _async_client(app, settings) as client:
         request = asyncio.create_task(client.post("/api/links/item_123/remove"))
         try:
             assert await asyncio.to_thread(api.remove_started.wait, 5)
@@ -653,14 +647,7 @@ async def test_cancelled_sdk_call_is_drained_before_lifespan_shutdown() -> None:
     await lifespan.__aenter__()
     shutdown: asyncio.Task[bool | None] | None = None
     try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
-            base_url=settings.public_base_url,
-            headers={
-                "Origin": settings.public_base_url,
-                "Cookie": f"__Host-plaid-link-session={_session_cookie(settings)}",
-            },
-        ) as client:
+        async with _async_client(app, settings) as client:
             request = asyncio.create_task(client.get("/api/institutions", params={"q": "cha"}))
             assert await asyncio.to_thread(api.search_started.wait, 5)
             request.cancel()

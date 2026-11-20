@@ -263,7 +263,6 @@ def _use_coinbase_mock_transport(
     monkeypatch.setattr(portfolio.httpx, "AsyncClient", mock_async_client)
 
 
-@pytest.mark.asyncio
 async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_exclusions(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -299,7 +298,6 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
     assert view.sources[0].as_of == captured_at
 
 
-@pytest.mark.asyncio
 async def test_holding_correction_uses_balance_from_the_same_capture(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -333,7 +331,6 @@ async def test_holding_correction_uses_balance_from_the_same_capture(
     assert view.sources[0].as_of == captured_at
 
 
-@pytest.mark.asyncio
 async def test_correction_reconciles_with_independent_capture_times_across_accounts(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -448,7 +445,6 @@ def test_covered_empty_correction_capture_is_zero_and_still_reconciles(current: 
             value_plaid_rows(policy, account_rows=accounts, holding_rows=[], now=now)
 
 
-@pytest.mark.asyncio
 async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -471,7 +467,6 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
     assert "Corrected holdings do not reconcile" in view.sources[0].issues[0]
 
 
-@pytest.mark.asyncio
 async def test_complete_capture_treats_missing_excluded_position_as_absent(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -500,7 +495,6 @@ async def test_complete_capture_treats_missing_excluded_position_as_absent(
     assert view.excluded_minor_units == 0
 
 
-@pytest.mark.asyncio
 async def test_complete_capture_treats_missing_corrected_position_as_absent(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -523,7 +517,6 @@ async def test_complete_capture_treats_missing_corrected_position_as_absent(
     assert view.assets_minor_units == 300_000
 
 
-@pytest.mark.asyncio
 async def test_covered_empty_holding_capture_has_zero_current_holdings(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -548,7 +541,6 @@ async def test_covered_empty_holding_capture_has_zero_current_holdings(
     assert view.excluded_minor_units == 0
 
 
-@pytest.mark.asyncio
 async def test_spend_does_not_fall_back_when_latest_item_capture_lacks_account_coverage(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -587,8 +579,6 @@ async def test_spend_does_not_fall_back_when_latest_item_capture_lacks_account_c
     assert "latest Item holding capture does not cover" in view.sources[0].issues[0]
 
 
-@pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_fresh_capture_supersedes_an_unapplied_holdings_receipt(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -670,7 +660,6 @@ async def test_fresh_capture_supersedes_an_unapplied_holdings_receipt(
     assert fresh.assets_minor_units == 300_000
 
 
-@pytest.mark.asyncio
 async def test_negative_credit_balance_is_preserved_as_a_liability_credit(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -687,7 +676,6 @@ async def test_negative_credit_balance_is_preserved_as_a_liability_credit(
     assert view.net_minor_units == 15_000
 
 
-@pytest.mark.asyncio
 async def test_stale_plaid_fails_closed(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -710,7 +698,6 @@ async def test_stale_plaid_fails_closed(
     assert view.sources[0].status == "unavailable"
 
 
-@pytest.mark.asyncio
 async def test_unavailable_plaid_does_not_hide_enabled_coinbase_status(
     postgres_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -723,7 +710,6 @@ async def test_unavailable_plaid_does_not_hide_enabled_coinbase_status(
     assert [source.status for source in view.sources] == ["unavailable", "unavailable"]
 
 
-@pytest.mark.asyncio
 async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(
     postgres_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -824,7 +810,6 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(
     assert any(request.url.params.get("cursor") == "opaque-test-cursor" for request in requests)
 
 
-@pytest.mark.asyncio
 async def test_coinbase_zero_balance_wallet_does_not_request_an_unsupported_asset_quote(
     postgres_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -870,7 +855,6 @@ async def test_coinbase_zero_balance_wallet_does_not_request_an_unsupported_asse
     assert view.sources[0].as_of is None
 
 
-@pytest.mark.asyncio
 async def test_coinbase_cursor_without_next_page_token_fails_closed(
     postgres_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
