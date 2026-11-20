@@ -8,6 +8,7 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import shiftFuzzer from "shift-fuzzer";
 import codegen from "shift-codegen";
+import { composeModernExpressions } from "./modern_syntax.mjs";
 import { lowerDump } from "../lowering/dump_core.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
@@ -176,6 +177,7 @@ const option = (name, fallback) => {
 const count = option("count", 128);
 const startSeed = option("seed", 1);
 const scriptGrammar = process.argv.includes("--script-grammar");
+const modern = process.argv.includes("--modern-syntax");
 assert(Number.isInteger(count) && count > 0 && Number.isInteger(startSeed) && startSeed >= 0);
 function rng(seed) {
   let n = seed >>> 0;
@@ -186,10 +188,10 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function run(rootDir, entry) {
+function run(rootDir, entry, marker = null) {
   const child = spawnSync(
     process.execPath,
-    ["--max-old-space-size=128", "--experimental-vm-modules", worker, rootDir, entry],
+    ["--max-old-space-size=128", "--experimental-vm-modules", worker, rootDir, entry, ...(marker ? [marker] : [])],
     {
       encoding: "utf8",
       timeout: 2000,
@@ -223,6 +225,10 @@ const stats = {
   reordered: 0,
   reorderedOk: 0,
   differing: 0,
+  modernComposed: 0,
+  instrumentationRejected: 0,
+  modernExecuted: { nullish: 0, optional: 0, field: 0 },
+  modernReorderedExecuted: { nullish: 0, optional: 0, field: 0 },
 };
 const coverage = emptyCoverage();
 const syntax = new Set(),
@@ -246,6 +252,49 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   } catch {
     stats.parseRejected++;
     continue;
+  }
+  let marker = null;
+  if (modern) {
+    marker = `__shift_modern_marker_${seed}`;
+    // Restrict generated code that could discover the non-enumerable marker
+    // through the VM global or dynamic code. The marker is also excluded from
+    // the original source, so it cannot be shadowed or referenced directly.
+    const forbidden = new Set([
+      "globalThis",
+      "global",
+      "self",
+      "window",
+      "eval",
+      "Function",
+      "Reflect",
+      "Proxy",
+      marker,
+    ]);
+    let unsafe = false;
+    (function scan(node) {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(scan);
+      if (
+        node.type === "ThisExpression" ||
+        node.type === "ImportExpression" ||
+        (node.type === "Identifier" && forbidden.has(node.name))
+      )
+        unsafe = true;
+      for (const value of Object.values(node)) if (value && typeof value === "object") scan(value);
+    })(parsed);
+    if (unsafe) {
+      stats.instrumentationRejected++;
+      continue;
+    }
+    const composed = composeModernExpressions(source, parsed, rng(seed ^ 0x8b11c5), marker);
+    if (composed.sites) stats.modernComposed++;
+    source = composed.source;
+    try {
+      parsed = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
+    } catch {
+      stats.parseRejected++;
+      continue;
+    }
   }
   collect(parsed, syntax);
   const present = syntaxFeatures(parsed);
@@ -278,14 +327,14 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   const out = path.join(dir, "out");
   mkdirSync(out, { recursive: true });
   writeFileSync(path.join(dir, "original.mjs"), source);
-  const baseline = run(dir, "original.mjs");
+  const baseline = run(dir, "original.mjs", marker);
   if (!baseline || baseline.status === "timeout") {
     stats.baselineTimeout++;
     record("baselineTimeout");
     continue;
   }
   if (baseline.status !== "ok") stats.baselineThrows++;
-  const repeat = run(dir, "original.mjs");
+  const repeat = run(dir, "original.mjs", marker);
   if (JSON.stringify(baseline) !== JSON.stringify(repeat)) {
     stats.unstable++;
     record("unstable");
@@ -337,6 +386,11 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   stats.accepted++;
   if (baseline.status === "ok") stats.acceptedOk++;
   collect(parsed, acceptedSyntax);
+  const executed =
+    modern && baseline.status === "ok"
+      ? Object.keys(stats.modernExecuted).filter((kind) => baseline.modern.includes(kind))
+      : [];
+  for (const kind of executed) stats.modernExecuted[kind]++;
   const match = emitter.stdout.match(/statement order\s+\[([^\]]*)\]/);
   let reordered = false;
   if (match) {
@@ -345,9 +399,10 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     if (reordered) {
       stats.reordered++;
       if (baseline.status === "ok") stats.reorderedOk++;
+      for (const kind of executed) stats.modernReorderedExecuted[kind]++;
     }
   }
-  const emitted = run(out, "entry.mjs");
+  const emitted = run(out, "entry.mjs", marker);
   if (!emitted) throw new Error(`seed ${seed}: emitted tree did not complete; artifacts at ${dir}`);
   if (JSON.stringify(baseline) !== JSON.stringify(emitted)) {
     stats.differing++;
@@ -395,6 +450,7 @@ console.log(
   JSON.stringify({
     seed: startSeed,
     grammar: scriptGrammar ? "script" : "module",
+    modern,
     ...stats,
     syntax: [...syntax].sort(),
     acceptedSyntax: [...acceptedSyntax].sort(),
@@ -403,3 +459,7 @@ console.log(
 assert(stats.accepted > 0, "no executable generated split was accepted");
 assert(stats.reordered > 0, "no accepted generated split reordered statements");
 if (scriptGrammar) assert(stats.reorderedOk > 0, "no successful generated split reordered statements");
+
+if (modern)
+  for (const [kind, n] of Object.entries(stats.modernReorderedExecuted))
+    assert(n > 0, `no successful reordered split executed ${kind}`);

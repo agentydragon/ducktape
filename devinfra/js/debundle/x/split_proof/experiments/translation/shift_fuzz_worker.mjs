@@ -6,6 +6,19 @@ import vm from "node:vm";
 
 const root = path.resolve(process.argv[2]);
 const context = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
+const marker = process.argv[4];
+const modernSeen = new Set();
+if (marker)
+  Object.defineProperty(context, marker, {
+    value: (kind, value) => {
+      modernSeen.add(kind);
+      return value;
+    },
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+const result = (status) => ({ status, trace: context.__trace, ...(marker ? { modern: [...modernSeen].sort() } : {}) });
 vm.runInContext(
   `
 globalThis.__trace = [];
@@ -29,12 +42,9 @@ try {
     return load(path.relative(root, path.resolve(path.dirname(parent.identifier), name)));
   });
   await entry.evaluate({ timeout: 100 });
-  process.stdout.write(JSON.stringify({ status: "ok", trace: context.__trace }));
+  process.stdout.write(JSON.stringify(result("ok")));
 } catch (e) {
   process.stdout.write(
-    JSON.stringify({
-      status: e?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT" ? "timeout" : (e?.name ?? "Error"),
-      trace: context.__trace,
-    })
+    JSON.stringify(result(e?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT" ? "timeout" : (e?.name ?? "Error")))
   );
 }

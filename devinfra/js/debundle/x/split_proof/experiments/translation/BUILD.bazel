@@ -10,6 +10,7 @@ _SHIFT_FUZZ_DATA = [
     ":node_modules/shift-fuzzer",
     ":node_modules/shift-parser",
     "shift_fuzz_worker.mjs",
+    "modern_syntax.mjs",
     "scope_metadata.mjs",
     "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -492,4 +493,29 @@ js_test(
     data = _SHIFT_FUZZ_DATA,
     entry_point = "shift_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "shift_modern_fuzz_test",
+    size = "small",
+    args = [
+        "--seed",
+        "1",
+        "--count",
+        "96",
+        "--script-grammar",
+        "--modern-syntax",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "modern_syntax_test",
+    data = [
+        "modern_syntax.mjs",
+        ":node_modules/acorn",
+    ],
+    entry_point = "modern_syntax_test.mjs",
 )
