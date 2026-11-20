@@ -5,10 +5,7 @@ py_library(
     name = "cli",
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":agent_sandbox",
-        "@pypi//typer",
-    ],
+    deps = ["@pypi//typer"],
 )
 
 py_binary(
@@ -46,9 +43,4 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
-)
-
-py_library(
-    name = "agent_sandbox",
-    srcs = ["agent_sandbox.py"],
 )
