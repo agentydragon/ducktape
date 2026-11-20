@@ -11,9 +11,9 @@ in the cluster downloads nothing.
 - **`TF_CLI_CONFIG_FILE`** points at a `tofurc` whose only installation method is that
   directory. A module needing a provider or version outside the mirror fails `tofu init`;
   fix it by changing the module or the mirror, never by adding a `direct` fallback.
-- **The runner version** must match the `third_party/tofu_controller` source: the controller
-  and runner talk a gRPC protocol that changes between versions. The pinned upstream image in
-  `devinfra/bazel/oci.MODULE.bazel` comes from the same commit; update both together.
+- **The runner version** in the cluster must match the controller's upstream version because
+  their gRPC protocol can change between releases. `devinfra/bazel/oci.MODULE.bazel` pins the
+  upstream base for the next runner build.
 
 ## Rollout
 

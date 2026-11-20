@@ -76,16 +76,14 @@ oci.pull(
     tag = "1.103.0",
 )
 
-# Base of //cluster/tf_runner:image. Keep it at the upstream release third_party/tofu_controller's
-# fork branch is based on (v0.16.5, runner/ untouched), which release.py's chart version names.
+# Base of //cluster/tf_runner:image. Before deploying a new runner, publish this build and pair
+# its tag with the matching controller release in the HelmRelease image pins.
 oci.pull(
     name = "tf_runner",
-    # Match the tofu-controller commit pinned in third_party/tofu_controller. Its runner protocol
-    # changed since v0.16.5; do not roll one image without the other.
-    digest = "sha256:3fa7aa1ebd041fbdae285f5f7f3f2171d7b1e9b07c51afec5214c31cca7f4443",
+    digest = "sha256:f355a568c4f803ee4276122f8b661382d058d7dc5cded285fd4616f824295516",
     image = "ghcr.io/flux-iac/tf-runner",
     platforms = ["linux/amd64"],
-    tag = "main-e2db61bd",
+    tag = "v0.17.0",
 )
 
 # Bare-k3s fixture: published PostgreSQL 18 without LLVM JIT. CNPG supplies the
