@@ -112,12 +112,14 @@ class ProxySpec:
     replicas: int
     env: tuple[_EnvEntry, ...]
     startup_failure_threshold: int
-    resources: ContainerResources | None = None
-    image_pull_policy: ImagePullPolicy | None = None
-    image_pull_secret_name: str | None = None
-    service_account_name: str | None = None
-    termination_grace_period_seconds: int | None = None
-    node_affinity: LabeledNode | None = None
+    resources: ContainerResources
+    image_pull_policy: ImagePullPolicy
+    image_pull_secret_name: str
+    service_account_name: str
+    termination_grace_period_seconds: int
+    node_affinity: LabeledNode
+    strategy: DeploymentStrategy
+    hostname: str
     tolerations: tuple[TaintedNode, ...] = ()
     # cdk8s_plus_34's fluent Deployment/Workload has no builder for custom
     # topologySpreadConstraints (only an all-or-nothing `spread: bool`
@@ -125,9 +127,6 @@ class ProxySpec:
     # is real API-schema-validated input to the ApiObject escape hatch in
     # _add_deployment, not a raw dict.
     topology_spread_constraints: tuple[k8s.TopologySpreadConstraint, ...] = ()
-    strategy: DeploymentStrategy | None = None
-    hostname: str | None = None
-    forgejo_image_credentials: bool = False
 
     @property
     def name(self) -> str:
@@ -232,7 +231,6 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
             ),
             hostname="litellm.allegedly.works",
-            forgejo_image_credentials=True,
         ),
     )
 
@@ -266,13 +264,11 @@ class LiteLLMProxy(Construct):
         self.spec = spec
 
         config_map = self._add_config_map()
-        if spec.forgejo_image_credentials:
-            self._add_forgejo_image_credentials()
-        service_account = self._add_service_account() if spec.service_account_name is not None else None
+        self._add_forgejo_image_credentials()
+        service_account = self._add_service_account()
         deployment = self._add_deployment(config_map, service_account)
         self._add_service(deployment)
-        if spec.hostname is not None:
-            self._add_http_route(spec.hostname)
+        self._add_http_route()
 
     def _add_config_map(self) -> ConfigMap:
         return ConfigMap(
@@ -300,7 +296,7 @@ class LiteLLMProxy(Construct):
             for entry in self.spec.env
         }
 
-    def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount | None) -> Deployment:
+    def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount) -> Deployment:
         ref = service(self.spec)
         deployment = Deployment(
             self,
@@ -315,15 +311,9 @@ class LiteLLMProxy(Construct):
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
             service_account=service_account,
-            termination_grace_period=(
-                Duration.seconds(self.spec.termination_grace_period_seconds)
-                if self.spec.termination_grace_period_seconds is not None
-                else None
-            ),
-            docker_registry_auth=(
-                Secret.from_secret_name(self, "forgejo-images-creds-ref", self.spec.image_pull_secret_name)
-                if self.spec.image_pull_secret_name is not None
-                else None
+            termination_grace_period=Duration.seconds(self.spec.termination_grace_period_seconds),
+            docker_registry_auth=Secret.from_secret_name(
+                self, "forgejo-images-creds-ref", self.spec.image_pull_secret_name
             ),
             # cdk8s_plus_34 defaults pods to a hardened SecurityContext
             # (runAsNonRoot). Opt out explicitly to preserve today's actual behavior
@@ -352,8 +342,7 @@ class LiteLLMProxy(Construct):
         )
         deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
-        if self.spec.node_affinity is not None:
-            deployment.scheduling.attract(self.spec.node_affinity)
+        deployment.scheduling.attract(self.spec.node_affinity)
         for toleration in self.spec.tolerations:
             deployment.scheduling.tolerate(toleration)
         if self.spec.topology_spread_constraints:
@@ -381,7 +370,6 @@ class LiteLLMProxy(Construct):
         )
 
     def _add_service_account(self) -> ServiceAccount:
-        assert self.spec.service_account_name is not None
         return ServiceAccount(
             self,
             "serviceaccount",
@@ -389,12 +377,12 @@ class LiteLLMProxy(Construct):
             automount_token=False,
         )
 
-    def _add_http_route(self, hostname: str) -> None:
+    def _add_http_route(self) -> None:
         https_route(
             self,
             "httproute",
             metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
-            hostnames=[hostname],
+            hostnames=[self.spec.hostname],
             backend=service(self.spec),
             timeout="2400s",
             hsts=False,
