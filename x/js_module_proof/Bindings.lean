@@ -5,6 +5,7 @@ inductive BindingStmt where
   | function (name target source : String)
   | reader (name source : String)
   | thrower (name : String) (value : Nat)
+  | expressionFunction (name : String) (parameters : List String) (expression : NumericExpr)
   | factory (name localName source : String)
   | closure (name factory : String)
   | wrapper (name target : String)
@@ -32,6 +33,7 @@ def declaredName : BindingStmt → Option String
   | .function name _ _ => some name
   | .reader name _ => some name
   | .thrower name _ => some name
+  | .expressionFunction name _ _ => some name
   | .factory name _ _ => some name
   | .closure name _ => some name
   | .wrapper name _ => some name
@@ -53,6 +55,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .function _ _ _ => false
     | .reader _ _ => false
     | .thrower _ _ => false
+    | .expressionFunction _ _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -69,6 +72,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .function _ _ _ => false
     | .reader _ _ => false
     | .thrower _ _ => false
+    | .expressionFunction _ _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -85,6 +89,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .function _ _ _ => true
     | .reader _ _ => true
     | .thrower _ _ => true
+    | .expressionFunction _ _ _ => true
     | .factory _ _ _ => false
     | .closure _ _ => true
     | .wrapper _ _ => true
@@ -97,6 +102,7 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .thrower _ _ => true
+    | .expressionFunction _ _ _ => false
     | .variable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => false
@@ -118,6 +124,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .function _ _ _ => false
     | .reader _ _ => false
     | .thrower _ _ => false
+    | .expressionFunction _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
@@ -135,6 +142,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .function _ _ _ => false
     | .reader _ _ => false
     | .thrower _ _ => false
+    | .expressionFunction _ _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
     | .call _ => false
@@ -197,6 +205,14 @@ theorem lexical_nearest_binding (name : String) (identity : Nat) (ready : Bool)
   unfold List.find?
   rw [self]
 
+def expressionNames : NumericExpr → List String
+  | .literal _ => []
+  | .name name => [name]
+  | .add left right => expressionNames left ++ expressionNames right
+
+def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
+  (expressionNames expression).filter (fun name => !parameters.contains name)
+
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
   | .variable _ _ => true
@@ -206,6 +222,10 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
   | .thrower _ _ => true
+  | .expressionFunction _ parameters expression =>
+    parameters.all (fun name => parameters.count name == 1) &&
+      (freeExpressionNames parameters expression).all (fun name =>
+        isReadableBinding source name && visible modules index name)
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
   | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
@@ -253,6 +273,7 @@ def referenceNames : BindingStmt → List String
   | .constant _ _ => []
   | .function _ target source => [target, source]
   | .thrower _ _ => []
+  | .expressionFunction _ parameters expression => freeExpressionNames parameters expression
   | .reader _ source => [source]
   | .factory _ _ source => [source]
   | .closure _ factory => [factory]
@@ -365,6 +386,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
       some (if observeReturn then [.addBinding target sourceName, .returnUndefined] else [.addBinding target sourceName])
     | .reader _ sourceName => some [if observeReturn then .returnBinding sourceName else .readBinding sourceName]
     | .thrower _ value => some [.throwNumber value]
+    | .expressionFunction _ _ _ => none
     | .closure closureName _ => some (if observeReturn then [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)] else [.incrementBinding (closureCell closureName)])
     | .wrapper _ target => if isClosure source target then some (if observeReturn then [.incrementBinding (closureCell target), .returnBinding (closureCell target)] else [.incrementBinding (closureCell target)]) else none
     | .factory _ _ _ => none
@@ -381,6 +403,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
   | .function _ _ _ => some []
   | .reader _ _ => some []
   | .thrower _ _ => some []
+  | .expressionFunction _ _ _ => some []
   | .factory _ _ _ => some []
   | .closure name factory => do
     let definition ← findDefinition source factory
@@ -391,6 +414,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .function _ _ _ => none
     | .reader _ _ => none
     | .thrower _ _ => none
+    | .expressionFunction _ _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
     | .recordCall _ => none
@@ -409,6 +433,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .function _ _ _ => none
       | .reader _ _ => none
       | .thrower _ _ => none
+      | .expressionFunction _ _ _ => none
       | .recordCall _ => none
       | .call _ => none
       | .record _ => none
@@ -429,6 +454,7 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .function _ _ _ => none
     | .reader _ _ => none
     | .thrower _ _ => none
+    | .expressionFunction _ _ _ => none
     | .factory _ _ _ => none
     | .closure name _ => some (closureCell name)
     | .wrapper _ _ => none
@@ -467,4 +493,52 @@ theorem binding_calls_preserved (left right : Option (ExecutionState Unit))
     (same : left = right) (sameTable : leftTable = rightTable) (calls : List String) :
     left.bind (fun state => leftTable.bind (fun table => runExportedCalls table state calls)) =
       right.bind (fun state => rightTable.bind (fun table => runExportedCalls table state calls)) := by
+  rw [same, sameTable]
+
+inductive PublicCallable where
+  | fixed (operations : List Operation)
+  | expression (parameters : List String) (body : NumericExpr)
+  deriving DecidableEq, Repr
+
+def publicCallable (statements : List BindingStmt) (name : String) : Option PublicCallable :=
+  match findDefinition statements name with
+  | none => none
+  | some statement => match statement with
+    | .expressionFunction _ parameters expression => some (.expression parameters expression)
+    | .variable _ _ => none
+    | .constant _ _ => none
+    | .factory _ _ _ => none
+    | .recordCall _ => none
+    | .call _ => none
+    | .record _ => none
+    | .function _ target source => some (.fixed [.addBinding target source, .returnUndefined])
+    | .reader _ source => some (.fixed [.returnBinding source])
+    | .thrower _ value => some (.fixed [.throwNumber value])
+    | .closure closureName _ => some (.fixed [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)])
+    | .wrapper _ target => if isClosure statements target then some (.fixed [.incrementBinding (closureCell target), .returnBinding (closureCell target)]) else none
+
+def publicCallableTable (statements : List BindingStmt) (names : List String) : Option (List (String × PublicCallable)) :=
+  names.mapM (fun name => (publicCallable statements name).map (fun callable => (name, callable)))
+
+def callableOperations (callable : PublicCallable) (arguments : List Nat) : Option (List Operation) :=
+  match callable with
+  | .fixed operations => if arguments.isEmpty then some operations else none
+  | .expression parameters expression =>
+    if parameters.length == arguments.length then
+      some [.returnExpression expression (parameters.zip arguments)]
+    else none
+
+def runArgumentCalls (table : List (String × PublicCallable)) (state : ExecutionState Unit)
+    (calls : List (String × List Nat)) : Option (ExecutionState Unit) := do
+  let operations ← calls.mapM (fun call => do
+    let entry ← table.find? (fun entry => entry.1 == call.1)
+    callableOperations entry.2 call.2)
+  runExecution state operations.flatten
+
+theorem argument_calls_preserved (left right : Option (ExecutionState Unit))
+    (leftTable rightTable : Option (List (String × PublicCallable)))
+    (same : left = right) (sameTable : leftTable = rightTable)
+    (calls : List (String × List Nat)) :
+    left.bind (fun state => leftTable.bind (fun table => runArgumentCalls table state calls)) =
+      right.bind (fun state => rightTable.bind (fun table => runArgumentCalls table state calls)) := by
   rw [same, sameTable]

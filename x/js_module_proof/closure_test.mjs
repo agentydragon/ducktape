@@ -246,3 +246,50 @@ export { read };
   );
   assert.equal(cli("generate", writeSource, scopeSpec, join(root, "scope-write-out")).result, "unknown");
 }
+
+if (!unsafe) {
+  const parameterSource = join(root, "parameter-source.mjs");
+  const parameterSpec = join(root, "parameter-spec.json");
+  const parameterOut = join(root, "parameter-out");
+  await writeFile(
+    parameterSource,
+    `let seed = 4;
+function shadow(seed, delta) { return seed + delta; }
+function add(a, b) { return (a + b) + seed; }
+export { shadow, add };
+`
+  );
+  await writeFile(
+    parameterSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", parameterSource, parameterSpec, parameterOut).result, "generated");
+  const proof = cli("validate", parameterSource, parameterSpec, parameterOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "shadow", args: [8, 2] },
+    { name: "add", args: [1, 3] },
+    { name: "add", args: [4, 5] },
+  ];
+  const sourceTrace = execute(parameterSource, calls);
+  assert.deepEqual(sourceTrace.results, [{ value: 10 }, { value: 8 }, { value: 13 }]);
+  assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const logic = join(parameterOut, "logic.mjs");
+  await writeFile(logic, (await readFile(logic, "utf8")).replace("(a + b) + seed", "(a + b) + a"));
+  assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unknown");
+  assert.notDeepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
+}

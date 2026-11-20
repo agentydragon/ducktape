@@ -4,6 +4,15 @@ inductive Observation where
   | number (value : Nat)
   deriving DecidableEq, Repr
 
+/- Expressions are evaluated by the same transition system as the original
+   operations. Parameters shadow module bindings; arithmetic is restricted by
+   the reported JavaScript safe-integer assumption. -/
+inductive NumericExpr where
+  | literal (value : Nat)
+  | name (name : String)
+  | add (left right : NumericExpr)
+  deriving DecidableEq, Repr
+
 inductive Operation where
   | initialize (value : Nat)
   | increment
@@ -22,6 +31,7 @@ inductive Operation where
   | returnBinding (name : String)
   | returnUndefined
   | throwNumber (value : Nat)
+  | returnExpression (expression : NumericExpr) (parameters : List (String × Nat))
   deriving DecidableEq, Repr
 
 structure ExecutionState (α : Type) where
@@ -36,6 +46,16 @@ structure ExecutionState (α : Type) where
 def lookupBinding : List (String × Nat) → String → Option Nat
   | [], _ => none
   | (key, value) :: rest, name => if key == name then some value else lookupBinding rest name
+
+def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option Nat
+  | .literal value => some value
+  | .name name => match lookupBinding locals name with
+    | some value => some value
+    | none => lookupBinding globals name
+  | .add left right => do
+    let leftValue ← evaluateExpression locals globals left
+    let rightValue ← evaluateExpression locals globals right
+    pure (leftValue + rightValue)
 
 def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
   | [], _, _ => none
@@ -101,6 +121,9 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       pure { state with returns := state.returns ++ [some value] }
     | .returnUndefined => some { state with returns := state.returns ++ [none] }
     | .throwNumber value => some { state with thrown := some value }
+    | .returnExpression expression parameters => do
+      let value ← evaluateExpression parameters state.bindings expression
+      pure { state with returns := state.returns ++ [some value] }
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

@@ -99,7 +99,12 @@ call to that closure. Initialization may call the wrapper or record its return.
 Parameterless exported functions with a single `throw` of a nonnegative safe
 integer are also supported after successful initialization. A throw terminates
 the observed call sequence, and the certificate proves matching thrown values.
-Top-level calls to such functions remain unsupported.
+Top-level calls to such functions remain unsupported. Exported functions may
+also take numeric parameters and return expressions composed of those
+parameters, readable module bindings, nonnegative integer literals and `+`.
+For these functions the certificate covers finite sequences of calls with
+explicit argument lists. Calls must supply exactly the declared number of
+nonnegative safe-integer arguments; intermediate results must stay in range.
 
 The captured variable must have a different name from `seed`: the shared Lean
 lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone

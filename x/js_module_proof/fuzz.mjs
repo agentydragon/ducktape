@@ -476,7 +476,7 @@ const thrownValue=v=>{
 try{
   const m=await import(${JSON.stringify(pathToFileURL(path).href)});
   names=Object.keys(m);phase='call';
-  for(const n of ${JSON.stringify(calls)}){index++;const v=m[n]();results.push(v===undefined?{undefined:true}:{value:v});}
+  for(const call of ${JSON.stringify(calls)}){index++;const name=typeof call==='string'?call:call.name;const args=typeof call==='string'?[]:call.args;const v=m[name](...args);results.push(v===undefined?{undefined:true}:{value:v});}
   console.log(JSON.stringify({events,exports:names,results,error:null}));
 }catch(e){
   const thrown=thrownValue(e);

@@ -128,12 +128,52 @@ function scopedFunction(node) {
   return { kind: "scopedFunction", name, references: [...reads], writes: [...writes] };
 }
 
+// A compositional expression grammar for functions with numeric parameters.
+// This is also emitted into the Lean AST; the generator's free-name list is
+// only used to construct imports, while Lean recomputes it for validation.
+function expressionFunction(node) {
+  check(node.type === "FunctionDeclaration" && !node.async && !node.generator, "unsupported function");
+  const name = identifier(node.id);
+  const parameters = node.params.map(identifier);
+  check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
+  check(new Set(parameters).size === parameters.length, "duplicate parameters");
+  check(node.body.body.length === 1 && node.body.body[0].type === "ReturnStatement", "expected expression return");
+  const refs = new Set();
+  const expression = (node) => {
+    if (node?.type === "Literal") {
+      check(Number.isSafeInteger(node.value) && node.value >= 0, "expected a nonnegative safe integer");
+      return { kind: "literal", value: node.value };
+    }
+    if (node?.type === "Identifier") {
+      const value = identifier(node);
+      check(!["globalThis", "eval", "arguments"].includes(value), "unsupported dynamic reference");
+      if (!parameters.includes(value)) refs.add(value);
+      return { kind: "name", name: value };
+    }
+    if (node?.type === "BinaryExpression" && node.operator === "+")
+      return { kind: "add", left: expression(node.left), right: expression(node.right) };
+    check(false, "unsupported numeric expression");
+  };
+  return {
+    kind: "expressionFunction",
+    name,
+    parameters,
+    expression: expression(node.body.body[0].argument),
+    references: [...refs],
+  };
+}
+
 function candidateStatement(node) {
   try {
     return statement(node);
   } catch (error) {
     if (node.type !== "FunctionDeclaration" || !String(error).includes("unknown:")) throw error;
-    return scopedFunction(node);
+    try {
+      return expressionFunction(node);
+    } catch (expressionError) {
+      if (!String(expressionError).includes("unknown:")) throw expressionError;
+      return scopedFunction(node);
+    }
   }
 }
 
@@ -286,13 +326,22 @@ function readSpec(spec, count) {
 }
 
 const declarationName = (item) =>
-  ["variable", "constant", "function", "reader", "thrower", "factory", "closure", "wrapper", "scopedFunction"].includes(
-    item.kind
-  )
+  [
+    "variable",
+    "constant",
+    "function",
+    "reader",
+    "thrower",
+    "factory",
+    "closure",
+    "wrapper",
+    "scopedFunction",
+    "expressionFunction",
+  ].includes(item.kind)
     ? item.name
     : null;
 function references(item) {
-  if (item.kind === "scopedFunction") return item.references;
+  if (item.kind === "scopedFunction" || item.kind === "expressionFunction") return item.references;
   if (item.kind === "function") return [item.target, item.source];
   if (item.kind === "reader" || item.kind === "factory") return [item.source];
   if (item.kind === "closure") return [item.factory];
@@ -395,18 +444,29 @@ function outputAst(text, names) {
       imports.push({ dep, locals, reexports: [] });
     } else if (node.type === "ExportNamedDeclaration") {
       if (node.declaration) {
-        const ast = statement(node.declaration);
+        const ast = candidateStatement(node.declaration);
         check(declarationName(ast), "unsupported exported declaration");
         exports.push(declarationName(ast));
         statements.push(ast);
       } else if (node.source) imports.push({ dep: dependency(node), locals: [], reexports: exportNames(node) });
       else exports.push(...exportNames(node));
-    } else statements.push(statement(node));
+    } else statements.push(candidateStatement(node));
   }
   return { imports, exports, statements };
 }
 
 const leanStrings = (values) => list(values.map(str));
+function leanExpression(expression) {
+  switch (expression.kind) {
+    case "literal":
+      return `.literal ${expression.value}`;
+    case "name":
+      return `.name ${str(expression.name)}`;
+    case "add":
+      return `.add (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
+  }
+  throw new Error("unknown expression");
+}
 function leanStatement(item) {
   switch (item.kind) {
     case "variable":
@@ -419,6 +479,8 @@ function leanStatement(item) {
       return `.reader ${str(item.name)} ${str(item.source)}`;
     case "thrower":
       return `.thrower ${str(item.name)} ${item.value}`;
+    case "expressionFunction":
+      return `.expressionFunction ${str(item.name)} ${leanStrings(item.parameters)} (${leanExpression(item.expression)})`;
     case "factory":
       return `.factory ${str(item.name)} ${str(item.local)} ${str(item.source)}`;
     case "closure":
@@ -470,10 +532,31 @@ export async function validateBindings(sourcePath, specPath, out) {
     return { result: "unknown", reason: "scoped function execution is not modeled" };
   const files = await Promise.all(names.map((name) => readFile(resolve(out, name), "utf8")));
   const actual = files.map((text) => outputAst(text, names));
+  if (actual.some((module) => module.statements.some((item) => item.kind === "scopedFunction")))
+    return { result: "unknown", reason: "scoped output function execution is not modeled" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
   const prefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_graph_valid\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
-  const same = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
+  const legacySame = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
+  const hasExpressions = source.statements.some((item) => item.ast.kind === "expressionFunction");
+  const expressionSame = `
+theorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide
+theorem binding_public_table : publicCallableTable bindingSource bindingExports = publicCallableTable (outputDefinitions bindingModules) bindingExports := by decide
+theorem binding_public_table_ready : (publicCallableTable bindingSource bindingExports).isSome = true := by decide
+theorem binding_future_calls (calls : List (String × List Nat)) : (sourceBindingState bindingSource).bind (fun state => (publicCallableTable bindingSource bindingExports).bind (fun table => runArgumentCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicCallableTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runArgumentCalls table state calls)) := by
+  exact argument_calls_preserved _ _ _ _ binding_initialization binding_public_table calls
+theorem binding_return_values (calls : List (String × List Nat)) : ((sourceBindingState bindingSource).bind (fun state => (publicCallableTable bindingSource bindingExports).bind (fun table => runArgumentCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicCallableTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runArgumentCalls table state calls))).map (fun state => state.returns) := by
+  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)
+theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindingState bindingSource).bind (fun state => (publicCallableTable bindingSource bindingExports).bind (fun table => runArgumentCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicCallableTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runArgumentCalls table state calls))).map (fun state => state.thrown) := by
+  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)
+#print axioms binding_throw_values
+#print axioms binding_initialization
+#print axioms binding_public_table
+#print axioms binding_public_table_ready
+#print axioms binding_future_calls
+#print axioms binding_return_values
+`;
+  const same = hasExpressions ? expressionSame : legacySame;
   const model = (
     await Promise.all(
       ["Semantics.lean", "Effects.lean", "Bindings.lean"].map((name) =>
@@ -525,7 +608,12 @@ export async function validateBindings(sourcePath, specPath, out) {
       assumptions: [
         "The Acorn-to-Lean AST conversion faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values and intermediate sums remain nonnegative safe integers",
+        "All binding values, arguments and intermediate sums remain nonnegative safe integers",
+        ...(hasExpressions
+          ? [
+              "Expression functions receive exactly their declared number of numeric arguments; other exports are called without arguments",
+            ]
+          : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
         "Supported thrown values are nonnegative safe integers; a throw ends the observed call sequence",
@@ -545,6 +633,7 @@ export async function validateBindings(sourcePath, specPath, out) {
       reason: "Lean did not prove a state difference",
       detail: mismatch.stdout || mismatch.stderr,
     };
+  if (hasExpressions) return { result: "unknown", reason: "argument-bearing witness search is not supported" };
   const original = execute(sourcePath);
   const output = execute(resolve(out, spec.entry));
   if (JSON.stringify(original) !== JSON.stringify(output))
