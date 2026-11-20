@@ -38,10 +38,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GOPATH=/root/go \
     PATH="/root/.local/bin:/root/.cargo/bin:/root/.bun/bin:/opt/rbenv/bin:/opt/rbenv/shims:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/usr/local/go1.25.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# =============================================================================
-# STATIC FILES (Layers 3-4)
-# =============================================================================
-
 # Layer 3: All /etc/ overlay files (apt repos, preferences, keyrings, profile.d)
 # Includes: CA certs for TLS proxy, PPA sources, preferences, docker.asc/list,
 # profile.d scripts. All placed before any RUN step so APT can use them.
@@ -51,10 +47,6 @@ COPY rootfs/etc/ /etc/
 # Includes: /usr/local/share/ca-certificates/*.crt and /usr/local/bin/ scripts.
 # CA certs must be here before the first RUN that runs update-ca-certificates.
 COPY rootfs/usr/ /usr/
-
-# =============================================================================
-# PACKAGE INSTALLATION
-# =============================================================================
 
 # All dpkg packages — fetched from Ubuntu snapshot archives and PPAs by
 # fetch_debs.py. This guarantees exact version match with the live environment
@@ -71,9 +63,6 @@ RUN dpkg --force-all -i /tmp/local_debs/*.deb || true && \
       echo "=== configure pass $i had failures, retrying... ==="; \
     done && \
     update-ca-certificates
-# =============================================================================
-# RUNTIME INSTALLATIONS
-# =============================================================================
 
 # Node.js 20, 21, 22 + NVM
 RUN mkdir -p /opt && \
@@ -166,10 +155,6 @@ RUN ln -sf /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
     ln -sf /usr/bin/python3.11 /usr/local/bin/python3
 
-# =============================================================================
-# SCRIPTS AND CONFIGURATION
-# =============================================================================
-
 # Compressed proprietary binaries
 COPY reference/environment-manager.gz reference/process_api.gz /tmp/
 
@@ -195,10 +180,6 @@ RUN useradd -m -s /bin/bash -u 999 claude && \
 
 # Claude user home files + permissions
 COPY rootfs/home/claude/ /home/claude/
-
-# =============================================================================
-# FINAL SETUP
-# =============================================================================
 
 # Permission fixes (claude .claude + SUID/SGID + directory perms)
 RUN chmod +x /home/claude/.claude/stop-hook-git-check.sh && \
