@@ -63,6 +63,26 @@ js_binary(
     entry_point = "prototype_guard_cli.mjs",
 )
 
+js_test(
+    name = "call_facts_test",
+    data = [
+        "call_facts.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+    entry_point = "call_facts_test.mjs",
+)
+
+js_binary(
+    name = "call_facts",
+    data = [
+        "call_facts.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+    entry_point = "call_facts_cli.mjs",
+)
+
 exports_files(
     ["fixtures/callback/bundle.js"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
