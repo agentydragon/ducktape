@@ -668,7 +668,18 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       await writeFile(spec, JSON.stringify(input.spec, null, 2) + "\n");
       await writeFile(
         join(root, "case.json"),
-        JSON.stringify({ seed, index, calls: input.calls, unsupported: input.unsupported }, null, 2) + "\n"
+        JSON.stringify(
+          {
+            seed,
+            index,
+            calls: input.calls,
+            grammar: input.grammar,
+            unsupported: input.unsupported,
+            nodeVersion: process.version,
+          },
+          null,
+          2
+        ) + "\n"
       );
       if (input.useConstant) summary.constantCases++;
       if (input.grammar === "modeledClosure") {
@@ -746,6 +757,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         continue;
       }
       const equal = JSON.stringify(before) === JSON.stringify(after);
+      await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
@@ -765,12 +777,12 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       summary[equal ? "equal" : "different"]++;
       if (!mutated) summary.splitCompared++;
       if (!equal) summary[mutated ? "mutatedDifferent" : "splitDifferent"]++;
-      await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       let verdictName = "unvalidated";
       if (random(seed ^ 0xa5a5a5a5, index)(validateEvery) === 0) {
         const verdict = await validateBindings(source, spec, out);
         summary.validated++;
         verdictName = verdict.result;
+        await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (input.grammar === "modeledClosure") {
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
           if (verdict.result !== expected)
@@ -779,7 +791,6 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
           else summary.modeledClosureProved++;
         }
         if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
-        await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
