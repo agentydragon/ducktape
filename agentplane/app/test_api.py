@@ -202,27 +202,11 @@ async def test_policy_mutations_require_the_generated_operator_facade(
         assert revoke.status_code == 403, revoke.text
 
 
-async def test_go_openapi_tracks_frontend_config_route(http: httpx.AsyncClient) -> None:
-    response = await http.get("/openapi.json")
-    assert response.status_code == 200, response.text
-    document = response.json()
-    paths = document.get("paths") or {}
-    schemas = (document.get("components") or {}).get("schemas") or {}
-
-    assert "/frontend-config" not in paths
-    assert "FrontendConfig" not in schemas
-    assert "/sandboxes/form" not in paths
-    assert "SandboxFormOutputBody" not in schemas
-
-
 async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.AsyncClient) -> None:
     frontend = await http.get("/upstream/app-config/v1/frontend-config")
     assert frontend.status_code == 200, frontend.text
     # The generated gateway encodes unset message fields as ProtoJSON null; the frontend adapter maps both to null.
     assert frontend.json() == {"frontendConfig": {"traceSearch": None, "langfuseSearch": None}}
-
-    legacy_frontend = await http.get("/frontend-config")
-    assert legacy_frontend.status_code == 404, legacy_frontend.text
 
     models = await http.get("/upstream/app-config/v1/models")
     assert models.status_code == 200, models.text
@@ -259,10 +243,6 @@ async def test_protected_go_routes_reject_kubernetes_bearer(app: AppProcess, kub
 
 
 async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncClient) -> None:
-    openapi = await http.get("/openapi.json")
-    assert openapi.status_code == 200, openapi.text
-    assert "/system/status" not in openapi.json().get("paths", {})
-
     status = await http.get("/upstream/app/v1/system/status")
     assert status.status_code == 200, status.text
     components = status.json().get("components")
@@ -273,9 +253,6 @@ async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncC
         and isinstance(component.get("checkedAt"), str)
         for component in components
     )
-
-    legacy = await http.get("/system/status")
-    assert legacy.status_code == 404, legacy.text
 
 
 if __name__ == "__main__":

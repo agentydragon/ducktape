@@ -65,7 +65,6 @@ go_test(
     srcs = ["server_test.go"],
     embed = [":server"],
     deps = [
-        "//agentplane/app/internal/auth",
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/settings",

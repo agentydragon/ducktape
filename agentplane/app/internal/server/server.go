@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"regexp"
 	"sync"
@@ -13,8 +12,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-// httpServer owns the standard-library router, Huma API and the readiness drain gate.
-// A single mux keeps API documentation, auth and health routes on one listener.
+// httpServer owns the standard-library router, the Huma API behind the OpenAPI document and the
+// readiness drain gate. A single mux keeps auth and health routes on one listener.
 type httpServer struct {
 	mux            *uuidMux
 	api            huma.API
@@ -27,22 +26,10 @@ type httpServer struct {
 func newHTTPServer(authentication *auth.Auth) *httpServer {
 	mux := &uuidMux{ServeMux: http.NewServeMux()}
 	apiConfig := huma.DefaultConfig("Agentplane", "0")
-	// Keep Huma's generated OpenAPI document enabled; the custom docs pages below render it.
+	// The OpenAPI document stays at /openapi.json; the app serves no documentation page.
 	apiConfig.DocsPath = ""
-	// Huma adds optional $schema fields to object responses by default. Python's API models reject
-	// unknown fields, so keep those response bodies on the existing wire contract while retaining
-	// the generated OpenAPI document.
-	apiConfig.CreateHooks = nil
 	api := humago.New(mux, apiConfig)
 	server := &httpServer{mux: mux, api: api, authentication: authentication, drainDone: make(chan struct{})}
-	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(swaggerDocsHTML))
-	})
-	mux.HandleFunc("GET /redoc", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(redocDocsHTML))
-	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -81,63 +68,8 @@ func (m *uuidMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *
 	m.Handle(pattern, http.HandlerFunc(handler))
 }
 
-const swaggerDocsHTML = `<!doctype html>
-<html><head><title>Agentplane API</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
-<body><div id="swagger-ui"></div>
-<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>SwaggerUIBundle({url:"/openapi.json",dom_id:"#swagger-ui"})</script></body></html>`
-
-const redocDocsHTML = `<!doctype html>
-<html><head><title>Agentplane API</title></head>
-<body><redoc spec-url="/openapi.json"></redoc>
-<script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script></body></html>`
-
-// API is the Huma registration point used by feature packages and the OpenAPI exporter.
-func (s *httpServer) API() huma.API { return s.api }
-
-// ProtectedAPI groups the application routes that require either an operator session or an
-// audience-checked Kubernetes token, matching the Python app's router-wide caller dependency.
-func (s *httpServer) ProtectedAPI() *huma.Group {
-	group := huma.NewGroup(s.api)
-	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		if s.authentication == nil {
-			_, writer := humago.Unwrap(ctx)
-			httpresponse.WriteDetailError(writer, http.StatusUnauthorized, "no session and no accepted token")
-			return
-		}
-		request, writer := humago.Unwrap(ctx)
-		s.authentication.RequireCaller(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
-			if withContext, ok := ctx.(interface {
-				WithContext(context.Context) huma.Context
-			}); ok {
-				next(withContext.WithContext(request.Context()))
-				return
-			}
-			next(ctx)
-		})).ServeHTTP(writer, request)
-	})
-	return group
-}
-
-// OperatorAPI groups endpoints that additionally require the browser OIDC login, as opposed to
-// operator ID-token bearer authentication.
-func (s *httpServer) OperatorAPI() *huma.Group {
-	group := huma.NewGroup(s.ProtectedAPI())
-	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		request, writer := humago.Unwrap(ctx)
-		session, ok := auth.SessionFromContext(request.Context())
-		if !ok || session.Login == nil {
-			httpresponse.WriteDetailError(writer, http.StatusForbidden, "operator login required")
-			return
-		}
-		next(ctx)
-	})
-	return group
-}
-
-// RegisterRawRoute mounts a non-JSON or streaming endpoint on the same mux as Huma. Caller routes
-// use the app's OIDC cookie-or-ID-token boundary; operator routes additionally require a browser login.
+// RegisterRawRoute mounts an endpoint on the app's mux. Caller routes use the app's OIDC
+// cookie-or-ID-token boundary; operator routes additionally require a browser login.
 func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool) {
 	if s.authentication == nil {
 		handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
