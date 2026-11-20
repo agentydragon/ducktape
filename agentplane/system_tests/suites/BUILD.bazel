@@ -330,7 +330,7 @@ vm_test(
     recycle = True,
 )
 
-# Same scenarios on managed BuildBuddy for the devel shadow comparison.
+# Same scenarios on managed BuildBuddy for on-demand comparisons.
 vm_test(
     name = "test_vm_tcg",
     pool = None,

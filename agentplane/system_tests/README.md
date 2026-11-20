@@ -44,7 +44,7 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
 | `//agentplane/system_tests/suites:test_vm`                             | Required Claude and Codex VM scenarios on hosted KVM  |
-| `//agentplane/system_tests/suites:test_vm_tcg`                         | Same VM scenarios on managed QEMU, devel shadow       |
+| `//agentplane/system_tests/suites:test_vm_tcg`                         | Same VM cases on managed QEMU, manual comparison      |
 | `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
 | `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
 | `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |

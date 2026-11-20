@@ -172,21 +172,3 @@ py_library(
     name = "cancel_invocations",
     srcs = ["cancel_invocations.py"],
 )
-
-py_library(
-    name = "vm_shadow",
-    srcs = ["vm_shadow.py"],
-    deps = [
-        ":invocation_ids",
-        "//devinfra/buildbuddy:cli",
-    ],
-)
-
-py_test(
-    name = "test_vm_shadow",
-    srcs = ["test_vm_shadow.py"],
-    deps = [
-        ":vm_shadow",
-        "@pypi//pytest_bazel",
-    ],
-)
