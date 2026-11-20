@@ -206,6 +206,8 @@ js_test(
 
 js_test(
     name = "fuzz_test",
+    # The Lean-backed generated graphs have exceeded the default test memory.
+    size = "large",
     data = [
         "Bindings.lean",
         "Effects.lean",

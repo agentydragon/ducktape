@@ -380,6 +380,12 @@ export async function validateBindings(sourcePath, specPath, out) {
     };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   const mismatch = runLean(prefix + different);
+  if (mismatch.error || mismatch.status === null)
+    return {
+      result: "unknown",
+      reason: "Lean could not be run",
+      detail: mismatch.error ? String(mismatch.error) : `Lean terminated by ${mismatch.signal ?? "unknown signal"}`,
+    };
   if (mismatch.status !== 0 || !has(mismatch, "binding_difference"))
     return {
       result: "unknown",
