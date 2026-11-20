@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
@@ -39,26 +38,40 @@ var ErrPatternEvaluation = errors.New("argument schema regular expression could 
 const patternBudget = 250 * time.Millisecond
 
 type patternState struct {
-	mu       sync.Mutex
 	deadline time.Time
 	failed   bool
 }
 
 // CompiledSchema keeps regexp evaluation errors associated with the right validation. jsonschema's Regexp interface
-// exposes only a bool, so a per-schema mutex serializes its validations while the adapter records any match error.
-// Distinct compiled schemas do not share the mutex or state.
+// exposes only a bool, so schemas with backtracking patterns serialize their validations while the adapter records any
+// match error. RE2-only schemas need no shared state and can validate concurrently.
 type CompiledSchema struct {
 	schema *jsonschema.Schema
 	state  *patternState
+	gate   chan struct{}
 }
 
 // Validate rejects the whole validation when a regexp evaluation fails, even if `not`, `anyOf`, `if`, or
-// patternProperties would otherwise turn that match failure into acceptance.
+// patternProperties would otherwise turn that match failure into acceptance. Waiting for a shared fallback matcher
+// and evaluating fallback matches share the budget; callers that wait too long fail closed.
 func (s *CompiledSchema) Validate(value any) error {
-	s.state.mu.Lock()
-	defer s.state.mu.Unlock()
+	if s.gate == nil {
+		return s.schema.Validate(value)
+	}
+	deadline := time.Now().Add(patternBudget)
+	timer := time.NewTimer(patternBudget)
+	defer timer.Stop()
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	case <-timer.C:
+		return ErrPatternEvaluation
+	}
+	if time.Until(deadline) <= 0 {
+		return ErrPatternEvaluation
+	}
 	s.state.failed = false
-	s.state.deadline = time.Now().Add(patternBudget)
+	s.state.deadline = deadline
 	err := s.schema.Validate(value)
 	if s.state.failed {
 		return ErrPatternEvaluation
@@ -87,7 +100,7 @@ func (r boundedRegexp) MatchString(value string) bool {
 	return matched
 }
 
-func patternEngine(state *patternState) func(string) (jsonschema.Regexp, error) {
+func patternEngine(state *patternState, fallback func()) func(string) (jsonschema.Regexp, error) {
 	return func(expr string) (jsonschema.Regexp, error) {
 		if re, err := regexp.Compile(expr); err == nil {
 			return re, nil
@@ -96,6 +109,7 @@ func patternEngine(state *patternState) func(string) (jsonschema.Regexp, error) 
 		if err != nil {
 			return nil, err
 		}
+		fallback()
 		return boundedRegexp{re: re, state: state}, nil
 	}
 }
@@ -106,8 +120,15 @@ func patternEngine(state *patternState) func(string) (jsonschema.Regexp, error) 
 // metaschemas is not valid.
 func CompileSchema(document any) (*CompiledSchema, error) {
 	state := &patternState{}
+	// format:regex can call the engine at validation time, but only to compile an expression; the returned matcher is
+	// discarded. Only fallback matchers produced during compilation become part of the compiled schema.
+	compiling, hasFallback := true, false
 	compiler := jsonschema.NewCompiler()
-	compiler.UseRegexpEngine(patternEngine(state))
+	compiler.UseRegexpEngine(patternEngine(state, func() {
+		if compiling {
+			hasFallback = true
+		}
+	}))
 	compiler.DefaultDraft(jsonschema.Draft2020)
 	compiler.UseLoader(noDocuments{})
 	for _, name := range annotatedFormats {
@@ -118,13 +139,18 @@ func CompileSchema(document any) (*CompiledSchema, error) {
 	}
 	state.deadline = time.Now().Add(patternBudget)
 	schema, err := compiler.Compile(schemaURL)
+	compiling = false
 	if state.failed {
 		return nil, ErrPatternEvaluation
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &CompiledSchema{schema: schema, state: state}, nil
+	var gate chan struct{}
+	if hasFallback {
+		gate = make(chan struct{}, 1)
+	}
+	return &CompiledSchema{schema: schema, state: state, gate: gate}, nil
 }
 
 // noDocuments loads no document a schema refers to; the library's default loader reads local files.

@@ -95,10 +95,47 @@ func TestConcurrentValidationsKeepPatternErrorsSeparate(t *testing.T) {
 				if err := schema.Validate(slow); !errors.Is(err, ErrPatternEvaluation) {
 					t.Errorf("timeout got %v", err)
 				}
-			} else if err := schema.Validate("safe"); err != nil {
-				t.Errorf("valid request incorrectly rejected: %v", err)
+			} else if err := schema.Validate("safe"); err != nil && !errors.Is(err, ErrPatternEvaluation) {
+				t.Errorf("valid request returned unexpected error: %v", err)
 			}
 		}(i)
 	}
 	wg.Wait()
+	if err := schema.Validate("safe"); err != nil {
+		t.Errorf("validation remained poisoned after concurrent requests: %v", err)
+	}
+}
+
+// The regex format compiles its value at validation time, but never matches against it. It must not introduce
+// shared fallback state into an otherwise RE2-only schema, even when validations run concurrently.
+func TestRegexFormatCanCompileConcurrently(t *testing.T) {
+	schema := compileTestSchema(t, `{"$schema":"http://json-schema.org/draft-07/schema#","type":"string","format":"regex"}`)
+	if schema.gate != nil {
+		t.Fatal("format-only schema unexpectedly requires fallback matcher gate")
+	}
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			if err := schema.Validate("(?=a)"); err != nil {
+				t.Errorf("valid regex format rejected: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestSaturatedPatternGateFailsClosed(t *testing.T) {
+	schema := compileTestSchema(t, `{"not":{"pattern":"^(?=a)(a+)+$"}}`)
+	if schema.gate == nil {
+		t.Fatal("fallback matcher has no gate")
+	}
+	// Hold the slot deterministically so the request exercises waiting, not a slow match.
+	schema.gate <- struct{}{}
+	if err := schema.Validate("safe"); !errors.Is(err, ErrPatternEvaluation) {
+		t.Fatalf("saturated gate returned %v; want ErrPatternEvaluation", err)
+	}
+	<-schema.gate
+	if err := schema.Validate("safe"); err != nil {
+		t.Fatalf("validation remained poisoned after saturation: %v", err)
+	}
 }
