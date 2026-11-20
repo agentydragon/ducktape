@@ -69,8 +69,8 @@ let
   ++ [
     # Keep the symbolizer available in local dev shells as well as the runner.
     llvmAddr2line
-    # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
-    # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
+    # Cluster/infra CLIs. Used for Talos, Route 53, Nebula PKI, policy
+    # validation, and bare-metal provisioning.
     pkgsUnstable.talosctl
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
