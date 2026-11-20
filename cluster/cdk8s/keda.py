@@ -35,14 +35,11 @@ def _resources(
 
 def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) -> ContainerPolicy:
     requests = resources["requests"]
-    # Admission can still see a CPU recommendation from before the policy change.
-    # Clamp it to the template request until the recommender refreshes.
-    return ContainerPolicy(
-        container_name=container_name,
-        controlled_values=ControlledValues.REQUESTS_ONLY,
-        controlled_resources=("memory",),
-        min_allowed={"cpu": requests["cpu"], "memory": requests["memory"]},
-        max_allowed={"cpu": requests["cpu"], "memory": resources["limits"]["memory"]},
+    return ContainerPolicy.memory_requests_only(
+        container_name,
+        cpu_request=requests["cpu"],
+        memory_floor=requests["memory"],
+        memory_limit=resources["limits"]["memory"],
     )
 
 

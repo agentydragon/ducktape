@@ -8,13 +8,8 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
-from cluster.cdk8s.vpa_policy import (
-    VPA_RESOURCE_POLICY_ANNOTATION,
-    ContainerPolicy,
-    ControlledValues,
-    resource_policy_annotation,
-)
+from cluster.cdk8s.namespaces import Vpa, initial_memory_request_annotations
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
@@ -30,25 +25,6 @@ _REPORTS_MEMORY_REQUEST = "256Mi"
 _REPORTS_MEMORY_LIMIT = "512Mi"
 
 
-def _initial_memory_annotations(
-    container_name: str, *, cpu_request: str, memory_floor: str, memory_limit: str
-) -> dict[str, str]:
-    return {
-        VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
-        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
-            ContainerPolicy(
-                container_name=container_name,
-                controlled_values=ControlledValues.REQUESTS_ONLY,
-                controlled_resources=("memory",),
-                # VPA 1.7.1 admission can still use a stale CPU target from Off mode.
-                min_allowed={"cpu": cpu_request, "memory": memory_floor},
-                max_allowed={"cpu": cpu_request, "memory": memory_limit},
-            ),
-            ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
-        ),
-    }
-
-
 def _values() -> dict[str, object]:
     return {
         # Use ghcr.io instead of reg.kyverno.io (scarf.sh proxy) — more reliable.
@@ -62,11 +38,13 @@ def _values() -> dict[str, object]:
             "podDisruptionBudget": {"minAvailable": 2},
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
-            "annotations": _initial_memory_annotations(
-                "kyverno",
-                cpu_request=_ADMISSION_CPU_REQUEST,
-                memory_floor="224Mi",
-                memory_limit=_ADMISSION_MEMORY_LIMIT,
+            "annotations": initial_memory_request_annotations(
+                ContainerPolicy.memory_requests_only(
+                    "kyverno",
+                    cpu_request=_ADMISSION_CPU_REQUEST,
+                    memory_floor="224Mi",
+                    memory_limit=_ADMISSION_MEMORY_LIMIT,
+                )
             ),
             "container": {
                 "resources": {
@@ -136,11 +114,13 @@ def _values() -> dict[str, object]:
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 191Mi during startup.
-            "annotations": _initial_memory_annotations(
-                "controller",
-                cpu_request=_BACKGROUND_CPU_REQUEST,
-                memory_floor="208Mi",
-                memory_limit=_BACKGROUND_MEMORY_LIMIT,
+            "annotations": initial_memory_request_annotations(
+                ContainerPolicy.memory_requests_only(
+                    "controller",
+                    cpu_request=_BACKGROUND_CPU_REQUEST,
+                    memory_floor="208Mi",
+                    memory_limit=_BACKGROUND_MEMORY_LIMIT,
+                )
             ),
             "resources": {
                 "limits": {"cpu": "200m", "memory": _BACKGROUND_MEMORY_LIMIT},
@@ -152,8 +132,13 @@ def _values() -> dict[str, object]:
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
-            "annotations": _initial_memory_annotations(
-                "controller", cpu_request=_CLEANUP_CPU_REQUEST, memory_floor="124Mi", memory_limit=_CLEANUP_MEMORY_LIMIT
+            "annotations": initial_memory_request_annotations(
+                ContainerPolicy.memory_requests_only(
+                    "controller",
+                    cpu_request=_CLEANUP_CPU_REQUEST,
+                    memory_floor="124Mi",
+                    memory_limit=_CLEANUP_MEMORY_LIMIT,
+                )
             ),
             "resources": {
                 "limits": {"cpu": "100m", "memory": _CLEANUP_MEMORY_LIMIT},
@@ -165,11 +150,13 @@ def _values() -> dict[str, object]:
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
             # Preserve the existing 256Mi reservation. Peak 30-day working set was 204Mi.
-            "annotations": _initial_memory_annotations(
-                "controller",
-                cpu_request=_REPORTS_CPU_REQUEST,
-                memory_floor=_REPORTS_MEMORY_REQUEST,
-                memory_limit=_REPORTS_MEMORY_LIMIT,
+            "annotations": initial_memory_request_annotations(
+                ContainerPolicy.memory_requests_only(
+                    "controller",
+                    cpu_request=_REPORTS_CPU_REQUEST,
+                    memory_floor=_REPORTS_MEMORY_REQUEST,
+                    memory_limit=_REPORTS_MEMORY_LIMIT,
+                )
             ),
             "resources": {
                 # No CPU limit: this controller syncs an informer cache over ALL resources

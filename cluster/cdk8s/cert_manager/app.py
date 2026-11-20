@@ -46,17 +46,6 @@ _WEBHOOK_METRICS = ServiceRef(
 )
 
 
-def _memory_request_policy(container_name: str, *, floor: str, limit: str) -> ContainerPolicy:
-    # Admission can still see the old CPU target until the recommender refreshes.
-    return ContainerPolicy(
-        container_name=container_name,
-        controlled_values=ControlledValues.REQUESTS_ONLY,
-        controlled_resources=("memory",),
-        min_allowed={"cpu": _CPU_REQUEST, "memory": floor},
-        max_allowed={"cpu": _CPU_REQUEST, "memory": limit},
-    )
-
-
 def _values() -> dict[str, object]:
     return {
         # cert-manager-webhook backs a failurePolicy: Fail webhook, so while it is down
@@ -146,9 +135,24 @@ def chart(app: App) -> Chart:
             mode=Vpa.INITIAL,
             container_policies=(
                 # Floors round up the 30-day working-set peaks (104, 200, and 53 MiB, including startup).
-                _memory_request_policy("cert-manager-controller", floor="112Mi", limit=_CONTROLLER_MEMORY_LIMIT),
-                _memory_request_policy("cert-manager-cainjector", floor="224Mi", limit=_CAINJECTOR_MEMORY_LIMIT),
-                _memory_request_policy("cert-manager-webhook", floor="64Mi", limit=_WEBHOOK_MEMORY_LIMIT),
+                ContainerPolicy.memory_requests_only(
+                    "cert-manager-controller",
+                    cpu_request=_CPU_REQUEST,
+                    memory_floor="112Mi",
+                    memory_limit=_CONTROLLER_MEMORY_LIMIT,
+                ),
+                ContainerPolicy.memory_requests_only(
+                    "cert-manager-cainjector",
+                    cpu_request=_CPU_REQUEST,
+                    memory_floor="224Mi",
+                    memory_limit=_CAINJECTOR_MEMORY_LIMIT,
+                ),
+                ContainerPolicy.memory_requests_only(
+                    "cert-manager-webhook",
+                    cpu_request=_CPU_REQUEST,
+                    memory_floor="64Mi",
+                    memory_limit=_WEBHOOK_MEMORY_LIMIT,
+                ),
                 # The startupapicheck Job and any new containers stay outside the pilot.
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
