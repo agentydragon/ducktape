@@ -24,8 +24,9 @@ Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audie
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
 EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview. Configure
-service SVID allowlists and typed service delegation. TokenReview RBAC and projected-token cleanup remain
-a separate final stage across receivers.
+service SVID allowlists and typed service delegation. The staging render grants no TokenReview
+(`test_workload_trust.py`) and Sandbox Pods project no Dispatcher or History audience token
+(`test_egress.py`), so no projected-token cleanup remains here.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in

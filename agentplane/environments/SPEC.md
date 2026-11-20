@@ -30,8 +30,9 @@ RPCs for up to five seconds before force-closing them. Leadership loss shuts dow
 its RPC listener; clients reconnect and reconcile uncertain mutation outcomes without automatic replay.
 
 EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview. Configure
-service SVID allowlists and typed service delegation. TokenReview RBAC and projected-token cleanup remain
-a separate final stage across receivers.
+service SVID allowlists and typed service delegation. The staging render grants no TokenReview
+(`test_workload_trust.py`) and Sandbox Pods project no Dispatcher or History audience token
+(`test_egress.py`), so no projected-token cleanup remains here.
 
 Omitting `environment_service` retains the controller-only process and existing readiness behavior.
 Deployment configuration enables the listener only after the accepting image is pinned; caller

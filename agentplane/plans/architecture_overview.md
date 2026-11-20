@@ -424,7 +424,7 @@ Held until one is chosen:
   Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). Inbox tags are stored as
   `spec.inboxTags`.
 - **Broader History-read grants** (who may read another principal's Sessions). History's configured
-  `reader_accounts` provide backend-wide access; ordinary callers can read Sessions owned by their
+  `reader_service_callers` provide backend-wide access; ordinary callers can read Sessions owned by their
   exact retained execution principal. Sends are granted by `session_inbox_access` rules that the
   Notification service enforces. Proposed: a rule type of their own for broader reads, in
   `PolicySet`s, enforced by History

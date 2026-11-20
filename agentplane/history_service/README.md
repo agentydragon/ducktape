@@ -23,7 +23,7 @@ Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to
 platform gRPC listener, `http://<local gateway>:3130`. The listener routes History RPCs through an
 mTLS CONNECT to the History Service; the sidecar presents the Sandbox workload SVID, and this
 service scopes the read to the Identity name and UID in that credential. No projected History token
-or `reader_accounts` grant is needed for this path.
+or `reader_service_callers` grant is needed for this path.
 
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
@@ -153,8 +153,8 @@ events. Normal watch positions are ordinals over the caller's retained Sessions,
 not reveal gaps from another principal; configured backend service readers retain the existing
 service-wide opening cursor. Each RPC resolves its workload credential against live Kubernetes
 records. Watch/follow streams end at their lease so continued reads require a newly authorized call.
-Legacy `reader_accounts` settings remain decodable for deployment compatibility but do not grant
-read access. Errors carry a gRPC status and fixed detail:
+Backend reads are granted by `reader_service_callers`; there is no `reader_accounts` setting, and the
+strict settings model refuses the key. Errors carry a gRPC status and fixed detail:
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |

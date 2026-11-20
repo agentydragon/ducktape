@@ -81,8 +81,8 @@ listeners or starting workers. A startup probe delays health checks until that i
 completed. Replicas use the environment's rolling profile, so migrations must remain compatible with
 both old and new writers during rollout. Goose serializes concurrent starts with a PostgreSQL
 advisory session lock. The service needs its own
-PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
-service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
+PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, client TLS
+material for each peer, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
@@ -160,8 +160,6 @@ The receiver admits live workload SVIDs and exact service SVID grants only; it p
 A certificate combined with bearer or delegation metadata is refused. `operator_reader_services`
 admits exact service SPIFFE IDs to the five diagnostic read methods. A service SVID grants neither an
 agent Identity nor inbox ownership, and is not admitted to mutations or other RPCs.
-Legacy Kubernetes bearer listener entries still decode but grant no admission.
-CLEANUP: remove that shared listener variant after every receiver omits it and the rollout completes.
 The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
 paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
@@ -192,8 +190,8 @@ longer makes Runtime-proxy calls and holds no Runtime-proxy reader grant. The se
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects
-service SVIDs for all four peers, with no bearer fallback. The projected tokens and account RBAC
-remain mounted for rollback. A bearer-configured peer instead sets `token_file` to its rotating,
+service SVIDs for all four peers, with no bearer fallback: no peer sets `token_file` and the
+Deployment projects no ServiceAccount token. A bearer-configured peer instead sets `token_file` to its rotating,
 audience-specific projected ServiceAccount token and sends no client certificate. The Action
 Service client rereads that token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.

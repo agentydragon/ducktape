@@ -506,8 +506,8 @@ enabling it or deploying a sampler client that calls these methods.
 
 These settings require the listener's SPIFFE client trust and default to no service grants.
 Receiver settings no longer accept `reader_accounts` or `connection_delegation_actor`; Connection
-delegation is configured by `connection_delegation_service`. Listener `kubernetes_bearer` entries
-remain decodable but grant no admission.
+delegation is configured by `connection_delegation_service`. Listener `auth` accepts only
+`mode: spiffe`; any other mode fails settings decoding.
 Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
 

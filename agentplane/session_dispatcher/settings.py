@@ -135,7 +135,7 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_receiver_and_control_tls(self) -> Settings:
-        # Legacy bearer modes remain decodable during rollout; receivers only authenticate SVIDs.
+        # The listener declares one mode; receivers authenticate SVIDs only.
         if not any(method.mode == "spiffe" for method in self.rpc.auth):
             raise ValueError("rpc.auth must include spiffe")
         if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:

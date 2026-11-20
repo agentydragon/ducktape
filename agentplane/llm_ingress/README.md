@@ -61,8 +61,8 @@ errors, returned to callers, or mounted into a runner or harness container. Ingr
 TokenReview or admit Kubernetes bearers.
 
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
-with `spiffe` roots. Legacy bearer listener settings remain decodable during manifest rollout but
-grant no admission.
+with `spiffe` roots. `spiffe` is the only mode the schema declares, so a bearer entry fails settings
+decoding instead of starting an unauthenticated receiver.
 
 The complete non-secret service settings, including `log_levels`, come from the required YAML file
 named by `AGENTPLANE_LLM_INGRESS_CONFIG_FILE`. Static settings have no per-setting environment or

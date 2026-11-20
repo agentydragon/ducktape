@@ -84,8 +84,9 @@ a live PolicyBinding. Owned workloads retain their existing incarnation checks; 
 requires no Sandbox or Pod. Service certificates supply no workload, ServiceAccount or Pod proof.
 Kubernetes bearer tokens are refused, including valid tokens for the former audience. No TokenReview
 client is constructed for receiver admission. `reader_accounts` and `connection_delegation_actor` are
-not accepted receiver settings. Listener `kubernetes_bearer` entries remain decodable but grant no
-admission.
+not accepted receiver settings. The shared listener schema has one authentication mode, `spiffe`, and
+refuses any other mode while decoding, so a `kubernetes_bearer` entry stops startup rather than
+granting nothing.
 Operator RPCs retain their separately verified OIDC contract and explicit service-plus-OIDC exception.
 
 The Gate admits only explicitly listed full gRPC method names; any other method is denied before
