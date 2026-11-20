@@ -466,7 +466,7 @@ def build_configured_server_arg_parser(
     return parser
 
 
-def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int | None = None) -> int:
+def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int | None = None) -> None:
     """Serve `app` on `host`:`port`, or on the inherited listening socket `fd` when supplied."""
     config = uvicorn.Config(app, host=host, port=port)
     with config.bind_socket() if fd is None else socket.socket(fileno=fd) as sock:
@@ -474,16 +474,15 @@ def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int, fd: int
         print(f"serving Augur API on http://{bound_host}:{bound_port}")
         print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
         uvicorn.Server(config).run(sockets=[sock])
-    return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     args = build_configured_server_arg_parser().parse_args(argv)
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     config = load_augur_config(config_path)
     app = create_app_from_augur_config(config, price_clients=default_price_clients())
-    return run_app(app=app, augur_config=config, host=args.host, port=args.port, fd=args.fd)
+    run_app(app=app, augur_config=config, host=args.host, port=args.port, fd=args.fd)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -68,7 +68,7 @@ def build_dev_app(augur_config: Config, *, api_only: bool = False, price_clients
     return app
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     args = build_configured_server_arg_parser(
         description="Serve the Augur public fixture dev app.",
         api_only_help="Serve only API routes; skip the dev static bundle.",
@@ -76,8 +76,8 @@ def main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
     app = build_dev_app(augur_config, api_only=args.api_only, price_clients=default_price_clients())
-    return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port, fd=args.fd)
+    run_app(app=app, augur_config=augur_config, host=args.host, port=args.port, fd=args.fd)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
