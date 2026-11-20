@@ -3307,6 +3307,11 @@ data:
           "connection": "llm-ingress",
           "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
           "api": "chat_completions",
+          "chat_compaction": {
+            "max_tokens": 8192,
+            "keep_recent_turns": 2,
+            "auto_compact_tokens": 196608
+          },
           "exec_encoding": "json",
           "reasoning_efforts": [
             ""

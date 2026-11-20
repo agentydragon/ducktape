@@ -44,6 +44,7 @@ from agentplane.sampler.settings import (
     AnthropicPromptCacheConfig,
     AnthropicThinkingConfig,
     AuthConfig,
+    ChatCompactionConfig,
     ConnectionConfig,
     ModelConfig,
     ResponsesConfig,
@@ -512,6 +513,9 @@ ENV = Environment(
                 api="chat_completions",
                 exec_encoding="json",
                 reasoning_efforts={""},
+                chat_compaction=ChatCompactionConfig(
+                    max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
+                ),
             )
         },
         connections={

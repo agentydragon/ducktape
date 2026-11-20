@@ -474,6 +474,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
         "connection": "llm-ingress",
         "exec_encoding": "json",
         "reasoning_efforts": [""],
+        "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
     }
     for route in STAGING_APP_MODELS.central_sampler:
         model = sampler["models"][route.id]
