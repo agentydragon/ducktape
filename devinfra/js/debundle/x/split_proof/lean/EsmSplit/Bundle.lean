@@ -50,7 +50,7 @@ structure Stmt where
   effect  : Bool := false
   /-- Pure initialization that must stay ordered against potentially reentrant effects. -/
   observedInit : Bool := false
-  /-- This effect cannot synchronously invoke code that observes other bindings. -/
+  /-- This effect neither reenters nor fails before completion (excluding resource exhaustion). -/
   nonReentrant : Bool := false
   deriving Repr, Inhabited
 

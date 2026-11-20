@@ -59,4 +59,18 @@ def arrowRead : Bundle := [
 
 theorem captured_binding_remains_ordered : arrowRead.conflict 0 1 = true := by decide
 
+/-- The record allocation remains an arbitrary world effect; only the
+nonthrowing, non-reentrant crossing is modeled. -/
+def constantAndRecord : Bundle := [
+  { src := "const a = 1", defs := ["a"], observedInit := true },
+  { src := "const r = { value: 2 }", defs := ["r"], effect := true, nonReentrant := true }
+]
+
+theorem constant_record_do_not_conflict : constantAndRecord.conflict 0 1 = false := by decide
+
+theorem constant_record_commute {V W : Type} (M : Meaning V W) (s : St V W) :
+    constantAndRecord.step M 1 (constantAndRecord.step M 0 s) =
+      constantAndRecord.step M 0 (constantAndRecord.step M 1 s) :=
+  constantAndRecord.step_comm M constant_record_do_not_conflict s
+
 end ObservedInitializer

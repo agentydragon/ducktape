@@ -409,6 +409,8 @@ lean_axiom_test(
         "ObservedInitializer.constant_arrow_commute",
         "ObservedInitializer.arrow_allocations_remain_ordered",
         "ObservedInitializer.captured_binding_remains_ordered",
+        "ObservedInitializer.constant_record_do_not_conflict",
+        "ObservedInitializer.constant_record_commute",
     ],
 )
 
@@ -434,3 +436,4 @@ filegroup(
     srcs = ["Experiments/Translate.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
 )
+
