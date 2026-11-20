@@ -123,32 +123,9 @@ and Sandbox-hosted app-server with isolated tools remain explicit transitional o
 
 ### Isolated Codex execution
 
-- Deployment selects local tools or one isolated executor shared by every Codex Session. Runner
-  configures the app-server's `CODEX_EXEC_SERVER_URL`; failed isolated execution never falls back to
-  local tools. Claude execution is unchanged.
-- In VMs the executor and native harnesses have separate sibling slice budgets under the shared
-  `agentplane.slice`. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
-  and Kubernetes resource limits. It starts `agentplane-execution-service companion`. Workspace and runtime paths are shared
-  under the same Sandbox principal.
-- Runner may launch and initialize the shared app-server while executor startup is still in
+- Runtime may launch and initialize the shared app-server while executor startup is still in
   progress. It admits no Codex Session to that app-server until the executor is ready; a refusal
   or readiness deadline drains the app-server before the waiting Session receives the failure.
-  Execution Service probes native executor progress and exits on terminal backend loss. Runtime owns
-  its process lifetime and fence proof; Host cannot start or restart the executor. Failed tool side
-  effects remain uncertain and are never replayed. Host asks Runtime for in-process Execution
-  readiness to gate the shared app-server. Runtime verifies native protocol readiness before
-  publishing the in-process adapter.
-- Startup fences previous executor work before admitting a replacement native executor. Quiesce fences the executor
-  before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior
-  owned systemd units before admitting work. Runtime coordinates component shutdown so Host native
-  drain and the Execution fence complete before Host stops. Pod ownership
-  loss normally fences the companion's workload process domain and publishes a fresh idle generation
-  while PID 1 stays alive; if that fence fails, the companion exits and the container runtime must
-  fence the whole namespace. Failed cleanup prevents sealing and starting a successor. If a Pod
-  companion cannot spawn Codex, it refuses the claim with its reason and stays available to answer a
-  later claim; no workload generation was started to fence.
-- Code-mode workers, MCP helpers and external daemons are outside the executor budget in the pinned
-  Codex release. Details and configuration: [Codex executor isolation](codex_executor.md).
 - Central sampler execution sessions wait for controller-owned readiness and retries within the
   Gateway's readiness deadline. Closing the session stream cancels its pending readiness wait or connection
   attempt without blocking the Environment Runtime control stream. A refused launch or terminal fencing failure

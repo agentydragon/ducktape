@@ -18,7 +18,6 @@ composes it into the runtime configuration. The [protocol contract](../SPEC.md) 
 1. The template writes `environment-runtime.json`: endpoints, paths, providers, environment declarations,
    platform instructions and isolation policy. `environment_sandbox.py` writes Pod configuration;
    `environment_vm.py` writes VM configuration using the same schema.
-   The process environment field is `environment_runtime_environment` after the direct cutover.
 2. The image supplies only explicitly inherited environment names. Provider `token_env` fields
    name Environment Runtime variables containing credential placeholders; tokens are not serialized in the file.
 3. The Sandbox Controller supplies `launch.json`: namespace, name, UID and optional bootstrap source.
@@ -205,8 +204,7 @@ available peak memory before releasing a native service.
 See [supervision](../supervision/docs/supervision.md) for the unit hierarchy and startup fence.
 
 `/run/agentplane/config/environment-runtime.env` supplies the VM systemd unit's Environment Runtime-only OpenTelemetry
-settings. Pod templates set the corresponding container environment directly. The Go guest loader
-has been removed; the common file explicitly supplies proxy, trust, tool paths and identities.
+settings. Pod templates set the corresponding container environment directly.
 
 ## Provider, Session and telemetry settings
 

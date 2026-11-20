@@ -8,15 +8,9 @@ package defaults to test-only in Bazel.
 
 ## Tests
 
-`//agentplane/env/runtime/internal/coordinator:coordinator_test` and `//agentplane/env/runtime/internal/harnesses/codex:codex_test` run with Go's race detector. The
-Codex router test drives parallel sessions through shared host, request, and thread routing state. The
-journal suite (`//agentplane/env/runtime/journal:journal_test`) also runs with the race detector;
-the runner suite covers process and Session integration. The VM fixture runs the separate
-pure-Go `//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture` test binary against its real systemd manager before starting
-Runner. It exercises direct argv/stream semantics, lost launch replies, Runner death, stop status,
-reaper retries and scoped startup fencing. Ordinary VM Session setup checks workspace creation,
-credentials, resource mapping and detached descendants; VM tools cover execution and OOM.
-The production `//agentplane/env/runtime/cmd:agentplane-environment-runtime` is pure Go.
+Process-supervision acceptance coverage (PID 1 and Execution companion containers, the VM systemd
+fixture and VM scenarios) is described in
+[supervision](../runtime/supervision/docs/supervision.md#acceptance-coverage).
 
 ### Native subagents
 
@@ -51,6 +45,8 @@ in `testing/`, where `launches.py` wires the pinned binaries to a scripted upstr
 runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
 image ([`image.nix`](../images/image.nix)), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
+The App and Sessions integration tests reuse these fixtures through
+[`native_service_fixtures.py`](../../testing/native_service_fixtures.py).
 
 Durability unit tests live beside the code in [`env/runtime/`](../runtime) (`journal/`, `ingress/`,
 `supervision/` and the Session process tests); none are physical power-loss tests.
