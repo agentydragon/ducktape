@@ -356,8 +356,9 @@ function Report() {
             and 256–384 MiB; its two replicas were Ready on separate hosts with
             a PDB allowing one disruption. Both endpoints passed CA and hostname
             verification; admission accepted a valid ExternalSecret and rejected
-            an invalid one. The webhook fails closed, and no eviction was
-            induced.<//
+            an invalid one. At 23:00 UTC the recommender had observed VPA
+            generation 3 and both replicas remained Ready. The webhook fails
+            closed; no eviction was induced.<//
           >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with

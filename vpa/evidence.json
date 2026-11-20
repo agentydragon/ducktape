@@ -20203,6 +20203,10 @@
     "invalid_refresh_interval_dry_run": "denied by validating webhook",
     "failure_policy": "Fail",
     "timeout_seconds": 5,
-    "notes": "TLS and admission dry runs performed before the inventory collection; no eviction was induced. Observed VPA generation was 3 and recommender observedGeneration was 2."
+    "notes": "TLS and admission dry runs performed before the inventory collection; no eviction was induced.",
+    "recommender_verified_at_utc": "2026-11-20T23:00:49Z",
+    "vpa_generation": 3,
+    "recommender_observed_generation": 3,
+    "ready_replicas_after_recommender_cycle": 2
   }
 }

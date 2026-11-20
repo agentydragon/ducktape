@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "973b11b9beaf3d04194b0239c44b98713752bc138ab7418bccedde4b85f9ce18",
-  "report_script_sha256": "45056a39eacae1a749491c2c75a95e929f7875011e4174260192a476e4ebdb0e",
-  "evidence_sha256": "8a4074c52f7e50d562d635c23cd1b08a841eb5b07f3df9c725dbb3e434496244",
+  "report_script_sha256": "10a934a97ed019c7fd099d739806467b1977e10fadd53ae21f61518338f2ae86",
+  "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -64,5 +64,6 @@
   "staging_frontend_vpa_recreate_observed_at_utc": "2026-11-20T22:09:30Z",
   "staging_history_notifications_spread_observed_at_utc": "2026-11-20T22:26:56Z",
   "staging_all_ten_spread_observed_at_utc": "2026-11-20T22:36:37Z",
-  "external_secrets_webhook_recreate_observed_at_utc": "2026-11-20T22:55:54Z"
+  "external_secrets_webhook_recreate_observed_at_utc": "2026-11-20T22:55:54Z",
+  "external_secrets_recommender_observed_at_utc": "2026-11-20T23:00:49Z"
 }
