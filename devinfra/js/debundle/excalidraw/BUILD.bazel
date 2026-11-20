@@ -243,7 +243,7 @@ py_test(
             "roughjs": "$(rlocationpath //:node_modules/roughjs/dir)",
         }),
     },
-    shard_count = 2,
+    shard_count = 4,
     deps = [
         "//:conftest",
         "//testing:asgi",
