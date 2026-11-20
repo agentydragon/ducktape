@@ -262,82 +262,6 @@ def default_disable_service_links_chart(app: App) -> Chart:
     )
 
 
-def require_secret_store_conditions_chart(app: App) -> Chart:
-    return _cluster_policy_chart(
-        app,
-        "require-secret-store-conditions",
-        annotations=_annotations(
-            title="Require ClusterSecretStore Conditions",
-            category="Access Control",
-            severity="high",
-            subject="ClusterSecretStore",
-            description=(
-                "A ClusterSecretStore with no `spec.conditions` is usable from every namespace in the cluster. "
-                "That is not a mild default here: the ESO ServiceAccount holds cluster-wide secret read, so the "
-                "store — not RBAC — is the only thing bounding what an ExternalSecret can pull out of the "
-                "store's `remoteNamespace`. An unfenced `kubernetes-flux-system-secret-store` means any "
-                "namespace can read the GitHub App, the PATs, the AWS Route 53 credentials and `ci-age-key`. "
-                "This requires every store to name at least one namespace in `conditions[].namespaces`, which "
-                "rejects the degenerate forms as well: an empty `conditions: []` (ESO treats it exactly like an "
-                "absent one), a condition carrying no criteria at all, and a bare `namespaceSelector: {}` — an "
-                "empty LabelSelector matches every namespace by the standard Kubernetes convention, so that one "
-                "reads as a fence while being the widest setting available. Requiring an explicit list also "
-                "rules out selector-based fences, which nothing here uses; relax it deliberately if that changes."
-            ),
-        ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            # background: true so the Kyverno background controller also evaluates stores
-            # that already exist. Enforce only sees what is applied from here on, and an
-            # object that predates the policy and is never rewritten is never re-admitted —
-            # a background scan is the only thing that would report one. Nothing in CI
-            # checks this either; it is enforced here and nowhere else. The rule matches on
-            # kind alone and reads no request.userInfo, which is what makes background
-            # evaluation possible; the policies here that set background: false do so
-            # because they need admission-only context.
-            background=True,
-            # Enforce: every ClusterSecretStore reaching this cluster now declares
-            # conditions, including `kubernetes-seaweedfs-secret-store`, which is applied
-            # from gaffer-private and was the last holdout (gaffer-private#383). A store
-            # that arrives without them is rejected at admission rather than merely
-            # reported, so the fence cannot be dropped by a manifest edit.
-            validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="require-conditions",
-                    match=match_resources(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["ClusterSecretStore"], operations=[_CREATE, _UPDATE]
-                        )
-                    ),
-                    validate=Validate.deny(
-                        message=(
-                            "ClusterSecretStore must name the namespaces allowed to use it in "
-                            "spec.conditions[].namespaces; without at least one the store is readable from every "
-                            "namespace and the ESO ServiceAccount has cluster-wide secret read. "
-                            "Store: {{request.object.metadata.name}} (remoteNamespace "
-                            "{{request.object.spec.provider.kubernetes.remoteNamespace || 'n/a'}})."
-                        ),
-                        conditions={
-                            "any": [
-                                # Flattened, so this covers an absent `conditions`, an empty list,
-                                # a condition with no criteria, an empty `namespaces: []`, and a
-                                # bare `namespaceSelector: {}` — which matches every namespace and
-                                # is therefore the widest setting, not a fence.
-                                {
-                                    "key": "{{ request.object.spec.conditions[].namespaces[] || `[]` | length(@) }}",
-                                    "operator": "Equals",
-                                    "value": 0,
-                                }
-                            ]
-                        },
-                    ),
-                )
-            ],
-        ),
-    )
-
-
 def cleanup_controller_jobs_chart(app: App) -> Chart:
     # Aggregates into the kyverno cleanup controller's ClusterRole. Required before
     # any CleanupPolicy can target Jobs: kyverno validates at policy admission that
@@ -385,7 +309,6 @@ CHARTS = (
     require_gitops_chart,
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
-    require_secret_store_conditions_chart,
     cleanup_controller_jobs_chart,
     cleanup_controller_workloads_chart,
     cleanup_controller_sandboxes_chart,

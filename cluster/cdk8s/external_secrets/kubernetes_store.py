@@ -3,7 +3,7 @@
 Our policy for every such store: the API server's CA comes from the `kube-root-ca.crt`
 ConfigMap kube-controller-manager publishes into every namespace, and a `ClusterSecretStore`
 names the namespaces allowed to use it (`conditions`), which the
-`require-secret-store-conditions` Kyverno policy enforces at admission.
+`require-cluster-secret-store-namespaces` native admission policy enforces at admission.
 """
 
 from __future__ import annotations

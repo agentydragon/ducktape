@@ -85,21 +85,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_test(
-    name = "test_require_secret_store_conditions",
-    srcs = ["test_require_secret_store_conditions.py"],
-    data = [
-        "@multitool//tools/kyverno",
-        "@nodejs_linux_amd64//:bin/node",
-    ] + glob(["testdata/cluster_secret_store_*.yaml"]),
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":apply",
-        ":test_support",
-        "//cluster/cdk8s:conftest",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)

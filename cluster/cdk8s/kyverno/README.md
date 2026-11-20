@@ -15,7 +15,7 @@ manifests.
 
 ## Coverage
 
-Tested: `default-disable-service-links` and `require-secret-store-conditions`.
+Tested: `default-disable-service-links`.
 
 `require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does
 not supply. It needs `--userinfo` or a mock admission context.

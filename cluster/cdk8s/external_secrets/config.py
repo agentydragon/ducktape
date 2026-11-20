@@ -6,7 +6,7 @@ so an ExternalSecret added anywhere can pull any Secret out of the store's remot
 only thing bounding that. Keep each list to the namespaces that actually hold a consuming
 ExternalSecret — ESO refuses to reconcile into any namespace not listed here, so an
 omission shows up as a failing ExternalSecret. That every store declares `conditions` at
-all is enforced at admission by the `require-secret-store-conditions` Kyverno policy.
+all is enforced at admission by the `require-cluster-secret-store-namespaces` native policy.
 
 Application-scoped stores live with their applications (`ntfy.py`, ...).
 """
