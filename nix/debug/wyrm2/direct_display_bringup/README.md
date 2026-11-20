@@ -2,7 +2,7 @@
 
 Current, working design (2026-07-17). The display 5090 is wyrm2's **only** local
 graphical seat; remote access is a **session, not a seat**. This supersedes a long,
-cursed multiseat investigation — see [History](#history-archived).
+cursed multiseat investigation — see [History](#history-archived--the-constraints-we-ran-into).
 
 ## Design
 
@@ -19,7 +19,7 @@ cursed multiseat investigation — see [History](#history-archived).
   on [systemd#42247](https://github.com/systemd/systemd/issues/42247) — and we
   don't need two _simultaneous local_ graphical seats (physical vs. remote are
   never both live). So we collapsed to one seat. Full reasoning +
-  the display-manager capability matrix: [History](#history-archived).
+  the display-manager capability matrix: [History](#history-archived--the-constraints-we-ran-into).
 
 ## Wiring
 
