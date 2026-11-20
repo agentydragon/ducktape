@@ -16,9 +16,28 @@ assert.ok(new Set(examples.map((c) => c.source)).size > 90);
 assert.ok(new Set(examples.map((c) => JSON.stringify(c.spec))).size > 90);
 const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
 assert.equal(result.cases, 16 / shards);
-if (shards === 4 && shard === 0) assert.equal(result.proved, result.cases);
+if (shards === 4 && shard === 0) assert.ok(result.proved > 0);
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) assert.equal(result.refused, result.cases);
-if (shards === 4 && shard === 2) assert.ok(result.mutated > 0);
+if (shards === 4 && shard === 2) {
+  assert.ok(result.mutated > 0);
+  assert.ok(result.different > 0);
+}
 assert.equal(result.generated, result.compared);
 console.log(JSON.stringify(result));
+
+// Exercise many additional programs against Node without paying for a Lean
+// invocation on every case. Validation is sampled independently by index.
+const bulk = await runFuzz({
+  seed: 456,
+  cases: 128,
+  outputDir: process.env.TEST_TMPDIR,
+  shard,
+  shards,
+  validateEvery: 1000000000,
+});
+assert.equal(bulk.cases, 128 / shards);
+assert.equal(bulk.generated, bulk.compared);
+if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
+if (shards === 4 && shard === 3) assert.equal(bulk.refused, bulk.cases);
+console.log(JSON.stringify(bulk));

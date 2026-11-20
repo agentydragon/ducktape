@@ -164,6 +164,10 @@ export function makeCase(seed, index) {
     specifiers: publicNames.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
   });
   statements.forEach(([, owner], i) => modules[owner].statements.push(i));
+  const cyclic = index % 16 === 6;
+  const invalidAssignment = index % 16 === 14;
+  if (cyclic) modules[state].imports.push(entry);
+  if (invalidAssignment) modules[entry].statements.push(0);
   const observations = [];
   for (let i = 0; i < 2 + rand(4); i++) observations.push(getters[rand(count)], bumps[rand(count)]);
   observations.push(...getters);
@@ -174,6 +178,8 @@ export function makeCase(seed, index) {
     calls: observations,
     cell0Owner: ranked[owners[0]],
     unsupported: mode === 3,
+    cyclic,
+    invalidAssignment,
   };
 }
 
@@ -226,11 +232,12 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
-        if (!input.unsupported) throw new Error(`supported generated case was refused: ${error}`);
+        if (!input.unsupported && !input.invalidAssignment)
+          throw new Error(`supported generated case was refused: ${error}`);
         keep = false;
         continue;
       }
-      if (input.unsupported) throw new Error("unsupported syntax unexpectedly accepted");
+      if (input.unsupported || input.invalidAssignment) throw new Error("unsupported input unexpectedly accepted");
       summary.generated++;
       if (index % 8 === 2) {
         const file = join(out, input.cell0Owner);
@@ -251,6 +258,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         const verdict = await validateBindings(source, spec, out);
         summary.validated++;
         verdictName = verdict.result;
+        if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;

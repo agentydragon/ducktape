@@ -133,7 +133,8 @@ return values and exceptions after a generated sequence of exported calls. It
 also runs the Lean-backed validator and checks that a proved result agrees with
 Node and that an unsafe result's witness matches the independently observed
 initialization. Some trials mutate generated modules to exercise the validator;
-other trials generate valid but unsupported JavaScript and require refusal.
+other trials generate valid but unsupported JavaScript, cyclic graphs, or
+invalid assignments and check that they are refused or reported unknown.
 
 ```sh
 nix develop .#js-module-proof
