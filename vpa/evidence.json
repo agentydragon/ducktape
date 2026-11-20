@@ -20101,5 +20101,79 @@
     "history_recovery_suites": "4 passed: 2 fresh, 2 cached",
     "notifications_recovery_suites": "2 passed from cache",
     "note": "No deliberate live termination or node-failure test."
+  },
+  "staging_all_ten_spread": {
+    "observed_at_utc": "2026-11-20T22:36:37Z",
+    "pull_requests": [
+      "https://github.com/agentydragon/ducktape/pull/18301",
+      "https://github.com/agentydragon/ducktape/pull/18306",
+      "https://github.com/agentydragon/ducktape/pull/18302"
+    ],
+    "targets": {
+      "actions": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "app": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "environments": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns103656", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "frontend": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Recreate"
+      },
+      "history-service": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "llm-ingress": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns1001419", "ovh-ns104952"],
+        "vpa_mode": "Initial"
+      },
+      "mcp-edge": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "notifications": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "policy-controller": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      },
+      "sessions": {
+        "ready": 2,
+        "activePods": 2,
+        "nodes": ["ovh-ns102453", "ovh-ns103711"],
+        "vpa_mode": "Initial"
+      }
+    },
+    "pdb_healthy_each": 2,
+    "pdb_allowed_disruptions_each": 1,
+    "constraint": "revision-scoped hard hostname spread, maxSkew=1, minDomains=2",
+    "caveat": "No deliberate node failure was tested; readiness does not establish Notifications delivery or uninterrupted in-flight work."
   }
 }

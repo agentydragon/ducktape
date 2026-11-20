@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/3f734ef8a5f6b81f2d5d041603e7529cf671369a/";
+const currentSource = github + "blob/e1763745011c20b11627d08ee485083c7fce576a/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2226`).then((r) => {
+        fetch(`${url}?v=20261120-2236`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -319,16 +319,15 @@ function Report() {
             and no eviction or handoff was tested.<//
           >
           <${Text} component="p"
-            >At 22:27 UTC, staging ${" "}<${Anchor}
-              href=${github + "pull/18301"}
-              >frontend<//
-            >, ${" "}<${Anchor} href=${github + "pull/18306"}
-              >History Service and Notifications<//
-            >${" "}each had two Ready replicas on different nodes, a PDB
-            allowing one disruption, and revision-scoped hard hostname spread.
-            Frontend uses Recreate; History and Notifications remain Initial.
-            Recovery suites passed, but no deliberate live termination or node
-            failure was tested.<//
+            >At 22:36 UTC, all ten staging services in the ${" "}<${Anchor}
+              href=${github + "pull/18302"}
+              >spread cohort<//
+            >${" "}had two updated, Ready replicas on distinct nodes and PDBs
+            allowing one disruption. Frontend uses Recreate; the other nine
+            remain Initial. Historical recovery suites cover selected services,
+            but Pod readiness does not prove current Notifications delivery or
+            uninterrupted in-flight work, and no deliberate node-failure test
+            was performed.<//
           >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
@@ -439,9 +438,9 @@ function Report() {
             checking PDBs, endpoints, spread, capacity and rollout behavior.
             Keep singletons such as ntfy and CDviz in Initial until replacement
             is safe. Preserve VPAs already managing both requests and limits; do
-            not silently weaken their policies. The remaining staging spread
-            cohort needs service-specific recovery checks and a fresh concurrent
-            capacity review before rollout. Storage work has a separate
+            not silently weaken their policies. Check service-specific recovery
+            and capacity before any further promotion to Recreate; PDBs do not
+            guarantee uninterrupted in-flight work. Storage work has a separate
             owner.<//
           ><//
         >
@@ -496,8 +495,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        22:26 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at 3f734ef8a5<//
+        22:36 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at e176374501<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
