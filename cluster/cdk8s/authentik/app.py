@@ -25,6 +25,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
+from cluster.cdk8s.authentik.db import NAMESPACE
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -36,7 +37,6 @@ from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "authentik"
-NAMESPACE = "authentik"
 HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 _HOST_CONFIG_MAP = "host"

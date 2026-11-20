@@ -39,13 +39,13 @@ from litellm_team_crds.io.crossplane.m.litellm import (
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/crossplane-keys"
 NAME = "litellm-crossplane-keys"
-NAMESPACE = "litellm"
 _LITELLM_API_BASE = "http://litellm.litellm.svc.cluster.local:4000"
 _PROVIDER_CONFIG_SECRET = "litellm-crossplane-provider-credentials"
 

@@ -21,6 +21,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.clickhouse.client import NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -28,7 +29,6 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "clickhouse-operator"
-NAMESPACE = "clickhouse"
 _CHART_NAME = "altinity-clickhouse-operator"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/operator"
 _RESTRICTED_CONTAINER = {

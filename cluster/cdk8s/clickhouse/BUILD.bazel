@@ -65,6 +65,7 @@ py_library(
     name = "operator",
     srcs = ["operator.py"],
     deps = [
+        ":client",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",

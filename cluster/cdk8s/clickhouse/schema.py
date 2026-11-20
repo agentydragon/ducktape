@@ -17,13 +17,13 @@ from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
+from cluster.cdk8s.clickhouse.client import NAMESPACE
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "clickhouse-schema"
 OUTPUT_DIR = f"{GENERATED_ROOT}/clickhouse/schema"
-NAMESPACE = "clickhouse"
 _CONFIG_MAP = "clickhouse-aiquota-schema"
 _JOB_NAME = "clickhouse-aiquota-schema-v12"
 _LABELS = {

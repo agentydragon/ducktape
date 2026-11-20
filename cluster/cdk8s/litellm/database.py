@@ -18,8 +18,9 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
+NAMESPACE = "litellm"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
-DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace="litellm")
+DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace=NAMESPACE)
 
 
 def _chart(app: App) -> Chart:
