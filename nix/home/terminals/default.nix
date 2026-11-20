@@ -20,11 +20,8 @@ let
   # system won't honor a lambda-arg default for a declared formal.
   nixGLEnabled = args.nixGLEnabled or (!isNixOS);
 
-  lightScheme = solarizedLight;
-  darkScheme = solarizedDark;
   fontFamily = terminalFont.family;
-  fontSizeValue = terminalFont.size;
-  fontSizeStr = builtins.toString fontSizeValue;
+  fontSizeStr = builtins.toString terminalFont.size;
 
   wrapPkg = pkg: if nixGLEnabled then config.lib.nixGL.wrap pkg else pkg;
   kittyPkg = wrapPkg pkgs.kitty;
@@ -136,8 +133,8 @@ let
   kittyWatcherScript = ./scripts/kitty-theme-watcher.sh;
   weztermConfig =
     let
-      darkSchemeLua = mkWeztermScheme darkScheme false;
-      lightSchemeLua = mkWeztermScheme lightScheme true;
+      darkSchemeLua = mkWeztermScheme solarizedDark false;
+      lightSchemeLua = mkWeztermScheme solarizedLight true;
     in
     ''
       local wezterm = require 'wezterm'
@@ -168,8 +165,6 @@ let
             { key = "w", mods = "CTRL|SHIFT", action = act.CloseCurrentTab { confirm = false } },
             { key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
             { key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
-            { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
-            { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
             { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
             { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
             { key = "c", mods = "CTRL|SHIFT", action = act.CopyTo "ClipboardAndPrimarySelection" },
@@ -252,8 +247,8 @@ in
       };
     };
 
-    xdg.configFile."kitty/themes/solarized-dark.conf".text = mkKittyTheme darkScheme false;
-    xdg.configFile."kitty/themes/solarized-light.conf".text = mkKittyTheme lightScheme true;
+    xdg.configFile."kitty/themes/solarized-dark.conf".text = mkKittyTheme solarizedDark false;
+    xdg.configFile."kitty/themes/solarized-light.conf".text = mkKittyTheme solarizedLight true;
 
     xdg.configFile."ghostty/config".text = ghosttyConfigText;
 

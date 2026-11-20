@@ -17,7 +17,6 @@ in
 import ./gateway.nix { inherit pkgs lib; } "tana-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_tana_key.path;
-  inherit (models) model;
-  inherit (models) haikuModel;
+  inherit (models) model haikuModel;
   gatewayDiscovery = true;
 }

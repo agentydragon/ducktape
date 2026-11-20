@@ -13,8 +13,7 @@ in
 import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_codex_key.path;
-  inherit (models) model;
-  inherit (models) haikuModel;
+  inherit (models) model haikuModel;
   gatewayDiscovery = true;
   # Preserve this wrapper's explicit Claude budgets from model_catalog/nix.py;
   # Codex's configurable window is not proof of subscription serving capacity.

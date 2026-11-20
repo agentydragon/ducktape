@@ -282,12 +282,10 @@ in
     };
 
     # Ensure CDI specs are generated before containerd starts
-    systemd.services.containerd = lib.mkMerge [
-      (lib.mkIf cfg.enableNvidiaRuntime {
-        after = [ "nvidia-container-toolkit-cdi-generator.service" ];
-        wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
-      })
-    ];
+    systemd.services.containerd = lib.mkIf cfg.enableNvidiaRuntime {
+      after = [ "nvidia-container-toolkit-cdi-generator.service" ];
+      wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+    };
 
     # Cilium DaemonSet installs cilium-cni + loopback into /opt/cni/bin at runtime.
     # We just need the directory to exist.
