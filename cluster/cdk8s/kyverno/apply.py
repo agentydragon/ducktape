@@ -34,7 +34,9 @@ class KyvernoApplyResult:
 _SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*\d+,\s*error:\s*(\d+),\s*skip:\s*\d+")
 
 
-def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None) -> KyvernoApplyResult:
+def apply_policy(
+    policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None, *, json_payload: bool = False
+) -> KyvernoApplyResult:
     """Run `kyverno apply` against a resource, parse summary and mutated output.
 
     `set_vars` feeds `--set name=value` pairs into the run. `kyverno apply` unconditionally
@@ -44,13 +46,18 @@ def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str
     precondition depends on an apiCall-populated variable can only be exercised offline by
     supplying that variable's value directly, keyed by the same name the `context` entry
     would have bound it to.
+
+    `json_payload` passes the file as `--json` instead of `--resource`: for a `policies.kyverno.io`
+    policy in `evaluation.mode: JSON` (see `test_utils.policy(json_mode=True)`), the only way to
+    evaluate a custom-resource kind, because offline `kyverno apply` cannot map a CRD's kind to a
+    resource ("failed to map gvk to gvr") and has no flag to load the CRD.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         args: list[str | Path] = [
             _kyverno_bin(),
             "apply",
             str(policy_path),
-            "--resource",
+            "--json" if json_payload else "--resource",
             str(resource_path),
             "-o",
             tmpdir,
