@@ -319,7 +319,7 @@ without proxy support, remove the setting and verify its ConfigMap and rollout.
 ## Runtime lifecycle calls
 
 The controller uses the historically named `runner_gateway_target` to call the stable
-`environments:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
+`environments:8082` Service while sealing a Sandbox with `EnvironmentRuntime.Quiesce` or performing suspend
 admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
 routes the request to its own Runtime connection. No per-Sandbox control Service is created.
 Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the
@@ -353,7 +353,7 @@ proxy's per-replica Runtime observation and callable connection.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
 - The Pod or VM is owned by the Sandbox with `blockOwnerDeletion`, so foreground propagation and
   namespace deletion remove it before the seal completes and the unsealed tail of a Session's
-  journal is lost; background propagation (the `kubectl` and `DeleteSandbox` default) keeps it until
+  journal is lost; background propagation (the `kubectl` and `DeleteEnvironment` default) keeps it until
   the finalizer clears.
 
 ## Status
@@ -369,6 +369,8 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 reason such as `CertificatePending`),
 `VMIStopping`, `IncarnationUnpublished`,
 `IdentityMissing`, `IdentityChanged`,
+`FirecrackerPending`, `FirecrackerLauncherLost`, `FirecrackerStatusUnavailable`,
+`FirecrackerStatusMismatch`, `FirecrackerFailed`,
 `PodConflict` or `VMConflict`
 (a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
 dispatch on typed status fields.

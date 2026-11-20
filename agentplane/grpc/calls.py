@@ -1,5 +1,5 @@
-"""Channel dialing and status translation for Agentplane gRPC clients, including Runner Gateway
-calls that read FAILED_PRECONDITION as a `RefusedError`."""
+"""Channel dialing and status translation for Agentplane gRPC clients; `call_unary` reads
+FAILED_PRECONDITION as a `RefusedError`."""
 
 import ipaddress
 import logging

@@ -191,14 +191,14 @@ The MCP edge's optional `oauth` settings enable its Go authorization server: dis
 registration (DCR), CIMD, authorization, token (code and refresh), revocation, and callback
 endpoints. It pins an upstream OIDC issuer, client, and operator subject; only a verified sign-in of
 that operator completes authorization. The consent page chooses a new Connection or a confirmed
-reconnect and a currently labeled ServiceAccount. A consent decision is one-shot and
+reconnect and a live Identity. A consent decision is one-shot and
 version-checked; code exchange rechecks the choice, activates the grant, and issues local tokens in
 one database transaction. Replaying an exchanged code revokes that grant.
 
 Local access and refresh tokens are opaque; PostgreSQL stores their SHA-256 digests. The upstream
 provider refresh token must be recoverable for renewal, so it is stored as plaintext in
 the MCP edge database's `oauth_authorization.upstream_refresh_token`; the current design accepts
-plaintext database storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
+plaintext database storage. Each `/mcp` request resolves the grant to its Connection's live bound Identity. Grant
 identity and provenance are retained on newly admitted Action receipts, with the authenticated
 component actor kept separate from the effective Identity. Actions does not resolve the Connection
 or treat its IDs as authority. Receipts written before attribution recording, and direct calls, have
@@ -440,8 +440,8 @@ is accepted.
 ## Action policy sets and bindings
 
 `PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) supply Action policies. The Go
-[`informer`](internal/admission/informer/informer.go) watches the policy namespace's sets and bindings and labeled
-caller ServiceAccounts, and writes `ActionsReady` on bindings. The Go
+[`informer`](internal/admission/informer/informer.go) watches the policy namespace's sets, bindings and
+Identities, and writes `ActionsReady` on bindings. The Go
 [`policies.Provider`](internal/admission/policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
 a matching allow records `PolicyEvidence`, including the matched rule and any resolved GitHub
 repository. A set has no deny form: no match leaves the request for a human. The Go
@@ -461,7 +461,7 @@ Go informer and provider. Staging's network policy admits `api.github.com:443` f
 public-repository lookup.
 
 The end-to-end proof is `//agentplane/system_tests/suites/mcp:test_services`, which creates the set and binding
-for the Sandbox it launches through the Runner Gateway's `EnvironmentService` (see [the system tests README](../system_tests/README.md))
+for the Sandbox it launches through the Environments `EnvironmentService` (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth
 edge composition are covered by `//agentplane/action_service/cmd:integration_test`.

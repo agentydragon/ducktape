@@ -291,9 +291,9 @@ nested tools, executor, effect journal and History export.
 }
 ```
 
-The Go implementation separates native protocol adapters into `providers/anthropic/` and `providers/responses/` packages.
-Both depend on `protocol/` for content, tool invocations, context operations and the evidence sink;
-neither imports the sampler or the other API package. The sampler owns settings, credentials,
+The Go implementation separates native protocol adapters into `providers/anthropic/`, `providers/responses/`
+and `providers/chatcompletions/` packages. Each depends on `protocol/` for content, tool invocations,
+context operations and the evidence sink; none imports the sampler or another API package. The sampler owns settings, credentials,
 leases, effect intents, execution and storage. Native compaction plans prepare requests and validate
 replacements; the sampler commits the request before dispatch and applies the replacement under
 its context and lease fences.

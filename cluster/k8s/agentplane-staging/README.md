@@ -122,8 +122,8 @@ The operator-supplied `github-app.sops.yaml` contains the `agentplane-github-app
 with only `private-key` and `webhook-secret`. The staging Kustomization includes it for
 Flux decryption. The notification server reads these through Secret-backed
 `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY` and
-`AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables; the migration
-container does not receive them. Existing MCP credentials/callbacks are unchanged.
+`AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables. Existing MCP
+credentials/callbacks are unchanged.
 Testing has no GitHub configuration or Secret references.
 
 App **5188971** is enabled and the operator confirmed installation on all their repositories.

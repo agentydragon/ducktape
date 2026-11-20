@@ -242,7 +242,7 @@ Delivered job payloads contain the accepted job/run IDs, steps, status and concl
 
 GitHub subscriptions consider accepted deliveries after their creation boundary. Catch-up,
 late PR/commit association matching and delivery-ID deduplication are bounded by the configured
-[raw delivery retention](../README.md#raw-github-delivery-retention). A delivery that expires before
+[raw delivery retention](../README.md#github-event-retention). A delivery that expires before
 matching is no longer available for catch-up. Redelivery after expiry is accepted as new, but an
 inbox already containing the event still deduplicates it. Delivered inbox payload copies have
 their own 30-day lifetime.

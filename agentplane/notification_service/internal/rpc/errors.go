@@ -26,7 +26,7 @@ func (e admissionRefused) Unwrap() error { return e.err }
 var errGitHubDisabled = errors.New("GitHub provider is disabled")
 
 // errSandboxMissing is a destination that names no Sandbox the caller may use: it is missing, outside the
-// service's namespace, another incarnation, or, for a subscription, another account's.
+// service's namespace, another incarnation, or not running as the recipient Identity.
 var errSandboxMissing = errors.New("destination Sandbox not found")
 
 var (

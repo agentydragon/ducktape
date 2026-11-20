@@ -66,19 +66,9 @@ service wake budgets by exact SPIFFE ID.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
 `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or input is
-opened or replayed.
-
-The CLI exposes `agentplane environments list` and
-`agentplane environments get NAMESPACE NAME UID`, and
-`agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`; all use
-`AGENTPLANE_ENVIRONMENTS_URL` with an optional `AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when a
-dedicated EnvironmentService route is configured. Otherwise they retain the compatibility behavior
-of using `AGENTPLANE_SESSIONS_URL` and its optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer. A
-dedicated environments credential is never sent to the Sessions endpoint, and a Sessions credential
-is never sent to a dedicated environments endpoint. Workload SVID routes need no bearer.
-
-The resume response reports acceptance, not readiness. Reconcile an uncertain reply before taking
-another action; wait adapters for the CLI and Action/MCP surfaces remain separate work.
+opened or replayed. Reconcile an uncertain reply before taking another action. The
+`agentplane environments` commands and their endpoint and credential selection are in the
+[Agent CLI](../../../docs/agent_cli.md#commands).
 
 For a child Session, choose a separate path under the configured root, such as
 `/state/workspaces/ci-latency-2026-10-31`. The Runner creates missing cwd directories while materializing
