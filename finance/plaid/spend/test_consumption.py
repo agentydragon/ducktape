@@ -27,28 +27,16 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.reconciliation import ReportStatus
+from finance.plaid.spend.testing.transaction import make_transaction
 
 _TODAY = date(2026, 4, 1)
 _ZONE = ZoneInfo("America/Los_Angeles")
 
 
 def transaction(name: str, amount: str = "10.00", **changes: object) -> Transaction:
-    return Transaction.model_validate(
-        {
-            "account_id": "card",
-            "transaction_id": name,
-            "pending_transaction_id": None,
-            "date": date(2026, 3, 10),
-            "amount": Decimal(amount),
-            "pending": False,
-            "name": name,
-            "merchant_name": None,
-            "pfc_primary": None,
-            "pfc_detailed": None,
-            "currency": "USD",
-            **changes,
-        }
-    )
+    return make_transaction(
+        account_id="card", transaction_id=name, date=date(2026, 3, 10), amount=Decimal(amount), name=name
+    ).model_copy(update=changes)
 
 
 def policy() -> AllowancePolicy:

@@ -457,6 +457,7 @@ py_test(
         ":consumption",
         ":reconciliation",
         "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
