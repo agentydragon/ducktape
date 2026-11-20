@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "e323a6cf792dddf4cfc807c14c378a27f833989d1660180e7d3f5cbde0f676ec",
-  "evidence_sha256": "dab16de97edd4f349fc1661dc0420514c2a70b1ed5396b8e168e70d261592e54",
+  "report_script_sha256": "b316878e0b6e69562f2bee7ba9c90834b29b80d423b36653cd95b1a7db6dc118",
+  "evidence_sha256": "601edfe3eaa92563acc631db4a42abd464275c4e1608ece81c629f33c6d2ace6",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -39,5 +39,8 @@
   "agentplane_staging_initial_at_utc": "2026-11-20T17:59:43Z",
   "agentplane_staging_admission_at_utc": "2026-11-20T18:03:02Z",
   "web_frontend_ha_at_utc": "2026-11-20T18:26:35Z",
-  "clickhouse_exporter_initial_at_utc": "2026-11-20T18:37:51Z"
+  "clickhouse_exporter_initial_at_utc": "2026-11-20T18:37:51Z",
+  "agentplane_staging_controllers_at_utc": "2026-11-20T20:17:50Z",
+  "secret_store_background_recovery_at_utc": "2026-11-20T20:17:50Z",
+  "crossplane_site_spread_at_utc": "2026-11-20T20:21:11Z"
 }

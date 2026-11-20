@@ -19777,5 +19777,83 @@
     },
     "clickhouse_and_keeper_statefulset_vpas": "Off",
     "natural_replacement_observed": false
+  },
+  "agentplane_staging_controllers": {
+    "observed_at_utc": "2026-11-20T20:17:50Z",
+    "pr_url": "https://github.com/agentydragon/ducktape/pull/18245",
+    "merge_commit": "89798226c1ef33cf0488bcaceadb75c20a441148",
+    "targets": ["environments", "policy-controller"],
+    "update_mode": "Initial",
+    "controlled_resources": ["memory"],
+    "controlled_values": "RequestsOnly",
+    "memory_bounds": ["64Mi", "112Mi"],
+    "recommendations": ["100Mi", "100Mi"],
+    "deployments_ready": "2/2 each",
+    "existing_pods_predate_change": true,
+    "admission_verification": {
+      "kind": "server-side Pod CREATE dry runs with real ReplicaSet owners",
+      "pods_created": 0,
+      "admitted_cpu_request": "10m",
+      "admitted_memory_request": "100Mi",
+      "limits_preserved": true
+    },
+    "natural_replacement_observed": false
+  },
+  "secret_store_background_recovery": {
+    "observed_at_utc": "2026-11-20T20:17:50Z",
+    "migration_pr": "https://github.com/agentydragon/ducktape/pull/18199",
+    "fix_pr": "https://github.com/agentydragon/ducktape/pull/18249",
+    "fix_merge_commit": "701d88325bfb320b3bad021cd3579887323f0cda",
+    "closed_draft_pr": "https://github.com/agentydragon/ducktape/pull/18172",
+    "old_reports": 2,
+    "current_stores": 60,
+    "fresh_uid_matched_background_pass_results": 60,
+    "scan_result_time_utc": ["2026-11-20T20:16:00Z", "2026-11-20T20:16:01Z"],
+    "policy_generation": 2,
+    "policy_ready": true,
+    "served_api_versions": ["v1"],
+    "last_wildcard_error_at_utc": "2026-11-20T20:01:36Z",
+    "native_admission_dry_run": {
+      "valid_store": "allowed",
+      "unfenced_store": "denied by native ValidatingAdmissionPolicy",
+      "isolated_kyverno_denial_proven": false
+    },
+    "next_hourly_scan_observed": false,
+    "launcher_validation_migration_pr": "https://github.com/agentydragon/ducktape/pull/18231",
+    "launcher_validation_policy_ready": true,
+    "legacy_launcher_mutation_rules": 3,
+    "fresh_launcher_end_to_end_parity_verified": false
+  },
+  "crossplane_site_spread": {
+    "observed_at_utc": "2026-11-20T20:21:11Z",
+    "pr_url": "https://github.com/agentydragon/ducktape/pull/18253",
+    "merge_commit": "270ff4ce5e9d6748fda98016457d42fe485c9105",
+    "flux_ready": true,
+    "ready_endpoints": [
+      {
+        "node": "optiplex",
+        "zone": "home-lan",
+        "ip": "10.244.8.97"
+      },
+      {
+        "node": "wyrm2",
+        "zone": "atlas",
+        "ip": "10.244.5.74"
+      },
+      {
+        "node": "ovh-ns103711",
+        "zone": "hil-ovh",
+        "ip": "10.244.2.187"
+      }
+    ],
+    "pdb_min_available": 2,
+    "pdb_disruptions_allowed": 1,
+    "leader_pod": "crossplane-849797db96-88fl7",
+    "lease_renewed_at_utc": "2026-11-20T20:21:11.527654Z",
+    "memory_request": "671629701",
+    "memory_limit": "1Gi",
+    "sidekiq_ready": "1/1",
+    "fault_injection_tested": false,
+    "durable_capacity_proven": false
   }
 }
