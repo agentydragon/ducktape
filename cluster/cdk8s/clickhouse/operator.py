@@ -7,10 +7,14 @@ chart values that must stay encrypted; the HelmRelease reads it through `valuesF
 
 from __future__ import annotations
 
+import yaml
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecDriftDetection,
     HelmReleaseSpecDriftDetectionMode,
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
@@ -21,9 +25,11 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
+_CHART_NAME = "altinity-clickhouse-operator"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/operator"
 _RESTRICTED_CONTAINER = {
     "allowPrivilegeEscalation": False,
@@ -32,6 +38,7 @@ _RESTRICTED_CONTAINER = {
     "seccompProfile": {"type": "RuntimeDefault"},
 }
 _KUBECTL_UID = 65532
+_OPERATOR_REQUESTS = {"cpu": "50m", "memory": "128Mi"}
 
 
 def _values() -> dict[str, object]:
@@ -53,7 +60,7 @@ def _values() -> dict[str, object]:
             "containerSecurityContext": {**_RESTRICTED_CONTAINER, "runAsUser": _KUBECTL_UID},
         },
         "operator": {
-            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+            "resources": {"requests": _OPERATOR_REQUESTS, "limits": {"cpu": "500m", "memory": "512Mi"}},
             "containerSecurityContext": _RESTRICTED_CONTAINER,
         },
         "metrics": {
@@ -89,17 +96,28 @@ def namespace_chart(app: App) -> Chart:
 
 def helmrelease_chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
+    annotations = namespaces.initial_memory_request_annotations(
+        ContainerPolicy.memory_requests_only(
+            "metrics-exporter", cpu_request="25m", memory_floor="96Mi", memory_limit="128Mi"
+        ),
+        # The operator was previously OOMKilled under its current limit. Leave
+        # it out of new sizing, and pin requests against cached recommendations.
+        ContainerPolicy(
+            container_name=_CHART_NAME,
+            controlled_values=ControlledValues.REQUESTS_ONLY,
+            min_allowed=_OPERATOR_REQUESTS,
+            max_allowed=_OPERATOR_REQUESTS,
+            mode="Off",
+        ),
+    )
     helm_release(
         chart,
         NAME,
         NAMESPACE,
         repository=oci_helm_repository(
-            chart,
-            "altinity-clickhouse-operator",
-            "flux-system",
-            url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart",
+            chart, _CHART_NAME, "flux-system", url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart"
         ),
-        chart="altinity-clickhouse-operator",
+        chart=_CHART_NAME,
         version="0.27.3",
         interval="30m",
         chart_interval="12h",
@@ -114,6 +132,30 @@ def helmrelease_chart(app: App) -> Chart:
             )
         ],
         values=_values(),
+        # The chart only exposes common and Pod annotations. Goldilocks reads
+        # the Deployment metadata, so keep these annotations scoped to that object.
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            patch=yaml.safe_dump(
+                                {
+                                    "apiVersion": "apps/v1",
+                                    "kind": "Deployment",
+                                    "metadata": {
+                                        "name": f"{NAME}-{_CHART_NAME}",
+                                        "namespace": NAMESPACE,
+                                        "annotations": {key: str(value) for key, value in annotations.items()},
+                                    },
+                                },
+                                sort_keys=False,
+                            )
+                        )
+                    ]
+                )
+            )
+        ],
     )
     return chart
 
