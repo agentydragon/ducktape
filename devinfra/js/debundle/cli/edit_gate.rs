@@ -123,10 +123,7 @@ impl GraphEditArgs {
     }
 }
 
-/// How a spec-mutating CLI verb validates its edit. Replaces the
-/// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
-/// `(false, None)` combination used to silently skip the
-/// realizability gate.
+/// How a spec-mutating CLI verb validates its edit.
 #[derive(Debug)]
 pub enum Gate<'a> {
     /// Run name-collision checks and the post-edit realizability +

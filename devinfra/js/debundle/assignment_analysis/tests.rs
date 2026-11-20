@@ -225,9 +225,7 @@ fn cross_destination_lazy_write_is_rejected() {
     );
 }
 
-/// Sorted distinct destination modules across a conflict's claims —
-/// the typed equivalent of the prior string-rendered
-/// `conflicting_modules` field on `AtomicGroupConflictReport`.
+/// Sorted distinct destination modules across a conflict's claims.
 fn distinct_claim_modules(conflict: &AtomicGroupConflict) -> Vec<ModuleId> {
     let mut modules: Vec<ModuleId> = conflict
         .claims
