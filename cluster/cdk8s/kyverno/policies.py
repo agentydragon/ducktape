@@ -165,68 +165,6 @@ def require_gitops_chart(app: App) -> Chart:
     )
 
 
-def default_revision_history_limit_chart(app: App) -> Chart:
-    """Defaults spec.revisionHistoryLimit to 3 on workloads that don't set it.
-
-    The apiserver default is 10, so every Deployment that omits the field keeps up to 10
-    old (scaled-to-zero) ReplicaSets. Across ~138 Deployments that left ~660 dead
-    ReplicaSets around, inflating kube-state-metrics: it emits 9 kube_replicaset_*
-    series per RS and caches every object, which was a large part of why KSM outgrew its
-    memory limit and started OOMKilling. Capping history to 3 lets the Deployment
-    controller garbage-collect the excess while keeping a few revisions for rollback.
-
-    Only defaults when the field is unset, so it never fights a workload (or its Helm
-    chart / Flux source) that sets revisionHistoryLimit explicitly.
-
-    Admission-only (background: false) because the Kyverno background controller has no
-    RBAC to update these workloads. It doesn't need to: matching UPDATE means the
-    existing backlog clears on each object's next Flux/operator reconcile (an SSA apply
-    is an UPDATE admission), after which the controller prunes old ReplicaSets.
-    StatefulSets/DaemonSets are covered too (same field, bounds ControllerRevision
-    history).
-    """
-    return _cluster_policy_chart(
-        app,
-        "default-revision-history-limit",
-        annotations=_annotations(
-            title="Default revisionHistoryLimit",
-            category="Best Practices",
-            severity="low",
-            subject="Deployment, StatefulSet, DaemonSet",
-            description=(
-                "Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and DaemonSets that do not "
-                "specify it, to bound accumulated revision history (dead ReplicaSets / ControllerRevisions) and "
-                "the kube-state-metrics series and memory that track them."
-            ),
-        ),
-        spec=ClusterPolicySpec(
-            admission=True,
-            background=False,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="default-revision-history-limit",
-                    match=match_resources(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
-                        )
-                    ),
-                    preconditions={
-                        "all": [
-                            # Fire only when the field is unset (null coalesces to the -1 sentinel).
-                            {
-                                "key": "{{ request.object.spec.revisionHistoryLimit || `-1` }}",
-                                "operator": "Equals",
-                                "value": -1,
-                            }
-                        ]
-                    },
-                    mutate=ClusterPolicySpecRulesMutate(patch_strategic_merge={"spec": {"revisionHistoryLimit": 3}}),
-                )
-            ],
-        ),
-    )
-
-
 def default_disable_service_links_chart(app: App) -> Chart:
     """Disables Kubernetes' legacy Service-to-environment-variable injection by default.
 
@@ -442,7 +380,6 @@ def cleanup_controller_sandboxes_chart(app: App) -> Chart:
 
 CHARTS = (
     require_gitops_chart,
-    default_revision_history_limit_chart,
     default_disable_service_links_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
