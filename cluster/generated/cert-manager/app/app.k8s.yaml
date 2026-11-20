@@ -80,8 +80,20 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     webhook:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: webhook
+                  app.kubernetes.io/instance: cert-manager
+              topologyKey: kubernetes.io/hostname
       extraArgs:
         - --dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 2
+      replicaCount: 3
       resources:
         limits:
           cpu: 100m

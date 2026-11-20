@@ -97,6 +97,18 @@ def _values() -> dict[str, object]:
             "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
         },
         "webhook": {
+            "replicaCount": 3,
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 2},
+            "affinity": {
+                "podAntiAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": [
+                        {
+                            "labelSelector": {"matchLabels": _WEBHOOK_METRICS.pods.selector},
+                            "topologyKey": "kubernetes.io/hostname",
+                        }
+                    ]
+                }
+            },
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Additional DNS names for the webhook certificate.
             "extraArgs": [
