@@ -217,7 +217,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
-                # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.
+                # never go to BuildBuddy/RBE or any external CI. See haku_ci/README.md.
                 "actions": {"ENABLED": True},
                 "metrics": {"ENABLED": True},
                 "security": {

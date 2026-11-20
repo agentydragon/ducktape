@@ -34,7 +34,6 @@ _ROUTES = {
     "grocy-vallejo": grocy.hostname("vallejo"),
     # ActivityWatch's read-only proxy.
     "activitywatch": "activitywatch.allegedly.works",
-    # The OpenClaw mitmproxy traffic viewer (admin-only).
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",

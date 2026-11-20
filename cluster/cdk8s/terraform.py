@@ -22,11 +22,9 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     Terraform,
     TerraformSpec,
     TerraformSpecBackendConfig,
-    TerraformSpecDependsOn,
     TerraformSpecRunnerPodTemplate,
     TerraformSpecRunnerPodTemplateSpec,
     TerraformSpecRunnerPodTemplateSpecEnv,
-    TerraformSpecRunnerPodTemplateSpecEnvFrom,
     TerraformSpecRunnerPodTemplateSpecEnvValueFrom,
     TerraformSpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef,
     TerraformSpecRunnerPodTemplateSpecResources,
@@ -46,8 +44,6 @@ from cluster.cdk8s.secret_ref import SecretKey
 from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "flux-system"
-STATE_DATABASE_CONNECTION_STRING = db.STATE_CONNECTION_STRING
-STATE_DATABASE_PASSWORD = db.STATE_PASSWORD
 
 # Requests only. Without them runner pods are BestEffort, so the scheduler counts them as free and
 # stacks a synchronised wave of up to a dozen on one node. Observed per runner: median working set
@@ -96,9 +92,7 @@ def tofu_state_terraform(
     store_readable_plan: TerraformSpecStoreReadablePlan | None = None,
     targets: Sequence[str] | None = None,
     vars: Sequence[TerraformSpecVars] | None = None,
-    depends_on: Sequence[TerraformSpecDependsOn] | None = None,
     env: Sequence[TerraformSpecRunnerPodTemplateSpecEnv] = (),
-    env_from: Sequence[TerraformSpecRunnerPodTemplateSpecEnvFrom] = (),
     node_selector: Mapping[str, str] | None = None,
     volumes: Sequence[TerraformSpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformSpecRunnerPodTemplateSpecVolumeMounts] = (),
@@ -124,14 +118,12 @@ def tofu_state_terraform(
             targets=targets,
             service_account_name="tf-runner",
             backend_config=TerraformSpecBackendConfig(
-                custom_configuration=f'backend "pg" {{\n  conn_str    = "{STATE_DATABASE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
+                custom_configuration=f'backend "pg" {{\n  conn_str    = "{db.STATE_CONNECTION_STRING}"\n  schema_name = "{schema}"\n}}\n'
             ),
             vars=vars,
-            depends_on=depends_on,
             runner_pod_template=TerraformSpecRunnerPodTemplate(
                 spec=TerraformSpecRunnerPodTemplateSpec(
-                    env_from=list(env_from) or None,
-                    env=[secret_env("PGPASSWORD", STATE_DATABASE_PASSWORD), *env],
+                    env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
                     node_selector=node_selector,
                     resources=_RUNNER_RESOURCES,
                     volumes=list(volumes) or None,
@@ -148,12 +140,6 @@ def gitops_terraform(
     *,
     module: ArtifactGeneratorSpecArtifacts,
     variables: BaseModel | None,
-    additional_vars: Sequence[TerraformSpecVars] = (),
-    interval: str = "15m",
-    depends_on: Sequence[Terraform] = (),
-    env: Sequence[TerraformSpecRunnerPodTemplateSpecEnv] = (),
-    env_from: Sequence[TerraformSpecRunnerPodTemplateSpecEnvFrom] = (),
-    schema: str | None = None,
     store_readable_plan: TerraformSpecStoreReadablePlan | None = None,
     auto_apply: bool = True,
     node_selector: Mapping[str, str] | None = None,
@@ -163,17 +149,11 @@ def gitops_terraform(
     """The module `module` packages (`gitops_module`), run from that artifact and, unless
     `auto_apply=False`, auto-approved. Without auto-apply each run plans and waits for a person to
     set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.
-    The module directory's name is the CR's name and, underscored, its state schema unless
-    `schema` names the one its state already lives in.
+    The module directory's name is the CR's name and, underscored, its state schema.
 
     `variables` models the module's variables.tf (None: set none); each field is written
     structurally into the runner's tfvars, so a nested map arrives as a Terraform
     map/object, not a string.
-
-    `additional_vars` appends typed tofu-controller vars, for values sourced from a Kubernetes
-    Secret without placing the credential in plaintext `spec.vars`.
-
-    `interval` controls periodic drift checks; the default is 15 minutes.
 
     `store_readable_plan=HUMAN` writes each plan's diff to the `tfplan-default-<name>`
     ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
@@ -190,25 +170,19 @@ def gitops_terraform(
         scope,
         id,
         name=name,
-        schema=schema or gitops_state_schema(name),
+        schema=gitops_state_schema(name),
         source_ref=TerraformSpecSourceRef(
             kind=TerraformSpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=flux.NAMESPACE
         ),
         path=f"./{directory}",
-        interval=interval,
+        interval="15m",
         approve_plan="auto" if auto_apply else None,
         store_readable_plan=store_readable_plan,
         vars=[
-            *(
-                TerraformSpecVars(name=key, value=value)
-                for key, value in (variables.model_dump(mode="json").items() if variables is not None else ())
-            ),
-            *additional_vars,
+            TerraformSpecVars(name=key, value=value)
+            for key, value in (variables.model_dump(mode="json").items() if variables is not None else ())
         ]
         or None,
-        depends_on=[TerraformSpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
-        env=env,
-        env_from=env_from,
         node_selector=node_selector,
         volumes=volumes,
         volume_mounts=volume_mounts,

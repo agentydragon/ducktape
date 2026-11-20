@@ -49,10 +49,9 @@ credentials.
 
 ## Moving existing resources
 
-When moving live resources between Flux Kustomizations, follow Flux's staged
-ownership-transfer procedure: disable pruning on the old owner, reconcile the
-move and verify the new inventory, then restore pruning. Do not perform the move
-in one reconciliation with pruning enabled.
+When moving live resources between Flux Kustomizations, follow
+[AGENTS.md](AGENTS.md#restructuring-which-kustomization-owns-an-object-land-it-in-two-steps)
+and [the stateful-migration procedure](../AGENTS.md#migrating-stateful-flux-kustomizations).
 
 ## Scope
 

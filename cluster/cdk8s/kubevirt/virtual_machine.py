@@ -12,7 +12,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpec,
     VirtualMachineSpecTemplate,
     VirtualMachineSpecTemplateSpec,
-    VirtualMachineSpecTemplateSpecAffinity,
     VirtualMachineSpecTemplateSpecDomain,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainDevices,
@@ -27,7 +26,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecNetworks,
     VirtualMachineSpecTemplateSpecNetworksPod,
-    VirtualMachineSpecTemplateSpecTolerations,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
 )
@@ -64,8 +62,6 @@ def container_disk_template(
     controller_attached_disks: Sequence[str] = (),
     firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
     root_disk_serial: str | None = None,
-    affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
-    tolerations: Sequence[VirtualMachineSpecTemplateSpecTolerations] | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachineSpecTemplate:
@@ -79,8 +75,6 @@ def container_disk_template(
         metadata=k8s.ObjectMeta(labels=dict(labels)),
         spec=VirtualMachineSpecTemplateSpec(
             node_selector=dict(node_selector) if node_selector is not None else None,
-            affinity=affinity,
-            tolerations=list(tolerations) if tolerations is not None else None,
             domain=VirtualMachineSpecTemplateSpecDomain(
                 cpu=cpu,
                 resources=resources,

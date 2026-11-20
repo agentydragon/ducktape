@@ -42,8 +42,6 @@ class EnvironmentFirecrackerTemplate(Construct):
         runner_image: str,
         platform_instructions: str,
         harness_env: Mapping[str, str],
-        boot_image: str = BOOT_IMAGE,
-        launcher_image: str = LAUNCHER_IMAGE,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
@@ -99,7 +97,7 @@ class EnvironmentFirecrackerTemplate(Construct):
         memory = resources.guest_memory_bytes + 512 * 1024 * 1024
         launcher = k8s.Container(
             name="environment-runtime",
-            image=launcher_image,
+            image=LAUNCHER_IMAGE,
             args=["--config", "/run/agentplane/firecracker/config.json"],
             env=[wiring.path_env],
             security_context=k8s.SecurityContext(
@@ -167,7 +165,7 @@ class EnvironmentFirecrackerTemplate(Construct):
                 {
                     "firecracker": {
                         "pod": sandbox_pod.render_pod_template(labels, pod),
-                        "bootImage": boot_image,
+                        "bootImage": BOOT_IMAGE,
                         "runnerImage": runner_image,
                         "vcpuCount": resources.guest_vcpu_count,
                         "memoryMiB": resources.guest_memory_bytes // (1024 * 1024),

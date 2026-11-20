@@ -43,8 +43,8 @@ SPEND = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-spend")
 _READONLY_CONSUMER = "haku-sandbox"
 _READONLY_READER = "plaid-mcp-db-readonly-reader"
 _PROVISIONER_LABELS = {"app": "plaid-mcp-db-readonly-provisioner"}
-_SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
-_SQL_FILE = "readonly-role.sql"
+SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
+SQL_FILE = "readonly-role.sql"
 
 
 def _cluster(chart: Chart) -> None:
@@ -207,7 +207,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                                 " exit 1; fi\n"
                                 "  sleep 2\n"
                                 "done\n"
-                                f"exec psql --set=ON_ERROR_STOP=1 -f /sql/{_SQL_FILE}\n"
+                                f"exec psql --set=ON_ERROR_STOP=1 -f /sql/{SQL_FILE}\n"
                             ],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
@@ -219,7 +219,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
                         )
                     ],
-                    volumes=[k8s.Volume(name="sql", config_map=k8s.ConfigMapVolumeSource(name=_SQL_CONFIG_MAP))],
+                    volumes=[k8s.Volume(name="sql", config_map=k8s.ConfigMapVolumeSource(name=SQL_CONFIG_MAP))],
                 ),
             ),
         ),

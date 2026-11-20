@@ -22,7 +22,7 @@ from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY
+from cluster.cdk8s.cert_manager import cluster_ca
 
 _ENVIRONMENT_RUNTIME_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
@@ -75,8 +75,8 @@ def guest_config_data(
                 else TLS(
                     cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                     key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
-                    ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
-                    client_ca_file=f"{_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
+                    ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}",
+                    client_ca_file=f"{_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}",
                 )
             ),
         ),

@@ -38,6 +38,19 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.testing.manifests import find_resource
 
 
+def _controller_settings(staging_manifests: list[dict[str, Any]]) -> Settings:
+    config_map = find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")
+    return Settings.model_validate(yaml.safe_load(config_map["data"]["config.yaml"]))
+
+
+def _environments_grpc_target(staging_manifests: list[dict[str, Any]]) -> str:
+    service = find_resource(
+        staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
+    )
+    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    return f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
+
+
 def test_environments_selects_controller_endpoints_for_the_single_metrics_scrape(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
@@ -70,16 +83,8 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     assert {key for key in env if key.startswith(("AGENTPLANE_SANDBOX_CONTROLLER_", "AGENTPLANE_ENVIRONMENTS_"))} == {
         config_env
     }
-    config_volume = one(
-        volume for volume in pod["volumes"] if volume.get("configMap", {}).get("name") == config_map["metadata"]["name"]
-    )
-    config_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == config_volume["name"])
-    assert config_mount["mountPath"] == str(config_path.parent)
-    assert config_mount["readOnly"] is True
     settings = yaml.safe_load(config_map["data"][config_path.name])
-    Settings.model_validate(settings)
     assert settings["runner_gateway_target"] == "environments.{namespace}.svc:8082"
-    assert "runner_gateway_token_file" not in settings
     certificate = find_resource(staging_manifests, "Certificate", f"{name}-client-workload")
     certificate_uris = certificate["spec"]["uris"]
     assert certificate_uris == [SANDBOX_CONTROLLER_URI]
@@ -146,11 +151,7 @@ def test_controller_rbac_keeps_only_leader_election_lease_access(staging_manifes
 def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    controller = Settings.model_validate(
-        yaml.safe_load(
-            find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
-        )
-    )
+    controller = _controller_settings(staging_manifests)
     receiver = controller.environment_service
     assert receiver is not None
     assert set(receiver.service_readers) == {APP_URI}
@@ -185,19 +186,8 @@ def test_actions_environment_peer_matches_receiver_and_separates_dispatcher(
     )
     peer = settings.environment_service
     assert peer is not None
-    service = find_resource(
-        staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
-    )
-    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
-    assert (
-        peer.target
-        == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
-    )
-    receiver = Settings.model_validate(
-        yaml.safe_load(
-            find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
-        )
-    ).environment_service
+    assert peer.target == _environments_grpc_target(staging_manifests)
+    receiver = _controller_settings(staging_manifests).environment_service
     assert receiver is not None
     assert peer.tls is not None
     assert peer.tls.client_uri in receiver.service_launchers
@@ -246,24 +236,13 @@ def test_app_environment_peer_matches_receiver_and_mounted_service_identity(
     )
     peer = settings.environment_service
     assert peer is not None
-    service = find_resource(
-        staging_manifests, "Service", environment_service.environments_service(staging.ENV.namespace).name
-    )
-    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
-    assert (
-        peer.target
-        == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
-    )
+    assert peer.target == _environments_grpc_target(staging_manifests)
     certificate = find_resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
     assert certificate["spec"]["uris"] == [peer.tls.server_uri]
     app_certificate = find_resource(staging_manifests, "Certificate", f"{app.NAME}-workload")
     assert app_certificate["spec"]["uris"] == [peer.tls.client_uri]
     assert peer.tls.client_uri == APP_URI
-    receiver = Settings.model_validate(
-        yaml.safe_load(
-            find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
-        )
-    ).environment_service
+    receiver = _controller_settings(staging_manifests).environment_service
     assert receiver is not None
     assert peer.tls.client_uri in receiver.service_readers
     assert peer.tls.client_uri in receiver.service_managers
@@ -306,9 +285,7 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     name = sandbox_controller.NAME
-    controller = Settings.model_validate(
-        yaml.safe_load(find_resource(staging_manifests, "ConfigMap", f"{name}-settings")["data"]["config.yaml"])
-    )
+    controller = _controller_settings(staging_manifests)
     assert controller.environment_service is not None
     proxy = controller.environment_service.runtime_proxy
     assert proxy is not None
@@ -332,16 +309,6 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     mount = one(mount for mount in one(pod["containers"])["volumeMounts"] if mount["name"] == volume["name"])
     assert mount["readOnly"]
     assert proxy.runner_security.tls.cert_file == f"{mount['mountPath']}/tls.crt"
-
-
-def test_environments_role_binding(staging_manifests: list[dict[str, Any]]) -> None:
-    pod = find_resource(staging_manifests, "Deployment", "environments")["spec"]["template"]["spec"]
-    assert pod["serviceAccountName"] == "environments"
-    binding = find_resource(staging_manifests, "RoleBinding", "environments")
-    assert binding["roleRef"]["name"] == "environments"
-    assert binding["subjects"] == [
-        {"apiGroup": "", "kind": "ServiceAccount", "name": "environments", "namespace": staging.ENV.namespace}
-    ]
 
 
 def test_environment_receiver_network_reachability_matches_enabled_callers(

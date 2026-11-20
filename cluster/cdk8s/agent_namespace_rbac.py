@@ -1,7 +1,6 @@
 """GitOps-owned diagnostics bindings from the same policy as managed grants.
 
-Distinct names permit a two-stage migration from Kyverno without adopting its
-synchronized objects. The old generator is retired; labels alone grant no access.
+Labels alone grant no access.
 """
 
 from functools import partial

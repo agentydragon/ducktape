@@ -9,6 +9,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
@@ -17,7 +18,6 @@ from cluster.cdk8s.agentplane.policy_controller import NAME
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 
 _RBAC = "rbac.authorization.k8s.io"
-_GROUP = "agentplane.allegedly.works"
 
 
 class PolicyControllerRbac(Construct):
@@ -56,36 +56,35 @@ class PolicyControllerRbac(Construct):
             rules=[
                 # A ManagedServiceAccount's EgressCredential and use PolicySet, which it owns.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "policysets"), custom_resource(_GROUP, "egresscredentials")],
+                    resources=[custom_resource(GROUP, "policysets"), custom_resource(GROUP, "egresscredentials")],
                     verbs=["create", "update", "patch", "get", "list", "watch"],
                 ),
-                RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
                 # Deleting is how a binding expires.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "policybindings")],
+                    resources=[custom_resource(GROUP, "policybindings")],
                     verbs=["create", "get", "list", "watch", "delete"],
                 ),
-                RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "kubernetesrolesets")], verbs=["get", "list", "watch"]
+                    resources=[custom_resource(GROUP, "kubernetesrolesets")], verbs=["get", "list", "watch"]
                 ),
                 # PolicyService serves identities, a launch's create of one and the operator's delete.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "identities")],
-                    verbs=["get", "list", "watch", "delete", "create"],
+                    resources=[custom_resource(GROUP, "identities")], verbs=["get", "list", "watch", "delete", "create"]
                 ),
                 # Deleting is how a grant or a managed account expires.
                 RolePolicyRule(
                     resources=[
-                        custom_resource(_GROUP, "serviceaccountgrants"),
-                        custom_resource(_GROUP, "managedserviceaccounts"),
+                        custom_resource(GROUP, "serviceaccountgrants"),
+                        custom_resource(GROUP, "managedserviceaccounts"),
                     ],
                     verbs=["get", "list", "watch", "delete"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        custom_resource(_GROUP, "serviceaccountgrants/status"),
-                        custom_resource(_GROUP, "managedserviceaccounts/status"),
+                        custom_resource(GROUP, "serviceaccountgrants/status"),
+                        custom_resource(GROUP, "managedserviceaccounts/status"),
                     ],
                     verbs=["patch"],
                 ),
@@ -145,14 +144,14 @@ class PolicyControllerRbac(Construct):
                 metadata=ApiObjectMetadata(name=f"{role_name}-workload-credentials", namespace=workload_namespace),
                 rules=[
                     RolePolicyRule(
-                        resources=[custom_resource(_GROUP, "workloadcredentials")], verbs=["get", "list", "watch"]
+                        resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get", "list", "watch"]
                     ),
                     RolePolicyRule(
-                        resources=[custom_resource(_GROUP, "workloadcredentials/status")], verbs=["update", "patch"]
+                        resources=[custom_resource(GROUP, "workloadcredentials/status")], verbs=["update", "patch"]
                     ),
                     # Its Certificates block their record's deletion until they are gone.
                     RolePolicyRule(
-                        resources=[custom_resource(_GROUP, "workloadcredentials/finalizers")], verbs=["update"]
+                        resources=[custom_resource(GROUP, "workloadcredentials/finalizers")], verbs=["update"]
                     ),
                     RolePolicyRule(
                         resources=[custom_resource("cert-manager.io", "certificates")],

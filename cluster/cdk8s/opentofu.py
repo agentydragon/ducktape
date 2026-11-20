@@ -26,7 +26,7 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import flux, terraform
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import (
     Kustomization,
     RenderedDirectory,
@@ -35,6 +35,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.secret_ref import SecretKey
+from cluster.cdk8s.tofu_state import db
 
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
@@ -98,7 +99,7 @@ def gitops_workspace(
         metadata=ApiObjectMetadata(name=provider_config_name),
         spec=ProviderConfigSpec(
             configuration=configuration,
-            backend_file=f'conn_str = "{terraform.STATE_DATABASE_CONNECTION_STRING}"\nschema_name = "{schema}"\n',
+            backend_file=f'conn_str = "{db.STATE_CONNECTION_STRING}"\nschema_name = "{schema}"\n',
         ),
     )
     return Workspace(
@@ -114,7 +115,7 @@ def gitops_workspace(
                 module=inline_module(directory),
                 plan_args=["-lock-timeout=5m"],
                 vars=list(variables) or None,
-                env=[secret_env("PGPASSWORD", terraform.STATE_DATABASE_PASSWORD), *env],
+                env=[secret_env("PGPASSWORD", db.STATE_PASSWORD), *env],
             ),
         ),
     )

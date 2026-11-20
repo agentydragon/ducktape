@@ -1,4 +1,4 @@
-"""Flux Kustomizations for the cluster/k8s/external-secrets slice."""
+"""Flux Kustomizations for the external-secrets component."""
 
 from __future__ import annotations
 

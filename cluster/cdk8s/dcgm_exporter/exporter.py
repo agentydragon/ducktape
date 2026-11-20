@@ -4,7 +4,8 @@ The PodMonitor is auto-discovered by Alloy (`prometheus.operator.podmonitors "cl
 forwarded to Mimir (365 d). The
 motivation is getting DCGM_FI_DEV_XID_ERRORS (the `Xid 79 "GPU has fallen off the bus"`
 signal), PCIe replay counters, and power/temp into Mimir to characterize the recurring RTX 5090
-fall-off events; this replaces the local-CSV nix/nixos/modules/gpu-monitor.nix poller.
+fall-off events; it is to replace the local-CSV nix/nixos/modules/gpu-monitor.nix poller
+(cluster/k8s/TODO.md).
 Context: debug/atlas/gpu_lockup_20260718/followups.md, cluster/docs/plan.md.
 """
 

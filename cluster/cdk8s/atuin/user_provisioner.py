@@ -39,8 +39,8 @@ def chart(app: App) -> Chart:
         spec=k8s.JobSpec(
             # The script is idempotent (creates if missing, updates the password only when
             # the SOPS source changed, else no-op), so re-running is safe; the TTL lets a
-            # failed run retry instead of holding this Kustomization unready forever.
-            # Rationale in cluster/cdk8s/ha_mcp.py's HaMcpCredentialsProvisioner._add_job.
+            # failed run retry instead of holding this Kustomization unready forever
+            # (cluster/docs/troubleshooting.md § A Failed Job Wedges Its Flux Kustomization).
             ttl_seconds_after_finished=3600,
             backoff_limit=5,
             template=k8s.PodTemplateSpec(

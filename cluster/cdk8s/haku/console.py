@@ -6,7 +6,7 @@ backend paths to the API.
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
 reviewed/released ducktape code it sits outside Haku's RBAC (Haku cannot read its secrets or
 logs or patch it) and outside haku-sandbox's egress fence, so it gets ordinary egress and can
-hold secrets Haku may not read (haku/PLAN.md, "The agent-authored console").
+hold secrets Haku may not read.
 
 The API and static shell are separate Deployments so a frontend-only image update never
 restarts operator authentication or background maintenance. Both images carry the
@@ -110,12 +110,10 @@ class Console(Construct):
         super().__init__(scope, id)
         self._secrets: dict[str, ISecret] = {}
 
-        # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
-        # (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access outside that pool.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
-        self._add_rbac(service_account)
+        self._add_rbac()
         env = self._container_env()
         config = SettingsFile(
             self,
@@ -130,7 +128,7 @@ class Console(Construct):
         self._add_static()
         self._add_http_route()
 
-    def _add_rbac(self, service_account: ServiceAccount) -> None:
+    def _add_rbac(self) -> None:
         # Narrow metadata/configuration diagnostics for the agents. Not
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.
@@ -404,8 +402,7 @@ class Console(Construct):
 
     def _add_http_route(self) -> None:
         # Gateway -> static shell -> API, with no forward-auth outpost: the console owns its
-        # auth. The timeout clears the `sandbox` server's exec budget (max_exec_timeout_seconds
-        # plus the 15s the console waits beyond it) and the MCP/OAuth streams.
+        # auth. The timeout clears the MCP/OAuth streams.
         https_route(
             self,
             "httproute",

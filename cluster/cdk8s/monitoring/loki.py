@@ -1,8 +1,6 @@
 """Loki (SimpleScalable) with its SeaweedFS bucket, identity, credentials and CiliumNetworkPolicy.
 
-External access goes through the Authentik proxy outpost (native blueprint in
-cluster/k8s/authentik/app/blueprints/): Gateway → ak-outpost-loki-outpost (auth) → loki
-backend. Grafana reaches Loki internally via the cluster Service.
+Grafana reaches Loki internally via the cluster Service.
 """
 
 from __future__ import annotations

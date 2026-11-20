@@ -48,7 +48,7 @@ _CONFIG_PATH = SpendSettings.model_fields["config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
 _DESKTOP_CLIENT_ID = "plaid-spend-desktop"
 _WEB_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-web/"
-_WEB_PUBLIC_BASE_URL = "https://plaid-spend.allegedly.works"
+_WEB_PUBLIC_BASE_URL = f"https://{_HOST}"
 _WEB = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=8080),

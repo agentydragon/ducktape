@@ -1429,11 +1429,11 @@ py_library(
     deps = [
         ":flux",
         ":secret_ref",
-        ":terraform",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

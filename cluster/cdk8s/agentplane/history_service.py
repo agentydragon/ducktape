@@ -20,6 +20,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.history_service.settings import IngressSettings, ServiceDelegationSettings, ServiceDelegator, Settings
 from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
@@ -96,15 +97,11 @@ class HistoryService(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
                 # A writer's SVID names its WorkloadCredential, read live on every request.
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # An Identity writer's SVID names its Identity, read live in the policy namespace.
-                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(

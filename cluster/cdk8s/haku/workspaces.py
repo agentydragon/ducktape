@@ -1,7 +1,4 @@
-"""haku-workspaces: credential mirrors consumed by Haku workloads in haku-sandbox.
-
-The Console sandbox template, warm pool, and image pin were retired with the Sandbox MCP lane.
-"""
+"""haku-workspaces: credential mirrors consumed by Haku workloads in haku-sandbox."""
 
 from __future__ import annotations
 

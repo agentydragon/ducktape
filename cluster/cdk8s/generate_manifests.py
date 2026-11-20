@@ -1976,7 +1976,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
-    home_assistant_artifact = artifact("home-assistant", f"{HAND_WRITTEN_ROOT}/home-assistant")
+    home_assistant_artifact = artifact("home-assistant", home_assistant_namespace.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
         "home-assistant",

@@ -29,6 +29,9 @@ _TABBY_QWEN_IDS = {
 }
 
 
+CONFIG_MAP_NAME = "config"
+
+
 @dataclass(frozen=True)
 class ConfigMapSpec:
     """The generated files belonging to one LiteLLM proxy."""
@@ -36,10 +39,6 @@ class ConfigMapSpec:
     name: str
     namespace: str
     data: dict[str, object]
-
-    @property
-    def config_map_name(self) -> str:
-        return "config"
 
 
 def model_entry(entry: Route | RouteAlias) -> dict:

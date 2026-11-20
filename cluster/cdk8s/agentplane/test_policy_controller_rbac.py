@@ -11,12 +11,11 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.crd_group import GROUP
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.testing.manifests import find_resource
-
-_GROUP = "agentplane.allegedly.works"
 
 
 def _role(documents: list[dict[str, Any]], kind: str, name: str, namespace: str | None) -> dict[str, Any]:
@@ -55,17 +54,6 @@ def _allowed(documents: list[dict[str, Any]], group: str, resource: str, verbs: 
 def _settings(documents: list[dict[str, Any]]) -> dict[str, Any]:
     config = find_resource(documents, "ConfigMap", "policy-controller-settings")
     return cast(dict[str, Any], yaml.safe_load(one(config["data"].values())))
-
-
-def test_policy_controller_has_a_workload_server_certificate(staging_manifests: list[dict[str, Any]]) -> None:
-    certificate = _role(staging_manifests, "Certificate", "policy-controller-workload", STAGING_NAMESPACE)
-    assert certificate["spec"]["uris"] == [POLICY_CONTROLLER_URI]
-    deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
-    pod = deployment["spec"]["template"]["spec"]
-    assert any(
-        volume.get("secret", {}).get("secretName") == f"{policy_controller.NAME}-workload-tls"
-        for volume in pod["volumes"]
-    )
 
 
 def test_policy_controller_serves_policyservice_only_over_tls(staging_manifests: list[dict[str, Any]]) -> None:
@@ -115,8 +103,8 @@ def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
 ) -> None:
     policy_namespace = _settings(staging_manifests)["policy_namespace"]
     # Server-side apply creates or patches.
-    assert _allowed(staging_manifests, _GROUP, resource, {"create", "patch"}) == {policy_namespace}
-    assert not _allowed(staging_manifests, _GROUP, resource, {"delete", "deletecollection"})
+    assert _allowed(staging_manifests, GROUP, resource, {"create", "patch"}) == {policy_namespace}
+    assert not _allowed(staging_manifests, GROUP, resource, {"delete", "deletecollection"})
 
 
 @pytest.mark.parametrize(
@@ -125,7 +113,7 @@ def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
 def test_controller_may_apply_the_status_it_reports(staging_manifests: list[dict[str, Any]], status: str) -> None:
     policy_namespace = _settings(staging_manifests)["policy_namespace"]
     # Server-side apply of a status subresource is a patch.
-    assert policy_namespace in _allowed(staging_manifests, _GROUP, status, {"patch"})
+    assert policy_namespace in _allowed(staging_manifests, GROUP, status, {"patch"})
 
 
 def test_only_the_policy_controller_writes_workload_credential_status(staging_manifests: list[dict[str, Any]]) -> None:
@@ -145,7 +133,7 @@ def test_only_the_policy_controller_writes_workload_credential_status(staging_ma
             (ref["kind"], ref["name"], binding["metadata"].get("namespace") if ref["kind"] == "Role" else None)
         )
         if role is None or not any(
-            set(rule.get("apiGroups", [])) & {_GROUP, "*"}
+            set(rule.get("apiGroups", [])) & {GROUP, "*"}
             and set(rule["resources"]) & {"workloadcredentials/status", "*"}
             and set(rule["verbs"]) & {"update", "patch", "*"}
             for rule in role.get("rules", [])

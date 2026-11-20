@@ -1,4 +1,4 @@
-"""Flux Kustomizations for the cluster/k8s/snapshot-controller slice."""
+"""Flux Kustomizations for the snapshot-controller component."""
 
 from __future__ import annotations
 

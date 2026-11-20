@@ -302,9 +302,6 @@ def chart(app: App) -> Chart:
             },
         ),
     ]
-    # Keep the canonical aliases unchanged during the ownership transfer. The old
-    # Terraform Kustomization completes its apply (including deletes) before this one
-    # starts, so there is no duplicate-alias window.
     for key in dynamic_keys:
         connection_secret = f"litellm-crossplane-key-{key.name}"
         metadata_secret = f"litellm-key-metadata-{key.name}"
@@ -326,11 +323,6 @@ def chart(app: App) -> Chart:
                 max_budget=key.max_budget,
                 budget_duration=key.budget_duration,
                 connection_secret=connection_secret,
-                team={
-                    "codex-clients": "team-codex-clients",
-                    "gemini-clients": "team-gemini-clients",
-                    "antigravity-clients": "team-antigravity-clients",
-                }.get(key.name),
             ),
         )
         _publish_key(

@@ -32,12 +32,9 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA, ROOT_CA_SECRET
+from cluster.cdk8s.cert_manager.cluster_ca import BOOTSTRAP_ISSUER, BUNDLE_KEY, LONG_LIVED_CA, ROOT_CA_SECRET
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.reflector import mirror_annotations
-
-_ROOT_CA_ISSUER = "cluster-ca-bootstrap"
-BUNDLE_KEY = "ca-certificates.crt"
 
 
 def interception_root_ca(
@@ -70,7 +67,7 @@ def interception_root_ca(
             private_key=CertificatePrivateKey.ecdsa_p256(),
             # trust-manager reads Bundle sources from its own namespace.
             secret_template=CertificateSpecSecretTemplate(annotations=mirror_annotations(reflection_namespaces)),
-            issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),
+            issuer_ref=CertificateSpecIssuerRef(name=BOOTSTRAP_ISSUER, kind="ClusterIssuer"),
         ),
     )
     Bundle(

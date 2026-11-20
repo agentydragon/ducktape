@@ -39,7 +39,6 @@ NAME = "authentik"
 NAMESPACE = "authentik"
 HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
-HOSTNAME = "auth.allegedly.works"
 _HOST_CONFIG_MAP = "host"
 _BLUEPRINTS_CONFIG_MAP = "sso-blueprints"
 _SOPS_SECRETS = (

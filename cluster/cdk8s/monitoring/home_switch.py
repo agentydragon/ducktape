@@ -6,7 +6,7 @@ RouterOS accounts:
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
   creates it on the switch with a fresh password, which it writes to this directory's
   `tofu-password.sops.yaml`; re-running it rotates the password.
-- `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
+- `monitoring`: the read-only user the Terraform manages, which the MKTXP exporter logs in as.
   ESO mints it.
 - `agentplane`: the SSH user whose public key Tofu installs for Agentplane's SSH MCP backend. Its
   RouterOS password is empty; its private key is separately SOPS-encrypted and mounted into the
