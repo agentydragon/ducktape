@@ -167,7 +167,7 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. Whole-PR latency, fleet reuse rate and the warm-floor benefit have not been measured."}
+                ${" Firecracker fixture reuse and a two-worker KVM minimum are deployed. Fresh acceptance passed; warm setup was 40.6s versus 106.3s in its cold seed. The paired VM review tracks managed TCG and cluster KVM timing on devel. Whole-PR latency and fleet reuse remain open."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
@@ -181,7 +181,7 @@
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" 10–16 November UTC: 32 failures / 883 completed mainline test invocations; VM cache and physical-attempt audit, the 375-second setup breakdown, an interim 380-result baseline census, and merge-time checks. The 17 November follow-up verifies merged case accounting, captures native profiles around 25 cold imports, narrows the browser snapshot boundary, and exercises a focused VM topology control; kernel and provider causes remain open. "}
+                ${" 10–16 November UTC: 32 failures / 883 completed mainline test invocations; VM cache and physical-attempt audit, the 375-second setup breakdown, an interim 380-result baseline census, and merge-time checks. The 17 November follow-up verifies merged case accounting, captures native profiles around 25 cold imports, narrows the browser snapshot boundary, and exercises a focused VM topology control; kernel and provider causes remain open. The paired VM review tracks first attempts and retry recovery. "}
               <//>
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">

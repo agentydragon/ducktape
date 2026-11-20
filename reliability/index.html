@@ -191,6 +191,17 @@
                 ${link("./manifest.json", "Manifest")}<//
               >
             </header>
+            <section id="vm-shadow">
+              <${Title} order=${2}>Managed TCG and cluster KVM · paired VM runs<//>
+              <${Text} mt="sm">${e.vm_shadow_review.observation}<//>
+              <${Title} order=${3} mt="md">How often does only one executor fail?<//>
+              <${Text} mt="xs">${e.vm_shadow_review.recommendation}<//>
+              <${Text} size="sm" mt="sm">
+                Reviewed through ${e.vm_shadow_review.cutoff_utc}. ${link(e.vm_shadow_review.run_url, "Collection run")}
+                · ${link("https://github.com/agentydragon/ducktape/pull/17940", "Workflow and retry policy")}
+                · ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "How to refresh this comparison")}
+              <//>
+            </section>
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Metric}
                 value="32 / 883"

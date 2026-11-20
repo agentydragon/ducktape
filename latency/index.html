@@ -1653,7 +1653,8 @@
           ><${Stack} gap="xl">
             <header>
               ${link("../", "Ducktape reports")}<${Text} c="dimmed" mt="md"
-                >CI latency · reviewed 18 November 2026 UTC<//
+                >CI latency · Firecracker rollout reviewed 18 November 2026
+                UTC<//
               >
               <${Title} order=${1} my="sm"
                 >${configurationRollout?.title ?? backendGraph?.verdict_title ?? "CI latency and ordinary Firecracker reuse"}<//
@@ -1669,6 +1670,23 @@
                 their original windows.<//
               >
             </header>
+            <section id="vm-shadow">
+              <${Title} order=${2}
+                >Managed TCG and cluster KVM · paired VM runs<//
+              >
+              <${Text} mt="sm">${e.vm_shadow_review.observation}<//>
+              <${Title} order=${3} mt="md"
+                >What does a retry cost on each executor?<//
+              >
+              <${Text} mt="xs">${e.vm_shadow_review.recommendation}<//>
+              <${Text} size="sm" mt="sm">
+                Reviewed through ${e.vm_shadow_review.cutoff_utc}.
+                ${link(e.vm_shadow_review.run_url, "Collection run")} ·
+                ${link("https://github.com/agentydragon/ducktape/pull/17940", "Workflow and retry policy")}
+                ·
+                ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "How to refresh this comparison")}
+              <//>
+            </section>
             <${ConfigurationRollout} />
             <${BackendGraphComparison} />
             <${NaturalScheduling} />

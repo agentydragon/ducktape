@@ -1,4 +1,45 @@
 {
+  "vm_shadow_review": {
+    "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+    "merged_at_utc": "2026-11-20T00:16:49Z",
+    "cutoff_utc": "2026-11-20T00:20:41Z",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+    "observation": "The first devel push archived a cached managed VM pass. The collector correctly skipped the cluster KVM run, leaving zero fresh pairs at this review. Future uncached managed results trigger the same suite on cluster KVM at the same commit.",
+    "complete_fresh_pairs": 0,
+    "selections": {
+      "cached": 1
+    },
+    "workflow_attempts": [
+      {
+        "run_id": 44644577743,
+        "attempt": 1,
+        "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+        "collector_status": "completed",
+        "collector_conclusion": "success",
+        "job_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743/job/135983790115",
+        "artifact_id": 14587774242,
+        "pair": {
+          "sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+          "run_id": "44644577743",
+          "run_attempt": "1",
+          "managed": "e6746ad0-ca61-54fa-af91-a009f69d5456",
+          "shadow": "41d9737f-82b5-5ee2-8bc9-043cd3924147",
+          "managed_label": "//agentplane/system_tests/suites:test_vm",
+          "shadow_label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled",
+          "selection": "cached"
+        },
+        "collection_errors": false,
+        "routes": {},
+        "managed_result": {
+          "status": "PASSED",
+          "cachedLocally": true,
+          "invocation_url": "https://app.buildbuddy.io/invocation/e6746ad0-ca61-54fa-af91-a009f69d5456"
+        }
+      }
+    ],
+    "recommendation": "Keep the required suite on its current route while paired timings accumulate. At each review, compare time to first result and final verdict, including retry time. Split valid queue, preparation and execution clocks by fixture state. Check whether shadow demand delays required Firecracker work before revising the latency recommendation. Check coverage at 50 fresh pairs and reassess routing at 200."
+  },
   "schema_version": 3,
   "reviewed_at_utc": "2026-11-18T11:09:14.807132+00:00",
   "source_devel_commit": "1768cc1555b3a323924981aab85a9a3112ec13a8",

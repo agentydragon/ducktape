@@ -1,4 +1,12 @@
 {
+  "vm_shadow_review": {
+    "cutoff_utc": "2026-11-20T00:20:41Z",
+    "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44644577743",
+    "evidence_key": "vm_shadow_review",
+    "browser_preview_invocation": "5132a3f7-5744-4bd3-b22f-debb069d7fb8",
+    "browser_cases_passed": 4
+  },
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-17T00:00:00Z",
@@ -20,8 +28,8 @@
   "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
   "visual_validation": "visual-validation.json",
   "validation_invocation_url": "https://app.buildbuddy.io/invocation/82469e16-ba0c-484c-b9f4-60f53a96c9e8",
-  "report_sha256": "a2f44e4a29de24c883a03287127f6b396b89abd59bde70764531dc485f377672",
-  "evidence_sha256": "fa9637f620a06e489a52dc06fb13351e8c90e779a72b3b32cf9977e0a43b7a7f",
+  "report_sha256": "d51fb43ae47579a7a204058150eda105abe7a4a9fa940f2cbe51be58c182d246",
+  "evidence_sha256": "4f49bedd387180d5f6302c6e58f55b9937ac9365c85eb4eeb331a8926ab4de2f",
   "visual_validation_sha256": "3d5f1095779859d8952436ad98508a166c376bcd1001cbf6320725b4a5d69228",
   "selected_experiments_collected_at_utc": "2026-11-17T13:06:40.684966+00:00",
   "selected_experiment_invocations": [
