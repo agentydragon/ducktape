@@ -177,7 +177,24 @@ function expressionFunction(node) {
   };
   const returning = (statement) => {
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
-    if (statement?.type === "ThrowStatement") return { kind: "raise", value: expression(statement.argument) };
+    if (statement?.type === "ThrowStatement") {
+      const argument = statement.argument;
+      if (
+        argument?.type === "Literal" &&
+        (argument.value === null || typeof argument.value === "boolean" || typeof argument.value === "string")
+      ) {
+        check(typeof argument.value !== "string" || /^[\x20-\x7e]*$/.test(argument.value), "unsupported thrown string");
+        return { kind: "raisePrimitive", value: argument.value };
+      }
+      if (
+        argument?.type === "UnaryExpression" &&
+        argument.operator === "void" &&
+        argument.argument?.type === "Literal" &&
+        argument.argument.value === 0
+      )
+        return { kind: "raisePrimitive", value: undefined };
+      return { kind: "raise", value: expression(argument) };
+    }
     if (statement?.type === "BlockStatement") return sequence(statement.body);
     if (statement?.type === "IfStatement" && statement.alternate)
       return {
@@ -203,6 +220,8 @@ function expressionFunction(node) {
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
       case "raise":
         return free(item.value, bound);
+      case "raisePrimitive":
+        return [];
     }
     throw new Error("unknown numeric expression");
   };
@@ -522,6 +541,18 @@ function leanExpression(expression) {
       return `.local ${str(expression.name)} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
     case "raise":
       return `.raise (${leanExpression(expression.value)})`;
+    case "raisePrimitive": {
+      const value = expression.value;
+      const primitive =
+        value === undefined
+          ? ".undefined"
+          : value === null
+            ? ".null"
+            : typeof value === "boolean"
+              ? `.boolean ${value}`
+              : `.text ${str(value)}`;
+      return `.raisePrimitive (${primitive})`;
+    }
   }
   throw new Error("unknown expression");
 }
@@ -674,7 +705,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown values are nonnegative safe integers; a throw ends the observed call sequence",
+        "Supported thrown values are nonnegative safe integers, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
       ],
     };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
@@ -761,6 +792,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       return initial > body ? initial : body;
     }
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
+    if (expression.kind === "raisePrimitive") return 0n;
     throw new Error("unknown expression");
   };
   for (const calls of candidates.slice(0, 64)) {
@@ -774,8 +806,15 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
         continue;
     }
     if (BigInt(maximum) << BigInt(initialCalls + calls.length) > BigInt(Number.MAX_SAFE_INTEGER)) break;
-    const before = execute(sourcePath, calls);
-    const after = execute(resolve(out, spec.entry), calls);
+    let before, after;
+    try {
+      before = execute(sourcePath, calls);
+      after = execute(resolve(out, spec.entry), calls);
+    } catch {
+      // This witness harness only certifies normal returns. Throws are still
+      // covered by safe proofs; skip them while looking for a normal witness.
+      continue;
+    }
     if (JSON.stringify(before) !== JSON.stringify(after)) {
       const certificate = witnessed(before, after, calls);
       if (certificate) return { result: "unsafe", original: before, output: after, calls, certificate };

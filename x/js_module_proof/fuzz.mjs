@@ -400,7 +400,8 @@ function parameterCase(seed, index) {
   const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
   const left = { type: "BinaryExpression", operator: "+", left: id(parameters[0]), right: id(parameters[1]) };
   const value = { type: "BinaryExpression", operator: "+", left, right: id("base") };
-  const thrownValue = 1 + rand(8);
+  const thrownValue = ["generated", false, null, 1 + rand(8)][Math.floor(index / 32) % 4];
+  const expectedThrown = thrownValue === null ? { kind: "null" } : { kind: typeof thrownValue, value: thrownValue };
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -445,6 +446,7 @@ function parameterCase(seed, index) {
     grammar: "parameter",
     expectThrow: true,
     thrownValue,
+    expectedThrown,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -858,12 +860,11 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
         if (
-          before.error?.thrown?.kind !== "number" ||
-          before.error.thrown.value !== input.thrownValue ||
+          JSON.stringify(before.error?.thrown) !== JSON.stringify(input.expectedThrown) ||
           before.error.index !== 1 ||
           before.results.length !== 1
         )
-          throw new Error("generated parameter branch did not preserve the numeric throw and return prefix");
+          throw new Error("generated parameter branch did not preserve the primitive throw and return prefix");
       }
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {

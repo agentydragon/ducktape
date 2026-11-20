@@ -104,8 +104,9 @@ also take numeric parameters and return expressions composed of those
 parameters, readable module bindings, nonnegative integer literals, `+`, and
 numeric conditionals. Function bodies may introduce initialized local `let`
 or `const` bindings and use `if`/`else` when both branches end in a supported
-return or numeric throw. A throw stops the observed call sequence while
-preserving its preceding trace. The checker conservatively rejects local
+return or throw of a nonnegative safe integer, boolean, `null`, `undefined`
+(written as `void 0`) or ASCII string. A throw stops the observed call sequence
+while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
 For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of

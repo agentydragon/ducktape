@@ -4,6 +4,14 @@ inductive Observation where
   | number (value : Nat)
   deriving DecidableEq, Repr
 
+inductive ThrownValue where
+  | number (value : Nat)
+  | text (value : String)
+  | boolean (value : Bool)
+  | null
+  | undefined
+  deriving DecidableEq, Repr
+
 /- Expressions are evaluated by the same transition system as the original
    operations. Parameters shadow module bindings; arithmetic is restricted by
    the reported JavaScript safe-integer assumption. -/
@@ -14,6 +22,7 @@ inductive NumericExpr where
   | conditional (test consequent alternative : NumericExpr)
   | local (name : String) (initial body : NumericExpr)
   | raise (value : NumericExpr)
+  | raisePrimitive (value : ThrownValue)
   deriving DecidableEq, Repr
 
 inductive Operation where
@@ -43,7 +52,7 @@ structure ExecutionState (α : Type) where
   replies : List (Option α)
   error : Option α
   returns : List (Option Nat)
-  thrown : Option Nat
+  thrown : Option ThrownValue
   deriving DecidableEq, Repr
 
 def lookupBinding : List (String × Nat) → String → Option Nat
@@ -52,7 +61,7 @@ def lookupBinding : List (String × Nat) → String → Option Nat
 
 /- `Except.error` is a JavaScript throw, while `none` means the model could
    not evaluate an unsupported or uninitialized operation. -/
-def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except Nat Nat)
+def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue Nat)
   | .literal value => some (.ok value)
   | .name name => match lookupBinding locals name with
     | some value => some (.ok value)
@@ -77,7 +86,8 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
   | .raise expression => do
     match ← evaluateExpression locals globals expression with
     | .error value => pure (.error value)
-    | .ok value => pure (.error value)
+    | .ok value => pure (.error (.number value))
+  | .raisePrimitive value => some (.error value)
 
 def updateBinding : List (String × Nat) → String → Nat → Option (List (String × Nat))
   | [], _, _ => none
@@ -142,7 +152,7 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       let value ← lookupBinding state.bindings name
       pure { state with returns := state.returns ++ [some value] }
     | .returnUndefined => some { state with returns := state.returns ++ [none] }
-    | .throwNumber value => some { state with thrown := some value }
+    | .throwNumber value => some { state with thrown := some (.number value) }
     | .returnExpression expression parameters => do
       match ← evaluateExpression parameters state.bindings expression with
       | .error value => pure { state with thrown := some value }

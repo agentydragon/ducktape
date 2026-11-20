@@ -212,6 +212,7 @@ def expressionNames : NumericExpr → List String
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .local _ initial body => expressionNames initial ++ expressionNames body
   | .raise value => expressionNames value
+  | .raisePrimitive _ => []
 
 def laterExpressionNames : NumericExpr → List String
   | .local name _ body => name :: laterExpressionNames body
@@ -220,6 +221,7 @@ def laterExpressionNames : NumericExpr → List String
   | .add _ _ => []
   | .conditional _ _ _ => []
   | .raise _ => []
+  | .raisePrimitive _ => []
 
 /- Reject a read of a local before its initialization, including a later
    declaration in the same lowered sequence. Nested blocks can be treated
@@ -230,6 +232,7 @@ def validNumericExpression : NumericExpr → Bool
   | .add left right => validNumericExpression left && validNumericExpression right
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
   | .raise value => validNumericExpression value
+  | .raisePrimitive _ => true
   | .local name initial body =>
     !(expressionNames initial).any (fun reference => (name :: laterExpressionNames body).contains reference) &&
       validNumericExpression initial && validNumericExpression body
@@ -241,6 +244,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .local name initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
   | .raise value => expressionFreeNames bound value
+  | .raisePrimitive _ => []
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
   expressionFreeNames parameters expression

@@ -299,7 +299,11 @@ function add(a, b) { return (a + b) + seed; }
 function choose(flag, value) { if (flag) { return value + seed; } else { return value + 1; } }
 function local(flag, value) { let total = value + seed; if (flag) { let value = 2; return total + value; } else { return total + value; } }
 function maybe(flag) { if (flag) { throw seed + flag; } else { return seed; } }
-export { shadow, add, choose, local, maybe };
+function text(flag) { if (flag) { throw "oops"; } else { return seed; } }
+function boolean(flag) { if (flag) { throw false; } else { return seed; } }
+function nil(flag) { if (flag) { throw null; } else { return seed; } }
+function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
+export { shadow, add, choose, local, maybe, text, boolean, nil, undef };
 `
   );
   await writeFile(
@@ -309,7 +313,7 @@ export { shadow, add, choose, local, maybe };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -346,6 +350,21 @@ export { shadow, add, choose, local, maybe };
   assert.deepEqual(throwingTrace.results, [{ value: 4 }]);
   assert.deepEqual(throwingTrace.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 5 } });
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), throwingCalls), throwingTrace);
+  for (const [name, thrown] of [
+    ["text", { kind: "string", value: "oops" }],
+    ["boolean", { kind: "boolean", value: false }],
+    ["nil", { kind: "null" }],
+    ["undef", { kind: "undefined" }],
+  ]) {
+    const primitiveCalls = [
+      { name, args: [0] },
+      { name, args: [1] },
+    ];
+    const primitiveTrace = execute(parameterSource, primitiveCalls);
+    assert.deepEqual(primitiveTrace.results, [{ value: 4 }]);
+    assert.deepEqual(primitiveTrace.error, { name: null, phase: "call", index: 1, thrown });
+    assert.deepEqual(execute(join(parameterOut, "entry.mjs"), primitiveCalls), primitiveTrace);
+  }
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
