@@ -16,7 +16,7 @@ nix/home/
 ├── codex/                 # Personal integration: Codex
 ├── opencode/              # Personal integration: OpenCode
 ├── crush/                 # Personal integration: Crush
-├── gemini_cli.nix         # Personal integration: Gemini CLI
+├── gemini_cli.nix         # Personal integration: Gemini CLI (import disabled in home.nix)
 ├── config/, services/, shell/, terminals/   # Neovim config, user services, shell init, terminal setup
 ├── home.nix               # Main home-manager configuration
 └── hosts/*.nix            # Host-specific configurations

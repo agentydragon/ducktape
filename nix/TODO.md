@@ -68,10 +68,9 @@ enabled on **wyrm2** and **rugged**. Decide whether to enable
 would remain a Home Manager service.
 
 - [ ] Auto-fetch the gaffer pubkey post-cache-creation and PR it into
-      `nix/attic-pubkeys.json` (TODO already noted in the module + `bootstrap.sh`).
+      `nix/attic-pubkeys.json`.
 - [ ] Split the `&ci` age recipient into `&ducktape-ci` and `&gaffer-ci` so the
-      gaffer writer token isn't decryptable by ducktape CI's age key (TODO already
-      noted in `.sops.yaml`).
+      gaffer writer token isn't decryptable by ducktape CI's age key.
 
 - [ ] Move Wyrm2 `/home` to a separate VM volume during a convenient maintenance
       window. Preserve existing home data and define a rollback path; account for
