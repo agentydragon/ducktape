@@ -110,6 +110,22 @@
           >
             <${Paper} component="article" withBorder p="lg" radius="md" my="md">
               <${Title} order=${2} mt="md" mb="sm">
+                <${Anchor} href="vpa/">Cluster VPA coverage and action plan<//>
+              <//>
+              <${Text} component="p" my="sm">
+                A 20 November workload inventory, missing resource requests,
+                observed OOMs and staged recommendations for request-only and
+                existing request-and-limit VPA policies.
+              <//>
+              <${ManifestStamp} src="vpa/manifest.json" />
+              <${Text} component="p" my="sm">
+                <${Anchor} href="vpa/evidence.json">evidence<//>
+                ${" · "}
+                <${Anchor} href="vpa/manifest.json">manifest<//>
+              <//>
+            <//>
+            <${Paper} component="article" withBorder p="lg" radius="md" my="md">
+              <${Title} order=${2} mt="md" mb="sm">
                 <${Anchor} href=${"agentplane-test-architecture/"}>
                   ${"Agentplane test architecture"}
                 <//>
