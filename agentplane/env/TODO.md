@@ -68,6 +68,53 @@ define parking and durable terminal release before promising indefinite process 
   a Go CPU profile to separate inventory listing, sorting and COSI reads, and record resource counts
   and blocker transitions. Preserve the full membership and recovery proof if optimizing.
 
+### Tentative review findings (2026-11-19)
+
+Proposals for owner review, not approved work. Estimates of net savings need prototypes and must
+include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
+durable user data and uncertain-effect handling in any accepted change.
+
+- **Close ownership:** Consider one Runtime-owned sequential Close worker observing component COSI
+  status, instead of the Close-only controller and its status resource
+  ([controller](runtime/internal/coordinator/lifecycle_controller.go),
+  [status](runtime/internal/coordinator/close_status.go)). Preserve exact-generation barriers,
+  shared Close, caller cancellation, engine-exit ordering, fences, History ACKs and owner release.
+  Prototype under the coordinator race suite and Pod/VM shutdown tests; recent fixes protect real races.
+- **Session operations:** Consider consuming operation completions and deciding the next action in
+  the live Session owner, publishing smaller observations for the environment aggregate. Today
+  [snapshots](runtime/session/inputs.go), operation revisions, local slots and
+  [lifecycle status](runtime/session/resources.go) coordinate the same work; Codex app-server has a
+  related pattern. Keep durable journal authority, admission guards, completion ordering and no replay.
+  Prototype one operation before deciding whether a broader change actually saves code.
+- **Admission accounting:** Consider one mutex-protected count plus a COSI wakeup, instead of mirroring
+  the count in both Runtime and a live COSI resource
+  ([accounting](runtime/internal/coordinator/session_lifecycle_inputs.go)). Preserve the accepted-generation
+  wakeup, atomic admission/close, idle detection, diagnostics and fail-closed behavior; test their races.
+- **Bootstrap output:** [COSI events](runtime/internal/bootstrap/log.go) retain every output chunk and
+  load them on restart, although no production reader of the output bytes was found. Decide whether
+  full retained output is needed before changing the contract. A bounded/indexed store preserves output
+  but needs data-preserving migration and rollback; bounded diagnostics would discard future output.
+  The [storage comparison](runtime/debug/2026_11_04_bootstrap_event_storage_comparison.md) has synthetic
+  measurements, not production output distributions. Preserve existing evidence and one-shot outcomes.
+- **Execution scope checks:** Consider sharing the common destination/incarnation validation between
+  [Runtime forwarding](runtime/internal/coordinator/forward.go) and the
+  [embedded service](runtime/execution/service/service.go). Keep peer authorization and verified
+  incarnation-change details at their boundaries; reconcile differences such as Session ID length first.
+- **Delivery status:** Consider deriving `Delivered` from the generation-qualified seal and ACK fields
+  in [Session status](runtime/session/resources.go), rather than storing the derived boolean too.
+  Retain detailed blockers and tests for missing, unsealed, wrong-cursor and stale-generation ACKs.
+- **Tests:** Review exact internal wakeup-revision assertions, such as the concurrent-bootstrap test,
+  for removal where behavior is already covered. Retain controller-restart, publication-failure,
+  no-replay and ordering race coverage.
+- **Possible admission cleanup defect:** In [Execution admission](runtime/internal/coordinator/forward.go),
+  `execCalls` is populated before admission-count publication; on publication failure the error path
+  appears to leave the entry and cancel function until teardown. Confirm with fault injection before
+  fixing. No native call is dispatched on this path; Runtime fails closed.
+
+Moving native protocol translation out of Runtime is a cross-service tradeoff, not established net
+savings; see the existing [native interface proposal](../plans/native_harness_interfaces.md).
+Removing Pod or VM supervision likewise drops a deployment mode and requires a separate decision.
+
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
 Runtime holds the COSI backing database's process lock through cleanup. Pod PID1 descendants rely
