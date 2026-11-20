@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "crossplane", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m"}, "controlledResources": ["memory"]}, {"containerName": "package-runtime", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "15m", "memory": "128Mi"}, "maxAllowed": {"cpu": "500m", "memory": "2Gi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: crossplane-system
 spec: {}
 ---
