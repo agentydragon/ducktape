@@ -30,6 +30,7 @@ def call : Json := Json.mkObj [
 def top (source : Json) : Lower.Top := {
   defs := [], rawEager := #[], rawLazy := #[], assignedEager := #[], assignedLazy := #[],
   fallback := #[], hoisted := false, inert := false,
+  factoryDef := Lower.factoryDeclaration source, factoryCall := Lower.factoryCall source,
   identityDef := Lower.identityDeclaration source, identityCall := Lower.identityCall source, source := source
 }
 
