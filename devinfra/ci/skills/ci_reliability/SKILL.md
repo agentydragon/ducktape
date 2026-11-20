@@ -39,11 +39,21 @@ as separate populations. Expand the window when low counts limit conclusions.
 
 Use the `action_report` skill to plan and edit the dashboard.
 Apply the [CI dashboard contract](references/reporting.md) to its PR sample and publication.
-Count each eligible PR head once. Reconstruct required-check attempts to show
-how many heads went green on the first attempt, and how many initially red heads
-recovered on a retry of the same tested revision. Give each rate its denominator
-and show cancelled, superseded, incomplete and unknown outcomes separately.
-Graph first-pass outcomes over time or by PR class.
+Lead with observed false-red PR heads and intermittent Bazel tests. Plot daily
+affected heads out of all sampled heads. Count a head once even if several targets
+flake. Verify that the failing required gate recovered on the same tested inputs,
+and identify the fresh conflicting target verdicts or other demonstrated transient
+cause. Keep unexplained rerun recoveries, real regressions and superseded heads
+separate. Unretried failures make verified counts a lower bound. Keep ordinary
+red/green outcomes as supporting context.
+
+Also measure failures absorbed by Bazel inside a single invocation, including
+green CI jobs. Pair fresh failing and passing TestResult attempts by target,
+configuration, run and shard. Count recovered test sequences, distinct targets
+and affected PRs, with fresh eligible sequences as the rate denominator. Separate
+whole-job reruns, executor retries and cached verdicts. Check when the retry policy
+was enabled and which targets it covered. Show the observed post-policy exposure
+until there are enough comparable days for a trend.
 
 Report the number of distinct test targets with confirmed intermittent failures
 in the sampled PRs and how many heads they affected. Identify the counting unit

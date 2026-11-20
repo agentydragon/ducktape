@@ -597,8 +597,11 @@ Show median and p90 time to required green for the recent PR heads. Name both
 clock endpoints and show how many heads reached green, failed, were cancelled
 or remained unresolved. If sampling balances PR classes,
 lead with typical and tail times by class and show each class's sample size.
-A pooled percentile needs a representative PR mix. Graph the class differences
-or a comparable trend, then show which gate finished last and how often. Tie a
+A pooled percentile needs a representative PR mix. Plot typical and tail time to
+required green by workflow creation day using comparable clocks and cohorts.
+Include successful reruns and disclose heads that never reached green. Choose
+a percentile the daily sample supports. Use the class breakdown to explain the
+trend, then show which gate finished last and how often. Tie a
 proposed speedup to the wall time it could save before another gate becomes last.
 
 ### Preserve the evidence behind the presentation

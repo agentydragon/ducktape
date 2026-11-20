@@ -3,7 +3,9 @@
 ## PR dashboard scope
 
 Refresh the broad PR sample even when the newest work concerns one incident or
-rollout. Open with PR health and a relevant graph. If collection is incomplete,
+rollout. Open with the headline metric and its daily trend, normally for the
+last seven complete UTC days. Show daily denominators, flag partial days and
+policy changes, and leave unobserved periods as gaps. If collection is incomplete,
 show the gap and date any retained baseline. Quantify the impact of a driver or
 proposed fix in PR terms, such as minutes per affected head or reruns per week.
 Check recommendations against current source, routing and landed fixes.
