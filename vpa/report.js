@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=cohort-20261120-0921")
+    fetch("./evidence.json?v=cohort-20261120-rollouts")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -217,6 +217,11 @@ function Report() {
   if (!data)
     return html`<${Container} py="xl"><${Text}>Loading VPA evidence…<//><//>`;
   const counts = data.counts;
+  const latest = data.third_cohort;
+  const latestTime = latest.observed_at_utc.slice(11, 16);
+  const verifiedCount = latest.workloads.filter(
+    (row) => row.dry_run_admitted_resources,
+  ).length;
   const chart = [
     { mode: "Recommend", count: counts.vpa_modes.Off },
     { mode: "Initial", count: counts.vpa_modes.Initial },
@@ -244,13 +249,13 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. First- and second-cohort rollout and admission checked 20 November 2026, 09:10 and 09:21 UTC. Inventory and charts remain historical.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21 and ${latestTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
         ><${Anchor} href="#architecture">Policy refactor<//
-        ><${Anchor} href="#batches">Recommended batches<//
+        ><${Anchor} href="#batches">Rollout batches<//
         ><${Anchor} href="#inventory">Search inventory<//><//
       >
     </header>
@@ -733,23 +738,23 @@ function Report() {
     </section>
 
     <section id="batches">
-      <${Title} order=${2} mt="xl">Recommended batches<//>
+      <${Title} order=${2} mt="xl">Rollout batches<//>
       <${Text} component="p">
         The goal is requests for almost all supported workloads, with automatic
         resizing wherever disruption is acceptable. Do not serialize the rollout
         one Deployment at a time: select cohorts by ownership and risk, use the
         shared profile once per namespace or chart, and review the effective
-        policies together. First- and second-cohort rollouts were checked at
-        09:10 and 09:21 UTC; refresh values before subsequent changes.
+        policies together. The rollout tables use later, workload-specific
+        observations than the inventory and coverage charts.
       <//>
       <${Alert} color="orange" title="Reconciliation is a rollout gate" my="md">
         Goldilocks watches Pods and Namespaces, not Deployment metadata. CDviz’s
         annotations landed after its last reconciliation and its VPA stayed Off
         until a namespace update at 08:17 UTC. Verify every intended VPA after
-        each batch and trigger a namespace update when needed; investigate a
-        durable level-triggered fix. CDviz is now Initial, memory-only and
-        RequestsOnly; its existing pod remains running and new-pod admission has
-        not yet been verified for that collector. ${" "}
+        each batch and trigger a namespace update when needed. GitLab spike also
+        required a namespace update in the third cohort. CDviz is now Initial,
+        memory-only and RequestsOnly; new-Pod admission remains unverified for
+        that collector. ${" "}
         <${Anchor}
           href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go"
         >
@@ -904,8 +909,108 @@ function Report() {
             request adjustment does not fix its narrow limit headroom.
           <//>
         <//>
+        <${Paper} id="verified-rollouts" withBorder p="md" radius="md">
+          <${Badge} color="green" variant="light"
+            >3 · third cohort and follow-ups<//
+          >
+          <${Title} order=${3} size="h4" mt="xs">
+            Crossplane, GitLab and control-plane workloads
+          <//>
+          <${Text} component="p">
+            At ${latestTime} UTC the five Crossplane and four GitLab Deployments
+            were Initial. External Secrets’ controller was Recreate with two
+            ready replicas and a minimum of one available in its disruption
+            budget. Its webhook stayed Initial. Kyverno admission remained
+            Initial with three ready replicas and its disruption budget now
+            requires two available.
+          <//>
+          <${Text} component="p">
+            All six PRs were merged at the observation. New-Pod admission
+            changed requests for ${verifiedCount} of the
+            ${latest.workloads.length} observed Deployments in server-side dry
+            runs using actual ReplicaSet owners. Limits and init-container
+            resources were preserved. Dry runs cover admission only. Existing
+            Pods, future scheduling, and updater-driven evictions are separate
+            checks.
+          <//>
+          <${Text} component="p">
+            ${latest.prs.map(
+              (pr, index) =>
+                html`<span key=${pr.number}>
+                  ${index ? " · " : ""}<${Anchor} href=${pr.html_url}
+                    >#${pr.number}<//
+                  >
+                </span>`,
+            )}
+          <//>
+          <${Table.ScrollContainer}
+            minWidth=${930}
+            type="native"
+            tabIndex=${0}
+            aria-label="Third cohort and follow-up admission checks"
+          >
+            <${Table} striped withTableBorder verticalSpacing="sm">
+              <${Table.Thead}>
+                <${Table.Tr}>
+                  <${Table.Th}>Namespace / Deployment<//>
+                  <${Table.Th}>Ready<//>
+                  <${Table.Th}>Live VPA<//>
+                  <${Table.Th}>Memory request · running → dry run<//>
+                  <${Table.Th}>CPU request · running → dry run<//>
+                <//>
+              <//>
+              <${Table.Tbody}>
+                ${latest.workloads.map((row) => {
+                  const changes = (resource, format) =>
+                    row.dry_run_admitted_resources
+                      ? row.current_pod_resources.map((old, index) => {
+                          const admitted =
+                            row.dry_run_admitted_resources[index];
+                          const label =
+                            row.current_pod_resources.length > 1
+                              ? `${old.name} · `
+                              : "";
+                          return html`<${Text}
+                            component="div"
+                            size="sm"
+                            key=${old.name}
+                          >
+                            ${`${label}${format(old.requests[resource])} → ${format(admitted.requests[resource])}`}
+                          <//>`;
+                        })
+                      : "Awaiting admission check";
+                  return html`<${Table.Tr}
+                    key=${`${row.namespace}/${row.deployment}`}
+                  >
+                    <${Table.Td}>${`${row.namespace} / ${row.deployment}`}<//>
+                    <${Table.Td}
+                      >${`${row.ready_replicas}/${row.desired_replicas}`}<//
+                    >
+                    <${Table.Td}>${modeLabels[row.vpa_mode] ?? row.vpa_mode}<//>
+                    <${Table.Td}>${changes("memory", quantityMiB)}<//>
+                    <${Table.Td}>${changes("cpu", (value) => value ?? "—")}<//>
+                  <//>`;
+                })}
+              <//>
+            <//>
+          <//>
+          <${Text} component="p" mt="sm">
+            The GitLab cap model fit the three HPAs at their maxima and,
+            separately, an individual rollout surge at current replica counts,
+            with Crossplane on its observed placements. If two Crossplane
+            providers moved to the two eligible Sidekiq workers at their 2 GiB
+            caps, a 4 GiB Sidekiq Pod could become unschedulable. Placement and
+            headroom can change. Rails, Workhorse and Toolbox stayed
+            recommendation-only.
+          <//>
+          <${Text} component="p" mb="0">
+            The singleton Redis operator stays recommendation-only. Reducing its
+            500 MiB memory request below its limit would move it from Guaranteed
+            to Burstable.
+          <//>
+        <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="blue" variant="light">3 · coverage by class<//>
+          <${Badge} color="blue" variant="light">Coverage by class<//>
           <${Title} order=${3} size="h4" mt="xs"
             >Expand to eligible namespaces, not a bespoke change per workload<//
           >
@@ -923,29 +1028,28 @@ function Report() {
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="cyan" variant="light">4 · automatic cohorts<//>
+          <${Badge} color="cyan" variant="light">Automatic cohorts<//>
           <${Title} order=${3} size="h4" mt="xs"
             >Promote replicated workloads to Recreate in groups<//
           >
           <${Text} component="p" mb=${0}>
-            Candidate replicated controllers include external-secrets,
-            kubeapi-proxy and the Kyverno admission controller. Check each
-            cohort’s rollout topology, PDB, redundancy, availability budget,
-            startup and node fit before enabling eviction; avoid simultaneous
-            changes across tightly coupled control-plane dependencies. VPA’s
-            installed two-replica minimum is a guard, not a guarantee of service
-            availability. Preserve existing request-and-limit ownership. Do not
-            lower namespace-wide <${Code}>minReplicas<//> for a singleton
-            without reviewing every VPA in that namespace. CDviz and ntfy remain
-            non-evicting until their delivery and availability requirements are
-            addressed. For CPU HPA targets, keep CPU ownership separate or prove
-            the interaction; memory-only policies are a useful default.
+            External Secrets’ controller now uses Recreate. Future candidates
+            include kubeapi-proxy and the Kyverno admission controller. Check
+            each cohort’s rollout topology, PDB, redundancy, availability
+            budget, startup and node fit before enabling eviction; avoid
+            simultaneous changes across tightly coupled control-plane
+            dependencies. VPA’s installed two-replica minimum is a guard, not a
+            guarantee of service availability. Preserve existing
+            request-and-limit ownership. Do not lower namespace-wide
+            <${Code}>minReplicas<//> for a singleton without reviewing every VPA
+            in that namespace. CDviz and ntfy remain non-evicting until their
+            delivery and availability requirements are addressed. For CPU HPA
+            targets, keep CPU ownership separate or prove the interaction;
+            memory-only policies are a useful default.
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="gray" variant="light"
-            >5 · operator-owned exceptions<//
-          >
+          <${Badge} color="gray" variant="light">Operator-owned exceptions<//>
           <${Title} order=${3} size="h4" mt="xs"
             >Cover databases and dynamic workloads through their owners<//
           >

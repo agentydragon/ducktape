@@ -17008,5 +17008,1298 @@
       ],
       "source_devel_commit": "e83515e7f8ab797ef41d015d5aa1b5cf3e1b2430"
     }
+  },
+  "third_cohort": {
+    "observed_from_utc": "2026-11-20T09:47:26+00:00",
+    "observed_at_utc": "2026-11-20T09:47:28+00:00",
+    "method": "Read live Kubernetes objects and use server-side Pod CREATE dry runs from current ReplicaSet templates with actual controller owner references. No Pod was created. This checks admission, while scheduling, readiness of replacements, and VPA-initiated evictions require later observations.",
+    "prs": [
+      {
+        "number": 18115,
+        "state": "closed",
+        "title": "Allow VPA to resize External Secrets controller requests",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18115",
+        "merged": true,
+        "merged_at": "2026-11-20T09:36:07Z",
+        "merge_commit_sha": "e3891d12150dfe566cfe7ab2113a9e494c870477"
+      },
+      {
+        "number": 18116,
+        "state": "closed",
+        "title": "Keep two Kyverno admission replicas available during evictions",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18116",
+        "merged": true,
+        "merged_at": "2026-11-20T09:35:53Z",
+        "merge_commit_sha": "6dede023aaaf8666e057142dd2e204145a50555e"
+      },
+      {
+        "number": 18117,
+        "state": "closed",
+        "title": "cluster: size Crossplane controller and provider requests",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18117",
+        "merged": true,
+        "merged_at": "2026-11-20T09:40:02Z",
+        "merge_commit_sha": "6ef769400d5b9de3f5a0983e9e41318c4ea8f66f"
+      },
+      {
+        "number": 18118,
+        "state": "closed",
+        "title": "Size GitLab spike requests at Pod admission",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18118",
+        "merged": true,
+        "merged_at": "2026-11-20T09:39:46Z",
+        "merge_commit_sha": "8e079f09b0a4085d7fd2fb8728c83722cbc54ba7"
+      },
+      {
+        "number": 18122,
+        "state": "closed",
+        "title": "Size trust-manager and kubeapi-proxy requests on Pod creation",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18122",
+        "merged": true,
+        "merged_at": "2026-11-20T09:43:55Z",
+        "merge_commit_sha": "3e32292b7edbdb320ee88ff1d573d864d0fc055a"
+      },
+      {
+        "number": 18123,
+        "state": "closed",
+        "title": "Size Home Assistant and GitLab spike runner memory requests at admission",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18123",
+        "merged": true,
+        "merged_at": "2026-11-20T09:44:48Z",
+        "merge_commit_sha": "32575189e616a7788b54bb1301c5152896e3c5d2"
+      }
+    ],
+    "budgets": [
+      {
+        "namespace": "external-secrets-system",
+        "name": "external-secrets-pdb",
+        "min_available": 1,
+        "disruptions_allowed": 1,
+        "current_healthy": 2
+      },
+      {
+        "namespace": "kyverno",
+        "name": "kyverno-admission-controller",
+        "min_available": 2,
+        "disruptions_allowed": 1,
+        "current_healthy": 3
+      }
+    ],
+    "gitlab_namespace_reconcile_annotation": "20261120T094158Z",
+    "gitlab_capacity_model": {
+      "modeled_utc_date": "2026-11-20",
+      "worker_headroom_mib_at_gitlab_caps": [2527, 4233, 5009],
+      "worker_headroom_mib_with_crossplane_core_also_at_cap": [
+        1759, 4233, 5009
+      ],
+      "current_placement": "The three GitLab HPAs at their maxima and an individual rollout surge at the current replica count fit when modeled separately. Two 2 GiB Crossplane providers moving onto the two Sidekiq-capable workers could block a cap-sized 4 GiB Sidekiq Pod."
+    },
+    "redis_operator": {
+      "vpa_mode": "Off",
+      "pods": [
+        {
+          "qos_class": "Guaranteed",
+          "containers": [
+            {
+              "name": "redis-operator",
+              "requests": {
+                "cpu": "500m",
+                "memory": "500Mi"
+              },
+              "limits": {
+                "cpu": "500m",
+                "memory": "500Mi"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "workloads": [
+      {
+        "group": "Crossplane",
+        "pr": 18117,
+        "namespace": "crossplane-system",
+        "deployment": "crossplane",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "crossplane",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "package-runtime",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "500m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "628694953"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-crossplane: container 0: memory request"
+      },
+      {
+        "group": "Crossplane",
+        "pr": 18117,
+        "namespace": "crossplane-system",
+        "deployment": "crossplane-rbac-manager",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "crossplane",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "package-runtime",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "500m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "crossplane",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-crossplane-rbac-manager: container 0: memory request"
+      },
+      {
+        "group": "Crossplane",
+        "pr": 18117,
+        "namespace": "crossplane-system",
+        "deployment": "provider-buildbuddy-6704cb3b8215",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "crossplane",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "package-runtime",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "500m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {
+              "cpu": "15m",
+              "memory": "128Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-provider-buildbuddy-6704cb3b8215: container 0: cpu request, memory request"
+      },
+      {
+        "group": "Crossplane",
+        "pr": 18117,
+        "namespace": "crossplane-system",
+        "deployment": "provider-litellm-c0bdf543761d",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "crossplane",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "package-runtime",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "500m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {
+              "cpu": "224m",
+              "memory": "548861636"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-provider-litellm-c0bdf543761d: container 0: cpu request, memory request"
+      },
+      {
+        "group": "Crossplane",
+        "pr": 18117,
+        "namespace": "crossplane-system",
+        "deployment": "provider-opentofu-b0adaac1fc19",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "crossplane",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "package-runtime",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "500m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "package-runtime",
+            "requests": {
+              "cpu": "143m",
+              "memory": "628694953"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-provider-opentofu-b0adaac1fc19: container 0: cpu request, memory request"
+      },
+      {
+        "group": "GitLab",
+        "pr": 18118,
+        "namespace": "gitlab-spike",
+        "deployment": "gitlab-spike-gitlab-exporter",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "gitlab-exporter",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "75m",
+                "memory": "128Mi"
+              },
+              "minAllowed": {
+                "cpu": "75m",
+                "memory": "96Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "gitlab-exporter",
+            "requests": {
+              "cpu": "75m",
+              "memory": "100M"
+            },
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "gitlab-exporter",
+            "requests": {
+              "cpu": "75m",
+              "memory": "100M"
+            },
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "gitlab-exporter",
+            "requests": {
+              "cpu": "75m",
+              "memory": "100Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-gitlab-spike-gitlab-exporter: container 0: memory request"
+      },
+      {
+        "group": "GitLab",
+        "pr": 18118,
+        "namespace": "gitlab-spike",
+        "deployment": "gitlab-spike-gitlab-shell",
+        "ready_replicas": 2,
+        "desired_replicas": 2,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "gitlab-shell",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "50m",
+                "memory": "128Mi"
+              },
+              "minAllowed": {
+                "cpu": "20m",
+                "memory": "96Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "gitlab-shell",
+            "requests": {
+              "cpu": "0",
+              "memory": "6M"
+            },
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "gitlab-shell",
+            "requests": {
+              "cpu": "0",
+              "memory": "6M"
+            },
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "gitlab-shell",
+            "requests": {
+              "cpu": "23m",
+              "memory": "100Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-gitlab-spike-gitlab-shell: container 0: cpu request, memory request"
+      },
+      {
+        "group": "GitLab",
+        "pr": 18118,
+        "namespace": "gitlab-spike",
+        "deployment": "gitlab-spike-registry",
+        "ready_replicas": 2,
+        "desired_replicas": 2,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "registry",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "50m",
+                "memory": "128Mi"
+              },
+              "minAllowed": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "registry",
+            "requests": {
+              "cpu": "50m",
+              "memory": "32Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "registry",
+            "requests": {
+              "cpu": "50m",
+              "memory": "32Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "registry",
+            "requests": {
+              "cpu": "50m",
+              "memory": "100Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-gitlab-spike-registry: container 0: memory request"
+      },
+      {
+        "group": "GitLab",
+        "pr": 18118,
+        "namespace": "gitlab-spike",
+        "deployment": "gitlab-spike-sidekiq-all-in-1-v2",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "sidekiq",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "900m",
+                "memory": "4Gi"
+              },
+              "minAllowed": {
+                "cpu": "900m",
+                "memory": "3Gi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "sidekiq",
+            "requests": {
+              "cpu": "900m",
+              "memory": "2G"
+            },
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "sidekiq",
+            "requests": {
+              "cpu": "900m",
+              "memory": "2G"
+            },
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "sidekiq",
+            "requests": {
+              "cpu": "900m",
+              "memory": "3Gi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-gitlab-spike-sidekiq-all-in-1-v2: container 0: memory request"
+      },
+      {
+        "group": "External Secrets",
+        "pr": 18115,
+        "namespace": "external-secrets-system",
+        "deployment": "external-secrets",
+        "ready_replicas": 2,
+        "desired_replicas": 2,
+        "vpa_mode": "Recreate",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "external-secrets",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "384Mi"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "webhook",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "384Mi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": "auto",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-external-secrets: container 0: memory request"
+      },
+      {
+        "group": "External Secrets",
+        "pr": 18115,
+        "namespace": "external-secrets-system",
+        "deployment": "external-secrets-webhook",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "external-secrets",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "384Mi"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "webhook",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "384Mi"
+              },
+              "minAllowed": {
+                "cpu": "15m",
+                "memory": "256Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "webhook",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "webhook",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "webhook",
+            "requests": {
+              "cpu": "15m",
+              "memory": "256Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-external-secrets-webhook: container 0: memory request, cpu request"
+      },
+      {
+        "group": "Kyverno",
+        "pr": 18116,
+        "namespace": "kyverno",
+        "deployment": "kyverno-admission-controller",
+        "ready_replicas": 3,
+        "desired_replicas": 3,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "kyverno",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "384Mi"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "224Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "kyverno",
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "memory": "384Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "kyverno",
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "memory": "384Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "kyverno",
+            "requests": {
+              "cpu": "100m",
+              "memory": "224Mi"
+            },
+            "limits": {
+              "memory": "384Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-kyverno-admission-controller: container 0: memory request"
+      },
+      {
+        "group": "Trust manager",
+        "pr": 18122,
+        "namespace": "cert-manager-trust",
+        "deployment": "trust-manager",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "trust-manager",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              },
+              "minAllowed": {
+                "cpu": "25m",
+                "memory": "128Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "trust-manager",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "trust-manager",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "deployment_vpa_annotation": null,
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "trust-manager",
+            "requests": {
+              "cpu": "25m",
+              "memory": "128Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-trust-manager: container 0: cpu request, memory request"
+      },
+      {
+        "group": "Kubernetes API proxy",
+        "pr": 18122,
+        "namespace": "default",
+        "deployment": "kubeapi-proxy",
+        "ready_replicas": 2,
+        "desired_replicas": 2,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "nginx",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "10m",
+                "memory": "24Mi"
+              },
+              "minAllowed": {
+                "cpu": "10m",
+                "memory": "16Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "nginx",
+            "requests": {
+              "cpu": "10m",
+              "memory": "16Mi"
+            },
+            "limits": {
+              "memory": "64Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "nginx",
+            "requests": {
+              "cpu": "10m",
+              "memory": "16Mi"
+            },
+            "limits": {
+              "memory": "64Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "nginx",
+            "requests": {
+              "cpu": "10m",
+              "memory": "24Mi"
+            },
+            "limits": {
+              "memory": "64Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-kubeapi-proxy: container 0: memory capped to maxAllowed, cpu capped to maxAllowed, memory request, cpu request"
+      },
+      {
+        "group": "Home Assistant",
+        "pr": 18123,
+        "namespace": "home-assistant",
+        "deployment": "home-assistant",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "home-assistant",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "250m",
+                "memory": "2Gi"
+              },
+              "minAllowed": {
+                "cpu": "250m",
+                "memory": "512Mi"
+              }
+            },
+            {
+              "containerName": "caddy",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "20m",
+                "memory": "128Mi"
+              },
+              "minAllowed": {
+                "cpu": "20m",
+                "memory": "40Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "home-assistant",
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            },
+            "limits": {
+              "memory": "2Gi"
+            }
+          },
+          {
+            "name": "caddy",
+            "requests": {
+              "cpu": "20m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "home-assistant",
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            },
+            "limits": {
+              "memory": "2Gi"
+            }
+          },
+          {
+            "name": "caddy",
+            "requests": {
+              "cpu": "20m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "home-assistant",
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            },
+            "limits": {
+              "memory": "2Gi"
+            }
+          },
+          {
+            "name": "caddy",
+            "requests": {
+              "cpu": "20m",
+              "memory": "50Mi"
+            },
+            "limits": {
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-home-assistant: container 0: cpu capped to minAllowed, memory capped to minAllowed, cpu request, memory request; container 1: cpu capped to minAllowed, cpu request, memory request"
+      },
+      {
+        "group": "GitLab runner",
+        "pr": 18123,
+        "namespace": "gitlab-spike-ci",
+        "deployment": "gitlab-spike-runner-gitlab-runner",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "vpa_mode": "Initial",
+        "resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "gitlab-spike-runner-gitlab-runner",
+              "controlledResources": ["memory"],
+              "controlledValues": "RequestsOnly",
+              "maxAllowed": {
+                "cpu": "100m",
+                "memory": "512Mi"
+              },
+              "minAllowed": {
+                "cpu": "100m",
+                "memory": "160Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "template_requests": [
+          {
+            "name": "gitlab-spike-runner-gitlab-runner",
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "current_pod_resources": [
+          {
+            "name": "gitlab-spike-runner-gitlab-runner",
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "deployment_vpa_annotation": "initial",
+        "dry_run_owner_kind": "ReplicaSet",
+        "dry_run_admitted_resources": [
+          {
+            "name": "gitlab-spike-runner-gitlab-runner",
+            "requests": {
+              "cpu": "100m",
+              "memory": "160Mi"
+            },
+            "limits": {
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-gitlab-spike-runner-gitlab-runner: container 0: cpu capped to minAllowed, memory capped to minAllowed, cpu request, memory request"
+      }
+    ],
+    "source_devel_commit": "32575189e616a7788b54bb1301c5152896e3c5d2",
+    "followup_namespace_reconcile_annotations": {
+      "default": "20261120T094549Z",
+      "home-assistant": "20261120T094650Z",
+      "gitlab-spike-ci": "20261120T094650Z"
+    },
+    "trust_manager_bundles": {
+      "synced": 6,
+      "total": 6
+    }
   }
 }
