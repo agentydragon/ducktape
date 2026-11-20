@@ -119,7 +119,7 @@ export function githubPresentation<S extends z.ZodType>({
   result: ResultPreview;
   outcome?: (value: unknown) => ActionOutcome | undefined;
 }): ActionPresentation {
-  const preview = definePreview(schema, request ?? (() => null));
+  const preview = request ? definePreview(schema, request) : { schema, render: () => null };
   const compactPreview = compact ? definePreview(schema, compact) : null;
   return {
     fallbackLabel: label,
