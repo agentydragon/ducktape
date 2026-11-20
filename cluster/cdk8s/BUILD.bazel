@@ -1252,6 +1252,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
