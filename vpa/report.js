@@ -208,6 +208,11 @@ function Report() {
       .then(setData)
       .catch((e) => setError(String(e)));
   }, []);
+  useEffect(() => {
+    // Evidence can arrive after the browser's initial fragment lookup.
+    const fragment = window.location.hash.slice(1);
+    if (data && fragment) document.getElementById(fragment)?.scrollIntoView();
+  }, [data]);
   if (error)
     return html`<${Container} py="xl"
       ><${Alert} color="red" title="Evidence could not be loaded"
@@ -925,13 +930,17 @@ function Report() {
             requires two available.
           <//>
           <${Text} component="p">
-            All six PRs were merged at the observation. New-Pod admission
-            changed requests for ${verifiedCount} of the
-            ${latest.workloads.length} observed Deployments in server-side dry
-            runs using actual ReplicaSet owners. Limits and init-container
-            resources were preserved. Dry runs cover admission only. Existing
-            Pods, future scheduling, and updater-driven evictions are separate
-            checks.
+            ${`All six PRs were merged at the observation. New-Pod admission changed requests for ${verifiedCount} of the ${latest.workloads.length} observed Deployments in server-side dry runs using actual ReplicaSet owners.`}
+            ${" "}Limits and init-container resources were preserved. Dry runs
+            cover admission only. Existing Pods, future scheduling, and
+            updater-driven evictions are separate checks.
+          <//>
+          <${Text} component="p">
+            Trust-manager, kubeapi-proxy, Home Assistant and the GitLab runner
+            manager were all Initial and ready. The proxy, Home Assistant and
+            runner needed namespace updates to pick up their Deployment
+            annotations.${" "}
+            ${`Trust-manager reported ${latest.trust_manager_bundles.synced} of ${latest.trust_manager_bundles.total} Bundles synced.`}
           <//>
           <${Text} component="p">
             ${latest.prs.map(
