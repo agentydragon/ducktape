@@ -150,13 +150,11 @@ export function liveNdjsonWatch(
   signal: AbortSignal | undefined,
   drop = false
 ): Response {
-  const text = (results: readonly unknown[]): string =>
-    results.map((result) => `${JSON.stringify({ result })}\n`).join("");
   return streamResponse(
     "application/x-ndjson",
-    text(initial),
+    ndjson(initial),
     signal,
-    drop ? null : { path, updates: () => text(updates()) },
+    drop ? null : { path, updates: () => ndjson(updates()) },
     drop
   );
 }

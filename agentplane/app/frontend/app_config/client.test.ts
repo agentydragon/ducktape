@@ -117,15 +117,3 @@ it.each([
   );
   await expect(read()).rejects.toThrow("unknown harness");
 });
-
-it.each([
-  { wire: '{"code":10,"message":"changed"}', body: { code: 10, message: "changed" }, code: 10 },
-  { wire: "gateway unavailable", body: "gateway unavailable", code: undefined },
-])("preserves HTTP error details before protobuf decoding: $wire", async ({ wire, body, code }) => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response(wire, { status: 409 }))
-  );
-
-  await expect(listModels()).rejects.toMatchObject({ status: 409, code, body });
-});

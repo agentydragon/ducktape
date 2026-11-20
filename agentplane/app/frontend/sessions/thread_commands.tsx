@@ -168,7 +168,7 @@ export function PendingInputMessages({
   );
   if (pending.length === 0 && projectedOutcomes.length === 0) return null;
   return (
-    <Stack className="agentplane-input-messages" role="region" aria-label="Input messages" gap="xs" pt="xs">
+    <Stack role="region" aria-label="Input messages" gap="xs" pt="xs">
       {pending.map((value) => {
         if (value.command.operation.case !== "submitInput") return null;
         const id = value.command.commandId;
