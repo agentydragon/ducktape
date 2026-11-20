@@ -6,7 +6,13 @@ ServiceMonitors for the controller and webhook metrics Services the chart create
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, Yaml
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
+)
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import namespaces, node_scheduling
@@ -46,8 +52,45 @@ _WEBHOOK_METRICS = ServiceRef(
 )
 
 
+def _availability(component: str, *, replicas: int, min_available: int) -> dict[str, object]:
+    return {
+        "replicaCount": replicas,
+        "podDisruptionBudget": {"enabled": True, "minAvailable": min_available},
+        "affinity": {
+            "podAntiAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": [
+                    {
+                        "labelSelector": {"matchLabels": _component(component).selector},
+                        "topologyKey": "kubernetes.io/hostname",
+                    }
+                ]
+            }
+        },
+    }
+
+
+def _readiness_patch(
+    deployment: str, container: str, probe: dict[str, object]
+) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # The pinned chart configures readiness only for the webhook.
+    return HelmReleaseSpecPostRenderersKustomizePatches(
+        target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+            kind="Deployment", name=deployment, namespace=NAMESPACE
+        ),
+        patch=Yaml.stringify(
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {"name": deployment, "namespace": NAMESPACE},
+                "spec": {"template": {"spec": {"containers": [{"name": container, "readinessProbe": probe}]}}},
+            }
+        ),
+    )
+
+
 def _values() -> dict[str, object]:
     return {
+        **_availability("controller", replicas=2, min_available=1),
         # cert-manager-webhook backs a failurePolicy: Fail webhook, so while it is down
         # the API *rejects* every Certificate/Issuer/CertificateRequest write rather than
         # degrading. Without a priority class it sorted with ordinary workloads under
@@ -86,18 +129,7 @@ def _values() -> dict[str, object]:
             "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
         },
         "webhook": {
-            "replicaCount": 3,
-            "podDisruptionBudget": {"enabled": True, "minAvailable": 2},
-            "affinity": {
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {"matchLabels": _WEBHOOK_METRICS.pods.selector},
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                }
-            },
+            **_availability("webhook", replicas=3, min_available=2),
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Additional DNS names for the webhook certificate.
             "extraArgs": [
@@ -110,6 +142,7 @@ def _values() -> dict[str, object]:
             },
         },
         "cainjector": {
+            **_availability("cainjector", replicas=2, min_available=1),
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {
                 "limits": {"cpu": "100m", "memory": _CAINJECTOR_MEMORY_LIMIT},
@@ -170,6 +203,21 @@ def chart(app: App) -> Chart:
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        _readiness_patch(
+                            NAME, f"{NAME}-controller", {"httpGet": {"path": "/livez", "port": "http-healthz"}}
+                        ),
+                        # The manager starts metrics after CRD discovery and injector registration.
+                        _readiness_patch(
+                            f"{NAME}-cainjector", f"{NAME}-cainjector", {"tcpSocket": {"port": "http-metrics"}}
+                        ),
+                    ]
+                )
+            )
+        ],
         values=_values(),
     )
     _service_monitor(chart, NAME, _CONTROLLER_METRICS)

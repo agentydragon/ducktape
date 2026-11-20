@@ -37,8 +37,68 @@ spec:
     remediation:
       retries: 3
   interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager
+                namespace: cert-manager
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: cert-manager-controller
+                        readinessProbe:
+                          httpGet:
+                            path: /livez
+                            port: http-healthz
+            target:
+              kind: Deployment
+              name: cert-manager
+              namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager-cainjector
+                namespace: cert-manager
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: cert-manager-cainjector
+                        readinessProbe:
+                          tcpSocket:
+                            port: http-metrics
+            target:
+              kind: Deployment
+              name: cert-manager-cainjector
+              namespace: cert-manager
   values:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: controller
+                app.kubernetes.io/instance: cert-manager
+            topologyKey: kubernetes.io/hostname
     cainjector:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: cainjector
+                  app.kubernetes.io/instance: cert-manager
+              topologyKey: kubernetes.io/hostname
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+      replicaCount: 2
       resources:
         limits:
           cpu: 100m
@@ -64,10 +124,14 @@ spec:
     ingressShim:
       defaultIssuerKind: ClusterIssuer
       defaultIssuerName: letsencrypt-prod
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
     prometheus:
       enabled: true
       servicemonitor:
         enabled: false
+    replicaCount: 2
     resources:
       limits:
         cpu: 100m
