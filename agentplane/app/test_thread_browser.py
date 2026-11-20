@@ -1792,16 +1792,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.runner.commands.get()
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-error-input",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-error-input")
     partial = "".join(f"\n\nTest partial paragraph {number}" for number in range(30))
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=partial)))
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
@@ -1868,16 +1859,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     assert following.command_id != command.command_id
     assert following.submit_input.text == "Test distinct input after the failed turn"
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-following-turn")))
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-following-input",
-                origin_command_ids=[following.command_id],
-                text=following.submit_input.text,
-                turn_id="test-following-turn",
-            )
-        )
-    )
+    source.confirm_input(following, message_id="test-following-input", turn_id="test-following-turn")
     source.append(
         event_pb2.Event(
             item_started=event_pb2.ItemStarted(item_id="test-following-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
@@ -1970,16 +1952,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-confirmed-message",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
@@ -2253,16 +2226,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending).to_have_count(0)
         await expect(pending.locator('[data-stage="local"]')).to_have_count(0)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-recovered-from-unobserved-admission",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-recovered-from-unobserved-admission")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2308,16 +2272,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-input-after-replay-catch-up",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-input-after-replay-catch-up")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.runner.commands.empty()
@@ -2385,16 +2340,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-after-electric-reconnect",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-after-electric-reconnect")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2451,16 +2397,7 @@ async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stop
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-command-after-terminal-shape-refresh",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-command-after-terminal-shape-refresh")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
