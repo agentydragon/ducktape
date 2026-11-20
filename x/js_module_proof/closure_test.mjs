@@ -297,7 +297,8 @@ if (!unsafe) {
 function shadow(seed, delta) { return seed + delta; }
 function add(a, b) { return (a + b) + seed; }
 function choose(flag, value) { if (flag) { return value + seed; } else { return value + 1; } }
-export { shadow, add, choose };
+function local(flag, value) { let total = value + seed; if (flag) { let value = 2; return total + value; } else { return total + value; } }
+export { shadow, add, choose, local };
 `
   );
   await writeFile(
@@ -307,7 +308,7 @@ export { shadow, add, choose };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -321,9 +322,19 @@ export { shadow, add, choose };
     { name: "add", args: [4, 5] },
     { name: "choose", args: [0, 5] },
     { name: "choose", args: [1, 5] },
+    { name: "local", args: [0, 3] },
+    { name: "local", args: [1, 3] },
   ];
   const sourceTrace = execute(parameterSource, calls);
-  assert.deepEqual(sourceTrace.results, [{ value: 10 }, { value: 8 }, { value: 13 }, { value: 6 }, { value: 9 }]);
+  assert.deepEqual(sourceTrace.results, [
+    { value: 10 },
+    { value: 8 },
+    { value: 13 },
+    { value: 6 },
+    { value: 9 },
+    { value: 10 },
+    { value: 9 },
+  ]);
   assert.deepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
@@ -331,6 +342,32 @@ export { shadow, add, choose };
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const tdzSource = join(root, "local-tdz-source.mjs");
+  const tdzSpec = join(root, "local-tdz-spec.json");
+  const tdzOut = join(root, "local-tdz-out");
+  await writeFile(
+    tdzSource,
+    `let later = 4;
+function broken() { let first = later; let later = 1; return first; }
+export { broken };
+`
+  );
+  await writeFile(
+    tdzSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", tdzSource, tdzSpec, tdzOut).result, "generated");
+  assert.equal(cli("validate", tdzSource, tdzSpec, tdzOut).result, "unknown");
+  assert.equal(execute(tdzSource, ["broken"]).error.name, "ReferenceError");
+  assert.equal(execute(join(tdzOut, "entry.mjs"), ["broken"]).error.name, "ReferenceError");
   const logic = join(parameterOut, "logic.mjs");
   await writeFile(logic, (await readFile(logic, "utf8")).replace("(a + b) + seed", "(a + b) + a"));
   assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unknown");

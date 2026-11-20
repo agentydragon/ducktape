@@ -137,8 +137,7 @@ function expressionFunction(node) {
   const parameters = node.params.map(identifier);
   check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
   check(new Set(parameters).size === parameters.length, "duplicate parameters");
-  check(node.body.body.length === 1, "expected one returning statement");
-  const refs = new Set();
+  check(node.body.body.length > 0, "expected a returning function body");
   const expression = (node) => {
     if (node?.type === "Literal") {
       check(Number.isSafeInteger(node.value) && node.value >= 0, "expected a nonnegative safe integer");
@@ -147,7 +146,6 @@ function expressionFunction(node) {
     if (node?.type === "Identifier") {
       const value = identifier(node);
       check(!["globalThis", "eval", "arguments"].includes(value), "unsupported dynamic reference");
-      if (!parameters.includes(value)) refs.add(value);
       return { kind: "name", name: value };
     }
     if (node?.type === "BinaryExpression" && node.operator === "+")
@@ -161,9 +159,25 @@ function expressionFunction(node) {
       };
     check(false, "unsupported numeric expression");
   };
+  const sequence = (statements) => {
+    check(statements.length > 0, "expected a returning statement");
+    const [first, ...rest] = statements;
+    if (first.type === "VariableDeclaration") {
+      check(
+        (first.kind === "let" || first.kind === "const") && first.declarations.length === 1 && rest.length > 0,
+        "unsupported local declaration"
+      );
+      const declaration = first.declarations[0];
+      const name = identifier(declaration.id);
+      check(name !== "globalThis", "unsupported local binding");
+      return { kind: "local", name, initial: expression(declaration.init), body: sequence(rest) };
+    }
+    check(rest.length === 0, "unsupported statements after return");
+    return returning(first);
+  };
   const returning = (statement) => {
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
-    if (statement?.type === "BlockStatement" && statement.body.length === 1) return returning(statement.body[0]);
+    if (statement?.type === "BlockStatement") return sequence(statement.body);
     if (statement?.type === "IfStatement" && statement.alternate)
       return {
         kind: "conditional",
@@ -173,12 +187,28 @@ function expressionFunction(node) {
       };
     check(false, "unsupported function body");
   };
+  const body = sequence(node.body.body);
+  const free = (item, bound) => {
+    switch (item.kind) {
+      case "literal":
+        return [];
+      case "name":
+        return bound.includes(item.name) ? [] : [item.name];
+      case "add":
+        return [...free(item.left, bound), ...free(item.right, bound)];
+      case "conditional":
+        return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
+      case "local":
+        return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
+    }
+    throw new Error("unknown numeric expression");
+  };
   return {
     kind: "expressionFunction",
     name,
     parameters,
-    expression: returning(node.body.body[0]),
-    references: [...refs],
+    expression: body,
+    references: [...new Set(free(body, parameters))],
   };
 }
 
@@ -485,6 +515,8 @@ function leanExpression(expression) {
       return `.add (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
     case "conditional":
       return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
+    case "local":
+      return `.local ${str(expression.name)} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
   }
   throw new Error("unknown expression");
 }
@@ -718,6 +750,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       return [expression.test, expression.consequent, expression.alternative]
         .map((part) => expressionBound(part, bound))
         .reduce((a, b) => (a > b ? a : b));
+    if (expression.kind === "local") {
+      const initial = expressionBound(expression.initial, bound);
+      const body = expressionBound(expression.body, initial > bound ? initial : bound);
+      return initial > body ? initial : body;
+    }
     throw new Error("unknown expression");
   };
   for (const calls of candidates.slice(0, 64)) {

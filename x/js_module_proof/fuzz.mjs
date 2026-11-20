@@ -409,8 +409,20 @@ function parameterCase(seed, index) {
         {
           type: "IfStatement",
           test: id("y"),
-          consequent: { type: "BlockStatement", body: [returnNode(value)] },
-          alternate: { type: "BlockStatement", body: [returnNode(left)] },
+          consequent: {
+            type: "BlockStatement",
+            body: [
+              declaration("temp", value),
+              returnNode({ type: "BinaryExpression", operator: "+", left: id("temp"), right: id("base") }),
+            ],
+          },
+          alternate: {
+            type: "BlockStatement",
+            body: [
+              declaration("base", literal(2)),
+              returnNode({ type: "BinaryExpression", operator: "+", left: id("base"), right: id("y") }),
+            ],
+          },
         },
       ]),
       {

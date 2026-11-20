@@ -210,9 +210,36 @@ def expressionNames : NumericExpr → List String
   | .name name => [name]
   | .add left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
+  | .local _ initial body => expressionNames initial ++ expressionNames body
+
+def laterExpressionNames : NumericExpr → List String
+  | .local name _ body => name :: laterExpressionNames body
+  | .literal _ => []
+  | .name _ => []
+  | .add _ _ => []
+  | .conditional _ _ _ => []
+
+/- Reject a read of a local before its initialization, including a later
+   declaration in the same lowered sequence. Nested blocks can be treated
+   conservatively as part of the surrounding lowered sequence. -/
+def validNumericExpression : NumericExpr → Bool
+  | .literal _ => true
+  | .name _ => true
+  | .add left right => validNumericExpression left && validNumericExpression right
+  | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
+  | .local name initial body =>
+    !(expressionNames initial).any (fun reference => (name :: laterExpressionNames body).contains reference) &&
+      validNumericExpression initial && validNumericExpression body
+
+def expressionFreeNames (bound : List String) : NumericExpr → List String
+  | .literal _ => []
+  | .name name => if bound.contains name then [] else [name]
+  | .add left right => expressionFreeNames bound left ++ expressionFreeNames bound right
+  | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
+  | .local name initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
-  (expressionNames expression).filter (fun name => !parameters.contains name)
+  expressionFreeNames parameters expression
 
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
@@ -224,7 +251,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       visible modules index sourceName
   | .thrower _ _ => true
   | .expressionFunction _ parameters expression =>
-    parameters.all (fun name => parameters.count name == 1) &&
+    parameters.all (fun name => parameters.count name == 1) && validNumericExpression expression &&
       (freeExpressionNames parameters expression).all (fun name =>
         isReadableBinding source name && visible modules index name)
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
