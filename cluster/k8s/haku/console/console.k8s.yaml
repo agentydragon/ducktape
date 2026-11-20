@@ -646,6 +646,17 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-console-static
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - emptyDir: {}
           name: nginx-conf
