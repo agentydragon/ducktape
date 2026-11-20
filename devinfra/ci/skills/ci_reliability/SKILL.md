@@ -37,7 +37,8 @@ inspected devel SHA. Record repository, branches, workflow filters, collection t
 and missing coverage. Keep mainline invocations, PR runs, and selected retry examples
 as separate populations. Expand the window when low counts limit conclusions.
 
-Plan the PR sample for the [shared dashboard contract](references/reporting.md).
+Use the `action_report` skill to plan and edit the dashboard.
+Apply the [CI dashboard contract](references/reporting.md) to its PR sample and publication.
 Count each eligible PR head once. Reconstruct required-check attempts to show
 how many heads went green on the first attempt, and how many initially red heads
 recovered on a retry of the same tested revision. Give each rate its denominator

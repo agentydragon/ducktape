@@ -1,59 +1,12 @@
 # Shared CI report publishing contract
 
-Use this contract when planning a dashboard refresh and again before publishing.
+## PR dashboard scope
 
-The reader uses these pages to judge how fast and reliable required PR CI is,
-decide which problems deserve attention, and choose what to try given the likely
-benefit and cost. Start each refresh by asking which decision the evidence can
-inform. Choose metrics and visuals for that decision. A trend answers whether
-conditions changed, a distribution shows who sees a long wait, and a breakdown
-can show where failures concentrate. Omit a chart if it adds no information.
-
-## Default reading order
-
-1. **How are PRs doing?** Open with the headline PR metrics and a graph showing
-   their distribution or trend. Put the observation window, population, sample size
-   and units beside them. Refresh the broad PR sample even when the newest work
-   concerns a single incident or rollout. If collection is incomplete, identify
-   the gap in the opening and date any retained baseline. A new experiment does
-   not refresh the baseline's date.
-2. **Where is the problem concentrated?** Compare PR classes, gates or failure
-   mechanisms as the evidence warrants. Show how often the driver occurs, which PRs
-   it affects and how much it costs them. Use a breakdown to establish its scale
-   before drilling into a representative run. Keep detailed traces and methods
-   one click away.
-3. **What should we try next?** Rank the open interventions. For each, name the
-   affected test, trigger or service, the proposed change, expected payoff for PRs, implementation cost,
-   evidence and uncertainty, and the smallest check that would support adopting it.
-   Express payoff in units the reader can use, such as minutes per affected head or
-   reruns avoided per week. If the evidence supports only a bound, give the bound.
-   If payoff is unknown, identify the measurement that would establish it. Check
-   each proposal against current source, routing and landed fixes.
-4. **What changed?** Put useful history last, collapsed by default. Keep a past
-   intervention when its measured effect, unresolved outcome or failed experiment
-   informs a decision today. Link to dated evidence for the rest. On each refresh,
-   retire superseded advice.
-
-## Edit the whole report on every update
-
-Even for a one-result follow-up, read the existing page and ask what this result
-changes for a PR author. Revise the headline, driver breakdown or ranked actions
-where the answer changes. A result that only documents an experiment can live in
-linked evidence. When one experiment informs both dashboards, give each page the
-conclusion relevant to its question and link the shared method and results once.
-
-Read the complete rendered page in order on desktop and mobile with disclosures
-closed. Can a reader see PR health and its graph on opening, then find the main
-driver and a worthwhile next action by scrolling? For each visible section, ask
-what the reader learns there that affects that judgment. Combine repeated claims,
-shorten explanations the graph already supplies, and move background into a
-disclosure or a dated evidence link. Preserve a useful deep link when moving detail.
-
-Check the title, summary, charts, captions and recommendations against the same
-current facts. When a fix lands or routing changes, look for every place the old
-assumption shaped the advice. Keep measurement windows and material limits visible.
-Use semantic headings and accessible controls. Distinguish chart series by more
-than color.
+Refresh the broad PR sample even when the newest work concerns one incident or
+rollout. Open with PR health and a relevant graph. If collection is incomplete,
+show the gap and date any retained baseline. Quantify the impact of a driver or
+proposed fix in PR terms, such as minutes per affected head or reruns per week.
+Check recommendations against current source, routing and landed fixes.
 
 ## Presentation
 
@@ -70,7 +23,8 @@ visualizations during refreshes and inspect the rendered screenshots: a passing
 test can still show empty bars, clipped labels or lost distinctions. Keep original
 chart windows, units and denominators when retaining historical measurements.
 Author standalone HTML; do not wrap Markdown in a preformatted block.
-Verify actual CDN loading, desktop and mobile layouts, both
+Use semantic headings, accessible controls and chart labels that work without color.
+Review the full page on desktop and mobile with disclosures closed. Verify actual CDN loading, both
 initial color schemes and a live OS or browser preference change. Keep
 styling-only work distinct from measurement or source updates.
 

@@ -17,8 +17,8 @@ an existing investigation to continue, with historical measurements and conclusi
 checked against current CI. Keep working reports and measurement snapshots out of
 `devel`; publish each reviewed
 run as the latest snapshot in that namespace (below). `cihealth` covers
-release/pin currency and failed CI more broadly. Plan a published refresh around
-the [shared dashboard contract](references/reporting.md).
+release/pin currency and failed CI more broadly. Use the `action_report` skill to plan and edit the dashboard.
+Apply the [CI dashboard contract](references/reporting.md) to its PR sample and publication.
 Propose instrumentation only when it closes a decision-relevant evidence gap.
 
 Test implementations, execution architecture and infrastructure are part of the
