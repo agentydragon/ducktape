@@ -215,6 +215,26 @@ function Report() {
     return html`<${Container} py="xl"><${Text}>Loading VPA evidence…<//><//>`;
   const current = data.inventory;
   const counts = current.counts;
+  const missingRequestContainers = (row) =>
+    row.containers
+      .flatMap((c) => c.admitted)
+      .filter((p) => !p.requests.cpu || !p.requests.memory).length;
+  const piraeusMissing = current.workloads
+    .filter((row) => row.namespace === "piraeus-datastore")
+    .reduce((n, row) => n + missingRequestContainers(row), 0);
+  const seaweedMissing = current.workloads
+    .filter((row) => row.namespace === "seaweedfs-csi-system")
+    .reduce((n, row) => n + missingRequestContainers(row), 0);
+  const cnpgWithGaps = current.workloads.filter(
+    (row) =>
+      row.apiGroup === "postgresql.cnpg.io" &&
+      row.kind === "Cluster" &&
+      missingRequestContainers(row) > 0,
+  );
+  const cnpgMissing = cnpgWithGaps.reduce(
+    (n, row) => n + missingRequestContainers(row),
+    0,
+  );
   const chart = Object.entries(counts.vpa_modes).map(([mode, count]) => ({
     mode,
     count,
@@ -416,10 +436,9 @@ function Report() {
             show usage or an OOM cause.<//
           >
           <${Text} component="p" mb=${0}
-            >The largest request gaps are Piraeus (63 containers) and SeaweedFS
-            CSI (16); another 42 PostgreSQL containers belong to 21 CNPG
-            clusters. Work through those with their operator owners. Search the
-            current inventory below for individual owners and containers.<//
+            >${`Request gaps include Piraeus (${piraeusMissing} containers) and SeaweedFS CSI (${seaweedMissing}); another ${cnpgMissing} PostgreSQL containers belong to ${cnpgWithGaps.length} CNPG clusters.`}${" "}
+            Work through those with their operator owners. Search the current
+            inventory below for individual owners and containers.<//
           >
         <//>
       <//>
