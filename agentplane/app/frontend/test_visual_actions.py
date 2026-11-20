@@ -5,13 +5,14 @@ from dataclasses import dataclass
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Locator, expect
 
 from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture
 from agentplane.app.frontend.testing.visual_assertions import _open_phone_navigation
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import MOBILE, Viewport
 
 pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -366,9 +367,21 @@ EXAMPLES = (
 )
 
 
+async def _expect_live_preview(surface: Locator, example: ActionExample) -> None:
+    if example.live_preview is not None:
+        await expect(surface.get_by_role("link", name=example.live_preview[2], exact=True)).to_be_visible()
+
+
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda example: example.key)
-async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, example: ActionExample) -> None:
+async def test_action_presentations(
+    view: VisualPage, app: AgentplaneFixture, example: ActionExample, viewport: Viewport
+) -> None:
+    form_factor = "mobile" if viewport == MOBILE else "desktop"
+
+    async def capture(checkpoint: str, target: Locator) -> None:
+        await view.capture(checkpoint, target=target, label=f"{example.key} · {form_factor} · {checkpoint}")
+
     page = view.page
     registered = await page.evaluate("window.agentplaneVisual.actionRendererKeys()")
     keys = [item.key for item in EXAMPLES]
@@ -385,17 +398,16 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(sidebar.locator(".agentplane-actions-sidebar-name")).to_be_visible()
     await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("sidebar-collapsed", target=sidebar)
+    await capture("sidebar-collapsed", sidebar)
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         await disclosure.click()
-        if example.live_preview:
-            await expect(sidebar.get_by_text(example.live_preview[2], exact=False)).to_be_visible()
+        await _expect_live_preview(sidebar, example)
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
         await wait_for_stable(page)
-        await view.capture("sidebar-expanded", target=sidebar)
+        await capture("sidebar-expanded", sidebar)
         review_link = sidebar.get_by_role("link", name="Details", exact=True)
     else:
         await expect(disclosure).to_have_count(0)
@@ -408,13 +420,25 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     )
     await expect(pending).to_have_count(1)
     await expect(pending).to_contain_text("Check the exact call before approving.")
-    if example.live_preview:
-        await expect(pending.get_by_text(example.live_preview[2], exact=False)).to_be_visible()
+    await _expect_live_preview(pending, example)
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
+    if example.key == "gmail.threads_modify_labels":
+        subject_link = pending.get_by_role("link", name="Deployment review", exact=True)
+        await expect(subject_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/thread-123")
+        await expect(subject_link).to_have_attribute("target", "_blank")
+    elif example.key == "tana.move_node":
+        await expect(pending).to_contain_text(
+            "Move Draft notes to the start of Website project, keeping the source reference."
+        )
+        for name, node_id in (("Draft notes", "draft"), ("Website project", "website")):
+            node_link = pending.get_by_role("link", name=name, exact=True)
+            await expect(node_link).to_have_attribute("href", f"https://app.tana.inc?nodeid={node_id}")
+            await expect(node_link).to_have_attribute("target", "_blank")
+            await expect(pending.get_by_text(node_id, exact=True)).to_have_count(0)
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("pending-detail", target=pending)
+    await capture("pending-detail", pending)
 
     # Native sandbox results are stored directly. MCP results use the actual wire envelope.
     result = (
@@ -437,11 +461,12 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
+    await _expect_live_preview(receipt, example)
     await expect(receipt.locator(".ui-code-block-placeholder")).to_have_count(0)
     await expect(receipt.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture("detail-result", target=receipt)
+    await capture("detail-result", receipt)
 
     await page.evaluate("window.location.hash = '/actions'")
     await expect(page.get_by_role("radio", name="Not auto-allowed", exact=True)).to_be_checked()
@@ -451,15 +476,16 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     await expect(details).to_have_attribute("aria-expanded", "false")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await wait_for_stable(page)
-    await view.capture("history", target=history)
+    await capture("history", history)
 
     await details.click()
     await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
+    await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
-    await view.capture("history-expanded", target=history)
+    await capture("history-expanded", history)
 
 
 if __name__ == "__main__":

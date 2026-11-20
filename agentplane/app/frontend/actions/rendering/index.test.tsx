@@ -432,16 +432,9 @@ describe("Action presentation slots", () => {
         keepSourceReference: true,
       })
     );
-    for (const text of [
-      "Node draft",
-      "Destination project",
-      "Source parent inbox",
-      "Reference node checklist",
-      "Position after",
-      "Keep the source reference",
-    ]) {
-      expect(details.textContent).toContain(text);
-    }
+    expect(details.textContent).toContain(
+      "Move draft from inbox after checklist in project, keeping the source reference."
+    );
   });
 
   it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {

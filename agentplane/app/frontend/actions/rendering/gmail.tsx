@@ -13,7 +13,7 @@ import {
   type PreviewProps,
 } from "./entry";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
-import { LiveResourceName, useIntegrationPreviewNames } from "./integration_previews";
+import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -188,14 +188,16 @@ function draftSubject(result: DraftCallResult): string | null {
   return result.message?.payload?.headers?.find((header) => header.name?.toLowerCase() === "subject")?.value ?? null;
 }
 
+function gmailThreadHref(id: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(id)}`;
+}
+
 function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallResult>): JSX.Element {
   const subject = result ? (draftSubject(result) ?? args.subject) : args.subject;
   const draftHref = result?.id
     ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(result.id)}`
     : null;
-  const threadHref = args.thread_id
-    ? `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(args.thread_id)}`
-    : null;
+  const threadHref = args.thread_id ? gmailThreadHref(args.thread_id) : null;
 
   return (
     <Stack gap="xs">
@@ -274,7 +276,7 @@ function GmailThreadsResult({ result }: { result: z.infer<typeof gmailThreadsRes
       ) : (
         threads.map((thread, index) => {
           const text = thread.snippet || thread.id || `Thread ${index + 1}`;
-          const href = thread.id ? `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(thread.id)}` : undefined;
+          const href = thread.id ? gmailThreadHref(thread.id) : undefined;
           return href ? (
             <Anchor key={thread.id} href={href} target="_blank" rel="noreferrer">
               {text}
@@ -322,7 +324,7 @@ const threadLabels = definePreview(
         {args.remove?.length ? <Text size="sm">Remove labels {args.remove.join(", ")}</Text> : null}
         {args.thread_ids.map((id, index) => (
           <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
-            <LiveResourceName id={id} name={names?.get(id)} />
+            <LiveResourceLink id={id} name={names?.get(id)} href={gmailThreadHref(id)} showResolvedId />
           </Text>
         ))}
       </Stack>
