@@ -26,9 +26,12 @@ assert.equal(result.cases, 16 / shards);
 if (shards === 4 && shard === 0) assert.ok(result.proved > 0);
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) {
-  assert.equal(result.closureCases, result.cases);
-  assert.equal(result.closureSourceExecuted, result.cases);
-  assert.equal(result.closureRefused, result.cases);
+  assert.equal(result.closureCases + result.modeledClosureCases, result.cases);
+  assert.equal(result.modeledClosureCases, 1);
+  assert.equal(result.modeledClosureCompared, 1);
+  assert.equal(result.modeledClosureProved, 1);
+  assert.equal(result.closureSourceExecuted, result.closureCases);
+  assert.equal(result.closureRefused, result.closureCases);
 }
 if (shards === 4 && shard === 2) {
   assert.ok(result.mutated > 0);
@@ -50,8 +53,10 @@ assert.equal(bulk.cases, 128 / shards);
 assert.equal(bulk.generated, bulk.compared);
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
-  assert.equal(bulk.closureSourceExecuted, bulk.cases);
-  assert.equal(bulk.closureRefused, bulk.cases);
+  assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
+  assert.equal(bulk.modeledClosureCases, 8);
+  assert.equal(bulk.modeledClosureCompared, 8);
+  assert.equal(bulk.closureRefused, bulk.closureCases);
   assert.equal(bulk.controlFlowCases, bulk.cases / 2);
   assert.ok(bulk.branchThen > 0);
   assert.ok(bulk.branchElse > 0);
@@ -60,7 +65,7 @@ console.log(JSON.stringify(bulk));
 
 // Run structural sampling after the Lean-backed cases to limit peak memory.
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
-const closures = Array.from({ length: 128 }, (_, i) => makeCase(917, 4 * i + 3));
+const closures = Array.from({ length: 128 }, (_, i) => makeCase(917, 4 * i + 3)).filter((c) => c.grammar === "closure");
 assert.deepEqual(makeCase(917, 15), makeCase(917, 15));
 assert.equal(new Set(closures.map((c) => c.depth)).size, 4);
 assert.ok(closures.some((c) => c.shadowed));
@@ -83,7 +88,7 @@ for (const c of closures) {
   assert.equal(countNodes(c.ast, "IfStatement"), c.controlFlow ? 1 : 0);
   assert.equal(countNodes(c.ast, "ForStatement"), c.controlFlow ? 1 : 0);
 }
-assert.ok(new Set(closures.map((c) => c.source)).size > 100);
+assert.ok(new Set(closures.map((c) => c.source)).size > 80);
 for (const c of closures) {
   const parsed = parse(c.source, { ecmaVersion: "latest", sourceType: "module" });
   assert.deepEqual(

@@ -180,6 +180,11 @@ function generateFiles(source, spec, names) {
         defs.set(binding, name);
       }
     }
+  for (const name of names)
+    for (const index of spec.modules[name].statements) {
+      const item = source.statements[index].ast;
+      if (item.kind === "function") check(defs.get(item.target) === name, "cannot write an imported binding");
+    }
   const referencesByModule = Object.fromEntries(
     names.map((name) => [
       name,

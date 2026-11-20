@@ -66,7 +66,7 @@ function print(node) {
     case "ForStatement":
       return `for (${print(node.init).slice(0, -1)}; ${print(node.test)}; ${print(node.update)}) ${print(node.body)}`;
     case "UpdateExpression":
-      return `${print(node.argument)}${node.operator}`;
+      return node.prefix ? `${node.operator}${print(node.argument)}` : `${print(node.argument)}${node.operator}`;
     case "EmptyStatement":
       return ";";
     case "ArrowFunctionExpression":
@@ -264,9 +264,96 @@ function closureCase(seed, index) {
   };
 }
 
+// The proof-supported closure grammar is generated separately from the wider
+// closure grammar. Assignments vary the owners and evaluation order.
+function modeledClosureCase(seed, index) {
+  const rand = random(seed ^ 0xced, index);
+  const names = Array.from({ length: 1 + rand(4) }, (_, i) => `unit${i}.mjs`);
+  const observer = "observer.mjs",
+    entry = "entry.mjs";
+  const modules = Object.fromEntries(
+    [...names, observer, entry].map((name) => [name, { imports: [], statements: [] }])
+  );
+  const owners = [0];
+  for (let i = 1; i < 4; i++) owners.push(owners[i - 1] + rand(names.length - owners[i - 1]));
+  const [seedOwner, factoryOwner, closureOwner, readerOwner] = owners.map((i) => names[i]);
+  const dep = (owner, target) => {
+    if (owner !== target && !modules[owner].imports.includes(target)) modules[owner].imports.push(target);
+  };
+  dep(factoryOwner, seedOwner);
+  dep(closureOwner, factoryOwner);
+  dep(readerOwner, closureOwner);
+  dep(observer, readerOwner);
+  modules[entry].imports = shuffle([...names, observer], rand);
+  const factory = functionNode(
+    "make",
+    [],
+    [
+      declaration("captured", id("seed")),
+      returnNode({
+        type: "ArrowFunctionExpression",
+        params: [],
+        async: false,
+        body: { type: "UpdateExpression", operator: "++", prefix: true, argument: id("captured") },
+      }),
+    ]
+  );
+  const seedDecl = declaration("seed", literal(1 + rand(8)));
+  const closureDecl = declaration("next", call(id("make")));
+  closureDecl.kind = "const";
+  const reader = functionNode("read", [], [returnNode(call(id("next")))]);
+  const first = shuffle(
+    [
+      [seedDecl, seedOwner],
+      [factory, factoryOwner],
+    ],
+    rand
+  );
+  const unsafe = index % 32 === 19;
+  const items = [
+    ...first,
+    [closureDecl, closureOwner],
+    [reader, readerOwner],
+    [expr(call(id("read"))), unsafe ? entry : readerOwner],
+    [
+      expr(
+        call({ type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false }, [
+          call(id("read")),
+        ])
+      ),
+      observer,
+    ],
+  ];
+  if (unsafe) dep(entry, readerOwner);
+  items.forEach(([, owner], i) => modules[owner].statements.push(i));
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      ...items.map(([node]) => node),
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("read"), exported: id("read") }],
+      },
+    ],
+  };
+  return {
+    ast,
+    source: print(ast),
+    spec: { kind: "bindings", entry, modules },
+    calls: Array.from({ length: 2 + rand(4) }, () => "read"),
+    grammar: "modeledClosure",
+    expectUnsafe: unsafe,
+    cyclic: false,
+    invalidAssignment: false,
+    unsupported: false,
+  };
+}
+
 // Generate declarations and effects independently of their module placement.
 // Mode changes how effects are distributed, not the program grammar.
 export function makeCase(seed, index) {
+  if (index % 16 === 3) return modeledClosureCase(seed, index);
   if (index % 4 === 3) return closureCase(seed, index);
   const rand = random(seed, index);
   const mode = index % 4;
@@ -363,6 +450,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     seed,
     start,
     cases: 0,
+    modeledClosureCases: 0,
+    modeledClosureCompared: 0,
+    modeledClosureProved: 0,
+    modeledClosureUnsafe: 0,
     closureCases: 0,
     closureSourceExecuted: 0,
     closureRefused: 0,
@@ -405,6 +496,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         join(root, "case.json"),
         JSON.stringify({ seed, index, calls: input.calls, unsupported: input.unsupported }, null, 2) + "\n"
       );
+      if (input.grammar === "modeledClosure") summary.modeledClosureCases++;
       if (input.grammar === "closure") {
         summary.closureCases++;
         summary.closureDepths[input.depth] = (summary.closureDepths[input.depth] ?? 0) + 1;
@@ -453,6 +545,11 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       const after = execute(join(out, input.spec.entry), input.calls);
       const equal = JSON.stringify(before) === JSON.stringify(after);
       summary.compared++;
+      if (input.grammar === "modeledClosure") {
+        summary.modeledClosureCompared++;
+        if (equal === input.expectUnsafe || before.error || after.error)
+          throw new Error("closure split differed from its intended Node behavior");
+      }
       summary[equal ? "equal" : "different"]++;
       if (!mutated) summary.splitCompared++;
       if (!equal) summary[mutated ? "mutatedDifferent" : "splitDifferent"]++;
@@ -462,6 +559,13 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         const verdict = await validateBindings(source, spec, out);
         summary.validated++;
         verdictName = verdict.result;
+        if (input.grammar === "modeledClosure") {
+          const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
+          if (verdict.result !== expected)
+            throw new Error(`closure validation expected ${expected}, got ${verdict.result}: ${verdict.reason ?? ""}`);
+          if (input.expectUnsafe) summary.modeledClosureUnsafe++;
+          else summary.modeledClosureProved++;
+        }
         if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (verdict.result === "proved under assumptions") {

@@ -116,8 +116,7 @@ theorem fixture_reference : ∃ owner declaration,
       },
     })
   );
-  assert.equal(cli("generate", source, importedWriteSpec, importedWriteOut).value.result, "generated");
-  assert.equal(cli("validate", source, importedWriteSpec, importedWriteOut).value.result, "unknown");
+  assert.equal(cli("generate", source, importedWriteSpec, importedWriteOut).value.result, "unknown");
 
   // A different number of declarations, functions and calls must use the same
   // syntax-directed frontend and Lean linker, not a template for the first input.

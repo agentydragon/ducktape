@@ -144,10 +144,12 @@ return values and exceptions after a generated sequence of exported calls. It
 also runs the Lean-backed validator and checks that a proved result agrees with
 Node and that an unsafe result's witness matches the independently observed
 initialization. Some trials mutate generated modules to exercise the validator;
-other trials generate programs with nested, escaping closures, parameters,
+some trials generate supported counter closures and check safe and unsafe
+splits against Node and Lean. Other trials generate programs with nested,
+escaping closures, parameters,
 shadowed bindings, captured writes, bounded loops and branches, plus cyclic
 graphs or invalid assignments.
-Closure programs are independently executed in Node even when the splitter
+More general closure programs are independently executed in Node when the splitter
 refuses them.
 
 ```sh
