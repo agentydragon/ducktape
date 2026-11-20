@@ -56,7 +56,10 @@ const resourceScaleNotification: ActionNotificationFormatter = (request) => {
 
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
-const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
+export const ACTION_NOTIFICATION_FORMATTERS: ReadonlyMap<
+  string,
+  ReadonlyMap<string, ActionNotificationFormatter>
+> = new Map([
   [
     "kubernetes_admin",
     new Map([
@@ -240,10 +243,121 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["ha_search", fixedActionNotification("Search Home Assistant")],
       ["ha_list_floors_areas", fixedActionNotification("List floors and areas")],
       ["ha_list_services", fixedActionNotification("List Home Assistant services")],
+      ["ha_config_delete_dashboard", fixedActionNotification("Delete Home Assistant dashboard")],
+      ["ha_config_delete_dashboard_resource", fixedActionNotification("Delete dashboard resource")],
+      ["ha_config_get_automation", fixedActionNotification("Read automation configuration")],
+      ["ha_config_get_calendar_events", fixedActionNotification("Read Home Assistant calendar")],
+      ["ha_config_get_category", fixedActionNotification("Read Home Assistant categories")],
+      ["ha_config_get_dashboard", fixedActionNotification("Read Home Assistant dashboard")],
+      ["ha_config_get_label", fixedActionNotification("Read Home Assistant labels")],
+      ["ha_config_get_scene", fixedActionNotification("Read scene configuration")],
+      ["ha_config_get_script", fixedActionNotification("Read script configuration")],
+      ["ha_config_list_dashboard_resources", fixedActionNotification("List dashboard resources")],
+      ["ha_config_list_groups", fixedActionNotification("List Home Assistant groups")],
+      ["ha_config_list_helpers", fixedActionNotification("List Home Assistant helpers")],
+      ["ha_config_remove_automation", fixedActionNotification("Remove automation")],
+      ["ha_config_remove_calendar_event", fixedActionNotification("Remove Home Assistant calendar event")],
+      ["ha_config_remove_category", fixedActionNotification("Remove Home Assistant category")],
+      ["ha_config_remove_group", fixedActionNotification("Remove Home Assistant group")],
+      ["ha_config_remove_label", fixedActionNotification("Remove Home Assistant label")],
+      ["ha_config_remove_scene", fixedActionNotification("Remove scene")],
+      ["ha_config_remove_script", fixedActionNotification("Remove script")],
+      ["ha_config_set_automation", fixedActionNotification("Review automation configuration change")],
+      ["ha_config_set_calendar_event", fixedActionNotification("Create Home Assistant calendar event")],
+      ["ha_config_set_category", fixedActionNotification("Save Home Assistant category")],
+      ["ha_config_set_dashboard", fixedActionNotification("Save dashboard configuration")],
+      ["ha_config_set_dashboard_resource", fixedActionNotification("Save dashboard resource")],
+      ["ha_config_set_group", fixedActionNotification("Save Home Assistant group")],
+      ["ha_config_set_helper", fixedActionNotification("Save Home Assistant helper")],
+      ["ha_config_set_label", fixedActionNotification("Save Home Assistant label")],
+      ["ha_config_set_scene", fixedActionNotification("Save scene configuration")],
+      ["ha_config_set_script", fixedActionNotification("Save script configuration")],
+      ["ha_eval_template", fixedActionNotification("Evaluate Home Assistant template")],
+      ["ha_get_app", fixedActionNotification("Read Home Assistant apps")],
+      ["ha_get_automation_traces", fixedActionNotification("Read automation traces")],
+      ["ha_get_blueprint", fixedActionNotification("Read Home Assistant blueprint")],
+      ["ha_get_camera_image", fixedActionNotification("Capture Home Assistant camera image")],
+      ["ha_get_entity_exposure", fixedActionNotification("Read voice assistant exposure")],
+      ["ha_get_hacs_info", fixedActionNotification("Read HACS repository information")],
+      ["ha_get_history", fixedActionNotification("Read Home Assistant history")],
+      ["ha_get_integration", fixedActionNotification("Read Home Assistant integration")],
+      ["ha_get_logs", fixedActionNotification("Read Home Assistant logs")],
+      ["ha_get_operation_status", fixedActionNotification("Check Home Assistant operation status")],
+      ["ha_get_skill_guide", fixedActionNotification("Read Home Assistant guide")],
+      ["ha_get_system_health", fixedActionNotification("Read Home Assistant health")],
+      ["ha_get_todo", fixedActionNotification("Read Home Assistant to-do lists")],
+      ["ha_get_zone", fixedActionNotification("Read Home Assistant zones")],
+      ["ha_import_blueprint", fixedActionNotification("Import Home Assistant blueprint")],
+      ["ha_manage_app", fixedActionNotification("Manage Home Assistant Supervisor app")],
+      ["ha_manage_backup", fixedActionNotification("Manage Home Assistant backup")],
+      ["ha_manage_energy_prefs", fixedActionNotification("Manage Home Assistant energy preferences")],
+      ["ha_manage_hacs", fixedActionNotification("Manage HACS repository")],
+      ["ha_manage_pipeline", fixedActionNotification("Manage Home Assistant voice pipeline")],
+      ["ha_manage_radio", fixedActionNotification("Manage Home Assistant radio")],
+      ["ha_manage_theme", fixedActionNotification("Manage Home Assistant theme")],
+      ["ha_manage_updates", fixedActionNotification("Manage Home Assistant updates")],
+      ["ha_reload_core", fixedActionNotification("Reload Home Assistant components")],
+      ["ha_remove_area_or_floor", fixedActionNotification("Remove Home Assistant area or floor")],
+      ["ha_remove_device", fixedActionNotification("Remove Home Assistant device")],
+      ["ha_remove_entity", fixedActionNotification("Remove Home Assistant entity")],
+      ["ha_remove_helpers_integrations", fixedActionNotification("Remove Home Assistant helper or integration")],
+      ["ha_remove_todo_item", fixedActionNotification("Remove Home Assistant to-do item")],
+      ["ha_remove_zone", fixedActionNotification("Remove Home Assistant zone")],
+      ["ha_report_issue", fixedActionNotification("Prepare Home Assistant diagnostic report")],
+      ["ha_restart", fixedActionNotification("Review Home Assistant restart")],
+      ["ha_set_area_or_floor", fixedActionNotification("Save Home Assistant area or floor")],
+      ["ha_set_device", fixedActionNotification("Update Home Assistant device")],
+      ["ha_set_entity", fixedActionNotification("Update Home Assistant entity")],
+      ["ha_set_integration", fixedActionNotification("Review Home Assistant integration change")],
+      ["ha_set_todo_item", fixedActionNotification("Change Home Assistant to-do item")],
+      ["ha_set_zone", fixedActionNotification("Save Home Assistant zone")],
     ]),
   ],
-  ["sandbox", new Map([["exec", sandboxExecNotification]])],
-  ["ssh", new Map([["exec", sshExecNotification]])],
+  [
+    "google_calendar",
+    new Map([
+      ["create_event", fixedActionNotification("Create Google Calendar event")],
+      ["delete_event", fixedActionNotification("Delete Google Calendar event")],
+      ["get_event", fixedActionNotification("Read Google Calendar event")],
+      ["list_event_instances", fixedActionNotification("List Google Calendar event occurrences")],
+      ["list_events", fixedActionNotification("Read Google Calendar agenda")],
+      ["update_event", fixedActionNotification("Update Google Calendar event")],
+    ]),
+  ],
+  [
+    "orchestration_v1",
+    new Map([
+      ["change_model", fixedActionNotification("Change Sandbox Session model")],
+      ["change_reasoning_effort", fixedActionNotification("Change Sandbox Session reasoning effort")],
+      ["create_session", fixedActionNotification("Create Session in Sandbox")],
+      ["get_session", fixedActionNotification("Inspect Sandbox Session")],
+      ["interrupt_turn", fixedActionNotification("Interrupt Sandbox Session turn")],
+      ["launch_sandbox", fixedActionNotification("Launch Session Sandbox")],
+      ["list_launch_presets", fixedActionNotification("List launch presets")],
+      ["list_sessions", fixedActionNotification("List Sandbox Sessions")],
+      ["read_turns", fixedActionNotification("Read Sandbox Session turns")],
+      ["submit_input", fixedActionNotification("Submit Sandbox Session input")],
+      ["wait_for_turn", fixedActionNotification("Wait for Sandbox Session turn")],
+    ]),
+  ],
+  [
+    "sandbox",
+    new Map([
+      ["exec", sandboxExecNotification],
+      ["create", fixedActionNotification("Create Sandbox")],
+      ["dispose", fixedActionNotification("Dispose Sandbox")],
+      ["get", fixedActionNotification("Inspect Sandbox")],
+      ["get_template", fixedActionNotification("Inspect Sandbox template")],
+      ["list", fixedActionNotification("List Sandboxes")],
+    ]),
+  ],
+  [
+    "ssh",
+    new Map([
+      ["exec", sshExecNotification],
+      ["list_targets", fixedActionNotification("List SSH targets")],
+    ]),
+  ],
   [
     "tana",
     new Map([
@@ -261,7 +375,8 @@ export function formatActionNotification(
   names?: ReadonlyMap<string, string>
 ): ActionNotificationContent {
   const action = actionIdentity(request);
-  const parts = FORMATTERS.get(action.group)?.get(action.name)?.(request, names) ?? fallbackParts(request);
+  const parts =
+    ACTION_NOTIFICATION_FORMATTERS.get(action.group)?.get(action.name)?.(request, names) ?? fallbackParts(request);
   return {
     title: combineNotificationTitle(request.title, parts.actionTitle),
     text: parts.text,
