@@ -31,7 +31,7 @@
 //!   imports are irrelevant here.
 //! - `Source`-bodied files (no AST) are upstream-verbatim and skipped.
 
-use binding_targets::module_export_name;
+use binding_targets::{imported_export_name, module_export_name, public_export_name};
 use std::collections::BTreeSet;
 
 use artifact::paths::{join_module_path, module_path_dirname};
@@ -121,10 +121,7 @@ fn collect_consumers(
                 for spec in &import.specifiers {
                     match spec {
                         ImportSpecifier::Named(named) => {
-                            consumed.insert(match &named.imported {
-                                Some(name) => module_export_name(name),
-                                None => named.local.sym.to_string(),
-                            });
+                            consumed.insert(imported_export_name(named));
                         }
                         ImportSpecifier::Namespace(_) => {
                             if let Some(src) = import.src.value.as_str() {
@@ -192,11 +189,7 @@ fn prune_local_named_exports(
             if import_locals.contains(&local) {
                 return true;
             }
-            let public = match &n.exported {
-                Some(name) => module_export_name(name),
-                None => local.clone(),
-            };
-            consumed.contains(&public)
+            consumed.contains(&public_export_name(n))
         });
         // Drop a now-empty `export {};` rather than emit it.
         !named.specifiers.is_empty()
@@ -257,10 +250,7 @@ mod tests {
             {
                 for spec in &named.specifiers {
                     if let ExportSpecifier::Named(n) = spec {
-                        names.push(match &n.exported {
-                            Some(name) => module_export_name(name),
-                            None => module_export_name(&n.orig),
-                        });
+                        names.push(public_export_name(n));
                     }
                 }
             }

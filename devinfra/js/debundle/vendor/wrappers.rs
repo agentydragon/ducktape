@@ -8,7 +8,7 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 
 use artifact::paths::path_from_module_path;
-use binding_targets::module_export_name;
+use binding_targets::public_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
     member_property, module_export_name_node, named_export_module_item, named_export_specifier,
@@ -201,11 +201,7 @@ pub(super) fn generate_named_from_module_default_wrapper(
                         remaining.push(specifier.clone());
                         continue;
                     };
-                    let exported_name = named_specifier
-                        .exported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| module_export_name(&named_specifier.orig));
+                    let exported_name = public_export_name(named_specifier);
                     if exported_name != "default" {
                         remaining.push(specifier.clone());
                         continue;

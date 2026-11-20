@@ -34,7 +34,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
-use binding_targets::module_export_name;
+use binding_targets::{imported_export_name, module_export_name, public_export_name};
 use js_ast::{set_str_value, str_value};
 use spec::PartialSwapKind;
 
@@ -235,11 +235,7 @@ fn rewrite_import_decl(
                 retained_specifiers.push(specifier);
                 continue;
             };
-            let imported_name = named
-                .imported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| named.local.sym.to_string());
+            let imported_name = imported_export_name(&named);
             match plan_named_import_replacement(
                 target_chunk_id,
                 &imported_name,
@@ -284,11 +280,7 @@ fn rewrite_import_decl(
             let ImportSpecifier::Named(named) = specifier else {
                 continue;
             };
-            let imported_name = named
-                .imported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| named.local.sym.to_string());
+            let imported_name = imported_export_name(named);
             let Some(mapped) = context
                 .plan
                 .boundary_public_export_name(target_chunk_id, &imported_name)
@@ -393,11 +385,7 @@ fn rewrite_export_from_decl(
             continue;
         };
         let orig_name = module_export_name(&named_spec.orig);
-        let exported_name = named_spec
-            .exported
-            .as_ref()
-            .map(module_export_name)
-            .unwrap_or_else(|| orig_name.clone());
+        let exported_name = public_export_name(named_spec);
         let Some(target) = chunk_mapping.symbols.get(&orig_name) else {
             retained.push(specifier);
             continue;

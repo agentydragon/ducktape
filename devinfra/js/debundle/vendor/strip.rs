@@ -3,7 +3,7 @@ use std::fmt;
 
 use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
-use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
+use binding_targets::{declaration_ids, declaration_name_strings, public_export_name};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, item_var_decl};
 use swc_common::sync::Lrc;
 use swc_common::{BytePos, DUMMY_SP, SourceMap, Spanned};
@@ -172,11 +172,7 @@ fn strip_export_specifiers(
                         kept.push(spec);
                         continue;
                     };
-                    let exported = named_spec
-                        .exported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| module_export_name(&named_spec.orig));
+                    let exported = public_export_name(named_spec);
                     if swapped.contains(&exported) {
                         let Some(symbol) = symbols.get(&exported) else {
                             unreachable!("swapped names are derived from symbols");
@@ -2031,13 +2027,7 @@ fn export_aliases_from_named(named: &NamedExport) -> BTreeSet<String> {
         .specifiers
         .iter()
         .filter_map(|spec| match spec {
-            ExportSpecifier::Named(named_spec) => Some(
-                named_spec
-                    .exported
-                    .as_ref()
-                    .map(module_export_name)
-                    .unwrap_or_else(|| module_export_name(&named_spec.orig)),
-            ),
+            ExportSpecifier::Named(named_spec) => Some(public_export_name(named_spec)),
             _ => None,
         })
         .collect()

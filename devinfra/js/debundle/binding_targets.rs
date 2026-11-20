@@ -357,6 +357,22 @@ pub fn module_export_name(name: &ModuleExportName) -> String {
     name.atom().to_string()
 }
 
+/// Name an export specifier publishes: its alias, else its original name
+/// (`export { a as b }` publishes `b`, `export { a }` publishes `a`).
+pub fn public_export_name(specifier: &ExportNamedSpecifier) -> String {
+    module_export_name(specifier.exported.as_ref().unwrap_or(&specifier.orig))
+}
+
+/// Name an import specifier requests from its source module: its original
+/// name, else its local name (`import { a as b }` requests `a`).
+pub fn imported_export_name(specifier: &ImportNamedSpecifier) -> String {
+    specifier
+        .imported
+        .as_ref()
+        .map(module_export_name)
+        .unwrap_or_else(|| specifier.local.sym.to_string())
+}
+
 pub fn record_assign_target(target: &AssignTarget, recorder: &mut impl TargetAccessRecorder) {
     match target {
         AssignTarget::Simple(simple) => record_simple_assign_target(simple, recorder),
