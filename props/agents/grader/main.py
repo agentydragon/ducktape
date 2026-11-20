@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -90,9 +89,6 @@ TEXT_OUTPUT_REMINDER = (
     "or fill_remaining, and its .clustering field lists issues needing create_cluster or add_to_cluster. "
     "Call sleep when all grading and clustering is complete."
 )
-
-# Default workspace path
-_WORKSPACE = Path("/workspace")
 
 
 class GraderAbortError(Exception):
@@ -424,7 +420,7 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
         return f"Deleted cluster '{args.cluster_id}'"
 
     return [
-        make_exec_tool(_WORKSPACE),
+        make_exec_tool(WORKSPACE),
         *direct_tools(
             get_drift,
             show_issue,

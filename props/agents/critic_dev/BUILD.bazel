@@ -99,6 +99,7 @@ py_library(
     deps = [
         ":grading",
         "//openai_utils:pydantic_strict_mode",
+        "//props/agents:runtime",
         "//props/agents/af:exec_tool",
         "//props/agents/af:tools",
         "//props/core:eval_api_models",
