@@ -43,14 +43,15 @@ Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
 `topology.kubernetes.io/region=roaming`, `node.kubernetes.io/role=roaming`.
 
 **Good fit**: BuildBuddy executors, batch ML/LLM jobs, CI runners, dev/test workloads.
-**Avoid**: StatefulSets, PVCs, ingress, anything in the OVH-only resilience invariant.
+**Avoid**: StatefulSets, ingress, anything in the OVH-only resilience invariant, and any PVC
+other than a strict-local `piraeus-ssd-local` claim, which goes offline with the laptop.
 
 ## Intermittent Connectivity
 
 - Node goes `NotReady` after ~40s (`node-monitor-grace-period`)
-- Pods evicted after 5 minutes (default `tolerationSeconds`)
+- Offline handling (out-of-service taint, eviction): <../roaming_node_controller/README.md>
 - Taint ensures only opt-in workloads land there
-- No PVCs — stateless workloads only
+- Stateless workloads, except strict-local `piraeus-ssd-local` claims (`cdk8s/piraeus.py`)
 
 ## Known Gotchas
 
