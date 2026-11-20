@@ -1404,7 +1404,7 @@ async def test_kubernetes_pods_delete_success_receipt(
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
     await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
-    await expect(page.get_by_text("managed Service", exact=False)).to_be_visible()
+    await expect(page.get_by_text("matching Services and OpenShift Routes", exact=False)).to_be_visible()
     await view.check(context="successful pod deletion shown as an accepted request")
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 
