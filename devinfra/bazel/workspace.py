@@ -16,7 +16,6 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -195,77 +194,18 @@ class BazelWorkspace:
 
     root: Path
     backend: BazelBackend
-    output_base: Path | None = None
-    startup_flags: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        if self.backend != BazelBackend.LOCAL:
-            if self.output_base is not None:
-                raise ValueError(f"output_base is not supported with {self.backend}")
-            if self.startup_flags:
-                raise ValueError(f"startup_flags is not supported with {self.backend}")
-
-    @property
-    def _bazel_prefix(self) -> tuple[str, ...]:
-        """Base bazel command with optional --output_base and startup flags."""
-        cmd = list(self.backend.command)
-        if self.output_base is not None:
-            cmd.append(f"--output_base={self.output_base}")
-        cmd.extend(self.startup_flags)
-        return tuple(cmd)
-
-    def query(
-        self,
-        expr: str,
-        *,
-        persist_dir: Path | None = None,
-        keep_going: bool = False,
-        timeout: int | None = None,
-        universe_scope: str | None = None,
-        profile_path: Path | None = None,
-    ) -> list[BazelLabel]:
+    def query(self, expr: str, *, keep_going: bool = False) -> list[BazelLabel]:
         """Run ``bazel query`` and return parsed labels.
 
-        Short queries are passed as a positional arg (works with both local
-        bazel and ``bbr``).  Queries exceeding 100 KB fall back to
-        ``--query_file`` (local only — ``bbr`` cannot access local temp
-        files).
+        ``expr`` is one command-line argument (works with both local bazel and
+        ``bbr``), so it must fit the 128 KiB Linux per-argument limit.
         """
-        cmd = [*self._bazel_prefix, "query", "--output=label"]
+        cmd = [*self.backend.command, "query", "--output=label"]
         if keep_going:
             cmd.append("--keep_going")
-        if universe_scope is not None:
-            cmd.append(f"--universe_scope={universe_scope}")
-        if profile_path is not None:
-            cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
-        if persist_dir is not None:
-            (persist_dir / "query").write_text(expr)
-        # Prefer inline query arg (works with both local bazel and bbr).
-        # Fall back to --query_file for large queries (local only — bbr
-        # can't access local temp files on the runner).
-        max_inline_bytes = 100_000  # conservative; Linux MAX_ARG_STRLEN is 128 KiB
-        query_file_path: Path | None = None
-        if len(expr.encode()) <= max_inline_bytes:
-            cmd.append(expr)
-        elif self.backend == BazelBackend.LOCAL:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery", delete=False) as f:
-                f.write(expr)
-            query_file_path = Path(f.name)
-            cmd.append(f"--query_file={query_file_path}")
-        else:
-            raise RuntimeError(
-                f"Query too large ({len(expr)} chars) for command line,"
-                f" and --query_file is not supported with {self.backend}"
-            )
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root, check=False, timeout=timeout)
-        finally:
-            if query_file_path is not None:
-                query_file_path.unlink(missing_ok=True)
-        if persist_dir is not None:
-            (persist_dir / "stdout").write_text(result.stdout)
-            (persist_dir / "stderr").write_text(result.stderr)
-            (persist_dir / "exit_code").write_text(str(result.returncode))
+        cmd.append(expr)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root, check=False)
         ok_codes = {0, 3} if keep_going else {0}
         if result.returncode not in ok_codes:
             error = subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
@@ -280,16 +220,3 @@ class BazelWorkspace:
         # repo each time and doesn't benefit from bbr's runner recycling.
         labels = (BazelLabel.try_parse(line) for line in result.stdout.splitlines())
         return [label for label in labels if label is not None]
-
-    def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
-        """Run ``bazel test`` and return the exit code."""
-        cmd = [*self._bazel_prefix, "test"]
-        if check_up_to_date:
-            cmd.append("--check_tests_up_to_date")
-        cmd.extend(targets)
-        result = subprocess.run(cmd, check=False, cwd=self.root, timeout=timeout)
-        return result.returncode
-
-    def shutdown(self) -> None:
-        """Shut down the Bazel server for this workspace."""
-        subprocess.run([*self._bazel_prefix, "shutdown"], cwd=self.root, check=False, capture_output=True)
