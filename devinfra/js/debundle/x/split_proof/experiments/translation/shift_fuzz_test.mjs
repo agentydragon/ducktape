@@ -19,6 +19,7 @@ const option = (name, fallback) => {
 };
 const count = option("count", 128);
 const startSeed = option("seed", 1);
+const scriptGrammar = process.argv.includes("--script-grammar");
 assert(Number.isInteger(count) && count > 0 && Number.isInteger(startSeed) && startSeed >= 0);
 function rng(seed) {
   let n = seed >>> 0;
@@ -62,7 +63,9 @@ const stats = {
   loweringRejected: 0,
   emitterRejected: 0,
   accepted: 0,
+  acceptedOk: 0,
   reordered: 0,
+  reorderedOk: 0,
   differing: 0,
 };
 const syntax = new Set(),
@@ -76,7 +79,9 @@ function collect(node, target) {
 for (let seed = startSeed; seed < startSeed + count; seed++) {
   stats.attempted++;
   const random = rng(seed);
-  const shift = shiftFuzzer.fuzzModule(new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random }));
+  const shift = (scriptGrammar ? shiftFuzzer.fuzzScript : shiftFuzzer.fuzzModule)(
+    new shiftFuzzer.FuzzerState({ maxDepth: 4, rng: random })
+  );
   let source = codegen.default ? codegen.default(shift) : codegen(shift);
   let parsed;
   try {
@@ -162,11 +167,15 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     continue;
   }
   stats.accepted++;
+  if (baseline.status === "ok") stats.acceptedOk++;
   collect(parsed, acceptedSyntax);
   const match = emitter.stdout.match(/statement order\s+\[([^\]]*)\]/);
   if (match) {
     const order = match[1].split(",").map((x) => Number(x.trim()));
-    if (order.some((item, i) => item !== i)) stats.reordered++;
+    if (order.some((item, i) => item !== i)) {
+      stats.reordered++;
+      if (baseline.status === "ok") stats.reorderedOk++;
+    }
   }
   const emitted = run(out, "entry.mjs");
   if (!emitted) throw new Error(`seed ${seed}: emitted tree did not complete; artifacts at ${dir}`);
@@ -183,7 +192,14 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   }
 }
 console.log(
-  JSON.stringify({ seed: startSeed, ...stats, syntax: [...syntax].sort(), acceptedSyntax: [...acceptedSyntax].sort() })
+  JSON.stringify({
+    seed: startSeed,
+    grammar: scriptGrammar ? "script" : "module",
+    ...stats,
+    syntax: [...syntax].sort(),
+    acceptedSyntax: [...acceptedSyntax].sort(),
+  })
 );
 assert(stats.accepted > 0, "no executable generated split was accepted");
 assert(stats.reordered > 0, "no accepted generated split reordered statements");
+if (scriptGrammar) assert(stats.reorderedOk > 0, "no successful generated split reordered statements");
