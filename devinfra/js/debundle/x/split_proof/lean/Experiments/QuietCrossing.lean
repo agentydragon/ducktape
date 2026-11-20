@@ -17,7 +17,7 @@ variable {V W : Type}
 def Bundle.bindingConflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i
   let b := B.stmt j
-  (a.effect && b.observedInit) || (b.effect && a.observedInit) ||
+  (a.effect && b.observedInit && !a.nonReentrant) || (b.effect && a.observedInit && !b.nonReentrant) ||
   (!b.hoisted && b.binds.any (B.readsOf i).contains)
     || (!a.hoisted && a.binds.any (B.readsOf j).contains)
     || a.binds.any b.binds.contains

@@ -286,6 +286,17 @@ def primitiveConstant (s : Json) : Bool :=
     typ (fld d "id") == "Identifier" && typ init == "Literal" &&
     (lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:")
 
+/-- A single plain `const` initializer that directly creates an arrow. Its
+body and parameter initializers do not run until the function is called. The
+allocation is still effectful; this flag only records absence of reentry. -/
+def directArrowConstant (s : Json) : Bool :=
+  let ds := items (fld s "declarations")
+  let d := ds[0]?.getD Json.null
+  let init := fld d "init"
+  typ s == "VariableDeclaration" && str (fld s "kind") == "const" && ds.size == 1 &&
+    typ (fld d "id") == "Identifier" && typ init == "ArrowFunctionExpression" &&
+    (items (fld init "params")).all fun p => typ p == "Identifier"
+
 /-! ## Top-level statements -/
 
 partial def topDefs (s : Json) : List String :=
@@ -432,6 +443,7 @@ structure Footprint where
   hoisted  : Bool
   effect   : Bool
   observedInit : Bool
+  nonReentrant : Bool
   /-- names the statement may assign when it runs, including through the functions it may call -/
   writes   : List String
   /-- names that the code of the statement assigns, while it runs or in function bodies it creates -/
@@ -525,11 +537,12 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     -- that escaped earlier and runs indirectly before this binding initializes.
     let observedInert := t.inert && !t.hoisted && !unobserved
     let observedInit := observedInert && primitiveConstant t.source
+    let nonReentrant := directArrowConstant t.source
     let effect := !(t.inert || identityInert || factoryInert) || (observedInert && !observedInit) || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
-    { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, observedInit, writes,
+    { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, observedInit, nonReentrant, writes,
       assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
       fallback := dedupe t.fallback,
       rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
@@ -541,7 +554,7 @@ def finalize (tops : Array Top) : Array Footprint := (finalizeWithScanStatus top
 
 def Footprint.toJson (f : Footprint) : Json :=
   Json.mkObj [("defs", Lean.toJson f.defs), ("eager", Lean.toJson f.eager), ("lazy", Lean.toJson f.lazy),
-    ("hoisted", Lean.toJson f.hoisted), ("effect", Lean.toJson f.effect), ("observedInit", Lean.toJson f.observedInit),
+    ("hoisted", Lean.toJson f.hoisted), ("effect", Lean.toJson f.effect), ("observedInit", Lean.toJson f.observedInit), ("nonReentrant", Lean.toJson f.nonReentrant),
     ("writes", Lean.toJson f.writes), ("assigns", Lean.toJson f.assigns), ("fallback", Lean.toJson f.fallback),
     ("rawEager", Lean.toJson f.rawEager), ("rawLazy", Lean.toJson f.rawLazy)]
 
