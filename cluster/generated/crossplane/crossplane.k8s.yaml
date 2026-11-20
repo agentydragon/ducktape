@@ -8,6 +8,18 @@ metadata:
   name: crossplane-system
 spec: {}
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: crossplane
+      release: crossplane
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -36,4 +48,39 @@ spec:
     remediation:
       retries: 3
   interval: 30m
-  values: {}
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: crossplane
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        readinessProbe:
+                          httpGet:
+                            path: /readyz
+                            port: readyz
+                          periodSeconds: 5
+                          timeoutSeconds: 2
+            target:
+              kind: Deployment
+              name: crossplane
+  values:
+    leaderElection: true
+    replicas: 2
+    topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app: crossplane
+            release: crossplane
+        matchLabelKeys:
+          - pod-template-hash
+        maxSkew: 1
+        nodeTaintsPolicy: Honor
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
