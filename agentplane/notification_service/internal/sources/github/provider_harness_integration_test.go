@@ -145,7 +145,7 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 
 var (
 	// testIncarnation owns the Sessions' inboxes as an Identity incarnation.
-	testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: "test-sandbox-uid"}
+	testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}

@@ -81,7 +81,7 @@ func legacyInboxKeyWriter(t *testing.T, db *sql.DB) func() {
 
 func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (inboxstore.Owner, inboxstore.Subscription) {
 	t.Helper()
-	owner := inboxstore.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
+	owner := inboxstore.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}}
 	defer legacyInboxKeyWriter(t, db)()
 	subscription, err := newStore(db).Subscribe(t.Context(), owner, sourceadapter.Subscribe{
 		SessionID: sessionID, IdempotencyKey: "adoption-subscription",

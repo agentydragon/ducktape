@@ -29,7 +29,7 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 // Message is a message a workload sends to a Session's inbox.
 type Message struct {
 	Sender IdentitySender
-	// Recipient is the exact Identity and Sandbox incarnation the inbox belongs to.
+	// Recipient is the exact Identity incarnation the inbox belongs to.
 	Recipient Owner
 	SessionID string
 	// IdempotencyKey is unique per sender and inbox: an identical retry answers with the message it sent.
@@ -116,7 +116,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	if sender.Identity.Name == "" || sender.Identity.UID == "" || sender.Sandbox.Name == "" {
 		return SentMessage{}, ErrNotFound
 	}
-	if message.Recipient.Identity.Name == "" || message.Recipient.Identity.UID == "" || message.Recipient.SandboxUID == "" {
+	if message.Recipient.Identity.Name == "" || message.Recipient.Identity.UID == "" {
 		return SentMessage{}, ErrNotFound
 	}
 	digest := sha256.Sum256(payload)

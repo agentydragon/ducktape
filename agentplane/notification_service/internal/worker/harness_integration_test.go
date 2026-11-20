@@ -42,8 +42,8 @@ const (
 // testOwner owns the inboxes: the Dispatcher records this exact Identity for each Session.
 var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
-// testIncarnation keeps legacy Sandbox sender metadata for store tests.
-var testIncarnation = inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
+// testIncarnation is testOwner as the store's inbox owner.
+var testIncarnation = inboxstore.Owner{Identity: testOwner}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -252,7 +252,7 @@ func (h *harness) step(t *testing.T) {
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) inboxstore.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
 		SessionID: testSession, IdempotencyKey: key,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})

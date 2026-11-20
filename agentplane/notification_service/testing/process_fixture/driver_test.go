@@ -279,8 +279,7 @@ func TestNotificationProcessDriver(t *testing.T) {
 		requestID := uuid.New()
 		idempotencyKey := "notification-process-" + uuid.NewString()
 		created, err := inboxstore.New(db, transaction.New(db), c.Quotas).Subscribe(t.Context(), inboxstore.Owner{
-			Identity:   model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
-			SandboxUID: input.SeedSubscription.SandboxUID,
+			Identity: model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
 		}, sourceadapter.Subscribe{
 			SessionID:      "notification-process-" + uuid.NewString(),
 			IdempotencyKey: idempotencyKey,

@@ -49,7 +49,6 @@ type fixture struct {
 	runner      *transaction.Runner
 	owner       model.ServiceAccount
 	identity    model.Identity
-	sandboxUID  string
 	sessionID   string
 }
 
@@ -76,8 +75,8 @@ func fixtureForDatabase(t *testing.T, db *sql.DB, databaseURL string, quotas inb
 	runner := transaction.New(db)
 	return fixture{
 		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner, owner: newOwner(),
-		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
-		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+		identity:  model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sessionID: uuid.NewString(),
 	}
 }
 
@@ -113,10 +112,8 @@ func (f fixture) insertInbox(t *testing.T, sessionID string) uuid.UUID {
 	return id
 }
 
-const testSandboxUID = "test-uid"
-
 func (f fixture) incarnation() inboxstore.Owner {
-	return inboxstore.Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+	return inboxstore.Owner{Identity: f.identity}
 }
 
 func (f fixture) body(key string) sourceadapter.Subscribe {

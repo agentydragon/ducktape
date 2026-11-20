@@ -88,7 +88,7 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	destination.UID = sandbox.Uid
 	// The recipient is the exact Identity the Session authority recorded, which the destination Sandbox must name.
 	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, destination); ok {
-		message.Recipient = inboxstore.Owner{Identity: identity, SandboxUID: sandbox.Uid}
+		message.Recipient = inboxstore.Owner{Identity: identity}
 	} else {
 		return nil, inboxstore.ErrNotFound
 	}
