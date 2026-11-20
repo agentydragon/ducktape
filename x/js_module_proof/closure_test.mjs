@@ -475,7 +475,7 @@ if (shard === 4) {
   await writeFile(
     callSource,
     `let seed = 4;
-function helper(value) { return value + seed; }
+function helper(value) { if (value) { return value + seed; } else { throw "bad"; } }
 function call(value) { return helper(value) + 1; }
 export { call };
 `
@@ -502,6 +502,20 @@ export { call };
   const sourceTrace = execute(callSource, calls);
   assert.deepEqual(sourceTrace.results, [{ value: 8 }, { value: 12 }]);
   assert.deepEqual(execute(join(callOut, "entry.mjs"), calls), sourceTrace);
+  const thrownCalls = [
+    { name: "call", args: [3] },
+    { name: "call", args: [0] },
+    { name: "call", args: [7] },
+  ];
+  const thrownTrace = execute(callSource, thrownCalls);
+  assert.deepEqual(thrownTrace.results, [{ value: 8 }]);
+  assert.deepEqual(thrownTrace.error, {
+    name: null,
+    phase: "call",
+    index: 1,
+    thrown: { kind: "string", value: "bad" },
+  });
+  assert.deepEqual(execute(join(callOut, "entry.mjs"), thrownCalls), thrownTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + proof.certificate,
