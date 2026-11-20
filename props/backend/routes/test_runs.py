@@ -51,9 +51,6 @@ def parent_run(synced_db: Database) -> UUID:
     return run_id
 
 
-# --- agent_run_budget_status view tests (real Postgres) ---
-
-
 def test_budget_view_no_spend(synced_db: Database, parent_run: UUID) -> None:
     """View shows full budget remaining when no LLM requests exist."""
     with synced_db.session() as session:
@@ -104,9 +101,6 @@ def test_budget_view_includes_child_costs(synced_db: Database, parent_run: UUID)
         assert status.own_spent_usd == 0.0  # Parent itself spent nothing
         assert status.tree_spent_usd == pytest.approx(0.625, abs=0.01)
         assert status.remaining_usd == pytest.approx(1.375, abs=0.01)
-
-
-# --- HTTP endpoint tests (mock registry, real FastAPI) ---
 
 
 def test_active_runs_returns_only_active_run_details(synced_db: Database, parent_run: UUID) -> None:

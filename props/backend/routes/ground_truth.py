@@ -323,8 +323,8 @@ class FileTreeResponse(BaseModel):
 
 @router.get("/snapshots/{org}/{snapshot_date}/tree")
 def get_snapshot_tree(org: str, snapshot_date: str, caller_db: CallerDb) -> FileTreeResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get directory tree with issue occurrence counts."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 
@@ -517,8 +517,8 @@ def get_snapshot_files(
 
 @router.get("/snapshots/{org}/{snapshot_date}/files/{file_path:path}")
 def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: CallerDb) -> FileContentResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get file content from snapshot tar archive."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         snapshot = get_snapshot_or_404(session, snapshot_slug)
 
@@ -561,8 +561,8 @@ class ClustersListResponse(BaseModel):
 
 @router.get("/snapshots/{org}/{snapshot_date}/clusters")
 def list_clusters(org: str, snapshot_date: str, caller_db: CallerDb) -> ClustersListResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """List all issue clusters for a snapshot with members."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 
