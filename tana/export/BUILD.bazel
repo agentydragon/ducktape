@@ -5,8 +5,8 @@ py_library(
     srcs = ["convert.py"],
     visibility = ["//tana:__subpackages__"],
     deps = [
-        "//tana/domain:constants",
         "//tana/domain:nodes",
+        "//tana/domain:system_nodes",
         "//tana/domain:types",
         "//tana/graph",
         "//tana/graph:loader",
@@ -29,8 +29,8 @@ py_library(
     srcs = ["export_node_subset.py"],
     deps = [
         ":convert",
-        "//tana/domain:constants",
         "//tana/domain:nodes",
+        "//tana/domain:system_nodes",
         "//tana/domain:types",
         "//tana/graph",
         "//tana/graph:wrappers",

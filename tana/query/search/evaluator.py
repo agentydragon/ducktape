@@ -5,7 +5,6 @@ from functools import singledispatch
 
 from more_itertools import one, unique_everseen
 
-from tana.domain.constants import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.nodes import BaseNode
 from tana.domain.search import (
     BooleanOperator,
@@ -16,6 +15,7 @@ from tana.domain.search import (
     TextSearch,
     TypeSearch,
 )
+from tana.domain.system_nodes import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 from tana.query.filters import filter_by_field_value, filter_by_tag, filter_nodes

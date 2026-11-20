@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from tana.domain.constants import MEDIA_KEY_ID, MIME_TYPE_KEY_ID, MIN_TUPLE_CHILDREN
-from tana.domain.nodes import BaseNode, TupleNode
+from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, TupleNode
+from tana.domain.system_nodes import MEDIA_KEY_ID, MIME_TYPE_KEY_ID
 from tana.domain.types import NodeId
 
 if TYPE_CHECKING:

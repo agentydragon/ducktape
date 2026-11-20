@@ -7,15 +7,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from tana.domain.constants import (
+from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, CodeBlockNode, TupleNode, VisualNode
+from tana.domain.system_nodes import (
     CHECKBOX_CHECKED_ID,
     CHECKBOX_KEY_ID,
     CHECKBOX_UNCHECKED_ID,
-    MIN_TUPLE_CHILDREN,
     SUPERTAG_KEY_ID,
     URL_KEY_ID,
 )
-from tana.domain.nodes import BaseNode, CodeBlockNode, TupleNode, VisualNode
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace

@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
+from tana.domain.nodes import DOC_CLASS, MIN_TUPLE_CHILDREN, BaseNode, TupleNode, UnknownNode
+from tana.domain.system_nodes import SUPERTAG_KEY_ID
 from tana.domain.types import NodeId
 from tana.export.convert import RenderContext
 from tana.graph.graph import TanaGraph
