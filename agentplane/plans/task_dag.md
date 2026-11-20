@@ -1158,7 +1158,7 @@ harness, and `central_sampler_v1` carries one exact required executor environmen
 the Dispatcher Session row when that required Environment is deleted, but central V1 still has no
 optional attachments, environment-free admission or alternate executor. The principal and
 harness-store contracts remain unresolved.
-The [Dispatcher outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+The [Dispatcher outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands)
 also leaves unconfirmed native owner admission explicit: `UNKNOWN` outcomes hold dependent queued
 commands without forwarding or waking, and those commands remain cancellable. Automatic resolution
 is not provided; decide whether an authorized caller or operator can resolve the hold from durable

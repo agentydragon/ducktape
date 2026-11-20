@@ -796,7 +796,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if session.Placement.RequiresReadyExecutor() && (session.State == SessionFailedState || session.State == SessionUnknownState) {
+		if session.State == SessionFailedState || session.State == SessionUnknownState {
 			return ErrSessionUnconfirmed
 		}
 		var count int
@@ -1400,7 +1400,7 @@ func (s *Store) SettleSession(ctx context.Context, id string, owner SessionOwner
 	return s.settleSession(ctx, id, owner, from, to, reason, false)
 }
 
-// RejectSession records a proven native rejection and fails only commands that have
+// RejectSession records a proven placement-owner rejection and fails only commands that have
 // not left the queue. An older FAILED row alone cannot supply this evidence.
 func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner, from []string, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, SessionFailedState, reason, true)

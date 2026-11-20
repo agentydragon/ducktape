@@ -1628,7 +1628,7 @@ func (r *openingOutcomeRuntime) CreateSession(_ context.Context, _ SandboxSnapsh
 	return r.err
 }
 
-func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
+func TestSessionOutcomesFenceQueuedWork(t *testing.T) {
 	cases := []struct {
 		name         string
 		code         codes.Code
@@ -1645,82 +1645,87 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 		{"lost reservation response", codes.DeadlineExceeded, store.SessionWaitingState, store.QueueState},
 		{"admitted", codes.OK, store.SessionAcceptedState, store.AdmittedState},
 	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			ctx := t.Context()
-			queueStore := testStore(t, 3)
-			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-			sandbox := SandboxSnapshot{Name: "test-materialization", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
-			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-			if _, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
-				t.Fatal(err)
-			}
-			command := input(commandID, "queued before owner response")
-			if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil {
-				t.Fatal(err)
-			}
-			runtime := &openingOutcomeRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 3)}, err: status.Error(test.code, "test owner response")}
-			worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
-			worker.init()
-			defer worker.queue.ShutDown()
-			if err := worker.reconcile(ctx); err != nil {
-				t.Fatal(err)
-			}
-			if err := worker.processSession(ctx, sessionID); err != nil {
-				t.Fatal(err)
-			}
-			if len(runtime.calls) != 1 || <-runtime.calls != "opening:"+sessionID {
-				t.Fatal("opening did not reach owner exactly once")
-			}
-			if retry, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
-				t.Fatalf("opening receipt retry: %+v %v", retry, err)
-			} else if test.openingState == store.SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
-				t.Fatalf("uncertain Session reason lost owner evidence: %q", retry.Reason)
-			}
-			if test.openingState == store.FailedState || test.openingState == store.UnknownState {
-				if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, store.ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
-					t.Fatalf("new command accepted after terminal opening: %v", err)
+	for _, kind := range []string{"native", "central"} {
+		for _, test := range cases {
+			t.Run(kind+"/"+test.name, func(t *testing.T) {
+				ctx := t.Context()
+				queueStore := testStore(t, 3)
+				sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+				sandbox := SandboxSnapshot{Name: "test-materialization", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
+				spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
+				if kind == "central" {
+					spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}}}}
 				}
-				deliveryOwner := claimSessionOwner(t, queueStore, sessionID)
-				if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
+				if _, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
 					t.Fatal(err)
 				}
-				if err := queueStore.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
+				command := input(commandID, "queued before owner response")
+				if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil {
 					t.Fatal(err)
 				}
-				// A later suspended environment must not cause wake or redelivery.
-				sandbox.Blocker, sandbox.WakeOnSend = "sandbox_suspended", true
-				worker.Catalog = testCatalog{sandbox: sandbox}
-			}
-			wake := &scriptedWake{}
-			worker.Wake = wake
-			if err := worker.processSession(ctx, sessionID); err != nil {
-				t.Fatal(err)
-			}
-			row, err := queueStore.GetDispatch(ctx, commandID)
-			if err != nil || row.State != test.commandState {
-				t.Fatalf("dependent command: %+v %v", row, err)
-			}
-			if retry, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil || retry.State != row.State || retry.Position != row.Position {
-				t.Fatalf("existing command receipt retry: %+v %v", retry, err)
-			}
-			if test.commandState == store.FailedState && row.Reason != "session_rejected" {
-				t.Fatalf("unsent rejection reason: %s", row.Reason)
-			}
-			if test.openingState == store.UnknownState && row.Reason != "session_unconfirmed" {
-				t.Fatalf("uncertain opening blocker: %s", row.Reason)
-			}
-			if len(wake.targets) != 0 {
-				t.Fatal("unconfirmed opening attempted wake")
-			}
-			if test.commandState == store.AdmittedState {
-				if len(runtime.calls) != 1 || <-runtime.calls != commandID || row.Admission == nil {
-					t.Fatal("admitted opening did not release its command")
+				runtime := &openingOutcomeRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 3)}, err: status.Error(test.code, "test owner response")}
+				worker := &DeliveryWorker{Store: queueStore, Catalog: testCatalog{sandbox: sandbox}, Delivery: runtime}
+				worker.init()
+				defer worker.queue.ShutDown()
+				if err := worker.reconcile(ctx); err != nil {
+					t.Fatal(err)
 				}
-			} else if len(runtime.calls) != 0 || row.Admission != nil {
-				t.Fatal("unconfirmed opening delivered or replayed work")
-			}
-		})
+				if err := worker.processSession(ctx, sessionID); err != nil {
+					t.Fatal(err)
+				}
+				if len(runtime.calls) != 1 || <-runtime.calls != "opening:"+sessionID {
+					t.Fatal("opening did not reach owner exactly once")
+				}
+				if retry, err := createSession(queueStore, ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
+					t.Fatalf("opening receipt retry: %+v %v", retry, err)
+				} else if test.openingState == store.SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
+					t.Fatalf("uncertain Session reason lost owner evidence: %q", retry.Reason)
+				}
+				if test.openingState == store.FailedState || test.openingState == store.UnknownState {
+					if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, store.ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {
+						t.Fatalf("new command accepted after terminal opening: %v", err)
+					}
+					deliveryOwner := claimSessionOwner(t, queueStore, sessionID)
+					if _, err := queueStore.RecoverSession(ctx, deliveryOwner); err != nil {
+						t.Fatal(err)
+					}
+					if err := queueStore.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
+						t.Fatal(err)
+					}
+					// A later suspended environment must not cause wake or redelivery.
+					sandbox.Blocker, sandbox.WakeOnSend = "sandbox_suspended", true
+					worker.Catalog = testCatalog{sandbox: sandbox}
+				}
+				wake := &scriptedWake{}
+				worker.Wake = wake
+				if err := worker.processSession(ctx, sessionID); err != nil {
+					t.Fatal(err)
+				}
+				row, err := queueStore.GetDispatch(ctx, commandID)
+				if err != nil || row.State != test.commandState {
+					t.Fatalf("dependent command: %+v %v", row, err)
+				}
+				if retry, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandbox.Name, uid, command, nil); err != nil || retry.State != row.State || retry.Position != row.Position {
+					t.Fatalf("existing command receipt retry: %+v %v", retry, err)
+				}
+				if test.commandState == store.FailedState && row.Reason != "session_rejected" {
+					t.Fatalf("unsent rejection reason: %s", row.Reason)
+				}
+				if test.openingState == store.UnknownState && row.Reason != "session_unconfirmed" {
+					t.Fatalf("uncertain opening blocker: %s", row.Reason)
+				}
+				if len(wake.targets) != 0 {
+					t.Fatal("unconfirmed opening attempted wake")
+				}
+				if test.commandState == store.AdmittedState {
+					if len(runtime.calls) != 1 || <-runtime.calls != commandID || row.Admission == nil {
+						t.Fatal("admitted opening did not release its command")
+					}
+				} else if len(runtime.calls) != 0 || row.Admission != nil {
+					t.Fatal("unconfirmed opening delivered or replayed work")
+				}
+			})
+		}
 	}
 }
 
@@ -1762,15 +1767,11 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if kind == "native" {
-				if row.State != store.QueueState || row.Reason != "session_unconfirmed" || len(runtime.calls) != 0 {
-					t.Fatalf("unproven failure did not hold work: %+v", row)
-				}
-				if _, err := queueStore.CancelForCaller(ctx, commandID, testStoreCaller(nil)); err != nil {
-					t.Fatalf("held command cannot be cancelled: %v", err)
-				}
-			} else if row.State != store.AdmittedState || len(runtime.calls) != 1 || <-runtime.calls != commandID {
-				t.Fatalf("existing %s delivery behavior changed: %+v", kind, row)
+			if row.State != store.QueueState || row.Reason != "session_unconfirmed" || len(runtime.calls) != 0 {
+				t.Fatalf("unproven failure did not hold work: %+v", row)
+			}
+			if _, err := queueStore.CancelForCaller(ctx, commandID, testStoreCaller(nil)); err != nil {
+				t.Fatalf("held command cannot be cancelled: %v", err)
 			}
 		})
 	}

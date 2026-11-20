@@ -450,72 +450,80 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 }
 
 func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	staleDelivery := claimSessionOwner(t, store, sessionID)
-	expireSessionLease(t, store, staleDelivery)
-	deliveryOwner := claimSessionOwner(t, store, sessionID)
-	if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
-		t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
-	}
-	gate, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gate.Rollback()
-	if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
-		t.Fatal(err)
-	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	admitter, admitterPID := connect()
-	rejecter, rejecterPID := connect()
-	admitted := make(chan error, 1)
-	go func() {
-		_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
-		admitted <- err
-	}()
-	postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
-	rejected := make(chan error, 1)
-	go func() {
-		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
-		rejected <- err
-	}()
-	// Admission has the Session lock but has not inserted the command yet.
-	postgres.WaitForBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
-	if err := gate.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-admitted; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-rejected; err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
-		t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
-	}
-	if err := store.EndSandbox(ctx, uid); err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
-		t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
+	for _, kind := range []string{"native", "central"} {
+		t.Run(kind, func(t *testing.T) {
+			store, databaseURL := testStoreWithURL(t, 3)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			spec := &sessionpb.SessionSpec{}
+			if kind == "central" {
+				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-rejection-race", Uid: uid}}}}
+			}
+			if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, spec, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			staleDelivery := claimSessionOwner(t, store, sessionID)
+			expireSessionLease(t, store, staleDelivery)
+			deliveryOwner := claimSessionOwner(t, store, sessionID)
+			if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
+				t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
+			}
+			gate, err := store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gate.Rollback()
+			if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
+				t.Fatal(err)
+			}
+			var gatePID int
+			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+				t.Fatal(err)
+			}
+			connect := func() (*Store, int) {
+				db := postgres.Open(t, databaseURL)
+				db.SetMaxOpenConns(1)
+				var pid int
+				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+					t.Fatal(err)
+				}
+				return NewStore(db, 3), pid
+			}
+			admitter, admitterPID := connect()
+			rejecter, rejecterPID := connect()
+			admitted := make(chan error, 1)
+			go func() {
+				_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
+				admitted <- err
+			}()
+			postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
+			rejected := make(chan error, 1)
+			go func() {
+				_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
+				rejected <- err
+			}()
+			// Admission has the Session lock but has not inserted the command yet.
+			postgres.WaitForBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
+			if err := gate.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-admitted; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-rejected; err != nil {
+				t.Fatal(err)
+			}
+			if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
+				t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
+			}
+			if err := store.EndSandbox(ctx, uid); err != nil {
+				t.Fatal(err)
+			}
+			if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
+				t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
+			}
+		})
 	}
 }
 

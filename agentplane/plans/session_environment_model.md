@@ -643,7 +643,7 @@ projection.
 
 **Open: unconfirmed native openings.** An unconfirmed native owner admission holds dependent queued
 commands as `session_opening_unconfirmed`
-([outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands));
+([outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands));
 nothing resolves that hold automatically. Whether an authorized caller or operator can resolve it
 from durable owner evidence remains open in
 [`SESSION_RUNTIME_MODEL_DESIGN`](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments).
@@ -652,7 +652,7 @@ from durable owner evidence remains open in
 
 The Dispatcher commit establishes logical existence without waiting for the owner, wake, History or
 native creation; the native temporary/rejected/unknown materialization outcomes are in the
-[outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands).
+[outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands).
 Unavailable owners and suspended environments are wait and retry conditions; wake an environment
 only under an authorized policy, which must support eligible unattended inbox notices. A rejected
 configuration is corrected by a new Session UUID; a future edit-and-retry operation is a separate
