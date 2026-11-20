@@ -60,6 +60,9 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Caller-privilege Session delegation](session_delegation_workflows.md) — natural-agent usability,
   instruction composition, budgets and deferred environment provisioning; the shipped tools are
   documented in [Session delegation](../action_service/session_delegation/README.md)
+- [Persistent agents and scheduled wake](persistent_agents.md) — declaring a managed agent
+  (instructions, execution Identity, placement, subscriptions, notice cadence) as a Flux CR applied
+  by a new reconciler; declaration path decided, remaining design unscheduled, nothing released
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
 - [Egress relay rename](egress_relay_rename.md) — deferred rollout for the relay binary,

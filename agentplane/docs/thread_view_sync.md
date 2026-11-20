@@ -124,7 +124,7 @@ not mandate a second wire protocol beside the engine.
 | Submit                      | Session Dispatcher records the sender's durable result before runner admission; the app has no server-side command queue. |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
-Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
+Counts have server maxima. Content selection explicitly chooses text, reasoning, tool
 arguments and output; selecting nothing still returns metadata and references. Selecting
 text includes confirmed user input as well as assistant text. The `ConfirmedInput` record separates that selectable body from its metadata; the
 exact confirmation Event remains evidence at the Segment cursor.
@@ -266,7 +266,7 @@ The app proxy authenticates callers and fixes the permitted conversation predica
 tables and columns. Client-supplied sync parameters must not widen those permissions,
 including subset query bodies. Proxy replicas share authorization state and the same
 Electric endpoint; browser sessions must not require replica affinity. Commands continue
-through the app's command API to the Runner Gateway. The proxy does not own another conversation
+through the app's command API to the Session Dispatcher. The proxy does not own another conversation
 cache or implement snapshot/live reconciliation.
 
 ### Server memory ownership

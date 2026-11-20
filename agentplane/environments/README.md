@@ -125,7 +125,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   deletion a blocking reference would remove the state while a sealing runner still writes to it.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
-- **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the Environments
+- **The runner seals, the controller asks.** The seal is a unary `EnvironmentRuntime.Quiesce` through the Environments
   proxy. The controller records the last request time for that runner incarnation before calling,
   and makes at most three attempts on transient `Unavailable` replies within one 30-second handshake, opening a new connection through the stable
   Environments Service on each try and fencing every call to that same incarnation Pod UID. A changed

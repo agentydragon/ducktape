@@ -105,8 +105,8 @@ edge protocols.
   response, SQL or bearer data reaches a client. A failure whose fixed message names no cause logs
   the error behind it.
 - **Client:** `agentplane.grpc.calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
-  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Runner
-  Gateway client reads `FAILED_PRECONDITION` as `RefusedError`).
+  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; `call_unary`
+  reads `FAILED_PRECONDITION` as `RefusedError`).
 
 ## Deadlines
 
@@ -243,9 +243,8 @@ does not require an HTTP facade.
   through its standard stream encoder. Calls to other services remain native gRPC, and remotely
   callable gRPC service APIs use a native listener.
 - **Exposure:** only an RPC with a rule is on HTTP, so the full-duplex
-  `SessionJournalIngress.Push` and the private `Runner` service stay native gRPC. Operator and workload
-  callers get separate proto services (`OperatorActionService` beside `ActionService`,
-  `NotificationsOperator` beside `Notifications`), each authenticating its own audience. HTTP exposure is a separate choice from the service's implementation language.
+  `SessionJournalIngress.Push` and the private `EnvironmentRuntime` service stay native gRPC. Operator and workload
+  callers get separate proto services (`OperatorActionService` beside `ActionService`), each authenticating its own audience. HTTP exposure is a separate choice from the service's implementation language.
 - **Wire form:** stock gRPC-Gateway. Fields are camelCase, enums their names, unpopulated fields
   present. A server stream is newline-delimited JSON, one `{"result": <message>}` per line.
 - **Browser:** the app serves `/upstream/<service>/v1/` through generated gateway handlers or typed

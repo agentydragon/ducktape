@@ -639,7 +639,7 @@ Current sources: [History Service](https://github.com/agentydragon/ducktape/blob
 Give callers the same operation for creating a logical Session on either backend. Choose placement explicitly; let the selected owner prepare, reuse or start its harness as needed.
 
 `CreateSession`, `GetSession` and `ListSessions` are implemented for both placements; the
-[placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover) defines
+[placement contract](../session_dispatcher/dispatcher/SPEC.md#session-resource) defines
 the Dispatcher commit, idempotent retry, minimal `Session` projection and owner-materialization
 states. Materialization is placement-owner progress, not harness readiness, a model turn or History
 projection.

@@ -319,7 +319,7 @@ without proxy support, remove the setting and verify its ConfigMap and rollout.
 ## Runtime lifecycle calls
 
 The controller uses the historically named `runner_gateway_target` to call the stable
-`environments:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
+`environments:8082` Service while sealing a Sandbox with `EnvironmentRuntime.Quiesce` or performing suspend
 admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
 routes the request to its own Runtime connection. No per-Sandbox control Service is created.
 Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the
