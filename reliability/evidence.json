@@ -2,13 +2,13 @@
   "vm_shadow_review": {
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "merged_at_utc": "2026-11-20T00:16:49Z",
-    "cutoff_utc": "2026-11-20T05:12:00Z",
+    "cutoff_utc": "2026-11-20T05:41:06Z",
     "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
     "paired_evidence": "../vm-pairs.json",
     "complete_fresh_pairs": 3,
-    "workflow_attempts_reviewed": 67,
+    "workflow_attempts_reviewed": 68,
     "selections": {
-      "cached": 37,
+      "cached": 38,
       "no-invocation": 27,
       "fresh": 3
     },
@@ -36,63 +36,90 @@
     },
     "sections": [
       {
-        "heading": "First attempts and final verdicts across 56 commits",
-        "text": "Both routes passed first on 46 pairs. Managed TCG alone failed first on 10, of which nine passed on retry. KVM passed every first attempt. The first-attempt failure difference was 17.9 percentage points. Under independent pairs, a conservative exact 95% interval is 2.3–32.2 points, and the upper endpoint for the KVM first-attempt failure rate is 6.4%. The sampled commits share execution infrastructure and a time window. Final failures were 1 of 56 on managed and 0 of 56 on KVM."
+        "heading": "Required KVM cutover",
+        "text": "Required Agentplane VM CI moved to recycled KVM on the self-hosted BuildBuddy kvm-vm pool on 20 November at 05:41 UTC. Managed TCG is the optional shadow on eligible devel pushes. All required checks passed on the routing PR. Its required VM target ran both scenarios successfully on its first attempt in 224.150s. That action was shared by BuildBuddy and recorded 85.272s of native queue time."
+      },
+      {
+        "heading": "First attempts and final verdicts across 68 commits",
+        "text": "Both routes passed first on 54 manual pairs. Only managed failed first on 13 pairs and only KVM failed first on one. Ten managed failures and the KVM failure recovered on retry. Final failures were 3 of 68 on managed and 0 of 68 on KVM. The managed-minus-KVM first-attempt failure difference was 17.6 percentage points. The conservative exact 95% interval was 2.6–33.7 points under independent pairs. The sampled commits share a time window and executor fleet."
       },
       {
         "heading": "Observed failures",
-        "text": "Of 10 managed first-attempt failures, seven missed Sandbox readiness at 300 seconds, two failed guest shutdown, and one had interrupted session setup. Eight also refused to recycle with a remaining Sandbox. Pair 10 missed Codex readiness on both attempts while the Runtime had yet to authenticate. BuildBuddy recorded one additional managed transport execution at the native layer. Those observations describe this batch, and the prior 12-pair batch separately documents guest-kernel RCU stalls."
+        "text": "Managed first attempts hit nine Sandbox readiness deadlines, three guest shutdown failures and one interrupted session setup. Ten also refused recycle with a remaining Sandbox. The KVM failure in pair 64 recorded a VMI lookup failure, a Codex session timeout and a refused Kubernetes API connection in teardown. Both scenarios passed on retry."
       },
       {
-        "heading": "Ordinary devel pushes",
-        "text": "All three fresh devel push pairs passed both Claude and Codex on the first Bazel attempt on each route. One managed run needed a native retry after a Firecracker pause failure. Three matched push outcomes give limited evidence about the fleet failure rate."
+        "heading": "Devel push observations",
+        "text": "All three fresh pre-cutover devel pairs passed Claude and Codex on both routes on the first Bazel attempt. One managed run first needed a native retry after a Firecracker pause failure. The first post-cutover devel push reused a cached required KVM result. Its archive confirms the required KVM and managed shadow routes, and CI skipped launching the shadow. This push adds no fresh paired outcome."
       },
       {
-        "heading": "Required routing and follow-up",
-        "text": "The routing change moves the existing required Agentplane VM target to recycled KVM on the self-hosted BuildBuddy kvm-vm pool. Managed TCG continues as an optional devel shadow. The interim cohort predates the cutover. After cutover, check the required target’s first and final verdicts, cache exposure, queue and total time on fresh required runs. Compare Firecracker admission and execution over the same load window. The runs below do not measure the effect on required PR feedback."
+        "heading": "Next reliability measurements",
+        "text": "Track the required KVM target’s first and final verdicts, cache exposure and failures before a Bazel verdict on fresh devel and PR runs. Keep managed shadow outcomes paired with the same tested commit."
       }
     ],
-    "selection_note": "Of 67 ordinary devel push attempts created through 05:12 UTC on 20 November 2026, 37 reused cached managed results, 27 were cancelled before recording a managed invocation, and three produced fresh, complete pairs. This refresh adds no fresh pairs since the prior report.",
+    "selection_note": "Across 68 pre-cutover devel push attempts, 38 reused cached managed results, 27 were cancelled before recording a managed invocation, and three produced fresh, complete pairs. The census ends at 05:41:06 UTC, just before cutover.",
     "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
-    "sample_note": "Interim manual snapshot at 05:13:56 UTC on 20 November 2026. Of 100 planned pairs, 56 were complete, six were in flight and 38 were not yet reserved. The earlier 12-pair, single-commit experiment remains in the evidence at its original source and window.",
+    "sample_note": "Interim manual snapshot at 05:43 UTC on 20 November 2026. Of 100 planned pairs, 68 were complete, six were in flight and 26 were not yet reserved. The earlier 12-pair, single-commit experiment retains its original source and window.",
     "manual_interim": {
-      "snapshot_utc": "2026-11-20T05:13:56.539138+00:00",
+      "snapshot_utc": "2026-11-20T05:43:00.234065+00:00",
       "intended_pairs": 100,
-      "complete_pairs": 56,
+      "complete_pairs": 68,
       "submitted_pending": 6,
       "summary": {
-        "n": 56,
-        "different_shas": 56,
+        "n": 68,
+        "different_shas": 68,
         "first": {
-          "managed": [10, 56, [8.91, 30.4]],
-          "kvm": [0, 56, [0.0, 6.38]]
+          "managed": [13, 68, [10.59, 30.47]],
+          "kvm": [1, 68, [0.04, 7.92]]
         },
         "final": {
           "managed": {
-            "PASSED": 46,
-            "FLAKY": 9,
-            "FAILED": 1
+            "PASSED": 55,
+            "FLAKY": 10,
+            "FAILED": 3
           },
           "kvm": {
-            "PASSED": 56
+            "PASSED": 67,
+            "FLAKY": 1
           }
         },
-        "cells": "{(False, False): 46, (True, False): 10}",
-        "faster": [55, 56, [90.45, 99.95]],
-        "median": 287.7305,
-        "median_ci": [254.23000000000002, 344.49199999999996],
-        "coverage": 0.9559534538978492,
-        "arm_medians": [514.6705, 212.9],
-        "discordant": [10, 10, [69.15, 100.0]],
-        "paired_p": 0.001953125,
+        "cells": "{(False, False): 54, (True, False): 13, (False, True): 1}",
+        "faster": [66, 68, [89.78, 99.64]],
+        "median": 266.5255000000001,
+        "median_ci": [247.11700000000002, 311.188],
+        "coverage": 0.9615399466510725,
+        "arm_medians": [514.6705, 213.10500000000002],
+        "discordant": [13, 14, [66.13, 99.82]],
+        "paired_p": 0.0018310546875,
         "final_cis": [
-          [1, 56, [0.05, 9.55]],
-          [0, 56, [0.0, 6.38]]
+          [3, 68, [0.92, 12.36]],
+          [0, 68, [0.0, 5.28]]
         ],
-        "delta_pp": 17.857142857142858,
-        "conservative_paired_diff_ci": [2.32, 32.21]
+        "delta_pp": 17.647058823529413,
+        "conservative_paired_diff_ci": [2.64, 33.72]
       }
-    }
+    },
+    "routing_cutover": {
+      "merged_at_utc": "2026-11-20T05:41:07Z",
+      "merge_sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
+      "pull_request": 18046,
+      "required_route": "kvm",
+      "shadow_route": "managed",
+      "required_pr_ci": {
+        "source_commit": "59d606e26aeb573346d09029234326a26d710443",
+        "pr_head": "6f6ebdde072622b156732df3527d616d79d30ed0",
+        "required_check": "https://github.com/agentydragon/ducktape/actions/runs/44680431951/job/136102231173",
+        "invocation": "11bd9467-fd4a-502e-bf67-4f0657e44e57",
+        "label": "//agentplane/system_tests/suites:test_vm",
+        "route": "kvm",
+        "status": "PASSED",
+        "cases": ["test_vm_scenarios[claude]", "test_vm_scenarios[codex]"],
+        "first_attempt_s": 224.15,
+        "native_queue_s": 85.272,
+        "native_execution_link": "shared"
+      }
+    },
+    "post_cutover_url": "https://github.com/agentydragon/ducktape/actions/runs/44682660742",
+    "required_pr_invocation_url": "https://app.buildbuddy.io/invocation/11bd9467-fd4a-502e-bf67-4f0657e44e57"
   },
   "schema_version": 1,
   "repository": "https://github.com/agentydragon/ducktape",

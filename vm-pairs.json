@@ -577,43 +577,43 @@
     ]
   },
   "manual_interim": {
-    "snapshot": "2026-11-20T05:13:56.539138+00:00",
+    "snapshot": "2026-11-20T05:43:00.234065+00:00",
     "intended_pairs": 100,
     "reserved_pending": [
       {
-        "pair": 53,
-        "sha": "1c4d85e4432601beb637c6ad9d7b3c6daeeb0688",
-        "invocation": "85d2925e-516d-4237-bfb5-755568a6ebc7",
+        "pair": 68,
+        "sha": "5dbf5d0bd7df97d89803dd6de33c6dbde65f39b1",
+        "invocation": "4749e481-479c-429a-9a00-503d533a79dd",
         "state": "submitted"
       },
       {
-        "pair": 55,
-        "sha": "78888f837b47138bd713fb4d9dcf703eab3aec1e",
-        "invocation": "9cd4f8ec-126a-455f-bebd-d1b2fbbf06df",
+        "pair": 70,
+        "sha": "4a06f9f1601b4e225d19b131f10ae2c320dd194b",
+        "invocation": "0bd88e4f-cb27-471a-8fa4-b403a385d9d0",
         "state": "submitted"
       },
       {
-        "pair": 59,
-        "sha": "90e980efa448a170c8bd9cfc7bc8940dab377713",
-        "invocation": "02e0781e-b16b-481a-8c1c-8051fa816332",
+        "pair": 71,
+        "sha": "b968de15fb3630a1cf2e27b38552487c902eba6e",
+        "invocation": "f3c0165b-7257-4a5c-b40f-40ac905bdc4e",
         "state": "submitted"
       },
       {
-        "pair": 60,
-        "sha": "1a9179df10c408cc8de80b591f83920e6e21abf0",
-        "invocation": "67183b0a-d989-43a3-b742-0053f185c6f6",
+        "pair": 72,
+        "sha": "62823958347d6700c85796d4d2cc102d6c144a97",
+        "invocation": "e089f809-68ae-4c66-aa5d-7fd07336774e",
         "state": "submitted"
       },
       {
-        "pair": 61,
-        "sha": "b073c2318c097dd12b8ec87bd46461bc78d70686",
-        "invocation": "79041efa-2a61-4509-a52d-c277b9ab5ea7",
+        "pair": 73,
+        "sha": "37bd2fd770816410c6d0ac30eb8ddcb81b0650eb",
+        "invocation": "9f3ba564-e33f-4acc-88b1-7b46f91f7974",
         "state": "submitted"
       },
       {
-        "pair": 62,
-        "sha": "8cb4f6e56fc8dd96d408e1700ac2298e1394267a",
-        "invocation": "1587847f-d57b-4c30-88c7-e25bfe81d693",
+        "pair": 74,
+        "sha": "0974968529037b4c660b99c9c301d8fc3830f67b",
+        "invocation": "e1c84e55-ee2b-4681-a960-d04f9d4ae350",
         "state": "submitted"
       }
     ],
@@ -3562,6 +3562,85 @@
         }
       },
       {
+        "pair": 53,
+        "sha": "1c4d85e4432601beb637c6ad9d7b3c6daeeb0688",
+        "invocation": "85d2925e-516d-4237-bfb5-755568a6ebc7",
+        "submitted": "2026-11-20T04:55:18.057208+00:00",
+        "client_finished": "2026-11-20T05:15:45.719596+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 530.042,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 411.043,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "cb8a59ab50f88a45",
+              "queue_s": 0.131,
+              "preparation_s": 2.204,
+              "process_s": 530.042,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "7f1c73c122604b3f",
+              "queue_s": 0.094,
+              "preparation_s": 2.303,
+              "process_s": 252.48,
+              "rpc_code": 14,
+              "exit": -2
+            },
+            {
+              "execution_fingerprint": "3b674d441e816f99",
+              "queue_s": 0.061,
+              "preparation_s": 0.232,
+              "process_s": 411.044,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1200.188
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 231.171,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "e44a0e6bed748635",
+              "queue_s": 3.895,
+              "preparation_s": 2.16,
+              "process_s": 231.172,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 238.11
+        }
+      },
+      {
         "pair": 54,
         "sha": "0b219a8392d2f49aceac36341fab144e9d15d27d",
         "invocation": "bb2c462a-eca8-455c-9c36-e8ea2af2ddc5",
@@ -3611,6 +3690,86 @@
             }
           ],
           "enqueue_to_last_worker_completion_s": 221.147
+        }
+      },
+      {
+        "pair": 55,
+        "sha": "78888f837b47138bd713fb4d9dcf703eab3aec1e",
+        "invocation": "9cd4f8ec-126a-455f-bebd-d1b2fbbf06df",
+        "submitted": "2026-11-20T04:58:15.887754+00:00",
+        "client_finished": "2026-11-20T05:22:50.167485+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 852.152,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 589.325,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8d4b351e096ed4da",
+              "queue_s": 0.062,
+              "preparation_s": 0.791,
+              "process_s": 852.152,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "ca986c1a301a6f8c",
+              "queue_s": 0.276,
+              "preparation_s": 3.253,
+              "process_s": 589.325,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1447.024
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 175.763,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "c7cdc4f584147762",
+              "queue_s": null,
+              "preparation_s": 0.995,
+              "process_s": 175.764,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 176.993
         }
       },
       {
@@ -3768,48 +3927,634 @@
           ],
           "enqueue_to_last_worker_completion_s": 348.935
         }
+      },
+      {
+        "pair": 59,
+        "sha": "90e980efa448a170c8bd9cfc7bc8940dab377713",
+        "invocation": "02e0781e-b16b-481a-8c1c-8051fa816332",
+        "submitted": "2026-11-20T05:04:55.024585+00:00",
+        "client_finished": "2026-11-20T05:30:34.700616+00:00",
+        "client_exit": 3,
+        "managed": {
+          "final": "FAILED",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 939.824,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Sandbox missed Ready at 300 s"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "fixture refused recycle with a remaining Sandbox"
+                }
+              ]
+            },
+            {
+              "status": "FAILED",
+              "seconds": 548.561,
+              "fixture": ["cold"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "guest shutdown did not complete"
+                }
+              ]
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "88dcddfc4dedf85f",
+              "queue_s": 0.132,
+              "preparation_s": 3.245,
+              "process_s": 939.825,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "97f9f8e9a6380e5d",
+              "queue_s": 0.057,
+              "preparation_s": 2.238,
+              "process_s": 548.562,
+              "rpc_code": 0,
+              "exit": 1
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 1495.207
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 182.018,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "367c2376e8655f3c",
+              "queue_s": 8.508,
+              "preparation_s": 0.565,
+              "process_s": 182.018,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 194.769
+        }
+      },
+      {
+        "pair": 60,
+        "sha": "1a9179df10c408cc8de80b591f83920e6e21abf0",
+        "invocation": "67183b0a-d989-43a3-b742-0053f185c6f6",
+        "submitted": "2026-11-20T05:10:44.249926+00:00",
+        "client_finished": "2026-11-20T05:20:21.690916+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 519.721,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "47402d4ee3bbc41a",
+              "queue_s": 0.057,
+              "preparation_s": 0.352,
+              "process_s": 519.722,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 520.993
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 253.78,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "f99dd6bc5fae54b6",
+              "queue_s": null,
+              "preparation_s": 1.285,
+              "process_s": 253.78,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 254.631
+        }
+      },
+      {
+        "pair": 61,
+        "sha": "b073c2318c097dd12b8ec87bd46461bc78d70686",
+        "invocation": "79041efa-2a61-4509-a52d-c277b9ab5ea7",
+        "submitted": "2026-11-20T05:11:07.926160+00:00",
+        "client_finished": "2026-11-20T05:20:50.872095+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 526.581,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8b899aed45b1b92c",
+              "queue_s": 0.059,
+              "preparation_s": 0.469,
+              "process_s": 526.581,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 527.522
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 292.418,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b624a72ca59c33d2",
+              "queue_s": 4.178,
+              "preparation_s": 2.679,
+              "process_s": 292.418,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 300.414
+        }
+      },
+      {
+        "pair": 62,
+        "sha": "8cb4f6e56fc8dd96d408e1700ac2298e1394267a",
+        "invocation": "1587847f-d57b-4c30-88c7-e25bfe81d693",
+        "submitted": "2026-11-20T05:13:25.236581+00:00",
+        "client_finished": "2026-11-20T05:21:55.570846+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 470.8,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3d2c0263f385c31b",
+              "queue_s": 0.06,
+              "preparation_s": 0.627,
+              "process_s": 470.8,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 471.934
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 189.857,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "b9756376b19d5e66",
+              "queue_s": 4.461,
+              "preparation_s": 1.853,
+              "process_s": 189.857,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 197.062
+        }
+      },
+      {
+        "pair": 63,
+        "sha": "8a5f1d12c94f014b15cafb550d5dfc4973270b25",
+        "invocation": "da604463-5ad5-4696-bffc-5c4cd6ede1a4",
+        "submitted": "2026-11-20T05:15:48.745696+00:00",
+        "client_finished": "2026-11-20T05:23:24.079443+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 391.963,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "111490a578995828",
+              "queue_s": 0.061,
+              "preparation_s": 0.953,
+              "process_s": 391.964,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 393.41
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 210.149,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "a61209a472120ada",
+              "queue_s": null,
+              "preparation_s": 1.955,
+              "process_s": 210.15,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 211.395
+        }
+      },
+      {
+        "pair": 64,
+        "sha": "f7a736f560c8221ccc34b365850f027c407b050d",
+        "invocation": "2de8e501-a373-4c7c-908b-cabd1681e04a",
+        "submitted": "2026-11-20T05:20:24.332756+00:00",
+        "client_finished": "2026-11-20T05:34:27.837846+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 427.152,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "55e4035b0bd4eefd",
+              "queue_s": 0.095,
+              "preparation_s": 2.871,
+              "process_s": 427.152,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 430.715
+        },
+        "kvm": {
+          "final": "FLAKY",
+          "attempts": [
+            {
+              "status": "FAILED",
+              "seconds": 522.57,
+              "fixture": ["warm"],
+              "problems": [
+                {
+                  "case": "test_vm_scenarios[claude]",
+                  "signature": "VMI lookup failed during launcher topology check"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "session remained in its current state until timeout"
+                },
+                {
+                  "case": "test_vm_scenarios[codex]",
+                  "signature": "Kubernetes API connection refused during teardown"
+                }
+              ]
+            },
+            {
+              "status": "PASSED",
+              "seconds": 253.682,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "02cdcda5bbe0a77c",
+              "queue_s": 0.961,
+              "preparation_s": 1.923,
+              "process_s": 522.571,
+              "rpc_code": 0,
+              "exit": 1
+            },
+            {
+              "execution_fingerprint": "68100d8fb63fb1aa",
+              "queue_s": null,
+              "preparation_s": 1.957,
+              "process_s": 253.683,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 783.708
+        }
+      },
+      {
+        "pair": 65,
+        "sha": "5566521743b82ba4915194b4ce967b65aba261c6",
+        "invocation": "516bcc47-d27c-4a12-96b1-e2d48ee435bf",
+        "submitted": "2026-11-20T05:20:52.237184+00:00",
+        "client_finished": "2026-11-20T05:33:09.932705+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 485.636,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "8f87d8f072a8d6e9",
+              "queue_s": 0.056,
+              "preparation_s": 0.821,
+              "process_s": 485.636,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 486.882
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 248.907,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "76789d03898ea52b",
+              "queue_s": 458.351,
+              "preparation_s": 0.787,
+              "process_s": 248.907,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 709.127
+        }
+      },
+      {
+        "pair": 66,
+        "sha": "3bc3a9a293d460fed8559f641afc4e2a3378ac30",
+        "invocation": "474cadc6-23a1-41fe-8b39-28a5861eb640",
+        "submitted": "2026-11-20T05:21:57.293296+00:00",
+        "client_finished": "2026-11-20T05:30:25.533551+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 480.214,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3e082b7600b1d097",
+              "queue_s": 0.059,
+              "preparation_s": 0.598,
+              "process_s": 480.215,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 481.252
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 268.385,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "7efbdf1abd8ffc54",
+              "queue_s": 4.525,
+              "preparation_s": 1.622,
+              "process_s": 268.386,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 275.851
+        }
+      },
+      {
+        "pair": 67,
+        "sha": "f06123ce5d357cee389472ad482cc96dc2aeb9a6",
+        "invocation": "216c8c33-1f61-440c-ab16-2771cf74524b",
+        "submitted": "2026-11-20T05:22:52.883447+00:00",
+        "client_finished": "2026-11-20T05:29:46.374025+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 370.465,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "10976ba17ad65389",
+              "queue_s": 0.059,
+              "preparation_s": 0.591,
+              "process_s": 370.466,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 371.549
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 198.17,
+              "fixture": ["warm"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "704674a4b092810d",
+              "queue_s": 137.515,
+              "preparation_s": 1.417,
+              "process_s": 198.171,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 337.915
+        }
+      },
+      {
+        "pair": 69,
+        "sha": "df36b1da50bd3a2a01ea889546a927d6235dd545",
+        "invocation": "da6e5dba-39db-408f-9d2b-f84f31761f7d",
+        "submitted": "2026-11-20T05:29:48.905663+00:00",
+        "client_finished": "2026-11-20T05:41:14.598622+00:00",
+        "client_exit": 0,
+        "managed": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 653.269,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "3d5ee071330765e7",
+              "queue_s": 0.096,
+              "preparation_s": 2.228,
+              "process_s": 653.27,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 656.05
+        },
+        "kvm": {
+          "final": "PASSED",
+          "attempts": [
+            {
+              "status": "PASSED",
+              "seconds": 629.273,
+              "fixture": ["cold"],
+              "problems": []
+            }
+          ],
+          "native": [
+            {
+              "execution_fingerprint": "987399304398fe13",
+              "queue_s": 1.667,
+              "preparation_s": 1.346,
+              "process_s": 629.273,
+              "rpc_code": 0,
+              "exit": 0
+            }
+          ],
+          "enqueue_to_last_worker_completion_s": 633.381
+        }
       }
     ],
     "max_concurrent_pairs": 6,
     "protocol": "Managed TCG and recycled cluster KVM run concurrently in one invocation at the same SHA. One run per target, test-result caching disabled, at most two Bazel attempts, target tracking disabled. Completed records observed at the cutoff form an interim convenience sample.",
     "summary": {
-      "n": 56,
-      "different_shas": 56,
+      "n": 68,
+      "different_shas": 68,
       "first": {
-        "managed": [10, 56, [8.91, 30.4]],
-        "kvm": [0, 56, [0.0, 6.38]]
+        "managed": [13, 68, [10.59, 30.47]],
+        "kvm": [1, 68, [0.04, 7.92]]
       },
       "final": {
         "managed": {
-          "PASSED": 46,
-          "FLAKY": 9,
-          "FAILED": 1
+          "PASSED": 55,
+          "FLAKY": 10,
+          "FAILED": 3
         },
         "kvm": {
-          "PASSED": 56
+          "PASSED": 67,
+          "FLAKY": 1
         }
       },
-      "cells": "{(False, False): 46, (True, False): 10}",
-      "faster": [55, 56, [90.45, 99.95]],
-      "median": 287.7305,
-      "median_ci": [254.23000000000002, 344.49199999999996],
-      "coverage": 0.9559534538978492,
-      "arm_medians": [514.6705, 212.9],
-      "discordant": [10, 10, [69.15, 100.0]],
-      "paired_p": 0.001953125,
+      "cells": "{(False, False): 54, (True, False): 13, (False, True): 1}",
+      "faster": [66, 68, [89.78, 99.64]],
+      "median": 266.5255000000001,
+      "median_ci": [247.11700000000002, 311.188],
+      "coverage": 0.9615399466510725,
+      "arm_medians": [514.6705, 213.10500000000002],
+      "discordant": [13, 14, [66.13, 99.82]],
+      "paired_p": 0.0018310546875,
       "final_cis": [
-        [1, 56, [0.05, 9.55]],
-        [0, 56, [0.0, 6.38]]
+        [3, 68, [0.92, 12.36]],
+        [0, 68, [0.0, 5.28]]
       ],
-      "delta_pp": 17.857142857142858,
-      "conservative_paired_diff_ci": [2.32, 32.21]
+      "delta_pp": 17.647058823529413,
+      "conservative_paired_diff_ci": [2.64, 33.72]
     }
   },
   "devel_push": {
     "collector_merge_sha": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "window_start_utc": "2026-11-20T00:16:49Z",
-    "created_through_utc": "2026-11-20T05:12:00Z",
+    "created_through_utc": "2026-11-20T05:41:06Z",
     "attempts": [
+      {
+        "run": 44681492474,
+        "attempt": 1,
+        "sha": "38558447adc26d7ed9e45d8860e20d723cfbef27",
+        "workflow": "failure",
+        "created_at": "2026-11-20T05:30:39Z",
+        "artifact_id": 14604552258,
+        "selection": "cached",
+        "collection_errors": false
+      },
       {
         "run": 44676220625,
         "attempt": 1,
@@ -4614,11 +5359,46 @@
         "created_at": "2026-11-20T00:16:52Z"
       }
     ],
-    "artifacts_reviewed_at_utc": "2026-11-20T05:16:38.447710+00:00"
+    "artifacts_reviewed_at_utc": "2026-11-20T05:45:00.515015+00:00"
   },
   "labels": {
     "managed": "//agentplane/system_tests/suites:test_vm",
     "kvm": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled"
   },
-  "units": "Seconds. Queue is enqueue to worker start, preparation is worker start to process start, process is native execution start to completion. Null marks unavailable or inverted clocks. The enqueue to final worker completion interval includes all native retries. A missing Bazel verdict remains missing even when the worker passed. Each pair ran both Claude and Codex."
+  "units": "Seconds. Queue is enqueue to worker start, preparation is worker start to process start, process is native execution start to completion. Null marks unavailable or inverted clocks. The enqueue to final worker completion interval includes all native retries. A missing Bazel verdict remains missing even when the worker passed. Each pair ran both Claude and Codex.",
+  "routing_cutover": {
+    "merged_at_utc": "2026-11-20T05:41:07Z",
+    "merge_sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
+    "pull_request": 18046,
+    "required_route": "kvm",
+    "shadow_route": "managed",
+    "required_pr_ci": {
+      "source_commit": "59d606e26aeb573346d09029234326a26d710443",
+      "pr_head": "6f6ebdde072622b156732df3527d616d79d30ed0",
+      "required_check": "https://github.com/agentydragon/ducktape/actions/runs/44680431951/job/136102231173",
+      "invocation": "11bd9467-fd4a-502e-bf67-4f0657e44e57",
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "route": "kvm",
+      "status": "PASSED",
+      "cases": ["test_vm_scenarios[claude]", "test_vm_scenarios[codex]"],
+      "first_attempt_s": 224.15,
+      "native_queue_s": 85.272,
+      "native_execution_link": "shared"
+    }
+  },
+  "post_cutover_devel": {
+    "sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
+    "run_id": "44682660742",
+    "run_attempt": "1",
+    "schema_version": 2,
+    "required_route": "kvm",
+    "shadow_route": "managed",
+    "required": "0e75c61c-8a2b-5bb5-93e7-d3e3d81a3412",
+    "shadow": "0d8bdb52-0f3c-591d-8fb8-41cd430b09c4",
+    "required_label": "//agentplane/system_tests/suites:test_vm",
+    "shadow_label": "//agentplane/system_tests/suites:test_vm_tcg",
+    "selection": "cached",
+    "artifact_url": "https://github.com/agentydragon/ducktape/actions/runs/44682660742/artifacts/14605351862",
+    "finding": "The first post-cutover devel push reused a cached required KVM result. Its archive confirms the required KVM and managed shadow routes, and CI skipped launching the shadow. This push adds no fresh paired outcome."
+  }
 }

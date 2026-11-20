@@ -1,14 +1,16 @@
 {
   "vm_shadow_review": {
-    "cutoff_utc": "2026-11-20T05:12:00Z",
+    "cutoff_utc": "2026-11-20T05:41:06Z",
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
     "evidence_key": "vm_shadow_review",
     "manual_test_source": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
     "paired_evidence": "../vm-pairs.json",
-    "paired_evidence_sha256": "b7248988360b03caf0f506277de93bed839235f7bf44622af287d0fe46e87d68",
-    "manual_interim_snapshot_utc": "2026-11-20T05:13:56.539138+00:00",
-    "routing_url": "https://github.com/agentydragon/ducktape/pull/18046"
+    "paired_evidence_sha256": "76c6fa32d05ecbad2b7a86626b0416b94c220f9221f4f114a7be4522cb5d76da",
+    "manual_interim_snapshot_utc": "2026-11-20T05:43:00.234065+00:00",
+    "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
+    "routing_merge_sha": "55f1aed6f91700160c7617fcf40cd6aefb75c5c8",
+    "routing_merged_at_utc": "2026-11-20T05:41:07Z"
   },
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
@@ -31,8 +33,8 @@
   "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
   "visual_validation": "visual-validation.json",
   "validation_invocation_url": "https://app.buildbuddy.io/invocation/82469e16-ba0c-484c-b9f4-60f53a96c9e8",
-  "report_sha256": "8a17917aa2b98fe6f68b2249158abd206f73bf2e84dbc3dbddad76b2f8a1da55",
-  "evidence_sha256": "46fffc04efa2bb611e940e151e876cfc9b628a667ebad72501fbf052ca77be04",
+  "report_sha256": "cc3252632f143ecf2609124f7f15fd5f86c2c571d5a210c26ef9b75c5ff6185c",
+  "evidence_sha256": "3d231ac5d6e25a1401f34e643926e0a89e3dafa90246bb06f7867c3291cba01c",
   "visual_validation_sha256": "3d5f1095779859d8952436ad98508a166c376bcd1001cbf6320725b4a5d69228",
   "selected_experiments_collected_at_utc": "2026-11-17T13:06:40.684966+00:00",
   "selected_experiment_invocations": [
