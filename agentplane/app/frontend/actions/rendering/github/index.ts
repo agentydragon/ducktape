@@ -1,4 +1,6 @@
 import type { ActionPresentation } from "../presentation";
+import { discoveryRenderers } from "./discovery";
+import { repositoryRenderers } from "./repository_reads";
 import { issueRenderers } from "./issues";
 import { reviewRenderers } from "./reviews";
 import { createBranchPresentation } from "./create_branch";
@@ -13,6 +15,8 @@ import { updatePullRequestBranchPresentation } from "./update_pull_request_branc
 export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ...issueRenderers,
   ...reviewRenderers,
+  ...repositoryRenderers,
+  ...discoveryRenderers,
   ["create_or_update_file", createOrUpdateFilePresentation],
   ["push_files", pushFilesPresentation],
   ["delete_file", deleteFilePresentation],
