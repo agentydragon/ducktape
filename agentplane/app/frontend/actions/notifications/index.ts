@@ -88,6 +88,8 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["products_list", grocyProductsListNotification],
       ["quantity_units_list", grocyQuantityUnitsListNotification],
       ["get_system_info", grocySystemInfoNotification],
+      ["products_edit", fixedActionNotification("Edit Grocy products")],
+      ["stock_get", fixedActionNotification("View Grocy stock on hand")],
     ]),
   ],
   [
