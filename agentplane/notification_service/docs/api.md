@@ -37,9 +37,11 @@ Existing subscription, inbox and retained History data remain subject to their c
 Delivery checks the current Dispatcher Session's recorded Identity and placement, then submits by
 Session ID without an expected Sandbox UID. If the Identity differs or the Session is unplaced, the
 existing `OwnerMismatchError` outcome keeps the notice pending and unattempted for the five-second
-retry. A Dispatcher `GetSession` NotFound is shown as `SessionNotFoundError`; a History
-`ReadSessionEvents` NotFound is shown as `HistoryNotFoundError`. Both remain pending and retry using
-`unavailable_destination_retry_s` (30 seconds by default). The placement-free retry policy belongs to
+retry. A Dispatcher `GetSession` NotFound is shown as `SessionNotFoundError`, a History
+`ReadSessionEvents` NotFound as `HistoryNotFoundError`, and a Dispatcher `SubmitInput` NotFound as
+`DispatcherNotFoundError`. Each remains pending and retries using
+`unavailable_destination_retry_s` (30 seconds by default). New entries do not shorten a recorded
+delivery failure's retry deadline. The placement-free retry policy belongs to
 `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
