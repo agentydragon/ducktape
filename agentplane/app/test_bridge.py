@@ -39,7 +39,6 @@ from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
-from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -658,8 +657,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     db_url: str,
     history_service: GoHistoryService,
     sandbox: SandboxCluster,
-    gateway_service: GatewayProcess,
-    app_token_file: Path,
+    gateway_access: GatewayAccess,
     http: httpx.AsyncClient,
     runner: RunningRunner,
     session_dispatcher: SessionDispatcherClient,
@@ -667,11 +665,8 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     spec: session_pb2.SessionSpec,
 ) -> None:
     sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
-    gateway = GatewayAccess(
-        gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-    )
     async with (
-        app_process(db_url, history_service, sandboxes=sandboxes, gateway=gateway) as survivor,
+        app_process(db_url, history_service, sandboxes=sandboxes, gateway=gateway_access) as survivor,
         httpx.AsyncClient(
             base_url=survivor.url, cookies=survivor.cookies, headers={"Origin": survivor.url}, timeout=60
         ) as survivor_http,
