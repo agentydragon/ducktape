@@ -72,7 +72,7 @@ function print(node) {
     case "EmptyStatement":
       return ";";
     case "ArrowFunctionExpression":
-      return `() => ${print(node.body)}`;
+      return `(${node.params.map(print).join(", ")}) => ${print(node.body)}`;
     default:
       throw new Error(`unsupported generated AST node: ${node.type}`);
   }
@@ -468,9 +468,71 @@ function parameterCase(seed, index) {
   };
 }
 
+// Vary captured initial values, calls and placement while constructing the
+// program independently as ESTree. Each factory call allocates fresh cells.
+function capturedCase(seed, index) {
+  const rand = random(seed ^ 0xcafe, index);
+  const count = 2 + rand(2);
+  const factory = functionNode(
+    "make",
+    ["start"],
+    [
+      declaration("value", { type: "BinaryExpression", operator: "+", left: id("start"), right: id("seed") }),
+      returnNode({
+        type: "ArrowFunctionExpression",
+        params: [id("step")],
+        async: false,
+        body: { type: "BlockStatement", body: [add("value", "step"), returnNode(id("value"))] },
+      }),
+    ]
+  );
+  const closures = Array.from({ length: count }, (_, i) => {
+    const node = declaration(`closure${i}`, call(id("make"), [literal(1 + rand(8))]));
+    node.kind = "const";
+    return node;
+  });
+  const names = closures.map((_, i) => `closure${i}`);
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      variable("seed", 1 + rand(8)),
+      factory,
+      ...closures,
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: names.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
+      },
+    ],
+  };
+  const combined = rand(2) === 0;
+  const modules = combined
+    ? {
+        "state.mjs": { imports: [], statements: [0, 1, ...closures.map((_, i) => i + 2)] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+      }
+    : {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 2) },
+        "entry.mjs": { imports: ["closures.mjs"], statements: [] },
+      };
+  const calls = [...names, ...names.slice().reverse()].map((name) => ({ name, args: [1 + rand(5)] }));
+  return {
+    ast,
+    source: print(ast),
+    spec: { kind: "bindings", entry: "entry.mjs", modules },
+    calls,
+    grammar: "captured",
+    unsupported: false,
+    cyclic: false,
+    invalidAssignment: false,
+  };
+}
+
 // Generate declarations and effects independently of their module placement.
 // Mode changes how effects are distributed, not the program grammar.
 export function makeCase(seed, index) {
+  if (index % 64 === 28) return capturedCase(seed, index);
   if (index % 32 === 12) return parameterCase(seed, index);
   if (index % 16 === 3) return modeledClosureCase(seed, index);
   if (index % 4 === 3) return closureCase(seed, index);
@@ -725,6 +787,9 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     shards,
     cases: 0,
     constantCases: 0,
+    capturedCases: 0,
+    capturedCompared: 0,
+    capturedProved: 0,
     parameterCases: 0,
     parameterCompared: 0,
     parameterProved: 0,
@@ -793,6 +858,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         ) + "\n"
       );
       if (input.useConstant) summary.constantCases++;
+      if (input.grammar === "captured") summary.capturedCases++;
       if (input.grammar === "parameter") summary.parameterCases++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCases++;
@@ -881,6 +947,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         )
           throw new Error("generated parameter branch did not preserve the primitive throw and return prefix");
       }
+      if (input.grammar === "captured") summary.capturedCompared++;
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
@@ -919,6 +986,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
             if (!equal && !mutated) await minimizeProvedDifference(input, root);

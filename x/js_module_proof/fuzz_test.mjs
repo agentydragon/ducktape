@@ -73,6 +73,9 @@ if (shards === 4 && shard === 0) {
   assert.equal(result.parameterCases, 1);
   assert.equal(result.parameterCompared, 1);
   assert.equal(result.parameterProved, 1);
+  const captured = await runFuzz({ seed: 123, start: 28, cases: 1, outputDir: process.env.TEST_TMPDIR });
+  assert.equal(captured.capturedCompared, 1);
+  assert.equal(captured.capturedProved, 1);
 }
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) {

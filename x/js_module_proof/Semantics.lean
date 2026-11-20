@@ -48,6 +48,8 @@ inductive Operation where
   | returnUndefined
   | throwNumber (value : Nat)
   | returnExpression (expression : NumericExpr) (parameters : List (String × Nat))
+  | initializeCapture (key : String) (expression : NumericExpr) (parameters : List (String × Nat)) (prior : List (String × String))
+  | invokeCaptured (captures : List (String × String)) (parameters : List String) (arguments : List Nat) (body : NumericExpr)
   deriving DecidableEq, Repr
 
 structure ExecutionState (α : Type) where
@@ -70,60 +72,80 @@ def updateBinding : List (String × Nat) → String → Nat → Option (List (St
     else (updateBinding rest name value).map (fun tail => (key, old) :: tail)
 
 /- `Except.error` is a JavaScript throw, while `none` means the model could
-   not evaluate an unsupported or uninitialized operation. -/
+   not evaluate an unsupported or uninitialized operation. The local frame is
+   returned so captured cells can be observed after a call. -/
+structure ExpressionResult (α : Type) where
+  locals : List (String × Nat)
+  completion : Except ThrownValue α
+
 mutual
-def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue Nat)
-  | .literal value => some (.ok value)
-  | .name name => match lookupBinding locals name with
-    | some value => some (.ok value)
-    | none => (lookupBinding globals name).map Except.ok
+def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (ExpressionResult Nat)
+  | .literal value => some ⟨locals, .ok value⟩
+  | .name name => do
+    let value ← match lookupBinding locals name with
+      | some value => some value
+      | none => lookupBinding globals name
+    pure ⟨locals, .ok value⟩
   | .add left right => do
-    match ← evaluateExpression locals globals left with
-    | .error value => pure (.error value)
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
     | .ok leftValue =>
-      match ← evaluateExpression locals globals right with
-      | .error value => pure (.error value)
-      | .ok rightValue => pure (.ok (leftValue + rightValue))
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue + rightValue)⟩
   | .conditional test consequent alternative => do
-    match ← evaluateExpression locals globals test with
-    | .error value => pure (.error value)
+    let result ← evaluateExpression locals globals test
+    match result.completion with
+    | .error value => pure ⟨result.locals, .error value⟩
     | .ok condition =>
-      if condition == 0 then evaluateExpression locals globals alternative
-      else evaluateExpression locals globals consequent
+      if condition == 0 then evaluateExpression result.locals globals alternative
+      else evaluateExpression result.locals globals consequent
   | .local name _ initial body => do
-    match ← evaluateExpression locals globals initial with
-    | .error value => pure (.error value)
-    | .ok value => evaluateExpression ((name, value) :: locals) globals body
-  | .assign name expression body => do
-    match ← evaluateExpression locals globals expression with
-    | .error value => pure (.error value)
+    let initialResult ← evaluateExpression locals globals initial
+    match initialResult.completion with
+    | .error value => pure ⟨initialResult.locals, .error value⟩
     | .ok value =>
-      let updated ← updateBinding locals name value
+      let bodyResult ← evaluateExpression ((name, value) :: initialResult.locals) globals body
+      match bodyResult.locals with
+      | [] => none
+      | _ :: tail => pure ⟨tail, bodyResult.completion⟩
+  | .assign name expression body => do
+    let result ← evaluateExpression locals globals expression
+    match result.completion with
+    | .error value => pure ⟨result.locals, .error value⟩
+    | .ok value =>
+      let updated ← updateBinding result.locals name value
       evaluateExpression updated globals body
   | .raise expression => do
-    match ← evaluateExpression locals globals expression with
-    | .error value => pure (.error value)
-    | .ok value => pure (.error (.number value))
-  | .raisePrimitive value => some (.error value)
+    let result ← evaluateExpression locals globals expression
+    match result.completion with
+    | .error value => pure ⟨result.locals, .error value⟩
+    | .ok value => pure ⟨result.locals, .error (.number value)⟩
+  | .raisePrimitive value => some ⟨locals, .error value⟩
   | .argumentsNil => none
   | .argumentsCons _ _ => none
   | .invoke _ parameters arguments body => do
-    match ← evaluateArguments locals globals arguments with
-    | .error value => pure (.error value)
+    let args ← evaluateArguments locals globals arguments
+    match args.completion with
+    | .error value => pure ⟨args.locals, .error value⟩
     | .ok values =>
       if parameters.length == values.length then
-        evaluateExpression (parameters.zip values) globals body
+        (evaluateExpression (parameters.zip values) globals body).map (fun result => ⟨args.locals, result.completion⟩)
       else none
 
-def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → Option (Except ThrownValue (List Nat))
-  | .argumentsNil => some (.ok [])
+def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → Option (ExpressionResult (List Nat))
+  | .argumentsNil => some ⟨locals, .ok []⟩
   | .argumentsCons head tail => do
-    match ← evaluateExpression locals globals head with
-    | .error value => pure (.error value)
+    let headResult ← evaluateExpression locals globals head
+    match headResult.completion with
+    | .error value => pure ⟨headResult.locals, .error value⟩
     | .ok value =>
-      match ← evaluateArguments locals globals tail with
-      | .error error => pure (.error error)
-      | .ok values => pure (.ok (value :: values))
+      let tailResult ← evaluateArguments headResult.locals globals tail
+      match tailResult.completion with
+      | .error error => pure ⟨tailResult.locals, .error error⟩
+      | .ok values => pure ⟨tailResult.locals, .ok (value :: values)⟩
   | .literal _ => none
   | .name _ => none
   | .add _ _ => none
@@ -134,6 +156,25 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .raisePrimitive _ => none
   | .invoke _ _ _ _ => none
 end
+
+/- Closure cells have keys that cannot be JavaScript identifiers. Keeping them
+   in the shared binding store makes closure creation and calls participate in
+   the same execution state and observations as every other operation. -/
+def loadCaptures (bindings : List (String × Nat)) : List (String × String) → Option (List (String × Nat))
+  | [] => some []
+  | (name, key) :: rest => do
+    let value ← lookupBinding bindings key
+    let tail ← loadCaptures bindings rest
+    pure ((name, value) :: tail)
+
+def storeCaptures (bindings : List (String × Nat)) : List (String × String) → List (String × Nat) → Option (List (String × Nat))
+  | [], [] => some bindings
+  | (name, key) :: rest, (actual, value) :: values => do
+    if name != actual then none else
+      let updated ← updateBinding bindings key value
+      storeCaptures updated rest values
+  | [], _ :: _ => none
+  | _ :: _, [] => none
 
 def ExecutionState.cell (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$live"
 def ExecutionState.snapshot (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$snapshot"
@@ -194,9 +235,24 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
     | .returnUndefined => some { state with returns := state.returns ++ [none] }
     | .throwNumber value => some { state with thrown := some (.number value) }
     | .returnExpression expression parameters => do
-      match ← evaluateExpression parameters state.bindings expression with
+      let result ← evaluateExpression parameters state.bindings expression
+      match result.completion with
       | .error value => pure { state with thrown := some value }
       | .ok value => pure { state with returns := state.returns ++ [some value] }
+    | .initializeCapture key expression parameters prior => do
+      let captures ← loadCaptures state.bindings prior
+      let result ← evaluateExpression (parameters ++ captures) state.bindings expression
+      match result.completion with
+      | .error _ => none
+      | .ok value => declare state key value
+    | .invokeCaptured captures parameters arguments body => do
+      if parameters.length != arguments.length then none else
+        let values ← loadCaptures state.bindings captures
+        let result ← evaluateExpression (parameters.zip arguments ++ values) state.bindings body
+        let bindings ← storeCaptures state.bindings captures (result.locals.drop parameters.length)
+        match result.completion with
+        | .error value => pure { state with bindings, thrown := some value }
+        | .ok value => pure { state with bindings, returns := state.returns ++ [some value] }
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

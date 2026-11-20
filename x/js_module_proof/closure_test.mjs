@@ -565,3 +565,97 @@ export { read, choose };
   assert.deepEqual(execute(combinedSource, branchCalls).results, [{ value: 5 }, { value: 6 }]);
   assert.deepEqual(execute(join(combinedOut, "entry.mjs"), branchCalls), execute(combinedSource, branchCalls));
 }
+
+if (shard === 6) {
+  await writeFile(
+    source,
+    `let seed = 1;
+function make(start) { let value = start + seed; return (step) => { value += step; return value; }; }
+const first = make(2);
+const second = make(3);
+export { first, second };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "closures.mjs": { imports: ["state.mjs"], statements: [2, 3] },
+        "entry.mjs": { imports: ["closures.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "first", args: [2] },
+    { name: "first", args: [3] },
+    { name: "second", args: [1] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 5 }, { value: 8 }, { value: 5 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const immutable = join(root, "captured-immutable.mjs");
+  const immutableOut = join(root, "captured-immutable-out");
+  await writeFile(immutable, (await readFile(source, "utf8")).replace("let value =", "const value ="));
+  assert.equal(cli("generate", immutable, spec, immutableOut).result, "generated");
+  assert.equal(cli("validate", immutable, spec, immutableOut).result, "unknown");
+  assert.equal(execute(immutable, calls).error.name, "TypeError");
+  const tdz = join(root, "captured-tdz.mjs");
+  const tdzOut = join(root, "captured-tdz-out");
+  await writeFile(
+    tdz,
+    (await readFile(source, "utf8")).replace("let value = start + seed;", "let value = seed; let seed = 1;")
+  );
+  assert.equal(cli("generate", tdz, spec, tdzOut).result, "generated");
+  assert.equal(cli("validate", tdz, spec, tdzOut).result, "unknown");
+  assert.equal(execute(tdz, calls).error.name, "ReferenceError");
+}
+
+if (shard === 7) {
+  await writeFile(
+    source,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make(start) { let value = start + seed; return (step) => { value += step; return value; }; }
+bump();
+const first = make(2);
+export { first };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "closures.mjs": { imports: ["state.mjs"], statements: [5] },
+        "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const witness = cli("validate", source, spec, out);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
+  assert.deepEqual(execute(source, witness.calls).results, [{ value: 4 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 3 }]);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+}

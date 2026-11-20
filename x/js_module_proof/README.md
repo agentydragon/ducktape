@@ -114,9 +114,16 @@ For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of
 nonnegative safe-integer arguments; intermediate results must stay in range.
 
-The captured variable must have a different name from `seed`: the shared Lean
-lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone
-reference rather than falling through to an outer one. Other closure shapes
+The original incrementing factory requires its captured variable to have a
+different name from `seed`. The shared Lean lexical lookup treats a nearer
+uninitialized binding as a temporal-dead-zone reference rather than falling
+through to an outer one. The checker also supports factories with numeric
+parameters and initialized lexical locals that return a parameterized arrow
+function. The arrow can mutate captured `let` bindings and parameters through
+the supported numeric expression grammar. Top-level `const` declarations call
+these factories with numeric literals; each call receives independent captured
+cells. Reads of later or uninitialized factory locals and writes to captured
+`const` bindings are rejected. Arbitrary escaping and other closure shapes
 remain unsupported by the proof. The generator can also emit candidate splits
 for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
@@ -138,7 +145,7 @@ accepted graph. This is a checked sufficient condition on the restricted AST,
 not a proof of the Acorn conversion or ECMAScript's linking rules. The module
 scheduler and the shared named-cell
 execution state then model initialization and future exported calls. Each
-recognized closure instance has a private modeled cell initialized when its
+recognized closure instance has private modeled cells initialized when its
 factory is called; closure identity, arbitrary allocation and escaping beyond
 the accepted calls are excluded. A safe
 result proves equal modeled initialization and matching return values and
@@ -172,7 +179,8 @@ Node and that an unsafe result's witness matches the independently observed
 initialization. Unsafe witnesses include a Lean certificate of the exact Node
 trace and its difference, including later argument-bearing calls when supported.
 Some trials mutate generated modules to exercise the validator;
-some trials generate supported counter closures and check safe and unsafe
+some trials generate supported parameterized captured closures or counter
+closures and check safe and unsafe
 splits against Node and Lean. Other trials generate programs with nested,
 escaping closures, parameters,
 shadowed bindings, captured writes, bounded loops and branches, plus cyclic

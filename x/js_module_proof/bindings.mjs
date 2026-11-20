@@ -289,9 +289,108 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   };
 }
 
+// A factory captures its parameters and initialized lexical declarations.
+// The returned arrow is lowered through the same expression grammar used for
+// ordinary functions; cell keys are checked for freshness in Lean.
+function capturedFactory(node, functions) {
+  check(node.type === "FunctionDeclaration" && !node.async && !node.generator, "unsupported factory");
+  const name = identifier(node.id);
+  const parameters = node.params.map(identifier);
+  const statements = node.body.body;
+  const last = statements.at(-1);
+  check(
+    last?.type === "ReturnStatement" && last.argument?.type === "ArrowFunctionExpression" && !last.argument.async,
+    "expected returned arrow"
+  );
+  const arrow = last.argument;
+  const closureParameters = arrow.params.map(identifier);
+  const locals = [];
+  const refs = [];
+  const synthetic = (idName, params, body) => ({
+    type: "FunctionDeclaration",
+    id: { type: "Identifier", name: idName },
+    params: params.map((name) => ({ type: "Identifier", name })),
+    body:
+      body.type === "BlockStatement"
+        ? body
+        : { type: "BlockStatement", body: [{ type: "ReturnStatement", argument: body }] },
+  });
+  for (const statement of statements.slice(0, -1)) {
+    check(
+      statement.type === "VariableDeclaration" &&
+        ["let", "const"].includes(statement.kind) &&
+        statement.declarations.length === 1,
+      "unsupported factory local"
+    );
+    const declaration = statement.declarations[0];
+    const localName = identifier(declaration.id);
+    check(declaration.init, "factory locals must be initialized");
+    const initial = expressionFunction(
+      synthetic(
+        `factory_init_${locals.length}`,
+        [...parameters, ...locals.map((local) => local.name)],
+        declaration.init
+      ),
+      functions,
+      [name]
+    );
+    locals.push({ name: localName, mutable: statement.kind === "let", initial: initial.expression });
+    refs.push(...initial.references);
+  }
+  const captured = [...parameters, ...locals.map((local) => local.name)];
+  check(
+    new Set(captured).size === captured.length && new Set(closureParameters).size === closureParameters.length,
+    "duplicate lexical bindings"
+  );
+  const closure = expressionFunction(synthetic("factory_closure", closureParameters, arrow.body), functions, [name]);
+  refs.push(...closure.references.filter((reference) => !captured.includes(reference)));
+  return {
+    kind: "capturedFactory",
+    name,
+    parameters,
+    locals,
+    closureParameters,
+    body: closure.expression,
+    references: [...new Set(refs)],
+    writes: closure.writes.filter((target) => !captured.includes(target)),
+  };
+}
+
+function capturedClosure(node, functions) {
+  check(
+    node.type === "VariableDeclaration" && node.kind === "const" && node.declarations.length === 1,
+    "expected const closure binding"
+  );
+  const declaration = node.declarations[0];
+  const name = identifier(declaration.id);
+  const call = declaration.init;
+  check(call?.type === "CallExpression" && !call.optional, "expected factory call");
+  const factory = identifier(call.callee);
+  const definition = functions?.get(factory);
+  check(definition, "unknown factory");
+  const shape = capturedFactory(definition, functions);
+  const args = call.arguments.map((argument) => {
+    check(
+      argument.type === "Literal" && Number.isSafeInteger(argument.value) && argument.value >= 0,
+      "expected numeric factory argument"
+    );
+    return argument.value;
+  });
+  check(args.length === shape.parameters.length, "factory argument count differs from parameters");
+  const keys = [...shape.parameters, ...shape.locals.map((local) => local.name)].map((_, index) => `#${name}:${index}`);
+  return { kind: "capturedClosure", name, factory, arguments: args, keys };
+}
+
 function candidateStatement(node, functions) {
   try {
     const recognized = statement(node);
+    if (recognized.kind === "closure" && functions?.has(recognized.factory)) {
+      try {
+        return capturedClosure(node, functions);
+      } catch (error) {
+        if (!String(error).includes("unknown:")) throw error;
+      }
+    }
     if (recognized.kind === "wrapper" && functions?.has(recognized.target)) {
       try {
         return expressionFunction(node, functions);
@@ -301,12 +400,19 @@ function candidateStatement(node, functions) {
     }
     return recognized;
   } catch (error) {
-    if (node.type !== "FunctionDeclaration" || !String(error).includes("unknown:")) throw error;
+    if (!String(error).includes("unknown:")) throw error;
+    if (node.type === "VariableDeclaration") return capturedClosure(node, functions);
+    if (node.type !== "FunctionDeclaration") throw error;
     try {
       return expressionFunction(node, functions);
     } catch (expressionError) {
       if (!String(expressionError).includes("unknown:")) throw expressionError;
-      return scopedFunction(node);
+      try {
+        return capturedFactory(node, functions);
+      } catch (factoryError) {
+        if (!String(factoryError).includes("unknown:")) throw factoryError;
+        return scopedFunction(node);
+      }
     }
   }
 }
@@ -486,14 +592,16 @@ const declarationName = (item) =>
     "wrapper",
     "scopedFunction",
     "expressionFunction",
+    "capturedFactory",
+    "capturedClosure",
   ].includes(item.kind)
     ? item.name
     : null;
 function references(item) {
-  if (item.kind === "scopedFunction" || item.kind === "expressionFunction") return item.references;
+  if (["scopedFunction", "expressionFunction", "capturedFactory"].includes(item.kind)) return item.references;
   if (item.kind === "function") return [item.target, item.source];
   if (item.kind === "reader" || item.kind === "factory") return [item.source];
-  if (item.kind === "closure") return [item.factory];
+  if (item.kind === "closure" || item.kind === "capturedClosure") return [item.factory];
   if (item.kind === "wrapper") return [item.target];
   if (item.kind === "recordCall") return [item.name];
   if (item.kind === "call" || item.kind === "record") return [item.name];
@@ -518,7 +626,7 @@ function generateFiles(source, spec, names) {
         check(defs.get(item.target) === name, "cannot write an imported binding");
         check(!immutable.has(item.target), "cannot write a const binding");
       }
-      if (item.kind === "scopedFunction" || item.kind === "expressionFunction")
+      if (["scopedFunction", "expressionFunction", "capturedFactory"].includes(item.kind))
         for (const target of item.writes) {
           check(defs.get(target) === name, "cannot write an imported binding");
           check(!immutable.has(target), "cannot write a const binding");
@@ -657,6 +765,17 @@ function leanStatement(item) {
       return `.thrower ${str(item.name)} ${item.value}`;
     case "expressionFunction":
       return `.expressionFunction ${str(item.name)} ${leanStrings(item.parameters)} (${leanExpression(item.expression)})`;
+    case "capturedFactory": {
+      const locals = list(
+        item.locals.map(
+          (local) =>
+            `({ name := ${str(local.name)}, mutable := ${local.mutable}, initial := ${leanExpression(local.initial)} } : CapturedLocal)`
+        )
+      );
+      return `.capturedFactory ${str(item.name)} ${leanStrings(item.parameters)} ${locals} ${leanStrings(item.closureParameters)} (${leanExpression(item.body)})`;
+    }
+    case "capturedClosure":
+      return `.capturedClosure ${str(item.name)} ${str(item.factory)} ${list(item.arguments.map(String))} ${leanStrings(item.keys)}`;
     case "factory":
       return `.factory ${str(item.name)} ${str(item.local)} ${str(item.source)}`;
     case "closure":
@@ -715,7 +834,9 @@ export async function validateBindings(sourcePath, specPath, out) {
   const digest = (content) => createHash("sha256").update(content).digest("hex");
   const prefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_graph_valid\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
   const legacySame = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
-  const hasExpressions = source.statements.some((item) => item.ast.kind === "expressionFunction");
+  const hasExpressions = source.statements.some((item) =>
+    ["expressionFunction", "capturedFactory", "capturedClosure"].includes(item.ast.kind)
+  );
   const expressionSame = `
 theorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide
 theorem binding_public_table : publicCallableTable bindingSource bindingExports = publicCallableTable (outputDefinitions bindingModules) bindingExports := by decide
@@ -788,7 +909,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
         "All binding values, arguments and intermediate sums remain nonnegative safe integers",
         ...(hasExpressions
           ? [
-              "Expression functions receive exactly their declared number of numeric arguments; other exports are called without arguments",
+              "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
             ]
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
@@ -850,7 +971,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   if (JSON.stringify(original) !== JSON.stringify(output)) {
     const certificate = witnessed(original, output, []);
     if (certificate) return { result: "unsafe", original, output, certificate };
-    return { result: "unknown", reason: "Node initialization difference did not match the Lean observation" };
+    return {
+      result: "unknown",
+      reason: "Node initialization difference did not match the Lean observation",
+      detail: witnessFailure,
+    };
   }
 
   // Initialization can leave the same visible trace but different captured
@@ -867,8 +992,14 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   const candidates = hasExpressions
     ? callable.flatMap((name) => {
         const definition = source.statements.find((item) => item.ast.name === name)?.ast;
-        if (definition?.kind !== "expressionFunction") return [[{ name, args: [] }]];
-        return [0, 1, 2].map((value) => [{ name, args: definition.parameters.map(() => value) }]);
+        const factory =
+          definition?.kind === "capturedClosure"
+            ? source.statements.find((item) => item.ast.name === definition.factory)?.ast
+            : null;
+        const parameters =
+          definition?.kind === "expressionFunction" ? definition.parameters : factory?.closureParameters;
+        if (!parameters) return [[{ name, args: [] }]];
+        return [0, 1, 2].map((value) => [{ name, args: parameters.map(() => value) }]);
       })
     : callable.map((name) => [name]);
   if (!hasExpressions) for (const first of callable) for (const second of callable) candidates.push([first, second]);
@@ -910,6 +1041,19 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
         expressionBound(definition.expression, bound) > BigInt(Number.MAX_SAFE_INTEGER)
       )
         continue;
+      if (definition?.kind === "capturedClosure") {
+        const factory = source.statements.find((item) => item.ast.name === definition.factory)?.ast;
+        if (factory?.kind !== "capturedFactory") continue;
+        let capturedBound = definition.arguments.reduce((largest, value) => {
+          const n = BigInt(value);
+          return n > largest ? n : largest;
+        }, bound);
+        for (const local of factory.locals) {
+          const next = expressionBound(local.initial, capturedBound);
+          if (next > capturedBound) capturedBound = next;
+        }
+        if (expressionBound(factory.body, capturedBound) > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+      }
     }
     if (BigInt(maximum) << BigInt(initialCalls + calls.length) > BigInt(Number.MAX_SAFE_INTEGER)) break;
     let before, after;
