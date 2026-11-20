@@ -366,7 +366,6 @@ func (h *harness) makeDue(t *testing.T, inboxID uuid.UUID) {
 
 type inboxRow struct {
 	retired       bool
-	staleCheckAt  *time.Time
 	nextAttempt   *time.Time
 	deliveryError *string
 	acknowledged  int64
@@ -376,15 +375,12 @@ type inboxRow struct {
 func (h *harness) row(t *testing.T, inboxID uuid.UUID) inboxRow {
 	t.Helper()
 	var row inboxRow
-	var stale, next sql.NullTime
+	var next sql.NullTime
 	var deliveryError sql.NullString
 	if err := h.db.QueryRowContext(t.Context(), `
-		SELECT retired, stale_check_at, next_attempt, delivery_error, acknowledged, last_cursor FROM inbox WHERE id = $1`,
-		inboxID).Scan(&row.retired, &stale, &next, &deliveryError, &row.acknowledged, &row.lastCursor); err != nil {
+		SELECT retired, next_attempt, delivery_error, acknowledged, last_cursor FROM inbox WHERE id = $1`,
+		inboxID).Scan(&row.retired, &next, &deliveryError, &row.acknowledged, &row.lastCursor); err != nil {
 		t.Fatal(err)
-	}
-	if stale.Valid {
-		row.staleCheckAt = &stale.Time
 	}
 	if next.Valid {
 		row.nextAttempt = &next.Time
