@@ -95,9 +95,6 @@ func (c ModelConfig) Validate() error {
 		if c.ExecEncoding != protocol.ExecEncodingJSON {
 			return invalidSetting("exec_encoding", "chat_completions requires exec_encoding json")
 		}
-		if len(c.ReasoningEfforts) != 1 || c.ReasoningEfforts[0] != "" {
-			return invalidSetting("reasoning_efforts", "chat_completions uses the provider default reasoning effort")
-		}
 	default:
 		return invalidSetting("api", "model api must be responses, anthropic_messages, or chat_completions")
 	}

@@ -242,8 +242,6 @@ class ModelConfig(BaseModel):
                 raise ValueError("Chat Completions cannot set options for another API")
             if self.exec_encoding != "json":
                 raise ValueError("chat_completions requires exec_encoding json")
-            if self.reasoning_efforts != {""}:
-                raise ValueError("chat_completions uses the provider default reasoning effort")
         return self
 
 
