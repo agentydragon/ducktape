@@ -180,7 +180,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json")
+    fetch("./evidence.json?v=cnpg-20261120")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -363,6 +363,59 @@ function Report() {
           >Upstream scale-selector feature<//
         ><//
       >
+      <${Accordion} variant="separated" my="md">
+        <${Accordion.Item} value="database-inventory">
+          <${Accordion.Control}>CNPG database inventory · 23 clusters<//>
+          <${Accordion.Panel}>
+            <${Text} size="sm" c="dimmed" mb="sm">
+              Cluster resource fields are operator inputs. Current memory is the
+              largest sampled PostgreSQL instance working set, not a historical
+              peak; backup sidecars are separate. Unset means no field was
+              declared or admitted, not zero usage.
+            <//>
+            <${Table.ScrollContainer}
+              minWidth=${820}
+              type="native"
+              tabIndex=${0}
+              aria-label="CNPG database resource inventory"
+            >
+              <${Table} striped withTableBorder>
+                <${Table.Thead}
+                  ><${Table.Tr}>
+                    <${Table.Th}>Namespace / cluster<//
+                    ><${Table.Th}>Active / desired instances<//>
+                    <${Table.Th}>Declared CPU request / limit<//
+                    ><${Table.Th}>Declared memory request / limit<//>
+                    <${Table.Th}>Active without memory request<//
+                    ><${Table.Th}>Current max instance working set<//>
+                  <//><//
+                >
+                <${Table.Tbody}>
+                  ${(data.cnpg.cluster_details ?? []).map(
+                    (c) =>
+                      html`<${Table.Tr} key=${`${c.namespace}/${c.name}`}>
+                        <${Table.Td}>${`${c.namespace} / ${c.name}`}<//>
+                        <${Table.Td}
+                          >${`${c.activeInstances} / ${c.desiredInstances}`}<//
+                        >
+                        <${Table.Td}
+                          >${`${c.cpuRequest ?? "unset"} / ${c.cpuLimit ?? "unset"}`}<//
+                        >
+                        <${Table.Td}
+                          >${`${c.memoryRequest ?? "unset"} / ${c.memoryLimit ?? "unset"}`}<//
+                        >
+                        <${Table.Td}>${c.activeWithoutRequest}<//>
+                        <${Table.Td}
+                          >${c.currentMaxWorkingSetMiB == null ? "unknown" : `${c.currentMaxWorkingSetMiB} MiB`}<//
+                        >
+                      <//>`,
+                  )}
+                <//>
+              <//>
+            <//>
+          <//>
+        <//>
+      <//>
       <${Title} order=${3} size="h4" mt="lg"
         >Node reservations versus current use<//
       >
