@@ -2,14 +2,14 @@
   "vm_shadow_review": {
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "merged_at_utc": "2026-11-20T00:16:49Z",
-    "cutoff_utc": "2026-11-20T02:47:00Z",
+    "cutoff_utc": "2026-11-20T05:12:00Z",
     "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
     "paired_evidence": "../vm-pairs.json",
     "complete_fresh_pairs": 3,
-    "workflow_attempts_reviewed": 35,
+    "workflow_attempts_reviewed": 67,
     "selections": {
-      "cached": 17,
-      "no-invocation": 15,
+      "cached": 37,
+      "no-invocation": 27,
       "fresh": 3
     },
     "manual": {
@@ -36,23 +36,63 @@
     },
     "sections": [
       {
-        "heading": "How much faster was KVM?",
-        "text": "In the 12-pair manual batch, KVM had a shorter first attempt in all 11 pairs with two Bazel verdicts. The median within-pair saving was 5m42s. Median first attempts were 9m31s on managed TCG and 3m47s on cluster KVM. One managed worker passed both scenarios after Bazel lost its result."
+        "heading": "First-attempt duration across 56 commits",
+        "text": "KVM had the shorter first attempt in 55 of 56 complete manual pairs. The median within-pair saving was 4m48s. The exact sign interval was 4m14s to 5m44s (95.6% coverage under independent pairs). Arm medians were 8m35s on managed TCG and 3m33s on KVM. The incomplete batch shares a time window and executor fleet, and warm fixture reuse was more common on KVM (48 of 56 versus 17 of 56)."
       },
       {
-        "heading": "Fixture reuse and retries",
-        "text": "Median KVM first attempts took 2m54s with a warm fixture (7) and 4m39s with a cold fixture (5). Managed medians were 7m26s warm (5) and 10m19s cold (6). The two failed managed tests spent another 15m21s and 9m08s on their retries. Both still failed."
+        "heading": "Queue and native execution",
+        "text": "Queued-to-worker-start was usable on all 67 managed executions and 27 of 56 KVM executions. Median and p90 among usable clocks were 0.1s and 0.6s on managed, and 3.8s and 109s on KVM. The maximum usable KVM wait was 239s. The other 29 KVM clocks were inverted. Preparation medians were 1.5s on managed and 0.9s on KVM. These are native action clocks, including retries where recorded."
       },
       {
-        "heading": "What did ordinary devel pushes see?",
-        "text": "Three fresh pairs on three commits passed on both routes. KVM’s first attempt took 31s, 62s and 3m48s less. One managed run also spent over six minutes on a failed Firecracker execution before its passing Bazel attempt. All three KVM queue clocks were inverted, so KVM admission delay is unknown for these pushes."
+        "heading": "Ordinary devel pushes",
+        "text": "On three fresh devel pairs, KVM first attempts were 31s, 62s and 3m48s shorter. All KVM queue clocks in these pairs were inverted. The KVM shadow was triggered by the managed result. The manual arms ran concurrently, with up to six pairs in flight. Neither schedule measures the required PR critical path or KVM contention with Firecracker after cutover."
       },
       {
-        "heading": "Routing recommendation",
-        "text": "Prioritize KVM for the VM suite and keep measuring it in shadow. The manual batch tested one commit with at most two pairs in flight. Ordinary shadows start after the managed result. Measure contention with required Firecracker work and the PR critical path before moving the required suite."
+        "heading": "Required routing and follow-up",
+        "text": "The routing change moves the existing required Agentplane VM target to recycled KVM on the self-hosted BuildBuddy kvm-vm pool. Managed TCG continues as an optional devel shadow. The interim cohort predates the cutover. After cutover, check the required target’s first and final verdicts, cache exposure, queue and total time on fresh required runs. Compare Firecracker admission and execution over the same load window. The runs below do not measure the effect on required PR feedback."
       }
     ],
-    "selection_note": "Of 35 devel push attempts, 17 reused a cached managed result and 15 cancelled runs had no managed invocation. The remaining 3 produced fresh, complete pairs. Review selection at 50 fresh push pairs and reassess routing at 200."
+    "selection_note": "Of 67 ordinary devel push attempts created through 05:12 UTC on 20 November 2026, 37 reused cached managed results, 27 were cancelled before recording a managed invocation, and three produced fresh, complete pairs. This refresh adds no fresh pairs since the prior report.",
+    "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
+    "sample_note": "Interim manual snapshot at 05:13:56 UTC on 20 November 2026. Of 100 planned pairs, 56 were complete, six were in flight and 38 were not yet reserved. The earlier 12-pair, single-commit experiment remains in the evidence at its original source and window.",
+    "manual_interim": {
+      "snapshot_utc": "2026-11-20T05:13:56.539138+00:00",
+      "intended_pairs": 100,
+      "complete_pairs": 56,
+      "submitted_pending": 6,
+      "summary": {
+        "n": 56,
+        "different_shas": 56,
+        "first": {
+          "managed": [10, 56, [8.91, 30.4]],
+          "kvm": [0, 56, [0.0, 6.38]]
+        },
+        "final": {
+          "managed": {
+            "PASSED": 46,
+            "FLAKY": 9,
+            "FAILED": 1
+          },
+          "kvm": {
+            "PASSED": 56
+          }
+        },
+        "cells": "{(False, False): 46, (True, False): 10}",
+        "faster": [55, 56, [90.45, 99.95]],
+        "median": 287.7305,
+        "median_ci": [254.23000000000002, 344.49199999999996],
+        "coverage": 0.9559534538978492,
+        "arm_medians": [514.6705, 212.9],
+        "discordant": [10, 10, [69.15, 100.0]],
+        "paired_p": 0.001953125,
+        "final_cis": [
+          [1, 56, [0.05, 9.55]],
+          [0, 56, [0.0, 6.38]]
+        ],
+        "delta_pp": 17.857142857142858,
+        "conservative_paired_diff_ci": [2.32, 32.21]
+      }
+    }
   },
   "schema_version": 3,
   "reviewed_at_utc": "2026-11-18T11:09:14.807132+00:00",
