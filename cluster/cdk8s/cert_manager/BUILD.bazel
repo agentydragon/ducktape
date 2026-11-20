@@ -12,6 +12,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":config",
+        ":environment",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",

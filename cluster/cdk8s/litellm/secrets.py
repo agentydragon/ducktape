@@ -21,15 +21,15 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"
-_NAMESPACE = "litellm"
 _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
-ANTHROPIC_API_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-anthropic-key").key("api-key")
+ANTHROPIC_API_KEY = SecretRef(namespace=NAMESPACE, name="litellm-anthropic-key").key("api-key")
 _SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml", "rugged-local-llm-bearer-token.sops.yaml")
 _TANA_REFRESH_TOKEN = "tana-firebase-refresh-token"
 # ESO template for LiteLLM's EXPORTERS: the Langfuse OTLP exporter, owned by `langfuse_otel` so
@@ -65,7 +65,7 @@ def _external_secret(
     return ExternalSecret(
         chart,
         id,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations=annotations),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE, annotations=annotations),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(store),
         data=[remote_data(source, source_property, secret_key=secret_key)],
@@ -81,7 +81,7 @@ def _chart(app: App) -> Chart:
     reader = ServiceAccount(
         chart,
         "external-creds-reader",
-        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="external-creds-reader", namespace=NAMESPACE),
         automount_token=False,
     )
     langfuse_store = single_secret_store(
@@ -90,14 +90,14 @@ def _chart(app: App) -> Chart:
         reader=reader,
         source_namespace="langfuse",
         source_secret="langfuse-secrets",
-        consumer_namespace=_NAMESPACE,
+        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
         "langfuse-otel-config",
         metadata=ApiObjectMetadata(
             name="litellm-langfuse-otel-config",
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             annotations={"description": "LiteLLM EXPORTERS entry for the Langfuse OTLP endpoint."},
         ),
         refresh_interval="1h",
@@ -165,7 +165,7 @@ def _chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana",
-        metadata=ApiObjectMetadata(name=_TANA_REFRESH_TOKEN, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_TANA_REFRESH_TOKEN, namespace=NAMESPACE),
         refresh_interval="10m",
         secret_store_ref=SecretStoreRef.cluster(
             single_secret_store(
@@ -174,7 +174,7 @@ def _chart(app: App) -> Chart:
                 reader=reader,
                 source_namespace="tana-mcp",
                 source_secret=_TANA_REFRESH_TOKEN,
-                consumer_namespace=_NAMESPACE,
+                consumer_namespace=NAMESPACE,
             )
         ),
         data=[remote_data(_TANA_REFRESH_TOKEN, "refresh_token")],

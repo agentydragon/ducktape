@@ -15,6 +15,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFiltersResponseHeaderModifierSet
 
 from cluster.cdk8s.authentik.app import SERVER
+from cluster.cdk8s.authentik.db import NAMESPACE
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
@@ -22,7 +23,6 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 
 NAME = "proxy-routes"
-NAMESPACE = "authentik"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/proxy-routes"
 
 # Route name -> public hostname.

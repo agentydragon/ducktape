@@ -61,6 +61,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import CONFIG_MAP_NAME, ConfigMapSpec, proxy_configs
+from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.litellm.upstreams import (
     RUGGED_LOCAL_LLM_ENABLED,
     RUGGED_LOCAL_LLM_KEY_ENV,
@@ -79,10 +80,9 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _HTTP = Port(name="http", number=4000)
 # The namespace the proxy runs in and reads its Secrets from.
-_NAMESPACE = "litellm"
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
-_MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-_LANGFUSE_OTEL_CONFIG = SecretRef(namespace=_NAMESPACE, name="litellm-langfuse-otel-config")
+_MASTER_KEY = SecretRef(namespace=NAMESPACE, name="litellm-master-key").key("api-key")
+_LANGFUSE_OTEL_CONFIG = SecretRef(namespace=NAMESPACE, name="litellm-langfuse-otel-config")
 _CONFIG_DIR = "/etc/litellm"
 _RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
 
@@ -170,34 +170,31 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _LiteralEnv("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE", "llm_only"),
                 _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
                 _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
-                _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-salt-key").key("key")),
+                _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=NAMESPACE, name="litellm-salt-key").key("key")),
                 _SecretEnv(
-                    "ANTHROPIC_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-anthropic-key").key("api-key")
+                    "ANTHROPIC_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-anthropic-key").key("api-key")
+                ),
+                _SecretEnv("GROQ_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-groq-key").key("GROQ_API_KEY")),
+                _SecretEnv(
+                    "GEMINI_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-gemini-key").key("GEMINI_API_KEY")
                 ),
                 _SecretEnv(
-                    "GROQ_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-groq-key").key("GROQ_API_KEY")
-                ),
-                _SecretEnv(
-                    "GEMINI_API_KEY", SecretRef(namespace=_NAMESPACE, name="litellm-gemini-key").key("GEMINI_API_KEY")
-                ),
-                _SecretEnv(
-                    "MISTRAL_API_KEY",
-                    SecretRef(namespace=_NAMESPACE, name="litellm-mistral-key").key("MISTRAL_API_KEY"),
+                    "MISTRAL_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-mistral-key").key("MISTRAL_API_KEY")
                 ),
                 _SecretEnv(
                     "CLIPROXY_CLIENT_KEY",
-                    SecretRef(namespace=_NAMESPACE, name="litellm-cliproxy-key").key("CLIPROXY_CLIENT_KEY"),
+                    SecretRef(namespace=NAMESPACE, name="litellm-cliproxy-key").key("CLIPROXY_CLIENT_KEY"),
                 ),
                 _SecretEnv(
                     "TANA_FIREBASE_REFRESH_TOKEN",
-                    SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
+                    SecretRef(namespace=NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
                     optional=True,
                 ),
                 *(
                     (
                         _SecretEnv(
                             RUGGED_LOCAL_LLM_KEY_ENV,
-                            SecretRef(namespace=_NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token"),
+                            SecretRef(namespace=NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token"),
                         ),
                     )
                     if RUGGED_LOCAL_LLM_ENABLED
@@ -428,7 +425,7 @@ def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
     Service(
         scope,
         "rugged-local-llm-service",
-        metadata=ApiObjectMetadata(name=RUGGED_LOCAL_LLM_SERVICE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=RUGGED_LOCAL_LLM_SERVICE, namespace=NAMESPACE),
         cluster_ip="None",
         ports=[_RUGGED_LOCAL_LLM_PORT.service_port()],
     )
@@ -437,7 +434,7 @@ def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
         "rugged-local-llm-endpoints",
         metadata=k8s.ObjectMeta(
             name=RUGGED_LOCAL_LLM_SERVICE,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             labels={
                 "kubernetes.io/service-name": RUGGED_LOCAL_LLM_SERVICE,
                 "endpointslice.kubernetes.io/managed-by": "ducktape-static",
@@ -480,13 +477,13 @@ def litellm(
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(
-                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=_NAMESPACE
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=NAMESPACE
             ),
             KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="litellm", namespace=_NAMESPACE
+                api_version="apps/v1", kind="Deployment", name="litellm", namespace=NAMESPACE
             ),
             KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name="litellm", namespace=_NAMESPACE
+                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name="litellm", namespace=NAMESPACE
             ),
         ],
         depends_on=flux_kustomization_depends_on_many(

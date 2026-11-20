@@ -9,12 +9,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
+from cluster.cdk8s.public_coder.egress import NAMESPACE
 from cluster.cdk8s.restic_backup import ResticBackup
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
 OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/backup"
-_NAMESPACE = "public-coder-agent"
 _BUCKET_NAME = "public-coder-agent-backups"
 _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
 
@@ -25,7 +25,7 @@ def chart(app: App) -> Chart:
         chart,
         "storage",
         name=_BUCKET_NAME,
-        tenant=_NAMESPACE,
+        tenant=NAMESPACE,
         adopt_existing=True,
         description="Public Coder's tenant-local SeaweedFS backup bucket.",
         secret_name=_S3_CREDENTIALS_SECRET_NAME,
@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
     ResticBackup(
         chart,
         "backup",
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         name="public-coder-agent-state-v2-restic",
         repository="public-coder-agent-state-v2-restic",
         source_pvc="public-coder-agent-state-v2",

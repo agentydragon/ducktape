@@ -17,6 +17,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
+from cluster.cdk8s.cert_manager.environment import NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
@@ -24,7 +25,6 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "cert-manager"
-NAMESPACE = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
 _REPOSITORY_NAME = "jetstack"
 _REPOSITORY_NAMESPACE = "flux-system"

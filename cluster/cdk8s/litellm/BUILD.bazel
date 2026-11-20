@@ -56,6 +56,7 @@ py_library(
     name = "crossplane_keys",
     srcs = ["crossplane_keys.py"],
     deps = [
+        ":database",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/external_secrets:single_secret_store",
@@ -93,7 +94,10 @@ py_library(
     name = "credentials",
     srcs = ["credentials.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["//cluster/cdk8s:secret_ref"],
+    deps = [
+        ":database",
+        "//cluster/cdk8s:secret_ref",
+    ],
 )
 
 py_library(
@@ -160,6 +164,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":database",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
