@@ -224,10 +224,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
     app_container = app_pod["containers"][0]
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
-    actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
     actions_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    assert "connection_delegation_actor" not in actions_settings
-    assert "reader_accounts" not in actions_settings
     assert actions_settings["connection_delegation_service"] == MCP_EDGE_URI
     assert [auth["mode"] for auth in actions_settings["rpc"]["auth"]] == ["spiffe"]
     for workload in ("actions", "notifications", "history-service", "sessions", "llm-ingress"):
@@ -257,7 +254,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert edge_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
     assert edge_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
-    assert "port" not in edge_config
     assert edge_config["http_port"] == 8081
     assert edge_config["actions_target"] == (
         f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
@@ -270,16 +266,10 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
         "client_uri": MCP_EDGE_URI,
     }
     assert edge_config.get("actions_token_file") is None
-    app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
-    app_env = {entry["name"]: entry for entry in app_container["env"]}
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
-    assert "token_subjects" not in app_settings
-    assert "token_audience" not in app_settings
     assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(
         f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
     )
-    assert "AGENTPLANE_CONNECTION_SERVICE_URL" not in app_env
-    assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     edge_database_env_name = mcp_edge.DATABASE_URL_ENV
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
     assert edge_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-mcp-edge"
@@ -501,7 +491,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
             _resource(docs, "ConfigMap", settings_volume["configMap"]["name"])["data"]["settings.yaml"]
         )
         transport = settings["proxy"]["transport"]
-        assert "audience_token_files" not in settings
         assert transport["mode"] == "tls"
         # The Action Service mounts the box's SVID there (agentplane/action_service/sandbox/inventory.go).
         assert transport["auth"] == {
@@ -541,9 +530,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     # Terraform/provider-owned OAuth settings and the upstream secret are projected from one Secret.
     assert edge_config.get("oauth") is None
     assert edge_config["oauth_file"] == "/etc/agentplane-mcp/oauth"
-    assert edge_config.get("actions_token_file") is None
-    edge_settings_env_names = {entry["name"] for entry in edge_container["env"]}
-    assert "AGENTPLANE_MCP_EDGE_OAUTH" not in edge_settings_env_names
     edge_secret_mount = next(
         mount for mount in edge_container["volumeMounts"] if mount["mountPath"] == "/etc/agentplane-mcp"
     )
@@ -564,7 +550,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(runfiles: Runfiles
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
     assert edge_config["policy_namespace"] == fixture.namespace
-    assert edge_config.get("actions_token_file") is None
     caller = _resource(docs, "Identity", "mcp-edge-test-caller")
     assert caller["metadata"]["namespace"] == fixture.namespace
     binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
@@ -834,11 +819,9 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_config["central_sampler_identity_callers"] is True
     assert llm_config["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert {mode["mode"] for mode in llm_config["rpc"]["auth"]} == {"spiffe"}
-    assert "token_audience" not in llm_config
     assert AnyHttpUrl(llm_config["litellm_url"]) == AnyHttpUrl(_TEST_LOCAL_MODEL.url)
     assert llm_config["log_levels"] == {}
     assert "litellm_key" not in llm_config
-    assert "central_sampler_accounts" not in llm_config
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "sessions-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
     assert sampler_target["target"] == central_sampler.target(NAMESPACE)

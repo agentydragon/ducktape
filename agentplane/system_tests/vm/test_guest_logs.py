@@ -1,5 +1,8 @@
 """Guest log retention across launcher removal and container log replacement."""
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -29,6 +32,46 @@ BOOT_EVIDENCE = """2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN
 2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_ACTIVATION_END
 2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_END status=complete
 """
+
+CaptureLogs = Callable[..., AbstractContextManager[None]]
+
+
+@pytest.fixture
+def logs(tmp_path: Path) -> Path:
+    return tmp_path / "pods"
+
+
+@pytest.fixture
+def kubelet_pods(tmp_path: Path) -> Path:
+    return tmp_path / "kubelet-pods"
+
+
+@pytest.fixture
+def storage(tmp_path: Path) -> Path:
+    return tmp_path / "storage"
+
+
+@pytest.fixture
+def outputs(tmp_path: Path) -> Path:
+    return tmp_path / "artifacts"
+
+
+@pytest.fixture
+def capture_logs(logs: Path, kubelet_pods: Path, storage: Path, outputs: Path) -> CaptureLogs:
+    """Leaves `validate_shutdown` and the `require_*` options to each test."""
+    return partial(
+        capture,
+        log_root=logs,
+        pod_root=kubelet_pods,
+        storage_root=storage,
+        namespace="systest",
+        kubevirt_namespace="kubevirt",
+        destination=outputs,
+    )
+
+
+def _eventually() -> Retrying:
+    return Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True)
 
 
 def test_boot_failure_requires_a_complete_console_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,8 +105,7 @@ def test_proof_success_requires_a_complete_console_receipt(tmp_path: Path, monke
     assert not systemd_supervision_passed("another-vm")
 
 
-def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_retains_unlinked_logs_and_new_incarnations(logs: Path, outputs: Path, capture_logs: CaptureLogs) -> None:
     source = logs / "systest_virt-launcher-test_uid-one" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     other = logs / "other_virt-launcher-test_uid-two" / "guest-console-log" / "0.log"
@@ -71,22 +113,11 @@ def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
     other.write_text("OUTSIDE_NAMESPACE\n")
 
     def wait_for(text: str) -> None:
-        for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+        for attempt in _eventually():
             with attempt:
                 assert text in "".join(path.read_text() for path in outputs.rglob("*.log"))
 
-    with (
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-        ),
-        source.open("w") as original,
-    ):
+    with capture_logs(validate_shutdown=lambda: True), source.open("w") as original:
         original.write("BOOT\n")
         original.flush()
         wait_for("BOOT")
@@ -111,8 +142,7 @@ def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
     ]
 
 
-def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_requires_shutdown_for_each_launcher(logs: Path, capture_logs: CaptureLogs) -> None:
     traced_echo = MARKER.replace("stdout F ", "stdout F + echo ")
     interleaved_printk = MARKER.rstrip("\n") + "[   13.327261] systemd[1]: Starting service\n"
     for uid, content in [("one", MARKER), ("two", traced_echo), ("three", interleaved_printk)]:
@@ -122,28 +152,21 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
 
     with (
         pytest.raises(GuestShutdownError, match="systest_virt-launcher-test_uid-two"),
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-        ),
+        capture_logs(validate_shutdown=lambda: True),
     ):
         pass
 
 
 @pytest.mark.parametrize("raw_serial", [False, True])
-def test_retains_shutdown_sources_after_launcher_removal(tmp_path: Path, raw_serial: bool) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_retains_shutdown_sources_after_launcher_removal(
+    logs: Path, kubelet_pods: Path, outputs: Path, capture_logs: CaptureLogs, raw_serial: bool
+) -> None:
     launcher = logs / "systest_virt-launcher-test_uid-one"
     launcher.mkdir(parents=True)
     if raw_serial:
         relative = "volumes/kubernetes.io~empty-dir/private/vmi-one/virt-serial0-log"
-        source = tmp_path / "kubelet-pods/uid-one" / relative
-        foreign = tmp_path / "kubelet-pods/uid-other" / relative
+        source = kubelet_pods / "uid-one" / relative
+        foreign = kubelet_pods / "uid-other" / relative
         foreign.parent.mkdir(parents=True)
         foreign.write_text("FOREIGN_SERIAL\n")
         retained = outputs / "serial"
@@ -151,21 +174,10 @@ def test_retains_shutdown_sources_after_launcher_removal(tmp_path: Path, raw_ser
         source = launcher / "virtiofs-state" / "0.log"
         retained = outputs / "virtiofs"
     source.parent.mkdir(parents=True)
-    with (
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: False,
-        ),
-        source.open("w") as original,
-    ):
+    with capture_logs(validate_shutdown=lambda: False), source.open("w") as original:
         original.write("FUSE_REQUEST\n")
         original.flush()
-        for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+        for attempt in _eventually():
             with attempt:
                 assert [p.read_text() for p in retained.rglob("*.log")] == ["FUSE_REQUEST\n"]
         source.unlink()
@@ -175,37 +187,26 @@ def test_retains_shutdown_sources_after_launcher_removal(tmp_path: Path, raw_ser
     assert [p.read_text() for p in retained.rglob("*.log")] == ["FUSE_REQUEST\nFUSE_SHUTDOWN\n"]
 
 
-def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path: Path) -> None:
-    storage = tmp_path / "storage"
+def test_retains_native_journal_header_changes_after_unlink_on_failure(
+    storage: Path, outputs: Path, capture_logs: CaptureLogs
+) -> None:
     source = storage / "pvc-one_systest_vm-state/systemd-journal/machine/system.journal"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"initial header\x00entries")
     foreign = storage / "pvc-two_other_vm-state/systemd-journal/machine/system.journal"
     foreign.parent.mkdir(parents=True)
     foreign.write_bytes(b"FOREIGN_JOURNAL")
-    outputs = tmp_path / "artifacts"
 
     def fail_scenario() -> None:
-        with (
-            capture(
-                log_root=tmp_path / "pods",
-                pod_root=tmp_path / "kubelet-pods",
-                storage_root=storage,
-                namespace="systest",
-                kubevirt_namespace="kubevirt",
-                destination=outputs,
-                validate_shutdown=lambda: True,
-            ),
-            source.open("r+b") as journal,
-        ):
-            for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+        with capture_logs(validate_shutdown=lambda: True), source.open("r+b") as journal:
+            for attempt in _eventually():
                 with attempt:
                     assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"initial header\x00entries"]
             source.unlink()
             journal.seek(0)
             journal.write(b"updated header\x00entries")
             journal.flush()
-            for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+            for attempt in _eventually():
                 with attempt:
                     assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"updated header\x00entries"]
             journal.seek(0)
@@ -219,8 +220,9 @@ def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path:
     assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"updated header\x00entries\x00shutdown"]
 
 
-def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: Path) -> None:
-    storage, logs, outputs = tmp_path / "storage", tmp_path / "pods", tmp_path / "artifacts"
+def test_retains_unlinked_firecracker_console_and_only_namespace_logs(
+    storage: Path, logs: Path, outputs: Path, capture_logs: CaptureLogs
+) -> None:
     console = storage / "pvc-uid_systest_sandbox-state/firecracker/firecracker.log"
     console.parent.mkdir(parents=True)
     console.write_text("VMM_START\n")
@@ -236,23 +238,11 @@ def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: 
     foreign_runtime_log.write_text("FOREIGN_RUNTIME\n")
 
     def wait_for(text: str) -> None:
-        for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+        for attempt in _eventually():
             with attempt:
                 assert text in "".join(path.read_text() for path in outputs.rglob("*.log*"))
 
-    with (
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=storage,
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-            require_shutdown_marker=False,
-        ),
-        console.open("a") as original,
-    ):
+    with capture_logs(validate_shutdown=lambda: True, require_shutdown_marker=False), console.open("a") as original:
         wait_for("VMM_START")
         wait_for("CRI_RUNTIME")
         console.unlink()
@@ -269,53 +259,34 @@ def test_retains_unlinked_firecracker_console_and_only_namespace_logs(tmp_path: 
     assert "FOREIGN_RUNTIME" not in all_logs
 
 
-def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_retains_failure_evidence_without_masking_exception(
+    logs: Path, outputs: Path, capture_logs: CaptureLogs
+) -> None:
     source = logs / "systest_virt-launcher-test_uid-one" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     source.write_text("FAILED_GUEST\n")
     failure = ValueError("original scenario failure")
     with (
         pytest.raises(ValueError, match="original scenario failure") as caught,
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-            require_boot_evidence=True,
-        ),
+        capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True),
     ):
         raise failure
     assert caught.value is failure
     assert [path.read_text() for path in outputs.rglob("*.log")] == ["FAILED_GUEST\n"]
 
 
-def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_session_failures_disable_validation_at_teardown(logs: Path, outputs: Path, capture_logs: CaptureLogs) -> None:
     source = logs / "systest_virt-launcher-test_uid-one" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     source.write_text("FAILED_GUEST\n")
     failures = 0
-    with capture(
-        log_root=logs,
-        pod_root=tmp_path / "kubelet-pods",
-        storage_root=tmp_path / "storage",
-        namespace="systest",
-        kubevirt_namespace="kubevirt",
-        destination=outputs,
-        validate_shutdown=lambda: failures == 0,
-        require_boot_evidence=True,
-    ):
+    with capture_logs(validate_shutdown=lambda: failures == 0, require_boot_evidence=True):
         # pytest reports failed cases without throwing their exception into the session fixture.
         failures += 1
     assert [path.read_text() for path in outputs.rglob("*.log")] == ["FAILED_GUEST\n"]
 
 
-def test_boot_readiness_accepts_interleaved_kernel_printk(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_boot_readiness_accepts_interleaved_kernel_printk(logs: Path, capture_logs: CaptureLogs) -> None:
     source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     evidence = BOOT_EVIDENCE.replace(
@@ -325,16 +296,7 @@ def test_boot_readiness_accepts_interleaved_kernel_printk(tmp_path: Path) -> Non
     )
     source.write_text(evidence + MARKER)
 
-    with capture(
-        log_root=logs,
-        pod_root=tmp_path / "kubelet-pods",
-        storage_root=tmp_path / "storage",
-        namespace="systest",
-        kubevirt_namespace="kubevirt",
-        destination=outputs,
-        validate_shutdown=lambda: True,
-        require_boot_evidence=True,
-    ):
+    with capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True):
         pass
 
 
@@ -353,9 +315,8 @@ def test_boot_readiness_accepts_interleaved_kernel_printk(tmp_path: Path) -> Non
     ],
 )
 def test_boot_readiness_rejects_non_receipts_and_malformed_printk_frames(
-    tmp_path: Path, cri_fields: str, payload: str, terminated: bool
+    logs: Path, capture_logs: CaptureLogs, cri_fields: str, payload: str, terminated: bool
 ) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
     source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     normal_ready = "2026-10-27T21:41:13Z stdout F AGENTPLANE_UDEV_MONITOR_READY\n"
@@ -370,22 +331,14 @@ def test_boot_readiness_rejects_non_receipts_and_malformed_printk_frames(
 
     with (
         pytest.raises(GuestBootEvidenceError, match="did not report readiness"),
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-            require_boot_evidence=True,
-        ),
+        capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True),
     ):
         pass
 
 
-def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_successful_teardown_requires_complete_evidence_from_selected_guest(
+    logs: Path, capture_logs: CaptureLogs
+) -> None:
     selected = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
     selected.parent.mkdir(parents=True)
     selected.write_text(BOOT_EVIDENCE + MARKER)
@@ -397,16 +350,7 @@ def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_
         "(ConditionKernelCommandLine=agentplane.boot-evidence=1).\n" + MARKER
     )
 
-    with capture(
-        log_root=logs,
-        pod_root=tmp_path / "kubelet-pods",
-        storage_root=tmp_path / "storage",
-        namespace="systest",
-        kubevirt_namespace="kubevirt",
-        destination=outputs,
-        validate_shutdown=lambda: True,
-        require_boot_evidence=True,
-    ):
+    with capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True):
         pass
 
 
@@ -430,31 +374,24 @@ def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_
         ),
     ],
 )
-def test_successful_teardown_reports_incomplete_boot_evidence(tmp_path: Path, evidence: str, message: str) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_successful_teardown_reports_incomplete_boot_evidence(
+    logs: Path, outputs: Path, capture_logs: CaptureLogs, evidence: str, message: str
+) -> None:
     source = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log" / "0.log"
     source.parent.mkdir(parents=True)
     source.write_text(evidence + MARKER)
 
     with (
         pytest.raises(GuestBootEvidenceError, match=message),
-        capture(
-            log_root=logs,
-            pod_root=tmp_path / "kubelet-pods",
-            storage_root=tmp_path / "storage",
-            namespace="systest",
-            kubevirt_namespace="kubevirt",
-            destination=outputs,
-            validate_shutdown=lambda: True,
-            require_boot_evidence=True,
-        ),
+        capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True),
     ):
         pass
     assert evidence == "" or list(outputs.rglob("*.log"))
 
 
-def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(
+    logs: Path, capture_logs: CaptureLogs
+) -> None:
     console = logs / "systest_virt-launcher-test_uid-oom" / "guest-console-log"
     console.mkdir(parents=True)
     (console / "0.log").write_text(
@@ -476,21 +413,13 @@ def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(t
         + "\n"
     )
 
-    with capture(
-        log_root=logs,
-        pod_root=tmp_path / "kubelet-pods",
-        storage_root=tmp_path / "storage",
-        namespace="systest",
-        kubevirt_namespace="kubevirt",
-        destination=outputs,
-        validate_shutdown=lambda: True,
-        require_boot_evidence=True,
-    ):
+    with capture_logs(validate_shutdown=lambda: True, require_boot_evidence=True):
         pass
 
 
-def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Path) -> None:
-    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+def test_retains_only_scoped_console_compute_relay_and_handler_logs(
+    logs: Path, outputs: Path, capture_logs: CaptureLogs
+) -> None:
     contents = {
         "systest_virt-launcher-test_uid-one/guest-console-log/0.log": MARKER,
         "systest_virt-launcher-test_uid-one/compute/0.log": "COMPUTE\n",
@@ -505,15 +434,7 @@ def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Pa
         path = logs / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
-    with capture(
-        log_root=logs,
-        pod_root=tmp_path / "kubelet-pods",
-        storage_root=tmp_path / "storage",
-        namespace="systest",
-        kubevirt_namespace="kubevirt",
-        destination=outputs,
-        validate_shutdown=lambda: True,
-    ):
+    with capture_logs(validate_shutdown=lambda: True):
         pass
     assert sorted(path.read_text() for path in outputs.rglob("*.log")) == sorted(
         [MARKER, "COMPUTE\n", "HANDLER\n", "RELAY\n"]

@@ -18,7 +18,6 @@ def render() -> RenderedFixture:
     operator_oidc = fixture_chart.operator_oidc()
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
-        platform_callers=fixture_chart.NATIVE_CALLERS,
         routes=fixture_chart.LOCAL_MODEL_ROUTES,
         app=None,
         central_sampler=None,
