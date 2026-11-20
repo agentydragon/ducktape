@@ -478,3 +478,18 @@ js_test(
     },
     tags = ["manual"],
 )
+
+js_test(
+    name = "shift_script_fuzz_test",
+    size = "small",
+    args = [
+        "--seed",
+        "1",
+        "--count",
+        "128",
+        "--script-grammar",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
