@@ -369,24 +369,76 @@ describe("Action presentation slots", () => {
     expect(receipt.textContent).not.toContain("Updated labels");
   });
 
-  it("renders Grocy list options and results without resolving IDs", async () => {
-    for (const [name, args, expected] of [
-      ["products_list", { detail: "full" }, "Full Product records"],
-      ["quantity_units_list", {}, "Quantity unit names"],
+  it("shows named Grocy list links without duplicate numeric IDs or detail-mode copy", async () => {
+    for (const [name, args, label, article, path] of [
+      ["products_list", { detail: "full" }, "List Grocy products", "Pumpkin", "product"],
+      ["quantity_units_list", {}, "List quantity units", "Can", "quantityunit"],
     ] as const) {
       const action = identity("grocy_sf", name);
-      const opened = await mount(renderPaneOpened(action, args));
-      const details = await mount(renderDetailsArguments(action, args));
-      expect(opened.textContent).toContain(expected);
-      expect(details.textContent).toContain(expected);
+      expect((await mount(renderPaneOpened(action, args))).querySelector("p")).toBeNull();
+      expect((await mount(renderDetailsArguments(action, args))).querySelector("p")).toBeNull();
+      expect((await mount(renderActionLabel(action, args))).textContent).toContain(label);
+      const receipt = await drawDetailsResult(action, {
+        content: [],
+        structuredContent: [{ id: 734, name: article }],
+        isError: false,
+      });
+      expect(receipt.querySelector(`a[href="https://grocy-sf.allegedly.works/${path}/734"]`)?.textContent).toBe(
+        article
+      );
+      expect(receipt.textContent).not.toContain("#734");
     }
+  });
 
-    const productsLabel = await mount(renderActionLabel(identity("grocy_sf", "products_list"), { detail: "full" }));
-    const unitsLabel = await mount(renderActionLabel(identity("grocy_sf", "quantity_units_list"), {}));
-    const systemInfoLabel = await mount(renderActionLabel(identity("grocy_sf", "get_system_info"), {}));
-    expect(productsLabel.textContent).toContain("List Grocy products");
-    expect(unitsLabel.textContent).toContain("List quantity units");
-    expect(systemInfoLabel.textContent).toContain("Show Grocy system information");
+  it("shows submitted Grocy edit changes, explicit clears, and each recorded outcome", async () => {
+    const action = identity("grocy_sf", "products_edit");
+    const args = {
+      items: [
+        { product: "Oats", name: "Rolled oats", location: "Pantry", clear_fields: ["description"] },
+        { product: "Muesli", min_stock_amount: 0 },
+      ],
+    };
+    const result: CallToolResult = {
+      content: [],
+      structuredContent: [
+        { kind: "ok", object_id: 2 },
+        { kind: "error", error: "Product not found" },
+      ],
+      isError: false,
+    };
+    expect(renderActionOutcome(action, result)).toEqual({ label: "Partially completed", failed: true });
+    const rendered = await mount(renderActionCall(action, args, result)?.content);
+    expect(rendered.textContent).toContain("Description · Clear");
+    expect(rendered.textContent).toContain("Default location · Pantry");
+    expect(rendered.textContent).toContain("Disable low-stock threshold");
+    expect(rendered.textContent).toContain("Failed · Muesli · Product not found");
+    expect(rendered.querySelector('a[href="https://grocy-sf.allegedly.works/product/2"]')?.textContent).toBe(
+      "Rolled oats"
+    );
+  });
+
+  it("shows total inventory stock with the opened subset and matched location", async () => {
+    const action = identity("grocy_sf", "stock_get");
+    const args = { products: ["Kefir"], locations: ["Fridge"] };
+    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain("Locations · Fridge");
+    const view = await drawDetailsResult(action, {
+      content: [],
+      structuredContent: [
+        {
+          product_id: 21,
+          product_name: "Kefir",
+          amount: 3,
+          amount_opened: 1,
+          qu_name: "Bottle",
+          location_name: "Fridge",
+          best_before_date: "2026-11-25",
+        },
+      ],
+      isError: false,
+    });
+    expect(view.textContent).toContain("Kefir · 3 Bottle in Fridge");
+    expect(view.textContent).toContain("1 opened");
+    expect(view.textContent).toContain("Best before 2026-11-25");
   });
 
   it("falls back to the recorded Tana workspace ID when a name is unavailable", async () => {
@@ -407,12 +459,7 @@ describe("Action presentation slots", () => {
 
   it("preserves recorded data for lookup-dependent Haku Actions that have no Agentplane preview", async () => {
     const excluded = [
-      ["grocy_sf", "stock_add"],
-      ["grocy_sf", "stock_consume"],
-      ["grocy_sf", "stock_entry_edit"],
-      ["grocy_sf", "stock_get"],
       ["grocy_sf", "products_create"],
-      ["grocy_sf", "products_edit"],
       ["grocy_sf", "shopping_list_get"],
       ["grocy_sf", "shopping_list_items_add"],
       ["grocy_sf", "shopping_list_items_remove"],
@@ -1073,8 +1120,8 @@ const cardDecisionButtonCases: Array<{
     visible: ["Dispose sandbox disposed-sandbox"],
   },
   { group: "sandbox", name: "list", args: {}, visible: ["List sandboxes"] },
-  { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["Full Product records"] },
-  { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["Quantity unit names"] },
+  { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["List Grocy products"] },
+  { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["List quantity units"] },
   {
     group: "gmail",
     name: "threads_list",

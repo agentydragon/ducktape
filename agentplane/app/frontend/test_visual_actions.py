@@ -258,6 +258,29 @@ GITHUB_RELEASE = {
 }
 GITHUB_USER = {"login": "test-reviewer", "profile_url": "https://github.com/test-reviewer"}
 
+_KEFIR_ENTRY = {
+    "entry_id": 12,
+    "product_id": 21,
+    "product_name": "Kefir",
+    "amount": 2,
+    "qu_name": "Bottle",
+    "location_name": "Fridge",
+    "best_before_date": "2026-11-25",
+    "purchased_date": "2026-11-19",
+    "price": 3.2,
+    "open": True,
+    "note": "Cultured",
+}
+_KEFIR_CHANGE = {
+    "kind": "ok",
+    "product_name": "Kefir",
+    "transaction_id": "tx-kefir",
+    "qu_name": "Bottle",
+    "location_name": "Fridge",
+}
+_KEFIR_ALERT = {"product_id": 21, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"}
+
+
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
 EXAMPLES = (
@@ -1410,24 +1433,156 @@ EXAMPLES = (
         "grocy_sf",
         "products_list",
         {"detail": "full"},
-        [{"id": 1, "name": "Oat milk"}, {"id": 2, "name": "Coffee"}],
-        "Oat milk",
+        [{"id": 1, "name": "Olive Oil", "min_stock_amount": 1}, {"id": 2, "name": "Oats"}],
+        "Minimum 1 in stock",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
         "quantity_units_list",
         {"detail": "full"},
-        [{"id": 1, "name": "Bottle"}, {"id": 2, "name": "Gram"}],
-        "Bottle",
+        [{"id": 1, "name": "Bottle", "name_plural": "Bottles"}, {"id": 2, "name": "Gram", "name_plural": "Grams"}],
+        "Plural: Bottles",
+        compact_card_expands=False,
     ),
     ActionExample(
         "grocy_sf",
         "get_system_info",
         {},
         {"grocy_version": {"Version": "4.5.0"}, "php_version": "8.4", "sqlite_version": "3.50", "db_version": 1},
-        "4.5.0",
+        "Grocy 4.5.0",
         compact_card_expands=False,
     ),
+    ActionExample(
+        "grocy_sf",
+        "products_edit",
+        {"items": [{"product": "Oats", "name": "Rolled oats", "location": "Pantry", "clear_fields": ["description"]}]},
+        [{"kind": "ok", "object_id": 2}],
+        "1 product edited",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_get",
+        {"products": ["Kefir"], "locations": ["Fridge"]},
+        [
+            {
+                "product_id": 21,
+                "product_name": "Kefir",
+                "amount": 3,
+                "amount_opened": 1,
+                "qu_name": "Bottle",
+                "location_name": "Fridge",
+                "best_before_date": "2026-11-25",
+            }
+        ],
+        "1 opened · Best before 2026-11-25",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_add",
+        {"items": [{"product": "Kefir", "location": "Fridge", "qu": "Bottle", "amount": 2, "price": 3.2}]},
+        [{**_KEFIR_CHANGE, "amount_delta": 2, "new_amount": 4, "entry_id": 12, "best_before_date": "2026-11-25"}],
+        "Now 4 Bottle total",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_consume",
+        {"items": [{"product": "Kefir", "location": "Fridge", "qu": "Bottle", "amount": 1, "spoiled": True}]},
+        [{**_KEFIR_CHANGE, "amount_delta": -1, "new_amount": 1}],
+        "Change · -1 Bottle",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_set",
+        {"items": [{"product": "Kefir", "location": "Fridge", "new_amount": 0}]},
+        [{**_KEFIR_CHANGE, "amount_delta": -2, "new_amount": 0}],
+        "Now 0 Bottle total",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_transfer",
+        {"product": "Kefir", "qu": "Bottle", "amount": 1, "from_location": "Fridge", "to_location": "Cellar"},
+        {**_KEFIR_CHANGE, "location_name": "Fridge -> Cellar"},
+        "Kefir · Fridge → Cellar",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_entries_list",
+        {"products": ["Kefir"]},
+        [{"kind": "ok", "entry": _KEFIR_ENTRY}],
+        "Kefir · 2 Bottle in Fridge",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "stock_entry_edit",
+        {"items": [{"entry_id": 12, "amount": 2, "clear_fields": ["price"]}]},
+        [
+            {
+                "kind": "ok",
+                "entry": {**_KEFIR_ENTRY, "price": None},
+                "changes": {"amount": {"old": 3, "new": 2}, "price": {"old": 3.2, "new": None}},
+            }
+        ],
+        "Amount · 3 → 2",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_product_stock",
+        {"productId": 21},
+        {
+            "product": {"id": "21", "name": "Kefir"},
+            "stock_amount": "2",
+            "stock_amount_opened": "1",
+            "quantity_unit_stock": {"name": "Bottle", "name_plural": "Bottles"},
+            "location": {"name": "Fridge"},
+            "next_due_date": "2026-11-25",
+        },
+        "Kefir · 2 Bottles",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_expiring_stock",
+        {"days_ahead": 7},
+        [{**_KEFIR_ALERT, "location_name": "Fridge", "best_before_date": "2026-11-25", "days_until_expiry": 6}],
+        "Due in 6 d",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_expired_stock",
+        {},
+        [{**_KEFIR_ALERT, "location_name": "Fridge", "best_before_date": "2026-11-17", "days_overdue": 2}],
+        "2 d overdue",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "get_below_minimum_stock",
+        {},
+        [{**_KEFIR_ALERT, "min_amount": 3, "deficit": 1}],
+        "Minimum 3 · 1 short",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "list_volatile_stock",
+        {"due_soon_days": 6},
+        {
+            "due_products": [
+                {"product_id": "21", "amount": "2", "best_before_date": "2026-11-25", "product": {"name": "Kefir"}}
+            ],
+            "overdue_products": [],
+            "expired_products": [],
+            "missing_products": [{"id": "22", "name": "Oats", "amount_missing": "2"}],
+        },
+        "Oats · 2 stock units short",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "open_product_stock",
+        {"productId": 21, "amount": 1, "stock_entry_id": "batch-kefir"},
+        [{"product_id": "21", "amount": "1", "transaction_id": "tx-open", "transaction_type": "product-opened"}],
+        "Marked 1 stock units as opened",
+    ),
+    ActionExample("grocy_sf", "transaction_undo", {"transactionId": "tx-kefir"}, "null", "Transaction undone"),
     ActionExample(
         "tana",
         "get_or_create_calendar_node",

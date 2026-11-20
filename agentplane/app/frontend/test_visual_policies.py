@@ -34,6 +34,8 @@ CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
         ("kubernetes_admin", "pods_get"),
         ("kubernetes_admin", "pods_log"),
         ("kubernetes_admin", "events_list"),
+        ("grocy_sf", "products_list"),
+        ("grocy_sf", "quantity_units_list"),
         ("sandbox", "create"),
         ("sandbox", "get"),
         ("sandbox", "dispose"),
@@ -479,8 +481,8 @@ async def test_sandbox_action_results(
             "sandbox", "dispose", {"name": "disposed-sandbox"}, "Dispose sandbox disposed-sandbox", id="sandbox-dispose"
         ),
         pytest.param("sandbox", "list", {}, "List sandboxes", id="sandbox-list"),
-        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "Full Product records", id="grocy-products"),
-        pytest.param("grocy_sf", "quantity_units_list", {}, "Quantity unit names", id="grocy-units"),
+        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "List Grocy products", id="grocy-products"),
+        pytest.param("grocy_sf", "quantity_units_list", {}, "List quantity units", id="grocy-units"),
         pytest.param(
             "tana",
             "get_or_create_calendar_node",
