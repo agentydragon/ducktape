@@ -104,9 +104,7 @@ async def test_unknown_materialization(view: VisualPage, app: AgentplaneFixture,
     await expect(view.page.get_by_role("alert").filter(has_text="reservation outcome unknown")).to_be_visible()
     await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
     if retained:
-        await expect(
-            view.page.get_by_text("Done. The signature now declares its types explicitly:", exact=False)
-        ).to_be_visible()
+        await expect(view.page.get_by_text("I found the project files and the relevant tests.")).to_be_visible()
         await expect(view.page.locator("textarea")).to_be_disabled()
     else:
         await expect(view.page.locator("textarea")).to_have_count(0)
