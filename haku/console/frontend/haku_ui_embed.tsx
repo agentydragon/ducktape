@@ -102,7 +102,6 @@ export function HakuUiEmbed({
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, routeFromLocation(window.location)));
   const origin = new URL(uiUrl).origin;
-  const activeAction: Escalation | null = pending;
 
   function reply(msg: Outbound) {
     iframeRef.current?.contentWindow?.postMessage(msg, origin);
@@ -361,9 +360,9 @@ export function HakuUiEmbed({
   // The operator approved against trusted-rendered chrome — now actually perform the action
   // (open the link / fire the capability) and report the outcome back over the Agent UI bridge.
   function onApprove() {
-    const action = activeAction;
-    if (pending) setPending(null);
+    const action = pending;
     if (!action) return;
+    setPending(null);
     if (action.kind === "openLink") {
       openAndReply(action.url);
       return;
@@ -380,9 +379,9 @@ export function HakuUiEmbed({
   }
 
   function onCancel() {
-    const action = activeAction;
-    if (pending) setPending(null);
+    const action = pending;
     if (!action) return;
+    setPending(null);
     if (action.kind === "openLink") {
       reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
     } else {
@@ -480,7 +479,7 @@ export function HakuUiEmbed({
           </section>
         )}
       </main>
-      <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
+      <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </div>
   );
 }
