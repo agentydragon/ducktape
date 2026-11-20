@@ -10,7 +10,6 @@ Verifies that when the LLM calls report_failure:
 from __future__ import annotations
 
 import asyncio
-import logging
 from uuid import uuid4
 
 import pytest_bazel
@@ -18,15 +17,12 @@ import pytest_bazel
 from openai_utils.testing.responses import PlayGen
 from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import LocationAnchor
-from props.testing.fixtures.runs import make_fake_critic_run
+from props.db.models import AgentRun, AgentRunStatus
+from props.testing.fixtures.runs import make_fake_critic_run, make_reported_issues
 from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //props/agents/grader/testing:e2e_pytest_plugins
-pytest_plugins = ("props.agents.grader.testing.e2e_pytest_plugins",)
-
-logger = logging.getLogger(__name__)
+# gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
+pytest_plugins = ("props.agents.testing.e2e_pytest_plugins",)
 
 
 async def test_grader_report_failure_exits_with_failure(
@@ -53,26 +49,11 @@ async def test_grader_report_failure_exits_with_failure(
         critic_run_id = uuid4()
         with db.session() as session:
             critic_run = make_fake_critic_run(
-                session=session,
-                example=all_files_scope,
-                model=stack.model,
-                status=AgentRunStatus.EXITED,
-                agent_run_id=critic_run_id,
+                session=session, example=all_files_scope, model=stack.model, agent_run_id=critic_run_id
             )
             session.add(critic_run)
             session.flush()
-            session.add(
-                ReportedIssue(
-                    agent_run_id=critic_run_id, issue_id="fail-issue-1", rationale="Issue to trigger grader then fail"
-                )
-            )
-            session.add(
-                ReportedIssueOccurrence(
-                    agent_run_id=critic_run_id,
-                    reported_issue_id="fail-issue-1",
-                    locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
-                )
-            )
+            make_reported_issues(agent_run_id=critic_run_id, issue_ids=["fail-issue-1"], session=session)
             session.commit()
 
         grader_handle = await stack.registry.start_snapshot_grader(

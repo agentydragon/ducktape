@@ -21,14 +21,13 @@ from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.db.database import Database
-from props.db.models import AgentRunStatus, IssueCluster, IssueClusterMember, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import LocationAnchor
+from props.db.models import IssueCluster, IssueClusterMember
 from props.testing.assertions import assert_no_pending
-from props.testing.fixtures.runs import make_fake_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run, make_reported_issues
 from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //props/agents/grader/testing:e2e_pytest_plugins
-pytest_plugins = ("props.agents.grader.testing.e2e_pytest_plugins",)
+# gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
+pytest_plugins = ("props.agents.testing.e2e_pytest_plugins",)
 
 logger = logging.getLogger(__name__)
 
@@ -90,23 +89,12 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
         with db.session() as session:
             for cid, issue_name in [(critic_1_id, "null-check-1"), (critic_2_id, "null-check-2")]:
                 critic_run = make_fake_critic_run(
-                    session=session,
-                    example=all_files_scope,
-                    model=stack.model,
-                    status=AgentRunStatus.EXITED,
-                    agent_run_id=cid,
+                    session=session, example=all_files_scope, model=stack.model, agent_run_id=cid
                 )
                 session.add(critic_run)
                 session.flush()
-                session.add(
-                    ReportedIssue(agent_run_id=cid, issue_id=issue_name, rationale=f"Missing null check ({cid})")
-                )
-                session.add(
-                    ReportedIssueOccurrence(
-                        agent_run_id=cid,
-                        reported_issue_id=issue_name,
-                        locations=[LocationAnchor(file="parser.py", start_line=42, end_line=42)],
-                    )
+                make_reported_issues(
+                    agent_run_id=cid, issue_ids=[issue_name], session=session, location_file="parser.py"
                 )
             session.commit()
 

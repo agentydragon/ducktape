@@ -3,8 +3,9 @@
 The root `props/conftest.py` holds configuration and tracing only. Opt in to shared fixture
 modules with `pytest_plugins` in each test module and a `gazelle:include_dep` for each plugin.
 Register `testing.postgres_fixtures` before `props.testing.fixtures.db` so Props' synchronous
-`engine` fixture overrides the shared asynchronous default. Container E2E tests also need
-`mcp_infra.testing.fixtures` for `async_docker_client`.
+`engine` fixture overrides the shared asynchronous default. Agent container E2E tests register
+`props.agents.testing.e2e_pytest_plugins`, which bundles these with `runs`, `scopes`, `e2e_infra`,
+`e2e_container` and `mcp_infra.testing.fixtures` (`async_docker_client`).
 
 Git fixtures in `testing/fixtures/testdata/specimens/test-fixtures/` are the single source of
 truth for test data. Never construct `Snapshot`/`TruePositive`/`FalsePositive`/`Example` ORM

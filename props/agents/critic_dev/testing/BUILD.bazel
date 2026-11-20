@@ -12,6 +12,8 @@ py_library(
         "//openai_utils/testing:responses",
         "//props/agents/critic_dev:loop",
         "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core/models:examples",
         "//props/testing",
     ],
 )

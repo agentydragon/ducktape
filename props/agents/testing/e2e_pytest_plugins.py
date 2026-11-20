@@ -1,4 +1,4 @@
-"""Pytest fixture plugins shared by grader E2E tests."""
+"""Pytest fixture plugins shared by the agent container E2E tests."""
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
