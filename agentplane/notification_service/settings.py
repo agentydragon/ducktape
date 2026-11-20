@@ -169,7 +169,14 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     namespace: str = Field(description="Workload credential, Identity and destination Sandbox namespace.")
     actions: ActionsSettings
-    runner_gateway: RunnerGatewaySettings
+    # Retired Runtime-proxy peer: the Session-keyed service dials no Runtime proxy and holds no
+    # Runtime-proxy reader grant. Absence is the intended state; a deployed ConfigMap that still carries the
+    # block must load, so an explicit block still validates completely.
+    # CLEANUP(added 2026-11-20): delete this field and RunnerGatewaySettings once every rendered settings
+    # file omits the block.
+    runner_gateway: RunnerGatewaySettings | None = Field(
+        default=None, exclude_if=lambda value: value is None, description="Retired; see RunnerGatewaySettings."
+    )
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
     operator_reader_services: list[ServiceSPIFFEID] = Field(

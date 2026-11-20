@@ -36,9 +36,13 @@ type config struct {
 	worker.Settings        `mapstructure:",squash"`
 	GitHubRetention        settings.Retention `mapstructure:",squash"`
 	Actions                actionPeer         `mapstructure:"actions"`
-	RunnerGateway          runnerGateway      `mapstructure:"runner_gateway"`
-	HistoryService         peer               `mapstructure:"history_service"`
-	SessionDispatcher      peer               `mapstructure:"session_dispatcher"`
+	// RunnerGateway is retired: the Session-keyed binary dials no Runtime proxy and holds no
+	// Runtime-proxy reader grant. The block stays accepted so a pre-cutover ConfigMap still loads during a
+	// rollback; nothing reads it.
+	// CLEANUP(added 2026-11-20): delete this field once every rendered settings file omits the block.
+	RunnerGateway     *runnerGateway `mapstructure:"runner_gateway"`
+	HistoryService    peer           `mapstructure:"history_service"`
+	SessionDispatcher peer           `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
@@ -51,7 +55,8 @@ type config struct {
 	RPC      listener.Config `mapstructure:"rpc"`
 }
 
-// runnerGateway is how the service reaches a Sandbox's Runtime through the Environments proxy.
+// runnerGateway is the retired Runtime-proxy peer block. `request_timeout_s` is optional there, so an
+// omitted value stays unchecked; a supplied one still has to be a finite number above 0.
 type runnerGateway struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is the Environments Runtime proxy Service, a template of `{namespace}` such as
@@ -127,7 +132,6 @@ func defaultConfig() config {
 		Settings:        worker.DefaultSettings(),
 		GitHubRetention: settings.DefaultRetention(),
 		Actions:         actionPeer{RequestTimeoutSeconds: 5},
-		RunnerGateway:   runnerGateway{RequestTimeoutSeconds: 5},
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
@@ -180,7 +184,6 @@ func (c *config) validate() error {
 		{"namespace", c.Namespace},
 		{"host", c.Host},
 		{"actions.url", c.Actions.URL},
-		{"runner_gateway.control_target", c.RunnerGateway.ControlTarget},
 		{"history_service.target", c.HistoryService.Target},
 		{"session_dispatcher.target", c.SessionDispatcher.Target},
 	} {
@@ -191,17 +194,29 @@ func (c *config) validate() error {
 	if _, err := c.Actions.grpcEndpoint(); err != nil {
 		return err
 	}
-	for _, caller := range []struct {
+	callers := []struct {
 		name               string
 		tls                *peertls.ClientTLS
 		tokenFile          string
 		expectedServerURIs []string
 	}{
 		{name: "actions", tls: c.Actions.TLS, tokenFile: c.Actions.TokenFile, expectedServerURIs: []string{peertls.ActionsURI}},
-		{name: "runner_gateway", tls: c.RunnerGateway.TLS, tokenFile: c.RunnerGateway.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI}},
 		{name: "history_service", tls: c.HistoryService.TLS, tokenFile: c.HistoryService.TokenFile, expectedServerURIs: []string{peertls.HistoryIngressURI}},
 		{name: "session_dispatcher", tls: c.SessionDispatcher.TLS, tokenFile: c.SessionDispatcher.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI}},
-	} {
+	}
+	if gateway := c.RunnerGateway; gateway != nil {
+		// A supplied block is still a complete one: its target and caller credentials must hold.
+		if gateway.ControlTarget == "" {
+			return errors.New("runner_gateway.control_target is required when the block is set")
+		}
+		callers = append(callers, struct {
+			name               string
+			tls                *peertls.ClientTLS
+			tokenFile          string
+			expectedServerURIs []string
+		}{name: "runner_gateway", tls: gateway.TLS, tokenFile: gateway.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI}})
+	}
+	for _, caller := range callers {
 		if err := caller.tls.ValidateCaller(caller.tokenFile, peertls.NotificationsURI); err != nil {
 			return fmt.Errorf("%s caller authentication: %w", caller.name, err)
 		}
@@ -234,16 +249,22 @@ func (c *config) validate() error {
 			return fmt.Errorf("%s must be at least 1", quota.name)
 		}
 	}
-	for _, timeout := range []struct {
+	timeouts := []struct {
 		name  string
 		value float64
 	}{
-		{"runner_gateway.request_timeout_s", c.RunnerGateway.RequestTimeoutSeconds},
 		{"actions.request_timeout_s", c.Actions.RequestTimeoutSeconds},
 		{"history_service.request_timeout_s", c.HistoryService.RequestTimeoutSeconds},
 		{"session_dispatcher.request_timeout_s", c.SessionDispatcher.RequestTimeoutSeconds},
 		{"request_timeout_s", c.RequestTimeoutSeconds},
-	} {
+	}
+	if gateway := c.RunnerGateway; gateway != nil && gateway.RequestTimeoutSeconds != 0 {
+		timeouts = append(timeouts, struct {
+			name  string
+			value float64
+		}{name: "runner_gateway.request_timeout_s", value: gateway.RequestTimeoutSeconds})
+	}
+	for _, timeout := range timeouts {
 		if !(timeout.value > 0) || math.IsInf(timeout.value, 0) {
 			return fmt.Errorf("%s must be a finite number above 0", timeout.name)
 		}
