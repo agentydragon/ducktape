@@ -4,8 +4,8 @@
   "snapshot_utc": "2026-11-20T02:58:40Z",
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
-  "report_html_sha256": "a0681349602e8efd92a27d680f5612629ed41338e0aedd1b3472f19bf0377b5d",
-  "report_script_sha256": "ff1cac674f8cf25b3dcfcb2dd80f57f5121de6f4b858ef866cee83cbee494638",
+  "report_html_sha256": "5f809c8e635c0c01fb6556af16a5c4f98470c4f9ad3516c97c9d94a84ead14da",
+  "report_script_sha256": "684ec4a85f6cca556f497029555cfa01752250694d4c36feacab2aa9e76ea05f",
   "evidence_sha256": "5472c8f43a8121bd7cdb99699770183ba8929f58210f293f1d46e7de5d3e3c13",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -46,10 +46,10 @@
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
   "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
-  "current_inventory_collection_started_utc": "2026-11-20T20:55:24Z",
-  "current_inventory_collection_finished_utc": "2026-11-20T20:55:38Z",
-  "flux_source_observed_at_utc": "2026-11-20T20:57:03Z",
-  "inventory_sha256": "adfe5af289e62e584dd709698876928c1282d0fc634b0f72146dadb40d52a040",
+  "current_inventory_collection_started_utc": "2026-11-20T21:05:05Z",
+  "current_inventory_collection_finished_utc": "2026-11-20T21:05:16Z",
+  "flux_source_observed_at_utc": "2026-11-20T21:05:17Z",
+  "inventory_sha256": "5d34ad1d4077af92d0318c613523ad273ad49dc85e0ad2664121f716e24ed800",
   "inventory_collector_sha256": "cb2ee428c50a95fc1ed4509bd54c1dd40bfe7ffe4e6c421577a0e5da83360a1b",
-  "current_inventory_flux_source_devel_commit": "de98e00f5eeef56dea0391f39f55cf3020f17130"
+  "current_inventory_flux_source_devel_commit": "1c87503942dd7bc79c0010a50b38cbbb8bc0d56a"
 }
