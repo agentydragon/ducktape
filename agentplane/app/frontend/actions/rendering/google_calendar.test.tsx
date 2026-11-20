@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ActionIdentitySchema } from "../../../../action_service/api/contracts/action_service_pb";
 import { parseCallToolResult } from "../call_tool_result";
 import { answerApi, mount } from "../testing/harness";
-import { renderDetailsArguments, renderDetailsResult } from "./index";
+import { renderActionCall, renderDetailsArguments, renderDetailsResult } from "./index";
 
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
 const target = { event_id: "occurrence-1", calendar_id: "facilities@example.test" };
@@ -131,6 +131,32 @@ describe("Calendar Action review", () => {
 });
 
 describe("Calendar Action results", () => {
+  it("keeps the requested event ID when the result names a different event", async () => {
+    const call = renderActionCall(
+      identity("get_event"),
+      target,
+      success({ event_id: "different-event", summary: "A different event" }),
+      "completed"
+    );
+    expect(call?.includesResult).toBe(true);
+    const view = await mount(call?.content);
+    expect(view.textContent).toContain(target.event_id);
+    expect(view.textContent).toContain("A different event");
+  });
+
+  it("keeps the series ID and only replaces the calendar ID when an instance page names it", async () => {
+    const action = identity("list_event_instances");
+    const args = { calendar_id: target.calendar_id, recurring_event_id: "series-1" };
+    const page = { events: [], summary: "Recorded Facilities calendar" };
+    const call = renderActionCall(action, args, success(page), "completed");
+    expect(call?.includesResult).toBe(true);
+    const view = await mount(call?.content);
+    expect(view.querySelector("a")?.href).toBe(calendarLink);
+    expect(view.textContent).toContain("series-1");
+    expect(view.textContent).not.toContain(target.calendar_id);
+    expect(renderActionCall(action, args, success({ events: [] }), "completed")).toBeUndefined();
+  });
+
   it("links a recorded calendar title using the exact non-primary ID in the saved list arguments", async () => {
     const action = identity("list_events");
     const result = success({ summary: "Recorded Facilities calendar", events: [] });

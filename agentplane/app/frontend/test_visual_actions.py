@@ -3284,9 +3284,12 @@ async def test_action_presentations(
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(receipt, example)
     if example.key == "google_calendar.list_events":
-        await expect(receipt.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)).to_have_attribute(
-            "href", CALENDAR_URL
-        )
+        calendar_link = receipt.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)
+        await expect(calendar_link).to_have_attribute("href", CALENDAR_URL)
+        await expect(calendar_link).to_have_count(1)
+        await expect(receipt.get_by_text(CALENDAR_ID, exact=True)).to_have_count(0)
+    if example.key in {"google_calendar.get_event", "google_calendar.update_event"}:
+        await expect(receipt.get_by_text(str(example.arguments["event_id"]), exact=True)).to_have_count(0)
     if example.key == "tana.get_or_create_calendar_node":
         node_link = receipt.get_by_role("link", name=example.result_text)
         await expect(node_link).to_have_attribute("href", "https://app.tana.inc?nodeid=calendar-week-42")
@@ -3320,9 +3323,12 @@ async def test_action_presentations(
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(history, example)
     if example.key == "google_calendar.list_events":
-        await expect(history.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)).to_have_attribute(
-            "href", CALENDAR_URL
-        )
+        calendar_link = history.get_by_role("link", name=CALENDAR_RECORDED_NAME, exact=True)
+        await expect(calendar_link).to_have_attribute("href", CALENDAR_URL)
+        await expect(calendar_link).to_have_count(1)
+        await expect(history.get_by_text(CALENDAR_ID, exact=True)).to_have_count(0)
+    if example.key in {"google_calendar.get_event", "google_calendar.update_event"}:
+        await expect(history.get_by_text(str(example.arguments["event_id"]), exact=True)).to_have_count(0)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await capture("history-expanded", history)
@@ -3336,6 +3342,15 @@ async def test_action_presentations(
             await raw_result.get_by_role("button", name="Show more", exact=True).click()
         await expect(raw_result).to_contain_text('"Label_19"')
         await expect(raw_result).to_contain_text('"Label_99"')
+
+    if example.key in {"google_calendar.get_event", "google_calendar.update_event", "google_calendar.list_events"}:
+        raw_key = "calendar_id" if example.name == "list_events" else "event_id"
+        for surface in (receipt, history):
+            raw_switch = surface.get_by_role("switch", name="Raw", exact=True)
+            await raw_switch.press("Space")
+            await expect(raw_switch).to_be_checked()
+            await expect(surface).to_contain_text(f'"{raw_key}": "{example.arguments[raw_key]}"')
+
     if example.key == "google_calendar.delete_event":
         await expect(receipt.get_by_role("link", name="Facilities coordination", exact=True)).to_have_count(0)
         raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
