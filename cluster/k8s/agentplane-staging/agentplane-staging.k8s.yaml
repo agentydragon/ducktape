@@ -9073,7 +9073,10 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:

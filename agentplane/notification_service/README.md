@@ -113,19 +113,18 @@ empty database. A database with completed version 12 and the required final sche
 without copying rows or rewriting its Goose history. A partial predecessor must first finish
 migrating with the previous image. Subsequent schema changes use new Goose versions.
 
-The Notification Deployment normally rolls replicas. Existing replicas continue to accept webhooks and
-serve requests while replacement replicas apply migrations and start. The migration lock serializes
-schema updates, while migration changes must keep old and new service versions compatible throughout
-the rollout.
+The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
+requests while replacement replicas apply migrations and start. The migration lock serializes schema
+updates, while migration changes must keep old and new service versions compatible throughout the
+rollout.
 
-The Session key contract is the exception that rule cannot cover: migration 22 drops columns the
-previous image still reads, so a surged old replica would fail its inbox queries. The Deployment is
-held at `Recreate` in [`notifications.py`](../../cluster/cdk8s/agentplane/notifications.py) with a
-`CLEANUP` marker, the rollout hold
-[staging data preservation](../docs/staging_data_preservation.md) requires for a dropped column. It
-briefly takes Notifications offline while the replacement starts; restore the rolling profile once
-each environment runs and passes its checks on the contract schema. Rollback needs a backup taken
-before migration 22, not only the previous image.
+Migration 22 was one rollout that rule could not cover on its own: it drops columns the pre-contract
+image still reads, so a surged old replica would fail its inbox queries. That rollout crossed the drop
+under a `Recreate` hold, the hold
+[staging data preservation](../docs/staging_data_preservation.md) requires for a dropped column, and the
+hold lifted once serving replicas ran and passed their checks on the contract schema. An upgrade now
+rolls as usual; rolling _back_ past migration 22 does not, and needs a backup taken before the migration
+beside the paired API and CLI images.
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.
