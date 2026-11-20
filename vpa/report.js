@@ -930,7 +930,7 @@ function Report() {
             requires two available.
           <//>
           <${Text} component="p">
-            ${`All six PRs were merged at the observation. New-Pod admission changed requests for ${verifiedCount} of the ${latest.workloads.length} observed Deployments in server-side dry runs using actual ReplicaSet owners.`}
+            ${`All six PRs were merged at the observation. The VPA webhook ran for ${verifiedCount} of the ${latest.workloads.length} observed Deployments in server-side dry runs using actual ReplicaSet owners.`}
             ${" "}Limits and init-container resources were preserved. Dry runs
             cover admission only. Existing Pods, future scheduling, and
             updater-driven evictions are separate checks.
