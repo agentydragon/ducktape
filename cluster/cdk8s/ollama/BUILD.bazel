@@ -13,6 +13,12 @@ py_binary(
     deps = [":patch_qwen38_template"],
 )
 
+py_binary(
+    name = "stage_tabbyapi_checkpoint",
+    srcs = ["stage_tabbyapi_checkpoint.py"],
+    main_module = "cluster.cdk8s.ollama.stage_tabbyapi_checkpoint",
+)
+
 py_test(
     name = "test_patch_qwen38_template",
     srcs = ["test_patch_qwen38_template.py"],
