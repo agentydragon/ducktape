@@ -84,7 +84,14 @@ def report(kubectl: Kubectl, namespace: str) -> str:
     """KubeVirt's and Kyverno's view of the VMs, each guest's serial console, and what Pods pulled from
     registries rather than from the imported layouts."""
     parts = [
-        kubectl("get", "kubevirt,vm,vmi,clusterpolicy", "-A", "-o", "yaml", check=False),
+        kubectl(
+            "get",
+            "kubevirt,vm,vmi,mutatingpolicies.policies.kyverno.io,validatingpolicies.policies.kyverno.io",
+            "-A",
+            "-o",
+            "yaml",
+            check=False,
+        ),
         kubectl("get", "events", "-A", "--field-selector=reason=Pulling", check=False),
     ]
     launchers = kubectl("get", "pods", "-n", namespace, "-l", "kubevirt.io=virt-launcher", "-o", "name", check=False)

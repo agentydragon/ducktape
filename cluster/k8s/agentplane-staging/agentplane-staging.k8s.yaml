@@ -5530,210 +5530,83 @@ spec:
     - expression: variables.vmiVolumes.filter(v, (has(v.persistentVolumeClaim) || has(v.secret) || has(v.configMap)) && v.name in variables.virtiofsNames).map(v, v.name)
       name: eligibleVirtiofs
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
 metadata:
-  annotations:
-    pod-policies.kyverno.io/autogen-controllers: none
   name: agentplane-staging-launcher-relay
 spec:
-  background: false
+  autogen:
+    podControllers:
+      controllers: []
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
   failurePolicy: Fail
-  rules:
-    - context:
-        - name: vmiOwner
-          variable:
-            default: {}
-            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
-          name: vmi
-        - name: vmOwner
-          variable:
-            default: {}
-            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
-          name: vm
-        - name: sandbox
-          variable:
-            default: {}
-            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
-          name: credential
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      mutate:
-        patchStrategicMerge:
-          spec:
-            +(initContainers): []
-            automountServiceAccountToken: false
-            imagePullSecrets:
-              - name: forgejo-images-creds
-            serviceAccountName: default
-            volumes:
-              - configMap:
-                  name: launcher-relay-egress-sidecar
-                name: egress-sidecar-settings
-              - name: agentplane-runner-relay-tls
-                projected:
-                  defaultMode: 292
-                  sources:
-                    - secret:
-                        items:
-                          - key: tls.crt
-                            path: tls.crt
-                          - key: tls.key
-                            path: tls.key
-                        name: "{{ credential.status.secretName }}"
-                    - configMap:
-                        items:
-                          - key: ca-certificates.crt
-                            path: workload-ca.crt
-                        name: agentplane-workload-ca-bundle
-      name: inject-relay
-    - context:
-        - name: relay
-          variable:
-            value:
-              env:
-                - name: AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE
-                  value: /etc/agentplane-egress-sidecar/settings.yaml
-                - name: OTEL_SERVICE_NAME
-                  value: agentplane-egress-sidecar
-                - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
-                - name: OTEL_TRACES_EXPORTER
-                  value: otlp
-                - name: OTEL_EXPORTER_OTLP_PROTOCOL
-                  value: grpc
-                - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                  value: http://alloy.monitoring.svc.cluster.local:4317
-                - name: OTEL_TRACES_SAMPLER
-                  value: parentbased_always_on
-              image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
-              name: egress-sidecar
-              readinessProbe:
-                failureThreshold: 1
-                httpGet:
-                  path: /readyz
-                  port: 3129
-                periodSeconds: 2
-                timeoutSeconds: 1
-              resources:
-                limits:
-                  cpu: 100m
-                  memory: 128Mi
-                requests:
-                  cpu: 10m
-                  memory: 32Mi
-              restartPolicy: Always
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                    - ALL
-                runAsGroup: 1000
-                runAsNonRoot: true
-                runAsUser: 1000
-              volumeMounts:
-                - mountPath: /etc/agentplane-egress-sidecar
-                  name: egress-sidecar-settings
-                  readOnly: true
-                - mountPath: /run/agentplane/environment-runtime-tls
-                  name: agentplane-runner-relay-tls
-                  readOnly: true
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      mutate:
-        patchesJson6902: |
-          - op: add
-            path: /spec/initContainers/-
-            value: {{ to_string(relay) }}
-      name: append-native-relay
-      preconditions:
-        all:
-          - key: "{{ (request.object.spec.initContainers || `[]`)[?name=='egress-sidecar'] | length(@) }}"
-            operator: Equals
-            value: 0
-    - context:
-        - name: vmiOwner
-          variable:
-            default: {}
-            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
-          name: vmi
-        - name: vmOwner
-          variable:
-            default: {}
-            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
-          name: vm
-        - name: sandbox
-          variable:
-            default: {}
-            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
-        - apiCall:
-            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/workloadcredentials/{{sandbox.name || 'missing'}}
-          name: credential
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              namespaces:
-                - agentplane-staging
-              operations:
-                - CREATE
-              selector:
-                matchLabels:
-                  kubevirt.io: virt-launcher
-      mutate:
-        foreach:
-          - list: request.object.spec.containers
-            order: Descending
-            patchesJson6902: |-
-              - op: add
-                path: /spec/initContainers/-
-                value: {{ merge(element, `{"restartPolicy":"Always"}`) }}
-              - op: remove
-                path: /spec/containers/{{elementIndex}}
-            preconditions:
-              all:
-                - key: "{{ element.command[0] || '' }}"
-                  operator: Equals
-                  value: /usr/libexec/virtiofsd
-                - key: "{{ contains((vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]) || `[]`), element.name) && contains((vmi.spec.domain.devices.filesystems[?virtiofs != null].join('', ['virtiofs-', name]) || `[]`), element.name) }}"
-                  operator: Equals
-                  value: true
-      name: keep-virtiofs-through-guest-shutdown
-  webhookConfiguration:
-    matchConditions:
-      - expression: request.namespace == 'agentplane-staging' && (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher')
-        name: launcher
+  matchConditions:
+    - expression: request.namespace == 'agentplane-staging'
+      name: in-namespace
+    - expression: has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher'
+      name: launcher
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+  mutations:
+    - jsonPatch:
+        expression: "[JSONPatch{op: 'add', path: '/spec/serviceAccountName', value: 'default'}, JSONPatch{op: 'add', path: '/spec/automountServiceAccountToken', value: false}] + (has(variables.templatePod.imagePullSecrets) ? (has(object.spec.imagePullSecrets) ? variables.templatePod.imagePullSecrets.filter(s, !object.spec.imagePullSecrets.exists(e, e.name == s.name)).map(s, JSONPatch{op: 'add', path: '/spec/imagePullSecrets/-', value: s}) : [JSONPatch{op: 'add', path: '/spec/imagePullSecrets', value: variables.templatePod.imagePullSecrets}]) : [])"
+      patchType: JSONPatch
+    - jsonPatch:
+        expression: "(has(object.spec.volumes) && object.spec.volumes.exists(x, x.name == 'agentplane-egress-sidecar-settings')) ? [] : (has(object.spec.volumes) ? [JSONPatch{op: 'add', path: '/spec/volumes/-', value: json.unmarshal('{\"name\":\"agentplane-egress-sidecar-settings\",\"configMap\":{\"name\":\"relay-settings\"}}')}] : [JSONPatch{op: 'add', path: '/spec/volumes', value: [json.unmarshal('{\"name\":\"agentplane-egress-sidecar-settings\",\"configMap\":{\"name\":\"relay-settings\"}}')]}]) + ([])"
+      patchType: JSONPatch
+    - jsonPatch:
+        expression: "(has(object.spec.volumes) && object.spec.volumes.exists(x, x.name == 'agentplane-runner-relay-tls')) ? [] : (has(object.spec.volumes) ? [JSONPatch{op: 'add', path: '/spec/volumes/-', value: json.unmarshal('{\"name\":\"agentplane-runner-relay-tls\",\"projected\":{\"defaultMode\":292,\"sources\":[{\"secret\":{\"name\":\"set below\",\"items\":[{\"key\":\"tls.crt\",\"path\":\"tls.crt\"},{\"key\":\"tls.key\",\"path\":\"tls.key\"}]}},{\"configMap\":{\"name\":\"agentplane-workload-ca-bundle\",\"items\":[{\"key\":\"ca-certificates.crt\",\"path\":\"trust.crt\"}]}}]}}')}] : [JSONPatch{op: 'add', path: '/spec/volumes', value: [json.unmarshal('{\"name\":\"agentplane-runner-relay-tls\",\"projected\":{\"defaultMode\":292,\"sources\":[{\"secret\":{\"name\":\"set below\",\"items\":[{\"key\":\"tls.crt\",\"path\":\"tls.crt\"},{\"key\":\"tls.key\",\"path\":\"tls.key\"}]}},{\"configMap\":{\"name\":\"agentplane-workload-ca-bundle\",\"items\":[{\"key\":\"ca-certificates.crt\",\"path\":\"trust.crt\"}]}}]}}')]}]) + ([JSONPatch{op: 'replace', path: '/spec/volumes/' + string((has(object.spec.volumes) ? size(object.spec.volumes) : 0)) + '/projected/sources/0/secret/name', value: variables.credential.status.secretName}])"
+      patchType: JSONPatch
+    - jsonPatch:
+        expression: "(has(object.spec.initContainers) && object.spec.initContainers.exists(c, c.name == 'egress-sidecar')) ? [] : (has(object.spec.initContainers) ? [] : [JSONPatch{op: 'add', path: '/spec/initContainers', value: []}]) + [JSONPatch{op: 'add', path: '/spec/initContainers/-', value: variables.templateRelay}, JSONPatch{op: 'add', path: '/spec/initContainers/' + string((has(object.spec.initContainers) ? size(object.spec.initContainers) : 0)) + '/securityContext/runAsUser', value: 1000}, JSONPatch{op: 'add', path: '/spec/initContainers/' + string((has(object.spec.initContainers) ? size(object.spec.initContainers) : 0)) + '/securityContext/runAsGroup', value: 1000}, JSONPatch{op: 'add', path: '/spec/initContainers/' + string((has(object.spec.initContainers) ? size(object.spec.initContainers) : 0)) + '/securityContext/runAsNonRoot', value: true}, JSONPatch{op: 'add', path: '/spec/initContainers/' + string((has(object.spec.initContainers) ? size(object.spec.initContainers) : 0)) + '/volumeMounts/-', value: json.unmarshal('{\"name\":\"agentplane-runner-relay-tls\",\"mountPath\":\"/run/agentplane/environment-runtime-tls\",\"readOnly\":true}')}]"
+      patchType: JSONPatch
+    - jsonPatch:
+        expression: "lists.range(size(object.spec.containers)).filter(i, has(object.spec.containers[i].command) && object.spec.containers[i].command.size() > 0 && object.spec.containers[i].command[0] == '/usr/libexec/virtiofsd' && object.spec.containers[i].name in variables.eligibleVirtiofs.map(n, 'virtiofs-' + n)).reverse().map(i, JSONPatch{op: 'move', path: '/spec/initContainers/-', from: '/spec/containers/' + string(i)}) + lists.range(size(lists.range(size(object.spec.containers)).filter(i, has(object.spec.containers[i].command) && object.spec.containers[i].command.size() > 0 && object.spec.containers[i].command[0] == '/usr/libexec/virtiofsd' && object.spec.containers[i].name in variables.eligibleVirtiofs.map(n, 'virtiofs-' + n)).reverse())).map(k, JSONPatch{op: 'add', path: '/spec/initContainers/' + string((has(object.spec.initContainers) ? size(object.spec.initContainers) : 0) + k) + '/restartPolicy', value: 'Always'})"
+      patchType: JSONPatch
+  reinvocationPolicy: IfNeeded
+  variables:
+    - expression: object.metadata.ownerReferences.filter(r, r.kind == 'VirtualMachineInstance' && r.apiVersion == 'kubevirt.io/v1' && has(r.controller) && r.controller == true)[0]
+      name: vmiOwner
+    - expression: resource.Get('kubevirt.io/v1', 'virtualmachineinstances', request.namespace, variables.vmiOwner.name)
+      name: vmi
+    - expression: variables.vmi.metadata.ownerReferences.filter(r, r.kind == 'VirtualMachine' && r.apiVersion == 'kubevirt.io/v1' && has(r.controller) && r.controller == true)[0]
+      name: vmOwner
+    - expression: resource.Get('kubevirt.io/v1', 'virtualmachines', request.namespace, variables.vmOwner.name)
+      name: vm
+    - expression: variables.vm.metadata.ownerReferences.filter(r, r.kind == 'Sandbox' && r.apiVersion == 'agentplane.allegedly.works/v1alpha1' && has(r.controller) && r.controller == true)[0]
+      name: sandboxOwner
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'sandboxes', request.namespace, variables.sandboxOwner.name)
+      name: sandbox
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'workloadcredentials', request.namespace, variables.sandboxOwner.name)
+      name: credential
+    - expression: variables.credential.metadata.ownerReferences.filter(r, r.kind == 'Sandbox' && r.apiVersion == 'agentplane.allegedly.works/v1alpha1' && has(r.controller) && r.controller == true)[0]
+      name: credentialOwner
+    - expression: "(has(variables.vmi.spec.volumes) ? variables.vmi.spec.volumes : [])"
+      name: vmiVolumes
+    - expression: "(has(object.spec.initContainers) ? object.spec.initContainers : [])"
+      name: initContainers
+    - expression: "object.spec.containers.filter(c, c.name != 'egress-sidecar') + variables.initContainers.filter(c, c.name != 'egress-sidecar') + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])"
+      name: containersOutsideRelay
+    - expression: "(has(variables.vmi.spec.domain) && has(variables.vmi.spec.domain.devices) && has(variables.vmi.spec.domain.devices.filesystems) ? variables.vmi.spec.domain.devices.filesystems : []).filter(f, has(f.virtiofs)).map(f, f.name)"
+      name: virtiofsNames
+    - expression: variables.vmiVolumes.filter(v, (has(v.persistentVolumeClaim) || has(v.secret) || has(v.configMap)) && v.name in variables.virtiofsNames).map(v, v.name)
+      name: eligibleVirtiofs
+    - expression: resource.Get('agentplane.allegedly.works/v1alpha1', 'sandboxtemplates', request.namespace, 'runner-template').spec.pod.spec
+      name: templatePod
+    - expression: variables.templatePod.initContainers.filter(c, c.name == 'egress-sidecar')[0]
+      name: templateRelay
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -5745,6 +5618,12 @@ rules:
       - agentplane.allegedly.works
     resources:
       - sandboxes
+    verbs:
+      - get
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
     verbs:
       - get
   - apiGroups:

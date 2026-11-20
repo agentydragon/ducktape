@@ -74,14 +74,14 @@ class Policies:
 def policy() -> Policies:
     chart = Chart(App(), "test")
     LauncherRelayPolicy(
-        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
+        chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
     )
     documents = Cdk8sTesting.synth(chart)
-    mutation: dict = one(doc for doc in documents if doc["kind"] == "ClusterPolicy")
+    mutation: dict = one(doc for doc in documents if doc["kind"] == "MutatingPolicy")
     validation: dict = one(doc for doc in documents if doc["kind"] == "ValidatingPolicy")
     # The CLI's policy validation needs a cluster to check match conditions against and panics
     # without one; they narrow which requests reach the policy, not what it decides.
-    del mutation["spec"]["webhookConfiguration"]
+    del mutation["spec"]["matchConditions"]
     del validation["spec"]["matchConditions"]
     return Policies(mutation=mutation, validation=validation)
 
@@ -89,13 +89,14 @@ def policy() -> Policies:
 def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace() -> None:
     chart = Chart(App(), "test-tls-reader")
     LauncherRelayPolicy(
-        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
+        chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
     )
     documents = Cdk8sTesting.synth(chart)
     role = one(doc for doc in documents if doc["kind"] == "Role")
     assert role["metadata"]["namespace"] == NAMESPACE
     assert role["rules"] == [
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get"]},
+        {"apiGroups": [GROUP], "resources": ["sandboxtemplates"], "verbs": ["get"]},
         {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]},
     ]
     binding = one(doc for doc in documents if doc["kind"] == "RoleBinding")
@@ -209,11 +210,10 @@ class Admission:
 
 def mutation_policy(policy: Policies, **supplied: dict) -> dict:
     mutation = deepcopy(policy.mutation)
-    for rule in mutation["spec"]["rules"]:
-        for entry in rule.get("context", []):
-            if "apiCall" in entry:
-                del entry["apiCall"]
-                entry["variable"] = {"value": supplied[entry["name"]]}
+    supplied = {**supplied, "templatePod": RUNNER_POD["spec"]}
+    for variable in mutation["spec"]["variables"]:
+        if variable["name"] in supplied:
+            variable["expression"] = f"json.unmarshal({json.dumps(json.dumps(supplied[variable['name']]))})"
     return mutation
 
 

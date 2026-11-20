@@ -84,10 +84,9 @@ go away in 1.21. The chart is held at 3.9.x (Kyverno 1.19) in `renovate.json5` u
 Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions`,
 `context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`).
 Moved: `require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`,
-the janitor, and `agentplane-staging-launcher-relay`'s validation (`ValidatingPolicy` with
-`resource.Get` variables). Left: the launcher relay's three mutate rules
-(`agentplane/launcher_relay.py`, `ClusterPolicy`), and downstream `CleanupPolicy` users
-(props reaper, gaffer-private Job reaper).
+the janitor, and `agentplane-staging-launcher-relay` (`ValidatingPolicy` plus a `MutatingPolicy`, both
+with `resource.Get` variables). Left: downstream `CleanupPolicy` users (props reaper, gaffer-private Job
+reaper), and dropping the unused `ClusterPolicy` CRD pin and `providers/kyverno/cluster_policy.py`.
 
 Offline `kyverno apply` evaluates `resource.Get` only for kinds it can map (core kinds with
 `--context-file`); for KubeVirt and Agentplane kinds the tests substitute `json.unmarshal`
