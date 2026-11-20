@@ -93,12 +93,12 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
     const config = field === "config" ? asRecord(value) : undefined;
     if (!config) return exact;
     const sections = [
-      ["Triggers", config.triggers ?? config.trigger],
-      ["Conditions", config.conditions ?? config.condition],
-      ["Actions", config.actions ?? config.action ?? config.sequence],
-      ["Views", config.views],
+      ["trigger", config.triggers ?? config.trigger],
+      ["condition", config.conditions ?? config.condition],
+      ["action", config.actions ?? config.action ?? config.sequence],
+      ["view", config.views],
     ].flatMap(([label, entries]) =>
-      Array.isArray(entries) ? [`${entries.length} ${String(label).toLowerCase()}`] : []
+      Array.isArray(entries) ? [`${entries.length} ${String(label)}${entries.length === 1 ? "" : "s"}`] : []
     );
     return sections.length ? (
       <Stack gap={4}>
