@@ -60,6 +60,15 @@ jobs:
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
+  vm-shadow:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/devel' && vars.VM_SHADOW_DISABLED != 'true'
+    uses: ./.github/workflows/vm-shadow.yml
+    permissions:
+      actions: read
+      contents: read
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
   release:
     needs: [bazel-ci]
     if: always() && !cancelled() && github.event_name == 'push' && needs.bazel-ci.result != 'cancelled'
