@@ -2078,6 +2078,13 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
         cert_manager_environment_kustomization,
     )
+    study_casino_vpa_artifact = artifact(study_casino_app.VPA_NAME, study_casino_app.VPA_OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        study_casino_app.VPA_NAME,
+        write_directory(root, study_casino_vpa_artifact, study_casino_app.vpa_chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, study_casino_kustomization),
+    )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_kustomization = litellm_proxy.litellm(
         flux_chart,
@@ -2515,6 +2522,7 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_pr_visuals_bucket_artifact,
             ssh_mcp_artifact,
             study_casino_artifact,
+            study_casino_vpa_artifact,
             talos_cloud_controller_manager_artifact,
             user_agentydragon_artifact,
             talos_logs_artifact,
