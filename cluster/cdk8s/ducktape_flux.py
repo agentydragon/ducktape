@@ -160,7 +160,7 @@ def chart(app: App) -> Chart:
             # fit until someone does.
             #
             # 5m is an order of magnitude over the measurement while still bounding one attempt.
-            # Nothing set a clone timeout before this one; the 2m-30m timeouts elsewhere in the tree are
+            # The 2m-30m timeouts elsewhere in the tree are
             # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
             # answering a different question.
             timeout=CLONE_TIMEOUT,

@@ -1,6 +1,6 @@
 """The cluster's shared Gateway API `Gateway` -- every generated `HttpRoute` in this
 repo attaches to it -- with its `gateway-system` Namespace, the plaintext listener's
-redirect to HTTPS, and the directory's Flux Kustomization.
+redirect to HTTPS.
 """
 
 from __future__ import annotations
@@ -163,7 +163,7 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         raise ValueError("cluster Gateway needs at least one public node for ExternalDNS")
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is
     # avoided because Cilium bug #42159 makes listener-scoped allowedRoutes config bleed
-    # across listeners (see cluster/docs/plan.md). The fence against agents publishing
+    # across listeners (see cluster/k8s/TODO.md). The fence against agents publishing
     # public routes that bypass Authentik is the `restrict-agent-gateway-routes`
     # admission policy, which denies Gateway API writes in the agent sandbox namespaces.
     all_namespaces = GatewaySpecListenersAllowedRoutes(

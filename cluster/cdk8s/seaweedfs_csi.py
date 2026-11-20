@@ -1,5 +1,5 @@
 """The SeaweedFS CSI driver, pinned to OVH nodes, with the GitRepository its chart comes
-from, its StorageClasses, and the directory's Flux Kustomization.
+from, and its StorageClasses.
 """
 
 from __future__ import annotations

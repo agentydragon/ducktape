@@ -126,8 +126,8 @@ def force_proxy_egress(
 ) -> CiliumClusterwideNetworkPolicy:
     """Force the external egress of every Pod in `namespaces` through a proxy: admit kube-dns
     (plain L4), in-cluster traffic on TCP `cluster_ports` (any port when `None`), the
-    kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are additive, so any other egress policy selecting these
-    Pods widens this one.
+    kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are
+    additive, so any other egress policy selecting these Pods widens this one.
     """
     return CiliumClusterwideNetworkPolicy(
         scope,

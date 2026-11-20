@@ -1,8 +1,8 @@
 """Everything ha-mcp needs, generated into one Kustomization: its Namespace, the ESO copy of
 the Home Assistant token the Home Assistant provisioner keeps valid (cluster/cdk8s/home_assistant),
 and the ConfigMap/Deployment/Service/CiliumNetworkPolicy/ServiceMonitor for the MCP server itself.
-cdk8s generates all of it, so there's no real need to keep the Namespace/credentials/app split
-into separate directories the way hand-written manifests once did -- see cluster/docs/cdk8s.md.
+cdk8s generates all of it, so the Namespace, credentials and app share one directory
+(cluster/docs/cdk8s.md).
 
 The facade container's image tag is a deliberate placeholder ("unset") -- the hand-written
 `PINS_DIR` Component, which the directory includes across the roots, overrides it at
