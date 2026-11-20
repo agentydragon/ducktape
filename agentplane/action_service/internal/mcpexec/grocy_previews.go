@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,14 +14,21 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type grocyEntityPreview struct {
-	summary *operator_action_servicepb.GrocyReferenceSummary
-	links   []string
-}
-
-func (e *Executor) GrocyReferenceSummaries(ctx context.Context, keys []string) []*operator_action_servicepb.GrocyReferenceSummary {
+func (e *Executor) GrocyReferenceSummaries(ctx context.Context, keys []string, changedFields map[string][]string) []*operator_action_servicepb.GrocyReferenceSummary {
+	if e == nil || e.key != "grocy_sf" || len(keys) == 0 {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	s := e.pin()
+	if s == nil {
+		return nil
+	}
+	defer s.calls.Done()
+	tools, _, err := e.list(ctx, s)
+	if err != nil {
+		return nil
+	}
 	var entityKeys, entryKeys []string
 	for _, key := range keys {
 		if strings.HasPrefix(key, "stock_entries/") {
@@ -32,48 +40,102 @@ func (e *Executor) GrocyReferenceSummaries(ctx context.Context, keys []string) [
 	var entries []*operator_action_servicepb.GrocyReferenceSummary
 	var reads sync.WaitGroup
 	reads.Go(func() {
-		entries = readSummaries(ctx, e, entryKeys, "grocy_sf", "stock_entries_list", func(key string) map[string]any {
+		entries = readOfferedSummaries(ctx, e, s, tools, entryKeys, "stock_entries_list", func(key string) map[string]any {
 			_, id := grocyReference(key)
 			return map[string]any{"entry_ids": []int64{id}}
 		}, grocyStockEntrySummary)
 	})
-	entities := grocyEntities(ctx, e, entityKeys)
+	entities := grocyEntities(ctx, e, s, tools, entityKeys)
 	reads.Wait()
-	return append(grocyRelatedSummaries(ctx, e, entities), entries...)
-}
 
-func grocyEntities(ctx context.Context, e *Executor, keys []string) []*grocyEntityPreview {
-	return readSummaries(ctx, e, keys, "grocy_sf", "entities_get", func(key string) map[string]any {
-		kind, id := grocyReference(key)
-		if kind == "product_edits" {
-			kind = "products"
-		}
-		return map[string]any{"entity_type": kind, "object_ids": []int64{id}}
-	}, grocyEntitySummary)
-}
-
-// Follow only the exact IDs in the verified result of the first read. Share the original deadline
-// and keep a separate total bound on these optional display-name reads.
-func grocyRelatedSummaries(ctx context.Context, e *Executor, entities []*grocyEntityPreview) []*operator_action_servicepb.GrocyReferenceSummary {
-	const limit = 8
+	// Derive old references only from the exact product rows and fields the Action changes.
 	seen := make(map[string]bool)
-	var summaries []*operator_action_servicepb.GrocyReferenceSummary
-	for _, entity := range entities {
-		summary := entity.summary
-		summaries = append(summaries, summary)
+	for _, summary := range entities {
 		seen[summary.Key] = true
 	}
-	var keys []string
-	for _, entity := range entities {
-		for _, key := range entity.links {
-			if key != "" && !seen[key] && len(keys) < limit {
+	var linkedKeys []string
+	for _, summary := range entities {
+		for _, field := range changedFields[summary.Key] {
+			key := grocyProductLink(summary.GetProductEditCurrent(), field)
+			if key != "" && !seen[key] {
 				seen[key] = true
-				keys = append(keys, key)
+				linkedKeys = append(linkedKeys, key)
 			}
 		}
 	}
-	for _, related := range grocyEntities(ctx, e, keys) {
-		summaries = append(summaries, related.summary)
+	return append(append(entities, grocyEntities(ctx, e, s, tools, linkedKeys)...), entries...)
+}
+
+func grocyProductLink(product *operator_action_servicepb.GrocyProductEditCurrent, field string) string {
+	if product == nil {
+		return ""
+	}
+	switch field {
+	case "location":
+		return grocyLinkedKey("locations", product.LocationId)
+	case "stock_qu":
+		return grocyLinkedKey("quantity_units", product.StockUnitId)
+	case "purchase_qu":
+		return grocyLinkedKey("quantity_units", product.PurchaseUnitId)
+	case "consume_qu":
+		return grocyLinkedKey("quantity_units", product.ConsumeUnitId)
+	case "parent_product":
+		return grocyLinkedKey("products", product.ParentProductId)
+	case "product_group":
+		return grocyLinkedKey("product_groups", product.ProductGroupId)
+	}
+	return ""
+}
+
+type grocyEntityBatch struct {
+	kind string
+	keys []string
+}
+
+func grocyEntityType(kind string) string {
+	if kind == "product_edits" {
+		return "products"
+	}
+	return kind
+}
+
+func grocyEntities(ctx context.Context, e *Executor, s *session, tools map[string]tool, keys []string) []*operator_action_servicepb.GrocyReferenceSummary {
+	byType := make(map[string][]string)
+	for _, key := range keys {
+		kind, _ := grocyReference(key)
+		kind = grocyEntityType(kind)
+		byType[kind] = append(byType[kind], key)
+	}
+	var batches []grocyEntityBatch
+	for kind, refs := range byType {
+		for chunk := range slices.Chunk(refs, 32) {
+			batches = append(batches, grocyEntityBatch{kind: kind, keys: chunk})
+		}
+	}
+	responses := readOfferedSummaries(ctx, e, s, tools, batches, "entities_get", func(batch grocyEntityBatch) map[string]any {
+		ids := make([]int64, 0, len(batch.keys))
+		for _, key := range batch.keys {
+			_, id := grocyReference(key)
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		return map[string]any{"entity_type": batch.kind, "object_ids": ids}
+	}, func(batch grocyEntityBatch, result *mcp.CallToolResult) *[]*operator_action_servicepb.GrocyReferenceSummary {
+		summaries := grocyEntitySummaries(batch.keys, result)
+		return &summaries
+	})
+	byKey := make(map[string]*operator_action_servicepb.GrocyReferenceSummary)
+	for _, response := range responses {
+		for _, summary := range *response {
+			byKey[summary.Key] = summary
+		}
+	}
+	var summaries []*operator_action_servicepb.GrocyReferenceSummary
+	for _, key := range keys {
+		if summary := byKey[key]; summary != nil {
+			summaries = append(summaries, summary)
+		}
 	}
 	return summaries
 }
@@ -84,36 +146,51 @@ func grocyReference(key string) (string, int64) {
 	return kind, id
 }
 
-func grocyEntitySummary(key string, result *mcp.CallToolResult) *grocyEntityPreview {
-	kind, id := grocyReference(key)
-	entityType := kind
-	if kind == "product_edits" {
-		entityType = "products"
-	}
-	var rows []struct {
-		Kind              string
-		EntityType        string `json:"entity_type"`
-		ObjectID          int64  `json:"object_id"`
-		Data              map[string]json.RawMessage
-		ShoppingItemNames struct {
-			ProductName string `json:"product_name"`
-			ListName    string `json:"list_name"`
-			UnitName    string `json:"unit_name"`
-		} `json:"shopping_item_names"`
-	}
-	if !parseGrocyRows(result, &rows) || len(rows) != 1 {
+type grocyEntityRow struct {
+	Kind              string
+	EntityType        string `json:"entity_type"`
+	ObjectID          int64  `json:"object_id"`
+	Data              map[string]json.RawMessage
+	ShoppingItemNames struct {
+		ProductName string `json:"product_name"`
+		ListName    string `json:"list_name"`
+		UnitName    string `json:"unit_name"`
+	} `json:"shopping_item_names"`
+}
+
+func grocyEntitySummaries(keys []string, result *mcp.CallToolResult) []*operator_action_servicepb.GrocyReferenceSummary {
+	var rows []grocyEntityRow
+	if !parseGrocyRows(result, &rows) {
 		return nil
 	}
-	row := rows[0]
-	if row.Kind != "ok" || row.EntityType != entityType || row.ObjectID != id || row.Data == nil {
-		return nil
+	byKey := make(map[string]*grocyEntityRow)
+	for i, row := range rows {
+		key := row.EntityType + "/" + strconv.FormatInt(row.ObjectID, 10)
+		if _, duplicate := byKey[key]; duplicate {
+			byKey[key] = nil
+		} else {
+			byKey[key] = &rows[i]
+		}
 	}
+	var summaries []*operator_action_servicepb.GrocyReferenceSummary
+	for _, key := range keys {
+		kind, id := grocyReference(key)
+		row := byKey[grocyEntityType(kind)+"/"+strconv.FormatInt(id, 10)]
+		if row != nil && row.Kind == "ok" && row.Data != nil {
+			if summary := grocySummaryFromRow(key, kind, row); summary != nil {
+				summaries = append(summaries, summary)
+			}
+		}
+	}
+	return summaries
+}
+
+func grocySummaryFromRow(key, kind string, row *grocyEntityRow) *operator_action_servicepb.GrocyReferenceSummary {
 	name := row.Data["name"]
 	summary := &operator_action_servicepb.GrocyReferenceSummary{Key: key}
 	if value := grocyString(name); value != nil {
 		summary.Name = *value
 	}
-	preview := &grocyEntityPreview{summary: summary}
 	switch kind {
 	case "shopping_list":
 		names := row.ShoppingItemNames
@@ -148,20 +225,12 @@ func grocyEntitySummary(key string, result *mcp.CallToolResult) *grocyEntityPrev
 			Calories:        grocyNumber(row.Data["calories"]),
 		}
 		summary.ProductEditCurrent = product
-		preview.links = []string{
-			grocyLinkedKey("locations", product.LocationId),
-			grocyLinkedKey("quantity_units", product.StockUnitId),
-			grocyLinkedKey("quantity_units", product.PurchaseUnitId),
-			grocyLinkedKey("quantity_units", product.ConsumeUnitId),
-			grocyLinkedKey("products", product.ParentProductId),
-			grocyLinkedKey("product_groups", product.ProductGroupId),
-		}
 	default:
 		if strings.TrimSpace(summary.Name) == "" {
 			return nil
 		}
 	}
-	return preview
+	return summary
 }
 
 func grocyLinkedKey(kind string, id *int64) string {

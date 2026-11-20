@@ -280,7 +280,7 @@ func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group,
 	return readOfferedSummaries(ctx, e, s, tools, ids, name, arguments, summary)
 }
 
-func readOfferedSummaries[T any](ctx context.Context, e *Executor, s *session, tools map[string]tool, ids []string, name string, arguments func(string) map[string]any, summary func(string, *mcp.CallToolResult) *T) []*T {
+func readOfferedSummaries[T any, ID any](ctx context.Context, e *Executor, s *session, tools map[string]tool, ids []ID, name string, arguments func(ID) map[string]any, summary func(ID, *mcp.CallToolResult) *T) []*T {
 	tool, offered := tools[name]
 	if !offered {
 		return nil

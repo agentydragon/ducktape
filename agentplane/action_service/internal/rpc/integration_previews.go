@@ -35,7 +35,7 @@ type IntegrationPreviews struct {
 		TanaWorkspaceSummary(context.Context, string) *operator_action_servicepb.TanaWorkspaceSummary
 	}
 	Grocy interface {
-		GrocyReferenceSummaries(context.Context, []string) []*operator_action_servicepb.GrocyReferenceSummary
+		GrocyReferenceSummaries(context.Context, []string, map[string][]string) []*operator_action_servicepb.GrocyReferenceSummary
 	}
 }
 
