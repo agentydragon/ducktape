@@ -1,5 +1,6 @@
 import type { ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
 import { actionIdentity } from "../presentation";
+import { tanaTitles } from "../schemas/tana_titles";
 import { createBranchNotification } from "./github/create_branch";
 import { createPullRequestNotification } from "./github/create_pull_request";
 import { pushFilesNotification } from "./github/push_files";
@@ -87,6 +88,7 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
     new Map([
       ["get_or_create_calendar_node", tanaCalendarNodeNotification],
       ["move_node", tanaMoveNodeNotification],
+      ...Array.from(tanaTitles, ([name, title]) => [name, fixedActionNotification(title)] as const),
     ]),
   ],
 ]);

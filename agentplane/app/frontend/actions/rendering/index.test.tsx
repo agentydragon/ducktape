@@ -387,10 +387,6 @@ describe("Action presentation slots", () => {
       ["grocy_sf", "shopping_list_items_add"],
       ["grocy_sf", "shopping_list_items_remove"],
       ["grocy_sf", "shopping_list_item_edit"],
-      ["tana", "import_tana_paste"],
-      ["tana", "trash_node"],
-      ["tana", "edit_node"],
-      ["tana", "set_field_option"],
     ] as const;
     const result = parseCallToolResult({
       content: [],
@@ -478,6 +474,57 @@ describe("Action presentation slots", () => {
     );
     expect(receipt.querySelector("a")?.textContent).toBe("Calendar node for week containing 2026-10-12");
     expect(receipt.querySelector("a")?.getAttribute("href")).toBe("https://app.tana.inc?nodeid=calendar-week-42");
+  });
+
+  it("uses the provider's per-tag outcomes instead of treating a partial update as success", async () => {
+    const action = identity("tana", "tag");
+    const result: CallToolResult = {
+      content: [
+        {
+          type: "text",
+          text: 'Adding tags on "Plan review" (task-1):\n✓ Task: Added tag "Task"\n✗ missing: Tag not found: missing',
+        },
+      ],
+      isError: false,
+    };
+    expect(renderActionOutcome(action, result)).toEqual({ label: "Partially applied", failed: true });
+    const view = await mount(renderDetailsResult(action, result));
+    expect(view.textContent).toContain('Added tag "Task"');
+    expect(view.textContent).toContain("Tag not found: missing");
+    expect(view.querySelector('a[href="https://app.tana.inc?nodeid=task-1"]')?.textContent).toBe("Plan review");
+  });
+
+  it("links a returned workspace by its home node and represents out-of-range child pages", async () => {
+    const workspaces = await drawDetailsResult(identity("tana", "list_workspaces"), {
+      content: [{ type: "text", text: '[{"id":"workspace-1","name":"Product","homeNodeId":"home-1"}]' }],
+      isError: false,
+    });
+    expect(workspaces.querySelector('a[href="https://app.tana.inc?nodeid=home-1"]')?.textContent).toBe("Product");
+    expect(workspaces.textContent).not.toContain("workspace-1");
+
+    const children = await drawDetailsResult(identity("tana", "get_children"), {
+      content: [{ type: "text", text: '{"children":[],"total":2,"hasMore":false}' }],
+      isError: false,
+    });
+    expect(children.textContent).toContain("No child nodes on this page");
+  });
+
+  it("leaves a rejected Tana edit in the tool error view and preserves unexpected receipts", async () => {
+    const action = identity("tana", "edit_node");
+    const error: CallToolResult = {
+      content: [{ type: "text", text: "Name edit failed: old_string not found in current name" }],
+      isError: true,
+    };
+    expect(renderDetailsResult(action, error)).toBeUndefined();
+    const failed = await drawDetailsResult(action, error);
+    expect(failed.textContent).toContain("old_string not found in current name");
+
+    const unknown: CallToolResult = {
+      content: [{ type: "text", text: "Future edit result shape" }],
+      isError: false,
+    };
+    expect(renderDetailsResult(action, unknown)).toBeUndefined();
+    expect((await drawDetailsResult(action, unknown)).textContent).toContain("Future edit result shape");
   });
 
   it("summarizes a Gmail draft with its recipient, subject, and body preview", async () => {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"sync"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
@@ -71,33 +73,77 @@ func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *ope
 	if recorded.Action.Group != "tana" {
 		return nil, invalidRequest("request has no matching integration preview")
 	}
-	response := &operator_action_servicepb.GetTanaNodeSummariesResponse{}
+	var args struct {
+		NodeID          string   `json:"nodeId"`
+		TargetNodeID    string   `json:"targetNodeId"`
+		SourceParentID  string   `json:"sourceParentId"`
+		ReferenceNodeID string   `json:"referenceNodeId"`
+		ParentNodeID    string   `json:"parentNodeId"`
+		WorkspaceID     string   `json:"workspaceId"`
+		TagID           string   `json:"tagId"`
+		TagIDs          []string `json:"tagIds"`
+		ExtendsTagIDs   []string `json:"extendsTagIds"`
+		SourceTagID     string   `json:"sourceTagId"`
+		AttributeID     string   `json:"attributeId"`
+		OptionID        string   `json:"optionId"`
+		DoneMapping     struct {
+			FieldID         string   `json:"fieldId"`
+			CheckedValues   []string `json:"checkedValues"`
+			UncheckedValues []string `json:"uncheckedValues"`
+		} `json:"doneStateMapping"`
+	}
+	if json.Unmarshal(recorded.Arguments, &args) != nil {
+		return nil, invalidRequest("request has invalid integration preview arguments")
+	}
+
+	var nodeIDs []string
+	var workspaceID string
 	switch recorded.Action.Name {
 	case "move_node":
-		var args struct {
-			NodeID          string `json:"nodeId"`
-			TargetNodeID    string `json:"targetNodeId"`
-			SourceParentID  string `json:"sourceParentId"`
-			ReferenceNodeID string `json:"referenceNodeId"`
-		}
-		if json.Unmarshal(recorded.Arguments, &args) != nil {
-			return nil, invalidRequest("request has invalid integration preview arguments")
-		}
-		if s.previews.Tana != nil {
-			response.Nodes = s.previews.Tana.TanaNodeSummaries(ctx, previewIDs([]string{args.NodeID, args.TargetNodeID, args.SourceParentID, args.ReferenceNodeID}))
-		}
-	case "get_or_create_calendar_node":
-		var args struct {
-			WorkspaceID string `json:"workspaceId"`
-		}
-		if json.Unmarshal(recorded.Arguments, &args) != nil {
-			return nil, invalidRequest("request has invalid integration preview arguments")
-		}
-		if s.previews.Tana != nil && previewID.MatchString(args.WorkspaceID) {
-			response.Workspace = s.previews.Tana.TanaWorkspaceSummary(ctx, args.WorkspaceID)
-		}
+		nodeIDs = []string{args.NodeID, args.TargetNodeID, args.SourceParentID, args.ReferenceNodeID}
+	case "get_or_create_calendar_node", "list_tags":
+		workspaceID = args.WorkspaceID
+	case "read_node", "get_children", "open_node", "edit_node", "trash_node", "check_node", "uncheck_node":
+		nodeIDs = []string{args.NodeID}
+	case "import_tana_paste":
+		nodeIDs = []string{args.ParentNodeID}
+	case "tag":
+		nodeIDs = append([]string{args.NodeID}, args.TagIDs...)
+	case "get_tag_schema":
+		nodeIDs = []string{args.TagID}
+	case "create_tag":
+		workspaceID = args.WorkspaceID
+		nodeIDs = args.ExtendsTagIDs
+	case "add_field_to_tag":
+		nodeIDs = []string{args.TagID, args.SourceTagID}
+	case "set_tag_checkbox":
+		nodeIDs = []string{args.TagID, args.DoneMapping.FieldID}
+		nodeIDs = append(nodeIDs, args.DoneMapping.CheckedValues...)
+		nodeIDs = append(nodeIDs, args.DoneMapping.UncheckedValues...)
+	case "set_field_content":
+		nodeIDs = []string{args.NodeID, args.AttributeID}
+	case "set_field_option":
+		nodeIDs = []string{args.NodeID, args.AttributeID, args.OptionID}
 	default:
 		return nil, invalidRequest("request has no matching integration preview")
+	}
+	response := &operator_action_servicepb.GetTanaNodeSummariesResponse{}
+	if s.previews.Tana != nil {
+		// Keep both optional reads within the preview's overall deadline, including any partial result.
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		var lookups sync.WaitGroup
+		if previewID.MatchString(workspaceID) {
+			lookups.Go(func() {
+				response.Workspace = s.previews.Tana.TanaWorkspaceSummary(ctx, workspaceID)
+			})
+		}
+		if ids := previewIDs(nodeIDs); len(ids) != 0 {
+			lookups.Go(func() {
+				response.Nodes = s.previews.Tana.TanaNodeSummaries(ctx, ids)
+			})
+		}
+		lookups.Wait()
 	}
 	return response, nil
 }

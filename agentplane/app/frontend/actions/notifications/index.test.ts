@@ -176,6 +176,20 @@ describe("action notification formatting", () => {
     });
   });
 
+  it("uses Tana operation titles without adding resolved node or argument data to push", () => {
+    const request = actionRequest({
+      action: { group: "tana", name: "set_field_content" },
+      arguments: { nodeId: "private-id", attributeId: "private-field", content: "private value" },
+      title: "Update the planning page",
+      description: "Review the requested update.",
+    });
+
+    expect(formatActionNotification(request, new Map([["private-id", "Private title"]]))).toEqual({
+      title: "Update the planning page · Change Tana field content",
+      text: "Review the requested update.",
+    });
+  });
+
   it("uses human-facing descriptions for Grocy's no-lookup Actions", () => {
     const cases = [
       ["products_list", "List Grocy products"],
