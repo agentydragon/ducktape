@@ -11,8 +11,10 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -21,6 +23,7 @@ from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
+AUDIT_JOB_NAME = "cluster-secret-store-audit"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
 _CONTROLLER_CPU_REQUEST = "100m"
 _SECRET_STORE_ADMISSION = "require-cluster-secret-store-namespaces"
@@ -107,6 +110,78 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         },
         "certController": {"create": False},
     }
+
+
+def _add_store_audit(chart: Chart) -> None:
+    script = (
+        Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/external_secrets/audit_cluster_secret_stores.py"
+    ).read_text()
+    account = k8s.KubeServiceAccount(
+        chart,
+        "store-audit-account",
+        metadata=k8s.ObjectMeta(name=AUDIT_JOB_NAME, namespace=NAMESPACE),
+        automount_service_account_token=False,
+    )
+    role = k8s.KubeClusterRole(
+        chart,
+        "store-audit-role",
+        metadata=k8s.ObjectMeta(name=AUDIT_JOB_NAME),
+        rules=[k8s.PolicyRule(api_groups=["external-secrets.io"], resources=["clustersecretstores"], verbs=["list"])],
+    )
+    k8s.KubeClusterRoleBinding(
+        chart,
+        "store-audit-binding",
+        metadata=k8s.ObjectMeta(name=AUDIT_JOB_NAME),
+        subjects=[k8s.Subject(kind="ServiceAccount", name=account.name, namespace=NAMESPACE)],
+        role_ref=k8s.RoleRef(kind="ClusterRole", name=role.name, api_group="rbac.authorization.k8s.io"),
+    )
+    k8s.KubeCronJob(
+        chart,
+        "store-audit",
+        metadata=k8s.ObjectMeta(name=AUDIT_JOB_NAME, namespace=NAMESPACE),
+        spec=k8s.CronJobSpec(
+            schedule="*/30 * * * *",
+            concurrency_policy="Forbid",
+            starting_deadline_seconds=300,
+            successful_jobs_history_limit=1,
+            failed_jobs_history_limit=1,
+            job_template=k8s.JobTemplateSpec(
+                metadata=k8s.ObjectMeta(annotations={namespaces.VPA_UPDATE_MODE_LABEL: Vpa.RECOMMEND}),
+                spec=k8s.JobSpec(
+                    active_deadline_seconds=120,
+                    backoff_limit=0,
+                    template=k8s.PodTemplateSpec(
+                        spec=k8s.PodSpec(
+                            service_account_name=account.name,
+                            automount_service_account_token=True,
+                            node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+                            restart_policy="Never",
+                            security_context=k8s.PodSecurityContext(
+                                run_as_non_root=True,
+                                run_as_user=65534,
+                                run_as_group=65534,
+                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                            ),
+                            containers=[
+                                k8s.Container(
+                                    name="audit",
+                                    # Same official Python image as Atuin's provisioner, pinned to the live index.
+                                    image="python:3.14-alpine@sha256:601e99e090cb08c2784a42395487709500bc39930307fe72f3f11a8f3c430762",
+                                    command=["python", "-B", "-c", script],
+                                    resources=container_resources(cpu="25m", memory="32Mi", memory_limit="128Mi"),
+                                    security_context=k8s.SecurityContext(
+                                        allow_privilege_escalation=False,
+                                        read_only_root_filesystem=True,
+                                        capabilities=k8s.Capabilities(drop=["ALL"]),
+                                    ),
+                                )
+                            ],
+                        )
+                    ),
+                ),
+            ),
+        ),
+    )
 
 
 def chart(app: App) -> Chart:
@@ -203,6 +278,7 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name=_SECRET_STORE_ADMISSION),
         spec=k8s.ValidatingAdmissionPolicyBindingSpec(policy_name=_SECRET_STORE_ADMISSION, validation_actions=["Deny"]),
     )
+    _add_store_audit(chart)
     return chart
 
 

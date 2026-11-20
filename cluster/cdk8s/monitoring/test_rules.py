@@ -30,6 +30,9 @@ from cluster.cdk8s.monitoring import rules
         ),
         pytest.param({"disk-usage-rules": "disk-usage.yaml"}, "disk_usage_rules.yaml", id="disk-usage"),
         pytest.param({"io-pressure-alerts": "io-pressure.yaml"}, "io_pressure_rules.yaml", id="io-pressure"),
+        pytest.param(
+            {"external-secrets-alerts": "external-secrets.yaml"}, "external_secrets_rules.yaml", id="external-secrets"
+        ),
         pytest.param({"roaming-node-alerts": "roaming-node.yaml"}, "alloy_roaming_rules.yaml", id="alloy-roaming"),
         pytest.param({"roaming-node-alerts": "roaming-node.yaml"}, "roaming_node_rules.yaml", id="roaming-node"),
     ],

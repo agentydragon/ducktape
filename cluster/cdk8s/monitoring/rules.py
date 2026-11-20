@@ -8,6 +8,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.external_secrets import operator as external_secrets
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 NAME = "monitoring-rules"
@@ -99,7 +100,28 @@ _CONTROL_PLANE_IO = [
     ),
 ]
 
+_STORE_AUDIT_SELECTOR = f'namespace="{external_secrets.NAMESPACE}",cronjob="{external_secrets.AUDIT_JOB_NAME}"'
 _EXTERNAL_SECRETS = [
+    Rule.alert(
+        "ClusterSecretStoreAuditStale",
+        dedent(f"""\
+            (
+              time() - (
+                max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{{{_STORE_AUDIT_SELECTOR}}})
+                or on (namespace, cronjob)
+                max by (namespace, cronjob) (kube_cronjob_created{{{_STORE_AUDIT_SELECTOR}}})
+              ) > 45 * 60
+            )
+            or absent_over_time(kube_cronjob_created{{{_STORE_AUDIT_SELECTOR}}}[45m])
+        """).strip(),
+        for_="10m",
+        labels={"severity": "warning"},
+        summary="No recent successful ClusterSecretStore audit",
+        description=(
+            "The audit runs every 30 minutes and fails on a store missing explicit consumer namespaces or "
+            "an incomplete API read. Check the latest cluster-secret-store-audit Job logs in external-secrets-system."
+        ),
+    ),
     Rule.alert(
         "ExternalSecretNotReady",
         'externalsecret_status_condition{condition="Ready",status="False"} == 1',

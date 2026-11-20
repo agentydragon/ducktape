@@ -137,3 +137,140 @@ spec:
   policyName: require-cluster-secret-store-namespaces
   validationActions:
     - Deny
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-secret-store-audit
+  namespace: external-secrets-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-secret-store-audit
+rules:
+  - apiGroups:
+      - external-secrets.io
+    resources:
+      - clustersecretstores
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-secret-store-audit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-secret-store-audit
+subjects:
+  - kind: ServiceAccount
+    name: cluster-secret-store-audit
+    namespace: external-secrets-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cluster-secret-store-audit
+  namespace: external-secrets-system
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      annotations:
+        goldilocks.fairwinds.com/vpa-update-mode: "off"
+    spec:
+      activeDeadlineSeconds: 120
+      backoffLimit: 0
+      template:
+        spec:
+          automountServiceAccountToken: true
+          containers:
+            - command:
+                - python
+                - -B
+                - -c
+                - |
+                  """Read-only audit of stored ClusterSecretStores. This file runs with stdlib only."""
+
+                  from __future__ import annotations
+
+                  import json
+                  import ssl
+                  import sys
+                  from collections.abc import Callable
+                  from pathlib import Path
+                  from typing import Any
+                  from urllib.parse import urlencode
+                  from urllib.request import Request, urlopen
+
+                  _CREDENTIALS = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+                  _STORE_API = "https://kubernetes.default.svc/apis/external-secrets.io/v1/clustersecretstores"
+
+
+                  def audit(fetch_page: Callable[[str], dict[str, Any]]) -> int:
+                      invalid = []
+                      total = 0
+                      continuation = ""
+                      try:
+                          while True:
+                              page = fetch_page(continuation)
+                              for store in page["items"]:
+                                  total += 1
+                                  conditions = store["spec"].get("conditions") or []
+                                  if not any(condition and condition.get("namespaces") for condition in conditions):
+                                      invalid.append(store["metadata"]["name"])
+                              continuation = page["metadata"].get("continue", "")
+                              if not continuation:
+                                  break
+                      except (OSError, ValueError, KeyError, TypeError) as error:
+                          print(f"ClusterSecretStore audit could not complete ({type(error).__name__}).", file=sys.stderr)
+                          return 2
+                      for name in sorted(invalid):
+                          print(f"ClusterSecretStore {name} has no explicit consumer namespace.", file=sys.stderr)
+                      print(f"Checked {total} ClusterSecretStores. Violations: {len(invalid)}.")
+                      return int(bool(invalid))
+
+
+                  def _fetch_page(continuation: str) -> dict[str, Any]:
+                      token = (_CREDENTIALS / "token").read_text().strip()
+                      context = ssl.create_default_context(cafile=str(_CREDENTIALS / "ca.crt"))
+                      query = urlencode({"limit": 25, "continue": continuation})
+                      request = Request(f"{_STORE_API}?{query}", headers={"Authorization": f"Bearer {token}"})
+                      with urlopen(request, context=context, timeout=10) as response:
+                          page: dict[str, Any] = json.load(response)
+                          return page
+
+
+                  if __name__ == "__main__":
+                      raise SystemExit(audit(_fetch_page))
+              image: python:3.14-alpine@sha256:601e99e090cb08c2784a42395487709500bc39930307fe72f3f11a8f3c430762
+              name: audit
+              resources:
+                limits:
+                  memory: 128Mi
+                requests:
+                  cpu: 25m
+                  memory: 32Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: cluster-secret-store-audit
+  schedule: "*/30 * * * *"
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1

@@ -565,6 +565,22 @@ spec:
   groups:
     - name: external-secrets
       rules:
+        - alert: ClusterSecretStoreAuditStale
+          annotations:
+            description: The audit runs every 30 minutes and fails on a store missing explicit consumer namespaces or an incomplete API read. Check the latest cluster-secret-store-audit Job logs in external-secrets-system.
+            summary: No recent successful ClusterSecretStore audit
+          expr: |-
+            (
+              time() - (
+                max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{namespace="external-secrets-system",cronjob="cluster-secret-store-audit"})
+                or on (namespace, cronjob)
+                max by (namespace, cronjob) (kube_cronjob_created{namespace="external-secrets-system",cronjob="cluster-secret-store-audit"})
+              ) > 45 * 60
+            )
+            or absent_over_time(kube_cronjob_created{namespace="external-secrets-system",cronjob="cluster-secret-store-audit"}[45m])
+          for: 10m
+          labels:
+            severity: warning
         - alert: ExternalSecretNotReady
           annotations:
             description: |

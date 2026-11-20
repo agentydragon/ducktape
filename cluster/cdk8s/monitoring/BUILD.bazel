@@ -318,6 +318,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s/external_secrets:operator",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
@@ -332,6 +333,7 @@ py_test(
         "testdata/alloy_roaming_rules.yaml",
         "testdata/client_certificate_rules.yaml",
         "testdata/disk_usage_rules.yaml",
+        "testdata/external_secrets_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
         "testdata/roaming_node_rules.yaml",
