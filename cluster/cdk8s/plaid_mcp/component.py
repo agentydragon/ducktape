@@ -26,7 +26,7 @@ def write_directory(root: Path, artifact: ArtifactGeneratorSpecArtifacts) -> Ren
     return generation.write_directory(
         root,
         artifact,
-        partial(generation.namespace_chart, name=_NAMESPACE, vpa=Vpa.DISABLED),
+        partial(generation.namespace_chart, name=_NAMESPACE, vpa=Vpa.RECOMMEND),
         app.chart,
         db.chart,
         pgweb.chart,

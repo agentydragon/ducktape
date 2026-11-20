@@ -16,6 +16,7 @@ from cluster.cdk8s.vpa_policy import (
     REQUESTS_ONLY,
     VPA_RESOURCE_POLICY_ANNOTATION,
     ContainerPolicy,
+    ControlledValues,
     resource_policy_annotation,
 )
 
@@ -57,6 +58,16 @@ class VpaProfile:
 
 
 _POLICY_LABELS = {_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable}
+
+
+def initial_memory_request_annotations(*container_policies: ContainerPolicy) -> dict[str, str]:
+    """Opt a workload into admission-time sizing for the listed containers."""
+    return {
+        VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+            *container_policies, ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off")
+        ),
+    }
 
 
 def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, str]:
