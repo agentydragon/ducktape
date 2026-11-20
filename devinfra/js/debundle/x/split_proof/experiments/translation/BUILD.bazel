@@ -45,6 +45,15 @@ js_test(
     tags = ["manual"],
 )
 
+js_test(
+    name = "prototype_guard_test",
+    data = [
+        "prototype_guard.mjs",
+        ":node_modules/acorn",
+    ],
+    entry_point = "prototype_guard_test.mjs",
+)
+
 exports_files(
     ["fixtures/callback/bundle.js"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
