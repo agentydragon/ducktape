@@ -1,6 +1,6 @@
 """VM Sandbox scenarios on hosted KVM or managed QEMU emulation."""
 
-load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_BINARY_RLOCATION", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "KVM_EXEC_PROPERTIES", "k3s_recycling_key")
 load("//devinfra/python:defs.bzl", "py_test")
 
 def vm_test(
@@ -33,7 +33,12 @@ def vm_test(
             "test.EstimatedMemory": "7GiB",
         } | KVM_EXEC_PROPERTIES | {"test.Pool": pool} | recycling_properties
     else:
-        properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"} | K3S_PERSISTENCE_PROPERTIES | {
+        # The two routes share one PyCompile output. Scope VM sizing to TestRunner
+        # so the compiler sees identical execution properties for both targets.
+        properties = K3S_PERSISTENCE_PROPERTIES | {
+            "dockerNetwork": "bridge",
+            "test.EstimatedComputeUnits": "8",
+            "test.EstimatedFreeDiskBytes": "50GB",
             "test.runner-recycling-key": k3s_recycling_key(vm = True),
         }
 
