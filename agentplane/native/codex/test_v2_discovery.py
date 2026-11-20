@@ -82,14 +82,8 @@ async def test_v2_child_discovery_and_resume(
                         model=MODEL,
                     ).events
                 )
-            async with AsyncExitStack() as exchanges:
-                # Keep both requests open until their native identities are known. Arrival
-                # order is not a parent/child discriminator.
-                first = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                second = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                parent, child = (
-                    (first, second) if first.request.client_metadata.thread_id == root_id else (second, first)
-                )
+            # Both requests stay open until their native identities are known.
+            async with openai_responses.await_parent_and_child(root_id) as (parent, child):
                 assert parent.request.client_metadata.thread_id == root_id
                 child_id = child.request.client_metadata.thread_id
                 assert child_id != root_id
@@ -222,10 +216,8 @@ async def test_concurrent_child_transcripts_and_recovery(
                         ).events
                     )
                     await parent.close()
-                    first = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                    second = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                    parent, child = (
-                        (first, second) if first.request.client_metadata.thread_id == root_id else (second, first)
+                    parent, child = await exchanges.enter_async_context(
+                        openai_responses.await_parent_and_child(root_id)
                     )
                     assert parent.request.client_metadata.thread_id == root_id
                     child_id = child.request.client_metadata.thread_id
@@ -395,10 +387,8 @@ async def test_nested_child_ancestry_and_terminal_recovery(
                         ).events
                     )
                     await current.close()
-                    first = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                    second = await exchanges.enter_async_context(await openai_responses.await_next_request())
-                    parent, current = (
-                        (first, second) if first.request.client_metadata.thread_id == parent_id else (second, first)
+                    parent, current = await exchanges.enter_async_context(
+                        openai_responses.await_parent_and_child(parent_id)
                     )
                     assert parent.request.client_metadata.thread_id == parent_id
                     assert parent.request.function_call_outputs[-1].call_id == f"spawn_{name}"

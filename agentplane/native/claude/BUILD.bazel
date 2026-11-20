@@ -177,6 +177,7 @@ py_test(
         "//agentplane/native/claude/testing:harness",
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/claude/testing:model",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

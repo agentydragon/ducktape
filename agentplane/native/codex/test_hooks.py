@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 import pytest_bazel
 
 from agentplane.native.capture import codex_hook
@@ -39,39 +40,25 @@ def _pretooluse_events(log_path: Path) -> list[dict[str, Any]]:
     return [event for event in _hook_log_events(log_path) if event.get("hook_event_name") == "PreToolUse"]
 
 
-async def test_pretooluse_allow_lets_the_tool_run(
-    codex: CodexHarness, openai_responses: OpenAIResponses, tmp_path: Path
+@pytest.mark.parametrize(
+    ("decision", "output_markers", "final_text"),
+    [
+        pytest.param("allow", ["PROBE_OK", "exited with code 0"], "PROBE_DONE", id="allow"),
+        pytest.param(
+            "deny", ["Command blocked by PreToolUse hook", codex_hook.DENIAL], "HOOK_DENIED_OBSERVED", id="deny"
+        ),
+    ],
+)
+async def test_pretooluse_decision_gates_the_tool(
+    codex: CodexHarness,
+    openai_responses: OpenAIResponses,
+    tmp_path: Path,
+    decision: str,
+    output_markers: list[str],
+    final_text: str,
 ) -> None:
     log_path = tmp_path / "hooks.jsonl"
-    async with codex.start(openai_responses, config=_hooks_config(log_path, "allow")) as run:
-        turn = await run.start_turn("Use the shell probe and report PROBE_DONE.")
-
-        async with await openai_responses.await_next_request() as exchange:
-            stream = responses_sse.response_stream(
-                [responses_sse.FunctionCall("call_test_1", "exec_command", {"cmd": PROBE})], model=MODEL
-            )
-            await exchange.send(*stream.events)
-
-        async with await openai_responses.await_next_request() as exchange:
-            (result,) = exchange.request.function_call_outputs
-            assert result.call_id == "call_test_1"
-            assert "PROBE_OK" in result.output
-            assert "exited with code 0" in result.output
-            stream = responses_sse.response_stream([responses_sse.Message("PROBE_DONE")], model=MODEL)
-            await exchange.send(*stream.events)
-
-        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
-    captured = run.native_frames()
-    frames.assert_success(captured, "PROBE_DONE")
-
-    assert len(_pretooluse_events(log_path)) == 1
-
-
-async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
-    codex: CodexHarness, openai_responses: OpenAIResponses, tmp_path: Path
-) -> None:
-    log_path = tmp_path / "hooks.jsonl"
-    async with codex.start(openai_responses, config=_hooks_config(log_path, "deny")) as run:
+    async with codex.start(openai_responses, config=_hooks_config(log_path, decision)) as run:
         turn = await run.start_turn("Use the shell probe and report the outcome.")
 
         async with await openai_responses.await_next_request() as exchange:
@@ -83,14 +70,14 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
         async with await openai_responses.await_next_request() as exchange:
             (result,) = exchange.request.function_call_outputs
             assert result.call_id == "call_test_1"
-            assert "Command blocked by PreToolUse hook" in result.output
-            assert codex_hook.DENIAL in result.output
-            stream = responses_sse.response_stream([responses_sse.Message("HOOK_DENIED_OBSERVED")], model=MODEL)
+            for marker in output_markers:
+                assert marker in result.output
+            stream = responses_sse.response_stream([responses_sse.Message(final_text)], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     captured = run.native_frames()
-    frames.assert_success(captured, "HOOK_DENIED_OBSERVED")
+    frames.assert_success(captured, final_text)
 
     assert len(_pretooluse_events(log_path)) == 1
 
