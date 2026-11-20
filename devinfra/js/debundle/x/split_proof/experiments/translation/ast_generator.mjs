@@ -124,6 +124,11 @@ export function generateAstBundle(seed, round) {
     callback: false,
   };
   const units = [];
+  // Record only top-level increments; snapshots are kept out of the random
+  // environment so their sole later use is an observable log.
+  const written = [];
+  const snapshots = [];
+  const writeReadPairs = [];
   const ref = (b) => id(b.name, b.scope);
   const choose = (xs) => xs[pick(xs.length)];
   const callableNow = (scope) => scope.functions.filter((b) => pendingReady || scope.deferred || !b.needsPending);
@@ -214,11 +219,22 @@ export function generateAstBundle(seed, round) {
         ...(scope.arrays.length ? ["arrayAlias"] : []),
         ...(scope.callback && (pendingReady || !scope.callbackNeedsPending)
           ? Array(scope.callbackFromEarly ? 12 : 3).fill("invokeCallback")
-          : [])
+          : []),
+        ...(written.length ? ["observeWrite", "observeWrite", "observeWrite"] : [])
       );
     if (depth > 0) choices.push("block", "if");
     const kind = choose(choices);
     const bindingScope = topLevel ? "top" : "local";
+    if (kind === "observeWrite") {
+      const source = choose(written);
+      const binding = { name: fresh(), scope: "top" };
+      snapshots.push(binding);
+      return {
+        node: declare(binding, ref(source.binding), "const"),
+        defs: [binding.name],
+        writeRead: source,
+      };
+    }
     if (kind === "const" || kind === "let" || kind === "alias") {
       const binding = { name: fresh(), scope: bindingScope };
       const init = kind === "alias" ? ref(choose(scope.values)) : expression(scope, 2);
@@ -357,16 +373,19 @@ export function generateAstBundle(seed, round) {
         defs: [binding.name],
       };
     }
-    if (kind === "update")
+    if (kind === "update") {
+      const target = choose(scope.mutable);
       return {
         node: exprStmt({
           type: "UpdateExpression",
           operator: "++",
           prefix: false,
-          argument: ref(choose(scope.mutable)),
+          argument: ref(target),
         }),
         defs: [],
+        topLevelWrite: topLevel && target.scope === "top" ? target : null,
       };
+    }
     if (kind === "assign")
       return {
         node: exprStmt({
@@ -428,10 +447,20 @@ export function generateAstBundle(seed, round) {
       (futureCallable ? env.functions : env.values).push(alias);
       pendingReady = true;
     } else {
-      const { node, defs, deferredInvocation = false } = statement(env, 2, true);
+      const { node, defs, deferredInvocation = false, topLevelWrite, writeRead } = statement(env, 2, true);
+      if (topLevelWrite) written.push({ binding: topLevelWrite, writer: units.length });
+      if (writeRead)
+        writeReadPairs.push({
+          writer: writeRead.writer,
+          reader: units.length,
+          name: writeRead.binding.name,
+          snapshot: defs[0],
+        });
       units.push({ ast: node, defs, deferredInvocation });
     }
   }
+  const observed = snapshots.length ? choose(snapshots) : null;
+  if (observed) units.push({ ast: log(ref(observed), "write snapshot"), defs: [] });
   units.push({ ast: log(expression(env, 3), "final"), defs: [] });
   for (const u of units) {
     const uses = new Set();
@@ -464,6 +493,9 @@ export function generateAstBundle(seed, round) {
     pending: [future.name, alias.name],
     earlyCallbacks,
     guidedPlace,
+    // Pick a snapshot that is actually logged; other random code remains
+    // generated independently and the candidate need not be accepted.
+    writeGuided: writeReadPairs.find((pair) => pair.snapshot === observed?.name) ?? null,
   };
 }
 
