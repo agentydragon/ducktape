@@ -16,17 +16,6 @@ NAMESPACE = "node-feature-discovery"
 OUTPUT_DIR = f"{GENERATED_ROOT}/node-feature-discovery"
 
 
-def _memory_policy(container_name: str, *, cpu_request: str, memory_floor: str, memory_ceiling: str) -> ContainerPolicy:
-    # VPA 1.7.1 admission can read a stale CPU target until the recommender refreshes.
-    return ContainerPolicy(
-        container_name=container_name,
-        controlled_values=ControlledValues.REQUESTS_ONLY,
-        controlled_resources=("memory",),
-        min_allowed={"cpu": cpu_request, "memory": memory_floor},
-        max_allowed={"cpu": cpu_request, "memory": memory_ceiling},
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(
@@ -36,10 +25,16 @@ def chart(app: App) -> Chart:
         vpa=VpaProfile(
             Vpa.INITIAL,
             (
-                _memory_policy("gc", cpu_request="10m", memory_floor="128Mi", memory_ceiling="256Mi"),
-                _memory_policy("master", cpu_request="100m", memory_floor="128Mi", memory_ceiling="256Mi"),
+                ContainerPolicy.memory_requests_only(
+                    "gc", cpu_request="10m", memory_floor="128Mi", memory_limit="256Mi"
+                ),
+                ContainerPolicy.memory_requests_only(
+                    "master", cpu_request="100m", memory_floor="128Mi", memory_limit="256Mi"
+                ),
                 # The worker's 30-day working-set peak was ~68 MiB, above its 64 MiB template request.
-                _memory_policy("worker", cpu_request="5m", memory_floor="96Mi", memory_ceiling="128Mi"),
+                ContainerPolicy.memory_requests_only(
+                    "worker", cpu_request="5m", memory_floor="96Mi", memory_limit="128Mi"
+                ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
         ),

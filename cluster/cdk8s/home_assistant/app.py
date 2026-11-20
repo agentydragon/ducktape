@@ -42,7 +42,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
+from cluster.cdk8s.namespaces import initial_memory_request_annotations
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -50,12 +50,7 @@ from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 from cluster.cdk8s.volume_claim import volume_claim
-from cluster.cdk8s.vpa_policy import (
-    VPA_RESOURCE_POLICY_ANNOTATION,
-    ContainerPolicy,
-    ControlledValues,
-    resource_policy_annotation,
-)
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -192,27 +187,18 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
             name=_NAME,
             namespace=_NAMESPACE,
             labels=SERVICE.pods.selector,
-            annotations={
-                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
-                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
-                    # Peak 30-day working sets were 475Mi and 35Mi. Pin CPU against stale Off-mode targets.
-                    ContainerPolicy(
-                        container_name=_NAME,
-                        controlled_values=ControlledValues.REQUESTS_ONLY,
-                        controlled_resources=("memory",),
-                        min_allowed={"cpu": _APP_CPU_REQUEST, "memory": _APP_MEMORY_REQUEST},
-                        max_allowed={"cpu": _APP_CPU_REQUEST, "memory": _APP_MEMORY_LIMIT},
-                    ),
-                    ContainerPolicy(
-                        container_name="caddy",
-                        controlled_values=ControlledValues.REQUESTS_ONLY,
-                        controlled_resources=("memory",),
-                        min_allowed={"cpu": _CADDY_CPU_REQUEST, "memory": "40Mi"},
-                        max_allowed={"cpu": _CADDY_CPU_REQUEST, "memory": _CADDY_MEMORY_LIMIT},
-                    ),
-                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            annotations=initial_memory_request_annotations(
+                # Peak 30-day working sets were 475Mi and 35Mi.
+                ContainerPolicy.memory_requests_only(
+                    _NAME,
+                    cpu_request=_APP_CPU_REQUEST,
+                    memory_floor=_APP_MEMORY_REQUEST,
+                    memory_limit=_APP_MEMORY_LIMIT,
                 ),
-            },
+                ContainerPolicy.memory_requests_only(
+                    "caddy", cpu_request=_CADDY_CPU_REQUEST, memory_floor="40Mi", memory_limit=_CADDY_MEMORY_LIMIT
+                ),
+            ),
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,

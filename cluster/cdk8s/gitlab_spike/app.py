@@ -83,19 +83,6 @@ def _vpa_annotations(*policies: ContainerPolicy, mode: Vpa = Vpa.INITIAL) -> dic
     }
 
 
-def _memory_request_policy(
-    container: str, *, cpu_request: str, memory_floor: str, memory_ceiling: str
-) -> ContainerPolicy:
-    # VPA 1.7.1 admission can still use the old CPU recommendation before the recommender refreshes.
-    return ContainerPolicy(
-        container_name=container,
-        controlled_values=ControlledValues.REQUESTS_ONLY,
-        controlled_resources=("memory",),
-        min_allowed={"cpu": cpu_request, "memory": memory_floor},
-        max_allowed={"cpu": cpu_request, "memory": memory_ceiling},
-    )
-
-
 def _values() -> dict[str, object]:
     app_config = {
         feature: {
@@ -170,7 +157,9 @@ def _values() -> dict[str, object]:
             "deployment": {
                 "annotations": _vpa_annotations(
                     # Registry's HPA uses CPU utilization, which depends on the request.
-                    _memory_request_policy("registry", cpu_request="50m", memory_floor="96Mi", memory_ceiling="128Mi")
+                    ContainerPolicy.memory_requests_only(
+                        "registry", cpu_request="50m", memory_floor="96Mi", memory_limit="128Mi"
+                    )
                 )
             },
         },
@@ -178,8 +167,8 @@ def _values() -> dict[str, object]:
             "gitlab-exporter": {
                 "deployment": {
                     "annotations": _vpa_annotations(
-                        _memory_request_policy(
-                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_ceiling="128Mi"
+                        ContainerPolicy.memory_requests_only(
+                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_limit="128Mi"
                         )
                     )
                 }
@@ -237,7 +226,9 @@ def _values() -> dict[str, object]:
                 "livenessProbe": {"initialDelaySeconds": 300},
                 "deployment": {
                     "annotations": _vpa_annotations(
-                        _memory_request_policy("sidekiq", cpu_request="900m", memory_floor="3Gi", memory_ceiling="4Gi")
+                        ContainerPolicy.memory_requests_only(
+                            "sidekiq", cpu_request="900m", memory_floor="3Gi", memory_limit="4Gi"
+                        )
                     )
                 },
             },
