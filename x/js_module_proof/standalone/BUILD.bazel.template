@@ -233,6 +233,7 @@ js_test(
 
 js_test(
     name = "closure_test",
+    size = "medium",
     data = [
         "Bindings.lean",
         "Combined.lean",
