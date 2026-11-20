@@ -88,6 +88,31 @@ lean_binary(
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
 
+# Source groups used only to compile deliberately unsound mutation-test
+# checkers. Production binaries continue to use the unmodified Lower.lean.
+filegroup(
+    name = "translation_mutation_base_sources",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Correct.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/Plan.lean",
+        "EsmSplit/Render.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+        "Experiments/Translate.lean",
+        "Experiments/TranslateMain.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
+
+filegroup(
+    name = "lower_mutation_source",
+    srcs = ["Experiments/Lower.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
+
 lean_binary(
     name = "lowersplit",
     srcs = [
