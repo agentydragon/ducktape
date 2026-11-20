@@ -75,10 +75,7 @@ group, so another service joins as one more group under them.
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
 `environments` uses `AGENTPLANE_ENVIRONMENTS_URL` and its optional
-`AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when configured. If the new URL is unset, it keeps using
-`AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`; a configured environments credential
-without its matching URL is a usage error. The environments credential is never taken from the
-sessions credential when a dedicated URL is set.
+`AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer.
 `get` is an immediate current-state read: it reports readiness and resume eligibility as observed, and never
 waits or resumes. Watch-based wait adapters are future work. Use the fresh descriptor's
 `resume_eligibility`, `wake_generation`, and opaque `resume_token` before calling
