@@ -13,6 +13,7 @@ import (
 	"time"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -158,6 +159,26 @@ func readInvocationWatchResult(t *testing.T, path string) invocationWatchResult 
 		t.Fatalf("decode result file: %v\n%s", err, data)
 	}
 	return result
+}
+
+func TestFailedTestFindsTimedOutTarget(t *testing.T) {
+	const want = "//pkg:timed_out_test"
+	c := &client{rpc: &invocationWatchTestRPC{
+		getTarget: func(_ context.Context, request *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
+			if request.GetStatus() == commonpb.Status_TIMED_OUT {
+				return invocationWatchTestTargetResponse(want), nil
+			}
+			return invocationWatchTestTargetResponse(""), nil
+		},
+	}}
+
+	label, err := failedTest(c, "invocation-test", "test-group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if label != want {
+		t.Errorf("failedTest label = %q, want %q", label, want)
+	}
 }
 
 func TestWatchInvocationWritesEarlyTestFailureResult(t *testing.T) {
