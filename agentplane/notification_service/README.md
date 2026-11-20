@@ -8,56 +8,20 @@ the Dispatcher; inbox subscription and access do not require a Sandbox target or
 authorizes messages by the `session_inbox_access` rules of the PolicySets bound to the sender, which it watches.
 It does not depend on the integration app or connect directly to runners.
 
-Agents subscribe with a Session ID and an idempotence key, then retrieve stored
-payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
-contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-Creating a subscription resolves the Dispatcher Session and records its exact execution Identity.
-Once Dispatcher has admitted the Session, the matching Identity can subscribe, read and
-acknowledge even before the host creates the Session. A Session created only through Runtime has
-no Dispatcher record and cannot create a subscription.
-Message sends still resolve the Session placement and evaluate the sender's current scoped grant
-against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain intact through
-the placement migration.
-Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session. Workloads running
-as that exact Identity can read and manage its Session-keyed inbox across Sandbox incarnations; a
-same-name replacement Identity cannot inherit it. An inbox is keyed by its Session ID alone: the
-Session-derived Sandbox key and the Sandbox destination and owner columns are retired, so the store
-neither reads nor writes Sandbox addressing. Migration 21 rekeyed retained rows in place and
-migration 22 dropped the retired columns. Migration 22 refuses the rollout only when a row has no
-Session ID; a row a pre-cutover writer re-derived from its Sandbox is keyed from its Session ID again
-and named in a migration notice, because that key carries nothing the Session does not already name.
-Legacy ownerless and ServiceAccount-owned inboxes were deleted from staging; the service has no
-legacy owner representation or backfill path.
-An Action source additionally requires the request's exact `caller_identity`; retained ServiceAccount
-caller attribution grants no source access.
-
-Identity callers subscribe to any Dispatcher Session recorded as executing as their exact Identity,
-regardless of placement. Message sends use the sender's current `session_inbox_access` grant, or the
-existing same-Identity rule. Retired ServiceAccount credentials confer no sender or receipt access.
-Accepted sender attribution, payloads, cursors and runner receipts stay intact.
-The existing inbox quota follows the execution Identity across Sandbox incarnations. A message send
-still resolves the recipient Session's live Sandbox, but only to authorize the send; that
-resolution is per-request and is never stored or echoed back.
-
-Source workers continue processing due subscriptions and store unread entries and prepared notices.
-For delivery, the worker checks that the Dispatcher still records the inbox's exact Identity and
-that the Session has a complete placement, then submits by Session ID without an expected Sandbox
-UID. Dispatcher owns routing and automatic wake according to placement. A different Identity or an
-unplaced Session keeps the existing `OwnerMismatchError` outcome:
-the pending notice remains unattempted and retries after five seconds. Placement-free pending-and-retry
-policy changes belong to `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`. Explicit inbox retirement remains
-available through the API. A Dispatcher `GetSession` NotFound is exposed as `SessionNotFoundError`, a
-History `ReadSessionEvents` NotFound as `HistoryNotFoundError`, and a Dispatcher `SubmitInput`
-NotFound as `DispatcherNotFoundError`. Each keeps the inbox data and retries using
-`unavailable_destination_retry_s` (30 seconds by default). New entries do not advance an inbox's
-retry deadline while a delivery error is recorded.
+Inboxes are keyed by Session ID alone and owned by the exact Identity (name and UID) the Dispatcher recorded for the
+Session; a same-name replacement Identity cannot inherit one. Agents subscribe with a Session ID and an idempotence
+key, read stored payloads when notified, and acknowledge the handled prefix explicitly. Once Dispatcher has admitted
+the Session, that Identity can subscribe, read and acknowledge even before the host creates the Session. Retired
+ServiceAccount credentials confer no sender or receipt access. Accepted sender attribution, payloads, cursors and
+runner receipts stay intact.
 
 Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
 inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own
 generated JSON facade over gRPC; the Notification Service itself serves no HTTP workload API. Update the guides
 when those contracts change.
 
-- [API and caller-visible delivery semantics](docs/api.md)
+- [API and caller-visible delivery semantics](docs/api.md): Session-keyed inboxes, Identity ownership, message
+  authorization, delivery outcomes.
 - [Storage, worker and delivery architecture](docs/architecture.md)
 - [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
 
@@ -66,67 +30,39 @@ stored, but no notice reaches a Session: a delivery reads the Session's receipts
 Service first and, failing that, releases its claim to retry later. A delivery also waits while the
 History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
 
-Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener.
-Egress routes workload gRPC through an opaque central-proxy CONNECT. Notification verifies the
-certificate chain, explicit clientAuth EKU, expiry, current Sandbox UID and accepted credential ID,
-then resolves the credential's exact live Identity name and UID. Caller headers cannot select another Identity. Native gRPC uses this resolver,
-and watch revalidation repeats the live lookup. Backend and legacy operator callers use the same listener
-with their audience-scoped tokens and existing authorization. An exact configured service SVID may call
-only the namespace diagnostic read methods; it does not become an agent Identity or own an inbox.
+Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener, and the service resolves the
+credential's exact live Identity ([Agent API](docs/api.md#agent-api)).
 
 ## Running and deployment
 
 `:service_image` contains `notification-service`, which applies Goose migrations before opening
 listeners or starting workers. A startup probe delays health checks until that initialization has
-completed. Replicas use the environment's rolling profile, so migrations must remain compatible with
-both old and new writers during rollout. Goose serializes concurrent starts with a PostgreSQL
-advisory session lock. The service needs its own
+completed. Goose serializes concurrent starts with a PostgreSQL advisory session lock. The service needs its own
 PostgreSQL database, Actions, History Service and Session Dispatcher endpoints, client TLS material
 for each peer, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
-subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
+subscription through a newly opened harness after rollout.
 
-Subscription creation uses a Session-only request and requires a Dispatcher Session record. Deploy the
-Notification API and CLI images together; creations can fail while old and new versions overlap.
-Message sends also use a Session-only request; old CLI binaries cannot send to the new API during
-the rolling overlap. Once serving replicas and client binaries agree, retry uncertain creations and
-sends with their original idempotency keys.
-The SessionSpec placement cutover also changes the Dispatcher Session projection consumed here;
-roll the Notification service with the matching Dispatcher and sampler contract. Pre-cutover
-Sandbox/service binaries are not a supported compatibility tier. The Session-key migration preserves
-existing inboxes, subscriptions, entries, acknowledgements and receipts in place. Migration 22 is
-the contract step: it drops the Sandbox key, destination and owner columns, so rolling the image
-back to a pre-contract binary restores Sandbox-pinned routing over columns that no longer exist.
-Roll back by restoring a database backup taken before migration 22 alongside the prior images; do
-not roll the image back alone. The same applies to the CLI: send and subscribe requests accept no
-destination field once the API drops it, so old and new spellings must not overlap the contract
-step.
-New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
-does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
-prompt frozen when they were opened, which may still show a Sandbox reference and name the old
-variable. Use `--session ID` from such a Session or open a new Session for the current prompt and
-environment. Stored prompts and History are preserved unchanged.
-Rollback rolls both API and CLI images back together. Existing subscriptions, inbox entries,
-acknowledgements and notices are not deleted by migration 22; only the retired columns are, and the
-data they carried was already redundant with the Session ID.
+Replicas use the environment's rolling profile: existing replicas keep accepting webhooks and serving requests
+while replacements apply migrations and start, so every migration must stay compatible with both old and new
+writers (expand–migrate–contract; [migration contract](../postgres/migrate/README.md)). A migration that drops
+what the previous image reads needs the `Recreate` hold of
+[staging data preservation](../docs/staging_data_preservation.md) until serving replicas run and pass their
+checks on the new schema.
+
+Subscription creation and message sends take a Session-only request, and creation requires a Dispatcher Session
+record. Deploy the Notification API and CLI images together: while old and new versions overlap, creations can
+fail and old CLI binaries cannot send. Once serving replicas and client binaries agree, retry uncertain creations
+and sends with their original idempotency keys.
+
+The CLI reads the Session from `AGENTPLANE_SESSION_ID` or `--session ID`. Prompts stored by older central
+Sessions may still name the retired `AGENTPLANE_DESTINATION`; pass `--session ID` from such a Session or open a
+new one ([agent CLI](../docs/agent_cli.md#configuration-and-credentials)).
 
 Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
 empty database. A database with completed version 12 and the required final schema is adopted
 without copying rows or rewriting its Goose history. A partial predecessor must first finish
 migrating with the previous image. Subsequent schema changes use new Goose versions.
-
-The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
-requests while replacement replicas apply migrations and start. The migration lock serializes schema
-updates, while migration changes must keep old and new service versions compatible throughout the
-rollout.
-
-Migration 22 was one rollout that rule could not cover on its own: it drops columns the pre-contract
-image still reads, so a surged old replica would fail its inbox queries. That rollout crossed the drop
-under a `Recreate` hold, the hold
-[staging data preservation](../docs/staging_data_preservation.md) requires for a dropped column, and the
-hold lifted once serving replicas ran and passed their checks on the contract schema. An upgrade now
-rolls as usual; rolling _back_ past migration 22 does not, and needs a backup taken before the migration
-beside the paired API and CLI images.
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.
@@ -138,12 +74,6 @@ At a committed runner cursor, replay decodes the stored snapshot and compares th
 `proto.Equal`. All known fields, including fields added later, and unknown fields recursively must match.
 Unknown field-number groups may be reordered; occurrences and opaque wire bytes within one field number
 remain significant, so this does not equate different non-minimal encodings.
-
-Rollback requires a native-schema-capable service image. Restore a backup only before admitting
-new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
-readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging
-verification also includes a fresh Action subscription and a real GitHub webhook delivery;
-database checks alone do not prove ingress or runner notice delivery.
 
 The service reads the settings file and explicit Secret inputs described in [Configuration](#configuration). It takes no
 flags; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
@@ -165,10 +95,21 @@ paths return not found. It has no workload HTTP API or documentation routes. The
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
 process answers). Four source workers process durable due subscriptions independently of four inbox-delivery workers.
-A source can publish events while its destination is offline. Delivery checks the current Dispatcher
-Session's recorded Identity and placement, then submits by Session ID without a Sandbox UID fence.
-An unplaced Session retains the existing `OwnerMismatchError` pending-and-retry outcome. A worker that
+A source can publish events while its destination is offline. A worker that
 returns or fails ends the process, logging the types of its error and never its message.
+
+### Rollback
+
+Migration 22 (`00022_session_inbox_key_contract.sql`) drops the Sandbox key, destination and owner columns that
+images predating it read; it deletes no subscription, entry, acknowledgement or notice. An image rolled back alone
+would query columns that no longer exist: restore a database backup taken before migration 22 beside the paired
+prior API and CLI images (their send and subscribe requests differ by the destination field).
+
+Rollback also requires a native-schema-capable service image. Restore a backup only before admitting
+new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
+readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging
+verification also includes a fresh Action subscription and a real GitHub webhook delivery;
+database checks alone do not prove ingress or runner notice delivery.
 
 ## Configuration
 
@@ -216,9 +157,10 @@ quotas:
 
 Each value must be positive and is set in the deployment YAML. Configure the same quotas on all replicas.
 Lowering a quota does not delete retained data; it blocks new allocations
-when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
-distinct source-event identities over an inbox's lifetime, including payload-expiry tombstones. The message quota
-counts one sender's messages past the inbox's acknowledged cursor.
+when capacity is exhausted. The inbox quota (`inboxes_per_account`) counts retained inboxes per execution
+Identity, across Sandbox incarnations, and the entry quota counts distinct source-event identities over an
+inbox's lifetime, including payload-expiry tombstones. The message quota counts one sender's messages past the
+inbox's acknowledged cursor.
 
 ### GitHub event retention
 
@@ -257,13 +199,6 @@ all observed check-run states. Explicit action filters select actual webhook act
 invent `created`, `in_progress` or `completed` actions. The subscription command and default filters are
 unchanged. Branch and fixed-commit CI notifications use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
-
-Migration 11 retires the legacy aggregate GitHub CI tables and normalization/cursor columns. The
-operator accepted discarding fourteen historical observations missing from native history after
-overlapping writers during migration 7. Existing inbox copies, acknowledgements and native observation identities
-remain intact; the discarded facts are not replayed. Pending legacy subscription snapshots block
-the migration. Native tables and inbox payloads can retain the original aggregate JSON shape, so
-legacy payload-field compatibility remains necessary.
 
 Current review refresh state and pull-request review/lifecycle observations use the same retention
 setting and do not reconstruct transitions missed between observations. Deliveries predating the
