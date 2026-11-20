@@ -369,7 +369,7 @@ def generate_manifests(root: Path) -> None:
             kubevirt_operators.virt_operator_chart,
             remote_resources=[kubevirt_operators.VIRT_OPERATOR_RELEASE],
             patch_charts=[kubevirt_operators.virt_operator_namespace_patch],
-            json6902_patches=[kubevirt_operators.VIRT_OPERATOR_ON_HIL],
+            json6902_patches=[kubevirt_operators.VIRT_OPERATOR_ON_HIL, kubevirt_operators.VIRT_OPERATOR_AVAILABILITY],
         ),
         timeout="10m",
     )

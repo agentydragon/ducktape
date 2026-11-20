@@ -44,6 +44,30 @@ def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
 
 VIRT_OPERATOR_ON_HIL = _on_hil("virt-operator", KUBEVIRT_NAMESPACE)
 CDI_OPERATOR_ON_HIL = _on_hil("cdi-operator", _CDI_NAMESPACE)
+VIRT_OPERATOR_AVAILABILITY = Json6902Patch(
+    patch=Yaml.stringify(
+        [
+            {
+                "op": "add",
+                "path": "/spec/template/spec/affinity/podAntiAffinity/requiredDuringSchedulingIgnoredDuringExecution",
+                "value": [
+                    {
+                        "labelSelector": {"matchLabels": {"kubevirt.io": "virt-operator"}},
+                        "topologyKey": "kubernetes.io/hostname",
+                    }
+                ],
+            },
+            {"op": "test", "path": "/spec/template/spec/containers/0/name", "value": "virt-operator"},
+            {
+                # The metrics readiness probe uses the same serving certificate on a separate port.
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/startupProbe",
+                "value": {"tcpSocket": {"port": 8444}, "periodSeconds": 5, "failureThreshold": 60},
+            },
+        ]
+    ),
+    target=PatchTarget(kind="Deployment", name="virt-operator", namespace=KUBEVIRT_NAMESPACE),
+)
 
 
 def virt_operator_chart(app: App) -> Chart:
