@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
-import { act } from "react";
+import { act, useState } from "react";
 
 import {
   ActionIdentitySchema,
@@ -374,6 +374,44 @@ describe("Action presentation slots", () => {
       ]);
     }
   );
+
+  it("fetches saved Gmail labels after a cached pending message review becomes a receipt", async () => {
+    const action = identity("gmail", "messages_get");
+    const requestId = "70000000-0000-4000-8000-000000000007";
+    const path = `/upstream/actions/v1/operator/action-requests/${requestId}/gmail-resource-summaries`;
+    let completed = false;
+    const sent = answerApi((request) =>
+      request.path === path
+        ? Response.json(
+            completed
+              ? { labels: [{ id: "Label_19", title: "Deployments/Reviewed" }] }
+              : { messages: [{ id: "message-1", title: "Deployment approval" }] }
+          )
+        : undefined
+    );
+    const args = { id: "message-1" };
+    const receipt: CallToolResult = {
+      content: [],
+      structuredContent: { id: "message-1", labelIds: ["Label_19"] },
+      isError: false,
+    };
+    function Review() {
+      const [result, setResult] = useState<CallToolResult>();
+      return (
+        <>
+          <button onClick={() => setResult(receipt)}>Show receipt</button>
+          {renderActionCall(action, args, result, requestId)?.content}
+        </>
+      );
+    }
+
+    const view = await mount(<Review />);
+    await vi.waitFor(() => expect(view.textContent).toContain("Deployment approval"));
+    completed = true;
+    await act(async () => button(view, "Show receipt").click());
+    await vi.waitFor(() => expect(view.textContent).toContain("Deployments/Reviewed"));
+    expect(sent.map((request) => request.path)).toEqual([path, path]);
+  });
 
   it("shows a Gmail filter's exceptions and forwarding destination before approval", async () => {
     const action = identity("gmail", "filters_create");

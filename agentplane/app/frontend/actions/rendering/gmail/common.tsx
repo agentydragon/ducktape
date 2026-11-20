@@ -64,9 +64,12 @@ export const listArguments: z.ZodObject<{
   includeSpamTrash: z.boolean().nullish(),
 });
 
-export function useGmailSummaries(requestId?: string): GetGmailResourceSummariesResponse | undefined {
+export function useGmailSummaries(
+  requestId?: string,
+  scope: "request" | "receipt" = "request"
+): GetGmailResourceSummariesResponse | undefined {
   return useQuery({
-    queryKey: ["action-gmail-resource-summaries", requestId],
+    queryKey: ["action-gmail-resource-summaries", requestId, scope],
     queryFn: ({ signal }) => getGmailResourceSummaries(requestId ?? "", signal),
     enabled: Boolean(requestId),
     retry: false,

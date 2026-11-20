@@ -162,7 +162,7 @@ function hasCustomLabels(message: MessageDetailsFields): boolean {
 
 function ThreadView({ result, context }: ResultPreviewProps<z.infer<typeof threadResult>>): JSX.Element {
   const messages = result.messages ?? [];
-  const summaries = useGmailSummaries(messages.some(hasCustomLabels) ? context?.requestId : undefined);
+  const summaries = useGmailSummaries(messages.some(hasCustomLabels) ? context?.requestId : undefined, "receipt");
   const subject = messageHeader(messages[0], "subject");
   return (
     <Stack gap="xs">
@@ -187,7 +187,7 @@ function ThreadView({ result, context }: ResultPreviewProps<z.infer<typeof threa
 }
 
 function MessageView({ result, context }: ResultPreviewProps<Message>): JSX.Element {
-  const summaries = useGmailSummaries(hasCustomLabels(result) ? context?.requestId : undefined);
+  const summaries = useGmailSummaries(hasCustomLabels(result) ? context?.requestId : undefined, "receipt");
   return (
     <Stack gap="xs">
       <Text size="sm" fw={600}>

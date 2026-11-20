@@ -97,8 +97,10 @@ is assigned an explicit boundary.
 
 Operator integration summaries use only the saved request UUID. Gmail reads thread subjects for
 recorded thread reads, relabeling, draft replies and search results. Its resource summary reads
-draft and message subjects, label names and filter rules. Draft replacements and deletions, label
-changes and filter deletions look up the target only while approval is pending. Tana reads node and
+draft and message subjects, label names and filter rules. For message and thread receipts, Gmail
+resolves label IDs in the successful saved result after verifying that the current mailbox
+contains the exact message or thread. Draft replacements and deletions, label changes and filter
+deletions look up the target only while approval is pending. Tana reads node and
 workspace names for supported Actions using an allowlist of recorded ID fields. Tana's
 `list_workspaces` has no filter, so the service returns only the workspace named in the saved
 request. The service uses fixed read tools and tries up to eight distinct IDs within its shared
