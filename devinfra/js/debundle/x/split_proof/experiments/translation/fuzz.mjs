@@ -776,6 +776,14 @@ function split(bundle, r, opts) {
   });
   const order = Array.from({ length: modules }, () => []);
   place.forEach((m, i) => order[m].push(i));
+  if (opts.moveBefore) {
+    const list = order[0];
+    const from = list.indexOf(opts.moveBefore.reader);
+    const before = list.indexOf(opts.moveBefore.writer);
+    if (from <= before || before < 0) throw new Error("invalid AST write-guided move");
+    list.splice(from, 1);
+    list.splice(before, 0, opts.moveBefore.reader);
+  }
   // reorders inside a module: move a unit to another position, often next to a unit that mentions one of its names
   const names = (i) => new Set([...bundle.units[i].defs, ...bundle.units[i].uses]);
   const shares = (a, b) => [...names(a)].some((name) => names(b).has(name));
@@ -984,12 +992,21 @@ async function main() {
           ? bundle.units.map(() => 0)
           : astCorpus && t === 1 && bundle.guidedPlace
             ? bundle.guidedPlace
-            : undefined;
+            : astCorpus && t === 2 && bundle.writeGuided
+              ? bundle.units.map(() => 0)
+              : undefined;
       const plan = split(bundle, tr, {
         renameLocals: !callbackCorpus && tr.chance(0.5),
         place,
+        moveBefore: astCorpus && t === 2 ? bundle.writeGuided : undefined,
         controlName:
-          astCorpus && t === 0 ? "astControl" : astCorpus && t === 1 && bundle.guidedPlace ? "astGuided" : undefined,
+          astCorpus && t === 0
+            ? "astControl"
+            : astCorpus && t === 1 && bundle.guidedPlace
+              ? "astGuided"
+              : astCorpus && t === 2 && bundle.writeGuided
+                ? "astWriteGuided"
+                : undefined,
       });
       if (astCorpus) planTypes[plan.strategy] = (planTypes[plan.strategy] ?? 0) + 1;
       const treeDir = path.join(dir, `t${t}`, "out");
@@ -1018,6 +1035,17 @@ async function main() {
         );
       const verdict = outcome.name;
       if (astCorpus && plan.strategy === "astGuided" && !same) bump("ast/guidedDifferent");
+      if (astCorpus && plan.strategy === "astWriteGuided" && !same) {
+        bump("ast/writeGuidedDifferent");
+        if (verdict === "obligations") bump("ast/writeGuidedObligations");
+      }
+      if (
+        astCorpus &&
+        verdict === "accept" &&
+        same &&
+        (plan.modules > 1 || plan.mapping.some(([, , original], index) => original !== index))
+      )
+        bump("ast/nontrivialAccepted");
       if (astCorpus && /inferred identity call/.test(checked.stdout)) bump("ast/inferredIdentity");
       if (astCorpus && /inferred closure factory/.test(checked.stdout)) bump("ast/inferredFactory");
       if (astCorpus && t === 0 && (!same || verdict !== "accept"))
@@ -1039,6 +1067,7 @@ async function main() {
         verdict,
         same,
         plan: { strategy: plan.strategy, modules: plan.modules, rename: plan.rename, capture: plan.capture },
+        writeGuided: plan.strategy === "astWriteGuided" ? bundle.writeGuided : null,
         templates: [...new Set(bundle.units.map((u) => u.tmpl))].sort(),
         reference,
         observed: tree,
@@ -1090,6 +1119,9 @@ async function main() {
         inferredIdentityPlans: tally["ast/inferredIdentity"] ?? 0,
         inferredFactoryPlans: tally["ast/inferredFactory"] ?? 0,
         guidedDifferentPlans: tally["ast/guidedDifferent"] ?? 0,
+        writeGuidedDifferentPlans: tally["ast/writeGuidedDifferent"] ?? 0,
+        writeGuidedObligations: tally["ast/writeGuidedObligations"] ?? 0,
+        nontrivialAcceptedPlans: tally["ast/nontrivialAccepted"] ?? 0,
       })
     );
   if (callbackCorpus && (count < 1 || trees < 2))

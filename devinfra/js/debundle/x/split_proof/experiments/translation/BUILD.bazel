@@ -327,3 +327,17 @@ js_test(
     ],
     entry_point = "ast_generator_validation_test.mjs",
 )
+
+js_test(
+    name = "ast_write_mutation_test",
+    data = _CHECKER_RUNFILES + [
+        "ast_generator.mjs",
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate",
+    ],
+    entry_point = "ast_write_mutation_test.mjs",
+    env = {
+        "NO_WRITES": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
