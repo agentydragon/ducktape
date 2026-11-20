@@ -111,8 +111,11 @@ func (s *Sampler) CreateSession(ctx context.Context, request *harnesshostpb.Crea
 		return nil, err
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
-	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
-		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
+	if !modelConfigured {
+		return nil, status.Error(codes.InvalidArgument, "model is not configured for the central sampler")
+	}
+	if !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
+		return nil, status.Error(codes.InvalidArgument, "reasoning effort is not supported by the selected model")
 	}
 	session, err := s.Store.CreateSession(ctx, configuration, principal, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {

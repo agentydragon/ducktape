@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
@@ -136,6 +137,30 @@ func TestSessionConfigurationDerivesExecutor(t *testing.T) {
 				if destination.GetTarget().GetNamespace() != "fixture" || destination.GetTarget().GetName() != "executor" || destination.GetTarget().GetUid() != "sandbox-uid" || destination.GetOwner().GetNamespace() != "fixture" || destination.GetOwner().GetName() != "executor" || configuration.GetExpectedIncarnationUid() != "" {
 					t.Fatalf("configuration=%v", configuration)
 				}
+			}
+		})
+	}
+}
+
+func TestCreateSessionReportsUnsupportedModelAndEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name, model, effort, field string
+	}{
+		{name: "unknown model", model: "missing-model", effort: "high", field: "model"},
+		{name: "unsupported effort", model: "test-model", effort: "medium", field: "reasoning effort"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sampler := Sampler{Settings: fixtureSettings()}
+			request := &harnesshostpb.CreateSessionRequest{
+				SessionId: "b59b1e1b-f98e-4eef-88c4-c98bb458163a",
+				Spec: &sessionpb.SessionSpec{
+					Cwd: "/fixture", Model: tc.model, ReasoningEffort: tc.effort,
+					Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "executor", Uid: "sandbox-uid"}}}},
+				},
+			}
+			_, err := sampler.CreateSession(serviceContext(t, peertls.SessionsURI), request)
+			if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), tc.field) {
+				t.Fatalf("CreateSession error = %v, want InvalidArgument identifying %s", err, tc.field)
 			}
 		})
 	}
