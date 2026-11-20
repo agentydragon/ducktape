@@ -162,7 +162,9 @@ in separate fresh Node processes. It compares recorded events, public exports,
 return values and exceptions after a generated sequence of exported calls. It
 also runs the Lean-backed validator and checks that a proved result agrees with
 Node and that an unsafe result's witness matches the independently observed
-initialization. Some trials mutate generated modules to exercise the validator;
+initialization. Unsafe witnesses include a Lean certificate of the exact Node
+trace and its difference, including later argument-bearing calls when supported.
+Some trials mutate generated modules to exercise the validator;
 some trials generate supported counter closures and check safe and unsafe
 splits against Node and Lean. Other trials generate programs with nested,
 escaping closures, parameters,

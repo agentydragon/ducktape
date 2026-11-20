@@ -641,19 +641,6 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       ],
     };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
-  const mismatch = runLean(prefix + different);
-  if (mismatch.error || mismatch.status === null)
-    return {
-      result: "unknown",
-      reason: "Lean could not be run",
-      detail: mismatch.error ? String(mismatch.error) : `Lean terminated by ${mismatch.signal ?? "unknown signal"}`,
-    };
-  if (mismatch.status !== 0 || !has(mismatch, "binding_difference"))
-    return {
-      result: "unknown",
-      reason: "Lean did not prove a state difference",
-      detail: mismatch.stdout || mismatch.stderr,
-    };
   const witnessed = (original, output, calls) => {
     const events = (trace) => {
       if (!trace.events.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
@@ -689,8 +676,8 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     const witness = `\ntheorem binding_witness_original : ${left} = ${expectedLeft} := by decide\ntheorem binding_witness_output : ${right} = ${expectedRight} := by decide\ntheorem binding_witness_difference : ${left} ≠ ${right} := by decide\n#print axioms binding_witness_original\n#print axioms binding_witness_output\n#print axioms binding_witness_difference\n`;
     const checked = runLean(prefix + different + witness);
     return checked.status === 0 &&
-      ["binding_witness_original", "binding_witness_output", "binding_witness_difference"].every((name) =>
-        has(checked, name)
+      ["binding_difference", "binding_witness_original", "binding_witness_output", "binding_witness_difference"].every(
+        (name) => has(checked, name)
       )
       ? prefix + different + witness
       : null;
@@ -751,5 +738,5 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       if (certificate) return { result: "unsafe", original: before, output: after, calls, certificate };
     }
   }
-  return { result: "unknown", reason: "modeled difference was not reproduced in Node" };
+  return { result: "unknown", reason: "no Lean-certified Node witness was found" };
 }

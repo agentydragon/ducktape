@@ -291,6 +291,7 @@ function modeledClosureCase(seed, index) {
   dep(factoryOwner, seedOwner);
   dep(closureOwner, factoryOwner);
   dep(readerOwner, closureOwner);
+  dep(readerOwner, seedOwner);
   dep(observer, readerOwner);
   modules[entry].imports = shuffle([...names, observer], rand);
   const factory = functionNode(
@@ -310,6 +311,21 @@ function modeledClosureCase(seed, index) {
   const closureDecl = declaration("next", call(id("make")));
   closureDecl.kind = "const";
   const reader = functionNode("read", [], [returnNode(call(id("next")))]);
+  const choose = functionNode(
+    "choose",
+    ["flag"],
+    [
+      {
+        type: "IfStatement",
+        test: id("flag"),
+        consequent: {
+          type: "BlockStatement",
+          body: [returnNode({ type: "BinaryExpression", operator: "+", left: id("seed"), right: id("flag") })],
+        },
+        alternate: { type: "BlockStatement", body: [returnNode(literal(1))] },
+      },
+    ]
+  );
   const first = shuffle(
     [
       [seedDecl, seedOwner],
@@ -324,6 +340,7 @@ function modeledClosureCase(seed, index) {
     ...first,
     [closureDecl, closureOwner],
     [reader, readerOwner],
+    [choose, readerOwner],
     ...(expectThrow
       ? [[functionNode("fail", [], [{ type: "ThrowStatement", argument: literal(thrownValue) }]), readerOwner]]
       : []),
@@ -346,7 +363,7 @@ function modeledClosureCase(seed, index) {
       ...items.map(([node]) => node),
       {
         type: "ExportNamedDeclaration",
-        specifiers: ["read", ...(expectThrow ? ["fail"] : [])].map((name) => ({
+        specifiers: ["read", "choose", ...(expectThrow ? ["fail"] : [])].map((name) => ({
           type: "ExportSpecifier",
           local: id(name),
           exported: id(name),
@@ -358,7 +375,12 @@ function modeledClosureCase(seed, index) {
     ast,
     source: print(ast),
     spec: { kind: "bindings", entry, modules },
-    calls: expectThrow ? ["read", "fail", "read"] : Array.from({ length: 2 + rand(4) }, () => "read"),
+    calls: [
+      { name: "choose", args: [0] },
+      { name: "choose", args: [1] },
+      "read",
+      ...(expectThrow ? ["fail", "read"] : ["read"]),
+    ],
     expectThrow,
     thrownValue,
     grammar: "modeledClosure",
@@ -683,6 +705,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     modeledClosureProved: 0,
     modeledClosureUnsafe: 0,
     modeledClosureThrows: 0,
+    modeledClosureBranches: 0,
     closureCases: 0,
     closureSourceExecuted: 0,
     closureRefused: 0,
@@ -824,14 +847,17 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
+        if (before.results[0]?.value !== 1 || !(before.results[1]?.value > 1))
+          throw new Error("generated closure branch did not execute both outcomes");
+        summary.modeledClosureBranches++;
         if (equal === input.expectUnsafe || (!input.expectThrow && (before.error || after.error)))
           throw new Error("closure split differed from its intended Node behavior");
         if (input.expectThrow) {
           if (
             before.error?.thrown?.kind !== "number" ||
             before.error.thrown.value !== input.thrownValue ||
-            before.error.index !== 1 ||
-            before.results.length !== 1
+            before.error.index !== 3 ||
+            before.results.length !== 3
           )
             throw new Error("generated throw did not preserve the trace prefix");
           summary.modeledClosureThrows++;

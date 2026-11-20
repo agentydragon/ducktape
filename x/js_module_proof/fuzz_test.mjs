@@ -81,12 +81,14 @@ if (shards === 4 && shard === 3) {
   assert.equal(result.modeledClosureCompared, 1);
   assert.equal(result.modeledClosureProved, 1);
   assert.equal(result.modeledClosureThrows, 1);
+  assert.equal(result.modeledClosureBranches, 1);
   assert.equal(result.closureSourceExecuted, result.closureCases);
   assert.equal(result.closureRefused + result.closureGenerated, result.closureCases);
   assert.ok(result.closureCompared > 0);
   const unsafeClosure = await runFuzz({ seed: 123, start: 19, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(unsafeClosure.modeledClosureCompared, 1);
   assert.equal(unsafeClosure.modeledClosureUnsafe, 1);
+  assert.equal(unsafeClosure.modeledClosureBranches, 1);
 }
 if (shards === 4 && shard === 2) {
   assert.ok(result.mutated > 0);
