@@ -1,8 +1,8 @@
 {
-  "validated_at_utc": "2026-11-20T21:57:25.641356+00:00",
+  "validated_at_utc": "2026-11-20T23:06:45.855928+00:00",
   "validation_scope": "RBE Chromium preview of the exact report, evidence, shared assets and root navigation",
-  "invocation": "c06ece75-bb36-46f3-b56a-f016de1e786e",
-  "invocation_url": "https://app.buildbuddy.io/invocation/c06ece75-bb36-46f3-b56a-f016de1e786e",
+  "invocation": "00bcf219-2245-48e7-9ffc-58c1c39d3e06",
+  "invocation_url": "https://app.buildbuddy.io/invocation/00bcf219-2245-48e7-9ffc-58c1c39d3e06",
   "target": "//devinfra/ci/x/latency_report_preview:test_preview",
   "cases": [
     "test_preview[desktop-light]",
@@ -10,26 +10,45 @@
     "test_preview[mobile-light]",
     "test_preview[mobile-dark]"
   ],
-  "screenshots_digest_verified": 32,
-  "managed_pod_section_screenshot_sha256": {
-    "test_preview[desktop-dark]": "f1fcb36c31a525a0f0fcbd4a024223dd91646ea4b11afcc3ef5d454ed50b58d3",
-    "test_preview[desktop-light]": "23b8ff230043782ba310266de9ad012e31577f600b133e6587bdceaaa3cee1cb",
-    "test_preview[mobile-dark]": "abaa65939193cf3d46c913200f4e9a7771ee2c985ee7f8f1ceacbb51e0272e58",
-    "test_preview[mobile-light]": "a5035bb06bc6b3f0dd02eb60735b00b8ec87ae167be93622ff547e6b029d507e"
+  "screenshots_digest_verified": 40,
+  "section_screenshot_sha256": {
+    "kvm-cas": {
+      "test_preview[mobile-dark]": "32d708f9218dce2d8a270080b23ef76d5dd56a0b7f9685a47651e68ea2b641aa",
+      "test_preview[mobile-light]": "c0b120f97e4864b8e24dc059068ebf311cb81df56b645c907a09510a0c186cd4",
+      "test_preview[desktop-light]": "d689e5ee0d9fdd931c9784226f1825de07752a1d212d21fbf38237782a33e78c",
+      "test_preview[desktop-dark]": "c881335e5d08018b4d86dd6e94b226f195f9df2fa6732e7c6e9034749580c1ad"
+    },
+    "firecracker-overlap": {
+      "test_preview[mobile-dark]": "b3422757bf06865567a13335d744841a1a6c0b047f1fdbd6e52becda912ed0e0",
+      "test_preview[mobile-light]": "721424cf851ab274cc0a3c7d99c3d22970e97890392f7ac2862730c2606e9ba7",
+      "test_preview[desktop-dark]": "d912f207c440a4d6dc3650c2851578feaaa75dc989c8509501c2aabc2303c36b",
+      "test_preview[desktop-light]": "fe7284330ba2421100c9372d9097370c47f711fe213d75c4e1ca033d27a91358"
+    },
+    "weekly-trend": {
+      "test_preview[desktop-dark]": "bb6419da1c0ffe961ef097886cc4f90ab36fa9dea176ae28db2fd63b36b833ff",
+      "test_preview[mobile-dark]": "033cdc4b6b8b4fbc8833ad3c3b851655b5614e71644ad495e5af89e43e9a65a6",
+      "test_preview[mobile-light]": "8d4cf5c16d0fa607d02e7255a5bb3443b390882972c9cf61cb84da850fccebd1",
+      "test_preview[desktop-light]": "27d3648bffdc39fc51bb5d968e1fd2ff0936dd63cc559c3048d9ea33c0d01bdf"
+    },
+    "report": {
+      "test_preview[mobile-dark]": "344863101a791c16fa5576f6476e80f2c97060028f72ee864449166089faed7c",
+      "test_preview[desktop-light]": "5d4eb60210579729ec2c8dac7b6bff7152081faeb09421715e765b7a51cc28bb",
+      "test_preview[desktop-dark]": "4014d364dd89c440ef84a6dd2b48c559cc12c6965362a51558df8372f77d5d5c",
+      "test_preview[mobile-light]": "71eee06554adb681900c04f8502ddfa8d59e7043a85babd7526571a30583f896"
+    }
   },
   "rendered_sha256": {
-    "index.html": "9c1cd4f73c44694f63abfab272d4d5f6cffba1afe09294099b7697c8b983bbbc",
-    "latency/index.html": "bbcb44dfef01ff84ef91b63c27438d50692669e6f23de454b8a444d725de30ef",
-    "latency/evidence.json": "dde2ba5875b250d0aebf5b67586f87d9be918dcbf0f23ebbea4b7a832a3bfb82",
+    "index.html": "6f5b12df5ac1be2a5ee6c592d603e804482170733b66879c84dc617505cc91e1",
+    "latency/index.html": "950fd845580600f3349849a8c00c0560b1cb3263804be7437e2e6c0c575ab718",
+    "latency/evidence.json": "7eed3e7223bd7658bb5d96aba4b34b8b789426b8975fba957f9d36092ef40a0a",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "checks": [
-    "Manifest hashes for the report and evidence",
-    "Real CDN charts rendered with populated bars and lines",
-    "Desktop and mobile under both initial color schemes",
-    "Live media preference change and disclosure controls",
-    "Page width and root navigation",
-    "Visual review of the Pod section and weekly trend"
+    "Manifest content hashes for the report and evidence",
+    "Live CDN charts and chart data",
+    "Desktop and mobile in both themes",
+    "Live color preference, disclosures, navigation and page overflow",
+    "Visual review of the CAS and Firecracker sections, weekly trend and report"
   ]
 }
