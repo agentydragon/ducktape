@@ -64,7 +64,8 @@ nix shell "github:NixOS/nixpkgs/$nixpkgs_revision#python3Packages.huggingface-hu
 
 The wrapper uses `hf download` to resume partial downloads and `hf cache verify`
 to check the pinned snapshot before renaming the staging directory. Rerunning it
-verifies the existing checkpoint. To restore the serving checkpoint onto a replacement
+verifies the existing checkpoint. The pinned CLI reports its own `.cache/huggingface/`
+resume metadata as extra files. To restore the serving checkpoint onto a replacement
 disk, stage its pinned snapshot with the n-gram table and verify its weight hashes
 before starting TabbyAPI.
 See [the declarative-staging TODO](TODO.md).
