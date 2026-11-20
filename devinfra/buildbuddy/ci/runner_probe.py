@@ -466,13 +466,12 @@ def print_summary(data: dict[str, Any], out: Path) -> None:
         )
 
 
-def cmd_snapshot(args: argparse.Namespace) -> int:
+def cmd_snapshot(args: argparse.Namespace) -> None:
     paths = probe_paths(Path(args.dir))
     previous_run_log, stale_current = prepare_current(paths, args.phase)
     data = snapshot(args.phase, paths, previous_run_log, stale_current)
     append_snapshot(paths.probes_jsonl, data)
     print_summary(data, paths.probes_jsonl)
-    return 0
 
 
 def make_archive(paths: ProbePaths, *, selected_test_labels: Path | None = None) -> dict[str, Any]:
@@ -533,7 +532,7 @@ def output_tail(text: str, *, max_bytes: int = 500) -> str:
     return text[-max_bytes:]
 
 
-def cmd_finalize(args: argparse.Namespace) -> int:
+def cmd_finalize(args: argparse.Namespace) -> None:
     paths = probe_paths(Path(args.dir))
     archive_info = make_archive(paths, selected_test_labels=args.selected_test_labels)
     persist_latest(paths)
@@ -563,7 +562,6 @@ def cmd_finalize(args: argparse.Namespace) -> int:
             )
         else:
             print(f"CI_VM_PROBE_CAS unavailable={json.dumps(upload, sort_keys=True)}")
-    return 0
 
 
 def parser() -> argparse.ArgumentParser:
@@ -585,7 +583,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = parser().parse_args()
-    raise SystemExit(args.func(args))
+    args.func(args)
 
 
 if __name__ == "__main__":

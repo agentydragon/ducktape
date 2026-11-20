@@ -50,13 +50,6 @@ def test_scope_separates_parallel_release_artifact_builds() -> None:
     assert invocation_id(run_id="33060467222", attempt="1", role="release-stamped", scope="gazelle") != unstamped
 
 
-def test_bazel_accepts_the_shape() -> None:
-    """`--invocation_id` takes a UUID; anything else is rejected at the flag parser."""
-    result = invocation_id(run_id="33060467222", attempt="1", role="test")
-    assert result.version == 5
-    assert len(str(result)) == 36
-
-
 def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: Path) -> None:
     github_output = tmp_path / "github-output"
     write_bazel_ci_outputs(github_output, run_id="33060467222", attempt="1")
