@@ -314,6 +314,8 @@ export function generateAstBundle(seed, round) {
       };
     }
     if (kind === "invokeCallback")
+      // Avoid a direct eager use of the pending bindings in the argument: the
+      // guided move should test the saved callback's deferred observation.
       return {
         node: log(
           call(
@@ -335,7 +337,18 @@ export function generateAstBundle(seed, round) {
                   property: id("saved", "property"),
                   computed: false,
                 },
-            [expression(scope, 1)]
+            [
+              expression(
+                {
+                  ...scope,
+                  values: scope.values.filter((b) => b.name !== future.name && b.name !== alias.name),
+                  functions: scope.functions.filter(
+                    (b) => !b.needsPending && b.name !== future.name && b.name !== alias.name
+                  ),
+                },
+                1
+              ),
+            ]
           ),
           "callback"
         ),
@@ -475,7 +488,10 @@ export function generateAstBundle(seed, round) {
       units.push({ ast: declare(future, init, "const"), defs: [future.name] });
     } else if (i === insertAt + 1) {
       alias.needsPending = !!future.needsPending;
-      units.push({ ast: declare(alias, ref(future), "const"), defs: [alias.name] });
+      // A second numeric pending binding can be an independent literal as well
+      // as an alias; callable pending values must remain callable.
+      const aliasInit = !futureCallable && callbackPick(2) === 0 ? num(callbackPick(9)) : ref(future);
+      units.push({ ast: declare(alias, aliasInit, "const"), defs: [alias.name] });
       (futureCallable ? env.functions : env.values).push(alias);
       pendingReady = true;
     } else {

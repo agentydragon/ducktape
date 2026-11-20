@@ -377,3 +377,49 @@ js_test(
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
 )
+
+js_test(
+    name = "observed_fence_mutation_test",
+    args = ["17"],
+    data = _CHECKER_RUNFILES + [
+        "ast_generator.mjs",
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
+    ],
+    entry_point = "observed_fence_mutation_test.mjs",
+    env = {
+        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
+    name = "observed_fence_mutation_second_seed_test",
+    args = ["2026"],
+    data = _CHECKER_RUNFILES + [
+        "ast_generator.mjs",
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
+    ],
+    entry_point = "observed_fence_mutation_test.mjs",
+    env = {
+        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
+    name = "observed_fence_sweep",
+    size = "large",
+    data = _CHECKER_RUNFILES + [
+        "ast_generator.mjs",
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate",
+    ],
+    entry_point = "fence_sweep.mjs",
+    env = {
+        "NO_OBSERVED": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_observed_fence:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+    tags = ["manual"],
+)
