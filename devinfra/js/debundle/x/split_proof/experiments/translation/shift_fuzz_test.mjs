@@ -10,6 +10,160 @@ import shiftFuzzer from "shift-fuzzer";
 import codegen from "shift-codegen";
 import { lowerDump } from "../lowering/dump_core.mjs";
 
+// Named source-syntax families from the input requirements. Counts describe
+// syntactic presence, not execution of every branch or semantic equivalence.
+const features = [
+  "VariableDeclaration:var",
+  "VariableDeclaration:let",
+  "VariableDeclaration:const",
+  "VariableDeclaration:using",
+  "VariableDeclaration:await using",
+  "ArrayPattern",
+  "ObjectPattern",
+  "AssignmentPattern",
+  "RestElement",
+  "SpreadElement",
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "function:async",
+  "function:generator",
+  "function:async-generator",
+  "ClassDeclaration",
+  "ClassExpression",
+  "class:extends",
+  "PrivateIdentifier",
+  "PropertyDefinition",
+  "MethodDefinition",
+  "StaticBlock",
+  "class:private-field",
+  "class:private-method",
+  "property:computed",
+  "property:get",
+  "property:set",
+  "IfStatement",
+  "SwitchStatement",
+  "ForStatement",
+  "ForInStatement",
+  "ForOfStatement",
+  "for:await",
+  "WhileStatement",
+  "DoWhileStatement",
+  "TryStatement",
+  "CatchClause",
+  "ThrowStatement",
+  "LabeledStatement",
+  "BreakStatement",
+  "ContinueStatement",
+  "AwaitExpression",
+  "YieldExpression",
+  "TemplateLiteral",
+  "TaggedTemplateExpression",
+  "literal:regexp",
+  "literal:bigint",
+  "ChainExpression",
+  "ImportDeclaration",
+  "ImportSpecifier",
+  "ImportDefaultSpecifier",
+  "ImportNamespaceSpecifier",
+  "ImportExpression",
+  "ExportNamedDeclaration",
+  "ExportDefaultDeclaration",
+  "ExportAllDeclaration",
+  "meta:import.meta",
+  "meta:new.target",
+  "CallExpression",
+  "NewExpression",
+  "ThisExpression",
+  "Super",
+  "SequenceExpression",
+  "ConditionalExpression",
+  ...[
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "**",
+    "==",
+    "===",
+    "!=",
+    "!==",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "in",
+    "instanceof",
+    "|",
+    "&",
+    "^",
+    "<<",
+    ">>",
+    ">>>",
+  ].map((op) => `BinaryExpression:${op}`),
+  ...["&&", "||", "??"].map((op) => `LogicalExpression:${op}`),
+  ...["=", "+=", "-=", "*=", "/=", "%=", "**=", "|=", "&=", "^=", "<<=", ">>=", ">>>=", "&&=", "||=", "??="].map(
+    (op) => `AssignmentExpression:${op}`
+  ),
+  ...["!", "~", "+", "-", "typeof", "void", "delete"].map((op) => `UnaryExpression:${op}`),
+  "UpdateExpression:++",
+  "UpdateExpression:--",
+];
+function syntaxFeatures(node, found = new Set()) {
+  if (!node || typeof node !== "object") return found;
+  if (Array.isArray(node)) {
+    for (const item of node) syntaxFeatures(item, found);
+    return found;
+  }
+  if (node.type) {
+    found.add(node.type);
+    if (node.type === "VariableDeclaration") found.add(`${node.type}:${node.kind}`);
+    if (node.operator) found.add(`${node.type}:${node.operator}`);
+    if (node.type.includes("Function") || node.type === "ArrowFunctionExpression") {
+      if (node.async) found.add("function:async");
+      if (node.generator) found.add("function:generator");
+      if (node.async && node.generator) found.add("function:async-generator");
+    }
+    if (node.type.startsWith("Class") && node.superClass) found.add("class:extends");
+    if (
+      (node.type === "Property" || node.type === "MethodDefinition" || node.type === "PropertyDefinition") &&
+      node.computed
+    )
+      found.add("property:computed");
+    if ((node.type === "Property" || node.type === "MethodDefinition") && (node.kind === "get" || node.kind === "set"))
+      found.add(`property:${node.kind}`);
+    if (node.type === "PropertyDefinition" && node.key.type === "PrivateIdentifier") found.add("class:private-field");
+    if (node.type === "MethodDefinition" && node.key.type === "PrivateIdentifier") found.add("class:private-method");
+    if (node.type === "ForOfStatement" && node.await) found.add("for:await");
+    if (node.type === "Literal" && node.regex) found.add("literal:regexp");
+    if (node.type === "Literal" && node.bigint !== undefined) found.add("literal:bigint");
+    if (node.type === "MetaProperty") found.add(`meta:${node.meta.name}.${node.property.name}`);
+  }
+  for (const value of Object.values(node)) if (value && typeof value === "object") syntaxFeatures(value, found);
+  return found;
+}
+function emptyCoverage() {
+  return Object.fromEntries(
+    features.map((feature) => [
+      feature,
+      {
+        parsed: 0,
+        moduleSyntax: 0,
+        small: 0,
+        baselineTimeout: 0,
+        unstable: 0,
+        loweringRejected: 0,
+        emitterRejected: 0,
+        acceptedSame: 0,
+        acceptedSameOk: 0,
+        acceptedSameInSide: 0,
+        acceptedSameOkInSide: 0,
+      },
+    ])
+  );
+}
+
 const root = process.env.TEST_TMPDIR;
 assert(root);
 const worker = fileURLToPath(new URL("./shift_fuzz_worker.mjs", import.meta.url));
@@ -68,6 +222,7 @@ const stats = {
   reorderedOk: 0,
   differing: 0,
 };
+const coverage = emptyCoverage();
 const syntax = new Set(),
   acceptedSyntax = new Set();
 function collect(node, target) {
@@ -91,12 +246,19 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     continue;
   }
   collect(parsed, syntax);
+  const present = syntaxFeatures(parsed);
+  const record = (outcome, selected = present) => {
+    for (const feature of features) if (selected.has(feature)) coverage[feature][outcome]++;
+  };
+  record("parsed");
   if (parsed.body.some((s) => /^(Import|Export)/.test(s.type))) {
     stats.moduleSyntax++;
+    record("moduleSyntax");
     continue;
   }
   if (parsed.body.length < 2 || parsed.body.length > 30) {
     stats.small++;
+    record("small");
     continue;
   }
   // Observe initialized top-level values without accessing arbitrary object
@@ -117,12 +279,14 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   const baseline = run(dir, "original.mjs");
   if (!baseline || baseline.status === "timeout") {
     stats.baselineTimeout++;
+    record("baselineTimeout");
     continue;
   }
   if (baseline.status !== "ok") stats.baselineThrows++;
   const repeat = run(dir, "original.mjs");
   if (JSON.stringify(baseline) !== JSON.stringify(repeat)) {
     stats.unstable++;
+    record("unstable");
     continue;
   }
   let dump;
@@ -130,6 +294,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     dump = lowerDump(source, acorn, eslintScope);
   } catch {
     stats.loweringRejected++;
+    record("loweringRejected");
     continue;
   }
   const total = dump.statements.length;
@@ -164,6 +329,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     if (emitter.status === 1 && !emitter.stderr.includes("rejected; nothing written"))
       throw new Error(`seed ${seed}: unexpected emitter failure: ${emitter.stderr}`);
     stats.emitterRejected++;
+    record("emitterRejected");
     continue;
   }
   stats.accepted++;
@@ -190,7 +356,34 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
       `seed ${seed}: accepted output differs: ${JSON.stringify({ baseline, emitted })}; artifacts at ${dir}`
     );
   }
+  record("acceptedSame");
+  const sideFeatures = new Set();
+  for (const index of side) syntaxFeatures(parsed.body[index], sideFeatures);
+  record("acceptedSameInSide", sideFeatures);
+  if (baseline.status === "ok") {
+    record("acceptedSameOk");
+    record("acceptedSameOkInSide", sideFeatures);
+  }
 }
+for (const row of Object.values(coverage)) {
+  assert.equal(
+    row.parsed,
+    row.moduleSyntax +
+      row.small +
+      row.baselineTimeout +
+      row.unstable +
+      row.loweringRejected +
+      row.emitterRejected +
+      row.acceptedSame
+  );
+  assert(row.acceptedSameOkInSide <= row.acceptedSameInSide && row.acceptedSameInSide <= row.acceptedSame);
+}
+if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
+  writeFileSync(
+    path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, `syntax-coverage-${startSeed}.json`),
+    JSON.stringify({ seed: startSeed, count, coverage }, null, 2)
+  );
+console.log("syntax coverage:", JSON.stringify(coverage));
 console.log(
   JSON.stringify({
     seed: startSeed,

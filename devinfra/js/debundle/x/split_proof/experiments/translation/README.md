@@ -180,3 +180,14 @@ For a larger on-demand sample, override the fixed test arguments, for example:
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:shift_fuzz_test --test_arg=--seed --test_arg=4000 --test_arg=--count --test_arg=256
 ```
+
+The Shift grammar emitter fuzz tests also write `syntax-coverage-<seed>.json` to their
+undeclared test outputs. For each named source syntax family, the report counts parsed programs, exclusion
+reasons, accepted plans with matching observations, and accepted plans with that
+syntax in a side-module unit. The `Ok` counts additionally require successful
+baseline evaluation, so matching exceptions do not inflate them. A zero exposes a gap in this fixed sample, not a claim that the syntax is
+unsupported. Each plan contributes once per feature, regardless of how many
+occurrences it contains. `acceptedSameInSide` records placement, not whether that
+syntax ran or crossed another statement. The comparison observes evaluation status and the captured console trace; it is not a proof of equivalence. The list is a curated
+syntax inventory, not a complete ECMAScript grammar; generated import/export
+glue, lexical and regexp subfeatures, and runtime APIs are outside these counts.
