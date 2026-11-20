@@ -1,5 +1,5 @@
 import { Group, Loader, Stack, Text } from "@mantine/core";
-import type { JSX, ReactNode, Ref } from "react";
+import type { JSX } from "react";
 
 import {
   showsAutoApprovalEvaluation,
@@ -16,12 +16,6 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary";
 import { ToolResultField } from "./tool_result_field";
 import { VariantControl } from "./variant_control";
 
-/** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and
- * recent cards, and the history page's rows. It owns the shared skeleton: identity header, action
- * line, rationale/denial subhead, status marker, Details toggle, the arguments body, the result body
- * (a finished call's result, or its error when it failed) and the detailed Metadata. What differs
- * per surface — the status marker's label/color and the footer actions (approve/deny, dismiss,
- * countdown) — comes in as props. */
 function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.Element {
   const label = terminalStatusLabel(status);
   const color = statusColor(status);
@@ -44,32 +38,27 @@ function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.E
   );
 }
 
+/** One recorded tool call: title, status and detail toggle, rationale and decision notes,
+ * arguments, a finished call's result, and (when detailed) metadata. */
 export function ToolCallCard({
   fields,
   args,
   variant,
   onVariantChange,
   status,
-  error = null,
   result,
-  footer,
-  containerRef,
 }: {
   fields: ApprovalDisplayFields;
   args: Record<string, unknown>;
   variant: PreviewVariant;
   onVariantChange: (v: PreviewVariant) => void;
   status: ToolCallRecord["status"];
-  error?: string | null;
   result?: unknown;
-  footer?: ReactNode;
-  /** Set by a surface that needs to scroll this specific card into view (a deep-linked call). */
-  containerRef?: Ref<HTMLElement>;
 }): JSX.Element {
   const detailed = variant === "detailed";
   const destructive = isDestructiveToolCall(fields.serverId, fields.toolName);
   return (
-    <section className="haku-tool-call" ref={containerRef}>
+    <section className="haku-tool-call">
       <Stack gap="sm">
         <div className="haku-tool-call-summary">
           <Text
@@ -115,15 +104,6 @@ export function ToolCallCard({
           argumentsJson={fields.argumentsJson}
           variant={variant}
         />
-        {/* A failed call's error is its outcome — the failure counterpart of the result body
-            below — so it renders under the arguments, not as a head subhead. Error and result
-            are mutually exclusive (the ledger finishes a call with exactly one), so this never
-            collides with the result field. */}
-        {error && (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        )}
         <ToolResultField result={result} variant={variant} />
         {detailed && (
           <ToolCallMeta
@@ -134,7 +114,6 @@ export function ToolCallCard({
             toolCallId={fields.toolCallId}
           />
         )}
-        {footer}
       </Stack>
     </section>
   );
