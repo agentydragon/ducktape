@@ -5,8 +5,7 @@ import "github.com/gorilla/securecookie"
 const sessionCookiePurpose = "agentplane-session"
 
 // cookieSigner signs the opaque database-session handle with Gorilla's maintained
-// securecookie implementation. The cookie is intentionally not wire-compatible
-// with the former Python itsdangerous cookie.
+// securecookie implementation.
 type cookieSigner struct{ cookie *securecookie.SecureCookie }
 
 func newCookieSigner(secret string, maxAgeSeconds int) *cookieSigner {

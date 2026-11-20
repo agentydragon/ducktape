@@ -59,8 +59,8 @@ func newHTTPServer(authentication *auth.Auth) *httpServer {
 	return server
 }
 
-// ServeMux wildcards have no type constraints. Apply the UUID route constraint before auth or
-// Huma validation, to match the Python app's UUID path converter for typed and streaming routes.
+// ServeMux wildcards have no type constraints. Apply the UUID route constraint before auth, so a
+// non-UUID thread or session ID matches no route.
 type uuidMux struct{ *http.ServeMux }
 
 var uuidPathSegment = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -173,8 +173,8 @@ func (s *httpServer) DrainDone() <-chan struct{} { return s.drainDone }
 
 func (s *httpServer) Ready() bool { return !s.drain.Load() }
 
-// Handler installs the session middleware outside the API router, matching the Python app's
-// request-wide browser-session behavior and ensuring session changes commit before SSE headers.
+// Handler installs the session middleware outside the router, so session changes commit before
+// SSE headers.
 func (s *httpServer) Handler(authentication *auth.Auth) http.Handler {
 	if authentication == nil {
 		return s.mux

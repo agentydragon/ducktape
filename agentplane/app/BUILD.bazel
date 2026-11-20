@@ -76,10 +76,6 @@ py_proto_library_with_mypy_stubs(
 # gazelle:resolve py agentplane.action_service.api.contracts.action_service_pb2 //agentplane/action_service/api/contracts:action_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
-# No test here is small, and none of that is about the tests being slow: on the CI executor image
-# they are killed at a small target's 60s with the budget spent fetching inputs rather than running
-# -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
-# burned at all. <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md> is the class.
 genrule(
     name = "openapi_schema",
     outs = ["openapi.json"],

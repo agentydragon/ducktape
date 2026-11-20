@@ -21,10 +21,9 @@ The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-d
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.
-The Go app runs its embedded Goose migrations before opening the HTTP listener or starting
-workers. The baseline adopts the existing app schema without dropping operator sessions or Thread
-metadata; the next migration removes the retired `alembic_version_app` marker. Replicas serialize
-migrations with the app's stable advisory lock while older replicas may still serve.
+The Go app runs its embedded Goose migrations before opening the HTTP listener. The baseline
+adopts the existing app schema without dropping operator sessions or Thread metadata. Replicas
+serialize migrations with the app's stable advisory lock while older replicas may still serve.
 
 The API image contains no browser assets. The separate [static frontend](frontend/serving/README.md)
 serves the SPA and service worker on the same public origin through Gateway path routing; API,
@@ -344,8 +343,6 @@ and all are cryptographic:
   `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
   same-origin, which is the CSRF defence `SameSite=lax` leaves open. The deployed app requires these
   settings; an app the tests build without them has no login at all.
-  The Go app uses its own cookie encoding and typed pending-login records; neither needs Authlib
-  session compatibility. Switching between the Python and Go images requires signing in again.
 - **An operator's OIDC ID token.** A bearer whose `iss` is the configured issuer is checked as a
   login's ID token is: the issuer's signature, the client ID as its only audience, expiry, and a
   `sub` and `preferred_username`. It makes the same operator caller as a session, with no session
@@ -457,12 +454,12 @@ SIGTERM or SIGINT begins the Go server's drain. `/readyz` answers 503 while `/he
 liveness check. The server stops accepting new connections; long-lived SSE and upstream stream
 handlers that watch the drain signal end promptly. `http.Server.Shutdown` waits up to
 `shutdown_timeout` seconds from the mounted YAML (5 by default) for active requests. When that wait ends, the runtime
-cancels the app context and waits for background workers before closing the database and clients.
+cancels the app context before closing the database and clients.
 The Deployment keeps its 60-second termination grace period for this sequence; no preStop delay
 consumes that budget.
 
-An unexpected background worker failure starts the same drain, then exits with that error so
-Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying.
+An unexpected HTTP server failure starts the same drain, then exits with that error so
+Kubernetes restarts the replica.
 
 ## Shape
 
