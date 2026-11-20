@@ -26,7 +26,7 @@ class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""
 
     claude: tuple[Route, ...]
-    # Responses routes shared by the Codex and central sampler pickers.
+    # Routes offered by Codex through the Responses API.
     codex: tuple[Route, ...]
     # Routes offered by the service-side central sampler. This is independent of Codex so
     # API-only models never become Codex models through the subscription-compatible wrapper.
@@ -70,7 +70,12 @@ QWEN_CHAT_CANARY_ID = chat_completions_id(QWEN_CHAT_CANARY_ROUTE)
 STAGING_APP_MODELS = HarnessRoutes(
     central_sampler_chat=(QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED),
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
-    codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
+    codex=(
+        *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
+        *_AGENTPLANE_ANTIGRAVITY_ROUTES,
+        *_AGENTPLANE_OLLAMA_OPENAI_ROUTES,
+        TABBYAPI_QWEN_ABLITERATED,
+    ),
     central_sampler=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
@@ -86,6 +91,7 @@ RUNNER_CONTEXT_OVERRIDES = {
     OLLAMA_QWEN_IQ4XS_128K.native: 128 * 1024,
     OLLAMA_QWEN_IQ4XS_256K.openai: 256 * 1024,
     OLLAMA_QWEN_IQ4XS_256K.native: 256 * 1024,
+    TABBYAPI_QWEN_ABLITERATED: 256 * 1024,
 }
 
 
