@@ -1,8 +1,9 @@
-"""Tests for convert.py - Tana JSON to Markdown/TanaPaste conversion."""
+"""Tests for convert.py and export_node_subset.py - Tana JSON to Markdown/TanaPaste conversion."""
 
 from __future__ import annotations
 
 import difflib
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ import pytest_bazel
 
 from tana.domain.nodes import BaseNode
 from tana.export.convert import RenderContext
+from tana.export.export_node_subset import TrackingGraph, export_node_with_tracking
 from tana.graph.graph import TanaGraph
 from tana.graph.loader import load_workspace
 
@@ -69,6 +71,18 @@ def test_node_export_minimal_json(folder, node_id):
     actual = _render_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")
+
+
+@pytest.mark.parametrize("node_id", [f.stem for f in TESTDATA_PATH.glob("*.tanapaste")])
+def test_subset_export(node_id):
+    """The subset exporter builds its tracking graph from the workspace JSON and renders the golden TanaPaste."""
+    if node_id == "b9AZZEuj42vC":
+        pytest.skip("Same pending golden review as test_node_export")
+    docs = json.loads((TESTDATA_PATH / "test_workspace.json").read_text(encoding="utf-8"))["docs"]
+    tanapaste, _ = export_node_with_tracking(TrackingGraph.from_documents(docs), node_id)
+    expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
+    # The exporter ends the paste with a blank line.
+    check_content_match(tanapaste.rstrip() + "\n", expected, f"{node_id} subset export")
 
 
 if __name__ == "__main__":

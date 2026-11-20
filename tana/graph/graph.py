@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, ValuesView
-from typing import Any, cast, overload
+from typing import Any, Self, cast, overload
 
 from tana.domain.nodes import DOC_CLASS, MIN_TUPLE_CHILDREN, BaseNode, CodeBlockNode, TupleNode, UnknownNode
 from tana.domain.system_nodes import LANGUAGE_KEY_ID, SUPERTAG_KEY_ID
@@ -68,7 +68,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         return ""
 
     @classmethod
-    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> TanaGraph:
+    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> Self:
         """Build a graph from raw JSON documents."""
 
         def _make_node(raw: dict[str, Any]) -> BaseNode:
