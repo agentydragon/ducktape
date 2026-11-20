@@ -10,4 +10,4 @@
   outputs beside each example; test helpers are `testonly = True` and stay out of the
   package. Reference layout: `freecad/examples/<name>/` (e.g. `bracket/`: build
   script `parametric_sketch.py`, committed `drawing.{dxf,svg,pdf}`,
-  `test_parametric_sketch.py` running the build in a FreeCAD Docker container).
+  `test_parametric_sketch.py` running the build with the conda FreeCAD binaries).

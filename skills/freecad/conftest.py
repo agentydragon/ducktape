@@ -7,7 +7,6 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 from python.runfiles import Runfiles
 
@@ -216,7 +215,3 @@ def freecad_gui(conda_root: Path, xvfb_display: str, freecad_home: Path):
 def freecad_run(conda_root: Path, freecad_home: Path):
     """Run a FreeCAD script headlessly via freecadcmd (no Xvfb). Returns a callable."""
     return _make_runner(conda_root / "bin" / "freecadcmd", freecad_env(conda_root, freecad_home), default_timeout=120)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

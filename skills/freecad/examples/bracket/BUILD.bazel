@@ -1,12 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
-    [
-        "drawing.dxf",
-        "drawing.pdf",
-        "drawing.svg",
-        "parametric_sketch.py",
-    ],
+    ["parametric_sketch.py"],
     visibility = ["//skills/freecad:__subpackages__"],
 )
 

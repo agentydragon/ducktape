@@ -74,7 +74,6 @@ py_library(
         "//testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

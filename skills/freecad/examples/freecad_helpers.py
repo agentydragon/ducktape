@@ -97,7 +97,7 @@ def run_gui_script(qapp, fn):
             for name in list(FreeCAD.listDocuments().keys()):
                 FreeCAD.closeDocument(name)
         except Exception:
-            pass
+            traceback.print_exc(file=sys.stderr)
 
     def _wrapper():
         try:
