@@ -33,8 +33,8 @@ from props.testing.assertions import assert_no_pending
 from props.testing.fixtures.runs import make_fake_critic_run
 from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //props/agents/grader/testing:e2e_pytest_plugins
-pytest_plugins = ("props.agents.grader.testing.e2e_pytest_plugins",)
+# gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
+pytest_plugins = ("props.agents.testing.e2e_pytest_plugins",)
 
 logger = logging.getLogger(__name__)
 
