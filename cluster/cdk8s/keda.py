@@ -21,6 +21,7 @@ from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "keda"
 NAMESPACE = "keda"
+METRICS_SERVER_NAME = "keda-operator-metrics-apiserver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
 
@@ -58,7 +59,7 @@ def chart(app: App) -> Chart:
                 # Keep CPU reservations for these scaling and admission services. The memory floors
                 # preserve the startup reservations even when the recommender has sparse samples.
                 _memory_policy("keda-operator", operator_resources),
-                _memory_policy("keda-operator-metrics-apiserver", metrics_resources),
+                _memory_policy(METRICS_SERVER_NAME, metrics_resources),
                 _memory_policy("keda-admission-webhooks", webhook_resources),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
@@ -99,7 +100,21 @@ def chart(app: App) -> Chart:
                     }
                 },
             },
-            "podDisruptionBudget": {"webhooks": {"minAvailable": 1}},
+            "metricsServer": {"replicaCount": 2},
+            "topologySpreadConstraints": {
+                "metricsServer": [
+                    {
+                        "maxSkew": 1,
+                        "minDomains": 2,
+                        "topologyKey": "kubernetes.io/hostname",
+                        "whenUnsatisfiable": "DoNotSchedule",
+                        "nodeTaintsPolicy": "Honor",
+                        "labelSelector": {"matchLabels": {"app": METRICS_SERVER_NAME}},
+                        "matchLabelKeys": ["pod-template-hash"],
+                    }
+                ]
+            },
+            "podDisruptionBudget": {"webhooks": {"minAvailable": 1}, "metricServer": {"minAvailable": 1}},
             "resources": {
                 "operator": operator_resources,
                 "metricServer": metrics_resources,
