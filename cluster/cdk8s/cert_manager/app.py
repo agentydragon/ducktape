@@ -13,14 +13,21 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "cert-manager"
 NAMESPACE = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
 _REPOSITORY_NAME = "jetstack"
 _REPOSITORY_NAMESPACE = "flux-system"
+_CPU_REQUEST = "10m"
+_CONTROLLER_MEMORY_LIMIT = "128Mi"
+# cainjector caches every CA-injected Certificate/CRD/webhook/APIService cluster-wide.
+# A 128Mi limit previously left it in an OOMKilled crash loop.
+_CAINJECTOR_MEMORY_LIMIT = "512Mi"
+_WEBHOOK_MEMORY_LIMIT = "128Mi"
 # trust-manager installs from this repository too, from its own chart.
 JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
 
@@ -37,6 +44,17 @@ _CONTROLLER_METRICS = ServiceRef(name=NAME, port=Port(name="http-metrics", numbe
 _WEBHOOK_METRICS = ServiceRef(
     name=f"{NAME}-webhook", port=Port(name="metrics", number=9402), pods=_component("webhook")
 )
+
+
+def _memory_request_policy(container_name: str, *, floor: str, limit: str) -> ContainerPolicy:
+    # Admission can still see the old CPU target until the recommender refreshes.
+    return ContainerPolicy(
+        container_name=container_name,
+        controlled_values=ControlledValues.REQUESTS_ONLY,
+        controlled_resources=("memory",),
+        min_allowed={"cpu": _CPU_REQUEST, "memory": floor},
+        max_allowed={"cpu": _CPU_REQUEST, "memory": limit},
+    )
 
 
 def _values() -> dict[str, object]:
@@ -74,7 +92,10 @@ def _values() -> dict[str, object]:
         "extraArgs": ["--dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53", "--dns01-recursive-nameservers-only"],
         # The ServiceMonitors are this chart's own objects, not the Helm chart's.
         "prometheus": {"enabled": True, "servicemonitor": {"enabled": False}},
-        "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
+        "resources": {
+            "limits": {"cpu": "100m", "memory": _CONTROLLER_MEMORY_LIMIT},
+            "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
+        },
         "webhook": {
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             # Additional DNS names for the webhook certificate.
@@ -82,18 +103,16 @@ def _values() -> dict[str, object]:
                 "--dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,"
                 "cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local"
             ],
-            "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},
+            "resources": {
+                "limits": {"cpu": "100m", "memory": _WEBHOOK_MEMORY_LIMIT},
+                "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
+            },
         },
         "cainjector": {
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {
-                "limits": {
-                    "cpu": "100m",
-                    # cainjector caches every CA-injected Certificate/CRD/webhook/APIService
-                    # cluster-wide; 128Mi OOMKilled it in a crash-loop on this cluster.
-                    "memory": "512Mi",
-                },
-                "requests": {"cpu": "10m", "memory": "128Mi"},
+                "limits": {"cpu": "100m", "memory": _CAINJECTOR_MEMORY_LIMIT},
+                "requests": {"cpu": _CPU_REQUEST, "memory": "128Mi"},
             },
         },
     }
@@ -107,7 +126,22 @@ def _service_monitor(chart: Chart, name: str, service: ServiceRef) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            mode=Vpa.INITIAL,
+            container_policies=(
+                # Floors round up the 30-day working-set peaks (104, 200, and 53 MiB, including startup).
+                _memory_request_policy("cert-manager-controller", floor="112Mi", limit=_CONTROLLER_MEMORY_LIMIT),
+                _memory_request_policy("cert-manager-cainjector", floor="224Mi", limit=_CAINJECTOR_MEMORY_LIMIT),
+                _memory_request_policy("cert-manager-webhook", floor="64Mi", limit=_WEBHOOK_MEMORY_LIMIT),
+                # The startupapicheck Job and any new containers stay outside the pilot.
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     helm_release(
         chart,
         NAME,

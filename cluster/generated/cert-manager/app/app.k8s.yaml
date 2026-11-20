@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "cert-manager-controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "112Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "cert-manager-cainjector", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "224Mi"}, "maxAllowed": {"cpu": "10m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "cert-manager-webhook", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "64Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
     rbac.ducktape.io/agent-readable-logs: "true"
   name: cert-manager
 spec: {}
