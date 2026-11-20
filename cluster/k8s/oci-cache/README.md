@@ -108,7 +108,7 @@ name, not via the catalog, so pulls are unaffected).
 Root-mirror validation for haku-ci's dockerd path:
 
 ```bash
-kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
+kubectl -n haku-ci exec -c dind "$(kubectl -n haku-ci get pod -l app.kubernetes.io/name=haku-runner -o name | head -n1)" -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
 ```
 
