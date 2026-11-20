@@ -1,8 +1,11 @@
 """Run the pinned TabbyAPI app with a request lock for its single generation slot."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from importlib import import_module
+from typing import Protocol, cast
 
+from starlette.applications import Starlette
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _MODEL_REQUESTS = frozenset(
@@ -39,17 +42,27 @@ class SerializeModelRequests:
             await self.app(scope, receive, send)
 
 
+class _TabbyMain(Protocol):
+    entrypoint_async: Callable[[], Awaitable[None]]
+
+    def entrypoint(self) -> None: ...
+
+
+class _TabbyServer(Protocol):
+    setup_app: Callable[[str | None, int | None], Starlette]
+
+
 def main() -> None:
-    tabby = import_module("main")
+    tabby = cast(_TabbyMain, import_module("main"))
     entrypoint_async = tabby.entrypoint_async
 
     async def serve() -> None:
         # Import here so TabbyAPI first configures the PyTorch CUDA allocator.
-        server = import_module("endpoints.server")
+        server = cast(_TabbyServer, import_module("endpoints.server"))
         setup_app = server.setup_app
 
-        def setup_locked_app(*args, **kwargs):
-            app = setup_app(*args, **kwargs)
+        def setup_locked_app(host: str | None = None, port: int | None = None) -> Starlette:
+            app = setup_app(host, port)
             app.add_middleware(SerializeModelRequests)
             return app
 
