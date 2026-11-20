@@ -95,13 +95,6 @@ spec:
     spec:
       affinity:
         podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: kubeapi-proxy
-                topologyKey: topology.kubernetes.io/zone
-              weight: 100
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
                 matchLabels:
@@ -144,6 +137,17 @@ spec:
               name: tmp
             - mountPath: /var/cache/nginx
               name: cache
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app: kubeapi-proxy
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 1
+          nodeTaintsPolicy: Honor
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
       volumes:
         - configMap:
             name: kubeapi-proxy-config

@@ -77,18 +77,21 @@ def _deployment(chart: Chart) -> None:
                                     label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
                                     topology_key="kubernetes.io/hostname",
                                 )
-                            ],
-                            preferred_during_scheduling_ignored_during_execution=[
-                                k8s.WeightedPodAffinityTerm(
-                                    pod_affinity_term=k8s.PodAffinityTerm(
-                                        label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
-                                        topology_key="topology.kubernetes.io/zone",
-                                    ),
-                                    weight=100,
-                                )
-                            ],
+                            ]
                         )
                     ),
+                    topology_spread_constraints=[
+                        k8s.TopologySpreadConstraint(
+                            topology_key="topology.kubernetes.io/zone",
+                            max_skew=1,
+                            # A single eligible zone can keep both replicas on different hosts.
+                            min_domains=1,
+                            when_unsatisfiable="DoNotSchedule",
+                            label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                            match_label_keys=["pod-template-hash"],
+                            node_taints_policy="Honor",
+                        )
+                    ],
                     # nginx forwards each caller's own bearer and needs only the cluster CA.
                     automount_service_account_token=False,
                     containers=[
