@@ -390,8 +390,13 @@ EXAMPLES = (
 
 
 async def _expect_live_preview(surface: Locator, example: ActionExample) -> None:
-    if example.live_preview is not None:
-        await expect(surface.get_by_role("link", name=example.live_preview[2], exact=True).first).to_be_visible()
+    if example.live_preview is None:
+        return
+    _, payload, label = example.live_preview
+    if "workspace" in payload and "nodes" not in payload:
+        await expect(surface.get_by_text(label).first).to_be_visible()
+    else:
+        await expect(surface.get_by_role("link", name=label, exact=True).first).to_be_visible()
 
 
 @DESKTOP_AND_MOBILE
