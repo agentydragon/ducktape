@@ -3,6 +3,7 @@ import { createContext, type JSX, type ReactNode, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
+import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { getGrocyReferenceSummaries } from "../client";
 import { definePreview, type PreviewProps } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
@@ -43,7 +44,7 @@ export function GrocyReview({ requestId, children }: { requestId?: string; child
   return <review.Provider value={requestId}>{children}</review.Provider>;
 }
 
-export function useGrocyReferences() {
+export function useGrocyReferences(): ReadonlyMap<string, GrocyReferenceSummary> | undefined {
   const requestId = useContext(review);
   return useQuery({
     queryKey: ["action-integration-preview", "grocy_sf", requestId],
