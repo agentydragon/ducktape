@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -440,13 +441,24 @@ async def test_history_controls_and_category_highlighting(page: Page, view: Visu
     await expect(graph.get_by_label("30-day moving average")).to_be_checked()
     category = graph.get_by_role("button", name="Unclassified", exact=False).first
     await category.hover()
-    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "unclassified")
     await category.click()
     await expect(category).to_have_attribute("aria-pressed", "true")
     await graph.get_by_text("How this chart works").hover()
-    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "unclassified")
+    other = graph.get_by_role("button", pressed=False).first
+    await other.click()
+    await expect(other).to_have_attribute("aria-pressed", "true")
+    await expect(category).to_have_attribute("aria-pressed", "true")
+    await graph.get_by_text("How this chart works").hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", re.compile(r".*,.*"))
+    await view.capture("spending-history-multiple-categories", label="Multiple highlighted categories", animations="disabled")
     await category.click()
     await expect(category).to_have_attribute("aria-pressed", "false")
+    await expect(other).to_have_attribute("aria-pressed", "true")
+    await other.click()
+    await graph.get_by_text("How this chart works").hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "")
 
 
 @pytest.mark.asyncio
