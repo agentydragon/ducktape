@@ -51,6 +51,31 @@ spec:
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
 metadata:
+  name: environments
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: environments
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 112Mi
+        minAllowed:
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: environments
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
   name: frontend
   namespace: agentplane-staging
 spec:
@@ -170,6 +195,31 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: notifications
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: policy-controller
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: policy-controller
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 112Mi
+        minAllowed:
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: policy-controller
   updatePolicy:
     updateMode: Initial
 ---
