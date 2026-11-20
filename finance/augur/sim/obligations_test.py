@@ -13,7 +13,6 @@ from finance.augur.policy.cash_band import Raise, cash_band
 from finance.augur.policy.funding import ClaimPayer, fund_claims
 from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import ClaimId, DecisionActions, Transfer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, LotId
@@ -32,6 +31,7 @@ from finance.augur.sim.results import (
 )
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
@@ -139,16 +139,13 @@ def compose(case: Situation, rollout_id: int, *, series: tuple[Series, ...], rol
         )
     for claim in case.claims:
         world.track(
-            Biller(
+            biller(
                 schedule=claim.schedule,
                 obligation_id=claim.obligation_id,
                 obligation_type=claim.obligation_type,
                 from_account=claim.payer,
                 to_account=claim.payee,
                 amount_due=USD.quanta(claim.amount_due),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     return world

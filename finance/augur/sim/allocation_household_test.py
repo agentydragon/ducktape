@@ -16,7 +16,6 @@ from more_itertools import one
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, CpiIndexed, Reinvest, SecuritySleeve
 from finance.augur.sim.actions import LotSale, Sell
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
@@ -29,6 +28,7 @@ from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -188,16 +188,13 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     for bill in case.claims:
         world.track(
-            Biller(
+            biller(
                 schedule=bill.schedule,
                 obligation_id=bill.obligation_id,
                 obligation_type="cash_spend",
                 from_account=ref(ALICE),
                 to_account=ref(WORLD),
                 amount_due=bill.amount_due,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     world.track(Scripted(case.funding(), case.sales))

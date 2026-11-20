@@ -23,6 +23,7 @@ from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import RejectedAction, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.tax_authority import filer
@@ -56,16 +57,13 @@ def account(world: World, agent_id: AgentId, account_id: AccountId = CHECKING, b
 def unfundable(*, month: int, payer: AgentId, amount: Decimal | int) -> Biller:
     """One required payment larger than everything the payer has."""
 
-    return Biller(
+    return biller(
         schedule=Once(month=month),
         obligation_id="unfundable",
         obligation_type=ObligationType.CASH_SPEND,
         from_account=AccountRef(agent_id=payer, account_id=CHECKING),
         to_account=AccountRef(agent_id=VENDOR, account_id=CHECKING),
         amount_due=USD.quanta(amount),
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=1_000_000_000,
     )
 
 

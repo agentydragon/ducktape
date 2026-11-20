@@ -39,7 +39,6 @@ from finance.augur.model.series import (
 )
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, LotSale, Sell
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
@@ -60,6 +59,7 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
@@ -189,16 +189,13 @@ def target_allocation_world() -> World:
     account(world, AgentId("landlord"))
     hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
-        Biller(
+        biller(
             schedule=Recurring(start_month=RENT_MONTH, end_month=None),
             obligation_id="alice-rent",
             obligation_type="rent",
             from_account=ref(ALICE),
             to_account=ref(AgentId("landlord")),
             amount_due=USD.quanta(RENT),
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world

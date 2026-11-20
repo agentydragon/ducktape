@@ -53,6 +53,7 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import MortgageInterestDeduction
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, property_tax
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
@@ -562,15 +563,12 @@ def test_a_deduction_is_claimed_by_an_enrolled_taxpayer() -> None:
 
 
 def bill(*, amount_due: Amount = 1, schedule: Schedule = MONTH_ZERO) -> Biller:
-    return Biller(
+    return biller(
         obligation_id="test-bill",
         obligation_type="cash_spend",
         from_account=ref(HOLDER),
         to_account=ref(COUNTERPARTY),
         amount_due=amount_due,
-        property_id=None,
-        deduction_category=None,
-        deductible_fraction_ppb=0,
         schedule=schedule,
     )
 

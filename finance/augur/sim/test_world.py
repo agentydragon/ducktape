@@ -25,6 +25,7 @@ from finance.augur.sim.schedule import Once, Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax import TaxBracket, TaxProfile
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, taxpayer, world_on
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
 
@@ -537,15 +538,12 @@ def composed(run: Situation, rollout: int = 0) -> World:
         )
     for bill in run.obligations:
         world.track(
-            Biller(
+            biller(
                 obligation_id="bill",
                 obligation_type="rent",
                 from_account=CASH,
                 to_account=EXOGENOUS,
                 amount_due=bill.amount,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
                 schedule=Once(month=bill.month),
             )
         )

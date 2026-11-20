@@ -79,10 +79,10 @@ py_library(
     name = "funded_bill",
     srcs = ["funded_bill.py"],
     deps = [
+        ":bills",
         ":series",
         "//finance/augur/model:series",
         "//finance/augur/sim:actions",
-        "//finance/augur/sim:bills",
         "//finance/augur/sim:books",
         "//finance/augur/sim:claims",
         "//finance/augur/sim:fixed_point",
@@ -159,4 +159,10 @@ py_library(
         "//finance/augur/sim:tax_indexation",
         "//finance/augur/sim:tax_profile",
     ],
+)
+
+py_library(
+    name = "bills",
+    srcs = ["bills.py"],
+    deps = ["//finance/augur/sim:bills"],
 )

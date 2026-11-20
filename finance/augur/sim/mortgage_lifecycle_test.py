@@ -15,7 +15,6 @@ import pytest_bazel
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import ClaimId, PayClaim
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import CHECKING, AgentId, LiabilityId, PropertyId
@@ -25,6 +24,7 @@ from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sal
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.world import World
@@ -329,16 +329,13 @@ def test_paid_groups_update_entities_but_a_failed_year_end_does_not_reset_intere
     )
     if fail_year_end:
         world.track(
-            Biller(
+            biller(
                 schedule=Once(month=11),
                 obligation_id="unfundable",
                 obligation_type="cash_spend",
                 from_account=ref(ALICE),
                 to_account=ref(AgentId("seller")),
                 amount_due=USD.quanta(1_000_000),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     books = drive(world, BOB, ALICE).books

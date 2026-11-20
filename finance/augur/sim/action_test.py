@@ -8,7 +8,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.ids import AccountId, AgentId
@@ -18,6 +17,7 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.world import World
 
 ROLLOUT_COUNT = 2
@@ -46,16 +46,13 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
         deduction_category=None,
     )
     world.track(
-        Biller(
+        biller(
             schedule=Once(month=0),
             obligation_id=obligation_id,
             obligation_type=ObligationType.OUTSIDE_RENT,
             from_account=ALICE,
             to_account=WORLD,
             amount_due=USD.quanta(Decimal("0.01")),
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world

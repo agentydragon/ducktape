@@ -9,11 +9,10 @@ import pytest_bazel
 
 from finance.augur.model.series import LocationId, RentKey
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
-from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import CHECKING, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
@@ -21,6 +20,7 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.results import Paid, Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
@@ -71,16 +71,13 @@ def _compose(
         world.declare_account(account=opened, opening_balance=balance)
     if owed_rent is not None:
         world.track(
-            Biller(
+            biller(
                 schedule=Recurring(start_month=0, end_month=None),
                 obligation_id="outside_rent",
                 obligation_type=ObligationType.OUTSIDE_RENT,
                 from_account=AccountRef(agent_id=AgentId("alice"), account_id=CHECKING),
                 to_account=AccountRef(agent_id=AgentId("landlord"), account_id=CHECKING),
                 amount_due=owed_rent,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
     if tenant_rent is not None:

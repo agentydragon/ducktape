@@ -12,7 +12,6 @@ import numpy as np
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
@@ -26,6 +25,7 @@ from finance.augur.sim.schedule import Once
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
@@ -91,16 +91,13 @@ def compose(case: Situation, rollout_id: int) -> World:
         basis=USD.quanta(80),
     )
     world.track(
-        Biller(
+        biller(
             schedule=Once(month=0),
             obligation_id="example-bill",
             obligation_type=ObligationType.OUTSIDE_RENT,
             from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
             to_account=AccountRef(agent_id=CREDITOR, account_id=CHECKING),
             amount_due=USD.quanta(150),
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world
