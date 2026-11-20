@@ -330,7 +330,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 				return err
 			}
 		}
-		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
 		if err != nil {
 			return err
 		}
@@ -440,7 +440,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err := insertProviderAttempt(ctx, tx, id, owner, retryRequestWire, session, policy, predecessor.StepID, &previousIntentID, attemptNo, predecessor.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
