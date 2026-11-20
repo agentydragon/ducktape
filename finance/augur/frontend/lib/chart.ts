@@ -14,12 +14,7 @@ function metricIsCurrency(metricName: string | null | undefined) {
   return metricName?.endsWith("_quanta") || metricName?.includes("_value") || metricName?.includes("_cash_flow");
 }
 
-function fmtMetricValue(
-  metricName: string | null | undefined,
-  value: unknown,
-  _currencyDisplay = "exact",
-  currency?: CurrencyFormat
-) {
+export function fmtAxisMetricValue(metricName: string | null | undefined, value: unknown, currency?: CurrencyFormat) {
   if (metricName?.endsWith("_pct")) {
     return fmtPct(value);
   }
@@ -27,10 +22,6 @@ function fmtMetricValue(
     return fmtChartCurrency(value, currency);
   }
   return fmtNumber(value);
-}
-
-export function fmtAxisMetricValue(metricName: string | null | undefined, value: unknown, currency?: CurrencyFormat) {
-  return fmtMetricValue(metricName, value, "compact", currency);
 }
 
 function niceCurrencyTickStep(rawStep: number) {
