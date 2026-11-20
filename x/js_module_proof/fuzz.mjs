@@ -256,7 +256,7 @@ function closureCase(seed, index) {
     grammar: "closure",
     depth,
     shadowed,
-    writesCaptured,
+    writesCaptured: writesCaptured || controlFlow,
     controlFlow,
     unsupported: true,
     cyclic: false,
