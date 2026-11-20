@@ -167,6 +167,8 @@ class Ntfy(Construct):
             self,
             "namespace",
             name=NAMESPACE,
+            # TODO: Revisit automatic VPA updates once ntfy supports multiple replicas:
+            # https://github.com/agentydragon/ducktape/issues/17987
             vpa=Vpa.INITIAL,
             labels={"app.kubernetes.io/name": NAMESPACE},
             annotations={
