@@ -16,6 +16,6 @@
     group: root
     mode: "0644"
     backup: true
-  notify: restart bluetooth
+  notify: Restart bluetooth
   # This configuration enables battery level reading from devices like Bose QC45
   # by setting Experimental = true in the [General] section
