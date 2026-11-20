@@ -22,6 +22,7 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     assert "Notifications HTTP" not in guide
     assert "Notification Service HTTP listener is reserved for the signed GitHub webhook." in guide
     assert "kubectl --server <host> --token <placeholder>" in guide
+    assert "Runner Gateway" not in guide
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:
             assert "You run inside an Agentplane Sandbox" in guide
