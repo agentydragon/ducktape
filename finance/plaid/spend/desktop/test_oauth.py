@@ -97,7 +97,6 @@ def _install_oauth_transport(
     monkeypatch.setattr(oauth_module, "AsyncOAuth2Client", OAuthClient)
 
 
-@pytest.mark.asyncio
 async def test_callback_http_rejects_wrong_method_and_path() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -114,7 +113,6 @@ async def test_callback_http_rejects_wrong_method_and_path() -> None:
     assert not callback_future.done()
 
 
-@pytest.mark.asyncio
 async def test_callback_http_rejects_wrong_state_and_fails_login() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -127,7 +125,6 @@ async def test_callback_http_rejects_wrong_state_and_fails_login() -> None:
         await callback_future
 
 
-@pytest.mark.asyncio
 async def test_callback_http_returns_provider_error_safely() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     description = "bad\x1b_request <script> & " + "x" * 300
@@ -147,7 +144,6 @@ async def test_callback_http_returns_provider_error_safely() -> None:
     assert await callback_future == CallbackResult(error="invalid_request", error_description=expected_description)
 
 
-@pytest.mark.asyncio
 async def test_callback_http_requires_code_after_valid_state() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -160,7 +156,6 @@ async def test_callback_http_requires_code_after_valid_state() -> None:
         await callback_future
 
 
-@pytest.mark.asyncio
 async def test_callback_http_completes_login_with_code() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:

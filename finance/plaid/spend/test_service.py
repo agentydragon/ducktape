@@ -496,7 +496,6 @@ def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
     assert service.report_day(datetime(2026, 10, 9, 7, tzinfo=UTC)) == date(2026, 10, 9)
 
 
-@pytest.mark.asyncio
 async def test_report_day_and_disabled_sustainability_use_zone_without_allowance() -> None:
     zone = ZoneInfo("America/Los_Angeles")
     service = SpendService(
@@ -751,7 +750,6 @@ def _synthetic_portfolio() -> PortfolioView:
     )
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("failure_mode", ["postgres_error", "unavailable_result"])
 async def test_portfolio_read_retries_failure_and_caches_ready_result(
     monkeypatch: pytest.MonkeyPatch, failure_mode: str
@@ -807,7 +805,6 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
     assert attempts == 2
 
 
-@pytest.mark.asyncio
 async def test_net_worth_aligns_linked_balances_and_leaves_gaps(
     connection: asyncpg.Connection, postgres_url: str
 ) -> None:
@@ -935,7 +932,6 @@ async def test_net_worth_uses_dated_account_history(
     assert observed.inferred_zero_account_count == 0
 
 
-@pytest.mark.asyncio
 async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
     connection: asyncpg.Connection, postgres_url: str
 ) -> None:
