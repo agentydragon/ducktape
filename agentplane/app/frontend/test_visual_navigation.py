@@ -105,9 +105,9 @@ async def test_unknown_materialization(view: VisualPage, app: AgentplaneFixture,
     await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
     if retained:
         await expect(view.page.get_by_text("I found the project files and the relevant tests.")).to_be_visible()
-        await expect(view.page.locator("textarea")).to_be_disabled()
+        await expect(view.page.get_by_role("textbox", name="Message")).to_be_disabled()
     else:
-        await expect(view.page.locator("textarea")).to_have_count(0)
+        await expect(view.page.get_by_role("textbox", name="Message")).to_have_count(0)
     await view.check(context="Unconfirmed materialization and retained History readiness")
     await view.capture()
 
