@@ -2,6 +2,7 @@
 
 # gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
 # gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
+# gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -40,6 +41,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
+        "//cluster/cdk8s/providers/kyverno:mutatingpolicy",
         "//cluster/cdk8s/providers/kyverno:validatingpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

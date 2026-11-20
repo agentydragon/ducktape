@@ -647,6 +647,13 @@ http_file(
 )
 
 http_file(
+    name = "kyverno_mutatingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_mutatingpolicies.yaml",
+    sha256 = "7a71c76ed2ae76bedfa1e285fa919a2e8bb0bc7ea7a2122bebc6d9c183659688",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_mutatingpolicies.yaml"],
+)
+
+http_file(
     name = "kyverno_validatingpolicy_crd",
     downloaded_file_path = "policies.kyverno.io_validatingpolicies.yaml",
     sha256 = "87d8700778623b26ae2c9b2f512713e478714ddd0fbcb4e44574c76ae015f10f",
