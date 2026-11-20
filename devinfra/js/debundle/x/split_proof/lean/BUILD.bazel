@@ -22,6 +22,7 @@ lean_axiom_test(
     theorems = [
         "EsmSplit.Bundle.exec_reorder",
         "EsmSplit.split_correct",
+        "EsmSplit.sound_correct",
         "Example.plan_valid",
         "Example.plan_correct",
         "Example.control_effect_order_rejected",
@@ -76,7 +77,6 @@ lean_binary(
         "EsmSplit/Render.lean",
         "EsmSplit/Semantics.lean",
         "EsmSplit/Split.lean",
-        "Experiments/CheckOutput.lean",
         "Experiments/Lower.lean",
         "Experiments/Translate.lean",
         "Experiments/TranslateMain.lean",

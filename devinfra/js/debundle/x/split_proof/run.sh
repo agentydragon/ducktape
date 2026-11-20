@@ -4,7 +4,7 @@
 #   ./run.sh              build, check, render, compare output
 #   ./run.sh --controls   also write each rejected split and show how it fails in Node
 #   ./run.sh --fuzz       also run the differential fuzzer (about a minute)
-#   ./run.sh --experiments  also build experiments/ (output checker, mini-JS semantics, two-tier proofs)
+#   ./run.sh --experiments  also build experiments/ (mini-JS semantics, two-tier proofs)
 #   ./run.sh --lowering   also lower real bundles to ESTree, compute footprints in Lean, compare with eslint-scope
 #   ./run.sh --es-order   also compare the model's module evaluation order with Node on 500 random import graphs
 #   ./run.sh --splits     also check 2,740 splits of six real bundles and run each in Node (needs --lowering first; about 3 minutes)
@@ -73,11 +73,8 @@ if [[ " $* " == *" --fuzz "* ]]; then
 fi
 
 if [[ " $* " == *" --experiments "* ]]; then
-  step "Experiments: check an output against the bundle; mini-JS semantics; two-tier proofs"
-  node extract/extract_output.mjs example/input/bundle.mjs experiments/check_output/external_ok main.mjs --lean \
-    >lean/Experiments/ExternalOk.lean
-  (cd lean && lake build Experiments check)
-  python3 experiments/check_output/check_all.py
+  step "Experiments: mini-JS semantics and two-tier proofs"
+  (cd lean && lake build Experiments)
 fi
 
 if [[ " $* " == *" --lowering "* ]]; then

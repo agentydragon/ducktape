@@ -2,6 +2,7 @@ import EsmSplit.Controls
 
 #print axioms EsmSplit.Bundle.exec_reorder
 #print axioms EsmSplit.split_correct
+#print axioms EsmSplit.sound_correct
 #print axioms Example.plan_valid
 #print axioms Example.plan_correct
 #print axioms Example.control_effect_order_rejected

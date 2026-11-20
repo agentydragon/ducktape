@@ -2,7 +2,7 @@ import Lean.Data.Json
 import Std.Data.HashMap
 import Std.Data.HashSet
 import EsmSplit.Cli
-import Experiments.CheckOutput
+import EsmSplit.Correct
 import Experiments.Lower
 
 /-!

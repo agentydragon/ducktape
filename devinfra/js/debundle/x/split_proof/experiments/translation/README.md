@@ -24,7 +24,7 @@ A _unit_ is one top-level statement of the bundle, or one declarator of a variab
 2. Paired units are equal up to renaming: same node types, literals and property names. Locals correspond by a bijection. Globals are equal. Module-scope names pair up.
 3. Links. The output name that a bundle declaration pairs with is declared by the module that holds the unit. Every reference to a module-scope name resolves, through the output's imports and exports, to the declaration of the bundle name it pairs with.
 4. The output entry exports every name the bundle exports, each meaning the same declaration. Extra exports are counted.
-5. The plan the output describes, written in the bundle's own names, passes `Sound` ([`CheckOutput.lean`](../../lean/Experiments/CheckOutput.lean)): unique definitions, reads closed, linkable, hygienic, `AssignsHome`, every unit once, conflicting units keep their order. The last check is where obligations come from.
+5. The plan the output describes, written in the bundle's own names, passes `Sound` ([`Correct.lean`](../../lean/EsmSplit/Correct.lean)): unique definitions, reads closed, linkable, hygienic, `AssignsHome`, every unit once, conflicting units keep their order. The last check is where obligations come from.
    A unit _binds_ the names it declares and the names it may assign, its `writes`: reassigned variables, and what the functions it may call assign. Two units conflict if both are effects, if one reads a name the other binds, or if both bind the same name. A unit is an effect unless its shape is on a short list of inert ones ([`Lower.lean`](../../lean/Experiments/Lower.lean)) or it reads an undeclared name. These definitions are in the verified model ([`Bundle.lean`](../../lean/EsmSplit/Bundle.lean), [`Semantics.lean`](../../lean/EsmSplit/Semantics.lean)); the front end computes the footprints.
 6. `AssignsHome`: code that assigns a module-scope name sits in the module that declares it. ES imports are read-only, so an assignment through an import throws a `TypeError` when it runs. It is a conjunct of `Sound`. What a _call_ of such code changes is `writes`, and is ordered by the conflict rule, wherever the call sits. The first version of this checker lacked the rule and accepted such a split.
 7. Refused outright, because moving or renaming the unit changes what it does:
@@ -132,3 +132,7 @@ bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:fuzz_test
 ```
 
 The target generates 16 bundles with four split attempts each at seed 1. It runs each valid bundle and tree in Node and compares exit status, stdout and error class. The test requires a matching acceptance and fails if the checker accepts a tree with different behavior. The sample uses the ordinary templates. Standalone `./run.sh --translation-fuzz` runs the larger default sample.
+
+The callback fixture exercises the initialization-order regression where a callback passed to `map` reads a
+constant before its module initializes it. The checker reports obligations, and Node throws `ReferenceError`
+when loading the unsafe output. The extractor also has a separate regression test for the callback's eager read.

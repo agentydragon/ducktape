@@ -22,4 +22,14 @@ theorem split_correct {B : Bundle} {S : Spec} {P : Plan} (h : Valid B S P) : Cor
     fun x => ⟨hlt x, fun hx => hall x (List.mem_range.2 hx)⟩
   exact ⟨⟨hnd, hmem⟩, hyg, fun _ _ M s0 => B.exec_reorder M s0 B.length P.execOrder hnd hmem hord⟩
 
+/-- `Valid` without the spec: everything the semantic theorem and the linking need. -/
+def Sound (B : Bundle) (P : Plan) : Prop :=
+  UniqueDefs B ∧ ReadsClosed B ∧ Linkable B P ∧ Hygienic B P ∧ AssignsHome B P ∧ Permutes B P ∧ OrderOk B P
+
+theorem sound_correct {B : Bundle} {P : Plan} (h : Sound B P) : Correct B P := by
+  obtain ⟨_, _, _, hyg, _, ⟨hnd, hlt, hall⟩, hord⟩ := h
+  have hmem : ∀ x, x ∈ P.execOrder ↔ x < B.length :=
+    fun x => ⟨hlt x, fun hx => hall x (List.mem_range.2 hx)⟩
+  exact ⟨⟨hnd, hmem⟩, hyg, fun _ _ M s0 => B.exec_reorder M s0 B.length P.execOrder hnd hmem hord⟩
+
 end EsmSplit

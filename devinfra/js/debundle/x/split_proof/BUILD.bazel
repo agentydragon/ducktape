@@ -2,7 +2,7 @@
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 
 exports_files(
     [
@@ -49,4 +49,16 @@ js_run_binary(
     stdout = "generated/Instance.lean",
     tool = ":extract",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
+)
+
+js_test(
+    name = "extract_callback_test",
+    data = [
+        "extract/extract.mjs",
+        "//:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/experiments/translation:fixtures/callback/bundle.js",
+    ],
+    entry_point = "extract/callback_test.mjs",
+    env = {"BUNDLE": "$(rootpath //devinfra/js/debundle/x/split_proof/experiments/translation:fixtures/callback/bundle.js)"},
+    no_copy_to_bin = ["//devinfra/js/debundle/x/split_proof/experiments/translation:fixtures/callback/bundle.js"],
 )
