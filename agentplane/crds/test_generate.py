@@ -46,33 +46,5 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership(runfi
         assert not validator.is_valid(invalid), invalid
 
 
-def test_credential_schema_preserves_source_and_target_constraints(runfiles: Runfiles) -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresscredentials.yaml", runfiles))
-    for version in crd["spec"]["versions"]:
-        spec = version["schema"]["openAPIV3Schema"]["properties"]["spec"]
-        assert set(spec["required"]) == {"description", "source", "targets"}
-        assert spec["properties"]["description"]["minLength"] == 1
-        assert spec["properties"]["targets"]["minItems"] == 1
-
-        source = spec["properties"]["source"]
-        assert set(source["properties"]) == {"secretRef", "kubernetesServiceAccount"}
-        validator = Draft4Validator(source, registry=Registry())
-        assert validator.is_valid({"secretRef": {"name": "token", "key": "value"}})
-        assert validator.is_valid({"kubernetesServiceAccount": {"namespace": "accounts", "name": "diagnostics"}})
-        assert "filter(x,x==true).size() == 1" in source["x-kubernetes-validations"][0]["rule"]
-
-        target = spec["properties"]["targets"]["items"]
-        assert target["properties"]["method"]["enum"] == [
-            "wholeValue",
-            "schemeToken",
-            "basicUsername",
-            "basicPassword",
-            "basicWhole",
-            "jsonField",
-        ]
-        assert target["properties"]["field"]["maxLength"] == 256
-        assert target["x-kubernetes-validations"]
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

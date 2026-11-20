@@ -246,13 +246,16 @@ async def test_egress_credential_source_and_target_validation() -> None:
             ({"method": "basicPassword", "header": "Authorization"}, True),
             ({"method": "basicWhole", "header": "Authorization"}, True),
             ({"method": "jsonField", "field": "password"}, True),
+            ({"method": "jsonField", "field": "f" * 256}, True),
             ({"method": "jsonField"}, False),
             ({"method": "jsonField", "field": "password", "header": "Authorization"}, False),
             ({"method": "jsonField", "field": "password", "scheme": "Bearer"}, False),
             ({"method": "jsonField", "field": ""}, False),
+            ({"method": "jsonField", "field": "f" * 257}, False),
             ({"method": "wholeValue", "header": "Authorization", "scheme": "Bearer"}, False),
             ({"method": "wholeValue", "field": "password"}, False),
             ({"method": "schemeToken", "header": "Authorization"}, False),
+            ({"method": "unknownMethod", "header": "Authorization"}, False),
         ]
         secret = {"secretRef": {"name": "api-token", "key": "token"}}
         for index, (source, valid) in enumerate(source_cases):
@@ -290,6 +293,17 @@ async def test_egress_credential_source_and_target_validation() -> None:
         ]
         for index, (source, targets, valid) in enumerate(account_cases):
             await create(f"account-{index}", source, targets, valid)
+
+        # A credential needs a non-empty description, a source and at least one target.
+        complete: dict[str, Any] = {"description": "API token", "source": secret, "targets": [bearer]}
+        spec_cases: list[tuple[dict[str, Any], bool]] = [
+            (complete, True),
+            ({**complete, "description": ""}, False),
+            ({**complete, "targets": []}, False),
+            *(({key: value for key, value in complete.items() if key != omitted}, False) for omitted in complete),
+        ]
+        for index, (spec, valid) in enumerate(spec_cases):
+            await _create(credentials, f"spec-{index}", spec, valid)
 
 
 if __name__ == "__main__":
