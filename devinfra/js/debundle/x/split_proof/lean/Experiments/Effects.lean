@@ -195,7 +195,8 @@ structure Patch where
 can be read by any unit. A change to any other member of a function or a namespace is read where the program names it
 (`Symbol.dispose`, `Promise.withResolvers`), which `recBuiltinRead` records. -/
 def implicitKeys : List String :=
-  ["valueOf", "toString", "toLocaleString", "toJSON", "then", "catch", "finally", "constructor", "__proto__", "prototype"]
+  ["valueOf", "toString", "toLocaleString", "toJSON", "then", "catch", "finally", "constructor", "__proto__", "prototype",
+   "stackTraceLimit", "prepareStackTrace"]
 
 def Patch.tracked (p : Patch) : Bool :=
   !p.path.endsWith ".prototype" && (match p.key with | some k => !implicitKeys.contains k | none => false)
@@ -234,6 +235,8 @@ structure St where
   codeHashes : Std.HashMap USize UInt64 := {}
   /-- what each piece of code mentions and assigns, by address (see `codeInfo`) -/
   codeInfos : Std.HashMap USize (Array String × Array String) := {}
+  /-- what each piece of code patches by name, by address (see `codePatches`) -/
+  codePatchInfos : Std.HashMap USize (Array (String × Option String)) := {}
   /-- why the unit being run touches the world: the first reason -/
   why      : String := ""
   /-- why it runs unknown code: the first reason -/
@@ -274,6 +277,85 @@ unsafe def codeInfoImpl (j : Json) : M (Array String × Array String) := do
 
 @[implemented_by codeInfoImpl] opaque codeInfo (j : Json) : M (Array String × Array String)
 
+/-- The root and the member names of a chain `a.b.c` (`*` for a computed name), or `none` for anything else. -/
+partial def memberChain (j : Json) : Option (String × List String) :=
+  match typ j with
+  | "Identifier" => some (str (fld j "name"), [])
+  | "MemberExpression" =>
+    (memberChain (fld j "object")).map fun (r, ks) =>
+      (r, ks ++ [if flag j "computed" then "*" else str (fld (fld j "property") "name")])
+  | _ => none
+
+/-- What a change of `r.ks…` is, by name: a member of an intrinsic (`Math.max`, which a read can name), a prototype or
+anything deeper (a read can reach it without naming it), or a global that names an intrinsic. `key` is the member
+changed, if the text names it. -/
+def patchByName (r : String) (ks : List String) (key : Option String) : Option (String × Option String) :=
+  if intrinsicGlobals.contains r then
+    if ks.isEmpty then some (r, key) else some (r ++ ".prototype", none)
+  else if ["globalThis", "window", "self"].contains r && ks.isEmpty then
+    match key with
+    | some k => if intrinsicGlobals.contains k then some ("global", some k) else none
+    | none => none
+  else none
+
+/-- The member an assignment, an update or a `delete` changes. -/
+def targetPatch (t : Json) : Option (String × Option String) :=
+  match typ t with
+  | "Identifier" => if intrinsicGlobals.contains (str (fld t "name")) then some ("global", some (str (fld t "name"))) else none
+  | "MemberExpression" =>
+    (memberChain (fld t "object")).bind fun (r, ks) =>
+      patchByName r ks (if flag t "computed" then none else some (str (fld (fld t "property") "name")))
+  | _ => none
+
+/-- The functions that change their first argument, called as `Object.f(…)` or `Reflect.f(…)`. -/
+def mutatorNames : List String :=
+  ["defineProperty", "defineProperties", "setPrototypeOf", "assign", "freeze", "seal", "preventExtensions", "set",
+   "deleteProperty"]
+
+/-- The intrinsics a piece of code patches by name, read off its text: a store, an update, a `delete`, a call of
+`Object.defineProperty` and its kin on `Object.prototype`, `Math`, `globalThis.Array`, or a bare assignment to an
+intrinsic global. For code that is not run here (the world may run it at any time, or it is run but not looked into). A
+patch through an alias is not found. -/
+partial def textPatches (j : Json) : Array (String × Option String) :=
+  match j with
+  | .arr xs => xs.foldl (fun acc x => acc ++ textPatches x) #[]
+  | .obj kvs =>
+    let own : Option (String × Option String) :=
+      match typ j with
+      | "AssignmentExpression" => targetPatch (fld j "left")
+      | "UpdateExpression" => targetPatch (fld j "argument")
+      | "UnaryExpression" => if str (fld j "operator") == "delete" then targetPatch (fld j "argument") else none
+      | "CallExpression" =>
+        let c := fld j "callee"
+        if typ c == "MemberExpression" && !flag c "computed" then
+          let m := str (fld (fld c "property") "name")
+          if mutatorNames.contains m && ["Object", "Reflect"].contains (str (fld (fld c "object") "name")) then
+            match ((items (fld j "arguments"))[0]?).bind memberChain with
+            | some (r, ks) => patchByName r ks none
+            | none => none
+          else if m == "__defineGetter__" || m == "__defineSetter__" then
+            (memberChain (fld c "object")).bind fun (r, ks) => patchByName r ks none
+          else none
+        else none
+      | _ => none
+    let below := kvs.valuesArray.foldl (fun acc v => acc ++ textPatches v) #[]
+    match own with
+    | some p => below.push p
+    | none => below
+  | _ => #[]
+
+/-- `textPatches`, once per node. -/
+unsafe def codePatchesImpl (j : Json) : M (Array (String × Option String)) := do
+  let a := ptrAddrUnsafe j
+  match (← get).codePatchInfos[a]? with
+  | some r => return r
+  | none =>
+    let r := textPatches j
+    modify fun s => { s with codePatchInfos := s.codePatchInfos.insert a r }
+    return r
+
+@[implemented_by codePatchesImpl] opaque codePatches (j : Json) : M (Array (String × Option String))
+
 /-- How many nested calls are run. -/
 def maxDepth : Nat := 8
 /-- Abstract steps per unit. -/
@@ -302,6 +384,7 @@ units that read the member (`recBuiltinRead`), or, for a change that is not read
 unit that is not a function declaration. -/
 def patchIntrinsic (path : String) (key : Option String) (what : String) : M Unit :=
   modify fun s =>
+    let path := canonPath path
     if s.patches.any (fun p => p.path == path && p.key == key) then s
     else { s with patches := s.patches.push { unit := s.unit, path, key, what } }
 
@@ -332,7 +415,7 @@ def noteChange (v : AV) (what : String) : M Unit := do
 /-- A read of a member of an intrinsic (`Symbol.dispose`), or of all of them: `footprints` compares what a unit read with
 what the bundle patches. The names start with `%`, which no variable does. -/
 def recBuiltinRead (path : String) (key : Option String) : M Unit :=
-  modify fun s => { s with reads := s.reads.insert ("%" ++ path ++ "." ++ key.getD "*") }
+  modify fun s => { s with reads := s.reads.insert ("%" ++ canonPath path ++ "." ++ key.getD "*") }
 
 /-- Everything about the intrinsic objects among `v` is read: `Object.keys(Symbol)`, `for (k in Promise)`. -/
 def recBuiltinsRead (v : AV) : M Unit := do
@@ -350,6 +433,12 @@ def builtinObj (path : String) : M Nat := do
       let o := s.objs.size
       (o, { s with objs := s.objs.push { kind := .builtin path }, builtins := s.builtins.insert path o,
                    changes := s.changes + 1 })
+
+/-- The prototypes of a string, a number, a boolean, a symbol and a bigint. -/
+def primitivePrototypeValue : M AV := do
+  let mut r : AV := #[]
+  for p in primitivePrototypes do r := r.join (AV.ofObj (← builtinObj p))
+  return r
 
 /-- An object for an allocation site in the current unit. The same site yields the same object. Arrays, plain
 objects and functions start with their intrinsic prototype. (The state is updated in place: `get` followed by `set`
@@ -412,6 +501,8 @@ the world runs is not run here: every variable it may assign reads as anything f
 run but not looked into (a call deeper than the analysis follows, a generator that is advanced later). -/
 partial def escapeCode (code : Json) (scope : Scope) : M Unit := do
   for fr in scope do for c in fr.values do escapeObj c
+  -- the code is not run here, and it may be run at any time: a patch its text names is made
+  for (p, k) in (← codePatches code) do patchIntrinsic p k "a patch in code that is not run here"
   let (mentioned, assigned) ← codeInfo code
   for n in mentioned do
     if let some c := (← get).mods[n]? then escapeObj c
@@ -481,6 +572,7 @@ def joinProto (o : Nat) (v : AV) : M Unit := do
 def giveUp (why : String) (code : Json) : M Unit := do
   setWorld ("give up: " ++ why)
   modify fun s => { s with unknown := s.unknown.push why }
+  for (p, k) in (← codePatches code) do patchIntrinsic p k "a patch in code the analysis gave up on"
   for n in mentions code do
     if let some c := (← get).mods[n]? then escapeObj c
 
@@ -616,6 +708,7 @@ unknown code. -/
 partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M AV := do
   if c == 0 then
     match key with
+    | some "__proto__" => return AV.top
     | some k =>
       let child := "prim." ++ k
       if table.contains child then return AV.prim.join (AV.ofObj (← builtinObj child))
@@ -641,6 +734,10 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
           modify fun s => { s with usedVendor := s.usedVendor.insert (child.drop 7).toString }
           return AV.ofObj (← builtinObj child)
         else return AV.top
+      else if k == "__proto__" && !path.startsWith "env:" then
+        match builtinProto path with
+        | some pp => return AV.ofObj (← builtinObj pp)
+        | none => return #[]
       else if table.contains child then return AV.prim.join (AV.ofObj (← builtinObj child))
       -- the state of the environment: reading it is an effect, and the value is the world's
       else if path.startsWith "env:" then
@@ -699,6 +796,9 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
     return r
 
 partial def getAV (a : AV) (key : Option String) : M AV := do
+  -- a value that is a primitive for certain has the prototype of a string, a number, a boolean, a symbol or a bigint; one
+  -- that only may be a primitive has an unknown one (it would patch all five)
+  if key == some "__proto__" && a == AV.prim then return ← primitivePrototypeValue
   let mut parts : Array AV := #[]
   for c in a do parts := parts.push (← getVal c key)
   let r := AV.joinMany parts
@@ -984,6 +1084,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   for p in s.iterates do let _ ← iterate (pos p) false
   for p in s.optionalIterates do let _ ← iterate (pos p) true
   for p in s.retains do escapeAV (pos p)
+  for p in s.readsContents do let _ ← contentsOf (pos p)
   for p in s.muts do
     noteChange (pos p) "mutation of"
     for c in pos p do
@@ -995,6 +1096,12 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   if s.storeArgs then
     setAV thisV none (AV.joinAll args)
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
+  -- copying a property reads it: a getter the source has runs
+  for (src, dst) in s.copies do setAV (pos dst) none (← contentsOf (pos src))
+  for (dst, f) in s.accessors do
+    setAV (pos dst) none (pos f)
+    for c in pos dst do
+      if c ≥ 2 then modObj (c - 1) fun x => { x with acc := "*" :: x.acc }
   if s.setProto then
     noteChange (pos 1) "prototype of"
     for c in pos 1 do
@@ -1053,12 +1160,21 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     return AV.ofObj o
   | .protoOf p =>
     let mut r : AV := #[]
+    -- a value that is a primitive for certain has the prototypes of the five wrappers; one that only may be has an unknown one
+    if pos p == AV.prim then return ← primitivePrototypeValue
     for c in pos p do
       if c ≤ 1 then r := r.join AV.top
       else
         let ob ← getObj (c - 1)
         r := r.join ob.proto
-        if ob.kind matches .builtin _ then r := r.join AV.top
+        match ob.kind with
+        | .builtin q =>
+          if q.startsWith "env:" || q.startsWith "vendor" then r := r.join AV.top
+          else
+            match builtinProto q with
+            | some pp => r := r.join (AV.ofObj (← builtinObj pp))
+            | none => pure ()
+        | _ => pure ()
     return r
   | .freshOfEntries p =>
     let o ← alloc .plain (some (mixHash (mixHash fr.path site) 83))
@@ -1298,6 +1414,8 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     return r
   | "MemberExpression" =>
     if typ (fld j "object") == "Super" then
+      -- the method it names is not looked up: what `this` inherits may run, at any time
+      escapeAV fr.this
       giveUp "super member" j
       return AV.top
     let o ← eval fr (fld j "object")
@@ -1462,7 +1580,11 @@ partial def assignTo (fr : Fr) (t : Json) (v : AV) : M Unit := do
   | "Identifier" =>
     match ← lookup fr (str (fld t "name")) with
     | some c => writeVar c v
-    | none => setWorld ("assignment to the global " ++ str (fld t "name")); escapeAV v
+    | none =>
+      let n := str (fld t "name")
+      setWorld ("assignment to the global " ++ n); escapeAV v
+      -- replacing a global that names an intrinsic changes what the name means to every unit
+      if intrinsicGlobals.contains n then patchIntrinsic "global" (some n) s!"assignment to {n}"
   | "MemberExpression" =>
     let o ← eval fr (fld t "object")
     if flag t "computed" then
@@ -1784,12 +1906,14 @@ def footprints (units : Array Json) (imports : Std.HashMap String (String × Str
     -- P1 does not hold when the bundle changes an intrinsic: a unit that reads what it changed may read either value
     let patched := !t.hoisted && (wide || e.reads.any fun rd => rd.startsWith "%" && (named.contains rd || any.contains rd))
     let world := e.world || patched
+    -- the member it read may now be a function of the program, which the analysis did not run here: any code may have run
+    let unk := e.unk || patched
     let eager := if world then (dedupeArr (t.rawEager ++ t.rawLazy)).toList else (dedupeArr t.rawEager).toList
     let seeds : Std.HashSet String := Std.HashSet.ofList eager
     { defs := t.defs, eager, lazy := (dedupeArr t.rawLazy).toList,
       deps := (dedupeArr e.reads).toList.filter (fun n => !n.startsWith "%" && !seeds.contains n),
       hoisted := t.hoisted, effect := world,
-      writes := (dedupeArr (if e.unk then e.writes ++ r.escaped ++ importNames else e.writes)).toList,
+      writes := (dedupeArr (if unk then e.writes ++ r.escaped ++ importNames else e.writes)).toList,
       assigns := (dedupeArr ((t.assignedEager ++ t.assignedLazy).filter declared.contains)).toList,
       fallback := (dedupeArr t.fallback).toList, rawEager := (dedupeArr t.rawEager).toList,
       rawLazy := (dedupeArr t.rawLazy).toList }

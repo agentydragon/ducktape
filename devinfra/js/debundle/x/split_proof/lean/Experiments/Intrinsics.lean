@@ -12,11 +12,17 @@ change, what they store where, what they return.
 
 **Premise P1: nothing the analysis cannot see patches the intrinsics.** `Object.keys` is the function this table
 describes, and `Object.prototype` has the members it has. A patch the bundle makes itself is seen: a store, a
-definition, a deletion or a change of prototype on an intrinsic reached by name (`Object.prototype.x = …`,
-`Object.defineProperty(Array.prototype, …)`, `Object.setPrototypeOf(…)`; not through a value that may also be
-another object), and a store into the global object under the name of an intrinsic (`globalThis.Promise = …`). Any unit may read what a patch changes, so then every unit that is not
-a function declaration is treated as touching the world (`Effects.footprints`). Not seen: a patch by another script
-loaded before or during the bundle, one through a computed key into `window`, one through a value the world returned.
+definition, a deletion, a change of prototype or an accessor on an intrinsic reached by name or along a prototype
+chain (`Object.prototype.x = …`, `Object.defineProperty(Array.prototype, …)`, `Reflect.set(…)`,
+`Array.prototype.__proto__.x = …`; not through a value that may also be another object), and a store into a global
+that names an intrinsic (`Array = …`, `globalThis.Promise = …`). In code that is not run (a generator body, a call
+deeper than the analysis follows, a callback of a function without a row, a `Proxy` trap, a unit it gave up on) the
+text is read for the same shapes. Any unit may read what a patch changes, so then every unit that is not a function
+declaration is treated as touching the world (`Effects.footprints`); for a static member (`Math.max = …`) it is the
+units that read it. Not seen: a patch through an alias or a computed name in code that is not run, a standard
+function forwarded through a spread or called through a computed name, `Object.defineProperty(globalThis, …)`, a
+patch by another script loaded before or during the bundle, one through a value the world returned, and state the
+engine keeps (`RegExp.$1`). `experiments/effects/debug/p1_known_gaps` has a program for each.
 
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
 accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made, and
@@ -97,6 +103,14 @@ structure Summary where
   world  : Bool := false
   /-- positions the environment keeps: the objects there escape -/
   retains : List Nat := []
+  /-- `(from, to)`: the properties of the objects at `from` are read, so that a getter the program defined runs, and
+      stored into the objects at `to` (`Object.assign`) -/
+  copies : List (Nat × Nat) := []
+  /-- positions whose properties it reads, so that a getter the program defined runs (`Object.prototype.toString`
+      reads `Symbol.toStringTag`) -/
+  readsContents : List Nat := []
+  /-- `(to, f)`: the function at `f` becomes an accessor of the objects at `to` (`__defineGetter__`) -/
+  accessors : List (Nat × Nat) := []
   deriving Inhabited
 
 open Ret in
@@ -121,12 +135,23 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("Object.freeze", { ret := arg 0, muts := [1] }),
   ("Object.seal", { ret := arg 0, muts := [1] }),
   ("Object.preventExtensions", { ret := arg 0, muts := [1] }),
-  ("Object.assign", { ret := arg 0, muts := [1], store := [(2, 1), (3, 1), (4, 1), (5, 1)] }),
+  ("Object.assign", { ret := arg 0, muts := [1], copies := [(2, 1), (3, 1), (4, 1), (5, 1)] }),
   ("Object.setPrototypeOf", { ret := arg 0, muts := [1], setProto := true }),
   ("Object.prototype.hasOwnProperty", {}),
   ("Object.prototype.isPrototypeOf", {}),
   ("Object.prototype.propertyIsEnumerable", {}),
-  ("Object.prototype.toString", {}), ("Object.prototype.toLocaleString", {}),
+  ("Object.prototype.toString", { readsContents := [0] }), ("Object.prototype.toLocaleString", {}),
+  ("Object.prototype.__defineGetter__", { muts := [0], accessors := [(0, 2)] }),
+  ("Object.prototype.__defineSetter__", { muts := [0], accessors := [(0, 2)] }),
+  ("Object.prototype.__lookupGetter__", { ret := contents 0 }), ("Object.prototype.__lookupSetter__", { ret := contents 0 }),
+  -- Reflect: the same as the `Object` functions with the same names, with the target first
+  ("Reflect.get", { ret := contents 1 }), ("Reflect.has", {}), ("Reflect.ownKeys", { ret := freshPrims }),
+  ("Reflect.getPrototypeOf", { ret := protoOf 1 }), ("Reflect.getOwnPropertyDescriptor", { ret := descriptorOf 1 }),
+  ("Reflect.isExtensible", {}),
+  ("Reflect.set", { muts := [1], store := [(3, 1)] }),
+  ("Reflect.defineProperty", { muts := [1], define := true }),
+  ("Reflect.setPrototypeOf", { muts := [1], setProto := true }),
+  ("Reflect.deleteProperty", { muts := [1] }), ("Reflect.preventExtensions", { muts := [1] }),
   ("Function.prototype.call", {}), ("Function.prototype.apply", {}), ("Function.prototype.bind", {}),
   ("Function.prototype.toString", {}), ("Array.prototype.toString", { convertsContents := [0] }),
   ("RegExp.prototype.toString", {}),
@@ -246,9 +271,44 @@ def members : Std.HashSet String := Std.HashSet.ofList memberPaths
 /-- Globals that name an intrinsic object or function. Everything else undeclared is the environment. -/
 def intrinsicGlobals : Std.HashSet String := Std.HashSet.ofList [
   "Object", "Array", "Symbol", "Map", "Set", "WeakMap", "WeakSet", "Promise", "Error", "TypeError", "RangeError",
-  "SyntaxError", "ReferenceError", "RegExp", "JSON", "Math", "Number", "String", "Boolean", "BigInt", "Intl",
+  "SyntaxError", "ReferenceError", "EvalError", "URIError", "AggregateError", "RegExp", "JSON", "Math", "Number", "String",
+  "Boolean", "BigInt", "Intl", "Function", "Reflect", "Atomics", "WeakRef", "FinalizationRegistry", "Iterator",
+  "ArrayBuffer", "SharedArrayBuffer", "DataView", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array",
+  "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array",
+  "escape", "unescape",
   "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI",
   "TextEncoder", "TextDecoder", "URLSearchParams", "DOMException"]
+
+/-- The namespace objects: they are not functions, and inherit from `Object.prototype`. -/
+def namespaces : List String := ["Math", "JSON", "Reflect", "Atomics", "Intl"]
+
+/-- The error constructors: each inherits the statics of `Error`, and each prototype inherits `Error.prototype`. -/
+def errorTypes : List String :=
+  ["TypeError", "RangeError", "SyntaxError", "ReferenceError", "EvalError", "URIError", "AggregateError"]
+
+/-- The prototype of an intrinsic object, by path (`none` for `Object.prototype`, which has none): `Array.prototype` and
+the namespaces inherit from `Object.prototype`, `TypeError` from `Error`, and every other function, a constructor or a
+method, from `Function.prototype`. -/
+def builtinProto (path : String) : Option String :=
+  if path == "Object.prototype" then none
+  else if path == "Function.prototype" then some "Object.prototype"
+  else if path.endsWith ".prototype" then
+    if errorTypes.contains (path.toRawSubstring.dropRight 10).toString then some "Error.prototype" else some "Object.prototype"
+  else if namespaces.contains path then some "Object.prototype"
+  else if errorTypes.contains path then some "Error"
+  else some "Function.prototype"
+
+/-- The paths of the prototypes of a string, a number, a boolean, a symbol and a bigint: a primitive may be any of them. -/
+def primitivePrototypes : List String :=
+  ["String.prototype", "Number.prototype", "Boolean.prototype", "Symbol.prototype", "BigInt.prototype"]
+
+/-- One intrinsic object has more than one path: an error constructor inherits the statics of `Error`, and `parseFloat`
+is `Number.parseFloat`. A patch and a read of a member meet under the same path. -/
+def canonPath (path : String) : String :=
+  if errorTypes.contains path then "Error"
+  else if path == "parseFloat" then "Number.parseFloat"
+  else if path == "parseInt" then "Number.parseInt"
+  else path
 
 /-- Globals that name an object or a function of the environment. Reading one is not an effect; reading what it holds is,
 and a call of one of its listed members is the effect its row says. -/

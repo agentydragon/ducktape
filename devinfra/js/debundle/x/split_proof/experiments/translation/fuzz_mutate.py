@@ -25,6 +25,7 @@ BUNDLE, PLAN, LOWER, TRANSLATE = (
 
 # name: (file, old text, new text, why the fuzzer should see it)
 EFFECTS = "Experiments/Effects.lean"
+INTRINSICS = "Experiments/Intrinsics.lean"
 MUTANTS = {
     # the model: the conflict rule and module order
     "drop the effect-effect conflict": (BUNDLE, "(a.effect && b.effect)", "false", "effects swap"),
@@ -285,8 +286,8 @@ MUTANTS = {
     ),
     "getPrototypeOf returns nothing": (
         EFFECTS,
-        "        r := r.join ob.proto\n        if ob.kind matches .builtin _ then r := r.join AV.top",
-        "        if ob.kind matches .builtin _ then r := r.join AV.top",
+        "        let ob ← getObj (c - 1)\n        r := r.join ob.proto\n        match ob.kind with",
+        "        let ob ← getObj (c - 1)\n        match ob.kind with",
         "a class prototype patched through an instance",
     ),
     "standard functions do not convert": (
@@ -381,6 +382,72 @@ MUTANTS = {
         '("Array.prototype.join", { convertsContents := [0] })',
         '("Array.prototype.join", {})',
         "an element with a toString that writes an object",
+    ),
+    "a bare assignment to an intrinsic global is not a patch": (
+        EFFECTS,
+        '      if intrinsicGlobals.contains n then patchIntrinsic "global" (some n) s!"assignment to {n}"\n',
+        "",
+        "Array = class { … }",
+    ),
+    "the prototype of an intrinsic is the world's": (
+        EFFECTS,
+        '      else if k == "__proto__" && !path.startsWith "env:" then\n        match builtinProto path with\n        | some pp => return AV.ofObj (← builtinObj pp)\n        | none => return #[]\n',
+        "",
+        "Array.prototype.__proto__.tag = …",
+    ),
+    "a primitive has no wrapper prototypes": (
+        EFFECTS,
+        '  if key == some "__proto__" && a == AV.prim then return ← primitivePrototypeValue\n',
+        "",
+        '"x".__proto__.tag = …',
+    ),
+    "code that is not run is not scanned for patches": (
+        EFFECTS,
+        '  for (p, k) in (← codePatches code) do patchIntrinsic p k "a patch in code that is not run here"\n',
+        "",
+        "a patch in a generator body or a callback of a standard function without a row",
+    ),
+    "a give-up is not scanned for patches": (
+        EFFECTS,
+        '  for (p, k) in (← codePatches code) do patchIntrinsic p k "a patch in code the analysis gave up on"\n',
+        "",
+        "a patch after a loop that needs many rounds",
+    ),
+    "a read of a patched member runs no unknown code": (
+        EFFECTS,
+        "    let unk := e.unk || patched\n",
+        "    let unk := e.unk\n",
+        "a replaced Math.max that writes module state",
+    ),
+    "an error constructor has its own statics": (
+        INTRINSICS,
+        '  if errorTypes.contains path then "Error"\n  else if path == "parseFloat"',
+        '  if false then "Error"\n  else if path == "parseFloat"',
+        "Error.tag = … read as TypeError.tag",
+    ),
+    "Object.assign copies no property values": (
+        EFFECTS,
+        "  for (src, dst) in s.copies do setAV (pos dst) none (← contentsOf (pos src))\n",
+        "",
+        "Object.assign runs a getter of its source",
+    ),
+    "__defineGetter__ defines no accessor": (
+        EFFECTS,
+        "  for (dst, f) in s.accessors do\n    setAV (pos dst) none (pos f)\n",
+        "  for (dst, f) in s.accessors do\n    pure ()\n",
+        "__defineGetter__ on an intrinsic prototype",
+    ),
+    "toString does not read the string tag": (
+        EFFECTS,
+        "  for p in s.readsContents do let _ ← contentsOf (pos p)\n",
+        "",
+        "Object.prototype.toString runs a Symbol.toStringTag getter",
+    ),
+    "Error.stackTraceLimit is not read by every unit": (
+        EFFECTS,
+        '"__proto__", "prototype",\n   "stackTraceLimit", "prepareStackTrace"]',
+        '"__proto__", "prototype"]',
+        "Error.stackTraceLimit = 0 before new Error",
     ),
 }
 

@@ -87,6 +87,28 @@ console.log(seen);
     reorders: [{ order: [0, 1, 2, 3, 5, 4, 6], behavior: "differs" }],
   },
   {
+    name: "a write in a catch block",
+    source: `
+const o = { n: 0 };
+try { throw new Error("x"); } catch (e) { o.n = 1; }
+const seen = o.n;
+console.log(seen);
+`,
+    expect: ["pure", "writes o", "pure", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a write in a finally block",
+    source: `
+const o = { n: 0 };
+try { o.n = 1; } finally { o.n = 2; }
+const seen = o.n;
+console.log(seen);
+`,
+    expect: ["pure", "writes o", "pure", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
     name: "a class: the constructor and a method write `this`",
     source: `
 class Box { n = 0; inc() { this.n++; return this.n; } }
@@ -989,6 +1011,225 @@ const seen = a.tag;
 console.log(seen);
 `,
     expect: ["world", "world", "world", "world"],
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a bare assignment to an intrinsic global replaces it",
+    source: `
+Array = class { static isArray() { return "patched"; } };
+const r = Array.isArray([]);
+console.log(r);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "Function.prototype is an intrinsic: a store into it reaches every function",
+    source: `
+const f = () => 1;
+Function.prototype.tag = "patched";
+const seen = f.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "Reflect.set into an intrinsic prototype patches it",
+    source: `
+const o = {};
+Reflect.set(Object.prototype, "tag", "patched");
+const seen = o.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a patch through the prototype of an intrinsic prototype",
+    source: `
+Array.prototype.__proto__.tag = "patched";
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "a patch through Object.getPrototypeOf of an intrinsic prototype",
+    source: `
+const o = {};
+Object.getPrototypeOf(Array.prototype).tag = "patched";
+const seen = o.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a patch through the prototype of a primitive",
+    source: `
+const s = "abc";
+"x".__proto__.tag = "patched";
+const seen = s.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "__defineGetter__ on an intrinsic prototype patches it",
+    source: `
+const o = {};
+Object.prototype.__defineGetter__("tag", () => "patched");
+const seen = o.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a generator body that patches an intrinsic runs when it is advanced",
+    source: `
+function* g() { Object.prototype.tag = "patched"; yield 1; }
+g().next();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a loop that needs many rounds gives up the unit: a patch after it is still seen",
+    source: `
+(() => { let a=0,b=0,c=0,d=0,e=0,f=0,g=0,i=0; while (i++ < 8) { g=f; f=e; e=d; d=c; c=b; b={}; } Object.prototype.tag = "patched"; })();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "a callback of a standard function without a row may patch an intrinsic",
+    source: `
+Object.groupBy([1], () => { Object.prototype.tag = "patched"; return "k"; });
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "super.method() gives up: what this inherits may patch an intrinsic",
+    source: `
+class A { patcher() { Object.prototype.tag = "patched"; } }
+class B extends A { m() { super.patcher(); } }
+const b = new B();
+b.m();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "differs" }],
+  },
+  {
+    name: "a Proxy trap may patch an intrinsic",
+    source: `
+const p = new Proxy({}, { get() { Object.prototype.tag = "patched"; return 1; } });
+p.x;
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a call chain deeper than the analysis follows may patch an intrinsic",
+    source: `
+function f1() { f2(); }
+function f2() { f3(); }
+function f3() { f4(); }
+function f4() { f5(); }
+function f5() { f6(); }
+function f6() { f7(); }
+function f7() { f8(); }
+function f8() { f9(); }
+function f9() { Object.prototype.tag = "patched"; }
+f1();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 9, 11], behavior: "differs" }],
+  },
+  {
+    name: "more handlers than the analysis follows: one patches an intrinsic",
+    source: `
+const fns = [() => 0, () => 1, () => 2, () => 3, () => 4, () => 5, () => 6, () => 7, () => 8, () => 9, () => 10, () => 11, () => 12, () => 13, () => 14, () => 15, () => 16, () => 17, () => 18, () => 19, () => { Object.prototype.tag = "patched"; }];
+fns[20]();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "a chain of .call hops deeper than the analysis follows may patch an intrinsic",
+    source: `
+function a() { b.call(null); }
+function b() { c.call(null); }
+function c() { d.call(null); }
+function d() { e.call(null); }
+function e() { Object.prototype.tag = "patched"; }
+a();
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 1, 2, 3, 4, 6, 5, 7], behavior: "differs" }],
+  },
+  {
+    name: "a replaced static member is program code: its reads and writes order against the units that call it",
+    source: `
+let counter = 0;
+Math.max = () => { counter++; return 0; };
+const r = Math.max(1, 2);
+const c = counter;
+console.log(c);
+`,
+    reorders: [{ order: [0, 1, 3, 2, 4], behavior: "differs" }],
+  },
+  {
+    name: "new Error reads Error.stackTraceLimit",
+    source: `
+Error.stackTraceLimit = 0;
+const e = new Error("x");
+const n = e.stack.split("\\n").length;
+console.log(n);
+`,
+    reorders: [{ order: [1, 0, 2, 3], behavior: "differs" }],
+  },
+  {
+    name: "TypeError inherits the statics of Error",
+    source: `
+Error.tag = "patched";
+const seen = typeof TypeError.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "parseFloat is Number.parseFloat",
+    source: `
+Number.parseFloat.tag = "patched";
+const seen = typeof parseFloat.tag;
+console.log(seen);
+`,
+    reorders: [{ order: [1, 0, 2], behavior: "differs" }],
+  },
+  {
+    name: "Object.assign runs a getter of its source",
+    source: `
+const src = { get x() { Object.prototype.tag = "patched"; return 1; } };
+const t = Object.assign({}, src);
+const seen = ({}).tag;
+console.log(seen);
+`,
+    reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
+  },
+  {
+    name: "Object.prototype.toString runs a Symbol.toStringTag getter",
+    source: `
+const o = { get [Symbol.toStringTag]() { Object.prototype.tag = 'patched'; return 'X'; } };
+const s = Object.prototype.toString.call(o);
+const seen = ({}).tag;
+console.log(seen);
+`,
     reorders: [{ order: [0, 2, 1, 3], behavior: "differs" }],
   },
   {
