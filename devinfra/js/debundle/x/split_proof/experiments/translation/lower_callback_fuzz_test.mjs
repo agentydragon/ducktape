@@ -74,7 +74,9 @@ if (process.argv[2] !== "--worker") {
     const safe = `${base}const ${result} = ${factory}(${callback});\nconsole.log("side-${value}");\n${result}();`;
     const source = path.join(tmp, `safe-${i}.mjs`);
     writeFileSync(source, safe);
-    const emitted = emit(`safe-${i}`, safe, [3 + shift]);
+    // Some plans move the factory with the side effect; others import it from entry.
+    const safeSide = i % 4 >= 2 ? [1, 3 + shift] : [3 + shift];
+    const emitted = emit(`safe-${i}`, safe, safeSide);
     assert.equal(emitted.result.status, 0, `${i}: ${emitted.result.stdout}\n${emitted.result.stderr}`);
     assert.match(emitted.result.stdout, /inferred closure factory/, `safe ${i}`);
     const original = run(process.execPath, [source]);
