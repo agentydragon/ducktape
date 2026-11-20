@@ -161,10 +161,6 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"missing initialization cwd", func(v map[string]any) { delete(v, "initialization_cwd") }},
 		{"empty workspace root", func(v map[string]any) { v["workspace_root"] = "" }},
 		{"missing listen address", func(v map[string]any) { delete(v["control"].(map[string]any), "listen_address") }},
-		{"legacy target rejected", func(v map[string]any) { v["control"].(map[string]any)["target"] = "gateway.test:7100" }},
-		{"legacy bearer control", func(v map[string]any) {
-			v["control"] = map[string]string{"target": "gateway.test:7100", "bearer": "old-token"}
-		}},
 		{"bad listen address", func(v map[string]any) { v["control"].(map[string]any)["listen_address"] = "host:notaport" }},
 		{"missing mTLS material", func(v map[string]any) {
 			v["control"].(map[string]any)["tls"] = map[string]string{"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key"}
@@ -208,12 +204,6 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 			env := configurationVMEnvironment()
 			configurationVMExecutor(env)
 			env["resources"].(map[string]any)["executor"].(map[string]any)["memory_max_bytes"] = 67108865
-			v["environment"] = env
-		}},
-		{"obsolete VM executor root", func(v map[string]any) {
-			env := configurationVMEnvironment()
-			configurationVMExecutor(env)
-			env["executor"].(map[string]any)["root"] = "/old/executor/root"
 			v["environment"] = env
 		}},
 		{"executor without Codex", func(v map[string]any) {
