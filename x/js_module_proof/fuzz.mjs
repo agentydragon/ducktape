@@ -42,7 +42,7 @@ function print(node) {
     case "VariableDeclarator":
       return `${print(node.id)} = ${print(node.init)}`;
     case "FunctionDeclaration":
-      return `function ${print(node.id)}() ${print(node.body)}`;
+      return `function ${print(node.id)}(${node.params.map(print).join(", ")}) ${print(node.body)}`;
     case "BlockStatement":
       return `{ ${node.body.map(print).join(" ")} }`;
     case "ReturnStatement":
@@ -51,6 +51,8 @@ function print(node) {
       return `${print(node.expression)};`;
     case "AssignmentExpression":
       return `${print(node.left)} ${node.operator} ${print(node.right)}`;
+    case "BinaryExpression":
+      return `(${print(node.left)} ${node.operator} ${print(node.right)})`;
     case "CallExpression":
       return `${print(node.callee)}(${node.arguments.map(print).join(", ")})`;
     case "MemberExpression":
@@ -89,9 +91,144 @@ function shuffle(items, rand) {
   return result;
 }
 
+// Each lexical scope records only its own declarations. Looking up visible
+// names from inner to outer makes shadowed bindings unavailable to expressions.
+class Scope {
+  constructor(parent = null) {
+    this.parent = parent;
+    this.names = new Set();
+  }
+  declare(name) {
+    if (this.names.has(name)) throw new Error(`duplicate generated binding: ${name}`);
+    this.names.add(name);
+  }
+  visible() {
+    return [...new Set([...this.names, ...(this.parent?.visible() ?? [])])];
+  }
+}
+const declaration = (name, init) => ({
+  type: "VariableDeclaration",
+  kind: "let",
+  declarations: [{ type: "VariableDeclarator", id: id(name), init }],
+});
+const functionNode = (name, params, body) => ({
+  type: "FunctionDeclaration",
+  id: id(name),
+  params: params.map(id),
+  body: { type: "BlockStatement", body },
+});
+const returnNode = (argument) => ({ type: "ReturnStatement", argument });
+
+function closureCase(seed, index) {
+  const rand = random(seed ^ 0xc105ed, index);
+  const depth = 1 + rand(4);
+  const writesCaptured = rand(2) === 0;
+  let shadowed = false;
+  const global = new Scope();
+  for (const name of ["base", "make", "saved", "run"]) global.declare(name);
+  const factoryScope = new Scope(global);
+  factoryScope.declare("captured");
+  const expression = (scope, remaining = 0) => {
+    const names = scope.visible().filter((name) => !["make", "saved", "run"].includes(name));
+    if (remaining && rand(2)) {
+      return {
+        type: "BinaryExpression",
+        operator: ["+", "-", "*"][rand(3)],
+        left: expression(scope, remaining - 1),
+        right: literal(1 + rand(3)),
+      };
+    }
+    return rand(4) ? id(names[rand(names.length)]) : literal(rand(8));
+  };
+  const buildLevel = (level, parent) => {
+    const scope = new Scope(parent);
+    const paramCount = 1 + rand(2);
+    const params = Array.from({ length: paramCount }, (_, i) => `arg${level}_${i}`);
+    for (const param of params) scope.declare(param);
+    let local = `local${level}`;
+    // Shadow a parent parameter without referring to it in the initializer.
+    if (level > 0 && rand(2)) {
+      local = `arg${level - 1}_0`;
+      shadowed = true;
+    }
+    const init = { type: "BinaryExpression", operator: "+", left: id(params[0]), right: id("captured") };
+    scope.declare(local);
+    const body = [declaration(local, init)];
+    if (writesCaptured && level === depth - 1) body.push(add("captured", local));
+    if (level + 1 < depth) {
+      const child = buildLevel(level + 1, scope);
+      body.push(
+        child.node,
+        returnNode(
+          call(
+            id(child.name),
+            child.params.map(() => expression(scope, 2))
+          )
+        )
+      );
+    } else {
+      body.push(
+        returnNode({ type: "BinaryExpression", operator: "+", left: id("captured"), right: expression(scope, 2) })
+      );
+    }
+    const name = `nested${level}`;
+    return { name, params, node: functionNode(name, params, body) };
+  };
+  const nested = buildLevel(0, factoryScope);
+  const make = functionNode(
+    "make",
+    [],
+    [declaration("captured", literal(1 + rand(8))), nested.node, returnNode(id(nested.name))]
+  );
+  const run = functionNode(
+    "run",
+    [],
+    [
+      returnNode(
+        call(
+          id("saved"),
+          nested.params.map(() => literal(1 + rand(5)))
+        )
+      ),
+    ]
+  );
+  const statements = shuffle([declaration("base", literal(1 + rand(8))), make], rand);
+  statements.push(declaration("saved", call(id("make"))), run, record("base"));
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      ...statements,
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("run"), exported: id("run") }],
+      },
+    ],
+  };
+  const names = Array.from({ length: 1 + rand(3) }, (_, i) => `part${i}.mjs`);
+  const entry = "entry.mjs";
+  const modules = Object.fromEntries([...names, entry].map((name) => [name, { imports: [], statements: [] }]));
+  modules[entry].imports = shuffle(names, rand);
+  statements.forEach((_, i) => modules[[...names, entry][rand(names.length + 1)]].statements.push(i));
+  return {
+    ast,
+    source: print(ast),
+    spec: { kind: "bindings", entry, modules },
+    calls: Array.from({ length: 2 + rand(4) }, () => "run"),
+    grammar: "closure",
+    depth,
+    shadowed,
+    writesCaptured,
+    unsupported: true,
+    cyclic: false,
+    invalidAssignment: false,
+  };
+}
+
 // Generate declarations and effects independently of their module placement.
 // Mode changes how effects are distributed, not the program grammar.
 export function makeCase(seed, index) {
+  if (index % 4 === 3) return closureCase(seed, index);
   const rand = random(seed, index);
   const mode = index % 4;
   const count = 2 + rand(3);
@@ -146,17 +283,6 @@ export function makeCase(seed, index) {
     const cell = rand(count);
     placeRecord(cell, mode === 2 ? ranked[chooseOwner(owners[cell])] : others[rand(others.length)]);
   }
-  if (mode === 3) {
-    // Valid JavaScript outside the modeled grammar. Different AST productions
-    // exercise refusal rather than silently narrowing the fuzzer to supported JS.
-    const extra = [
-      variable("extra", rand(8), "const"),
-      { type: "IfStatement", test: literal(false), consequent: { type: "BlockStatement", body: [] } },
-      expr({ type: "ArrowFunctionExpression", body: literal(rand(8)) }),
-      { type: "EmptyStatement" },
-    ][rand(4)];
-    statements.push([extra, entry]);
-  }
   const publicNames = shuffle([...bumps, ...getters], rand);
   const ast = { type: "Program", sourceType: "module", body: statements.map(([node]) => node) };
   ast.body.push({
@@ -198,6 +324,12 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     seed,
     start,
     cases: 0,
+    closureCases: 0,
+    closureSourceExecuted: 0,
+    closureRefused: 0,
+    closureDepths: {},
+    closureShadowed: 0,
+    closureWrites: 0,
     generated: 0,
     refused: 0,
     compared: 0,
@@ -230,17 +362,33 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         join(root, "case.json"),
         JSON.stringify({ seed, index, calls: input.calls, unsupported: input.unsupported }, null, 2) + "\n"
       );
+      if (input.grammar === "closure") {
+        summary.closureCases++;
+        summary.closureDepths[input.depth] = (summary.closureDepths[input.depth] ?? 0) + 1;
+        if (input.shadowed) summary.closureShadowed++;
+        if (input.writesCaptured) summary.closureWrites++;
+        const observed = execute(source, input.calls);
+        await writeFile(join(root, "node-source.json"), JSON.stringify(observed, null, 2) + "\n");
+        if (
+          observed.error ||
+          observed.results.length !== input.calls.length ||
+          observed.results.some((r) => !Number.isSafeInteger(r.value))
+        )
+          throw new Error(`generated closure did not execute within its bounds: ${JSON.stringify(observed)}`);
+        summary.closureSourceExecuted++;
+      }
       try {
         await generateBindings(source, spec, out);
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
+        if (input.grammar === "closure") summary.closureRefused++;
         if (!input.unsupported && !input.invalidAssignment)
           throw new Error(`supported generated case was refused: ${error}`);
         keep = false;
         continue;
       }
-      if (input.unsupported || input.invalidAssignment) throw new Error("unsupported input unexpectedly accepted");
+      if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
       const mutated = index % 8 === 2;
       if (mutated) {

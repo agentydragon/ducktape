@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
 
 if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
@@ -19,6 +20,29 @@ assert.deepEqual(execute(throwing, ["first", "fail"]), {
   results: [{ value: 42 }],
   error: { name: "Error", phase: "call", index: 1 },
 });
+const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
+const closures = Array.from({ length: 128 }, (_, i) => makeCase(917, 4 * i + 3));
+assert.deepEqual(makeCase(917, 15), makeCase(917, 15));
+assert.equal(new Set(closures.map((c) => c.depth)).size, 4);
+assert.ok(closures.some((c) => c.shadowed));
+assert.ok(closures.some((c) => c.writesCaptured));
+assert.ok(closures.some((c) => !c.writesCaptured));
+assert.ok(new Set(closures.map((c) => c.source)).size > 100);
+for (const c of closures) {
+  const parsed = parse(c.source, { ecmaVersion: "latest", sourceType: "module" });
+  assert.deepEqual(
+    parsed.body.map((n) => n.type),
+    c.ast.body.map((n) => n.type)
+  );
+}
+const escaping = closures.find((c) => c.depth === 1 && c.writesCaptured);
+assert.ok(escaping);
+const closurePath = join(process.env.TEST_TMPDIR, `closure-${shard}.mjs`);
+await writeFile(closurePath, escaping.source);
+const observedClosure = execute(closurePath, escaping.calls);
+assert.equal(observedClosure.error, null);
+assert.ok(new Set(observedClosure.results.map((item) => item.value)).size > 1);
+assert.deepEqual(execute(closurePath, escaping.calls), observedClosure);
 const examples = Array.from({ length: 100 }, (_, i) => makeCase(123, i));
 assert.ok(new Set(examples.map((c) => c.source)).size > 90);
 assert.ok(new Set(examples.map((c) => JSON.stringify(c.spec))).size > 90);
@@ -26,7 +50,11 @@ const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST
 assert.equal(result.cases, 16 / shards);
 if (shards === 4 && shard === 0) assert.ok(result.proved > 0);
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
-if (shards === 4 && shard === 3) assert.equal(result.refused, result.cases);
+if (shards === 4 && shard === 3) {
+  assert.equal(result.closureCases, result.cases);
+  assert.equal(result.closureSourceExecuted, result.cases);
+  assert.equal(result.closureRefused, result.cases);
+}
 if (shards === 4 && shard === 2) {
   assert.ok(result.mutated > 0);
   assert.ok(result.different > 0);
@@ -47,5 +75,8 @@ const bulk = await runFuzz({
 assert.equal(bulk.cases, 128 / shards);
 assert.equal(bulk.generated, bulk.compared);
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
-if (shards === 4 && shard === 3) assert.equal(bulk.refused, bulk.cases);
+if (shards === 4 && shard === 3) {
+  assert.equal(bulk.closureSourceExecuted, bulk.cases);
+  assert.equal(bulk.closureRefused, bulk.cases);
+}
 console.log(JSON.stringify(bulk));

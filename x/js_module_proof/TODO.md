@@ -7,6 +7,10 @@ correctness for all JavaScript.
 
 ## 1. Generate broader valid programs
 
+The closure generator now tracks lexical bindings and independently runs nested,
+escaping closures in Node, including parameters, shadowing and captured writes.
+The following broader generator and syntax work remains open.
+
 - [ ] Replace the fixed collection of supported statement shapes and injected
       unsupported nodes with a compositional, scope-aware ESTree generator. Track
       declarations, references, initialization and control-flow context so generated
