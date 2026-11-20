@@ -1335,6 +1335,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":opentofu_runtime",
+        ":vpa_policy",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

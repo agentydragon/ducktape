@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, ServiceAccount
 from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     Provider,
     ProviderSpec,
@@ -24,7 +24,8 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 )
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "crossplane"
 NAMESPACE = "crossplane-system"
@@ -52,7 +53,34 @@ _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                # Both core Deployments currently reserve 100m CPU and 256Mi memory.
+                # Pin CPU while the recommender drops any stale Off-mode CPU target.
+                ContainerPolicy(
+                    container_name="crossplane",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("memory",),
+                    min_allowed={"cpu": Cpu.millis(100).amount, "memory": Size.mebibytes(256).as_string()},
+                    max_allowed={"cpu": Cpu.millis(100).amount},
+                ),
+                # Current provider runtimes have no template requests or limits; size both requests.
+                ContainerPolicy(
+                    container_name="package-runtime",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": Cpu.millis(15).amount, "memory": Size.mebibytes(128).as_string()},
+                    max_allowed={"cpu": Cpu.millis(500).amount, "memory": Size.gibibytes(2).as_string()},
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     helm_release(
         chart,
         NAME,
