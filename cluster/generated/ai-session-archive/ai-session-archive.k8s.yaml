@@ -200,6 +200,17 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-session-archive
+  namespace: session-backup
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-session-archive
+---
 apiVersion: v1
 kind: Service
 metadata:

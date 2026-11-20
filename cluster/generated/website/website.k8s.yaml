@@ -107,6 +107,28 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: website
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: website
+  namespace: website
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: website
 ---
 apiVersion: v1
 kind: Service

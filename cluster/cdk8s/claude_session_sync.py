@@ -16,7 +16,7 @@ from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -197,6 +197,10 @@ def _web_deployment(chart: Chart) -> None:
     )
 
 
+def _web_disruption_budget(chart: Chart) -> None:
+    disruption_budget.add_disruption_budget(chart, "web-disruption-budget", name=NAME, pods=WEB_SERVICE.pods)
+
+
 def _control_deployment(chart: Chart) -> None:
     _deployment(
         chart,
@@ -308,6 +312,7 @@ def chart(app: App) -> Chart:
     _database(chart)
     _data_claim(chart)
     _web_deployment(chart)
+    _web_disruption_budget(chart)
     _control_deployment(chart)
     _service_and_route(chart)
     _network_policies(chart)

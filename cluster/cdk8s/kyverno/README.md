@@ -15,7 +15,7 @@ manifests.
 
 ## Coverage
 
-Tested: `default-disable-service-links` and `require-secret-store-conditions`.
-
-`require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does
-not supply. It needs `--userinfo` or a mock admission context.
+Tested: `default-disable-service-links`, `require-gitops` (the request user comes from
+`--userinfo`) and `require-secret-store-conditions`. Offline `kyverno apply` cannot map a
+custom resource's kind, so the last one runs in JSON mode (`test_utils.policy(json_mode=True)`):
+its CEL `validations` are evaluated, its admission match is not.

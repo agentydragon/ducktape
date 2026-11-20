@@ -53,3 +53,14 @@ spec:
     - effect: NoSchedule
       key: node-role.kubernetes.io/control-plane
       operator: Exists
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forgejo-valkey-ovh
+  namespace: forgejo
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: forgejo-valkey-ovh

@@ -291,6 +291,17 @@ spec:
             storage: 2Gi
         storageClassName: piraeus-hdd-local
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: langfuse-valkey-ovh
+  namespace: langfuse
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: langfuse-valkey-ovh
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:

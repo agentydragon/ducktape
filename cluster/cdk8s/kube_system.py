@@ -26,11 +26,12 @@ def chart(app: App) -> Chart:
         # agent and public-coder opt-ins absent until we intentionally add an
         # explicit binding or a narrowly scoped resource-filter exception.
     )
-    # Talos and bootstrap Helm own the Deployments. Flux applies their eviction budgets
-    # without a Deployment change or a Cilium Helm upgrade.
+    # Talos, bootstrap Helm and the upstream snapshot-controller kustomize own the Deployments.
+    # Flux applies their eviction budgets without a Deployment change or a Cilium Helm upgrade.
     for name, labels in (
         ("coredns", {"k8s-app": "kube-dns"}),
         ("cilium-operator", {"io.cilium/app": "operator", "name": "cilium-operator"}),
+        ("snapshot-controller", {"app.kubernetes.io/name": "snapshot-controller"}),
     ):
         k8s.KubePodDisruptionBudget(
             chart,

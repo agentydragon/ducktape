@@ -140,6 +140,9 @@ spec:
       enabled: true
       ingress:
         enabled: false
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
     cleanPrometheusOperatorObjectNames: true
     coreDns:
       enabled: true

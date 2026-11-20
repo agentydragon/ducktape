@@ -2,6 +2,8 @@
 
 # gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
 # gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
+# gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
+# gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -37,8 +39,8 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/kyverno:cluster_policy",
-        "//cluster/cdk8s/providers/kyverno:clusterpolicy",
+        "//cluster/cdk8s/providers/kyverno:mutatingpolicy",
+        "//cluster/cdk8s/providers/kyverno:validatingpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -75,6 +77,27 @@ py_test(
         "@multitool//tools/kyverno",
         "@nodejs_linux_amd64//:bin/node",
     ] + glob(["testdata/pod_service_links_*.yaml"]),
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":apply",
+        ":test_support",
+        "//cluster/cdk8s:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_require_gitops",
+    srcs = ["test_require_gitops.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ] + glob([
+        "testdata/deployment_require_gitops.yaml",
+        "testdata/userinfo_*.yaml",
+    ]),
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":apply",

@@ -29,8 +29,8 @@
       "sha256": "c7i18uXCEW5cObzp2EW68JQMxVLyisZl+yeXRs6zGmU="
     },
     "gmail-archiver": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-4e49cd8102b4/gmail_archiver-0.1.0-py3-none-any.whl",
-      "sha256": "TknNgQK0U8C5CB82iFeJtzriQKTfbZOrn1u6Ffx44mI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-b72f1689b92f/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "ty8WibkvabAvcBlC5rDs91V5yBVAA1luExsdTAB5yXo="
     },
     "vm-interact": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-acc38ab506a1/vm_interact-0.1.0-py3-none-any.whl",
@@ -237,8 +237,8 @@
       "sha256": "VK2U3q80F1O068fC6Qj1Ws8Le+QIRxSa3d+iRbLS250="
     },
     "ducktape-claude-api": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-a26554063b4f/ducktape_claude_api-0.1.0-py3-none-any.whl",
-      "sha256": "omVUBjtPS3y2qljKxhZRs0jWRsELbrjEN+KE+q5md8M="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-2108ca52dd89/ducktape_claude_api-0.1.0-py3-none-any.whl",
+      "sha256": "IQjKUt2JtLE/agy+nfM20F05NocSvQ5+FGL7pjiP8xM="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-cb574df05f83/cdk8s_builders.skill",

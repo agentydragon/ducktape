@@ -24,7 +24,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from ai_session_archive.web_settings import WebSettings
-from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
+from cluster.cdk8s import cilium, disruption_budget, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -152,6 +152,7 @@ def _web(chart: Chart) -> None:
     ApiObject.of(workload).add_json_patch(JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()]))
     pod_policy.harden(workload)
     pod_policy.place(workload, node_scheduling.HIL_OVH)
+    disruption_budget.add_disruption_budget(chart, "web-disruption-budget", name=_WEB.name, pods=_WEB.pods)
 
     Service(
         chart,

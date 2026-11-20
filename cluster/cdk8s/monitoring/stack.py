@@ -225,6 +225,7 @@ def _values() -> dict[str, object]:
             "enabled": True,
             "config": _alertmanager_config(),
             "ingress": {"enabled": False},
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
             "alertmanagerSpec": {
                 "replicas": 2,
                 "secrets": ["alertmanager-ntfy-webhook"],

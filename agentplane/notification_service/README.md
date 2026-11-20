@@ -81,8 +81,8 @@ listeners or starting workers. A startup probe delays health checks until that i
 completed. Replicas use the environment's rolling profile, so migrations must remain compatible with
 both old and new writers during rollout. Goose serializes concurrent starts with a PostgreSQL
 advisory session lock. The service needs its own
-PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, client TLS
-material for each peer, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
+PostgreSQL database, Actions, History Service and Session Dispatcher endpoints, client TLS material
+for each peer, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
@@ -196,7 +196,8 @@ environment variable rather than putting the DSN in the ConfigMap.
 
 The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means
 the Dispatcher owns the retry; it is not a runner-admission receipt. The service reads admission and
-confirmation from History Service, and a Dispatcher error never falls back to a direct Runner Gateway send.
+confirmation from History Service, and a Dispatcher error never falls back to a direct Runtime call: the
+service holds no Runtime-proxy peer setting or client.
 
 The deployment mounts the settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.

@@ -496,8 +496,7 @@ def seaweed(scope: Construct) -> Seaweed:
                 # it. No `reloader.stakater.com/auto` here: `spec.s3.annotations` lands on the pod
                 # template, and Reloader reads only the Deployment's own metadata.
                 metrics_port=9327,
-                # QoS / eviction protection. No PDB: it is stateless and freely
-                # reschedulable, so descheduler moves are harmless.
+                # QoS / eviction protection (the PDB is `_pod_disruption_budget(chart, "s3", ...)`).
                 #
                 # Memory is load-driven, NOT a fixed footprint: it tracks concurrent in-flight
                 # transfers (our load is dominated by Mimir TSDB block range-GETs -- verified
@@ -627,11 +626,12 @@ def chart(app: App) -> Chart:
     # trigger behind the 2026-06-19 crash-loop incident (cluster/docs/lessons_learned/
     # 2026_06_19_seaweedfs_descheduler_dns_race_crashloop.md). minAvailable 2 of 3 on
     # master/volume preserves raft quorum and >=2 replicas (replication 001); 1 of the 2
-    # filers keeps a drain from causing a SeaweedFS-wide metadata stall. The stateless s3
-    # gateway deliberately gets no PDB.
+    # filers keeps a drain from causing a SeaweedFS-wide metadata stall; 1 of the 2 stateless
+    # s3 gateways keeps S3 serving through a drain.
     _pod_disruption_budget(chart, "master", min_available=2)
     _pod_disruption_budget(chart, "volume", min_available=2)
     _pod_disruption_budget(chart, "filer", min_available=1)
+    _pod_disruption_budget(chart, "s3", min_available=1)
     _tenants_grant(chart)
     return chart
 

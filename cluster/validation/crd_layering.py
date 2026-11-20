@@ -36,7 +36,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
     "keda": {"ScaledJob", "ScaledObject", "TriggerAuthentication"},
-    "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
+    "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy", "MutatingPolicy", "ValidatingPolicy"},
     "kyverno-policies": set(),
     "tofu-controller": {"Terraform"},
     # The CRDs, not the HelmRelease: prometheus-operator's only admission webhooks

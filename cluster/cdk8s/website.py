@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -13,6 +13,7 @@ from cdk8s_plus_34 import (
     MemoryResources,
     Pods as PodSelector,
     Service,
+    k8s,
 )
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
@@ -25,7 +26,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
 )
 
-from cluster.cdk8s import namespaces, pod_policy, probes
+from cluster.cdk8s import disruption_budget, namespaces, pod_policy, probes
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
@@ -80,6 +81,23 @@ def chart(app: App) -> Chart:
     )
     # Deployment selectors are immutable, so keep the existing labels.
     deployment.select(LabelSelector.of(labels=_SERVICE.pods.selector))
+    # Each revision spreads independently, so old Pods do not block a two-node rollout.
+    ApiObject.of(deployment).add_json_patch(
+        JsonPatch.add(
+            "/spec/template/spec/topologySpreadConstraints",
+            [
+                k8s.TopologySpreadConstraint(
+                    topology_key="kubernetes.io/hostname",
+                    max_skew=1,
+                    min_domains=2,
+                    when_unsatisfiable="DoNotSchedule",
+                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                    match_label_keys=["pod-template-hash"],
+                    node_taints_policy="Honor",
+                )
+            ],
+        )
+    )
     deployment.add_container(
         name="server",
         image=_IMAGE,
@@ -93,6 +111,7 @@ def chart(app: App) -> Chart:
         liveness=probes.http_probe("/health", port=_SERVICE.pod_port, initial_delay_seconds=5, period_seconds=10),
     )
     pod_policy.harden(deployment)
+    disruption_budget.add_disruption_budget(chart, "disruption-budget", name=_NAME, pods=_SERVICE.pods)
     Service(
         chart,
         "service",
