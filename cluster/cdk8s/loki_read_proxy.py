@@ -18,6 +18,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "loki-read-proxy"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/loki-read-proxy"
@@ -92,6 +93,11 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
+                **namespaces.initial_memory_request_annotations(
+                    ContainerPolicy.memory_requests_only(
+                        "proxy", cpu_request="50m", memory_floor="128Mi", memory_limit="160Mi"
+                    )
+                ),
                 "description": (
                     "Read-only namespace-filtering Loki query proxy for agents. Exposes only GET"
                     " query/query_range and requires an exact namespace matcher in every query; Loki"
@@ -99,7 +105,7 @@ def _deployment(chart: Chart) -> None:
                     " with a Kubernetes bearer token is authorized by that token's RBAC"
                     " (SelfSubjectAccessReview for get pods/log in the namespace); an anonymous request"
                     " by the static NAMESPACE_ALLOWLIST, fenced by the CiliumNetworkPolicy next to it."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -167,7 +173,7 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     _deployment(chart)
     k8s.KubeService(
         chart,

@@ -946,6 +946,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
