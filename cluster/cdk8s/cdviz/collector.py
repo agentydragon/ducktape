@@ -10,8 +10,15 @@ from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
@@ -70,7 +77,22 @@ def chart(app: App) -> Chart:
     deployment = k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=config.COLLECTOR.name, namespace=config.NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=config.COLLECTOR.name,
+            namespace=config.NAMESPACE,
+            annotations={
+                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    # Keep the declared CPU request while piloting memory adjustments.
+                    ContainerPolicy(
+                        container_name=config.COLLECTOR.name,
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("memory",),
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
+            },
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -112,7 +134,7 @@ def chart(app: App) -> Chart:
                     ],
                     containers=[
                         k8s.Container(
-                            name="collector",
+                            name=config.COLLECTOR.name,
                             image=IMAGE,
                             security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             args=["connect", "--config", f"{_CONFIG}/collector.toml"],
