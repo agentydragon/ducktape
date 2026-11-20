@@ -478,6 +478,87 @@ for (const [name, code] of [
   assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 }
 
+// An identifier in an array can throw before a later binding initializes.
+// A previously escaped callback observes the changed initialization state.
+{
+  const code = `globalThis.saved = () => x;\nconst x = 1;\nconst arr = [later];\nconst later = 2;`;
+  const dir = path.join(temp, "array_tdz_observer");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "array_tdz_observer.mjs");
+  const input = path.join(temp, "array_tdz_observer-ast.json");
+  const spec = path.join(temp, "array_tdz_observer-spec.json");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#1", "#3"], "side.mjs": ["#0", "#2"] } })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  const forced = run(process.env.LOWERSPLIT, [input, spec, dir, "--force"]);
+  assert.equal(forced.status, 1, `${forced.stdout}\n${forced.stderr}`);
+  const observe = (file) =>
+    run(process.execPath, [
+      "--input-type=module",
+      "-e",
+      `try { await import(${JSON.stringify(pathToFileURL(file).href)}); } catch (_) { try { console.log(globalThis.saved()); } catch (error) { console.log(error.name); } }`,
+    ]);
+  const original = observe(source);
+  const split = observe(path.join(dir, "entry.mjs"));
+  assert.equal(original.status, 0, original.stderr);
+  assert.equal(split.status, 0, split.stderr);
+  assert.equal(original.stdout, "1\n");
+  assert.equal(split.stdout, "ReferenceError\n");
+}
+
+// Calls and iteration inside an array can invoke an escaped callback.
+for (const [name, expr] of [
+  ["call", "globalThis.saved()"],
+  ["spread", "...{ *[Symbol.iterator]() { yield globalThis.saved(); } }"],
+]) {
+  const code = `globalThis.saved = () => x;\nconst x = 1;\nconst arr = [${expr}];\nconsole.log(arr[0]);`;
+  const dir = path.join(temp, `array_reentry_${name}`);
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, `array_reentry_${name}.mjs`);
+  const input = path.join(temp, `array_reentry_${name}-ast.json`);
+  const spec = path.join(temp, `array_reentry_${name}-spec.json`);
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#1", "#3"], "side.mjs": ["#0", "#2"] } })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  const forced = run(process.env.LOWERSPLIT, [input, spec, dir, "--force"]);
+  assert.equal(forced.status, 1, `${name}: ${forced.stdout}\n${forced.stderr}`);
+  const original = run(process.execPath, [source]);
+  const split = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(original.status, 0, original.stderr);
+  assert.equal(original.stdout, "1\n");
+  assert.notEqual(split.status, 0);
+  assert.match(split.stderr, /ReferenceError/);
+}
+
+// Fresh array allocations still conflict with each other.
+{
+  const code = `const a = [1];\nconst b = [2];\nfunction see() { return [a, b]; }\nconsole.log(see());`;
+  const dir = path.join(temp, "two_observed_arrays");
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, "two_observed_arrays-ast.json");
+  const spec = path.join(temp, "two_observed_arrays-spec.json");
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /FAIL\s+OrderOk/);
+}
+
 // Nested operations are not classified from an apparently simple outer record or array.
 for (const [name, code] of [
   ["record_identifier", `const v = 1;\nconst obj = { value: v };\nconsole.log(obj);`],
