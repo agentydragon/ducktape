@@ -32,6 +32,7 @@ ts_library(
         ":google_calendar",
         ":grocy",
         ":kubernetes_admin",
+        ":orchestration",
         ":presentation",
         ":result_entry",
         ":sandbox",
@@ -303,6 +304,24 @@ ts_library(
         "//agentplane/app/frontend/ui:shell_command_view",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:disclosure",
+    ],
+)
+
+ts_library(
+    name = "orchestration",
+    srcs = ["orchestration.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        ":session_delegation",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
     ],
 )
 

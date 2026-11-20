@@ -19,6 +19,7 @@ import { googleCalendarRenderers } from "./google_calendar";
 import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
+import { orchestrationRenderers } from "./orchestration";
 import { environmentRenderers, sessionRenderers } from "./session_delegation";
 import { sshRenderers } from "./ssh/index";
 
@@ -33,6 +34,7 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["sandbox", sandboxRenderers],
   ["environments", environmentRenderers],
   ["sessions", sessionRenderers],
+  ["orchestration_v1", orchestrationRenderers],
   ["ssh", sshRenderers],
 ]);
 
