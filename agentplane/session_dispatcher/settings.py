@@ -107,11 +107,6 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_service_caller_scopes(self) -> Settings:
-        service_callers_present = any((self.dispatcher_service_callers, self.wake_service_callers))
-        service_delegation_present = self.dispatcher_service_delegation is not None
-        spiffe_listener = any(method.mode == "spiffe" for method in self.rpc.auth)
-        if (service_callers_present or service_delegation_present) and not spiffe_listener:
-            raise ValueError("service caller settings require rpc.auth to include spiffe")
         if not self.wake_service_callers <= self.dispatcher_service_callers:
             raise ValueError("wake_service_callers must be a subset of dispatcher_service_callers")
         if self.dispatcher_service_delegation is not None:
@@ -135,9 +130,6 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_receiver_and_control_tls(self) -> Settings:
-        # The listener declares one mode; receivers authenticate SVIDs only.
-        if not any(method.mode == "spiffe" for method in self.rpc.auth):
-            raise ValueError("rpc.auth must include spiffe")
         if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:
             raise ValueError("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
         self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)

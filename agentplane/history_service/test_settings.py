@@ -10,19 +10,14 @@ from agentplane.history_service.settings import Settings
 
 
 def _settings_source(
-    *, policy_namespace: str = "test-policies", sampler_service_actor: str | None = None, spiffe_listener: bool = True
+    *, policy_namespace: str = "test-policies", sampler_service_actor: str | None = None
 ) -> dict[str, Any]:
-    auth = (
-        [{"mode": "spiffe", "ca_file": "/test/workload-ca.crt"}]
-        if spiffe_listener
-        else [{"mode": "kubernetes_bearer", "audiences": ["legacy-reader"]}]
-    )
     return {
         "policy_namespace": policy_namespace,
         "rpc": {
             "listen_address": "0.0.0.0:8080",
             "tls": {"cert_file": "/test/history.crt", "key_file": "/test/history.key"},
-            "auth": auth,
+            "auth": [{"mode": "spiffe", "ca_file": "/test/workload-ca.crt"}],
         },
         "ingress": {"writer_namespaces": ["test-agentplane"], "sampler_service_actor": sampler_service_actor},
     }
@@ -46,7 +41,7 @@ def test_settings_reject_runtime_secrets() -> None:
         Settings.model_validate(source)
 
 
-def test_service_callers_require_exact_service_ids_and_spiffe_listener() -> None:
+def test_service_callers_require_exact_service_ids() -> None:
     source = _settings_source()
     source["reader_service_callers"] = ["spiffe://agentplane/app", "spiffe://agentplane/notifications"]
     source["service_delegation"] = {
@@ -69,9 +64,13 @@ def test_service_callers_require_exact_service_ids_and_spiffe_listener() -> None
         with pytest.raises(ValidationError):
             Settings.model_validate(invalid_source)
 
-    no_spiffe = _settings_source(spiffe_listener=False)
-    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
-        Settings.model_validate(no_spiffe)
+
+def test_rpc_auth_requires_a_spiffe_method() -> None:
+    source = _settings_source()
+    source["rpc"]["auth"] = []
+    with pytest.raises(ValidationError) as rejected:
+        Settings.model_validate(source)
+    assert [error["loc"] for error in rejected.value.errors()] == [("rpc", "auth")]
 
 
 def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
