@@ -59,10 +59,14 @@ export function renderPaneCollapsed(action: ActionIdentity, args: unknown): Reac
 }
 
 /** An Action's opened-pane view; `undefined` uses the generic argument view and `null` suppresses it. */
-export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderPaneOpened(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const preview = presentation(action)?.pane?.opened;
   if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args);
+  const rendered = renderPreview(preview, args, requestId);
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 
@@ -73,10 +77,14 @@ export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unkno
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */
-export function renderDetailsArguments(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderDetailsArguments(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const preview = presentation(action)?.details?.arguments;
   if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args);
+  const rendered = renderPreview(preview, args, requestId);
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 

@@ -73,7 +73,7 @@ function PendingActionList({
         const unclamped = expanded || !expands;
         const actionLabel = renderActionLabel(action, args);
         const collapsedPreview = renderPaneCollapsed(action, args);
-        const openedPreview = renderPaneOpened(action, args);
+        const openedPreview = renderPaneOpened(action, args, request.id);
         const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
         const decision = actionOffersCardDecisionButtons(action, args) ? (
           <ActionDecisionButtons

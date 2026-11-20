@@ -605,7 +605,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages, rpc.IntegrationPreviews{Gmail: supervisors["gmail"], Tana: supervisors["tana"]}))
 	// The callback is public: its single-use state, not a bearer, authorizes completion.
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, rpc.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))

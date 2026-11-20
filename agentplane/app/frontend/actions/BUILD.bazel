@@ -358,6 +358,13 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "integration_preview_schemas",
+    srcs = ["schemas/integration_previews.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
+)
+
+ts_library(
     name = "notifications",
     srcs = [
         "notifications/command.ts",
@@ -369,6 +376,7 @@ ts_library(
         "notifications/grocy/products_list.ts",
         "notifications/grocy/quantity_units_list.ts",
         "notifications/index.ts",
+        "notifications/integration_previews.ts",
         "notifications/kubernetes_admin/events_list.ts",
         "notifications/kubernetes_admin/pods_delete.ts",
         "notifications/kubernetes_admin/pods_exec.ts",
@@ -387,6 +395,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":github_action_schemas",
+        ":integration_preview_schemas",
         ":kubernetes_action_schemas",
         ":presentation",
         ":sandbox_action_schemas",

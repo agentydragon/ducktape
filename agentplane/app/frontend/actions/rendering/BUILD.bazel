@@ -75,17 +75,32 @@ ts_library(
 )
 
 ts_library(
+    name = "integration_previews",
+    srcs = ["integration_previews.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
     name = "gmail",
     srcs = ["gmail.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":integration_previews",
         ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/actions:integration_preview_schemas",
         "//agentplane/app/frontend/ui:text_block",
     ],
 )
@@ -188,11 +203,13 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":integration_previews",
         ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/actions:integration_preview_schemas",
     ],
 )
 

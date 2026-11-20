@@ -10,7 +10,10 @@ import {
   type ArgumentsPreview,
   type CallPreview,
   type CallPreviewProps,
+  type PreviewProps,
 } from "./entry";
+import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
+import { LiveResourceName, useIntegrationPreviewNames } from "./integration_previews";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -294,8 +297,6 @@ function GmailThreadsResult({ result }: { result: z.infer<typeof gmailThreadsRes
 
 export const gmailThreadsResult: ResultPreview = defineResultPreview(gmailThreadsResultSchema, GmailThreadsResult);
 
-// These static views need no Gmail read lookup. Subject/label resolution for thread and message
-// actions stays on the submitted-data fallback until Agentplane has an explicit lookup surface.
 export const gmailDraftPresentation: ActionPresentation = {
   label: gmailDraftLabel,
   call: gmailDraftCall,
@@ -311,7 +312,39 @@ export const gmailThreadSearchPresentation: ActionPresentation = {
   offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
 };
 
+const threadLabels = definePreview(
+  modifyThreadLabelsArguments,
+  function ThreadLabels({ args, requestId }: PreviewProps<z.infer<typeof modifyThreadLabelsArguments>>): JSX.Element {
+    const names = useIntegrationPreviewNames("gmail", requestId);
+    return (
+      <Stack gap={4}>
+        {args.add?.length ? <Text size="sm">Add labels {args.add.join(", ")}</Text> : null}
+        {args.remove?.length ? <Text size="sm">Remove labels {args.remove.join(", ")}</Text> : null}
+        {args.thread_ids.map((id, index) => (
+          <Text size="sm" key={index} style={{ overflowWrap: "anywhere" }}>
+            <LiveResourceName id={id} name={names?.get(id)} />
+          </Text>
+        ))}
+      </Stack>
+    );
+  }
+);
+
+const threadLabelsPresentation: ActionPresentation = {
+  fallbackLabel: "Change Gmail thread labels",
+  pane: {
+    collapsed: definePreview(modifyThreadLabelsArguments, ({ args }) => (
+      <Text size="sm">
+        {args.thread_ids.length} Gmail {args.thread_ids.length === 1 ? "thread" : "threads"}
+      </Text>
+    )),
+    opened: threadLabels,
+  },
+  details: { arguments: threadLabels },
+};
+
 export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["drafts_create", gmailDraftPresentation],
   ["threads_list", gmailThreadSearchPresentation],
+  ["threads_modify_labels", threadLabelsPresentation],
 ]);

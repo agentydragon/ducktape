@@ -122,7 +122,7 @@ export function ActionCall({
   const action = actionIdentity(request);
   const args = actionArguments(request);
   const actionLabel = renderActionLabel(action, args);
-  const prettyArguments = renderDetailsArguments(action, args);
+  const prettyArguments = renderDetailsArguments(action, args, request.id);
   const combinedCall = providedCombinedCall === undefined ? renderActionCall(action, args) : providedCombinedCall;
   const showCombinedCall = combinedCall !== undefined && combinedCall !== null && combinedCall.content != null;
   return (
