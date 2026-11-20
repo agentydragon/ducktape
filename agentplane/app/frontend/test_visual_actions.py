@@ -808,6 +808,35 @@ EXAMPLES = (
     ),
     ActionExample("sandbox", "list", {}, {"sandboxes": [SANDBOX]}, "Running", compact_card_expands=False),
     ActionExample(
+        "sandbox",
+        "get_template",
+        {"template": "python"},
+        {
+            "spec": {
+                "containers": [{"name": "workspace", "image": "example.com/sandbox/python:3.13"}],
+                "volumes": [{"name": "work"}],
+            }
+        },
+        "example.com/sandbox/python:3.13",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "ssh",
+        "list_targets",
+        {},
+        [
+            {"user": "backup", "host": "archive.example.com", "available": True},
+            {
+                "user": "build",
+                "host": "builder.example.com",
+                "available": False,
+                "error": {"message": "Configured SSH identity is unavailable."},
+            },
+        ],
+        "backup@archive.example.com",
+        compact_card_expands=False,
+    ),
+    ActionExample(
         "ssh",
         "exec",
         {"host": "archive.example.com", "user": "backup", "command": "ls -lh /srv/backups", "timeout_seconds": 30},
