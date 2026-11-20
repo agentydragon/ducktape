@@ -770,7 +770,8 @@ function Report() {
             PRs and stage dependent infrastructure families separately; they do
             not need nine serial pilots. Use Initial and RequestsOnly for new
             policies, initially controlling memory where CPU ownership or HPA is
-            uncertain. Existing CPU requests, limits and policies stay intact.
+            uncertain. Memory-only policies leave CPU requests intact; existing
+            limits and policies are preserved.
           <//>
           <${Text} component="p" mb=${0}>
             These are candidates, not pre-approved changes: confirm the chart’s
