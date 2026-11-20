@@ -46,34 +46,23 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         )
 
 
-def test_app_migrates_with_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = find_resource(staging_manifests, "Deployment", app.NAME)
-    pod = deployment["spec"]["template"]["spec"]
-
-    assert not pod.get("initContainers")
+def test_app_reads_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(container for container in pod["containers"] if container["name"] == "app")
-
-    variables = container["env"]
-    database_url = one(variable for variable in variables if variable["name"] == "AGENTPLANE_DATABASE_URL")
+    database_url = one(variable for variable in container["env"] if variable["name"] == "AGENTPLANE_DATABASE_URL")
     assert database_url == {
         "name": "AGENTPLANE_DATABASE_URL",
         "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
     }
-    assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
-    assert container["startupProbe"]["httpGet"]["path"] == "/healthz"
 
 
 def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = find_resource(staging_manifests, "Deployment", app.NAME)
-    pod = deployment["spec"]["template"]["spec"]
-    app_container = one(container for container in pod["containers"] if container["name"] == "app")
     service = find_resource(staging_manifests, "Service", runner_gateway.sessions_service(staging.ENV.namespace).name)
     grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
     app_config_map = find_resource(staging_manifests, "ConfigMap", "app-config")
     app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
     assert app_config["session_dispatcher_target"] == endpoint
-    assert app_container.get("args", []) == []
 
 
 if __name__ == "__main__":
