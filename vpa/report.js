@@ -297,7 +297,7 @@ function Report() {
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
         ><${Anchor} href="#architecture">Policy refactor<//
-        ><${Anchor} href="#kyverno-retirement">Kyverno retirement<//
+        ><${Anchor} href="#kyverno-retirement">Kyverno policies<//
         ><${Anchor} href="#remaining-work">Remaining work<//
         ><${Anchor} href="#batches">Rollout evidence<//
         ><${Anchor} href="#inventory">Search inventory<//><//
@@ -407,19 +407,19 @@ function Report() {
 
     <section id="architecture">
       <${Title} order=${2} mt="xl"
-        >Define VPA behavior once; retire Kyverno incrementally<//
+        >Define VPA behavior once; simplify policies where useful<//
       >
       <${Text} size="sm" c="dimmed">
         ${`Architecture review: ${data.architecture_review.observed_at_utc}; devel ${data.architecture_review.source_devel_commit}. The workload and metrics snapshot above remains from 02:58 UTC.`}
       <//>
       <${Text} component="p">
-        The intended direction is broader VPA request coverage and, eventually,
-        no Kyverno. Author the common behavior in cdk8s once, keep Goldilocks as
-        the owner of VPAs it generates, and remove each Kyverno responsibility
-        once replacement owners pass the relevant admission or cleanup tests.
-        Shared VPA profile and memory-policy authoring are complete. The Kyverno
-        VPA fallback is removed, and the remaining eight Kyverno policies still
-        need independent cutovers.
+        Expand VPA request coverage and author common behavior in cdk8s while
+        keeping Goldilocks as the owner of VPAs it generates. Retain Kyverno
+        where it is the simpler way to provide admission, background reporting,
+        or cleanup. Replace individual policies only when the alternative is
+        simpler overall and preserves the behavior we need; do not build custom
+        scanners merely to remove Kyverno. Shared VPA profile and memory-policy
+        authoring are complete, and the Kyverno VPA fallback is removed.
       <//>
       <${Title} order=${3} size="h4" mt="md"
         >Small profiles, explicit exceptions<//
@@ -517,21 +517,22 @@ function Report() {
               ><//
             >
             <${Table.Tr}
-              ><${Table.Td}>4 · In progress: Kyverno retirement<//
+              ><${Table.Td}>4 · Keep or simplify Kyverno policies<//
               ><${Table.Td}
-                >Migrate its remaining defaults, security enforcement, dynamic
-                injection and cleanup separately.<//
+                >Retain Kyverno for existing admission, background reporting,
+                dynamic injection and cleanup unless a simpler replacement
+                exists.<//
               ><${Table.Td}
-                >Prove each replacement on real admission/cleanup paths,
-                including private sources and failure behavior, before disabling
-                the policy or controller.<//
+                >Prove any simpler replacement on real admission and cleanup
+                paths, including private sources and failure behavior, before
+                disabling the corresponding policy.<//
               ><//
             >
           <//>
         <//>
       <//>
       <${Title} id="kyverno-retirement" order=${3} size="h4" mt="lg"
-        >Kyverno retirement status<//
+        >Kyverno policy status<//
       >
       <${Text} component="p">
         The 03:36 UTC inventory found seven ClusterPolicies and two namespaced
@@ -641,8 +642,9 @@ function Report() {
         The separate ClusterSecretStore audit proposal closed at
         ${secretStoreDecisionTime} UTC. Kyverno still enforces the existing
         admission rule and scans stored objects in the background. Both stay in
-        place until there is a supported solution or a decision to keep Kyverno
-        for this policy. ${" "}<${Anchor} href=${secretStoreDecision.html_url}
+        place unless an existing, simpler solution preserves the required
+        coverage. A custom background scanner is not the intended replacement.
+        ${" "}<${Anchor} href=${secretStoreDecision.html_url}
           >Closed audit proposal<//
         >
       <//>
@@ -1348,8 +1350,13 @@ function Report() {
             controllers against the deployed cohorts above. The 02:58 snapshot
             had 89 Off VPA objects and 68 of 237 controller templates without a
             direct target. These overlapping inventories count different
-            resource kinds. Prioritize supported Deployments with credible
-            startup history and request headroom. Preserve existing
+            resource kinds. At 17:40 UTC, a fresh cluster inventory found 215
+            VPAs: 94 Initial, 67 Off and 54 Recreate. The older chart and
+            searchable inventory above retain their original snapshot. All 52
+            controller templates without a direct VPA in the fresh inventory
+            were in namespaces explicitly opted out of Goldilocks; assess their
+            owners before opting in. Prioritize supported Deployments with
+            credible startup history and request headroom. Preserve existing
             requests-and-limits policies and CPU-utilization HPA ownership.
             GitLab webservice stays excluded pending surge capacity, Redis
             operator stays Off to preserve its QoS class, and the five
@@ -1367,10 +1374,15 @@ function Report() {
             certificate, External Secrets and KEDA webhooks have disruption
             budgets and remain Initial. Evaluate eviction for each dependency
             independently, including placement, endpoint readiness, client
-            behavior and failure recovery. Crossplane core replication waits for
-            scheduling capacity alongside the existing GitLab Sidekiq surge.
-            ${" "}<${Anchor} href=${progress.prs[18145].html_url}
-              >Capacity-gated Crossplane draft<//
+            behavior and failure recovery. Crossplane and metrics-server HA are
+            ready for review with a documented capacity tradeoff: overlapping
+            rollouts can stall a GitLab Sidekiq surge, and a concurrent host
+            failure could affect its availability. ${" "}<${Anchor}
+              href=${progress.prs[18145].html_url}
+              >Crossplane HA PR<//
+            >
+            ${" · "}<${Anchor} href=${github + "pull/18154"}
+              >Metrics-server HA PR<//
             >
             ${" "}CDviz and ntfy stay non-evicting pending delivery and
             availability proof. Review every VPA in a namespace before lowering
@@ -1391,6 +1403,20 @@ function Report() {
             admission paths preclude a shared VPA.
           <//>
         <//>
+      <//>
+      <${Text} component="p" mt="md">
+        VPA admission can miss a newly created Pod while its ReplicaSet is
+        absent from the webhook's informer cache. Keep safe template requests,
+        verify the first replacement after rollout, and continue VPA adoption.
+        The upstream
+        <${Anchor} href="https://github.com/kubernetes/autoscaler/issues/10564"
+          >informer-lag issue<//
+        >
+        and
+        <${Anchor} href="https://github.com/kubernetes/autoscaler/pull/10625"
+          >proposed fallback fix<//
+        >
+        track the issue.
       <//>
       <${Text} component="p" mt="md">
         VPA 1.7.1 can briefly admit a stale CPU recommendation after a policy
