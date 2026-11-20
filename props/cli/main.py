@@ -13,8 +13,6 @@ from props.cli.cmd_db import db_app
 from props.db.database import Database
 from util.logging import LogLevel, make_logging_callback
 
-logger = logging.getLogger(__name__)
-
 app = TyperDI(help="props — properties tooling", add_completion=False)
 
 # Subcommand groups

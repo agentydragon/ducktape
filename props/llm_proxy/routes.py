@@ -16,7 +16,6 @@ Features:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -36,8 +35,6 @@ from props.config import LLMProxyConfig, UpstreamConfig
 from props.db.async_database import AsyncDatabase
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
 from props.llm_proxy.database import ProxyDb
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

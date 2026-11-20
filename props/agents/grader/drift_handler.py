@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -10,8 +9,6 @@ from pydantic import BaseModel
 from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.models import ClusteringPending, GradingPending
-
-logger = logging.getLogger(__name__)
 
 
 class PendingGradingEdge(BaseModel):

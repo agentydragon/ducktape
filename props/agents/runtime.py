@@ -18,8 +18,6 @@ from props.db.models import AgentRun, AgentRunStatus
 from props.db.snapshot_io import fetch_snapshot_to_path
 from props.mako_utils.preprocessor import markdown_heading_preprocessor
 
-logger = logging.getLogger(__name__)
-
 WORKSPACE = Path("/workspace")
 
 

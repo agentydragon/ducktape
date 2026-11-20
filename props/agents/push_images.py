@@ -15,8 +15,6 @@ from python.runfiles import Runfiles
 from devinfra.oci.oci import bazel_crane, read_oci_layout_digest
 from props.agents.env import get_required_env
 
-logger = logging.getLogger(__name__)
-
 # (rlocation of OCI layout dir, repository name, tag override for variants)
 IMAGES: list[tuple[str, str, str | None]] = [
     ("ducktape/props/agents/critic/image", "critic", None),
