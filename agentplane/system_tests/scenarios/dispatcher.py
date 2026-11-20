@@ -19,7 +19,6 @@ import yaml
 from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, event_log_pb2, identity_pb2, session_pb2
@@ -35,6 +34,7 @@ from agentplane.system_tests.driver.dispatcher_transport import Caller, forward 
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
+from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_diagnostics import (
     archive_runner_data,
     capture_cleanup_diagnostics,
@@ -54,19 +54,11 @@ class DispatchFailedError(RuntimeError):
 
 
 async def _delete_pod(cluster: Cluster, name: str, uid: str) -> None:
-    await _delete(cluster, "pod", name, uid)
-
-
-async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
     async with cluster.api_client() as api:
-        options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
-        if kind == "pod":
-            await k8s.CoreV1Api(api).delete_namespaced_pod(name, cluster.namespace, body=options)
-        else:
-            await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-                GROUP, VERSION, cluster.namespace, "sandboxes", name, body=options
-            )
-    await cluster.kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
+        await k8s.CoreV1Api(api).delete_namespaced_pod(
+            name, cluster.namespace, body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
+        )
+    await cluster.kubectl("wait", f"pod/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _cleanup_sandbox(
@@ -78,34 +70,13 @@ async def _cleanup_sandbox(
     session_ids: list[str],
     command_ids: list[str],
 ) -> None:
-    with tracer.start_as_current_span("system_test.dispatcher.cleanup"):
-        try:
-            await cluster.kubectl(
-                "patch",
-                "sandbox.agentplane.allegedly.works",
-                name,
-                "--type=merge",
-                "-p",
-                json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.operatingMode}=Suspended",
-                "--timeout=300s",
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.stopStage}=Stopped",
-                "--timeout=300s",
-            )
-            await _delete(cluster, "sandbox.agentplane.allegedly.works", name, uid)
-        except Exception as error:
-            await capture_without_masking(
-                error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
-            )
-            raise
+    try:
+        await delete_sandbox(cluster, name, uid)
+    except Exception as error:
+        await capture_without_masking(
+            error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
+        )
+        raise
 
 
 async def _dispatch_until(

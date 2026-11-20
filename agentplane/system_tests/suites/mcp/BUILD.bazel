@@ -297,6 +297,7 @@ py_test(
         "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:action_cli",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:offered_models",

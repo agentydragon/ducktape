@@ -23,6 +23,7 @@ from agentplane.proto import session_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher import api
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
@@ -807,14 +808,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
 
                     async def run_cli(*args: str) -> dict[str, Any]:
                         output = await cluster.kubectl(
-                            "exec",
-                            current_pod,
-                            "-c",
-                            ENVIRONMENT_RUNTIME_CONTAINER,
-                            "--",
-                            "/run/agentplane/environment/bin/agentplane",
-                            "--json",
-                            *args,
+                            "exec", current_pod, "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--", CLI, "--json", *args
                         )
                         page: dict[str, Any] = json.loads(output)
                         return page
@@ -836,7 +830,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                             "-c",
                             '"$@" 2>&1 || true',
                             "history-client",
-                            "/run/agentplane/environment/bin/agentplane",
+                            CLI,
                             "--json",
                             "history",
                             "read-session-events",
