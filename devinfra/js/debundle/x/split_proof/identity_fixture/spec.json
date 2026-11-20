@@ -1,0 +1,7 @@
+{
+  "entry": "main.mjs",
+  "modules": {
+    "base.mjs": ["identity", "first"],
+    "main.mjs": ["second"]
+  }
+}

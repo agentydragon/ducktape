@@ -1,0 +1,9 @@
+{
+  "why": "the baseline checker conservatively treats both calls as effects",
+  "fails": "OrderOk",
+  "entry": "main.mjs",
+  "modules": {
+    "base.mjs": ["identity", "second"],
+    "main.mjs": ["first"]
+  }
+}
