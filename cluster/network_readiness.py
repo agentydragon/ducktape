@@ -95,7 +95,7 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
     return True
 
 
-def restart_cilium_operator_gateway_controller(v1: client.CoreV1Api, timeout: int = 120) -> None:
+def restart_cilium_operator_gateway_controller(timeout: int = 120) -> None:
     """Restart the Cilium operator to ensure the gateway controller starts cleanly.
 
     The gateway controller is a one-shot job inside the operator. If it fails to sync

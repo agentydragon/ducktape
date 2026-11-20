@@ -106,7 +106,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _quest_scheduler_read(construct, namespace=namespace)
     _thrive_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
-    _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _buildbuddy(construct, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -741,7 +741,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
     )
 
 
-def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+def _buildbuddy(scope: Construct, *, credentials_namespace: str) -> None:
     # The shared BuildBuddy API key lives in external-creds; this environment's ExternalSecret
     # copies it into the isolated namespace the shared egress credential reads.
     credential_external_secret(

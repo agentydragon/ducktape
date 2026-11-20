@@ -194,7 +194,7 @@ def deploy_infrastructure() -> None:
 
     wait_for_cilium_health(v1)
     verify_clusterip_routing(v1)
-    restart_cilium_operator_gateway_controller(v1)
+    restart_cilium_operator_gateway_controller()
     log.info("Infrastructure ready")
 
 
