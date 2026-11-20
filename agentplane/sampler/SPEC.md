@@ -869,8 +869,8 @@ service applies its Goose migrations before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
 Acceptance tests start the actual Go binary and inspect its database separately. Durable sampler
 state, owner fencing, content projections and evidence commits are implemented in
-`internal/sessionstore`; runtime scheduling, executor effects and provider transport stay in the
-`central_sampler` package. Pure provider tool schemas shared by those layers live in
+`internal/sessionstore`; runtime scheduling and provider I/O stay in `internal/residentruntime`, and
+executor effects in `internal/executor`. Pure provider tool schemas shared by those layers live in
 `internal/toolcontract`. The History exporter depends on the narrow `historyexport.Outbox` contract.
 
 `sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
@@ -884,7 +884,7 @@ Content IDs hash the kind and standard-JSON payload with a versioned domain sepa
 bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
 general JSON node format or serializer.
 
-Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
+Native `anthropic`/`responses`/`chatcompletions` packages own their private stored types, packing/reconstruction
 codecs, API types, request construction, streaming and continuation semantics. They use the
 sampler-private `internal/content` content reader/writer: typed IDs/kinds, standard JSON encoding,
 content hashing and integrity checks. The content package imports neither provider nor semantic
