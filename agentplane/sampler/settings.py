@@ -180,12 +180,22 @@ class AnthropicMessagesConfig(BaseModel):
         return self
 
 
+class ChatCompactionReplacement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["assistant", "user"]
+    template: str = Field(min_length=1)
+
+
 class ChatCompactionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_tokens: int = Field(gt=0)
     keep_recent_turns: int = Field(gt=0)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
+
+    summary_prompt_template: str | None = None
+    replacement: ChatCompactionReplacement | None = None
 
 
 class ModelConfig(BaseModel):

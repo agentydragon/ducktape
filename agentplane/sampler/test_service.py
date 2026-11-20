@@ -28,7 +28,7 @@ from agentplane.native.codex.testing.responses_sse import (
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
-from agentplane.sampler.settings import ChatCompactionConfig, ModelConfig, ResponsesConfig
+from agentplane.sampler.settings import ChatCompactionConfig, ChatCompactionReplacement, ModelConfig, ResponsesConfig
 from agentplane.sampler.testing import (
     METADATA,
     SESSION_ID,
@@ -1190,7 +1190,13 @@ async def test_chat_completions_compaction(
             api="chat_completions",
             exec_encoding="json",
             chat_compaction=ChatCompactionConfig(
-                max_tokens=8192, keep_recent_turns=1, auto_compact_tokens=256 if automatic else None
+                max_tokens=8192,
+                keep_recent_turns=1,
+                auto_compact_tokens=256 if automatic else None,
+                summary_prompt_template=None if automatic else "Write a work handoff. Keep {{.KeepRecentTurns}} turns.",
+                replacement=None
+                if automatic
+                else ChatCompactionReplacement(role="user", template="<handoff>{{.Summary}}</handoff>"),
             ),
         )
         request = create_request(tmp_path)
@@ -1229,7 +1235,10 @@ async def test_chat_completions_compaction(
                 assert {"role": "assistant", "content": "old answer"} in messages
                 assert {"role": "user", "content": recent} in messages
                 assert messages[-1]["role"] == "user"
-                assert "handoff" in messages[-1]["content"]
+                if automatic:
+                    assert "handoff" in messages[-1]["content"]
+                else:
+                    assert messages[-1]["content"] == "Write a work handoff. Keep 1 turns."
                 if automatic:
                     await exchange.send(*completion("truncated summary")[:-1])
                 else:
@@ -1255,10 +1264,13 @@ async def test_chat_completions_compaction(
                 assert "tool_choice" not in continued
                 assert continued["messages"][0] == first_request["messages"][0]
                 messages = continued["messages"]
-                assert {
-                    "role": "assistant",
-                    "content": "Summary of earlier conversation:\nretained summary",
-                } in messages
+                expected = (
+                    {"role": "assistant", "content": "Summary of earlier conversation:\nretained summary"}
+                    if automatic
+                    else {"role": "user", "content": "<handoff>retained summary</handoff>"}
+                )
+                assert expected in messages
+                assert all("sampler_compaction_summary" not in m for m in messages)
                 assert {"role": "user", "content": recent} in messages
                 assert not any("old source" in m["content"] or "truncated summary" in m["content"] for m in messages)
                 await exchange.send(*completion("done"))

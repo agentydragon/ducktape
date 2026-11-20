@@ -231,8 +231,10 @@ type ProviderRequest struct {
 }
 
 type CompactionControl struct {
-	KeepRecentTurns  int  `json:"keep_recent_turns"`
-	PerMessageEffort bool `json:"per_message_effort"`
+	KeepRecentTurns     int    `json:"keep_recent_turns"`
+	PerMessageEffort    bool   `json:"per_message_effort"`
+	ReplacementRole     string `json:"replacement_role,omitempty"`
+	ReplacementTemplate string `json:"replacement_template,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested

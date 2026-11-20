@@ -406,6 +406,33 @@ prefix only if it reduces the serialized context. The full transcript remains av
 The sampler commits the summary request before dispatch and reuses its exact body on retry.
 Automatic compaction waits for a settled context with an older turn available.
 
+The route can set `chat_compaction.summary_prompt_template` and
+`chat_compaction.replacement` in the sampler settings ConfigMap. These are Go text templates.
+The prompt receives `.KeepRecentTurns`. The replacement receives `.Summary` and
+`.KeepRecentTurns`, and must include the summary verbatim. Choose `assistant` or `user`
+for the replacement role. The environment notice and retained native turns follow it.
+A replacement rendered as a user message does not count as an authored turn. With both
+settings omitted, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+
+```yaml
+chat_compaction:
+  max_tokens: 8192
+  keep_recent_turns: 2
+  summary_prompt_template: |
+    Write a handoff with goals, decisions, and open work.
+    The latest {{.KeepRecentTurns}} user turns will be kept verbatim.
+  replacement:
+    role: user
+    template: |
+      <handoff>
+      {{.Summary}}
+      </handoff>
+```
+
+The sampler validates templates at startup. A retry uses the original rendered request.
+Changing the replacement settings while a summary request is pending prevents applying
+that summary under the new settings.
+
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
 Native text/thinking/tool observations reference the original event evidence. `message_stop` with

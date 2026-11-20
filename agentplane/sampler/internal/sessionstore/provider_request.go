@@ -85,7 +85,7 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 		case protocol.APIStyleAnthropicMessages:
 			project = conversation.Context().(*anthropic.Context).ProjectRecords
 		case protocol.APIStyleChatCompletions:
-			project = conversation.Context().RecordsFrom
+			project = conversation.Context().(*chatcompletions.Context).ProjectRecords
 		default:
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
@@ -146,6 +146,10 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 		request.ProjectionKey = providerrequest.ProjectionFor(config)
 		if config.API == protocol.APIStyleChatCompletions && config.ChatCompaction != nil {
 			request.CompactionControl = &CompactionControl{KeepRecentTurns: config.ChatCompaction.KeepRecentTurns}
+			if replacement := config.ChatCompaction.Replacement; replacement != nil {
+				request.CompactionControl.ReplacementRole = replacement.Role
+				request.CompactionControl.ReplacementTemplate = replacement.Template
+			}
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && config.AnthropicMessages.Compaction != nil {
 			request.CompactionControl = &CompactionControl{

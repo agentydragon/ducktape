@@ -22,11 +22,13 @@ type toolCall struct {
 }
 
 type message struct {
-	Role      string     `json:"role"`
-	Content   string     `json:"content,omitempty"`
-	Reasoning string     `json:"reasoning_content,omitempty"`
-	ToolCalls []toolCall `json:"tool_calls,omitempty"`
-	ToolID    string     `json:"tool_call_id,omitempty"`
+	Role string `json:"role"`
+	// A summary rendered as a user message is not an authored turn.
+	CompactionSummary bool       `json:"sampler_compaction_summary,omitempty"`
+	Content           string     `json:"content,omitempty"`
+	Reasoning         string     `json:"reasoning_content,omitempty"`
+	ToolCalls         []toolCall `json:"tool_calls,omitempty"`
+	ToolID            string     `json:"tool_call_id,omitempty"`
 }
 
 // Chat Completions requires content for system, user and tool messages, even when empty.
@@ -61,11 +63,22 @@ func (c *Context) Clone() protocol.Context             { return &Context{message
 func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
 
 func (c *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
+	return c.recordsFrom(start, false)
+}
+
+func (c *Context) ProjectRecords(start int) ([]json.RawMessage, error) {
+	return c.recordsFrom(start, true)
+}
+
+func (c *Context) recordsFrom(start int, project bool) ([]json.RawMessage, error) {
 	if start < 0 || start > len(c.messages) {
 		return nil, protocol.ErrInvalid
 	}
 	records := make([]json.RawMessage, 0, len(c.messages)-start)
 	for _, m := range c.messages[start:] {
+		if project {
+			m.CompactionSummary = false
+		}
 		raw, err := json.Marshal(m)
 		if err != nil {
 			return nil, err

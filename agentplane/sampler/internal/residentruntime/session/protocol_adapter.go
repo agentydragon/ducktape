@@ -243,7 +243,7 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, _ *sessions
 	if config == nil {
 		return nil, protocol.ErrPrecondition
 	}
-	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(config.KeepRecentTurns, environment)
+	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(*config, environment)
 	if err != nil {
 		return nil, err
 	}

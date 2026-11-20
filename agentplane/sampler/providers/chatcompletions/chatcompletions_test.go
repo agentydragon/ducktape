@@ -116,7 +116,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if c.CanCompact(2) {
 		t.Fatal("two retained turns leave no older turn")
 	}
-	plan, err := c.PrepareCompaction(1, "current environment")
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1}, "current environment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,5 +172,71 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	after, err := c.MarshalJSON()
 	if err != nil || !bytes.Equal(initial, after) {
 		t.Fatal("compaction mutated the original conversation")
+	}
+}
+
+func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
+	state := &Context{}
+	if err := state.AppendRecords([]json.RawMessage{
+		json.RawMessage(`{"role":"user","content":"` + strings.Repeat("old data ", 100) + `"}`),
+		json.RawMessage(`{"role":"user","content":"recent task"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config := CompactionConfig{
+		MaxTokens: 100, KeepRecentTurns: 1,
+		Replacement: &CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := state.PrepareCompaction(config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"useful summary"}`)}, Audit{FinishReason: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := result.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &Context{}
+	if err := restored.AppendRecords(records); err != nil {
+		t.Fatal(err)
+	}
+	if restored.CanCompact(1) {
+		t.Fatal("reloaded user summary must not count as old conversation")
+	}
+	projected, err := restored.ProjectRecords(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 2 || string(projected[0]) != `{"role":"user","content":"Handoff: useful summary"}` {
+		t.Fatalf("unexpected projected records: %s", projected)
+	}
+}
+
+func TestCompactionRejectsInvalidTemplates(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		prompt      string
+		replacement *CompactionReplacement
+	}{
+		{name: "bad prompt field", prompt: "{{.Unknown}}"},
+		{name: "bad replacement syntax", replacement: &CompactionReplacement{Role: "user", Template: "{{"}},
+		{name: "summary omitted", replacement: &CompactionReplacement{Role: "user", Template: "No handoff"}},
+		{name: "system message", replacement: &CompactionReplacement{Role: "system", Template: "{{.Summary}}"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := CompactionConfig{
+				MaxTokens: 100, KeepRecentTurns: 1,
+				SummaryPromptTemplate: tc.prompt, Replacement: tc.replacement,
+			}
+			if err := config.Validate(); err == nil {
+				t.Fatal("invalid compaction config accepted")
+			}
+		})
 	}
 }

@@ -143,7 +143,7 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 	}
 	if frontier.Kind == sessionstore.PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
 		expected.CompactionControl != nil && *expected.CompactionControl != *stored.CompactionControl) {
-		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction suffix or effort policy changed during recovery")
+		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction policy changed during recovery")
 	}
 	return frontier, nil
 }

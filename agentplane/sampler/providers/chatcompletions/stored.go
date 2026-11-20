@@ -116,7 +116,10 @@ func PrepareCompactionRequest(store interface {
 	if err != nil {
 		return "", "", err
 	}
-	instruction := fmt.Sprintf("%s The last %d user turns before this request will be retained verbatim. Focus the summary on the earlier turns.", summaryInstructions, config.KeepRecentTurns)
+	instruction, err := config.summaryPrompt()
+	if err != nil {
+		return "", "", err
+	}
 	raw, err = json.Marshal(message{Role: "user", Content: instruction})
 	if err != nil {
 		return "", "", err
