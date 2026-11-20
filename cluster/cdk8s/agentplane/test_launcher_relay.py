@@ -33,7 +33,7 @@ NAMESPACE = "launcher-relay-test"
 RELAY_SETTINGS = "relay-test-relay-settings"
 RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 RUNNER_SECRET = f"svid-sandbox-a-{RUNNER_CREDENTIAL_ID}"
-RUNNER_POD = {
+RUNNER_POD: dict[str, dict] = {
     "metadata": {"labels": {"app": "relay-test-runner"}},
     "spec": {
         "imagePullSecrets": [{"name": "relay-test-pull"}],
