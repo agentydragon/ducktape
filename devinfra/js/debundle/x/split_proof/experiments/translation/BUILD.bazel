@@ -85,6 +85,21 @@ js_test(
 )
 
 js_test(
+    name = "unary_literal_safety_test",
+    size = "small",
+    data = _CHECKER_RUNFILES + [
+        "pair.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "unary_literal_safety_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
     name = "inert_escape_test",
     data = _CHECKER_RUNFILES + [
         "pair.mjs",

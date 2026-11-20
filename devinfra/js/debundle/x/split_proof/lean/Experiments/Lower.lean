@@ -257,8 +257,15 @@ partial def inertExpr (j : Json) : Bool :=
   | "ClassExpression" => classInert j
   | "UnaryExpression" =>
     let op := str (fld j "operator")
+    let arg := fld j "argument"
+    let lit := str (fld arg "lit")
+    let primitive := lit == "null" || lit.startsWith "s:" || lit.startsWith "n:" || lit.startsWith "b:"
     ((op == "void" || op == "typeof") && inertExpr (fld j "argument"))
-      || (["-", "+", "!", "~"].contains op && typ (fld j "argument") == "Literal")
+      -- Logical not does not coerce its operand. Numeric conversion of a
+      -- RegExp can call user code; unary plus on BigInt throws.
+      || (typ arg == "Literal" &&
+        (op == "!" || (op == "+" && primitive) ||
+          ((op == "-" || op == "~") && (primitive || lit.startsWith "bi:"))))
   | _ => false
 
 partial def inertTop (s : Json) : Bool :=
