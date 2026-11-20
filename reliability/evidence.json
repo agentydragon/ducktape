@@ -2,14 +2,14 @@
   "vm_shadow_review": {
     "source_devel_commit": "0d1cb089b3d6571731e849f55e0359e639b69dbe",
     "merged_at_utc": "2026-11-20T00:16:49Z",
-    "cutoff_utc": "2026-11-20T02:47:00Z",
+    "cutoff_utc": "2026-11-20T05:12:00Z",
     "run_url": "https://github.com/agentydragon/ducktape/actions/runs/44660636046",
     "paired_evidence": "../vm-pairs.json",
     "complete_fresh_pairs": 3,
-    "workflow_attempts_reviewed": 35,
+    "workflow_attempts_reviewed": 67,
     "selections": {
-      "cached": 17,
-      "no-invocation": 15,
+      "cached": 37,
+      "no-invocation": 27,
       "fresh": 3
     },
     "manual": {
@@ -36,23 +36,63 @@
     },
     "sections": [
       {
-        "heading": "Which executor failed first?",
-        "text": "In the manual batch, managed TCG failed 2 of 11 reported first attempts. Cluster KVM passed all 12, including 5 cold fixtures and 7 warm ones. Among the 11 complete Bazel pairs, both routes passed 9 times and only managed failed twice. In the remaining pair, Bazel lost the managed verdict and worker JUnit confirmed that both scenarios passed."
+        "heading": "First attempts and final verdicts across 56 commits",
+        "text": "Both routes passed first on 46 pairs. Managed TCG alone failed first on 10, of which nine passed on retry. KVM passed every first attempt. The first-attempt failure difference was 17.9 percentage points. Under independent pairs, a conservative exact 95% interval is 2.3–32.2 points, and the upper endpoint for the KVM first-attempt failure rate is 6.4%. The sampled commits share execution infrastructure and a time window. Final failures were 1 of 56 on managed and 0 of 56 on KVM."
       },
       {
-        "heading": "What did the retries show?",
-        "text": "Neither managed retry recovered. Both initial failures hit the Claude VM’s 300-second readiness deadline and logged repeated guest-kernel RCU stalls. Pair 6 repeated the stall on retry. Pair 12 reached teardown and then failed guest shutdown. A separate managed run passed its first Bazel attempt after the executor retried a Firecracker pause failure."
+        "heading": "Observed failures",
+        "text": "Of 10 managed first-attempt failures, seven missed Sandbox readiness at 300 seconds, two failed guest shutdown, and one had interrupted session setup. Eight also refused to recycle with a remaining Sandbox. Pair 10 missed Codex readiness on both attempts while the Runtime had yet to authenticate. BuildBuddy recorded one additional managed transport execution at the native layer. Those observations describe this batch, and the prior 12-pair batch separately documents guest-kernel RCU stalls."
       },
       {
-        "heading": "What did ordinary devel pushes see?",
-        "text": "All three fresh pairs passed both Claude and Codex on the first Bazel attempt on both routes. One managed run needed an executor retry after a Firecracker pause failure. Those retries appear in remote execution records even when Bazel reports a first-attempt pass."
+        "heading": "Ordinary devel pushes",
+        "text": "All three fresh devel push pairs passed both Claude and Codex on the first Bazel attempt on each route. One managed run needed a native retry after a Firecracker pause failure. Three matched push outcomes give limited evidence about the fleet failure rate."
       },
       {
-        "heading": "Routing recommendation",
-        "text": "Keep the cluster KVM shadow collecting across devel commits. The batch reproduced the guest stall on managed TCG and gives KVM the stronger result on this commit. Three passing push pairs give little leverage on the fleet failure rate. Keep the first-attempt comparison and the final verdict visible at the next review."
+        "heading": "Required routing and follow-up",
+        "text": "The routing change moves the existing required Agentplane VM target to recycled KVM on the self-hosted BuildBuddy kvm-vm pool. Managed TCG continues as an optional devel shadow. The interim cohort predates the cutover. After cutover, check the required target’s first and final verdicts, cache exposure, queue and total time on fresh required runs. Compare Firecracker admission and execution over the same load window. The runs below do not measure the effect on required PR feedback."
       }
     ],
-    "selection_note": "Of 35 devel push attempts, 17 reused a cached managed result and 15 cancelled runs had no managed invocation. The remaining 3 produced fresh, complete pairs. Review selection at 50 fresh push pairs and reassess routing at 200."
+    "selection_note": "Of 67 ordinary devel push attempts created through 05:12 UTC on 20 November 2026, 37 reused cached managed results, 27 were cancelled before recording a managed invocation, and three produced fresh, complete pairs. This refresh adds no fresh pairs since the prior report.",
+    "routing_url": "https://github.com/agentydragon/ducktape/pull/18046",
+    "sample_note": "Interim manual snapshot at 05:13:56 UTC on 20 November 2026. Of 100 planned pairs, 56 were complete, six were in flight and 38 were not yet reserved. The earlier 12-pair, single-commit experiment remains in the evidence at its original source and window.",
+    "manual_interim": {
+      "snapshot_utc": "2026-11-20T05:13:56.539138+00:00",
+      "intended_pairs": 100,
+      "complete_pairs": 56,
+      "submitted_pending": 6,
+      "summary": {
+        "n": 56,
+        "different_shas": 56,
+        "first": {
+          "managed": [10, 56, [8.91, 30.4]],
+          "kvm": [0, 56, [0.0, 6.38]]
+        },
+        "final": {
+          "managed": {
+            "PASSED": 46,
+            "FLAKY": 9,
+            "FAILED": 1
+          },
+          "kvm": {
+            "PASSED": 56
+          }
+        },
+        "cells": "{(False, False): 46, (True, False): 10}",
+        "faster": [55, 56, [90.45, 99.95]],
+        "median": 287.7305,
+        "median_ci": [254.23000000000002, 344.49199999999996],
+        "coverage": 0.9559534538978492,
+        "arm_medians": [514.6705, 212.9],
+        "discordant": [10, 10, [69.15, 100.0]],
+        "paired_p": 0.001953125,
+        "final_cis": [
+          [1, 56, [0.05, 9.55]],
+          [0, 56, [0.0, 6.38]]
+        ],
+        "delta_pp": 17.857142857142858,
+        "conservative_paired_diff_ci": [2.32, 32.21]
+      }
+    }
   },
   "schema_version": 1,
   "repository": "https://github.com/agentydragon/ducktape",
