@@ -36,6 +36,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gitops_admission",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",

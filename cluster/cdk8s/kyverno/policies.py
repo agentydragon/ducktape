@@ -26,6 +26,12 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.gitops_admission import (
+    CROSSPLANE_NAMESPACE,
+    CROSSPLANE_SERVICE_ACCOUNT,
+    EXEMPT_NAMESPACES,
+    EXEMPT_SERVICE_ACCOUNTS,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
 
@@ -74,27 +80,6 @@ def require_gitops_chart(app: App) -> Chart:
     """Blocks direct kubectl apply for Deployments/StatefulSets/DaemonSets. Allows Flux
     controllers, operators that create child workloads from GitOps-managed CRs, and
     Stakater Reloader (rolling restarts on secret changes)."""
-    exempt_service_accounts = [
-        # Flux kustomize-controller, helm-controller, and source-controller (for CRD updates)
-        ("kustomize-controller", "flux-system"),
-        ("helm-controller", "flux-system"),
-        ("source-controller", "flux-system"),
-        # The haku-state workload pipe: Flux applies Haku's self-authored workloads by
-        # impersonating this SA (Kustomization spec.serviceAccountName), so admission
-        # attributes the request to it rather than kustomize-controller. It is a GitOps
-        # path, Role-bounded to haku-sandbox (see cluster/cdk8s/haku/workloads.md).
-        ("haku-state-reconciler", "flux-system"),
-        # Kyverno itself (for admission webhooks)
-        ("kyverno-admission-controller", "kyverno"),
-        # Operators that create child workloads from CRs deployed via GitOps
-        ("monitoring-operator", "monitoring"),
-        ("grafana-operator", "monitoring"),
-        ("seaweedfs-operator", "seaweedfs"),
-        # Authentik (creates outpost Deployments from provider CRs)
-        ("authentik", "authentik"),
-        # Stakater Reloader (triggers rolling restarts on secret changes)
-        ("reloader-reloader", "kube-system"),
-    ]
     return _cluster_policy_chart(
         app,
         "require-gitops",
@@ -132,22 +117,22 @@ def require_gitops_chart(app: App) -> Chart:
                                         )
                                     ]
                                 )
-                                for name, namespace in exempt_service_accounts
+                                for name, namespace in EXEMPT_SERVICE_ACCOUNTS
                             ),
                             # Crossplane installs provider Deployments from GitOps-managed packages.
                             ClusterPolicySpecRulesExcludeAny(
                                 subjects=[
                                     ClusterPolicySpecRulesExcludeAnySubjects(
-                                        kind="ServiceAccount", name="crossplane", namespace="crossplane-system"
+                                        kind="ServiceAccount",
+                                        name=CROSSPLANE_SERVICE_ACCOUNT,
+                                        namespace=CROSSPLANE_NAMESPACE,
                                     )
                                 ],
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=["crossplane-system"]),
+                                resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=[CROSSPLANE_NAMESPACE]),
                             ),
                             # System namespaces
                             ClusterPolicySpecRulesExcludeAny(
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(
-                                    namespaces=["kube-system", "kyverno", "flux-system"]
-                                )
+                                resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=list(EXEMPT_NAMESPACES))
                             ),
                         ]
                     ),

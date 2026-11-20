@@ -1301,11 +1301,40 @@ py_library(
 )
 
 py_library(
+    name = "gitops_admission",
+    srcs = ["gitops_admission.py"],
+    visibility = ["//cluster/cdk8s/kyverno:__pkg__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_gitops_admission",
+    size = "medium",
+    srcs = ["test_gitops_admission.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":gitops_admission",
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "kube_system",
     srcs = ["kube_system.py"],
     deps = [
         ":artifact_generators",
         ":flux",
+        ":gitops_admission",
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",

@@ -7,6 +7,7 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.gitops_admission import add_gitops_write_audit
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
@@ -40,6 +41,7 @@ def chart(app: App) -> Chart:
                 min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=labels)
             ),
         )
+    add_gitops_write_audit(chart)
     return chart
 
 
