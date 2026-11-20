@@ -52,7 +52,7 @@ spec:
         deployment:
           annotations:
             goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"20m","memory":"96Mi"},"maxAllowed":{"cpu":"50m","memory":"128Mi"},"controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
-            goldilocks.fairwinds.com/vpa-update-mode: initial
+            goldilocks.fairwinds.com/vpa-update-mode: auto
       praefect:
         affinity:
           podAntiAffinity:
