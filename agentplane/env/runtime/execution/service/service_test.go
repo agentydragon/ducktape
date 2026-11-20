@@ -494,10 +494,12 @@ func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 		{"current", func(*executorpb.ExecutionScope) {}, codes.OK},
 		{"namespace", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Namespace = "another-namespace" }, codes.PermissionDenied},
 		{"owner", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Name = "another-owner" }, codes.PermissionDenied},
+		{"missing-target", func(s *executorpb.ExecutionScope) { s.Destination.Target = nil }, codes.PermissionDenied},
 		{"sandbox", func(s *executorpb.ExecutionScope) { s.Destination.Target.Name = "another-sandbox" }, codes.PermissionDenied},
 		{"uid", func(s *executorpb.ExecutionScope) { s.Destination.Target.Uid = "another-uid" }, codes.PermissionDenied},
 		{"incarnation", func(s *executorpb.ExecutionScope) { s.ExpectedIncarnationUid = "old-incarnation" }, codes.FailedPrecondition},
 		{"session", func(s *executorpb.ExecutionScope) { s.SessionId = "" }, codes.InvalidArgument},
+		{"session-too-long", func(s *executorpb.ExecutionScope) { s.SessionId = strings.Repeat("x", 129) }, codes.InvalidArgument},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := proto.Clone(scope).(*executorpb.ExecutionScope)
@@ -506,6 +508,9 @@ func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 			err := config.admit(t.Context(), candidate, true, func(context.Context) error { accepted = true; return nil })
 			if status.Code(err) != test.code || accepted != (test.code == codes.OK) {
 				t.Fatalf("admission: accepted=%v error=%v, want %s", accepted, err, test.code)
+			}
+			if test.code == codes.FailedPrecondition && len(status.Convert(err).Details()) != 0 {
+				t.Fatalf("embedded admission carried status details: %v", status.Convert(err).Details())
 			}
 		})
 	}

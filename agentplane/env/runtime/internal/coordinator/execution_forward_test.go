@@ -352,7 +352,12 @@ func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
 		code   codes.Code
 	}{
 		{name: "incomplete scope", mutate: func(scope *executorpb.ExecutionScope) { scope.ExpectedIncarnationUid = "" }, code: codes.InvalidArgument},
+		{name: "missing target", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.Target = nil }, code: codes.InvalidArgument},
 		{name: "foreign Sandbox", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.Target.Uid = "another-sandbox" }, code: codes.PermissionDenied},
+		{name: "foreign Sandbox with long Session ID", mutate: func(scope *executorpb.ExecutionScope) {
+			scope.Destination.Target.Uid = "another-sandbox"
+			scope.SessionId = strings.Repeat("x", 129)
+		}, code: codes.PermissionDenied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scope := client.scope("sampler-session")
