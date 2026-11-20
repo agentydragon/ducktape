@@ -375,13 +375,8 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     assert len(keys) == len(set(keys)), "Duplicate Action visual example"
     assert set(keys) == set(registered), "Every registered Action renderer needs a named visual example"
 
-    if example.live_preview:
-        endpoint, metadata, _ = example.live_preview
-        await page.route(
-            f"**/upstream/actions/v1/operator/action-requests/*/{endpoint}", lambda route: route.fulfill(json=metadata)
-        )
-
-    await app.show_action_preview(example.group, example.name, example.arguments)
+    summaries = {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
+    await app.show_action_preview(example.group, example.name, example.arguments, summaries)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(page)
     sidebar = page.locator(".agentplane-actions-sidebar")
