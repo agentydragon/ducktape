@@ -13,8 +13,10 @@ Schedule a GPU window with TabbyAPI users. This changes the pod template
 and recreates the only TabbyAPI replica. The previous uncached startup
 took 218 seconds. Before applying the cache change, confirm 16 GiB plus
 filesystem headroom on `/games` and create the local PV directory on
-`wyrm2` with `sudo install -d -m 0700 /games/tabbyapi-prefix-cache`.
-TabbyAPI runs as UID 0. The 16 GiB bound is enforced by
+`wyrm2` with `install -d -m 0700 /games/tabbyapi-prefix-cache`.
+For a directory owned by the host operator, grant the capability-dropped
+TabbyAPI process access with `setfacl -m u:0:rwx /games/tabbyapi-prefix-cache`.
+The 16 GiB bound is enforced by
 `memory.disk_cache_size`. The local PV capacity is a binding declaration.
 
 Use GitOps for each arm. Start with the currently deployed config. For
