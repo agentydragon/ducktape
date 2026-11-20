@@ -227,7 +227,7 @@ function Report() {
       batches.<//
     >
     <${Text} size="sm" c="dimmed"
-      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability and policy checks below were observed at 20:16–20:30 UTC. This is a snapshot, not a live dashboard.`}<//
+      >${`Inventory collection: ${current.collection_started_utc} to ${current.collection_finished_utc}. Availability was observed at 20:28–20:30 UTC; the policy scan was checked at 21:16 UTC. This is a snapshot, not a live dashboard.`}<//
     >
     <${Group} gap="md" my="md"
       ><${Anchor} href="#current-state">Current state<//
@@ -339,9 +339,9 @@ function Report() {
           <${Text} component="p" mb=${0}
             >Kyverno remains in use where it is the simpler owner. Its
             SecretStore validating policy now matches the sole served API
-            version, v1. At 20:16 UTC, all 60 current ClusterSecretStore UIDs
-            had fresh background pass reports after the version fix. A separate
-            native admission policy enforced the tested unfenced-store
+            version, v1. At 21:16 UTC, a subsequent hourly background scan
+            produced pass reports for all 60 current ClusterSecretStore UIDs. A
+            separate native admission policy enforced the tested unfenced-store
             rejection.<//
           >
         <//>
@@ -423,12 +423,10 @@ function Report() {
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${3} size="h4">4. Keep policy reporting effective<//
           ><${Text} component="p" mb=${0}
-            >Observe the next recurring SecretStore background scan and keep
-            coverage across all current store UIDs. Continue supported Kyverno
-            policy API migrations with their own behavior and reporting checks.
-            Replace Kyverno only for a specific case where the alternative is
-            simpler and preserves the required behavior; building a separate
-            scanner is not that simplification.<//
+            >Continue supported Kyverno policy API migrations with their own
+            behavior and reporting checks. Replace Kyverno only for a specific
+            case where the alternative is simpler and preserves the required
+            behavior; building a separate scanner is not that simplification.<//
           ><//
         >
       <//>

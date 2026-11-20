@@ -19936,5 +19936,20 @@
       "cnpg_clusters": 21,
       "notes": "Admitted Pod specs reflect defaults and VPA mutation; direct Pod owner resolved through ReplicaSet to Deployment. Init, restartable init and ephemeral containers excluded."
     }
+  },
+  "secret_store_hourly_scan": {
+    "observed_at_utc": "2026-11-20T21:17:28Z",
+    "report_result_timestamp_utc": "2026-11-20T21:16:45Z",
+    "current_cluster_secret_store_uids": 60,
+    "current_uids_with_background_pass": 60,
+    "policy": "require-secret-store-conditions",
+    "policy_api": "policies.kyverno.io/v1",
+    "matched_resource_api": "external-secrets.io/v1",
+    "policy_ready": true,
+    "report_source": "KyvernoValidatingPolicy",
+    "report_process": "background scan",
+    "configured_background_scan_interval": "1h",
+    "prior_recovery_scan_at_utc": "2026-11-20T20:16:01Z",
+    "scope": "Current ClusterSecretStore UIDs joined to ClusterPolicyReport scope UIDs; passes must match the policy, source, background process and result."
   }
 }
