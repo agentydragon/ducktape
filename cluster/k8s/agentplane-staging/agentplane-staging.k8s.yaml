@@ -4279,8 +4279,6 @@ data:
     notifications_request_timeout_s: 5
     session_dispatcher_request_timeout_s: 20
     history_service_request_timeout_s: 20
-    runner_gateway_request_timeout_s: 20
-    runner_gateway_lifecycle_timeout_s: 310
     log_levels: {}
     listen_address: 0.0.0.0:8080
     electric_url: http://electric.agentplane-staging.svc:3000/

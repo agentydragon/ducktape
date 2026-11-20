@@ -54,8 +54,6 @@ type Config struct {
 	SessionDispatcherRequestTimeoutSecs float64                    `mapstructure:"session_dispatcher_request_timeout_s"`
 	HistoryServiceTokenFile             string                     `mapstructure:"history_service_token_file"`
 	HistoryServiceRequestTimeoutSeconds float64                    `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64                    `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64                    `mapstructure:"runner_gateway_lifecycle_timeout_s"`
 	LogLevels                           map[string]string          `mapstructure:"log_levels"`
 	ListenAddress                       string                     `mapstructure:"listen_address"`
 	Kubeconfig                          string                     `mapstructure:"kubeconfig"`
@@ -64,7 +62,13 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	sandboxPresetOrder                  []string
+	// RunnerGateway timeouts are unused: the app health-probes runner_gateway_target and opens no
+	// Runtime-proxy call, so nothing reads either value. The renderer no longer writes them; they stay
+	// accepted, unset and unvalidated so an already-deployed settings file still loads on rollback.
+	// CLEANUP(added 2026-11-20): delete these two fields once no deployed settings file names them.
+	RunnerGatewayRequestTimeoutSeconds float64 `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs  float64 `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	sandboxPresetOrder                 []string
 }
 
 // EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
@@ -215,8 +219,6 @@ func defaultConfig() Config {
 		NotificationsRequestTimeoutSeconds:  5,
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceRequestTimeoutSeconds: 20,
-		RunnerGatewayRequestTimeoutSeconds:  20,
-		RunnerGatewayLifecycleTimeoutSecs:   310,
 		LogLevels:                           map[string]string{},
 		ListenAddress:                       "127.0.0.1:8080",
 		EgressAdminTimeoutSeconds:           5,
@@ -449,8 +451,6 @@ func (c Config) validate() error {
 		"notifications_request_timeout_s":      c.NotificationsRequestTimeoutSeconds,
 		"session_dispatcher_request_timeout_s": c.SessionDispatcherRequestTimeoutSecs,
 		"history_service_request_timeout_s":    c.HistoryServiceRequestTimeoutSeconds,
-		"runner_gateway_request_timeout_s":     c.RunnerGatewayRequestTimeoutSeconds,
-		"runner_gateway_lifecycle_timeout_s":   c.RunnerGatewayLifecycleTimeoutSecs,
 		"egress_admin_timeout":                 c.EgressAdminTimeoutSeconds,
 	} {
 		if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {

@@ -182,8 +182,6 @@ class Settings(BaseModel):
         default=None, description="Explicit bearer token file; omit when the caller presents its service SVID."
     )
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
     log_levels: LogLevels = Field(default_factory=dict)
     listen_address: str = Field(

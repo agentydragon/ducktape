@@ -104,8 +104,6 @@ func validTestConfig() Config {
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceTokenFile:             "/var/run/history/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
-		RunnerGatewayRequestTimeoutSeconds:  20,
-		RunnerGatewayLifecycleTimeoutSecs:   310,
 		DatabaseURL:                         "postgresql://app@postgres/agentplane",
 		EgressAdminURL:                      "http://egress:8080",
 		ConnectionServiceURL:                "http://connection:8080",
@@ -382,8 +380,15 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
 			t.Fatalf("database Secret input = %q", c.DatabaseURL)
 		}
-		if c.NotificationsRequestTimeoutSeconds != 5 || c.RunnerGatewayLifecycleTimeoutSecs != 310 {
-			t.Fatalf("omitted defaults changed: notifications=%v lifecycle=%v", c.NotificationsRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
+		if c.NotificationsRequestTimeoutSeconds != 5 || c.SessionDispatcherRequestTimeoutSecs != 20 ||
+			c.HistoryServiceRequestTimeoutSeconds != 20 || c.EgressAdminTimeoutSeconds != 5 || c.ShutdownTimeoutSeconds != 5 {
+			t.Fatalf("omitted timeout defaults changed: notifications=%v dispatcher=%v history=%v egress=%v shutdown=%v",
+				c.NotificationsRequestTimeoutSeconds, c.SessionDispatcherRequestTimeoutSecs,
+				c.HistoryServiceRequestTimeoutSeconds, c.EgressAdminTimeoutSeconds, c.ShutdownTimeoutSeconds)
+		}
+		if c.RunnerGatewayRequestTimeoutSeconds != 0 || c.RunnerGatewayLifecycleTimeoutSecs != 0 {
+			t.Fatalf("unused Runner Gateway timeouts took defaults: request=%v lifecycle=%v",
+				c.RunnerGatewayRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
 		}
 		views := c.PresetViews()
 		if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" {
