@@ -250,6 +250,11 @@ function Report() {
   const stagingInitialTime = stagingInitial.observed_at_utc.slice(11, 16);
   const webFrontendHA = data.web_frontend_ha;
   const webFrontendHATime = webFrontendHA.observed_at_utc.slice(11, 16);
+  const clickhouseExporter = data.clickhouse_exporter_initial;
+  const clickhouseExporterTime = clickhouseExporter.observed_at_utc.slice(
+    11,
+    16,
+  );
   const stagingAdmissionTime =
     stagingInitial.admission_verification.observed_at_utc.slice(11, 16);
   const revisionHistoryCutover = data.revision_history_cutover;
@@ -1446,6 +1451,35 @@ function Report() {
             requests to both public entry routes returned HTTP 200.
             Authenticated Haku actions and recovery after an actual host failure
             were not tested.
+          <//>
+        <//>
+        <${Paper}
+          id="clickhouse-exporter-initial"
+          withBorder
+          p="md"
+          radius="md"
+        >
+          <${Title} order=${3} size="h4"
+            >ClickHouse operator exporter requests<//
+          >
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Observed 20 November 2026 at ${clickhouseExporterTime} UTC
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            Flux and Helm were Ready after applying an Initial VPA policy for
+            the operator Deployment's metrics-exporter memory request. Its
+            recommendation is bounded to 96–128 MiB. The operator container
+            stays excluded, with its prior 50m CPU and 128 MiB memory requests
+            pinned to guard against stale recommendations. VPA status still
+            contained an older operator recommendation. A server-side Pod CREATE
+            dry run using the actual ReplicaSet owner admitted those operator
+            requests and a 96 MiB exporter request, preserving both containers'
+            CPU requests and limits. The existing operator Pod remained 2/2
+            Ready and predates the change; actual replacement and scheduling
+            remain to be observed. ClickHouse and Keeper StatefulSet VPAs remain
+            Off. ${" "}<${Anchor} href=${clickhouseExporter.pr_url}
+              >PR #18214<//
+            >
           <//>
         <//>
       <//>

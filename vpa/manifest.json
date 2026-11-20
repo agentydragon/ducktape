@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "eaa04d5dab7e0df62a43c87467eaaad1e06747b4ea407497027420925e03ec02",
-  "evidence_sha256": "2ff06ca4a57a37b16a2c0eaa154b6ac5102e745fa56f2310d219f4426eae3f43",
+  "report_script_sha256": "e323a6cf792dddf4cfc807c14c378a27f833989d1660180e7d3f5cbde0f676ec",
+  "evidence_sha256": "dab16de97edd4f349fc1661dc0420514c2a70b1ed5396b8e168e70d261592e54",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -38,5 +38,6 @@
   "controller_ha_followup_at_utc": "2026-11-20T17:57:47Z",
   "agentplane_staging_initial_at_utc": "2026-11-20T17:59:43Z",
   "agentplane_staging_admission_at_utc": "2026-11-20T18:03:02Z",
-  "web_frontend_ha_at_utc": "2026-11-20T18:26:35Z"
+  "web_frontend_ha_at_utc": "2026-11-20T18:26:35Z",
+  "clickhouse_exporter_initial_at_utc": "2026-11-20T18:37:51Z"
 }

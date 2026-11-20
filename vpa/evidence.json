@@ -19725,5 +19725,57 @@
     "revision_scoped": true,
     "host_failure_tested": false,
     "haku_authenticated_actions_tested": false
+  },
+  "clickhouse_exporter_initial": {
+    "observed_at_utc": "2026-11-20T18:37:51Z",
+    "pr_url": "https://github.com/agentydragon/ducktape/pull/18214",
+    "merge_commit": "a67c53487a4f3c4925f31cb19e5f9c648d54a9af",
+    "flux_ready": true,
+    "helm_generation": 3,
+    "helm_ready": true,
+    "helm_release_reason": "UpgradeSucceeded",
+    "deployment": "clickhouse-operator-altinity-clickhouse-operator",
+    "mode": "Initial",
+    "exporter_memory_min": "96Mi",
+    "exporter_memory_max": "128Mi",
+    "operator_policy": "Off",
+    "operator_pinned_requests": {
+      "cpu": "50m",
+      "memory": "128Mi"
+    },
+    "stale_operator_recommendation": {
+      "cpu": "11m",
+      "memory": "93633096"
+    },
+    "replicaset_owner": "clickhouse-operator-altinity-clickhouse-operator-75fd74c757",
+    "pod_name": "clickhouse-operator-altinity-clickhouse-operator-75fd74c75xww7x",
+    "pod_created_at_utc": "2026-10-27T05:12:01Z",
+    "pod_ready_containers": 2,
+    "pod_total_containers": 2,
+    "server_side_pod_create_dry_run": {
+      "pods_created": 0,
+      "operator": {
+        "requests": {
+          "cpu": "50m",
+          "memory": "128Mi"
+        },
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        }
+      },
+      "metrics_exporter": {
+        "requests": {
+          "cpu": "25m",
+          "memory": "96Mi"
+        },
+        "limits": {
+          "cpu": "200m",
+          "memory": "256Mi"
+        }
+      }
+    },
+    "clickhouse_and_keeper_statefulset_vpas": "Off",
+    "natural_replacement_observed": false
   }
 }
