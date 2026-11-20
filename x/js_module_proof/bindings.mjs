@@ -225,6 +225,13 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!["globalThis", "eval", "arguments"].includes(name), "unsupported assignment target");
       return { kind: "assign", name, value, body: sequence(rest) };
     }
+    if (first.type === "IfStatement" && !first.alternate && rest.length > 0)
+      return {
+        kind: "guard",
+        test: expression(first.test),
+        consequent: returning(first.consequent),
+        alternative: sequence(rest),
+      };
     check(rest.length === 0, "unsupported statements after return");
     return returning(first);
   };
@@ -270,6 +277,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "multiply":
         return [...free(item.left, bound), ...free(item.right, bound)];
       case "conditional":
+      case "guard":
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
       case "local":
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
@@ -743,7 +751,8 @@ function leanExpression(expression) {
     case "multiply":
       return `.${expression.kind} (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
     case "conditional":
-      return `.conditional (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
+    case "guard":
+      return `.${expression.kind} (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
       return `.local ${str(expression.name)} ${expression.mutable} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
     case "assign":
@@ -1048,7 +1057,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
     }
-    if (expression.kind === "conditional")
+    if (expression.kind === "conditional" || expression.kind === "guard")
       return [expression.test, expression.consequent, expression.alternative]
         .map((part) => expressionBound(part, bound))
         .reduce((a, b) => (a > b ? a : b));

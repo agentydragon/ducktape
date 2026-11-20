@@ -868,3 +868,108 @@ export { first };
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
 }
+
+if (shard === 12) {
+  await writeFile(
+    source,
+    `let later = 9;
+function choose(flag) { if (flag) return 3; let local = 4; return local + later; }
+function check(flag) { if (flag) throw "bad"; return later; }
+export { choose, check };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "choose", args: [0] },
+    { name: "choose", args: [1] },
+    { name: "check", args: [0] },
+    { name: "check", args: [1] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 13 }, { value: 3 }, { value: 9 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 3, thrown: { kind: "string", value: "bad" } });
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  const tdzSource = join(root, "guard-tdz.mjs");
+  const tdzSpec = join(root, "guard-tdz.json");
+  const tdzOut = join(root, "guard-tdz-out");
+  await writeFile(
+    tdzSource,
+    `let value = 9;
+function broken(flag) { if (flag) return value; if (flag) return 0; let value = 1; return value; }
+export { broken };
+`
+  );
+  await writeFile(
+    tdzSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", tdzSource, tdzSpec, tdzOut).result, "generated");
+  assert.equal(cli("validate", tdzSource, tdzSpec, tdzOut).result, "unknown");
+  assert.equal(execute(tdzSource, [{ name: "broken", args: [1] }]).error.name, "ReferenceError");
+}
+
+if (shard === 13) {
+  await writeFile(
+    source,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make(start) { let value = start * seed; return (step) => { if (step) return value; value += 1; return value; }; }
+bump();
+const first = make(2);
+export { first };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "closures.mjs": { imports: ["state.mjs"], statements: [5] },
+        "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const witness = cli("validate", source, spec, out);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
+  assert.deepEqual(execute(source, witness.calls).results, [{ value: 5 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 3 }]);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+}

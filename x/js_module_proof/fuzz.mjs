@@ -416,6 +416,11 @@ function parameterCase(seed, index) {
       : thrownValue;
   const expectedThrown =
     observedThrow === null ? { kind: "null" } : { kind: typeof observedThrow, value: observedThrow };
+  const guard = parameters[0] === "x";
+  const fallback = [
+    declaration("base", literal(2)),
+    returnNode({ type: "BinaryExpression", operator: "+", left: id("base"), right: id("y") }),
+  ];
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -438,14 +443,9 @@ function parameterCase(seed, index) {
               { type: "ThrowStatement", argument: typeof thrownValue === "number" ? id("temp") : literal(thrownValue) },
             ],
           },
-          alternate: {
-            type: "BlockStatement",
-            body: [
-              declaration("base", literal(2)),
-              returnNode({ type: "BinaryExpression", operator: "+", left: id("base"), right: id("y") }),
-            ],
-          },
+          alternate: guard ? null : { type: "BlockStatement", body: fallback },
         },
+        ...(guard ? fallback : []),
       ]),
       {
         type: "ExportNamedDeclaration",

@@ -106,9 +106,12 @@ numeric conditionals, and calls to modeled top-level functions with matching
 numeric arguments. The checker compares each called body with its declaration;
 recursive calls remain unsupported. Function bodies may introduce initialized local `let`
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
-`*=` or `++`, and use
-`if`/`else` when both branches end in a supported return or throw of a nonnegative safe integer, boolean, `null`, `undefined`
-(written as `void 0`) or ASCII string. A throw stops the observed call sequence
+`*=` or `++`, and use `if`/`else` when both branches end in a supported return
+or throw. A no-`else` `if` may return or throw early before the remaining
+statements. Such guards conservatively reject references to lexical declarations
+later in the same block, including behind subsequent guards. Supported thrown
+values are nonnegative safe integers, booleans, `null`, `undefined` (written as
+`void 0`), and ASCII strings. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
 For these functions the certificate covers finite sequences of calls with

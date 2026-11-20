@@ -21,6 +21,7 @@ inductive NumericExpr where
   | add (left right : NumericExpr)
   | multiply (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
+  | guard (test consequent continuation : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
   | assign (name : String) (value body : NumericExpr)
   | raise (value : NumericExpr)
@@ -112,6 +113,13 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
     | .ok condition =>
       if condition == 0 then evaluateExpression result.locals globals alternative
       else evaluateExpression result.locals globals consequent
+  | .guard test consequent alternative => do
+    let result ← evaluateExpression locals globals test
+    match result.completion with
+    | .error value => pure ⟨result.locals, .error value⟩
+    | .ok condition =>
+      if condition == 0 then evaluateExpression result.locals globals alternative
+      else evaluateExpression result.locals globals consequent
   | .local name _ initial body => do
     let initialResult ← evaluateExpression locals globals initial
     match initialResult.completion with
@@ -161,6 +169,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .add _ _ => none
   | .multiply _ _ => none
   | .conditional _ _ _ => none
+  | .guard _ _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
   | .raise _ => none
