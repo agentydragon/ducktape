@@ -37,11 +37,11 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "home-switch"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # Written by tf/gitops/home-switch/bootstrap.sh, which names the Secret `home-switch-tofu-password`.
 TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"

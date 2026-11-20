@@ -10,6 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 
 NAME = "grafana-operator"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-operator"
@@ -20,7 +21,7 @@ def chart(app: App) -> Chart:
     helm_release(
         chart,
         NAME,
-        "monitoring",
+        NAMESPACE,
         repository=oci_helm_repository(chart, NAME, "flux-system", url="oci://ghcr.io/grafana/helm-charts"),
         chart=NAME,
         version="~5.22",
@@ -47,7 +48,7 @@ def grafana_operator(chart: Chart, directory: RenderedDirectory, monitoring_name
                 api_version="helm.toolkit.fluxcd.io/v2",
                 kind="HelmRelease",
                 name="grafana-operator",
-                namespace="monitoring",
+                namespace=NAMESPACE,
             )
         ],
         timeout="5m",

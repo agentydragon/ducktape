@@ -22,9 +22,9 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_instance
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/grafana"
-_NAMESPACE = "monitoring"
 
 
 def chart(app: App) -> Chart:
@@ -32,7 +32,7 @@ def chart(app: App) -> Chart:
     GrafanaDatasource(
         chart,
         "datasource",
-        metadata=ApiObjectMetadata(name="clickhouse", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="clickhouse", namespace=NAMESPACE),
         spec=GrafanaDatasourceSpec(
             instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
             values_from=[
@@ -69,7 +69,7 @@ def chart(app: App) -> Chart:
     GrafanaDashboard(
         chart,
         "dashboard",
-        metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="aiquota-history", namespace=NAMESPACE),
         spec=GrafanaDashboardSpec(
             instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
             folder="Analytics",

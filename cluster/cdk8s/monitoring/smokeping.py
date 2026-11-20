@@ -26,13 +26,13 @@ from cluster.cdk8s import pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.node_scheduling import Placement
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
 
 NAME = "smokeping"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
 _SOURCES = ("optiplex", "wyrm2")
 _JOB = f"{NAMESPACE}/{NAME}"

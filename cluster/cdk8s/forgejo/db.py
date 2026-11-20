@@ -8,12 +8,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.forgejo.namespace import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
-NAMESPACE = "forgejo"
 DATABASE = "forgejo"
 POSTGRES = cluster.PostgresRef(
     name="forgejo-db-ssd",

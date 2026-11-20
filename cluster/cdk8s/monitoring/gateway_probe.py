@@ -35,10 +35,10 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.scripts.nebula_mesh import Mesh
 
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/gateway-probe"
 _NAME = "gateway-probe"
 _LABELS = {"app.kubernetes.io/name": _NAME}

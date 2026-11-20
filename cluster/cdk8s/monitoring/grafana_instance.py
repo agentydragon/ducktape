@@ -40,12 +40,12 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _DASHBOARD_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards"
 _NAME = "grafana"
-_NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
 GRAFANA_BASE_URL = f"https://{HOSTNAME}"
 # Adopt Tempo's existing Grafana identity so saved references continue to resolve.
@@ -58,18 +58,18 @@ LOKI_DATASOURCE_UID = "fc9a18f9-6955-4e40-95c1-66e32e7e8431"
 SERVICE = ServiceRef(
     name=f"{_NAME}-service",
     port=Port(name="grafana", number=3000),
-    pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
+    pods=Pods(namespace=NAMESPACE, labels=(("app", _NAME),)),
 )
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-instance"
 DATABASE = cluster.PostgresRef(
     name="grafana-db-ovh",
-    namespace=_NAMESPACE,
+    namespace=NAMESPACE,
     # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
     # from; the role's password came with the clone.
-    app_secret=SecretRef(namespace=_NAMESPACE, name="grafana-db-app"),
+    app_secret=SecretRef(namespace=NAMESPACE, name="grafana-db-app"),
 )
-_ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
-_OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
+_ADMIN = SecretRef(namespace=NAMESPACE, name="grafana-admin-password")
+_OIDC = SecretRef(namespace=NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
 INSTANCE_LABELS = {"dashboards": _NAME}
 
@@ -109,7 +109,7 @@ def _grafana(chart: Chart) -> None:
     Grafana(
         chart,
         "grafana",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=INSTANCE_LABELS),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE, labels=INSTANCE_LABELS),
         spec=GrafanaSpec(
             client=GrafanaSpecClient(use_kube_auth=True),
             config={
@@ -197,7 +197,7 @@ def _grafana(chart: Chart) -> None:
     https_route(
         chart,
         "route",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         hostnames=[HOSTNAME],
         backend=SERVICE,
         hsts=False,
@@ -209,7 +209,7 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
     GrafanaDatasource(
         chart,
         f"datasource-{name}",
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         spec=GrafanaDatasourceSpec(
             instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=INSTANCE_LABELS), datasource=datasource
         ),
@@ -298,7 +298,7 @@ def _dashboard(
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         spec=GrafanaDashboardSpec(
             instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=INSTANCE_LABELS),
             folder=folder,
@@ -424,10 +424,10 @@ def grafana_instance(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_checks=[
             KustomizationSpecHealthChecks(
-                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=DATABASE.name, namespace=_NAMESPACE
+                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=DATABASE.name, namespace=NAMESPACE
             ),
             KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name=f"{_NAME}-deployment", namespace=_NAMESPACE
+                api_version="apps/v1", kind="Deployment", name=f"{_NAME}-deployment", namespace=NAMESPACE
             ),
         ],
         timeout="5m",

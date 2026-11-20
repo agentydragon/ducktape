@@ -8,11 +8,11 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 NAME = "monitoring-rules"
 _PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring"
-NAMESPACE = "monitoring"
 
 # TODO(https://github.com/agentydragon/ducktape/issues/17964): cover clients that
 # are first observed with <=30 minutes remaining and low-volume clients.
