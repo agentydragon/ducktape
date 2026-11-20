@@ -332,3 +332,26 @@ lean_axiom_test(
         "IdentityScan.no_candidate_needed",
     ],
 )
+
+lean_axiom_test(
+    name = "fresh_closure_axioms_test",
+    srcs = ["Experiments/FreshClosure.lean"],
+    imports = ["Experiments.FreshClosure"],
+    theorems = [
+        "FreshClosure.make_step_commute",
+        "FreshClosure.inferred_swap_preserves_continuation",
+        "FreshClosure.allocated_closure_fresh",
+        "FreshClosure.Examples.set_creation_accepted",
+        "FreshClosure.Examples.later_call_observes_argument",
+        "FreshClosure.Examples.changed_argument_rejected",
+        "FreshClosure.Examples.changed_argument_changes_call",
+        "FreshClosure.Examples.escape_rejected",
+        "FreshClosure.Examples.escape_changes_observation",
+        "FreshClosure.Examples.early_call_rejected",
+        "FreshClosure.Examples.early_call_changes_observation",
+        "FreshClosure.Examples.reentrant_constructor_rejected",
+        "FreshClosure.Examples.reentrant_constructor_changes_observation",
+        "FreshClosure.Examples.other_allocation_rejected",
+        "FreshClosure.Examples.other_allocation_changes_identity",
+    ],
+)
