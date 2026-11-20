@@ -34,6 +34,20 @@ assert.deepEqual(
   [0]
 );
 assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
+const expressionInput = makeCase(123, 28);
+const expressionShrunk = await minimizeCase(
+  expressionInput,
+  async (candidate) =>
+    candidate.source.includes("function make(") &&
+    candidate.source.includes("return (step) =>") &&
+    candidate.ast.body.some(
+      (node) =>
+        node.type === "FunctionDeclaration" &&
+        node.id.name === "make" &&
+        node.body.body.some((item) => item.type === "VariableDeclaration" && item.declarations[0].id.name === "value")
+    )
+);
+assert.match(expressionShrunk.source, /let value = (start|seed);/);
 const throwing = join(process.env.TEST_TMPDIR, `throwing-${shard}.mjs`);
 await writeFile(throwing, "export function first() { return 42; } export function fail() { throw new Error(); }");
 assert.deepEqual(execute(throwing, ["first", "fail"]), {

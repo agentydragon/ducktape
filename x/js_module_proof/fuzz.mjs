@@ -678,6 +678,35 @@ export async function minimizeCase(input, fails) {
       }
     }
     if (changed) continue;
+    // Replacing a binary expression by one of its children strictly reduces
+    // its AST. The predicate still decides whether the whole case is valid
+    // and reproduces the particular failure being minimized.
+    const binaryPaths = [];
+    const visit = (value, path) => {
+      if (!value || typeof value !== "object") return;
+      if (value.type === "BinaryExpression") binaryPaths.push(path);
+      for (const [key, child] of Object.entries(value)) {
+        if (Array.isArray(child)) child.forEach((element, index) => visit(element, [...path, key, index]));
+        else if (child && typeof child === "object") visit(child, [...path, key]);
+      }
+    };
+    visit(current.ast, []);
+    for (const path of binaryPaths) {
+      for (const side of ["left", "right"]) {
+        const candidate = structuredClone(current);
+        const parent = path.slice(0, -1).reduce((node, key) => node[key], candidate.ast);
+        const key = path.at(-1);
+        parent[key] = parent[key][side];
+        candidate.source = print(candidate.ast);
+        if (await fails(candidate)) {
+          current = candidate;
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+    if (changed) continue;
     for (let index = 0; index < current.calls.length; index++) {
       const candidate = structuredClone(current);
       candidate.calls.splice(index, 1);

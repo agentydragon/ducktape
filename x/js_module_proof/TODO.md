@@ -61,8 +61,9 @@ The following broader generator and syntax work remains open.
       verdict and relevant runtime versions for failures and interesting differences.
       Automatically minimize unmutated proved-versus-Node counterexamples by
       removing statements, calls, empty modules and imports while preserving that
-      predicate; extend shrinking to mutated cases and other failure categories,
-      expression subtrees and more split transformations, and promote minimized
+      predicate. Binary expression subtrees can also shrink to either child;
+      extend shrinking to mutated cases, other failure categories, more expression
+      forms and split transformations, and promote minimized
       bugs to regression tests.
 - [ ] Track grammar, split, verdict and observation coverage, including refusal
       and timeout rates. Support deterministic sharding and replay; run a bounded
