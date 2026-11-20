@@ -14,7 +14,7 @@ The exporter also reflects two servers that do not run in-process in haku-consol
 ``grocy-sf`` server's custom batch tools, and ``gmail``/``google_calendar``, whose tool
 implementations moved to ``x/google_mcp_server`` (agentplane's own Gmail/Calendar MCP backend)
 when haku-console's in-process copies were decommissioned. Their frontend preview widgets
-(``tool_rendering/gmail``, ``tool_rendering/google_calendar``) still validate against these
+(``tool_rendering/google_calendar``) still validate against these
 schemas, so the exporter keeps building them the same inert-credential way it always did.
 grocy-sf runs elsewhere, but its batch tools are ordinary Python (``grocy_mcp.batch_tools``):
 building a batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy connection,

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
-import { act } from "react";
+import { act, useState } from "react";
 
 import {
   ActionIdentitySchema,
@@ -342,6 +342,75 @@ describe("Action presentation slots", () => {
     expect(renderedResult.textContent).toContain("1 thread returned");
     expect(renderedResult.textContent).toContain("More threads available");
     expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
+  });
+
+  it.each(["messages_get", "threads_get"])(
+    "resolves custom labels in the combined and standalone Gmail %s results",
+    async (name) => {
+      const action = identity("gmail", name);
+      const requestId = "70000000-0000-4000-8000-000000000007";
+      const path = `/upstream/actions/v1/operator/action-requests/${requestId}/gmail-resource-summaries`;
+      const sent = answerApi((request) =>
+        request.path === path
+          ? Response.json({ labels: [{ id: "Label_19", title: "Deployments/Reviewed" }] })
+          : undefined
+      );
+      const message = { id: "message-1", labelIds: ["INBOX", "Label_19", "Label_99"] };
+      const value = name === "messages_get" ? message : { id: "thread-1", messages: [message] };
+      const args = { id: value.id };
+      const receipt: CallToolResult = { content: [], structuredContent: value, isError: false };
+
+      for (const preview of [
+        renderActionCall(action, args, receipt, requestId)?.content,
+        renderDetailsResult(action, receipt, { requestId, arguments: args }),
+      ]) {
+        const view = await mount(preview);
+        await vi.waitFor(() => expect(view.textContent).toContain("Inbox, Deployments/Reviewed, Label_99"));
+        expect(view.textContent).not.toContain("Label_19");
+      }
+      expect(sent.map((request) => [request.method, request.path, request.query.toString(), request.body])).toEqual([
+        ["GET", path, "", undefined],
+        ["GET", path, "", undefined],
+      ]);
+    }
+  );
+
+  it("fetches saved Gmail labels after a cached pending message review becomes a receipt", async () => {
+    const action = identity("gmail", "messages_get");
+    const requestId = "70000000-0000-4000-8000-000000000007";
+    const path = `/upstream/actions/v1/operator/action-requests/${requestId}/gmail-resource-summaries`;
+    let completed = false;
+    const sent = answerApi((request) =>
+      request.path === path
+        ? Response.json(
+            completed
+              ? { labels: [{ id: "Label_19", title: "Deployments/Reviewed" }] }
+              : { messages: [{ id: "message-1", title: "Deployment approval" }] }
+          )
+        : undefined
+    );
+    const args = { id: "message-1" };
+    const receipt: CallToolResult = {
+      content: [],
+      structuredContent: { id: "message-1", labelIds: ["Label_19"] },
+      isError: false,
+    };
+    function Review() {
+      const [result, setResult] = useState<CallToolResult>();
+      return (
+        <>
+          <button onClick={() => setResult(receipt)}>Show receipt</button>
+          {renderActionCall(action, args, result, requestId)?.content}
+        </>
+      );
+    }
+
+    const view = await mount(<Review />);
+    await vi.waitFor(() => expect(view.textContent).toContain("Deployment approval"));
+    completed = true;
+    await act(async () => button(view, "Show receipt").click());
+    await vi.waitFor(() => expect(view.textContent).toContain("Deployments/Reviewed"));
+    expect(sent.map((request) => request.path)).toEqual([path, path]);
   });
 
   it("shows a Gmail filter's exceptions and forwarding destination before approval", async () => {

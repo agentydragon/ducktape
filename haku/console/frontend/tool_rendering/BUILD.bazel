@@ -72,11 +72,9 @@ ts_library(
     deps = [
         ":action_entry",
         ":server_ids",
-        "//haku/console/frontend/tool_rendering/gmail:actions",
         "//haku/console/frontend/tool_rendering/google_calendar:actions",
         "//haku/console/frontend/tool_rendering/grocy:actions",
         "//haku/console/frontend/tool_rendering/haku_routine:actions",
-        "//haku/console/frontend/tool_rendering/tana:actions",
     ],
 )
 
@@ -153,15 +151,12 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend/tool_rendering/gmail:requests",
-        "//haku/console/frontend/tool_rendering/gmail:responses",
         "//haku/console/frontend/tool_rendering/google_calendar:calls",
         "//haku/console/frontend/tool_rendering/google_calendar:requests",
         "//haku/console/frontend/tool_rendering/google_calendar:responses",
         "//haku/console/frontend/tool_rendering/grocy:requests",
         "//haku/console/frontend/tool_rendering/grocy:responses",
         "//haku/console/frontend/tool_rendering/haku_routine:requests",
-        "//haku/console/frontend/tool_rendering/tana:requests",
     ],
 )
 
@@ -171,11 +166,9 @@ ts_library(
 filegroup(
     name = "tailwind_srcs",
     srcs = glob(["*.tsx"]) + [
-        "//haku/console/frontend/tool_rendering/gmail:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/google_calendar:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/grocy:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
-        "//haku/console/frontend/tool_rendering/tana:tailwind_srcs",
     ],
 )
 

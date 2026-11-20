@@ -9,25 +9,15 @@
 // cannot phrase the same call differently.
 
 import type { ActionEntry, ToolAction } from "./action_entry";
-import { gmailActions } from "./gmail/actions";
 import { googleCalendarActions } from "./google_calendar/actions";
 import { grocyActions } from "./grocy/actions";
 import { hakuRoutineActions } from "./haku_routine/actions";
-import {
-  GMAIL_SERVER_ID,
-  GOOGLE_CALENDAR_SERVER_ID,
-  GROCY_SERVER_ID,
-  HAKU_ROUTINE_SERVER_ID,
-  TANA_SERVER_ID,
-} from "./server_ids";
-import { tanaActions } from "./tana/actions";
+import { GOOGLE_CALENDAR_SERVER_ID, GROCY_SERVER_ID, HAKU_ROUTINE_SERVER_ID } from "./server_ids";
 
 const ACTIONS: Record<string, Record<string, ActionEntry>> = {
-  [GMAIL_SERVER_ID]: gmailActions,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarActions,
   [GROCY_SERVER_ID]: grocyActions,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
-  [TANA_SERVER_ID]: tanaActions,
 };
 
 /** The tool's action description, or `null` when it has no entry or its args don't parse — a
@@ -38,6 +28,7 @@ export function toolActionDescription(
   toolName: string,
   args: Record<string, unknown>
 ): ToolAction | null {
+  if (serverId === "tana" && toolName === "trash_node") return { text: "Tana: Trash node", destructive: true };
   const entry = ACTIONS[serverId]?.[toolName];
   if (!entry) return null;
   if (!entry.schema) return entry.describe(undefined as never);

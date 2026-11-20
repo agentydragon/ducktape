@@ -2347,7 +2347,7 @@ EXAMPLES = (
         "gmail",
         "threads_get",
         {"id": "demo-thread", "format": "full"},
-        {"id": "demo-thread", "messages": [GMAIL_MESSAGE]},
+        {"id": "demo-thread", "messages": [{**GMAIL_MESSAGE, "labelIds": ["INBOX", "Label_19", "Label_99"]}]},
         "The staging deployment passed.",
     ),
     ActionExample(
@@ -2357,7 +2357,7 @@ EXAMPLES = (
         {
             "id": GMAIL_MESSAGE["id"],
             "threadId": "demo-thread",
-            "labelIds": ["INBOX", "UNREAD"],
+            "labelIds": ["INBOX", "Label_19", "Label_99"],
             "payload": {
                 "headers": [
                     {"name": "Subject", "value": "Deployment notice metadata"},
@@ -3157,6 +3157,9 @@ async def test_action_presentations(
     )
     if example.group == "grocy_sf" and summaries is None:
         summaries = {"grocy-reference-summaries": {"references": []}}
+    gmail_labeled_read = example.key in {"gmail.messages_get", "gmail.threads_get"}
+    if gmail_labeled_read:
+        summaries = {"gmail-resource-summaries": {"labels": [{"id": GMAIL_LABEL["id"], "title": GMAIL_LABEL["name"]}]}}
     # Native results are stored directly. MCP results use the actual wire envelope.
     mcp = example.group not in {"environments", "orchestration_v1", "sandbox", "sessions"}
     result = (
@@ -3257,6 +3260,9 @@ async def test_action_presentations(
     await expect(receipt).to_be_visible()
     await receipt.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(receipt).to_contain_text(example.result_text)
+    if gmail_labeled_read:
+        await expect(receipt).to_contain_text("Inbox, Deployments/Reviewed, Label_99")
+        await expect(receipt).not_to_contain_text("Label_19")
     if example.key == "home_assistant.ha_get_state":
         await expect(receipt.get_by_role("link", name="Greenhouse temperature", exact=True)).to_be_visible()
         await expect(receipt.get_by_text("sensor.greenhouse_temperature", exact=True)).to_have_count(0)
@@ -3292,12 +3298,24 @@ async def test_action_presentations(
     await expect(details).to_have_attribute("aria-expanded", "true")
     await history.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(history).to_contain_text(example.result_text)
+    if gmail_labeled_read:
+        await expect(history).to_contain_text("Inbox, Deployments/Reviewed, Label_99")
+        await expect(history).not_to_contain_text("Label_19")
     if example.group not in {"google_calendar", "grocy_sf"}:
         await _expect_live_preview(history, example)
     await expect(history.locator(".ui-code-block-placeholder")).to_have_count(0)
     await wait_for_stable(page)
     await capture("history-expanded", history)
 
+    if gmail_labeled_read:
+        raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
+        await raw_switch.press("Space")
+        await expect(raw_switch).to_be_checked()
+        raw_result = receipt.get_by_test_id("action-execution-outcome")
+        if example.name == "threads_get":
+            await raw_result.get_by_role("button", name="Show more", exact=True).click()
+        await expect(raw_result).to_contain_text('"Label_19"')
+        await expect(raw_result).to_contain_text('"Label_99"')
     if example.key == "google_calendar.delete_event":
         await expect(receipt.get_by_role("link", name="Facilities coordination", exact=True)).to_have_count(0)
         raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
