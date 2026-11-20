@@ -29,3 +29,11 @@ genrule(
     cmd = "cp $(location //devinfra/js/debundle/x/split_proof:identity_frontend_instance) $@",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
+
+genrule(
+    name = "generate_identity_certificate",
+    srcs = ["//devinfra/js/debundle/x/split_proof/experiments/translation:identity_certificate_source"],
+    outs = ["IdentityCertificate/Instance.lean"],
+    cmd = "cp $(location //devinfra/js/debundle/x/split_proof/experiments/translation:identity_certificate_source) $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)

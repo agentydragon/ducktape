@@ -2,7 +2,7 @@
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 
 exports_files(
     [
@@ -15,6 +15,12 @@ exports_files(
         "example/controls/effect_order.json",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+js_library(
+    name = "lowering_dump_core",
+    srcs = ["experiments/lowering/dump_core.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
 
 js_binary(

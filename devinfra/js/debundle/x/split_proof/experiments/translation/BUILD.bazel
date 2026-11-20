@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
@@ -7,6 +7,7 @@ _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _CHECKER_RUNFILES = [
     "frontend.mjs",
+    "scope_metadata.mjs",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     _TRANSLATE,
@@ -30,6 +31,7 @@ js_test(
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
         "pair.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
     entry_point = "identity_emission_test.mjs",
@@ -37,6 +39,27 @@ js_test(
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
+)
+
+js_binary(
+    name = "identity_certificate_tool",
+    data = [
+        "fixtures/local_identity/bundle.js",
+        "scope_metadata.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "identity_certificate.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_run_binary(
+    name = "identity_certificate_source",
+    stdout = "generated/IdentityCertificate.lean",
+    tool = ":identity_certificate_tool",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
 )
 
 js_test(
@@ -106,6 +129,7 @@ js_binary(
     name = "frontend_lean",
     data = [
         "frontend.mjs",
+        "scope_metadata.mjs",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
     ],
