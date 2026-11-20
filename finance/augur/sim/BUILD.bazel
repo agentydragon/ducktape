@@ -1786,7 +1786,6 @@ py_library(
         ":money",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
