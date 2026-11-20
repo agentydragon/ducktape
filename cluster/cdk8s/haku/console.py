@@ -17,7 +17,7 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
@@ -47,6 +47,7 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
+    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -353,6 +354,23 @@ class Console(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
         deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
+        # Spread each revision across hosts; with one eligible host, keep one replica running.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/topologySpreadConstraints",
+                [
+                    k8s.TopologySpreadConstraint(
+                        topology_key="kubernetes.io/hostname",
+                        max_skew=1,
+                        min_domains=2,
+                        when_unsatisfiable="DoNotSchedule",
+                        label_selector=k8s.LabelSelector(match_labels=_STATIC.pods.selector),
+                        match_label_keys=["pod-template-hash"],
+                        node_taints_policy="Honor",
+                    )
+                ],
+            )
+        )
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",
