@@ -123,14 +123,11 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         node_selector=_HOME_LAN,
         volumes=[
             TerraformSpecRunnerPodTemplateSpecVolumes(
-                name="cluster-ca",
-                config_map=TerraformSpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE),
+                name="cluster-ca", config_map=TerraformSpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE)
             )
         ],
         volume_mounts=[
-            TerraformSpecRunnerPodTemplateSpecVolumeMounts(
-                name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True
-            )
+            TerraformSpecRunnerPodTemplateSpecVolumeMounts(name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True)
         ],
     )
     return chart

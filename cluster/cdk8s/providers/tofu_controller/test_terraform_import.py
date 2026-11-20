@@ -19,9 +19,7 @@ def test_terraform_renders_v1alpha2(scratch_chart: Chart) -> None:
         "terraform",
         spec=TerraformSpec(
             interval="15m",
-            source_ref=TerraformSpecSourceRef(
-                kind=TerraformSpecSourceRefKind.GIT_REPOSITORY, name="repo"
-            ),
+            source_ref=TerraformSpecSourceRef(kind=TerraformSpecSourceRefKind.GIT_REPOSITORY, name="repo"),
         ),
     )
     (manifest,) = Cdk8sTesting.synth(scratch_chart)

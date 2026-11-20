@@ -76,9 +76,7 @@ def secret_env(name: str, key: SecretKey) -> TerraformSpecRunnerPodTemplateSpecE
     return TerraformSpecRunnerPodTemplateSpecEnv(
         name=name,
         value_from=TerraformSpecRunnerPodTemplateSpecEnvValueFrom(
-            secret_key_ref=TerraformSpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(
-                name=key.secret.name, key=key.key
-            )
+            secret_key_ref=TerraformSpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef(name=key.secret.name, key=key.key)
         ),
     )
 
