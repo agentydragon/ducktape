@@ -360,7 +360,7 @@ func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.C
 		name, target string
 		tls          *peertls.ClientTLS
 	}{
-		{"Runner Gateway", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
+		{"Environments", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
 	} {
 		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls); err != nil {
 			closeConnections(connections)

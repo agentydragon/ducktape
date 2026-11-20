@@ -286,8 +286,8 @@ remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
-retained items are labelled incomplete rather than actively streaming. The Runner Gateway
-owns runner attachment; loading a thread never rebuilds its history.
+retained items are labelled incomplete rather than actively streaming. Environments
+owns Runtime attachment; loading a thread never rebuilds its history.
 
 `test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
 processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
@@ -690,9 +690,9 @@ snapshot, and changing the Environment incarnation or account discards the prior
 
 ## Decisions
 
-- **Connection direction:** the Runner Gateway dials the runner's private mTLS gRPC server
+- **Connection direction:** Environments dials the runner's private mTLS gRPC server
   ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
-  Callers use the stable Runner Gateway Service across Pod replacements.
+  Callers use the stable `environments` Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy

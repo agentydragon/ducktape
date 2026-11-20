@@ -147,11 +147,11 @@ class Settings(BaseModel):
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own namespace.",
     )
     runner_gateway_target: str = Field(
-        min_length=1, description="The Runner Gateway's gRPC host:port, used by the health-status probe."
+        min_length=1,
+        description="Environments gRPC host:port for the health-status probe; the retained name predates the two-binary split.",
     )
     session_dispatcher_target: str = Field(
-        min_length=1,
-        description="Runner Gateway gRPC host:port for Session Dispatcher commands and app-brokered resume requests.",
+        min_length=1, description="Session Dispatcher gRPC host:port for commands and app-brokered resume requests."
     )
     environment_service: EnvironmentServicePeer | None = Field(
         default=None,
@@ -170,8 +170,7 @@ class Settings(BaseModel):
     )
     notifications_request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     runner_gateway_token_file: Path | None = Field(
-        default=None,
-        description="Bearer token file for the Runner Gateway audience; omission selects the configured service SVID.",
+        default=None, description="Bearer token file for this peer; omission selects the configured service SVID."
     )
     session_dispatcher_token_file: Path | None = Field(
         default=None,
