@@ -69,14 +69,23 @@ function Inventory({ workloads }) {
     const text =
       `${row.namespace} ${row.name} ${row.kind} ${row.containers.map((c) => `${c.name} ${c.admitted.map((p) => p.pod).join(" ")}`).join(" ")}`.toLowerCase();
     const values = row.containers.flatMap((c) => c.admitted);
-    const resourceMissing = (field) =>
-      values.some((p) => isMissing(p[field].cpu) || isMissing(p[field].memory));
+    const templates = row.containers.flatMap((c) =>
+      c.template ? [c.template] : [],
+    );
+    const resourceMissing = (items, field) =>
+      items.some((p) => isMissing(p[field].cpu) || isMissing(p[field].memory));
     return (
       (!query || text.includes(query)) &&
       (chosenMode === "All" || mode(row) === chosenMode) &&
       (missing === "All" ||
-        (missing === "Missing request" && resourceMissing("requests")) ||
-        (missing === "Missing limit" && resourceMissing("limits")))
+        (missing === "Pod missing request" &&
+          resourceMissing(values, "requests")) ||
+        (missing === "Pod missing limit" &&
+          resourceMissing(values, "limits")) ||
+        (missing === "Template missing request" &&
+          resourceMissing(templates, "requests")) ||
+        (missing === "Template missing limit" &&
+          resourceMissing(templates, "limits")))
     );
   });
   const setFilter = (fn) => (event) => {
@@ -99,14 +108,14 @@ function Inventory({ workloads }) {
         data=${["All", "No direct VPA", "Recommend", "Initial", "Recreate"]}
       />
       <${NativeSelect}
-        label="Admitted Pod resource fields"
+        label="Resource field filter"
         value=${missing}
         onChange=${setFilter(setMissing)}
-        data=${["All", "Missing request", "Missing limit"]}
+        data=${["All", "Pod missing request", "Pod missing limit", "Template missing request", "Template missing limit"]}
       />
     <//>
     <${Text} size="sm" c="dimmed" aria-live="polite"
-      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. Missing filters apply to admitted active Pods, not templates; owner-only rows are not proof of direct VPA coverage.`}<//
+      >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. Filters distinguish templates from admitted active Pods; owner-only rows have no template and are not proof of direct VPA coverage.`}<//
     >
     <${Table.ScrollContainer}
       minWidth=${1160}
@@ -443,11 +452,12 @@ function Report() {
       >
       <${Text} component="p"
         >Template values are authored controller values; admitted values include
-        API defaults and VPA mutation. Missing filters apply to actual
-        non-terminating Running or Pending Pods and regular containers. Current
-        memory is from metrics-server; seven-day working-set maxima are sampled
-        by Mimir for current Pod names, which may cover less than seven days or
-        be reused. Unknown means no sample, not zero.<//
+        API defaults and VPA mutation. Pod filters apply to actual
+        non-terminating Running or Pending Pods and regular containers; template
+        filters include inactive controllers. Current memory is from
+        metrics-server; seven-day working-set maxima are sampled by Mimir for
+        current Pod names, which may cover less than seven days or be reused.
+        Unknown means no sample, not zero.<//
       >
       <${Inventory} workloads=${current.workloads} />
     </section>
