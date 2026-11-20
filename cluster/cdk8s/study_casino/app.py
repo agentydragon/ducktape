@@ -30,7 +30,6 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
-
 from vpa_crds.io.k8s.autoscaling import (
     VerticalPodAutoscaler,
     VerticalPodAutoscalerSpec,
