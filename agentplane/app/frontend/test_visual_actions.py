@@ -1584,6 +1584,133 @@ EXAMPLES = (
     ),
     ActionExample("grocy_sf", "transaction_undo", {"transactionId": "tx-kefir"}, "null", "Transaction undone"),
     ActionExample(
+        "grocy_sf",
+        "shopping_list_get",
+        {"shopping_list": "Weekly groceries"},
+        {
+            "name": "Weekly groceries",
+            "items": [
+                {
+                    "item_id": 52,
+                    "product_id": 21,
+                    "product_name": "Kefir",
+                    "amount": 2,
+                    "qu_name": "Bottle",
+                    "note": "Plain",
+                    "done": True,
+                }
+            ],
+        },
+        "Kefir · Done",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_list_clear",
+        {"shopping_list": "Weekly groceries"},
+        {"kind": "ok", "cleared": 4},
+        "4 items removed · Shopping list kept",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_list_items_add",
+        {"items": [{"shopping_list": "Weekly groceries", "product": "Kefir", "amount": 2, "note": "Plain"}]},
+        [{"kind": "ok", "item_id": 52, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"}],
+        "1 item added",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_list_items_remove",
+        {"item_ids": [52]},
+        [{"kind": "ok", "item_id": 52, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"}],
+        "1 item removed",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_list_item_edit",
+        {"item_id": 52, "done": True, "clear_fields": ["note"]},
+        {"kind": "ok", "item_id": 52, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"},
+        "1 item updated",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_lists_list",
+        {"detail": "full"},
+        [{"id": 3, "name": "Weekly groceries", "description": "Regular restock"}],
+        "Weekly groceries · Regular restock",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "shopping_lists_create",
+        {"items": [{"name": "Farmers market", "description": "Saturday"}]},
+        [{"kind": "ok", "created_object_id": 3}],
+        "Created Farmers market",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "products_create",
+        {
+            "items": [
+                {
+                    "name": "Kefir",
+                    "location": "Fridge",
+                    "stock_qu": "Bottle",
+                    "due_type": 2,
+                    "default_best_before_days": 7,
+                }
+            ]
+        },
+        [{"kind": "ok", "created_object_id": 21}],
+        "Created Kefir",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_delete",
+        {"product": "Old coffee"},
+        {"kind": "ok", "object_id": 31},
+        "Deleted Old coffee and its stock entries",
+    ),
+    ActionExample(
+        "grocy_sf", "products_merge", {"productIdToKeep": 16, "productIdToRemove": 15}, "null", "Products merged"
+    ),
+    ActionExample(
+        "grocy_sf",
+        "locations_create",
+        {"items": [{"name": "Chest freezer", "is_freezer": True}]},
+        [{"kind": "ok", "created_object_id": 4}],
+        "Created Chest freezer",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "locations_list",
+        {"detail": "full"},
+        [{"id": 4, "name": "Chest freezer", "is_freezer": "1"}],
+        "Chest freezer · Freezer",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_groups_create",
+        {"items": [{"name": "Breakfast", "description": "Morning staples"}]},
+        [{"kind": "ok", "created_object_id": 5}],
+        "Created Breakfast",
+    ),
+    ActionExample(
+        "grocy_sf",
+        "product_groups_list",
+        {"detail": "full"},
+        [{"id": 5, "name": "Breakfast", "description": "Morning staples"}],
+        "Breakfast · Morning staples",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "grocy_sf",
+        "quantity_units_create",
+        {"items": [{"name": "Bottle", "name_plural": "Bottles"}]},
+        [{"kind": "ok", "created_object_id": 6}],
+        "Created Bottle",
+    ),
+    ActionExample(
         "tana",
         "get_or_create_calendar_node",
         {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
