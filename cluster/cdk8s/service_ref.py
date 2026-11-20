@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from cdk8s_plus_34 import ContainerPort, Protocol, ServicePort, k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecIngress
-from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
@@ -60,17 +59,6 @@ class Pods:
     def cilium(self) -> dict[str, str]:
         """The endpoint labels a Cilium rule matches these Pods by."""
         return {"k8s:io.kubernetes.pod.namespace": self.namespace, **self.selector}
-
-    def add_disruption_budget(self, scope: Construct, id: str, *, name: str) -> k8s.KubePodDisruptionBudget:
-        """Allow one voluntary eviction at a time (node drain, descheduler) across these Pods."""
-        return k8s.KubePodDisruptionBudget(
-            scope,
-            id,
-            metadata=k8s.ObjectMeta(name=name, namespace=self.namespace),
-            spec=k8s.PodDisruptionBudgetSpec(
-                max_unavailable=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=self.selector)
-            ),
-        )
 
     def admit(self, *ports: int) -> CiliumNetworkPolicySpecIngress:
         """The server-side rule letting these Pods in; the server passes its own `pod_port`."""

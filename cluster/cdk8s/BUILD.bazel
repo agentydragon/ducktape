@@ -278,6 +278,17 @@ py_test(
 )
 
 py_library(
+    name = "disruption_budget",
+    srcs = ["disruption_budget.py"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
+    deps = [
+        ":service_ref",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "service_ref",
     srcs = ["service_ref.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
@@ -287,7 +298,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -568,6 +578,7 @@ py_library(
     deps = [
         ":cilium",
         ":container_resources",
+        ":disruption_budget",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1887,6 +1898,7 @@ py_library(
     deps = [
         ":cilium",
         ":container_resources",
+        ":disruption_budget",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -2066,6 +2078,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":disruption_budget",
         ":flux",
         ":gateway",
         ":manifest_roots",

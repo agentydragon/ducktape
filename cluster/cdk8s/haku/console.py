@@ -51,7 +51,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import agent_access_profiles as access, disruption_budget, node_scheduling, pod_policy, service_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -311,7 +311,7 @@ class Console(Construct):
         pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
-        _API.pods.add_disruption_budget(self, "disruption-budget", name=_API.name)
+        disruption_budget.add_disruption_budget(self, "disruption-budget", name=_API.name, pods=_API.pods)
         Service(
             self,
             "service",
@@ -379,7 +379,7 @@ class Console(Construct):
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
         pod_policy.harden(deployment)
-        _STATIC.pods.add_disruption_budget(self, "static-disruption-budget", name=_STATIC.name)
+        disruption_budget.add_disruption_budget(self, "static-disruption-budget", name=_STATIC.name, pods=_STATIC.pods)
         Service(
             self,
             "static-service",
