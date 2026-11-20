@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -98,7 +100,10 @@ func TestPlatformRouteRecoversAfterSilentUpstreamBlackhole(t *testing.T) {
 			if response != "replacement:after-blackhole" {
 				t.Fatalf("replacement response = %q", response)
 			}
-			proxy.waitForConnections(t, 2, time.Second)
+			eventually.Within(t, time.Second, func() (bool, string) {
+				got := proxy.count.Load()
+				return got >= 2, fmt.Sprintf("upstream connections = %d, want at least 2", got)
+			})
 			break
 		}
 		if time.Now().After(deadline) {
@@ -218,17 +223,6 @@ func (p *routeTestProxy) blackholeAndSwitch(backend string) {
 		tunnel.blackhole.Store(true)
 	}
 	p.backend = backend
-}
-
-func (p *routeTestProxy) waitForConnections(t *testing.T, count int64, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for p.count.Load() < count {
-		if time.Now().After(deadline) {
-			t.Fatalf("upstream connections = %d, want at least %d", p.count.Load(), count)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
 }
 
 func (p *routeTestProxy) close() {

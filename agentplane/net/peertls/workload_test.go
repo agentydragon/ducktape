@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,10 +15,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -85,20 +86,21 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 		}
 	}
 	<-rotationDone
-	waitForWorkloadHandshake(t, clientCredentials, serverCredentials, readCertificateDER(t, rotated.CertFile))
+	rotatedDER := readCertificateDER(t, rotated.CertFile)
+	eventually.Within(t, 5*time.Second, func() (bool, string) {
+		clientInfo, _, err := handshake(t, clientCredentials, serverCredentials)
+		if err != nil {
+			t.Fatalf("handshake during SVID rotation: %v", err)
+		}
+		return string(peerLeaf(t, clientInfo).Raw) == string(rotatedDER), "Workload API source did not rotate the presented certificate"
+	})
 
 	workloadServer.updates <- workloadX509SVID(t, changedIdentity, otherURI, rootDER)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, _, err = handshake(t, clientCredentials, serverCredentials)
-		if err != nil && strings.Contains(err.Error(), "identity changed") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("identity switch was not rejected, last handshake error: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	eventually.Within(t, 5*time.Second, func() (bool, string) {
+		_, _, err := handshake(t, clientCredentials, serverCredentials)
+		return err != nil && strings.Contains(err.Error(), "identity changed"),
+			fmt.Sprintf("identity switch was not rejected, last handshake error: %v", err)
+	})
 
 	if err := opened.Close(); err != nil {
 		t.Fatal(err)
@@ -136,24 +138,6 @@ func TestWorkloadAPIConfigurationRequiresOneCanonicalUnixSocket(t *testing.T) {
 	}
 	if _, err := config.TLS.ServerCredentials(peertls.GatewayURI); err == nil || !strings.Contains(err.Error(), "Security.Open(ctx)") {
 		t.Fatalf("file-only Config.ServerCredentials() error = %v, want explicit Open(ctx) error", err)
-	}
-}
-
-func waitForWorkloadHandshake(t *testing.T, client, server credentials.TransportCredentials, want []byte) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		clientInfo, _, err := handshake(t, client, server)
-		if err != nil {
-			t.Fatalf("handshake during SVID rotation: %v", err)
-		}
-		if got := peerLeaf(t, clientInfo); string(got.Raw) == string(want) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Workload API source did not rotate the presented certificate")
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 

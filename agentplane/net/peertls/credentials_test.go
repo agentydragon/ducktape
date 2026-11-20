@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
@@ -261,22 +262,33 @@ func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.
 	}
 }
 
-func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+// loopbackPair returns both ends of a TCP connection over the loopback interface, closed when the test ends.
+func loopbackPair(t *testing.T) (client, server net.Conn) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
+	client, err = net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverRaw, err := listener.Accept()
+	server, err = listener.Accept()
 	if err != nil {
-		_ = clientRaw.Close()
+		_ = client.Close()
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+	return client, server
+}
+
+func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+	t.Helper()
+	clientRaw, serverRaw := loopbackPair(t)
 	deadline := time.Now().Add(5 * time.Second)
 	_ = clientRaw.SetDeadline(deadline)
 	_ = serverRaw.SetDeadline(deadline)
@@ -291,8 +303,6 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 	}
 	serverErr := <-serverResult
 	clientState, serverState := client.ConnectionState(), server.ConnectionState()
-	_ = clientRaw.Close()
-	_ = serverRaw.Close()
 	if clientErr != nil {
 		return tls.ConnectionState{}, tls.ConnectionState{}, clientErr
 	}
@@ -654,31 +664,18 @@ func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testin
 	rotatedDER := readCertificateDER(t, rotated.CertFile)
 	assertGRPCClientReconnectsAfterExpiry(t, clientCredentials, serverCredentials, shortLeaf.NotAfter, func() {
 		workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER)
-		time.Sleep(100 * time.Millisecond)
-		waitForWorkloadClientHandshake(t, clientCredentials, serverCredentials, rotatedDER)
+		eventually.Within(t, 5*time.Second, func() (bool, string) {
+			_, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
+			if err != nil {
+				t.Fatalf("handshake during Workload API rotation: %v", err)
+			}
+			return bytes.Equal(peerLeaf(t, serverInfo).Raw, rotatedDER), "Workload API source did not rotate the presented client certificate"
+		})
 	})
 	if err := opened.Close(); err != nil {
 		t.Fatal(err)
 	}
 	workloadServer.waitForStreamsToClose(t)
-}
-
-func waitForWorkloadClientHandshake(t *testing.T, client, server credentials.TransportCredentials, want []byte) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, serverInfo, err := handshake(t, client, server)
-		if err != nil {
-			t.Fatalf("handshake during Workload API rotation: %v", err)
-		}
-		if got := peerLeaf(t, serverInfo); bytes.Equal(got.Raw, want) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Workload API source did not rotate the presented client certificate")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 }
 
 func assertGRPCClientReconnectsAfterExpiry(
@@ -821,24 +818,7 @@ func handshakeWithApplicationData(t *testing.T, client, server credentials.Trans
 
 func handshakeWithApplicationDataMode(t *testing.T, client, server credentials.TransportCredentials, exchange bool) (clientInfo, serverInfo credentials.AuthInfo, err error) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverRaw, err := listener.Accept()
-	if err != nil {
-		clientRaw.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = clientRaw.Close()
-		_ = serverRaw.Close()
-	})
+	clientRaw, serverRaw := loopbackPair(t)
 	type result struct {
 		conn net.Conn
 		info credentials.AuthInfo
@@ -961,20 +941,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				listener, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer listener.Close()
-				clientRaw, err := net.Dial("tcp", listener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				serverRaw, err := listener.Accept()
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = clientRaw.Close(); _ = serverRaw.Close() })
+				clientRaw, serverRaw := loopbackPair(t)
 				type result struct {
 					conn net.Conn
 					err  error
