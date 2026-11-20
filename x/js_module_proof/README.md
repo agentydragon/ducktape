@@ -101,12 +101,12 @@ integer are also supported after successful initialization. A throw terminates
 the observed call sequence, and the certificate proves matching thrown values.
 Top-level calls to such functions remain unsupported. Exported functions may
 also take numeric parameters and return expressions composed of those
-parameters, readable module bindings, nonnegative integer literals, `+`, `*`,
+parameters, readable module bindings, nonnegative integer literals, `+`, `-`, `*`,
 numeric conditionals, and calls to modeled top-level functions with matching
 numeric arguments. The checker compares each called body with its declaration;
 recursive calls remain unsupported. Function bodies may introduce initialized local `let`
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
-`*=` or `++`, and use `if`/`else` when both branches end in a supported return
+`-=`, `*=` or `++`, and use `if`/`else` when both branches end in a supported return
 or throw. A no-`else` `if` may return or throw early before the remaining
 statements. Conditions may use numeric `===`, `!==`, `<` and `>=`, boolean literals, `!`,
 `&&`, and `||`, including short-circuiting calls. Comparison and logical
@@ -120,6 +120,9 @@ temporal-dead-zone reads.
 For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of
 nonnegative safe-integer arguments; intermediate results must stay in range.
+The model treats subtraction yielding a negative intermediate as unevaluable,
+so its natural-number subtraction never silently replaces a negative result
+with zero.
 
 The original incrementing factory requires its captured variable to have a
 different name from `seed`. The shared Lean lexical lookup treats a nearer

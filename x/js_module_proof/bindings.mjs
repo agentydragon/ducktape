@@ -161,9 +161,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!["globalThis", "eval", "arguments"].includes(value), "unsupported dynamic reference");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && ["+", "*"].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["+", "*", "-"].includes(node.operator))
       return {
-        kind: node.operator === "+" ? "add" : "multiply",
+        kind: node.operator === "+" ? "add" : node.operator === "*" ? "multiply" : "subtract",
         left: expression(node.left),
         right: expression(node.right),
       };
@@ -249,12 +249,12 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (first.type === "ExpressionStatement" && rest.length > 0) {
       const assignment = first.expression;
       let name, value;
-      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*="].includes(assignment.operator)) {
+      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*=", "-="].includes(assignment.operator)) {
         name = identifier(assignment.left);
         value = expression(assignment.right);
-        if (assignment.operator === "+=" || assignment.operator === "*=")
+        if (assignment.operator !== "=")
           value = {
-            kind: assignment.operator === "+=" ? "add" : "multiply",
+            kind: assignment.operator === "+=" ? "add" : assignment.operator === "*=" ? "multiply" : "subtract",
             left: { kind: "name", name },
             right: value,
           };
@@ -315,6 +315,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         return bound.includes(item.name) ? [] : [item.name];
       case "add":
       case "multiply":
+      case "subtract":
       case "equal":
       case "less":
         return [...free(item.left, bound), ...free(item.right, bound)];
@@ -791,6 +792,7 @@ function leanExpression(expression) {
       return `.name ${str(expression.name)}`;
     case "add":
     case "multiply":
+    case "subtract":
     case "equal":
     case "less":
       return `.${expression.kind} (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
@@ -1105,6 +1107,11 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
+    }
+    if (expression.kind === "subtract") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return left > right ? left : right;
     }
     if (expression.kind === "conditional" || expression.kind === "guard")
       return [expression.test, expression.consequent, expression.alternative]

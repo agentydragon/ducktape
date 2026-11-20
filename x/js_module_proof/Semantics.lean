@@ -20,6 +20,7 @@ inductive NumericExpr where
   | name (name : String)
   | add (left right : NumericExpr)
   | multiply (left right : NumericExpr)
+  | subtract (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
@@ -126,6 +127,17 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue * rightValue)⟩
+  | .subtract left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        if leftValue < rightValue then none
+        else pure ⟨rightResult.locals, .ok (leftValue - rightValue)⟩
   | .conditional test consequent alternative => do
     let result ← evaluateExpression locals globals test
     match result.completion with
@@ -188,6 +200,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .name _ => none
   | .add _ _ => none
   | .multiply _ _ => none
+  | .subtract _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .conditional _ _ _ => none

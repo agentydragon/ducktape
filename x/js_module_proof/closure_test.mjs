@@ -982,7 +982,8 @@ function select(x, y) { if (x < y && y === 4 && x !== 3 && x >= 2) return 9; ret
 function short(x) { if (x === 0 || maybe(x) >= maybe(0)) return 3; return 4; }
 function invert(x) { if (!x) return 8; return 2; }
 function conjunction(x) { if (x && maybe(1)) return 1; return 2; }
-export { select, short, invert, conjunction };
+function difference(x, y) { let value = x + 5; value -= y; return value - 1; }
+export { select, short, invert, conjunction, difference };
 `
   );
   await writeFile(
@@ -992,7 +993,7 @@ export { select, short, invert, conjunction };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -1006,6 +1007,7 @@ export { select, short, invert, conjunction };
     { name: "select", args: [2, 3] },
     { name: "select", args: [3, 4] },
     { name: "select", args: [1, 4] },
+    { name: "difference", args: [4, 3] },
     { name: "invert", args: [0] },
     { name: "invert", args: [2] },
     { name: "short", args: [0] },
@@ -1018,11 +1020,12 @@ export { select, short, invert, conjunction };
     { value: 1 },
     { value: 1 },
     { value: 1 },
+    { value: 5 },
     { value: 8 },
     { value: 2 },
     { value: 3 },
   ]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 8, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 9, thrown: { kind: "number", value: 7 } });
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const conjunctionCalls = [
     { name: "conjunction", args: [0] },
@@ -1039,11 +1042,22 @@ export { select, short, invert, conjunction };
   assert.deepEqual(execute(join(out, "entry.mjs"), conjunctionCalls), conjunctionTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
-    input: models + proof.certificate,
+    input:
+      models +
+      proof.certificate +
+      "\nexample : evaluateExpression [] [] (.subtract (.literal 1) (.literal 2)) = none := by decide\n",
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
   const logic = join(out, "logic.mjs");
+  const originalLogic = await readFile(logic, "utf8");
+  const changedSubtraction = originalLogic.replace("return value - 1", "return value - 2");
+  assert.notEqual(changedSubtraction, originalLogic);
+  await writeFile(logic, changedSubtraction);
+  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  const subtractionCalls = [{ name: "difference", args: [4, 3] }];
+  assert.notDeepEqual(execute(source, subtractionCalls), execute(join(out, "entry.mjs"), subtractionCalls));
+  await writeFile(logic, originalLogic);
   await writeFile(logic, (await readFile(logic, "utf8")).replace("x < y", "x === y"));
   assert.equal(cli("validate", source, spec, out).result, "unknown");
   assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
@@ -1091,7 +1105,7 @@ if (shard === 15) {
     `let seed = 1;
 let amount = 1;
 function bump() { seed += amount; }
-function make(start) { let value = start * seed; return (step) => { if (step < value) return value; return step; }; }
+function make(start) { let value = start * seed - 1; return (step) => { if (step < value) return value; return step; }; }
 bump();
 const first = make(2);
 export { first };
@@ -1113,8 +1127,8 @@ export { first };
   const witness = cli("validate", source, spec, out);
   assert.equal(witness.result, "unsafe", JSON.stringify(witness));
   assert.deepEqual(witness.calls, [{ name: "first", args: [0] }]);
-  assert.deepEqual(execute(source, witness.calls).results, [{ value: 4 }]);
-  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
+  assert.deepEqual(execute(source, witness.calls).results, [{ value: 3 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), witness.calls).results, [{ value: 1 }]);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + witness.certificate,

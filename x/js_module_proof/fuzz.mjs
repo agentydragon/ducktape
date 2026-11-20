@@ -451,7 +451,12 @@ function parameterCase(seed, index) {
   const guard = parameters[0] === "x";
   const fallback = [
     declaration("base", literal(2)),
-    returnNode({ type: "BinaryExpression", operator: "+", left: id("base"), right: id("y") }),
+    returnNode({
+      type: "BinaryExpression",
+      operator: "-",
+      left: { type: "BinaryExpression", operator: "+", left: id("base"), right: id("y") },
+      right: literal(1),
+    }),
   ];
   const ast = {
     type: "Program",
