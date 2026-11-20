@@ -99,10 +99,12 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
         ? placement.value.harness
         : undefined);
   const { commandsRequireReadySandbox } = harnessBehavior(harness);
-  const materializationFailed =
-    thread?.session?.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED;
+  const materialization = thread?.session?.status?.materialization;
+  const materializationUnconfirmed =
+    materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED ||
+    materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN;
   const notice =
-    !materializationFailed && !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
+    !materializationUnconfirmed && !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
       : thread &&
         environment.snapshot &&
@@ -114,13 +116,13 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
     ? DEFAULT_COMPOSER_PLACEHOLDER
     : sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands =
-    !materializationFailed &&
+    !materializationUnconfirmed &&
     commandsRequireReadySandbox &&
     inventoryFresh &&
     sandbox !== undefined &&
     ((suspended && sandbox.configuration?.wakeOnSend) || sandboxStarting(sandbox));
   const canResumeSandbox =
-    !materializationFailed &&
+    !materializationUnconfirmed &&
     commandsRequireReadySandbox &&
     inventoryFresh &&
     suspended &&
@@ -193,7 +195,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {error}
           </Text>
         )}
-        {thread && materializationFailed && (
+        {thread && materializationUnconfirmed && (
           <Text role="alert" c="red">
             {sessionMaterializationLabel(thread)}
           </Text>
@@ -208,13 +210,13 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {notice}
           </Text>
         )}
-        {thread && (!materializationFailed || thread.summary.projectionEpoch) && (
+        {thread && (!materializationUnconfirmed || thread.summary.projectionEpoch) && (
           <sync.Thread key={threadId} threadId={threadId}>
             <ThreadConversation
               threadId={threadId}
               thread={thread}
               available={
-                !materializationFailed &&
+                !materializationUnconfirmed &&
                 inventoryFresh &&
                 (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
               }

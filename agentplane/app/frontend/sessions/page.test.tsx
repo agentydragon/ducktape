@@ -1205,7 +1205,10 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
   expect(container.querySelector("textarea")).not.toBeNull();
 });
 
-it("shows a materialization failure without treating missing History as a deleted Sandbox", async () => {
+it.each([
+  ["failed", SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED],
+  ["unknown", SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN],
+])("shows materialization %s without treating missing History as a deleted Sandbox", async (label, materialization) => {
   sharedThread = {
     summary: { sandbox: undefined, attached: undefined },
     session: {
@@ -1219,36 +1222,42 @@ it("shows a materialization failure without treating missing History as a delete
         },
       },
       status: {
-        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED,
+        materialization,
         reason: "invalid model",
       },
     },
   };
   const container = await renderAfterThreadsSnapshot();
-  expect(container.textContent).toContain("Session materialization failed · invalid model");
+  expect(container.textContent).toContain(`Session materialization ${label} · invalid model`);
   expect(container.textContent).not.toContain("Sandbox no longer exists");
   expect(container.textContent).toContain("composer-test · Central sampler");
   expect(container.querySelector("textarea")).toBeNull();
 });
 
-it("keeps retained History visible and the composer disabled after a materialization failure", async () => {
-  sharedThread = {
-    summary: { projectionEpoch: "retained-epoch" },
-    session: {
-      sessionId: THREAD.metadata.threadId,
-      status: {
-        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED,
-        reason: "invalid model",
+it.each([
+  ["failed", SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED],
+  ["unknown", SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN],
+])(
+  "keeps retained History visible and the composer disabled after materialization %s",
+  async (label, materialization) => {
+    sharedThread = {
+      summary: { projectionEpoch: "retained-epoch" },
+      session: {
+        sessionId: THREAD.metadata.threadId,
+        status: {
+          materialization,
+          reason: "invalid model",
+        },
       },
-    },
-  };
-  const container = await renderAfterThreadsSnapshot(
-    threadState({ rows: [viewState(), testItem(1, ItemKind.TOOL_CALL, { toolName: "retained-tool" })] })
-  );
-  expect(container.textContent).toContain("Session materialization failed · invalid model");
-  expect(container.textContent).toContain("retained-tool");
-  expect(composer(container).disabled).toBe(true);
-});
+    };
+    const container = await renderAfterThreadsSnapshot(
+      threadState({ rows: [viewState(), testItem(1, ItemKind.TOOL_CALL, { toolName: "retained-tool" })] })
+    );
+    expect(container.textContent).toContain(`Session materialization ${label} · invalid model`);
+    expect(container.textContent).toContain("retained-tool");
+    expect(composer(container).disabled).toBe(true);
+  }
+);
 
 it("does not infer deletion when no exact Sandbox identity is known", async () => {
   sharedThread = { summary: { sandbox: undefined, attached: undefined }, session: undefined };
