@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261120064558-5bca2af # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261120065438-339bcf6 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261119002821-7656132 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
@@ -19,7 +19,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-app
     newTag: devel-20261120043856-12d7379 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261119085303-6013647 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
+    newTag: devel-20261120065436-339bcf6 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261119052251-a696d8f # {"$imagepolicy": "flux-system:environment-tools:tag"}
