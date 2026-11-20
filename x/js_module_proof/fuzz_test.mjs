@@ -202,6 +202,8 @@ if (shards === 4 && shard === 0) {
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
+  assert.ok(bulk.finallyCases > 0);
+  assert.equal(bulk.finallySourceExecuted, bulk.finallyCases);
   assert.equal(bulk.modeledClosureCases, bulk.cases / 4);
   assert.equal(bulk.modeledClosureCompared, bulk.modeledClosureCases);
   assert.ok(bulk.modeledClosureCrossModule > 0);

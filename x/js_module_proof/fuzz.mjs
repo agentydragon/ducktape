@@ -74,6 +74,8 @@ function print(node) {
       return print(node.local);
     case "IfStatement":
       return `if (${print(node.test)}) ${print(node.consequent)}${node.alternate ? ` else ${print(node.alternate)}` : ""}`;
+    case "TryStatement":
+      return `try ${print(node.block)} finally ${print(node.finalizer)}`;
     case "ForStatement":
       return `for (${print(node.init).slice(0, -1)}; ${print(node.test)}; ${print(node.update)}) ${print(node.body)}`;
     case "UpdateExpression":
@@ -139,6 +141,7 @@ function closureCase(seed, index) {
   const depth = 1 + rand(4);
   const writesCaptured = rand(2) === 0;
   const controlFlow = index % 8 === 7;
+  const usesFinally = index % 16 === 7;
   let shadowed = false;
   const global = new Scope();
   for (const name of ["base", "make", "saved", "run"]) global.declare(name);
@@ -171,6 +174,14 @@ function closureCase(seed, index) {
     scope.declare(local);
     const body = [declaration(local, init)];
     if (writesCaptured && level === depth - 1) body.push(add("captured", local));
+    if (usesFinally && level === depth - 1) {
+      body.push({
+        type: "TryStatement",
+        block: { type: "BlockStatement", body: [add("captured", local)] },
+        handler: null,
+        finalizer: { type: "BlockStatement", body: [declaration("marker", literal(103)), record("marker")] },
+      });
+    }
     if (controlFlow && level === depth - 1) {
       const branch = (value, marker) => {
         const block = new Scope(scope);
@@ -273,8 +284,9 @@ function closureCase(seed, index) {
     grammar: "closure",
     depth,
     shadowed,
-    writesCaptured: writesCaptured || controlFlow,
+    writesCaptured: writesCaptured || controlFlow || usesFinally,
     controlFlow,
+    usesFinally,
     unsupported: true,
     cyclic: false,
     invalidAssignment: false,
@@ -1007,6 +1019,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     closureShadowed: 0,
     closureWrites: 0,
     controlFlowCases: 0,
+    finallyCases: 0,
+    finallySourceExecuted: 0,
     branchThen: 0,
     branchElse: 0,
     generated: 0,
@@ -1098,6 +1112,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.grammar === "closure") {
         phase = "source-execution";
         summary.closureCases++;
+        if (input.usesFinally) summary.finallyCases++;
         summary.closureDepths[input.depth] = (summary.closureDepths[input.depth] ?? 0) + 1;
         if (input.shadowed) summary.closureShadowed++;
         if (input.writesCaptured) summary.closureWrites++;
@@ -1120,6 +1135,11 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         )
           throw new Error(`generated closure did not execute within its bounds: ${JSON.stringify(observed)}`);
         summary.closureSourceExecuted++;
+        if (input.usesFinally) {
+          if (observed.events.filter((event) => event === 103).length !== input.calls.length)
+            throw new Error("generated finally block did not run once per call");
+          summary.finallySourceExecuted++;
+        }
         if (input.controlFlow) {
           summary.controlFlowCases++;
           if (observed.events.includes(101)) summary.branchThen++;

@@ -200,6 +200,9 @@ the current proof frontend refuses these cases.
 Parameterized programs also compose bounded numeric expression trees from
 visible parameters, literals, addition and multiplication; the campaign
 summary reports their generated depths.
+Some nested closure cases also execute a `try`/`finally` block in Node and
+check that its finalizer runs once per call. The proof frontend currently
+refuses these cases; the summary reports their Node executions separately.
 More general closure programs are executed independently in Node; when candidate
 generation succeeds, the fuzzer also compares the emitted modules. The summary
 reports generated and compared closure cases separately from refusals. It
