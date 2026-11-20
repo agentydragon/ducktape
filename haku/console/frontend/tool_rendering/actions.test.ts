@@ -11,5 +11,6 @@ describe("toolActionDescription", () => {
   it("leaves retired Gmail and Tana calls on the generic path", () => {
     expect(toolActionDescription("gmail", "threads_get", {})).toBeNull();
     expect(toolActionDescription("tana", "trash_node", { nodeId: "n1" })?.destructive).toBe(true);
+    expect(toolActionDescription("google_calendar", "delete_event", {})?.destructive).toBe(true);
   });
 });

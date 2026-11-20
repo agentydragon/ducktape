@@ -72,7 +72,6 @@ ts_library(
     deps = [
         ":action_entry",
         ":server_ids",
-        "//haku/console/frontend/tool_rendering/google_calendar:actions",
         "//haku/console/frontend/tool_rendering/grocy:actions",
         "//haku/console/frontend/tool_rendering/haku_routine:actions",
     ],
@@ -118,32 +117,12 @@ ts_library(
     ],
 )
 
-# A combined pending/finished registry entry (one widget over both the tool's args and, once
-# present, its result) plus the defineCallPreview/renderCallPreview/describeCallAction helpers.
-# Uses the shared CallToolResult unwrap so pending calls, errors and schema mismatches
-# resolve the same way a result-only widget's do.
-ts_library(
-    name = "call_entry",
-    srcs = ["call_entry.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":entry",
-        ":vocabulary",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-        "//haku/console/frontend:mcp_result",
-    ],
-)
-
 ts_library(
     name = "tool_rendering",
     srcs = ["index.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":call_entry",
         ":entry",
         ":result_entry",
         ":server_ids",
@@ -151,9 +130,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend/tool_rendering/google_calendar:calls",
-        "//haku/console/frontend/tool_rendering/google_calendar:requests",
-        "//haku/console/frontend/tool_rendering/google_calendar:responses",
         "//haku/console/frontend/tool_rendering/grocy:requests",
         "//haku/console/frontend/tool_rendering/grocy:responses",
         "//haku/console/frontend/tool_rendering/haku_routine:requests",
@@ -166,7 +142,6 @@ ts_library(
 filegroup(
     name = "tailwind_srcs",
     srcs = glob(["*.tsx"]) + [
-        "//haku/console/frontend/tool_rendering/google_calendar:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/grocy:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
     ],
@@ -183,19 +158,6 @@ haku_vitest_test(
     deps = [
         ":tool_rendering",
         "//:node_modules/vitest",
-    ],
-)
-
-haku_vitest_test(
-    name = "call_entry_test",
-    srcs = ["call_entry.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":call_entry",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-        "//:node_modules/zod",
     ],
 )
 

@@ -26,7 +26,7 @@ route-specific cache headers.
   index is a generated file (`tailwind_content_index`) listing the shipped shell sources, since
   Bazel sandboxes inputs. Renderer-only styles and utility classes are added by
   `preview_styles.src.css` for the per-server preview targets.
-- `tool_call_card.tsx` + `tool_rendering/` — enriched Calendar, Grocy, and Haku Routine tool-call renderers. No shipped page mounts them since the tool-call service was retired;
+- `tool_call_card.tsx` + `tool_rendering/` — enriched Grocy and Haku Routine tool-call renderers. No shipped page mounts them since the tool-call service was retired;
   their MCP lookup clients, schema exporters, and per-server preview targets remain buildable. The
   production `:bundle` excludes this renderer subtree and its stylesheet inputs. Arguments/results
   validate against the MCP schemas `//haku/console/mcp:export_tool_schemas_bin` exports; renderer
