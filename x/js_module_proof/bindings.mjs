@@ -258,9 +258,13 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
             left: { kind: "name", name },
             right: value,
           };
-      } else if (assignment?.type === "UpdateExpression" && assignment.operator === "++") {
+      } else if (assignment?.type === "UpdateExpression" && ["++", "--"].includes(assignment.operator)) {
         name = identifier(assignment.argument);
-        value = { kind: "add", left: { kind: "name", name }, right: { kind: "literal", value: 1 } };
+        value = {
+          kind: assignment.operator === "++" ? "add" : "subtract",
+          left: { kind: "name", name },
+          right: { kind: "literal", value: 1 },
+        };
       } else check(false, "unsupported mutation");
       check(!["globalThis", "eval", "arguments"].includes(name), "unsupported assignment target");
       return { kind: "assign", name, value, body: sequence(rest) };

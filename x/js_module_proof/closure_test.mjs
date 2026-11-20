@@ -982,7 +982,7 @@ function select(x, y) { if (x < y && y === 4 && x !== 3 && x >= 2) return 9; ret
 function short(x) { if (x === 0 || maybe(x) >= maybe(0)) return 3; return 4; }
 function invert(x) { if (!x) return 8; return 2; }
 function conjunction(x) { if (x && maybe(1)) return 1; return 2; }
-function difference(x, y) { let value = x + 5; value -= y; return value - 1; }
+function difference(x, y) { let value = x + 5; value -= y; value--; return value - 1; }
 export { select, short, invert, conjunction, difference };
 `
   );
@@ -1020,7 +1020,7 @@ export { select, short, invert, conjunction, difference };
     { value: 1 },
     { value: 1 },
     { value: 1 },
-    { value: 5 },
+    { value: 4 },
     { value: 8 },
     { value: 2 },
     { value: 3 },

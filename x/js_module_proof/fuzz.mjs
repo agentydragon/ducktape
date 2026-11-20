@@ -451,6 +451,7 @@ function parameterCase(seed, index) {
   const guard = parameters[0] === "x";
   const fallback = [
     declaration("base", literal(2)),
+    expr({ type: "UpdateExpression", operator: "--", prefix: false, argument: id("base") }),
     returnNode({
       type: "BinaryExpression",
       operator: "-",
