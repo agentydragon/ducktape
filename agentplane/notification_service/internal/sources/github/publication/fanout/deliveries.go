@@ -45,9 +45,8 @@ type Match struct {
 
 // Delivery is a stored delivery that matched, with the identity of its entry.
 type Delivery struct {
-	Position int64
-	Event    sourceadapter.GitHubEvent
-	Payload  json.RawMessage
+	Event   sourceadapter.GitHubEvent
+	Payload json.RawMessage
 }
 
 // argList collects query arguments and names each by its placeholder.
@@ -127,7 +126,7 @@ func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, 
 	}
 	// The relational natural key matches this delivery; payload expiry does not affect identity.
 	rows, err := c.db.QueryContext(ctx, `
-		SELECT d.position, d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
+		SELECT d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
 		FROM github_delivery d
 		WHERE d.app_id = `+args.add(match.AppID)+`
 			AND (`+strings.Join(accessible, " OR ")+`)
@@ -153,7 +152,7 @@ func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, 
 		var event string
 		var action sql.NullString
 		var payload []byte
-		if err := rows.Scan(&delivery.Position, &delivery.Event.AppID, &delivery.Event.DeliveryID,
+		if err := rows.Scan(&delivery.Event.AppID, &delivery.Event.DeliveryID,
 			&delivery.Event.RepositoryID, &event, &action, &payload); err != nil {
 			return nil, err
 		}

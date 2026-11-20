@@ -13,20 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// workload is an admitted workload caller as an inbox owner.
-type workload struct {
-	owner inboxstore.Owner
-}
-
-// currentWorkload is the Identity named by the authenticated workload credential.
-func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
-	caller, err := s.admittedActor(ctx)
-	if err != nil {
-		return workload{}, err
-	}
-	return workload{owner: inboxstore.Owner{Identity: caller.identity}}, nil
-}
-
 // requireSessionIdentity authorizes the caller against the Session authority's current execution Identity.
 func (s *Notifications) requireSessionIdentity(ctx context.Context, caller model.Identity, sessionID string) error {
 	response, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID})

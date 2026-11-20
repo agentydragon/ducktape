@@ -243,7 +243,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 	if !operator {
 		return serveOwned(ctx, s, request, s.readInbox)
 	}
-	if err := rejectRetiredInboxAddress(request); err != nil {
+	if err := rejectRetiredAddress(request, "inbox", "inbox_id"); err != nil {
 		return nil, failure(ctx, err)
 	}
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
@@ -314,7 +314,7 @@ func (s *Notifications) retireInbox(ctx context.Context, owner inboxstore.Owner,
 
 // ownedInboxID rejects retired addresses before resolving the Session for its current owner.
 func (s *Notifications) ownedInboxID(ctx context.Context, owner inboxstore.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
-	if err := rejectRetiredInboxAddress(request); err != nil {
+	if err := rejectRetiredAddress(request, "inbox", "inbox_id"); err != nil {
 		return uuid.Nil, err
 	}
 	if err := model.CheckText("session_id", sessionID, 1, 200); err != nil {
@@ -326,14 +326,17 @@ func (s *Notifications) ownedInboxID(ctx context.Context, owner inboxstore.Owner
 	return s.store.InboxIDForSession(ctx, owner, sessionID)
 }
 
-func rejectRetiredInboxAddress(request proto.Message) error {
+// rejectRetiredAddress refuses a request that still carries the retired field 1, which addressed a Sandbox or an
+// inbox before the Session ID replaced it. kind names the request and field the retired field in the refusal.
+// Native gRPC retains unknown fields, so an old client's explicit address would otherwise be silently discarded.
+func rejectRetiredAddress(request proto.Message, kind, field string) error {
 	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
-		field, _, size := protowire.ConsumeField(unknown)
+		number, _, size := protowire.ConsumeField(unknown)
 		if size < 0 {
-			return invalidRequest("invalid inbox request")
+			return invalidRequest("invalid %s request", kind)
 		}
-		if field == 1 {
-			return invalidRequest("inbox_id is no longer accepted; address the Session by ID")
+		if number == 1 {
+			return invalidRequest("%s is no longer accepted; address the Session by ID", field)
 		}
 		unknown = unknown[size:]
 	}

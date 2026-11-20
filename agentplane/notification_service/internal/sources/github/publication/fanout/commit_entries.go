@@ -2,7 +2,6 @@ package fanout
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
@@ -21,9 +20,8 @@ func (c *Coordinator) recordCommitObservations(ctx context.Context, tx transacti
 	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creationProto sql.Null[[]byte]
-	var sourceProvider sql.NullString
-	var idempotencyKey string
+	var creationProto []byte
+	var sourceProvider, idempotencyKey string
 	var after int64
 	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key, github_commit_after_sequence
 		FROM subscription WHERE id = $1`, subscriptionID).

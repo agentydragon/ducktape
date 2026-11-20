@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
@@ -146,9 +147,9 @@ func (g githubFixture) assertNoPullRequestRetry(t *testing.T, sub githubSubscrip
 	}
 }
 
-func mergeabilityEntries(t *testing.T, g githubFixture) []Entry {
+func mergeabilityEntries(t *testing.T, g githubFixture) []inboxstore.Entry {
 	t.Helper()
-	var entries []Entry
+	var entries []inboxstore.Entry
 	for _, entry := range g.read(t, g.inbox, 0).Entries {
 		if _, ok := entry.Event.(sourceadapter.GitHubMergeabilityEvent); ok {
 			entries = append(entries, entry)
@@ -157,9 +158,9 @@ func mergeabilityEntries(t *testing.T, g githubFixture) []Entry {
 	return entries
 }
 
-func mergeabilitySnapshotEntries(t *testing.T, g githubFixture, inboxID uuid.UUID) []Entry {
+func mergeabilitySnapshotEntries(t *testing.T, g githubFixture, inboxID uuid.UUID) []inboxstore.Entry {
 	t.Helper()
-	var entries []Entry
+	var entries []inboxstore.Entry
 	for _, entry := range g.read(t, inboxID, 0).Entries {
 		if _, ok := entry.Event.(sourceadapter.GitHubMergeabilitySnapshotEvent); ok {
 			entries = append(entries, entry)
@@ -168,7 +169,7 @@ func mergeabilitySnapshotEntries(t *testing.T, g githubFixture, inboxID uuid.UUI
 	return entries
 }
 
-func sequencesForSubscription(t *testing.T, entries []Entry, subscription uuid.UUID) []int64 {
+func sequencesForSubscription(t *testing.T, entries []inboxstore.Entry, subscription uuid.UUID) []int64 {
 	t.Helper()
 	var sequences []int64
 	for _, entry := range entries {

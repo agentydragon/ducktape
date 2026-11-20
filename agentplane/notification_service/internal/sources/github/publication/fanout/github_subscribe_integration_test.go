@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -178,7 +179,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment, Actions: []string{"deleted"}},
 		githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}},
 	))
-	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, authorization); !errors.Is(err, ErrIdempotencyKeyReused) {
+	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, authorization); !errors.Is(err, inboxstore.ErrIdempotencyKeyReused) {
 		t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -84,9 +85,9 @@ func normalizedCommitStatusDelivery(g githubFixture, status githubmodel.CommitSt
 	return ingest
 }
 
-func commitObservationEntries(t *testing.T, entries []Entry) []Entry {
+func commitObservationEntries(t *testing.T, entries []inboxstore.Entry) []inboxstore.Entry {
 	t.Helper()
-	var observations []Entry
+	var observations []inboxstore.Entry
 	for _, entry := range entries {
 		if identity, ok := entry.Event.(sourceadapter.GitHubObservationEvent); ok && (identity.Event == githubmodel.EventCheckRun || identity.Event == githubmodel.EventStatus) {
 			observations = append(observations, entry)
