@@ -19213,7 +19213,7 @@
       },
       "revision_history": {
         "pr": 18158,
-        "state": "Explicit \u22121 gate",
+        "state": "Explicit −1 gate",
         "probe_at_utc": "2026-11-20T10:53:54Z",
         "create_update_omitted_admitted": 10,
         "valid_explicit_create_values_preserved": [0, 3, 10],
@@ -19855,5 +19855,55 @@
     "sidekiq_ready": "1/1",
     "fault_injection_tested": false,
     "durable_capacity_proven": false
+  },
+  "current_state": {
+    "observed_utc_start": "2026-11-20T20:28:00Z",
+    "observed_utc_end": "2026-11-20T20:30:00Z",
+    "flux_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
+    "all_vpa_objects": 226,
+    "vpa_modes": {
+      "Initial": 105,
+      "Off": 67,
+      "Recreate": 54
+    },
+    "vpas_with_recommendations": 214,
+    "active_controller_scope": "Deployment and StatefulSet spec replicas > 0, or DaemonSet desired > 0",
+    "active_controllers": 233,
+    "active_with_direct_vpa": 192,
+    "active_without_direct_vpa": 41,
+    "uncovered_all_namespaces_goldilocks_disabled": true,
+    "uncovered_by_namespace": {
+      "seaweedfs": 11,
+      "flux-system": 8,
+      "cdi": 4,
+      "kubevirt": 4,
+      "agentplane-staging": 3,
+      "claude-session-sync": 2,
+      "session-backup": 2,
+      "other_singleton_namespaces": 7
+    },
+    "direct_active_modes": {
+      "Initial": 104,
+      "Off": 48,
+      "Recreate": 40
+    },
+    "staging_explicit_initial_vpas": 10,
+    "secret_store_background_pass_uids": 60,
+    "secret_store_current_uids": 60,
+    "secret_store_pass_observed_utc": "2026-11-20T20:16:01Z",
+    "crossplane_ready_webhook_endpoints_by_zone": {
+      "home-lan": 1,
+      "atlas": 1,
+      "hil-ovh": 1
+    },
+    "loki_proxy_memory_request_bounds": "128Mi–160Mi",
+    "loki_proxy_recommendation_at_observation": "128Mi (later observation)",
+    "sources": [
+      "https://github.com/agentydragon/ducktape/pull/18245",
+      "https://github.com/agentydragon/ducktape/pull/18249",
+      "https://github.com/agentydragon/ducktape/pull/18253",
+      "https://github.com/agentydragon/ducktape/pull/18264"
+    ],
+    "loki_proxy_admission_dry_run": "ReplicaSet-owner server-side dry run admitted 50m/128Mi requests and unchanged 200m/256Mi limits"
   }
 }
