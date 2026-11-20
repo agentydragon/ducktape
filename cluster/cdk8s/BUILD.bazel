@@ -1052,6 +1052,7 @@ py_library(
         ":namespaces",
         ":node_scheduling",
         ":route53",
+        ":vpa_policy",
         "//cluster/cdk8s/providers/external_dns:dnsendpoint",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

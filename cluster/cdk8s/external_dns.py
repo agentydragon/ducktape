@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import k8s
 from external_dns_crds.io.k8s.externaldns import DnsEndpoint, DnsEndpointSpec, DnsEndpointSpecEndpoints
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
@@ -10,9 +10,10 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.route53 import HOSTED_ZONES
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 from cluster.scripts import nebula_mesh
 
 NAME = "external-dns"
@@ -25,7 +26,23 @@ _CREDENTIALS_SECRET = "aws-route53-credentials"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                ContainerPolicy(
+                    container_name=NAME,
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("memory",),
+                    min_allowed={"memory": Size.mebibytes(64).as_string()},
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )

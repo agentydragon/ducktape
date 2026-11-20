@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "external-dns", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "64Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
     rbac.ducktape.io/agent-readable-logs: "true"
   name: external-dns
 spec: {}
