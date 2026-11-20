@@ -20,9 +20,15 @@ import { resourcesListNotification } from "./kubernetes_admin/resources_list";
 import { sandboxExecNotification } from "./sandbox/exec";
 import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
+import { gmailThreadLabelsNotification, tanaMoveNodeNotification } from "./integration_previews";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
 
-type ActionNotificationFormatter = (request: ActionRequest) => ActionNotificationParts | null;
+export { notificationPreviewKind } from "./integration_previews";
+
+type ActionNotificationFormatter = (
+  request: ActionRequest,
+  names?: ReadonlyMap<string, string>
+) => ActionNotificationParts | null;
 
 function fixedActionNotification(actionTitle: string): ActionNotificationFormatter {
   return (request) => ({
@@ -71,18 +77,28 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
     new Map([
       ["drafts_create", fixedActionNotification("Gmail: Draft email")],
       ["threads_list", fixedActionNotification("Gmail: Search threads")],
+      ["threads_modify_labels", gmailThreadLabelsNotification],
     ]),
   ],
   ["sandbox", new Map([["exec", sandboxExecNotification]])],
   ["ssh", new Map([["exec", sshExecNotification]])],
-  ["tana", new Map([["get_or_create_calendar_node", tanaCalendarNodeNotification]])],
+  [
+    "tana",
+    new Map([
+      ["get_or_create_calendar_node", tanaCalendarNodeNotification],
+      ["move_node", tanaMoveNodeNotification],
+    ]),
+  ],
 ]);
 
 /** Format a pending Action for the OS notification surface. Unknown Actions use only their
  * caller-authored summary and description; arbitrary arguments can be large or sensitive. */
-export function formatActionNotification(request: ActionRequest): ActionNotificationContent {
+export function formatActionNotification(
+  request: ActionRequest,
+  names?: ReadonlyMap<string, string>
+): ActionNotificationContent {
   const action = actionIdentity(request);
-  const parts = FORMATTERS.get(action.group)?.get(action.name)?.(request) ?? fallbackParts(request);
+  const parts = FORMATTERS.get(action.group)?.get(action.name)?.(request, names) ?? fallbackParts(request);
   return {
     title: combineNotificationTitle(request.title, parts.actionTitle),
     text: parts.text,

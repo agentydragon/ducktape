@@ -3,9 +3,10 @@ import {
   Verdict,
   type ActionRequest,
 } from "../../../../../action_service/api/contracts/action_service_pb";
-import { decideActionById, listActionRequests } from "../../client";
+import { decideActionById, getIntegrationPreviewNames, listActionRequests } from "../../client";
 import { actionIdentity } from "../../presentation";
-import { formatActionNotification } from "../../notifications";
+import { formatActionNotification, notificationPreviewKind } from "../../notifications";
+import { notificationPreviewsEnabled } from "../preview_preference";
 
 interface PushShow {
   kind: "show";
@@ -40,6 +41,7 @@ declare global {
 // rebuilt from the Actions currently waiting, rather than one per Action plus a notice per outcome.
 const PENDING_TAG = "agentplane-pending";
 const LISTED_TITLES = 3;
+let pendingRevision = 0;
 
 interface PendingSummary {
   kind: "summary";
@@ -58,7 +60,9 @@ async function showPending(message: PushMessage): Promise<void> {
   // Push services can deliver pushes late, out of order, or collapsed, so the message only says
   // that something changed. Current authority decides what is shown; an expired session gets a
   // generic notification that deep-links to reauthentication, never decision buttons.
+  const revision = ++pendingRevision;
   const pending = await fetchPending();
+  if (revision !== pendingRevision) return;
   const options: NotificationOptions = { tag: PENDING_TAG, requireInteraction: true };
   if (pending === null) {
     await self.registration.showNotification("Agentplane", {
@@ -70,11 +74,20 @@ async function showPending(message: PushMessage): Promise<void> {
   } else if (pending.length === 0) {
     // Every push must show something, or Chrome shows its own "updated in the background" notice.
     await self.registration.showNotification("Agentplane", { tag: PENDING_TAG, silent: true });
-    for (const notification of await self.registration.getNotifications({ tag: PENDING_TAG })) notification.close();
+    const notices = await self.registration.getNotifications({ tag: PENDING_TAG });
+    if (revision !== pendingRevision) return;
+    for (const notification of notices) notification.close();
   } else if (pending.length === 1) {
     const [request] = pending;
     const action = actionIdentity(request);
-    const content = formatActionNotification(request);
+    const kind = notificationPreviewKind(request);
+    const names =
+      kind && (await notificationPreviewsEnabled())
+        ? await getIntegrationPreviewNames(kind, request.id).catch(() => undefined)
+        : undefined;
+    const includeNames = names && (await notificationPreviewsEnabled());
+    if (revision !== pendingRevision) return;
+    const content = formatActionNotification(request, includeNames ? names : undefined);
     await self.registration.showNotification(content.title, {
       ...options,
       body: content.text,

@@ -191,10 +191,12 @@ class AgentplaneFixture:
     async def consecutive_reasoning_history(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.consecutiveReasoningHistory()")
 
-    async def show_action_preview(self, group: str, name: str, arguments: dict[str, object]) -> None:
+    async def show_action_preview(
+        self, group: str, name: str, arguments: dict[str, object], summaries: dict[str, object] | None = None
+    ) -> None:
         await self.page.evaluate(
-            "([action, args]) => window.agentplaneVisual.showActionPreview(action, args)",
-            [{"group": group, "name": name}, arguments],
+            "([action, args, summaries]) => window.agentplaneVisual.showActionPreview(action, args, summaries)",
+            [{"group": group, "name": name}, arguments, summaries],
         )
 
     async def show_action_result(self, name: str, arguments: dict[str, object], result: dict[str, object]) -> None:

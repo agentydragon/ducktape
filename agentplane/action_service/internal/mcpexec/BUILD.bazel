@@ -7,12 +7,14 @@ go_library(
     srcs = [
         "config.go",
         "executor.go",
+        "integration_previews.go",
         "linkage.go",
         "tools.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/mcpexec",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/linkage",
         "//agentplane/action_service/internal/store",
@@ -30,6 +32,7 @@ go_test(
     name = "mcpexec_test",
     srcs = [
         "golden_test.go",
+        "integration_previews_test.go",
         "tools_test.go",
     ],
     embed = [":mcpexec"],

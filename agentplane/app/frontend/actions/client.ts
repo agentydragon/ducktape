@@ -23,6 +23,8 @@ import {
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
+  GetGmailThreadSummariesResponseSchema,
+  GetTanaNodeSummariesResponseSchema,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTIONS_PATH = "/upstream/actions";
@@ -120,6 +122,29 @@ export async function getAction(requestId: string): Promise<ActionRequest> {
     await fetchText(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
   );
   return validateActionRequest(required(response.actionRequest, "request"));
+}
+
+/** Live display metadata for a saved receipt. These optional reads never redirect to login. */
+export async function getIntegrationPreviewNames(
+  kind: "gmail" | "tana",
+  requestId: string,
+  signal?: AbortSignal
+): Promise<ReadonlyMap<string, string>> {
+  const timeout = AbortSignal.timeout(3000);
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  const options = { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: "no-store" } as const;
+  if (kind === "gmail") {
+    const { threads } = fromJsonString(
+      GetGmailThreadSummariesResponseSchema,
+      await fetchText(`${path}/gmail-thread-summaries`, options, fetch)
+    );
+    return new Map(threads.map(({ threadId, subject }) => [threadId, subject]));
+  }
+  const { nodes } = fromJsonString(
+    GetTanaNodeSummariesResponseSchema,
+    await fetchText(`${path}/tana-node-summaries`, options, fetch)
+  );
+  return new Map(nodes.map(({ nodeId, name }) => [nodeId, name]));
 }
 
 export async function actionHistory(

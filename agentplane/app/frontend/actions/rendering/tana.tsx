@@ -1,9 +1,12 @@
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
-import { Code, Text } from "@mantine/core";
+import { Code, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { definePreview, type ArgumentsPreview } from "./entry";
+import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
+
+import { moveNodeArguments } from "../schemas/integration_previews";
+import { LiveResourceName, useIntegrationPreviewNames } from "./integration_previews";
 
 const calendarNodeArguments = z.strictObject({
   workspaceId: z.string(),
@@ -54,6 +57,41 @@ export const calendarNodePresentation: ActionPresentation = {
   compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 
+const moveNode = definePreview(
+  moveNodeArguments,
+  function MoveNode({ args, requestId }: PreviewProps<z.infer<typeof moveNodeArguments>>): JSX.Element {
+    const names = useIntegrationPreviewNames("tana", requestId);
+    const rows = [
+      ["Node", args.nodeId],
+      ["Destination", args.targetNodeId],
+      ["Source parent", args.sourceParentId],
+      ["Reference node", args.referenceNodeId],
+    ] as const;
+    return (
+      <Stack gap={4}>
+        {rows.map(([label, id]) =>
+          id === undefined ? null : (
+            <Text key={label} size="sm" style={{ overflowWrap: "anywhere" }}>
+              {label} <LiveResourceName id={id} name={names?.get(id)} />
+            </Text>
+          )
+        )}
+        <Text size="sm">
+          Position <Code>{args.position}</Code>
+        </Text>
+        <Text size="sm">{args.keepSourceReference ? "Keep the source reference" : "Remove the source reference"}</Text>
+      </Stack>
+    );
+  }
+);
+
+const moveNodePresentation: ActionPresentation = {
+  fallbackLabel: "Move Tana node",
+  pane: { opened: moveNode },
+  details: { arguments: moveNode },
+};
+
 export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["get_or_create_calendar_node", calendarNodePresentation],
+  ["move_node", moveNodePresentation],
 ]);

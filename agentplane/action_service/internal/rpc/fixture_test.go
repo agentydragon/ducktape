@@ -278,17 +278,17 @@ func serveWithPolicy(
 	servers ...linkage.Server,
 ) *served {
 	t.Helper()
-	return serveWithPolicyOptions(t, groups, namespace, index, nil, servers...)
+	return serveWithPolicyOptions(t, groups, namespace, index, nil, IntegrationPreviews{}, servers...)
 }
 
 func serveWithGateOptions(t *testing.T, configure func(*grpcgate.Options, policyNamespace)) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
-	return serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), configure)
+	return serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), configure, IntegrationPreviews{})
 }
 
 func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
-	configure func(*grpcgate.Options, policyNamespace), servers ...linkage.Server,
+	configure func(*grpcgate.Options, policyNamespace), previews IntegrationPreviews, servers ...linkage.Server,
 ) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
@@ -330,7 +330,7 @@ func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace pol
 	s.gate = grpcgate.New(options)
 	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials), grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages, previews))
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(s.linkages))
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

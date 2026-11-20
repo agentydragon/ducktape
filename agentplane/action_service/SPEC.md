@@ -95,6 +95,16 @@ Health methods remain public. Linkage methods remain bearer-free because the cal
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
 
+Operator integration summaries resolve live display metadata from the MCP groups configured as
+`gmail` and `tana`. `GetGmailThreadSummaries` reads subjects for a recorded Gmail
+`threads_modify_labels` request. `GetTanaNodeSummaries` reads names for a recorded Tana
+`move_node` request. Both take only the saved request UUID and derive resource IDs from its
+arguments. The service calls the fixed read tools `threads_get` in metadata format and
+`read_node` at depth zero. It tries up to eight distinct IDs per call within a shared two-second
+lookup budget and omits unavailable results. The reads create no Action request, Decision or
+Execution. Names and subjects reflect current provider data and can change after the request
+was recorded. The original IDs remain on the receipt.
+
 An external MCP
 bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
 the edge delegates as its own component caller and carries typed Connection/grant provenance. It

@@ -12,7 +12,7 @@ import "google/protobuf/timestamp.proto";
 
 // The caller is the integration app acting for an operator. The bearer is the operator's OIDC token, whose issuer,
 // audience and signature the service verifies; a workload's bearer never reaches this service. An operator decides
-// requests and manages MCP server linkage.
+// requests, reads integration summaries and manages MCP server linkage.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request, or scopes the MCP server is not configured for. `NOT_FOUND` is a
@@ -42,6 +42,18 @@ service OperatorActionService {
   // fails `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
   rpc DecideActionRequest(DecideActionRequestRequest) returns (DecideActionRequestResponse) {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
+  }
+
+  // Live subjects of threads named by a recorded Gmail threads_modify_labels request.
+  // An unavailable thread or backend is omitted. The receipt's arguments remain authoritative.
+  rpc GetGmailThreadSummaries(GetGmailThreadSummariesRequest) returns (GetGmailThreadSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-thread-summaries"};
+  }
+
+  // Live names of nodes named by a recorded Tana move_node request.
+  // An unavailable node or backend is omitted. The receipt's arguments remain authoritative.
+  rpc GetTanaNodeSummaries(GetTanaNodeSummariesRequest) returns (GetTanaNodeSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/tana-node-summaries"};
   }
 
   // The linkage of every configured MCP server, then each one again whenever it changes, including when its token
@@ -78,6 +90,32 @@ message DecideActionRequestRequest {
 
 message DecideActionRequestResponse {
   ActionRequest action_request = 1;
+}
+
+message GetGmailThreadSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGmailThreadSummariesResponse {
+  repeated GmailThreadSummary threads = 1;
+}
+
+message GmailThreadSummary {
+  string thread_id = 1;
+  string subject = 2;
+}
+
+message GetTanaNodeSummariesRequest {
+  string request_id = 1;
+}
+
+message GetTanaNodeSummariesResponse {
+  repeated TanaNodeSummary nodes = 1;
+}
+
+message TanaNodeSummary {
+  string node_id = 1;
+  string name = 2;
 }
 
 message WatchMcpServersRequest {}

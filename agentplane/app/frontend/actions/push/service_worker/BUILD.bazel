@@ -49,6 +49,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:notifications",
         "//agentplane/app/frontend/actions:presentation",
+        "//agentplane/app/frontend/actions/push:preview_preference",
     ],
 )
 

@@ -7,6 +7,15 @@ display states remain readable as `unknown (value)`; they do not become an allow
 successful state. Required identities and timestamps, decision verdicts, mutation version checks,
 and nonempty watch frames remain validated.
 
+## Action previews
+
+The expanded Actions pane and receipt details show live Gmail subjects beside recorded thread IDs
+for label changes, and live Tana names beside recorded node IDs for node moves. Lookup is optional.
+The view can render the saved arguments immediately and keep showing them if the lookup fails.
+The page and Web Push worker both use the operator-authenticated Action Service facade.
+[Notification settings](actions/push/README.md) control whether a browser can show these names
+in a notification.
+
 ## Environment identity
 
 The Sandbox Status tab shows the currently requested `spec.identity` name. Only a Sandbox whose

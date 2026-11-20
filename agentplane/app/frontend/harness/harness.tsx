@@ -2999,6 +2999,11 @@ routes.push(
   ],
   [
     "GET",
+    /^\/upstream\/actions\/v1\/operator\/action-requests\/[^/]+\/(gmail-thread-summaries|tana-node-summaries)$/,
+    (match) => actionIntegrationSummaries?.[match[1]!],
+  ],
+  [
+    "GET",
     /^\/upstream\/connections\/v1\/operator\/connections$/,
     () => ({ connections: [sampleConnection(), ...retiredConnectionRows()].map(connectionJson) }),
   ],
@@ -4045,6 +4050,7 @@ routes.unshift(
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequest | null = null;
+let actionIntegrationSummaries: Record<string, JsonValue> | null = null;
 let queueCreateResponses = false;
 let queuedSessionId: string | null = null;
 
@@ -4209,7 +4215,11 @@ const visualHarness = {
       Array.from(renderers.keys(), (name) => `${group}.${name}`)
     ).flat();
   },
-  showActionPreview(action: { group: string; name: string }, args: NonNullable<ActionRequest["arguments"]>): void {
+  showActionPreview(
+    action: { group: string; name: string },
+    args: NonNullable<ActionRequest["arguments"]>,
+    summaries: Record<string, JsonValue> | null
+  ): void {
     const preview = clone(ActionRequestSchema, COMPACT_POD_ACTION);
     preview.action = create(ActionIdentitySchema, action);
     preview.arguments = args;
@@ -4219,6 +4229,7 @@ const visualHarness = {
         : `review ${action.name.replaceAll("_", " ")}`;
     preview.description = "Check the exact call before approving.";
     previewAction = preview;
+    actionIntegrationSummaries = summaries;
   },
   showActionResult(
     action: { group: string; name: string },

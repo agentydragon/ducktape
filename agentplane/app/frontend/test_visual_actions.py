@@ -26,6 +26,7 @@ class ActionExample:
     result_text: str
     # False where the closed compact card already shows every argument, so it has no expanded version.
     compact_card_expands: bool = True
+    live_preview: tuple[str, dict[str, object], str] | None = None
 
     @property
     def key(self) -> str:
@@ -258,6 +259,18 @@ EXAMPLES = (
         "Deployment review requested",
     ),
     ActionExample(
+        "gmail",
+        "threads_modify_labels",
+        {"thread_ids": ["thread-123", "thread-456"], "add": ["Reviewed"], "remove": ["Needs review"]},
+        {"thread_count": 2, "added": ["Reviewed"], "removed": ["Needs review"]},
+        "thread_count",
+        live_preview=(
+            "gmail-thread-summaries",
+            {"threads": [{"threadId": "thread-123", "subject": "Deployment review"}]},
+            "Deployment review",
+        ),
+    ),
+    ActionExample(
         "grocy_sf",
         "products_list",
         {"detail": "full"},
@@ -286,6 +299,18 @@ EXAMPLES = (
         {"nodeId": "calendar-week-42"},
         "calendar-week-42",
         compact_card_expands=False,
+    ),
+    ActionExample(
+        "tana",
+        "move_node",
+        {"nodeId": "draft", "targetNodeId": "website", "position": "start", "keepSourceReference": True},
+        {"moved": True, "nodeId": "draft"},
+        "moved",
+        live_preview=(
+            "tana-node-summaries",
+            {"nodes": [{"nodeId": "draft", "name": "Draft notes"}, {"nodeId": "website", "name": "Website project"}]},
+            "Website project",
+        ),
     ),
     ActionExample(
         "sandbox",
@@ -350,7 +375,10 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     assert len(keys) == len(set(keys)), "Duplicate Action visual example"
     assert set(keys) == set(registered), "Every registered Action renderer needs a named visual example"
 
-    await app.show_action_preview(example.group, example.name, example.arguments)
+    summaries: dict[str, object] | None = (
+        {example.live_preview[0]: example.live_preview[1]} if example.live_preview else None
+    )
+    await app.show_action_preview(example.group, example.name, example.arguments, summaries)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(page)
     sidebar = page.locator(".agentplane-actions-sidebar")
@@ -361,6 +389,8 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     disclosure = sidebar.get_by_role("button", name="Expand ", exact=False)
     if example.compact_card_expands:
         await disclosure.click()
+        if example.live_preview:
+            await expect(sidebar.get_by_text(example.live_preview[2], exact=False)).to_be_visible()
         await expect(sidebar.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
         await wait_for_stable(page)
         await expect(sidebar.locator(".ui-code-block-placeholder")).to_have_count(0)
@@ -378,6 +408,8 @@ async def test_action_presentations(view: VisualPage, app: AgentplaneFixture, ex
     )
     await expect(pending).to_have_count(1)
     await expect(pending).to_contain_text("Check the exact call before approving.")
+    if example.live_preview:
+        await expect(pending.get_by_text(example.live_preview[2], exact=False)).to_be_visible()
     await expect(pending.get_by_text("Details shown as recorded data", exact=True)).to_have_count(0)
     await pending.evaluate("element => element.scrollIntoView({block: 'end'})")
     await expect(pending.locator(".ui-code-block-placeholder")).to_have_count(0)
