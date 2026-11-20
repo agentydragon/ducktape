@@ -1341,10 +1341,12 @@ compact how.
 
 **Unscheduled; operator requested tracking, 2026-10-30 PDT.** Ordinary Anthropic compaction is
 [implemented and deployed](../sampler/docs/anthropic_acceptance.md). [Design and acceptance](../sampler/plans/anthropic.md#background-compaction).
-Use Anthropic on-demand compaction concurrently with ordinary turns. Persist the exact summarized
-prefix and atomically replace only it, retaining the appended suffix. Separate the background
-operation from the foreground pending-effect fence; reject stale results after context/ownership
-changes. Exit: deterministic concurrent-turn, suffix-preservation, restart and failure-isolation
+Add an opt-in flag for eager compaction on Anthropic and Chat Completions routes. At an early
+context-usage threshold, send a compaction request for a recorded prefix while the agent continues
+ordinary turns. When the summary is ready and usage reaches a later threshold, atomically replace
+only that prefix at a provider-request boundary. Keep the original suffix and every message added
+while the summary was running. Give the background request its own pending state and reject stale
+results after context or ownership changes. Exit: deterministic concurrent-turn, suffix-preservation, restart and failure-isolation
 coverage, plus one bounded direct real-model continuation from the background summary. No worker
 or priority is assigned, and this follow-up does not gate ordinary Anthropic compaction.
 
