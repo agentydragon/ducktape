@@ -119,7 +119,7 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     if current_tracking_ref is not None:
         # bb only uses HEAD directly when it's an ancestor of (or equal to) the
         # tracked commit — unpushed commits still fall through to the
-        # default-branch fallback below (see bb_remote_internals.md Phase 2).
+        # default-branch fallback below (see devinfra/buildbuddy/docs/remote.md Phase 2).
         ahead_of_own_branch, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
         if ahead_of_own_branch == 0:
             return None
@@ -195,7 +195,7 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     bbr mints the invocation ID and passes it into the remote Bazel command, so
     the ID it reports is this run's by construction. Reading it back from bb's
     --invocation_id_file is unsound: concurrent bbr runs sharing that path
-    cross-attribute each other's runs (bb_remote_internals.md § Invocation IDs).
+    cross-attribute each other's runs (devinfra/buildbuddy/docs/remote.md § Invocation IDs).
     """
     bb = _find_bb()
 
@@ -280,7 +280,7 @@ Environment variables:
                     Lines are parsed as "<command> <flag>" (prefix stripped).
   BBR_BUILDBUDDY_API_KEY_FILE  Optional mounted key file, passed to bb for real runs only.
   BBR_ALLOW_STALE_BASE  Run even when the likely diff base looks stale (bbr
-                    normally refuses — see bb_remote_internals.md).
+                    normally refuses — see devinfra/buildbuddy/docs/remote.md § Gotchas).
 
 Examples:
   bbr test //foo:bar                          # basic test
