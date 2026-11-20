@@ -167,3 +167,8 @@ Check findings against:
 - `cluster/docs/decisions.md` "Parked application manifests" — don't flag expected suspensions
 - `cluster/docs/plan.md` "Next Actions" — note if findings match known TODOs
 - `cluster/docs/troubleshooting.md` — reference known fix procedures for matching symptoms
+- Open issues in `agentydragon/ducktape` — search by alert, resource, service, and symptom
+  (e.g. `gh issue list -R agentydragon/ducktape --state open --search '<term>'`), then read
+  relevant matches with `gh issue view`. Link matching issues and compare their evidence
+  with the live state; an issue being known does not make the current condition healthy.
+  If GitHub is unavailable, say that known-issue context could not be checked.
