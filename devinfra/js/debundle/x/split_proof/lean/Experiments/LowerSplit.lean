@@ -17,7 +17,7 @@ Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 open Lean EsmSplit
 
 def toStmt (src : String) (f : Lower.Footprint) : Stmt :=
-  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect, observedInit := f.observedInit }
+  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect, observedInit := f.observedInit, nonReentrant := f.nonReentrant }
 
 def q (s : String) : String := (Json.str s).compress
 def qs (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
@@ -32,6 +32,7 @@ def stmtLean (s : Stmt) : String :=
     ++ (if s.hoisted then ["hoisted := true"] else [])
     ++ (if s.effect then ["effect := true"] else [])
     ++ (if s.observedInit then ["observedInit := true"] else [])
+    ++ (if s.nonReentrant then ["nonReentrant := true"] else [])
   "  { " ++ ", ".intercalate fields ++ " }"
 
 def selLean : Selector → String

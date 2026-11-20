@@ -225,3 +225,104 @@ for (const [name, reordered] of [
     assert.equal(result.stdout, "7\n");
   }
 }
+
+// A literal may cross allocation of an independent arrow, but neither the
+// closure's identity nor its deferred body is treated as a primitive value.
+{
+  const code = `const x = 1;\nconst f = () => 2;\nfunction see() { return [x, f]; }\nconsole.log(see()[0], see()[1]());`;
+  const dir = path.join(temp, "literal_arrow");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "literal_arrow.mjs");
+  const input = path.join(temp, "literal_arrow-ast.json");
+  const spec = path.join(temp, "literal_arrow-spec.json");
+  const certificate = path.join(temp, "literal_arrow-generated.lean");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const emitted = run(process.env.LOWERSPLIT, [input, spec, dir, "--lean", certificate]);
+  assert.equal(emitted.status, 0, `${emitted.stdout}\n${emitted.stderr}`);
+  const generated = readFileSync(certificate, "utf8");
+  assert.match(generated, /nonReentrant := true/);
+  assert.match(generated, /observedInit := true/);
+  const before = run(process.execPath, [source]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.equal(after.status, 0, after.stderr);
+  assert.equal(after.stdout, before.stdout);
+  const bundle = path.join(temp, "literal_arrow-bundle.json");
+  const tree = path.join(temp, "literal_arrow-tree.json");
+  const cert = path.join(temp, "literal_arrow-cert.json");
+  for (const args of [
+    [frontend, "bundle", source, "--out", bundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
+    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
+  ]) {
+    const result = run(process.execPath, args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+  assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+}
+
+// A closure which captures the moved binding still has a read dependency.
+{
+  const code = `const x = 1;\nconst f = () => x;\nfunction expose() { return f; }\nconsole.log(expose()());`;
+  const dir = path.join(temp, "arrow_captures_literal");
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, "arrow_captures_literal-ast.json");
+  const spec = path.join(temp, "arrow_captures_literal-spec.json");
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /FAIL\s+OrderOk/);
+}
+
+// Initializer calls, assignment, destructuring and parameter defaults must not
+// inherit the direct-arrow classification from a nested function expression.
+for (const [name, code] of [
+  ["default_param", `const f = (x = 1) => x;\nconsole.log(f());`],
+  ["destructured_param", `const f = ({x}) => x;\nconsole.log(f({x:1}));`],
+  ["destructure", `const { f = () => 1 } = {};\nconsole.log(f());`],
+  ["assignment", `let f;\nf = () => 1;\nconsole.log(f());`],
+  ["computed", `const obj = { [String(1)]: () => 1 };\nconsole.log(obj[1]());`],
+  ["call", `const f = ((x = 1) => x)();\nconsole.log(f);`],
+]) {
+  const dir = path.join(temp, `arrow_shape_${name}`);
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, `arrow_shape_${name}-ast.json`);
+  const spec = path.join(temp, `arrow_shape_${name}-spec.json`);
+  const certificate = path.join(temp, `arrow_shape_${name}-generated.lean`);
+  const parsed = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" });
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": parsed.body.map((_, i) => `#${i}`) } })
+  );
+  const result = run(process.env.LOWERSPLIT, [input, spec, dir, "--lean", certificate]);
+  assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
+  assert.doesNotMatch(readFileSync(certificate, "utf8"), /nonReentrant := true/, name);
+}
+
+// Two allocations remain ordered so the model never equates fresh identities.
+{
+  const code = `const f = () => 1;\nconst g = () => 2;\nfunction see() { return [f, g]; }\nconsole.log(see()[0](), see()[1]());`;
+  const dir = path.join(temp, "two_observed_arrows");
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, "two_observed_arrows-ast.json");
+  const spec = path.join(temp, "two_observed_arrows-spec.json");
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /FAIL\s+OrderOk/);
+}

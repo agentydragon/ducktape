@@ -50,6 +50,8 @@ structure Stmt where
   effect  : Bool := false
   /-- Pure initialization that must stay ordered against potentially reentrant effects. -/
   observedInit : Bool := false
+  /-- This effect cannot synchronously invoke code that observes other bindings. -/
+  nonReentrant : Bool := false
   deriving Repr, Inhabited
 
 /-- What a statement binds: the names it declares and the names it assigns. -/
@@ -303,13 +305,13 @@ end reads
 /-! ## Conflicts -/
 
 /-- Statements `i` and `j` must keep their relative order if they conflict:
-both have effects, one has an effect and the other is an observed initializer, one reads a name
+both have effects, a potentially reentrant effect crosses an observed initializer, one reads a name
 the other binds (declares or assigns), or both bind the same name.
 A hoisted declaration is available from the start, so nobody waits for it. -/
 def Bundle.conflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i
   let b := B.stmt j
-  ((a.effect && b.effect) || (a.effect && b.observedInit) || (b.effect && a.observedInit))
+  ((a.effect && b.effect) || (a.effect && b.observedInit && !a.nonReentrant) || (b.effect && a.observedInit && !b.nonReentrant))
     || (!b.hoisted && b.binds.any (B.readsOf i).contains)
     || (!a.hoisted && a.binds.any (B.readsOf j).contains)
     || a.binds.any b.binds.contains
@@ -333,7 +335,7 @@ def Bundle.readsTab (B : Bundle) : Array NameSet :=
 def Bundle.conflictT (arr : Array Stmt) (tab : Array NameSet) (i j : Nat) : Bool :=
   let a := arr.getD i default
   let b := arr.getD j default
-  ((a.effect && b.effect) || (a.effect && b.observedInit) || (b.effect && a.observedInit))
+  ((a.effect && b.effect) || (a.effect && b.observedInit && !a.nonReentrant) || (b.effect && a.observedInit && !b.nonReentrant))
     || (!b.hoisted && b.binds.any (tab.getD i ∅).contains)
     || (!a.hoisted && a.binds.any (tab.getD j ∅).contains)
     || a.binds.any b.binds.contains

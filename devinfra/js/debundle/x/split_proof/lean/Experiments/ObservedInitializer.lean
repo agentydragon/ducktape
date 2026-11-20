@@ -31,4 +31,32 @@ def read : Bundle := [
 
 theorem binding_read_remains_ordered : read.conflict 0 1 = true := by decide
 
+/-- The allocator can change the world arbitrarily; we do not equate or reorder
+fresh function identities. The literal neither reads nor changes that world. -/
+def constantAndArrow : Bundle := [
+  { src := "const a = 1", defs := ["a"], observedInit := true },
+  { src := "const f = () => 7", defs := ["f"], effect := true, nonReentrant := true }
+]
+
+theorem constant_arrow_do_not_conflict : constantAndArrow.conflict 0 1 = false := by decide
+
+theorem constant_arrow_commute {V W : Type} (M : Meaning V W) (s : St V W) :
+    constantAndArrow.step M 1 (constantAndArrow.step M 0 s) =
+      constantAndArrow.step M 0 (constantAndArrow.step M 1 s) :=
+  constantAndArrow.step_comm M constant_arrow_do_not_conflict s
+
+def twoArrows : Bundle := [
+  { src := "const f = () => 7", defs := ["f"], effect := true, nonReentrant := true },
+  { src := "const g = () => 8", defs := ["g"], effect := true, nonReentrant := true }
+]
+
+theorem arrow_allocations_remain_ordered : twoArrows.conflict 0 1 = true := by decide
+
+def arrowRead : Bundle := [
+  { src := "const a = 1", defs := ["a"], observedInit := true },
+  { src := "const f = () => a", defs := ["f"], eager := ["a"], effect := true, nonReentrant := true }
+]
+
+theorem captured_binding_remains_ordered : arrowRead.conflict 0 1 = true := by decide
+
 end ObservedInitializer

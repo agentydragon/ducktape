@@ -405,5 +405,9 @@ lean_axiom_test(
         "ObservedInitializer.independent_constants_commute",
         "ObservedInitializer.unknown_effect_remains_ordered",
         "ObservedInitializer.binding_read_remains_ordered",
+        "ObservedInitializer.constant_arrow_do_not_conflict",
+        "ObservedInitializer.constant_arrow_commute",
+        "ObservedInitializer.arrow_allocations_remain_ordered",
+        "ObservedInitializer.captured_binding_remains_ordered",
     ],
 )
