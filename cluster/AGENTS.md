@@ -108,6 +108,19 @@ For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
 identity only after credential and other IAM writers have finalized.
 For volume bytes above what the filer accounts for, follow <docs/runbooks/seaweedfs_orphan_chunks.md>.
 
+### DRBD disk recovery
+
+After a backing-disk I/O failure, do not bulk-clear `DrbdOptions/SkipDisk` and assume
+reattachment healed the volumes. Inventory each resource's consumer, role, disk states,
+and authoritative copy first. For a replicated resource with an active consumer, quiesce
+the consumer and confirm the volume is no longer in use before reattaching its disk; then
+recover one resource at a time, verify resync reaches `UpToDate` with zero out-of-sync
+data, and check the application before proceeding. Preserve the sole healthy copy; do not
+force promotion or discard data to make a sync proceed. Capture DRBD state before and after
+attachment, and investigate a stalled sync rather than waiting indefinitely. This is a
+precaution based on a suspected, not proven, diskless-primary reattachment issue:
+<debug/2026_11_20_ovh_nvme_drbd.md>.
+
 ## Flux Kustomizations
 
 - All Flux `Kustomization`s are generated into `k8s/flux/kustomizations.k8s.yaml`, applied by
