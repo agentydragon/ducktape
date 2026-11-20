@@ -182,16 +182,16 @@ func (r *streamingRoutes) actionFacade(w http.ResponseWriter, request *http.Requ
 	r.operatorFacade(w, request, r.deps.ActionHTTP, "Action facade")
 }
 
-// These backends admit the app's service account; the browser session bounds each stream.
+// These backends admit the app's service SVID; the browser session bounds each stream.
 func (r *streamingRoutes) policyFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.PolicyHTTP, "Policy Service")
+	r.appSVIDFacade(w, request, r.deps.PolicyHTTP, "Policy Service")
 }
 
 func (r *streamingRoutes) egressFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.EgressHTTP, "Egress Service")
+	r.appSVIDFacade(w, request, r.deps.EgressHTTP, "Egress Service")
 }
 
-func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
+func (r *streamingRoutes) appSVIDFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
 		httpresponse.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
@@ -287,7 +287,7 @@ func writeUpstreamOpenError(w http.ResponseWriter, method string, request *http.
 }
 
 func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.NotificationHTTP, "Notification Service")
+	r.appSVIDFacade(w, request, r.deps.NotificationHTTP, "Notification Service")
 }
 
 func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) {
