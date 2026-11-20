@@ -1,36 +1,16 @@
-import { Anchor, Code, Stack, Text } from "@mantine/core";
+import { Stack } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
 import { defineCallPreview, definePreview } from "./entry";
-import { type ActionOutcome, type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
+import { batchError, batchOutcome, displayRef, Line, objectLink, reference } from "./grocy_shared";
+import { grocyStockRenderers } from "./grocy_stock";
 
-const GROCY_BASE = "https://grocy-sf.allegedly.works";
 const listArguments = z.strictObject({ detail: z.enum(["brief", "full"]).optional() });
 const noArguments = z.strictObject({});
-const reference = z.union([z.number().int(), z.string()]);
 const namedRow = z.object({ id: z.number().int(), name: z.string() });
-
-function Line({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      {children}
-    </Text>
-  );
-}
-
-function objectLink(path: string, id: number, name: string): JSX.Element {
-  return (
-    <Anchor href={`${GROCY_BASE}/${path}/${id}`} target="_blank" rel="noreferrer" inherit>
-      {name}
-    </Anchor>
-  );
-}
-
-function displayRef(value: string | number): ReactNode {
-  return typeof value === "number" ? <Code>{value}</Code> : value;
-}
 
 const productsListResult = defineResultPreview(
   z.array(
@@ -207,17 +187,9 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
   );
 }
 
-const batchError = z.strictObject({ kind: z.literal("error"), error: z.string() });
 const editProductResult = z.array(
   z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
 );
-
-function batchOutcome(rows: { kind: "ok" | "error" }[]): ActionOutcome | undefined {
-  const failures = rows.filter((row) => row.kind === "error").length;
-  return failures === 0
-    ? undefined
-    : { label: failures === rows.length ? "All items failed" : "Partially completed", failed: true };
-}
 
 function editedProductsLabel(rows: z.infer<typeof editProductResult>): string {
   const count = rows.filter((row) => row.kind === "ok").length;
@@ -344,6 +316,7 @@ const stockGetResult = defineResultPreview(
 );
 
 export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+  ...grocyStockRenderers,
   ["products_list", listPresentation("List Grocy products", listArguments, productsListResult)],
   ["quantity_units_list", listPresentation("List quantity units", listArguments, quantityUnitsListResult)],
   ["get_system_info", listPresentation("Show Grocy system information", noArguments, systemInfoResult)],
