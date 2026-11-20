@@ -131,7 +131,6 @@ pub struct BindingGroup {
     adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
     comments: BTreeMap<&'static str, &'static str>,
-    notes: BTreeMap<&'static str, &'static str>,
 }
 
 impl BindingGroup {
@@ -170,11 +169,6 @@ impl BindingGroup {
 
     pub fn with_comments(mut self, comments: &[(&'static str, &'static str)]) -> Self {
         self.comments = comments.iter().copied().collect();
-        self
-    }
-
-    pub fn with_notes(mut self, notes: &[(&'static str, &'static str)]) -> Self {
-        self.notes = notes.iter().copied().collect();
         self
     }
 }
@@ -616,10 +610,6 @@ fn fixture_annotations(
             let public = group.exports.get(local).copied().unwrap_or(local);
             annotations.entry(public.to_string()).or_default().comment =
                 Some((*comment).to_string());
-        }
-        for (local, note) in &group.notes {
-            let public = group.exports.get(local).copied().unwrap_or(local);
-            annotations.entry(public.to_string()).or_default().note = Some((*note).to_string());
         }
     }
     annotations
