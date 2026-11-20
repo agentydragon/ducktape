@@ -89,9 +89,9 @@ Scanned release notes 25.2.7 → 25.3.0 for iris/LNL fixes touching _this_ bug:
 
 `nix/nixos/hosts/rugged/gpu-debug.nix`:
 
-1. **Mesa bump** — `hardware.graphics.package{,32}` → `nixpkgs-unstable.mesa` (26.1.2,
-   Hydra-cached; master's 26.1.3 would build from source). Swaps only the driver
-   package; rest of the system stays on stable.
+1. **Mesa stays on the host's `pkgs.mesa`.** An earlier `nixpkgs-unstable.mesa`
+   (26.1.2) override of `hardware.graphics.package{,32}` was reverted: fresh GNOME
+   sessions failed while loading Iris (see the header of `gpu-debug.nix`).
 2. **`MESA_DEBUG=1`** session-wide → iris logs the submit failure + errno before
    `abort()`. **The missing datum.** Tombstoned for removal once root-caused.
 3. **Coredump retention raised** so gnome-shell cores aren't rotated out.
@@ -132,8 +132,9 @@ slow or ambiguous.
 - **Re-mine the 3 existing cores** against Mesa 25.2.6 debug symbols → resolve
   `_iris_batch_flush.cold` to the precise `iris_batch.c` line + failing return var.
 - **Disable iris threaded context** — backtrace has `tc_*` frames. Clean drirc
-  (`intel_disable_threaded_context`) needs Mesa ≥ 25.2.8 (so the bump is a prerequisite);
-  `mesa_glthread=false` covers only the upper glthread layer.
+  (`intel_disable_threaded_context`) needs Mesa ≥ 25.2.8, which the host's `pkgs.mesa`
+  lacked on 2026-06-27 (the unstable bump was reverted); `mesa_glthread=false` covers
+  only the upper glthread layer.
 
 ## After the next crash
 

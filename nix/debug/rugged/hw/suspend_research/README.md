@@ -6,6 +6,10 @@
 a state where only reboot recovers? Windows on the same hardware doesn't
 seem to suffer this.
 
+**Open (2026-11-08)**: A rapid re-suspend failed during modem reprobe with
+MHI `-EBUSY` and queued packets. The sleep-inhibitor/low-power ordering is a
+hypothesis, not a proven cause. See the [capture](../../../../../debug/rugged/suspend/20261108T191127_0700/findings.md).
+
 ---
 
 ## TL;DR mechanism (smoking gun)

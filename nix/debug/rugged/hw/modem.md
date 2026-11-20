@@ -13,6 +13,10 @@ survived without a wedge (2026-05-18/19). The
 Modem re-enumerates on each resume (modem0 → modem1 → modem2) but
 connects to Google Fi reliably. No MHI/SBL wedge observed. See
 `suspend_research/README.md` for the full workaround history.
+**Suspend remains open (2026-11-08)**: a rapid re-suspend failed during
+modem reprobe with MHI `-EBUSY` and queued packets. The sequence supports,
+but does not prove, a sleep-inhibitor/low-power ordering hypothesis; see the
+[capture](../../../../debug/rugged/suspend/20261108T191127_0700/findings.md).
 **Runtime-PM wedge found (2026-06-08; recurred 2026-06-22)**: the
 system-suspend workaround left a gap — kernel _runtime-PM_ autosuspend
 (2s idle delay) was driving the modem into the same broken M3 path
@@ -89,12 +93,6 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   is back, the original fix is to bind IMEI `356398950074094` to the
   Fi account alongside ICCID `8901240270139815559` via data-only SIM
   activation at <https://fi.google.com>.
-- ~~Verify FCC unlock + auto-connect works from cold boot~~ — resolved
-  2026-04-30: `fcc-unlock.d/105b:e11d` was failing silently (no
-  `dmidecode` on the systemd PATH); fixed in `nix/packages/foxflss.nix`,
-  MM's reactive unlock now fires correctly. Watchdog
-  (`foxflss-watchdog.service`) added as safety net. See
-  `foxflss_wwan.md` "Watchdog + dmidecode fix".
 - **Try removing `foxflss-watchdog.service`** after ~1 month of zero
   fires. Verify with
   `journalctl -u foxflss-watchdog --since '30 days ago' | grep -c stuck`
@@ -105,27 +103,24 @@ http://speedtest.tele2.net/10MB.zip`), and confirm the device is
   to have been the actual unlock path; it's defense-in-depth against
   MM giving up on a future transient FoxFlss failure (per upstream
   contract, MM doesn't retry the script after one failure).
-- **Suspend/resume wedge — workaround confirmed (2026-05-19)**:
+- **Suspend/resume — investigate the reprobe window**:
   Full mechanism trace in <suspend_research/README.md>. At least 2
   suspend/resume cycles survived without wedge (2026-05-18/19). The
-  `--test-low-power-suspend-resume` MM flag in `foxconn-wwan.nix` is
-  doing its job: MM puts the modem in LOW_POWER before suspend, modem
-  avoids the broken MHI M3 path, and re-enumerates cleanly on resume
+  With `--test-low-power-suspend-resume` in `foxconn-wwan.nix`, MM put the
+  modem in LOW_POWER before suspend; the modem avoided the broken MHI M3
+  path and re-enumerated on resume
   (modem0 → modem1 → modem2 per boot). **WwanAutoSense=Enabled
   hypothesis was disproved**: post-reboot `reset_method` is still `flr
 bus` (no `acpi`); see research doc for the DSDT/WWEN analysis.
-  Remaining: run formal E1/E2/E3 matrix (especially E2 — in-flight
-  traffic) to confirm behavior is deterministic.
-- ~~Investigate weak signal (9% vs 92% observed manually)~~ — root
-  cause confirmed 2026-05-02: at this location LTE coverage is
-  essentially absent (RSRP -156 dBm), so the auto-connect path locked
-  to LTE-only and got terrible signal. Switching to `allowed: 4g, 5g;
-preferred: 5g` via `modem.sh try-5g` lands on 5G NR (RSRP -100 dBm,
-  S/N +5.5 dB, ~3.2 Mbps). Open question: should the NixOS auto-bring-up
-  default to allowed=4g+5g preferred=5g instead of the implicit 4g?
-  Test elsewhere first — at locations with strong LTE the current
-  default may behave better. Calibration-data theory was wrong; signal
-  is fine when the modem is allowed to pick its tech.
+  Later failures during reprobe remain open; see the November capture above.
+  Run the formal E1/E2/E3 matrix (especially E2 — in-flight traffic).
+- **Default RAT**: at the one location tested (2026-05-02) LTE coverage was
+  essentially absent (RSRP -156 dBm), so the auto-connect path, locked to the
+  implicit 4g, got 9% signal against 92% observed manually; it was not a
+  calibration-data problem. `allowed: 4g, 5g; preferred: 5g` via
+  `modem.sh try-5g` lands on 5G NR (RSRP -100 dBm, S/N +5.5 dB, ~3.2 Mbps).
+  Should the NixOS auto-bring-up default to that instead? Test elsewhere
+  first: where LTE is strong the current default may behave better.
 - **Harden `modem.sh try-5g`** — the mode change forces the modem to
   re-register, which drops the GSM bearer for a few seconds; NM
   auto-reconnects but the script's `nmcli connection up "$GSM_CONN"
