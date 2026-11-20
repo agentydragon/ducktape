@@ -1,5 +1,13 @@
 # TODO — sampler
 
+## Evaluate sampler-managed compaction for Messages and Responses
+
+Consider offering the Chat Completions approach as a per-route alternative to provider-native
+compaction for Anthropic Messages and OpenAI Responses. Append a configurable summary prompt to
+the cached prefix, request text, and replace the compacted prefix with a configurable summary
+message. Preserve complete retained turns and their tool exchanges. Compare cache reuse, latency,
+and summary quality against the existing provider-native modes.
+
 ## Evaluate Anthropic Message Batches for agent turns
 
 Investigate whether the central sampler can run a useful, delay-tolerant agent loop through the
