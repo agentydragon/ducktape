@@ -96,10 +96,6 @@ durable user data and uncertain-effect handling in any accepted change.
   but needs data-preserving migration and rollback; bounded diagnostics would discard future output.
   The [storage comparison](runtime/debug/2026_11_04_bootstrap_event_storage_comparison.md) has synthetic
   measurements, not production output distributions. Preserve existing evidence and one-shot outcomes.
-- **Execution scope checks:** Consider sharing the common destination/incarnation validation between
-  [Runtime forwarding](runtime/internal/coordinator/forward.go) and the
-  [embedded service](runtime/execution/service/service.go). Keep peer authorization and verified
-  incarnation-change details at their boundaries; reconcile differences such as Session ID length first.
 - **Possible admission cleanup defect:** In [Execution admission](runtime/internal/coordinator/forward.go),
   `execCalls` is populated before admission-count publication; on publication failure the error path
   appears to leave the entry and cancel function until teardown. Confirm with fault injection before
