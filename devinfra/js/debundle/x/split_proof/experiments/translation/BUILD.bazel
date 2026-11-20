@@ -300,3 +300,13 @@ js_test(
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
 )
+
+js_test(
+    name = "ast_generator_validation_test",
+    data = [
+        "ast_generator.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+    entry_point = "ast_generator_validation_test.mjs",
+)
