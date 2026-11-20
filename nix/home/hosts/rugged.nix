@@ -2,6 +2,7 @@
 {
   config,
   pkgs,
+  pkgsUnstable,
   ducktapePackages,
   ...
 }:
@@ -21,6 +22,10 @@
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 
   ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
+
+  programs.gnome-shell.extensions = [
+    { package = pkgsUnstable.gnomeExtensions.battery-time-3; }
+  ];
 
   ducktape.sessionBackup = {
     enable = true;
