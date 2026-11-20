@@ -1374,13 +1374,15 @@ function Report() {
             certificate, External Secrets and KEDA webhooks have disruption
             budgets and remain Initial. Evaluate eviction for each dependency
             independently, including placement, endpoint readiness, client
-            behavior and failure recovery. Crossplane core replication waits for
-            scheduling capacity alongside the existing GitLab Sidekiq surge.
-            ${" "}<${Anchor} href=${progress.prs[18145].html_url}
-              >Capacity-gated Crossplane draft<//
+            behavior and failure recovery. Crossplane and metrics-server HA are
+            ready for review with a documented capacity tradeoff: overlapping
+            rollouts can stall a GitLab Sidekiq surge, and a concurrent host
+            failure could affect its availability. ${" "}<${Anchor}
+              href=${progress.prs[18145].html_url}
+              >Crossplane HA PR<//
             >
             ${" · "}<${Anchor} href=${github + "pull/18154"}
-              >Capacity-gated metrics-server draft<//
+              >Metrics-server HA PR<//
             >
             ${" "}CDviz and ntfy stay non-evicting pending delivery and
             availability proof. Review every VPA in a namespace before lowering
