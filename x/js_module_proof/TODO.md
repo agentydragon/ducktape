@@ -8,7 +8,8 @@ correctness for all JavaScript.
 ## 1. Generate broader valid programs
 
 The closure generator now tracks lexical bindings and independently runs nested,
-escaping closures in Node, including parameters, shadowing and captured writes.
+escaping closures in Node, including parameters, shadowing, captured writes,
+bounded loops and branches.
 The following broader generator and syntax work remains open.
 
 - [ ] Replace the fixed collection of supported statement shapes and injected

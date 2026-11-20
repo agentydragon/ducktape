@@ -62,7 +62,11 @@ function print(node) {
     case "ExportSpecifier":
       return print(node.local);
     case "IfStatement":
-      return `if (${print(node.test)}) ${print(node.consequent)}`;
+      return `if (${print(node.test)}) ${print(node.consequent)}${node.alternate ? ` else ${print(node.alternate)}` : ""}`;
+    case "ForStatement":
+      return `for (${print(node.init).slice(0, -1)}; ${print(node.test)}; ${print(node.update)}) ${print(node.body)}`;
+    case "UpdateExpression":
+      return `${print(node.argument)}${node.operator}`;
     case "EmptyStatement":
       return ";";
     case "ArrowFunctionExpression":
@@ -123,6 +127,7 @@ function closureCase(seed, index) {
   const rand = random(seed ^ 0xc105ed, index);
   const depth = 1 + rand(4);
   const writesCaptured = rand(2) === 0;
+  const controlFlow = index % 8 === 7;
   let shadowed = false;
   const global = new Scope();
   for (const name of ["base", "make", "saved", "run"]) global.declare(name);
@@ -135,7 +140,7 @@ function closureCase(seed, index) {
         type: "BinaryExpression",
         operator: ["+", "-", "*"][rand(3)],
         left: expression(scope, remaining - 1),
-        right: literal(1 + rand(3)),
+        right: literal(1 + rand(2)),
       };
     }
     return rand(4) ? id(names[rand(names.length)]) : literal(rand(8));
@@ -155,6 +160,39 @@ function closureCase(seed, index) {
     scope.declare(local);
     const body = [declaration(local, init)];
     if (writesCaptured && level === depth - 1) body.push(add("captured", local));
+    if (controlFlow && level === depth - 1) {
+      const branch = (value, marker) => {
+        const block = new Scope(scope);
+        const shadow = params[0];
+        block.declare(shadow);
+        block.declare("marker");
+        shadowed = true;
+        return {
+          type: "BlockStatement",
+          body: [
+            declaration(shadow, literal(value)),
+            declaration("marker", literal(marker)),
+            record("marker"),
+            add("captured", shadow),
+          ],
+        };
+      };
+      body.push({
+        type: "IfStatement",
+        test: { type: "BinaryExpression", operator: ">", left: id(params[0]), right: id("captured") },
+        consequent: branch(1, 101),
+        alternate: branch(2, 102),
+      });
+      const loopScope = new Scope(scope);
+      loopScope.declare("step");
+      body.push({
+        type: "ForStatement",
+        init: declaration("step", literal(0)),
+        test: { type: "BinaryExpression", operator: "<", left: id("step"), right: literal(1 + rand(3)) },
+        update: { type: "UpdateExpression", operator: "++", prefix: false, argument: id("step") },
+        body: { type: "BlockStatement", body: [record("step"), add("captured", "step")] },
+      });
+    }
     if (level + 1 < depth) {
       const child = buildLevel(level + 1, scope);
       body.push(
@@ -219,6 +257,7 @@ function closureCase(seed, index) {
     depth,
     shadowed,
     writesCaptured,
+    controlFlow,
     unsupported: true,
     cyclic: false,
     invalidAssignment: false,
@@ -330,6 +369,9 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     closureDepths: {},
     closureShadowed: 0,
     closureWrites: 0,
+    controlFlowCases: 0,
+    branchThen: 0,
+    branchElse: 0,
     generated: 0,
     refused: 0,
     compared: 0,
@@ -376,6 +418,13 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         )
           throw new Error(`generated closure did not execute within its bounds: ${JSON.stringify(observed)}`);
         summary.closureSourceExecuted++;
+        if (input.controlFlow) {
+          summary.controlFlowCases++;
+          if (observed.events.includes(101)) summary.branchThen++;
+          if (observed.events.includes(102)) summary.branchElse++;
+          if ((!observed.events.includes(101) && !observed.events.includes(102)) || !observed.events.includes(0))
+            throw new Error("generated control flow did not run");
+        }
       }
       try {
         await generateBindings(source, spec, out);

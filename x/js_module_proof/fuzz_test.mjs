@@ -27,6 +27,23 @@ assert.equal(new Set(closures.map((c) => c.depth)).size, 4);
 assert.ok(closures.some((c) => c.shadowed));
 assert.ok(closures.some((c) => c.writesCaptured));
 assert.ok(closures.some((c) => !c.writesCaptured));
+assert.equal(closures.filter((c) => c.controlFlow).length, 64);
+function countNodes(node, type) {
+  if (!node || typeof node !== "object") return 0;
+  return (
+    (node.type === type ? 1 : 0) +
+    Object.values(node).reduce(
+      (sum, child) =>
+        sum +
+        (Array.isArray(child) ? child.reduce((n, item) => n + countNodes(item, type), 0) : countNodes(child, type)),
+      0
+    )
+  );
+}
+for (const c of closures) {
+  assert.equal(countNodes(c.ast, "IfStatement"), c.controlFlow ? 1 : 0);
+  assert.equal(countNodes(c.ast, "ForStatement"), c.controlFlow ? 1 : 0);
+}
 assert.ok(new Set(closures.map((c) => c.source)).size > 100);
 for (const c of closures) {
   const parsed = parse(c.source, { ecmaVersion: "latest", sourceType: "module" });
@@ -35,7 +52,7 @@ for (const c of closures) {
     c.ast.body.map((n) => n.type)
   );
 }
-const escaping = closures.find((c) => c.depth === 1 && c.writesCaptured);
+const escaping = closures.find((c) => c.depth === 1 && c.writesCaptured && !c.controlFlow);
 assert.ok(escaping);
 const closurePath = join(process.env.TEST_TMPDIR, `closure-${shard}.mjs`);
 await writeFile(closurePath, escaping.source);
@@ -43,6 +60,14 @@ const observedClosure = execute(closurePath, escaping.calls);
 assert.equal(observedClosure.error, null);
 assert.ok(new Set(observedClosure.results.map((item) => item.value)).size > 1);
 assert.deepEqual(execute(closurePath, escaping.calls), observedClosure);
+const flow = closures.find((c) => c.controlFlow);
+const flowPath = join(process.env.TEST_TMPDIR, `flow-${shard}.mjs`);
+await writeFile(flowPath, flow.source);
+const observedFlow = execute(flowPath, flow.calls);
+assert.equal(observedFlow.error, null);
+assert.equal(observedFlow.events.filter((n) => n === 101 || n === 102).length, flow.calls.length);
+assert.equal(observedFlow.events.filter((n) => n === 0).length, flow.calls.length);
+assert.deepEqual(execute(flowPath, flow.calls), observedFlow);
 const examples = Array.from({ length: 100 }, (_, i) => makeCase(123, i));
 assert.ok(new Set(examples.map((c) => c.source)).size > 90);
 assert.ok(new Set(examples.map((c) => JSON.stringify(c.spec))).size > 90);
@@ -78,5 +103,7 @@ if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.cases);
   assert.equal(bulk.closureRefused, bulk.cases);
+  assert.equal(bulk.controlFlowCases, bulk.cases / 2);
+  assert.ok(bulk.branchThen + bulk.branchElse >= bulk.controlFlowCases);
 }
 console.log(JSON.stringify(bulk));

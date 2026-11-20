@@ -137,7 +137,8 @@ also runs the Lean-backed validator and checks that a proved result agrees with
 Node and that an unsafe result's witness matches the independently observed
 initialization. Some trials mutate generated modules to exercise the validator;
 other trials generate programs with nested, escaping closures, parameters,
-shadowed bindings and captured writes, plus cyclic graphs or invalid assignments.
+shadowed bindings, captured writes, bounded loops and branches, plus cyclic
+graphs or invalid assignments.
 Closure programs are independently executed in Node even when the splitter
 refuses them.
 
@@ -158,7 +159,8 @@ unvalidated or unknown case is useful evidence, not itself a validator error.
 
 The generator covers a deliberately small, extensible ESTree grammar: integer
 bindings, functions, calls, records and exports, and a separate scope-aware
-generator for nested closures outside the currently supported splitter subset. It varies values, statement orders, effect placement, module
+generator for nested closures and bounded control flow outside the currently
+supported splitter subset. It varies values, statement orders, effect placement, module
 assignments, graph edges and public call sequences; it does not cover arbitrary
 JavaScript or establish the JavaScript semantics assumed by the proof. Values
 and call counts are bounded to stay within the safe-integer assumption. Node
