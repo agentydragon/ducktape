@@ -183,8 +183,8 @@ export function makeCase(seed, index) {
   };
 }
 
-function execute(path, calls) {
-  const code = `const events=[];globalThis.record=v=>events.push(v);let phase='import';let index=-1;try{const m=await import(${JSON.stringify(pathToFileURL(path).href)});const names=Object.keys(m);const results=[];phase='call';for(const n of ${JSON.stringify(calls)}){index++;const v=m[n]();results.push(v===undefined?{undefined:true}:{value:v});}console.log(JSON.stringify({events,exports:names,results,error:null}));}catch(e){console.log(JSON.stringify({events,error:{name:e.name,phase,index}}));}`;
+export function execute(path, calls) {
+  const code = `const events=[];globalThis.record=v=>events.push(v);let phase='import';let index=-1;let names=[];const results=[];try{const m=await import(${JSON.stringify(pathToFileURL(path).href)});names=Object.keys(m);phase='call';for(const n of ${JSON.stringify(calls)}){index++;const v=m[n]();results.push(v===undefined?{undefined:true}:{value:v});}console.log(JSON.stringify({events,exports:names,results,error:null}));}catch(e){console.log(JSON.stringify({events,exports:names,results,error:{name:e.name,phase,index}}));}`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", timeout: 10000 });
   if (child.error || child.status !== 0) throw new Error(`Node oracle failed: ${child.error ?? child.stderr}`);
   return JSON.parse(child.stdout);
@@ -204,6 +204,9 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     equal: 0,
     different: 0,
     mutated: 0,
+    splitCompared: 0,
+    splitDifferent: 0,
+    mutatedDifferent: 0,
     validated: 0,
     proved: 0,
     unsafe: 0,
@@ -239,7 +242,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       }
       if (input.unsupported || input.invalidAssignment) throw new Error("unsupported input unexpectedly accepted");
       summary.generated++;
-      if (index % 8 === 2) {
+      const mutated = index % 8 === 2;
+      if (mutated) {
         const file = join(out, input.cell0Owner);
         const original = await readFile(file, "utf8");
         const changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
@@ -252,6 +256,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       const equal = JSON.stringify(before) === JSON.stringify(after);
       summary.compared++;
       summary[equal ? "equal" : "different"]++;
+      if (!mutated) summary.splitCompared++;
+      if (!equal) summary[mutated ? "mutatedDifferent" : "splitDifferent"]++;
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       let verdictName = "unvalidated";
       if (random(seed ^ 0xa5a5a5a5, index)(validateEvery) === 0) {
@@ -275,7 +281,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         else throw new Error(`unexpected validator result: ${verdict.result}`);
       } else summary.unvalidated++;
       keep = !equal && (verdictName === "unknown" || verdictName === "unvalidated");
-      if (keep) summary.unexplainedDifferences.push({ index, verdict: verdictName, artifacts: root });
+      if (keep) summary.unexplainedDifferences.push({ index, mutated, verdict: verdictName, artifacts: root });
     } catch (error) {
       throw new Error(`seed=${seed} index=${index}; artifacts: ${root}\n${error.stack ?? error}`);
     } finally {

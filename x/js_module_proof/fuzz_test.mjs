@@ -1,16 +1,24 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
-const { makeCase, runFuzz } = await import("./fuzz.mjs");
+const { execute, makeCase, runFuzz } = await import("./fuzz.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
+const throwing = join(process.env.TEST_TMPDIR, `throwing-${shard}.mjs`);
+await writeFile(throwing, "export function first() { return 42; } export function fail() { throw new Error(); }");
+assert.deepEqual(execute(throwing, ["first", "fail"]), {
+  events: [],
+  exports: ["fail", "first"],
+  results: [{ value: 42 }],
+  error: { name: "Error", phase: "call", index: 1 },
+});
 const examples = Array.from({ length: 100 }, (_, i) => makeCase(123, i));
 assert.ok(new Set(examples.map((c) => c.source)).size > 90);
 assert.ok(new Set(examples.map((c) => JSON.stringify(c.spec))).size > 90);
