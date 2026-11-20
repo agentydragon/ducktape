@@ -59,7 +59,15 @@ function print(node) {
     case "CallExpression":
       return `${print(node.callee)}(${node.arguments.map(print).join(", ")})`;
     case "MemberExpression":
-      return `${print(node.object)}.${print(node.property)}`;
+      return node.computed
+        ? `${print(node.object)}[${print(node.property)}]`
+        : `${print(node.object)}.${print(node.property)}`;
+    case "ObjectExpression":
+      return `{ ${node.properties.map(print).join(", ")} }`;
+    case "Property":
+      return `${print(node.key)}: ${print(node.value)}`;
+    case "ArrayExpression":
+      return `[${node.elements.map(print).join(", ")}]`;
     case "ExportNamedDeclaration":
       return `export { ${node.specifiers.map(print).join(", ")} };`;
     case "ExportSpecifier":
@@ -562,9 +570,113 @@ function capturedCase(seed, index) {
   };
 }
 
+// Allocation, aliasing and indexed access are generated independently of the
+// proof frontend. These programs run in Node even when splitting is refused.
+function objectCase(seed, index) {
+  const rand = random(seed ^ 0x0b1ec7, index);
+  const property = `field${rand(8)}`;
+  const arraySize = 2 + rand(4);
+  const values = shuffle(
+    Array.from({ length: 8 }, (_, i) => i + 1),
+    rand
+  ).slice(0, arraySize);
+  const firstIndex = rand(arraySize);
+  const secondIndex = (firstIndex + 1 + rand(arraySize - 1)) % arraySize;
+  const combined = rand(2) === 0;
+  const computedProperty = rand(2) === 0;
+  const mutationCount = 1 + rand(3);
+  const member = (object, key, computed = false) => ({
+    type: "MemberExpression",
+    object: id(object),
+    property: computed ? literal(key) : id(key),
+    computed,
+  });
+  const addProperty = (element) =>
+    expr({
+      type: "AssignmentExpression",
+      operator: "+=",
+      left: member("alias", property, computedProperty),
+      right: member("values", element, true),
+    });
+  const immutable = (name, init) => {
+    const node = declaration(name, init);
+    node.kind = "const";
+    return node;
+  };
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      variable("bias", 1 + rand(8), "const"),
+      functionNode(
+        "read",
+        ["flag"],
+        [
+          immutable("box", {
+            type: "ObjectExpression",
+            properties: [
+              {
+                type: "Property",
+                key: id(property),
+                value: literal(1 + rand(8)),
+                kind: "init",
+                method: false,
+                shorthand: false,
+                computed: false,
+              },
+            ],
+          }),
+          immutable("alias", id("box")),
+          immutable("values", { type: "ArrayExpression", elements: values.map(literal) }),
+          ...Array.from({ length: mutationCount }, () => ({
+            type: "IfStatement",
+            test: id("flag"),
+            consequent: { type: "BlockStatement", body: [addProperty(firstIndex)] },
+            alternate: { type: "BlockStatement", body: [addProperty(secondIndex)] },
+          })),
+          returnNode({
+            type: "BinaryExpression",
+            operator: "+",
+            left: member("box", property, computedProperty),
+            right: id("bias"),
+          }),
+        ]
+      ),
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("read"), exported: id("read") }],
+      },
+    ],
+  };
+  return {
+    ast,
+    source: print(ast),
+    spec: {
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: combined
+        ? { "entry.mjs": { imports: [], statements: [0, 1] } }
+        : {
+            "state.mjs": { imports: [], statements: [0] },
+            "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+            "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+          },
+    },
+    calls: [
+      { name: "read", args: [0] },
+      { name: "read", args: [1] },
+    ],
+    grammar: "object",
+    unsupported: true,
+    cyclic: false,
+    invalidAssignment: false,
+  };
+}
+
 // Generate declarations and effects independently of their module placement.
 // Mode changes how effects are distributed, not the program grammar.
 export function makeCase(seed, index) {
+  if (index % 64 === 20) return objectCase(seed, index);
   if (index % 64 === 28) return capturedCase(seed, index);
   if (index % 32 === 12) return parameterCase(seed, index);
   if (index % 16 === 3) return modeledClosureCase(seed, index);
@@ -849,6 +961,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     shards,
     cases: 0,
     constantCases: 0,
+    objectCases: 0,
+    objectSourceExecuted: 0,
+    objectRefused: 0,
+    objectCompared: 0,
     capturedCases: 0,
     capturedCompared: 0,
     capturedProved: 0,
@@ -921,6 +1037,24 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         ) + "\n"
       );
       if (input.useConstant) summary.constantCases++;
+      if (input.grammar === "object") {
+        summary.objectCases++;
+        const observed = execute(source, input.calls);
+        await writeFile(join(root, "node-source.json"), JSON.stringify(observed, null, 2) + "\n");
+        if (observed.inconclusive) {
+          summary.inconclusive++;
+          summary.inconclusiveCases.push({ index, reason: observed.inconclusive, artifacts: root });
+          continue;
+        }
+        if (
+          observed.error ||
+          observed.results.length !== input.calls.length ||
+          observed.results.some((r) => !Number.isSafeInteger(r.value)) ||
+          observed.results[0].value === observed.results[1].value
+        )
+          throw new Error(`generated object program did not execute within its bounds: ${JSON.stringify(observed)}`);
+        summary.objectSourceExecuted++;
+      }
       if (input.grammar === "captured") summary.capturedCases++;
       if (input.grammar === "parameter") summary.parameterCases++;
       if (input.grammar === "modeledClosure") {
@@ -964,6 +1098,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
         if (input.grammar === "closure") summary.closureRefused++;
+        if (input.grammar === "object") summary.objectRefused++;
         if (!input.unsupported && !input.invalidAssignment)
           throw new Error(`supported generated case was refused: ${error}`);
         keep = false;
@@ -1010,6 +1145,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         )
           throw new Error("generated parameter branch did not preserve the primitive throw and return prefix");
       }
+      if (input.grammar === "object") summary.objectCompared++;
       if (input.grammar === "captured") {
         summary.capturedCompared++;
         if (equal === input.expectUnsafe) throw new Error("captured split differed from intended Node behavior");

@@ -34,6 +34,17 @@ assert.deepEqual(
   [0]
 );
 assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
+const generatedObjects = Array.from({ length: 32 }, (_, i) => makeCase(123, 20 + 64 * i));
+assert.equal(new Set(generatedObjects.map((item) => Object.keys(item.spec.modules).length)).size, 2);
+assert.ok(
+  new Set(generatedObjects.map((item) => item.ast.body[1].body.body[2].declarations[0].init.elements.length)).size > 1
+);
+assert.ok(
+  new Set(
+    generatedObjects.map((item) => item.ast.body[1].body.body.filter((node) => node.type === "IfStatement").length)
+  ).size > 1
+);
+assert.equal(new Set(generatedObjects.map((item) => item.ast.body[1].body.body.at(-1).argument.left.computed)).size, 2);
 const captureTargets = new Set(Array.from({ length: 32 }, (_, i) => makeCase(123, 28 + 128 * i).captureTarget));
 assert.deepEqual(captureTargets, new Set(["value", "start"]));
 const expressionInput = makeCase(123, 28);
@@ -89,6 +100,10 @@ if (shards === 4 && shard === 0) {
   assert.equal(result.parameterCases, 1);
   assert.equal(result.parameterCompared, 1);
   assert.equal(result.parameterProved, 1);
+  const objectCase = await runFuzz({ seed: 123, start: 20, cases: 1, outputDir: process.env.TEST_TMPDIR });
+  assert.equal(objectCase.objectCases, 1);
+  assert.equal(objectCase.objectSourceExecuted, 1);
+  assert.equal(objectCase.objectRefused + objectCase.objectCompared, 1);
   const multiply = await runFuzz({ seed: 123, start: 108, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(multiply.parameterCompared, 1);
   assert.equal(multiply.parameterProved, 1);
@@ -143,6 +158,11 @@ const bulk = await runFuzz({
 });
 assert.equal(bulk.cases, 128 / shards);
 assert.equal(bulk.generated, bulk.compared + bulk.inconclusive);
+if (shards === 4 && shard === 0) {
+  assert.equal(bulk.objectCases, 2);
+  assert.equal(bulk.objectSourceExecuted, 2);
+  assert.equal(bulk.objectRefused + bulk.objectCompared, 2);
+}
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);

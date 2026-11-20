@@ -14,7 +14,9 @@ Incrementing-counter closures and factories producing parameterized closures
 with independent captured numeric cells can also be split and validated against
 the shared Lean semantics. Immutable alias chains share those cells; the fuzzer
 varies inputs and module assignments for these cases.
-The following broader generator and syntax work remains open.
+The generator also runs object, array, property-access and alias-mutation
+cases in Node and reports when splitting is refused. The following broader
+generator and syntax work remains open.
 
 - [ ] Replace the fixed collection of supported statement shapes and injected
       unsupported nodes with a compositional, scope-aware ESTree generator. Track
