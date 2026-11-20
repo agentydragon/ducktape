@@ -33,12 +33,12 @@ from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mktxp"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
 _CONFIG_MAP = f"{NAME}-config"
 _HTTP = Port(name="http", number=49090)

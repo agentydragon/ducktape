@@ -66,6 +66,7 @@ py_library(
     srcs = ["grafana_operator.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -80,6 +81,7 @@ py_library(
     srcs = ["cilium_monitoring.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
@@ -92,6 +94,7 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -120,6 +123,7 @@ py_library(
         ":grafana_helmrepository",
         ":loki",
         ":mimir",
+        ":namespace",
         ":tempo",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
@@ -163,6 +167,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":grafana_helmrepository",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -182,6 +187,7 @@ py_library(
     deps = [
         ":grafana_helmrepository",
         ":mimir",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -217,6 +223,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":mimir",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
@@ -256,6 +263,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_instance",
+        ":namespace",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
@@ -318,6 +326,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
@@ -385,6 +394,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":alloy",
+        ":namespace",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
@@ -407,6 +417,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":blackbox_exporter",
+        ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
@@ -433,6 +444,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":blackbox_exporter",
+        ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
@@ -478,6 +490,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":home_switch",
+        ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:home_lan",
@@ -501,6 +514,7 @@ py_library(
     srcs = ["smokeping.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",

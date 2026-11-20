@@ -18,10 +18,10 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.node_scheduling import Placement
 
 NAME = "home-application-probes"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
 _LABELS = {"app.kubernetes.io/part-of": NAME}
 _SOURCES = ("optiplex", "wyrm2")

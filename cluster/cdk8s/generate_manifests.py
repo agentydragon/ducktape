@@ -547,7 +547,7 @@ def generate_manifests(root: Path) -> None:
             root,
             monitoring_gateway_probe_artifact,
             functools.partial(gateway_probe.chart, mesh=mesh),
-            namespace=gateway_probe.NAMESPACE,
+            namespace=monitoring_namespace.NAMESPACE,
             config_map_generator=[gateway_probe.CONFIG_MAP],
         ),
         timeout="5m",
@@ -559,7 +559,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_smokeping_artifact = artifact("monitoring-smokeping", smokeping.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
-        f"{smokeping.NAMESPACE}-{smokeping.NAME}",
+        f"{monitoring_namespace.NAMESPACE}-{smokeping.NAME}",
         write_directory(root, monitoring_smokeping_artifact, functools.partial(smokeping.chart, mesh=mesh)),
         timeout="5m",
         depends_on=[
@@ -573,12 +573,12 @@ def generate_manifests(root: Path) -> None:
     )
     flux.flux_kustomization(
         flux_chart,
-        f"{home_application_probes.NAMESPACE}-{home_application_probes.NAME}",
+        f"{monitoring_namespace.NAMESPACE}-{home_application_probes.NAME}",
         write_directory(
             root,
             monitoring_home_application_probes_artifact,
             home_application_probes.chart,
-            namespace=home_application_probes.NAMESPACE,
+            namespace=monitoring_namespace.NAMESPACE,
             config_map_generator=[home_application_probes.CONFIG_MAP],
         ),
         timeout="5m",
@@ -821,7 +821,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_mktxp_artifact = artifact("monitoring-mktxp", monitoring_mktxp.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
-        f"{monitoring_mktxp.NAMESPACE}-{monitoring_mktxp.NAME}",
+        f"{monitoring_namespace.NAMESPACE}-{monitoring_mktxp.NAME}",
         write_directory(
             root,
             monitoring_mktxp_artifact,
@@ -1457,7 +1457,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     alloy.alloy(
         flux_chart,
-        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=alloy.NAMESPACE),
+        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=monitoring_namespace.NAMESPACE),
         monitoring_crds_kustomization,
     )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
