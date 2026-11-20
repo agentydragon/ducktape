@@ -70,22 +70,23 @@ that policy permits traffic.
 Done per neighborhood: producer and consumers share labels without import cycles or a
 new peer registry.
 
-## Kyverno preconditions typed schema (v2beta1)
+## Kyverno CEL policy migration
 
-`providers/kyverno/cluster_policy.py`'s `Validate.deny(conditions=...)` takes
-`preconditions`/`deny.conditions` as a raw dict because `ClusterPolicy`'s `v1` schema --
-the version `cdk8s_import` names plainly, and what this repo's `ClusterPolicySpecRules`
-types come from -- declares `preconditions` as `x-kubernetes-preserve-unknown-fields:
-true`, with no structure at all.
+Kyverno 1.20 stops enforcing `kyverno.io` `ClusterPolicy`/`Policy`/`CleanupPolicy`/
+`ClusterCleanupPolicy`; its chart refuses to upgrade while any exist (override
+`upgrade.acknowledgeLegacyPoliciesNotEnforced` = they silently stop enforcing). Legacy CRDs
+go away in 1.21. The chart is held at 3.9.x (Kyverno 1.19) in `renovate.json5` until done.
 
-The CRD's `v2beta1` schema (served, not storage; generated as suffixed
-`ClusterPolicyV2Beta1Spec*` types) has a real typed shape instead: `any`/`all` arrays of
-`{key, operator, value, message}`, with `operator` a genuine 14-value enum. Migrating
-the wrapper to `v2beta1` would let `Validate.deny()` grow a typed `preconditions`
-factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
+Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions`,
+`context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`):
+`require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`
+(`cluster/cdk8s/kyverno/policies.py`), the janitor `CleanupPolicy` (`kyverno/janitor.py`),
+then `agentplane-staging-launcher-relay` (`agentplane/launcher_relay.py`; `apiCall` contexts
+and 3 mutate rules -- confirm `ValidatingPolicy`/`MutatingPolicy` can do them first).
 
-Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
-`preconditions` has a typed factory built from the real `any`/`all` shape.
+Done: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
+CRD pins in `devinfra/bazel/artifacts.MODULE.bazel` and the `kyverno` CLI pin match 1.20; the
+Renovate hold is removed.
 
 ## Watch GitHub secret inputs declaratively (deferred)
 
