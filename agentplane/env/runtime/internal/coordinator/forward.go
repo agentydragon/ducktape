@@ -26,7 +26,6 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	var outgoing context.Context
 	var cancel context.CancelFunc
 	var callID uint64
-	var admitted bool
 	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -49,26 +48,22 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		if client == nil {
 			return status.Error(codes.Unavailable, "Execution API is not ready for this incarnation")
 		}
+		if err := r.changeAdmissionsLocked(1); err != nil {
+			return err
+		}
 		outgoing, cancel = context.WithCancel(ctx)
 		r.execCallID++
 		callID = r.execCallID
 		r.execCalls[callID] = cancel
-		if err := r.changeAdmissionsLocked(1); err != nil {
-			return err
-		}
 		r.activeExecutionCalls++
 		r.idleSince = nil
 		r.changedLocked()
-		admitted = true
 		return nil
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	finish := func() {
-		if !admitted {
-			return
-		}
 		cancel()
 		r.mu.Lock()
 		delete(r.execCalls, callID)
