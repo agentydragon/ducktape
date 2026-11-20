@@ -12,7 +12,7 @@ import type {
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
-// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
+// the backend's OpenAPI schema: //haku/console/frontend:schema.
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
@@ -27,8 +27,8 @@ api.use({
 });
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
-// body isn't shaped that way. Shared with the per-integration client files.
-export function errorDetail(error: unknown, fallback: string): string {
+// body isn't shaped that way.
+function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };
     if (typeof detail === "string") return detail;

@@ -40,7 +40,6 @@ filegroup(
         "//:node_modules/@codemirror/lang-json",
         "//:node_modules/@codemirror/lang-yaml",
         "//:node_modules/@codemirror/language",
-        "//:node_modules/@codemirror/legacy-modes",
         "//:node_modules/@codemirror/state",
         "//:node_modules/@codemirror/view",
         "//:node_modules/@haku/console-bridge",
@@ -55,9 +54,7 @@ filegroup(
         "//:node_modules/esbuild",
         "//:node_modules/happy-dom",
         "//:node_modules/openapi-fetch",
-        "//:node_modules/rrule",
         "//:node_modules/tailwindcss",
-        "//:node_modules/zod",
         "//haku/console/mcp:launch_routine_arguments",
     ],
 )

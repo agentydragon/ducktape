@@ -12,7 +12,7 @@ import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
 import { launchRoutine } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
-import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
+import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation, type GeoResult } from "./geolocation";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
 import { ExternalLink } from "./link";
 import { openExternal, POPUP_HINT } from "./open_external";
@@ -102,7 +102,6 @@ export function HakuUiEmbed({
   // reload the frame); the iframe navigates itself, the console only reflects.
   const [frameSrc] = useState(() => initialFrameSrc(uiUrl, routeFromLocation(window.location)));
   const origin = new URL(uiUrl).origin;
-  const activeAction: Escalation | null = pending;
 
   function reply(msg: Outbound) {
     iframeRef.current?.contentWindow?.postMessage(msg, origin);
@@ -114,16 +113,18 @@ export function HakuUiEmbed({
     reply({ type: "openLinkResult", url, opened });
   }
 
+  function replyGeolocation(id: string, r: GeoResult) {
+    reply(
+      r.ok
+        ? { type: "geolocationResult", id, ok: true, position: r.position }
+        : { type: "geolocationResult", id, ok: false, code: r.code, reason: r.message }
+    );
+  }
+
   // Read the shell origin's location and report it (or a browser-shaped error) over the
   // bridge. Called on the granted fast-path AND after the operator approves the confirm.
   function geolocateAndReply(id: string, options?: GeolocationOptions) {
-    void getGeolocation(options).then((r) =>
-      reply(
-        r.ok
-          ? { type: "geolocationResult", id, ok: true, position: r.position }
-          : { type: "geolocationResult", id, ok: false, code: r.code, reason: r.message }
-      )
-    );
+    void getGeolocation(options).then((r) => replyGeolocation(id, r));
   }
 
   // Standing consent to share location + whether a live watch is currently streaming, both
@@ -137,13 +138,7 @@ export function HakuUiEmbed({
   // to the iframe as a geolocationResult tagged with its watch id. Created once.
   const watcherRef = useRef<GeolocationWatcher | null>(null);
   if (!watcherRef.current) {
-    watcherRef.current = new GeolocationWatcher((id, e) =>
-      reply(
-        e.ok
-          ? { type: "geolocationResult", id, ok: true, position: e.position }
-          : { type: "geolocationResult", id, ok: false, code: e.code, reason: e.message }
-      )
-    );
+    watcherRef.current = new GeolocationWatcher(replyGeolocation);
   }
   const watcher = watcherRef.current;
 
@@ -365,9 +360,9 @@ export function HakuUiEmbed({
   // The operator approved against trusted-rendered chrome — now actually perform the action
   // (open the link / fire the capability) and report the outcome back over the Agent UI bridge.
   function onApprove() {
-    const action = activeAction;
-    if (pending) setPending(null);
+    const action = pending;
     if (!action) return;
+    setPending(null);
     if (action.kind === "openLink") {
       openAndReply(action.url);
       return;
@@ -384,9 +379,9 @@ export function HakuUiEmbed({
   }
 
   function onCancel() {
-    const action = activeAction;
-    if (pending) setPending(null);
+    const action = pending;
     if (!action) return;
+    setPending(null);
     if (action.kind === "openLink") {
       reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
     } else {
@@ -484,7 +479,7 @@ export function HakuUiEmbed({
           </section>
         )}
       </main>
-      <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
+      <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </div>
   );
 }

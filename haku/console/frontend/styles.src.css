@@ -237,12 +237,6 @@
   }
 }
 
-/* Full-page cards sit on a solid page background, not floating over the iframe like the
-   approvals panel's — so drop the panel's lift shadow and let the border alone delineate them. */
-.haku-page .haku-shell-card {
-  box-shadow: none;
-}
-
 .haku-shell-header {
   flex: 0 0 auto;
 }
