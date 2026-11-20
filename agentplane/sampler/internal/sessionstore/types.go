@@ -251,8 +251,6 @@ const (
 type NestedOutcome string
 
 const (
-	NestedCompleted     NestedOutcome = "completed"
-	NestedRejected      NestedOutcome = "rejected"
 	NestedUnknown       NestedOutcome = "unknown"
 	NestedNotDispatched NestedOutcome = "not_dispatched"
 )

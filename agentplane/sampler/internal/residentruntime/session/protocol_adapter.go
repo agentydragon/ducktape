@@ -27,11 +27,6 @@ type providerAttribution struct {
 	Identity  *identitypb.Identity
 }
 
-// executionIdentity is the exact Identity the Dispatcher recorded for the Session.
-func executionIdentity(session *sessionstore.Session) (*identitypb.Identity, error) {
-	return session.ExecutionIdentity()
-}
-
 // providerAuthorization is the Authorization value and the attribution headers of one provider
 // call. Agentplane's LLM ingress is called as a delegating actor for the Session's execution
 // Identity. A bearer connection is never delegated to.
