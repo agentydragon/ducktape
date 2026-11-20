@@ -58,6 +58,8 @@ def _values() -> dict[str, object]:
         # cross-node hops that can fail during early bootstrap.
         "admissionController": {
             "replicas": 3,
+            # Keep two ready admission endpoints during voluntary evictions.
+            "podDisruptionBudget": {"minAvailable": 2},
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
             "annotations": _initial_memory_annotations(

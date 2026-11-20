@@ -53,6 +53,8 @@ spec:
             memory: 128Mi
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
+      podDisruptionBudget:
+        minAvailable: 2
       priorityClassName: system-cluster-critical
       replicas: 3
       tolerations:
