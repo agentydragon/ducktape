@@ -14,34 +14,14 @@ import pytest_bazel
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from props.core.ids import SnapshotSlug
 from props.db.database import Database
-from props.db.examples import Example
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
-from props.testing.fixtures.runs import make_fake_critic_run
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
 pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
-
-
-@pytest.fixture
-def test_critic_run(synced_db: Database):
-    """Create a test critic run using synced fixtures."""
-    with synced_db.session() as session:
-        # Query an existing example from test fixtures (synced_db provides agent definitions)
-        example = session.query(Example).filter_by(snapshot_slug=SnapshotSlug("test-fixtures/train1")).first()
-        assert example is not None, "Expected test-fixtures/train1 example to exist"
-
-        # Create critic run
-        critic_run = make_fake_critic_run(session=session, example=example.to_example_spec())
-        session.add(critic_run)
-        session.commit()
-
-        # Return ID while session is still open (SQLAlchemy session scoping)
-        return critic_run.agent_run_id
 
 
 def test_occurrence_empty_locations_invalid(test_critic_run, db: Database):

@@ -18,12 +18,11 @@ from props.backend.auth import AdminRole, AgentRole, AuthenticatedIdentity, get_
 from props.core.agent_types import CriticTypeConfig
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus
+from props.db.models import AgentRun
 from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.examples import TRAIN_EXAMPLE
 from props.testing.fixtures.credentials import make_agent_credentials
-from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
-from props.testing.models import DEFAULT_TEST_MODEL
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, make_fake_critic_run
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
@@ -53,17 +52,7 @@ async def test_agent_db_returns_rls_scoped_database(
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-fixtures/valid1 fixture not found"
 
-        ensure_fake_agent_definitions(session)
-        type_config = CriticTypeConfig(example=example.to_example_spec())
-        admin_run = AgentRun(
-            agent_run_id=valid_run_id,
-            image_digest=FAKE_CRITIC_DIGEST,
-            model=DEFAULT_TEST_MODEL,
-            status=AgentRunStatus.EXITED,
-            type_config=type_config.model_dump(),
-            budget_usd=5.0,
-        )
-        session.add(admin_run)
+        session.add(make_fake_critic_run(session=session, example=example.to_example_spec(), agent_run_id=valid_run_id))
         session.commit()
 
     # Exercise: get_caller_db with agent auth
