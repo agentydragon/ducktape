@@ -15,6 +15,7 @@ from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.sampler.api import sampler_admin_pb2
+from agentplane.sampler.settings import Settings
 from agentplane.sampler.testing import (
     Endpoint,
     Request,
@@ -26,6 +27,9 @@ from agentplane.sampler.testing import (
     submit_input,
 )
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
 
 
 class SetupEndpoint(Endpoint):
@@ -204,23 +208,17 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
             assert endpoint.requests == 0
 
 
-async def test_setup_script_limit_counts_utf8_bytes(
-    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
-) -> None:
-    async with Endpoint() as endpoint:
-        config = settings(
-            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
-        request = create_request(tmp_path)
-        request.setup_script = "#" + "λ" * 32768 + "\n"
-        async with service(config) as stub:
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.CreateSession(request, timeout=10)
-            assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-            request.setup_script = "#" + "λ" * 32767 + "\n"
+async def test_setup_script_limit_counts_utf8_bytes(config: Settings, tmp_path: Path) -> None:
+    request = create_request(tmp_path)
+    request.setup_script = "#" + "λ" * 32768 + "\n"
+    async with service(config) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as rejected:
             await stub.CreateSession(request, timeout=10)
-            events = await through_event(stub, request.session_id, "setup_finished")
-            assert events[-1].setup_finished.exit_code == 0
+        assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        request.setup_script = "#" + "λ" * 32767 + "\n"
+        await stub.CreateSession(request, timeout=10)
+        events = await through_event(stub, request.session_id, "setup_finished")
+        assert events[-1].setup_finished.exit_code == 0
 
 
 if __name__ == "__main__":

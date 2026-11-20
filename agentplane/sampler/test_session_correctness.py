@@ -27,18 +27,15 @@ from agentplane.native.codex.testing.responses_sse import CustomToolCall, Functi
 from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
-from agentplane.sampler.testing import Endpoint, create_request, service, settings, submit_input, turn_completed
+from agentplane.sampler.settings import Settings
+from agentplane.sampler.testing import Endpoint, create_request, service, submit_input, turn_completed
 from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from testing.sqlalchemy_engines import postgres_async_engine
+
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
 
 ResponseT = TypeVar("ResponseT")
-
-
-@pytest.fixture
-async def store(database_url: str) -> AsyncIterator[Store]:
-    async with postgres_async_engine(database_url) as engine:
-        yield Store(engine)
 
 
 def _store_retries() -> AsyncRetrying:
@@ -261,154 +258,131 @@ async def assert_lost_start_ack_settled(proxy: ExecutorProxy, store: Store, mark
 
 @pytest.mark.parametrize("failure", ["permanent", "failed", "429", "503", "partial", "invalid_wait"])
 async def test_turn_outcomes_preserve_safe_continuation(
-    store: Store,
-    database_url: str,
-    execution_target: str,
-    codex_binary: str,
-    code_mode_host: str,
-    tmp_path: Path,
-    failure: str,
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, failure: str
 ) -> None:
-    async with Endpoint() as endpoint:
-        config = settings(
-            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
-        async with service(config) as stub:
-            request = create_request(tmp_path)
-            await stub.CreateSession(request)
-            await submit_input(stub, session_id=request.session_id, command_id="first", text="Start", timeout_s=None)
-            if failure == "invalid_wait":
-                async with await endpoint.next() as exchange:
-                    await exchange.send(
-                        *response_stream(
-                            [
-                                FunctionCall("bad-wait", "wait", {"cell_id": "missing"}),
-                                CustomToolCall(
-                                    "sibling", "exec", 'text(await tools.exec_command({cmd:"touch sibling-ran"}));'
-                                ),
-                            ],
-                            model="test-model",
-                        ).events
-                    )
-                async with await endpoint.next() as exchange:
-                    outputs = [
-                        item
-                        for item in exchange.request.body["input"]
-                        if item["type"] in {"custom_tool_call_output", "function_call_output"}
-                    ]
-                    assert {item["call_id"] for item in outputs} == {"bad-wait", "sibling"}
-                    bad_wait = next(item for item in outputs if item["call_id"] == "bad-wait")
-                    assert "known live cell_id" in json.dumps(bad_wait["output"])
-                    assert (tmp_path / "sibling-ran").exists()
-                    await exchange.send(
-                        *response_stream([Message("Continued after tool error")], model="test-model").events
-                    )
-                assert (
-                    await turn_completed(stub, request.session_id, "first")
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-                observed = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
-                )
-                assert not observed.blocked
-                assert not any(intent.result is None for intent in await store.intents())
-                return
-
-            attempts = 1 if failure in {"permanent", "failed"} else 3
-            frozen_body: dict[str, Any] | None = None
-            for _ in range(attempts):
-                async with await endpoint.next() as exchange:
-                    if frozen_body is None:
-                        frozen_body = exchange.request.body
-                    else:
-                        assert exchange.request.body == frozen_body, "provider retry changed the frozen request"
-
-                    if failure in {"permanent", "429", "503"}:
-                        status = 400 if failure == "permanent" else int(failure)
-                        await exchange.respond(JsonResponse(b'{"error":{"code":"rate_limit_exceeded"}}', status))
-                    elif failure == "failed":
-                        payload = {
-                            "type": "response.failed",
-                            "response": {"status": "failed", "error": {"code": "rate_limit_exceeded"}},
-                        }
-                        await exchange.send(
-                            SseEvent("response.failed", ("data: " + json.dumps(payload) + "\n\n").encode())
-                        )
-                    else:
-                        events = response_stream(
-                            [
-                                CustomToolCall(
-                                    "partial-provider-call",
-                                    "exec",
-                                    'text(await tools.exec_command({cmd:"touch partial-provider-call-ran"}));',
-                                )
-                            ],
-                            model="test-model",
-                        ).through("response.output_item.done")
-                        await exchange.send(*events.events)
-                        await exchange.close()
-
-            assert frozen_body is not None
-            assert json.dumps(frozen_body["input"]).count('"Start"') == 1
-            assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
-            observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
-            assert not observed.blocked
-            command = await stub.admin.GetCommand(
-                sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="first")
-            )
-            assert command.outcome == sampler_pb2.COMMAND_OUTCOME_FAILED
-            assert command.failure_reason
-            intents = await store.intents()
-            async with store.engine.connect() as connection:
-                attempt_rows = (
-                    await connection.execute(
-                        text(
-                            "SELECT id::text, provider_attempt_no, provider_attempt_budget "
-                            "FROM sampler_intent WHERE provider_command_id=:command_id "
-                            "AND request->>'kind'='sampling' ORDER BY provider_attempt_no"
-                        ),
-                        {"command_id": "first"},
-                    )
-                ).all()
-            intents_by_id = {intent.id: intent for intent in intents}
-            attempts_for_command = [intents_by_id[row.id] for row in attempt_rows]
-            assert len(attempts_for_command) == attempts
-            assert [row.provider_attempt_no for row in attempt_rows] == list(range(1, attempts + 1))
-            assert all(row.provider_attempt_budget == 3 for row in attempt_rows)
-            failure_class = "transient" if failure in {"429", "503", "partial"} else "permanent"
-            assert all(
-                intent.result is not None
-                and intent.result.get("status") == "abandoned"
-                and intent.result.get("failure_class") == failure_class
-                and intent.result.get("failure_reason")
-                for intent in attempts_for_command
-            )
-            if failure == "partial":
-                assert not (tmp_path / "partial-provider-call-ran").exists()
-            await submit_input(
-                stub, session_id=request.session_id, command_id="second", text="Continue", timeout_s=None
-            )
+    async with service(config) as stub:
+        request = create_request(tmp_path)
+        await stub.CreateSession(request)
+        await submit_input(stub, session_id=request.session_id, command_id="first", text="Start", timeout_s=None)
+        if failure == "invalid_wait":
             async with await endpoint.next() as exchange:
-                next_input = json.dumps(exchange.request.body["input"])
-                assert next_input.count('"Start"') == 1
-                assert next_input.count('"Continue"') == 1
-                assert "partial-provider-call" not in next_input
-                await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
-            assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
+                await exchange.send(
+                    *response_stream(
+                        [
+                            FunctionCall("bad-wait", "wait", {"cell_id": "missing"}),
+                            CustomToolCall(
+                                "sibling", "exec", 'text(await tools.exec_command({cmd:"touch sibling-ran"}));'
+                            ),
+                        ],
+                        model="test-model",
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = [
+                    item
+                    for item in exchange.request.body["input"]
+                    if item["type"] in {"custom_tool_call_output", "function_call_output"}
+                ]
+                assert {item["call_id"] for item in outputs} == {"bad-wait", "sibling"}
+                bad_wait = next(item for item in outputs if item["call_id"] == "bad-wait")
+                assert "known live cell_id" in json.dumps(bad_wait["output"])
+                assert (tmp_path / "sibling-ran").exists()
+                await exchange.send(
+                    *response_stream([Message("Continued after tool error")], model="test-model").events
+                )
+            assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_COMPLETED
             observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
             assert not observed.blocked
+            assert not any(intent.result is None for intent in await store.intents())
+            return
+
+        attempts = 1 if failure in {"permanent", "failed"} else 3
+        frozen_body: dict[str, Any] | None = None
+        for _ in range(attempts):
+            async with await endpoint.next() as exchange:
+                if frozen_body is None:
+                    frozen_body = exchange.request.body
+                else:
+                    assert exchange.request.body == frozen_body, "provider retry changed the frozen request"
+
+                if failure in {"permanent", "429", "503"}:
+                    status = 400 if failure == "permanent" else int(failure)
+                    await exchange.respond(JsonResponse(b'{"error":{"code":"rate_limit_exceeded"}}', status))
+                elif failure == "failed":
+                    payload = {
+                        "type": "response.failed",
+                        "response": {"status": "failed", "error": {"code": "rate_limit_exceeded"}},
+                    }
+                    await exchange.send(SseEvent("response.failed", ("data: " + json.dumps(payload) + "\n\n").encode()))
+                else:
+                    events = response_stream(
+                        [
+                            CustomToolCall(
+                                "partial-provider-call",
+                                "exec",
+                                'text(await tools.exec_command({cmd:"touch partial-provider-call-ran"}));',
+                            )
+                        ],
+                        model="test-model",
+                    ).through("response.output_item.done")
+                    await exchange.send(*events.events)
+                    await exchange.close()
+
+        assert frozen_body is not None
+        assert json.dumps(frozen_body["input"]).count('"Start"') == 1
+        assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
+        observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
+        assert not observed.blocked
+        command = await stub.admin.GetCommand(
+            sampler_admin_pb2.GetCommandRequest(session_id=request.session_id, command_id="first")
+        )
+        assert command.outcome == sampler_pb2.COMMAND_OUTCOME_FAILED
+        assert command.failure_reason
+        intents = await store.intents()
+        async with store.engine.connect() as connection:
+            attempt_rows = (
+                await connection.execute(
+                    text(
+                        "SELECT id::text, provider_attempt_no, provider_attempt_budget "
+                        "FROM sampler_intent WHERE provider_command_id=:command_id "
+                        "AND request->>'kind'='sampling' ORDER BY provider_attempt_no"
+                    ),
+                    {"command_id": "first"},
+                )
+            ).all()
+        intents_by_id = {intent.id: intent for intent in intents}
+        attempts_for_command = [intents_by_id[row.id] for row in attempt_rows]
+        assert len(attempts_for_command) == attempts
+        assert [row.provider_attempt_no for row in attempt_rows] == list(range(1, attempts + 1))
+        assert all(row.provider_attempt_budget == 3 for row in attempt_rows)
+        failure_class = "transient" if failure in {"429", "503", "partial"} else "permanent"
+        assert all(
+            intent.result is not None
+            and intent.result.get("status") == "abandoned"
+            and intent.result.get("failure_class") == failure_class
+            and intent.result.get("failure_reason")
+            for intent in attempts_for_command
+        )
+        if failure == "partial":
+            assert not (tmp_path / "partial-provider-call-ran").exists()
+        await submit_input(stub, session_id=request.session_id, command_id="second", text="Continue", timeout_s=None)
+        async with await endpoint.next() as exchange:
+            next_input = json.dumps(exchange.request.body["input"])
+            assert next_input.count('"Start"') == 1
+            assert next_input.count('"Continue"') == 1
+            assert "partial-provider-call" not in next_input
+            await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
+        assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
+        observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
+        assert not observed.blocked
 
 
 async def test_lost_process_read_reply_resumes_same_process_and_cursor(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, execution_target: str, tmp_path: Path
 ) -> None:
     output = "RECOVERED_PROCESS_OUTPUT"
-    async with (
-        Endpoint() as endpoint,
-        faulting_executor_proxy(execution_target, drop_method="process/read", marker=output) as proxy,
-    ):
-        config = settings(
-            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
+    async with faulting_executor_proxy(execution_target, drop_method="process/read", marker=output) as proxy:
+        config.direct_executor_target = proxy.url
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request)
@@ -447,7 +421,7 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
 
 
 async def test_lost_process_read_after_observed_output_is_catchable_without_replay(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, execution_target: str, tmp_path: Path
 ) -> None:
     observed_output = "OBSERVED_BEFORE_FAILURE"
     lost_output = "FAULT_PAGE_MARKER"
@@ -457,19 +431,14 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
         + "; while [ ! -e release-fault-page ]; do sleep 0.05; done; printf "
         + lost_output
     )
-    async with (
-        Endpoint() as endpoint,
-        faulting_executor_proxy(
-            execution_target,
-            drop_method="process/read",
-            marker=lost_output,
-            drop_count=2,
-            prior_output_marker=observed_output,
-        ) as proxy,
-    ):
-        config = settings(
-            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
+    async with faulting_executor_proxy(
+        execution_target,
+        drop_method="process/read",
+        marker=lost_output,
+        drop_count=2,
+        prior_output_marker=observed_output,
+    ) as proxy:
+        config.direct_executor_target = proxy.url
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request)
@@ -568,16 +537,11 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
 
 
 async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, execution_target: str, tmp_path: Path
 ) -> None:
     output = "START_EFFECT_OBSERVED"
-    async with (
-        Endpoint() as endpoint,
-        faulting_executor_proxy(execution_target, drop_method="process/start", marker=output) as proxy,
-    ):
-        config = settings(
-            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
+    async with faulting_executor_proxy(execution_target, drop_method="process/start", marker=output) as proxy:
+        config.direct_executor_target = proxy.url
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request)
@@ -619,17 +583,12 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
 
 
 async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, execution_target: str, tmp_path: Path
 ) -> None:
     marker = "APPLY_PATCH_EFFECT_OBSERVED"
     patch = "*** Begin Patch\n*** Add File: applied.txt\n+" + marker + "\n*** End Patch"
-    async with (
-        Endpoint() as endpoint,
-        faulting_executor_proxy(execution_target, drop_method="process/start", marker=marker) as proxy,
-    ):
-        config = settings(
-            database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
+    async with faulting_executor_proxy(execution_target, drop_method="process/start", marker=marker) as proxy:
+        config.direct_executor_target = proxy.url
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request)
@@ -679,100 +638,88 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
 
 
 async def test_host_loss_settles_and_resets_javascript_session(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path
 ) -> None:
     host_logs = undeclared_outputs_dir() / "recovery-host-loss"
-    async with Endpoint() as endpoint:
-        # Isolate this service's host so the test can deliberately terminate it without
-        # affecting another test's shared fixture or host process.
-        config = settings(database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, host_logs)
-        async with service(config) as stub:
-            request = create_request(tmp_path)
-            await stub.CreateSession(request)
-            await submit_input(
-                stub,
-                session_id=request.session_id,
-                command_id="recover-start",
-                text="Start the operation.",
-                timeout_s=None,
+    # Isolate this service's host so the test can deliberately terminate it without
+    # affecting another test's shared fixture or host process.
+    config.logs = host_logs
+    async with service(config) as stub:
+        request = create_request(tmp_path)
+        await stub.CreateSession(request)
+        await submit_input(
+            stub, session_id=request.session_id, command_id="recover-start", text="Start the operation.", timeout_s=None
+        )
+        async with await endpoint.next() as exchange:
+            source = 'store("recovery-state", "old-state"); await new Promise(() => {});'
+            await exchange.send(
+                *response_stream([CustomToolCall("faulted-cell", "exec", source)], model="test-model").events
             )
-            async with await endpoint.next() as exchange:
-                source = 'store("recovery-state", "old-state"); await new Promise(() => {});'
-                await exchange.send(
-                    *response_stream([CustomToolCall("faulted-cell", "exec", source)], model="test-model").events
+
+        host_pid = await asyncio.to_thread(wait_for_host_pid, host_logs)
+        async for attempt in _store_retries():
+            with attempt:
+                assert await store.has_live_cell(request.session_id), "the faulted cell never became live"
+        os.killpg(host_pid, signal.SIGKILL)
+
+        assert (await turn_completed(stub, request.session_id, "recover-start")).status == event_pb2.TURN_STATUS_FAILED
+        # The restarted host has a new instance, so the work scan selects the blocked Session
+        # and its next owner settles the lost cell without an operator.
+        async for attempt in _store_retries():
+            with attempt:
+                settled = await stub.admin.GetSession(
+                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
                 )
+                assert not settled.blocked, f"{settled=}"
+        abandoned = [
+            intent
+            for intent in await store.intents()
+            if intent.result is not None and intent.result.get("status") == "abandoned"
+        ]
+        assert {intent.request.get("kind") for intent in abandoned} == {"cell"}
+        assert all(intent.result is not None and intent.result.get("automatic_replay") is False for intent in abandoned)
 
-            host_pid = await asyncio.to_thread(wait_for_host_pid, host_logs)
-            async for attempt in _store_retries():
-                with attempt:
-                    assert await store.has_live_cell(request.session_id), "the faulted cell never became live"
-            os.killpg(host_pid, signal.SIGKILL)
+        # Operator recovery stays authenticated and has nothing left to recover.
+        recovery = sampler_admin_pb2.RecoverSessionRequest(
+            session_id=request.session_id,
+            expected_cursor=settled.attached.last_cursor,
+            operator_note="Nothing to review; the loss settled on its own.",
+        )
+        with pytest.raises(grpc.aio.AioRpcError) as rejected:
+            await stub.admin.RecoverSession(recovery, metadata=(("authorization", "Bearer recreated-account-token"),))
+        assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
+            await stub.admin.RecoverSession(recovery)
+        assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
-            assert (
-                await turn_completed(stub, request.session_id, "recover-start")
-            ).status == event_pb2.TURN_STATUS_FAILED
-            # The restarted host has a new instance, so the work scan selects the blocked Session
-            # and its next owner settles the lost cell without an operator.
-            async for attempt in _store_retries():
-                with attempt:
-                    settled = await stub.admin.GetSession(
-                        sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
-                    )
-                    assert not settled.blocked, f"{settled=}"
-            abandoned = [
-                intent
-                for intent in await store.intents()
-                if intent.result is not None and intent.result.get("status") == "abandoned"
-            ]
-            assert {intent.request.get("kind") for intent in abandoned} == {"cell"}
-            assert all(
-                intent.result is not None and intent.result.get("automatic_replay") is False for intent in abandoned
+        await submit_input(
+            stub,
+            session_id=request.session_id,
+            command_id="continue-after-recovery",
+            text="Continue safely.",
+            timeout_s=None,
+        )
+        async with await endpoint.next() as exchange:
+            prompt = json.dumps(exchange.request.body["input"])
+            assert "faulted-cell" in prompt
+            assert "replayed" in prompt
+            assert "store()/load()" in prompt
+            assert "live-cell handles are unavailable" in prompt
+            await exchange.send(
+                *response_stream(
+                    [CustomToolCall("check-reset", "exec", 'text(String(load("recovery-state")));')], model="test-model"
+                ).events
             )
-
-            # Operator recovery stays authenticated and has nothing left to recover.
-            recovery = sampler_admin_pb2.RecoverSessionRequest(
-                session_id=request.session_id,
-                expected_cursor=settled.attached.last_cursor,
-                operator_note="Nothing to review; the loss settled on its own.",
-            )
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.admin.RecoverSession(
-                    recovery, metadata=(("authorization", "Bearer recreated-account-token"),)
-                )
-            assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
-            with pytest.raises(grpc.aio.AioRpcError) as nothing_to_recover:
-                await stub.admin.RecoverSession(recovery)
-            assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-
-            await submit_input(
-                stub,
-                session_id=request.session_id,
-                command_id="continue-after-recovery",
-                text="Continue safely.",
-                timeout_s=None,
-            )
-            async with await endpoint.next() as exchange:
-                prompt = json.dumps(exchange.request.body["input"])
-                assert "faulted-cell" in prompt
-                assert "replayed" in prompt
-                assert "store()/load()" in prompt
-                assert "live-cell handles are unavailable" in prompt
-                await exchange.send(
-                    *response_stream(
-                        [CustomToolCall("check-reset", "exec", 'text(String(load("recovery-state")));')],
-                        model="test-model",
-                    ).events
-                )
-            async with await endpoint.next() as exchange:
-                assert "undefined" in json.dumps(exchange.request.body["input"])
-                await exchange.send(*response_stream([Message("continued after recovery")], model="test-model").events)
-            assert (
-                await turn_completed(stub, request.session_id, "continue-after-recovery")
-            ).status == event_pb2.TURN_STATUS_COMPLETED
+        async with await endpoint.next() as exchange:
+            assert "undefined" in json.dumps(exchange.request.body["input"])
+            await exchange.send(*response_stream([Message("continued after recovery")], model="test-model").events)
+        assert (
+            await turn_completed(stub, request.session_id, "continue-after-recovery")
+        ).status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
-    store: Store, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path
 ) -> None:
     release = tmp_path / "release-background-process"
 
@@ -787,150 +734,142 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
         assert isinstance(output, str)
         return output
 
-    async with Endpoint() as endpoint:
-        config = settings(
-            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
+    config = config.model_copy(
+        update={"models": {"test-model": config.models["test-model"].model_copy(update={"exec_encoding": "json"})}}
+    )
+    async with service(config) as stub:
+        request = create_request(tmp_path)
+        await stub.CreateSession(request)
+        await submit_input(
+            stub,
+            session_id=request.session_id,
+            command_id="stale-json-cell",
+            text="Start a process and continue.",
+            timeout_s=None,
         )
-        config = config.model_copy(
-            update={"models": {"test-model": config.models["test-model"].model_copy(update={"exec_encoding": "json"})}}
-        )
-        async with service(config) as stub:
-            request = create_request(tmp_path)
-            await stub.CreateSession(request)
-            await submit_input(
-                stub,
-                session_id=request.session_id,
-                command_id="stale-json-cell",
-                text="Start a process and continue.",
-                timeout_s=None,
-            )
 
-            process_id: int | None = None
-            try:
-                async with await endpoint.next() as exchange:
-                    process_arguments = {
-                        "cmd": f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf retained-output",
-                        "yield_time_ms": 1,
-                    }
-                    code = (
-                        'store("validation-state", "preserved"); '
-                        f"const process = await tools.exec_command({json.dumps(process_arguments)}); "
-                        'store("validation-process", process.session_id); '
-                        'text("process=" + process.session_id);'
-                    )
-                    await exchange.send(
-                        *response_stream(
-                            [FunctionCall("start-process", "exec", {"code": code})], model="test-model"
-                        ).events
-                    )
-
-                async with await endpoint.next() as exchange:
-                    start_output = function_output_text(exchange.request.body, "start-process")
-                    match = re.search(r"process=(\d+)", start_output)
-                    assert match is not None, start_output
-                    process_id = int(match[1])
-                    process = await store.process(process_id)
-                    assert process is not None
-                    assert process.status == "running"
-                    before_invalid = await store.get_session(request.session_id)
-                    await exchange.send(
-                        *response_stream(
-                            [
-                                FunctionCall(
-                                    "stale-cell-id",
-                                    "exec",
-                                    {"cell_id": "00000000-0000-4000-8000-000000000001", "terminate": True},
-                                )
-                            ],
-                            model="test-model",
-                        ).events
-                    )
-
-                async with await endpoint.next() as exchange:
-                    invalid_output = function_output_text(exchange.request.body, "stale-cell-id")
-                    assert "known live cell_id" in invalid_output
-                    assert "process session_id is not accepted" in invalid_output
-                    recent_events = await store.events(request.session_id, before_invalid.cursor)
-                    assert not any(
-                        entry.event.HasField("boundary_record")
-                        and entry.event.boundary_record.boundary == "javascript"
-                        and entry.event.boundary_record.direction == "send"
-                        and b"session/terminate" in entry.event.boundary_record.payload
-                        for entry in recent_events
-                    )
-                    assert not any(
-                        entry.event.HasField("boundary_record")
-                        and entry.event.boundary_record.boundary == "executor"
-                        and entry.event.boundary_record.direction == "dispatch"
-                        for entry in recent_events
-                    )
-                    process = await store.process(process_id)
-                    assert process is not None
-                    assert process.status == "running"
-                    correct_code = (
-                        'const saved = load("validation-state"); '
-                        'const processId = load("validation-process"); '
-                        "const current = await tools.write_stdin({session_id: processId, yield_time_ms: 0}); "
-                        'if (saved !== "preserved" || current.session_id !== processId) '
-                        'throw new Error("live JavaScript or process handle was lost"); '
-                        'text("state=" + saved + " process=" + current.session_id);'
-                    )
-                    await exchange.send(
-                        *response_stream(
-                            [FunctionCall("valid-after-stale", "exec", {"code": correct_code})], model="test-model"
-                        ).events
-                    )
-
-                async with await endpoint.next() as exchange:
-                    valid_output = function_output_text(exchange.request.body, "valid-after-stale")
-                    assert "Script completed" in valid_output
-                    assert "state=preserved" in valid_output
-                    assert f"process={process_id}" in valid_output
-                    process = await store.process(process_id)
-                    assert process is not None
-                    assert process.status == "running"
-                    await exchange.send(
-                        *response_stream([Message("Continued after the invalid cell ID.")], model="test-model").events
-                    )
-
-                assert (
-                    await turn_completed(stub, request.session_id, "stale-json-cell")
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-                observed = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=request.session_id)
+        process_id: int | None = None
+        try:
+            async with await endpoint.next() as exchange:
+                process_arguments = {
+                    "cmd": f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf retained-output",
+                    "yield_time_ms": 1,
+                }
+                code = (
+                    'store("validation-state", "preserved"); '
+                    f"const process = await tools.exec_command({json.dumps(process_arguments)}); "
+                    'store("validation-process", process.session_id); '
+                    'text("process=" + process.session_id);'
                 )
-                assert not observed.blocked
-                assert not any(intent.result is None for intent in await store.intents())
+                await exchange.send(
+                    *response_stream([FunctionCall("start-process", "exec", {"code": code})], model="test-model").events
+                )
+
+            async with await endpoint.next() as exchange:
+                start_output = function_output_text(exchange.request.body, "start-process")
+                match = re.search(r"process=(\d+)", start_output)
+                assert match is not None, start_output
+                process_id = int(match[1])
                 process = await store.process(process_id)
                 assert process is not None
                 assert process.status == "running"
-
-                await submit_input(
-                    stub,
-                    session_id=request.session_id,
-                    command_id="after-stale-json-cell",
-                    text="Continue once more.",
-                    timeout_s=None,
+                before_invalid = await store.get_session(request.session_id)
+                await exchange.send(
+                    *response_stream(
+                        [
+                            FunctionCall(
+                                "stale-cell-id",
+                                "exec",
+                                {"cell_id": "00000000-0000-4000-8000-000000000001", "terminate": True},
+                            )
+                        ],
+                        model="test-model",
+                    ).events
                 )
-                async with await endpoint.next() as exchange:
-                    active_handles = json.dumps(exchange.request.body["input"])
-                    assert "Active execution handles" in active_handles
-                    assert str(process_id) in active_handles
-                    await exchange.send(
-                        *response_stream([Message("The next input still works.")], model="test-model").events
-                    )
-                assert (
-                    await turn_completed(stub, request.session_id, "after-stale-json-cell")
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-            finally:
-                release.write_text("")
-                if process_id is not None:
-                    deadline = time.monotonic() + 5
-                    while time.monotonic() < deadline:
-                        process = await store.process(process_id)
-                        if process is not None and process.status != "running":
-                            break
-                        await asyncio.sleep(0.05)
+
+            async with await endpoint.next() as exchange:
+                invalid_output = function_output_text(exchange.request.body, "stale-cell-id")
+                assert "known live cell_id" in invalid_output
+                assert "process session_id is not accepted" in invalid_output
+                recent_events = await store.events(request.session_id, before_invalid.cursor)
+                assert not any(
+                    entry.event.HasField("boundary_record")
+                    and entry.event.boundary_record.boundary == "javascript"
+                    and entry.event.boundary_record.direction == "send"
+                    and b"session/terminate" in entry.event.boundary_record.payload
+                    for entry in recent_events
+                )
+                assert not any(
+                    entry.event.HasField("boundary_record")
+                    and entry.event.boundary_record.boundary == "executor"
+                    and entry.event.boundary_record.direction == "dispatch"
+                    for entry in recent_events
+                )
+                process = await store.process(process_id)
+                assert process is not None
+                assert process.status == "running"
+                correct_code = (
+                    'const saved = load("validation-state"); '
+                    'const processId = load("validation-process"); '
+                    "const current = await tools.write_stdin({session_id: processId, yield_time_ms: 0}); "
+                    'if (saved !== "preserved" || current.session_id !== processId) '
+                    'throw new Error("live JavaScript or process handle was lost"); '
+                    'text("state=" + saved + " process=" + current.session_id);'
+                )
+                await exchange.send(
+                    *response_stream(
+                        [FunctionCall("valid-after-stale", "exec", {"code": correct_code})], model="test-model"
+                    ).events
+                )
+
+            async with await endpoint.next() as exchange:
+                valid_output = function_output_text(exchange.request.body, "valid-after-stale")
+                assert "Script completed" in valid_output
+                assert "state=preserved" in valid_output
+                assert f"process={process_id}" in valid_output
+                process = await store.process(process_id)
+                assert process is not None
+                assert process.status == "running"
+                await exchange.send(
+                    *response_stream([Message("Continued after the invalid cell ID.")], model="test-model").events
+                )
+
+            assert (
+                await turn_completed(stub, request.session_id, "stale-json-cell")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            observed = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=request.session_id))
+            assert not observed.blocked
+            assert not any(intent.result is None for intent in await store.intents())
+            process = await store.process(process_id)
+            assert process is not None
+            assert process.status == "running"
+
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="after-stale-json-cell",
+                text="Continue once more.",
+                timeout_s=None,
+            )
+            async with await endpoint.next() as exchange:
+                active_handles = json.dumps(exchange.request.body["input"])
+                assert "Active execution handles" in active_handles
+                assert str(process_id) in active_handles
+                await exchange.send(
+                    *response_stream([Message("The next input still works.")], model="test-model").events
+                )
+            assert (
+                await turn_completed(stub, request.session_id, "after-stale-json-cell")
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+        finally:
+            release.write_text("")
+            if process_id is not None:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    process = await store.process(process_id)
+                    if process is not None and process.status != "running":
+                        break
+                    await asyncio.sleep(0.05)
 
 
 if __name__ == "__main__":
