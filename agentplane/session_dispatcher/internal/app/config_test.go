@@ -82,26 +82,6 @@ func TestSharedListenerRequiresSVIDTLS(t *testing.T) {
 	}
 }
 
-func TestServiceCallerSettingsRequireSPIFFEListener(t *testing.T) {
-	withoutSPIFFE := strings.Replace(requiredFile, "    - {mode: spiffe, ca_file: /tmp/workload-ca}\n", "", 1)
-	for name, settings := range map[string]string{
-		"dispatcher caller": "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"wake caller":       "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"Dispatcher delegation": `dispatcher_service_delegation:
-  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
-  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
-`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			settings := configtest.WriteSettings(t, withoutSPIFFE+settings)
-			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+settings))
-			if err == nil || !strings.Contains(err.Error(), "service caller settings require rpc.auth to include spiffe") {
-				t.Fatalf("loadConfig error = %v, want missing-SPIFFE service-caller error", err)
-			}
-		})
-	}
-}
-
 func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *testing.T) {
 	base := `dispatcher_service_delegation:
   actors: [{spiffe_id: "spiffe://agentplane/actions"}]

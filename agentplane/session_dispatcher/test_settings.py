@@ -140,12 +140,12 @@ def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() ->
         Settings.model_validate(source)
 
 
-def test_service_settings_require_spiffe_listener_authentication() -> None:
+def test_rpc_auth_requires_a_spiffe_method() -> None:
     source = _settings().model_dump(mode="json")
-    source["rpc"]["auth"] = [{"mode": "kubernetes_bearer", "audiences": ["unused"]}]
-    source["dispatcher_service_callers"] = ["spiffe://agentplane/actions"]
-    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
+    source["rpc"]["auth"] = []
+    with pytest.raises(ValidationError) as rejected:
         Settings.model_validate(source)
+    assert [error["loc"] for error in rejected.value.errors()] == [("rpc", "auth")]
 
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:

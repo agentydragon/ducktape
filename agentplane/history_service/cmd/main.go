@@ -27,7 +27,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -120,17 +119,14 @@ func run(ctx context.Context, c config) error {
 
 // serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
-	var svids *auth.SVIDResolver
-	if c.RPC.Has(listener.SPIFFE) {
-		base, err := kubernetesConfig(c)
-		if err != nil {
-			return err
-		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
-			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
-		if err != nil {
-			return err
-		}
+	base, err := kubernetesConfig(c)
+	if err != nil {
+		return err
+	}
+	svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
+		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	if err != nil {
+		return err
 	}
 	// Schema initialization precedes the runtime pools; the read API's pool never writes.
 	readURL, err := readOnly(c.DatabaseURL)

@@ -120,9 +120,6 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)
 	}
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("rpc.auth must enable spiffe client trust")
-	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")
 	}
