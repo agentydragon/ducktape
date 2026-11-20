@@ -22,8 +22,10 @@ The LiteLLM compatibility IDs
 `ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
 deployment and select the stock checkpoint. Select
 `tabbyapi/oai-chat/qwen3.8-flash-next-abliterated` in LiteLLM or
-**Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI Chat Completions**
-in the Agentplane staging central sampler. Gatus probes the private
+**Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI**
+in Agentplane staging's Codex and central sampler pickers. Codex uses
+LiteLLM's Responses bridge and the central sampler uses Chat Completions.
+Gatus probes the private
 `/v1/models` endpoint. LiteLLM handles client authentication.
 
 The static local volumes mount the [staged checkpoints](#tabbyapi-checkpoint-staging)

@@ -466,7 +466,10 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
         *chat_models,
     ]
     assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CLAUDE"])
-    assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CODEX"])
+    assert abliterated_id in catalog["harnesses"]["HARNESS_CODEX"]
+    assert QWEN_CHAT_CANARY_ID not in catalog["harnesses"]["HARNESS_CODEX"]
+    [abliterated_option] = [model for model in catalog["models"] if model["model"] == abliterated_id]
+    assert abliterated_option["reasoning_efforts"] == []
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
