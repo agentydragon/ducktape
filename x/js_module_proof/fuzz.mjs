@@ -370,9 +370,47 @@ function modeledClosureCase(seed, index) {
   };
 }
 
+// Generate a parameterized expression independently of the validator. The
+// caller and captured module binding are placed in separate real modules.
+function parameterCase(seed, index) {
+  const rand = random(seed ^ 0x70617261, index);
+  const initial = 1 + rand(8);
+  const parameters = index % 64 === 12 ? ["base", "y"] : ["x", "y"];
+  const left = { type: "BinaryExpression", operator: "+", left: id(parameters[0]), right: id(parameters[1]) };
+  const value = { type: "BinaryExpression", operator: "+", left, right: id("base") };
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      variable("base", initial),
+      functionNode("calculate", parameters, [returnNode(value)]),
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
+      },
+    ],
+  };
+  const modules = {
+    "state.mjs": { imports: [], statements: [0] },
+    "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+    "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+  };
+  return {
+    ast,
+    source: print(ast),
+    spec: { kind: "bindings", entry: "entry.mjs", modules },
+    calls: Array.from({ length: 2 + rand(4) }, () => ({ name: "calculate", args: [1 + rand(8), 1 + rand(8)] })),
+    grammar: "parameter",
+    unsupported: false,
+    cyclic: false,
+    invalidAssignment: false,
+  };
+}
+
 // Generate declarations and effects independently of their module placement.
 // Mode changes how effects are distributed, not the program grammar.
 export function makeCase(seed, index) {
+  if (index % 32 === 12) return parameterCase(seed, index);
   if (index % 16 === 3) return modeledClosureCase(seed, index);
   if (index % 4 === 3) return closureCase(seed, index);
   const rand = random(seed, index);
@@ -626,6 +664,9 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     shards,
     cases: 0,
     constantCases: 0,
+    parameterCases: 0,
+    parameterCompared: 0,
+    parameterProved: 0,
     modeledClosureCases: 0,
     modeledClosureCrossModule: 0,
     modeledClosureCompared: 0,
@@ -690,6 +731,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         ) + "\n"
       );
       if (input.useConstant) summary.constantCases++;
+      if (input.grammar === "parameter") summary.parameterCases++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCases++;
         if (input.crossModuleCapture) summary.modeledClosureCrossModule++;
@@ -768,6 +810,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (input.grammar === "parameter") summary.parameterCompared++;
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
@@ -803,6 +846,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (input.grammar === "parameter") summary.parameterProved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
             if (!equal && !mutated) await minimizeProvedDifference(input, root);
             throw new Error("proved case differs or fails in Node");

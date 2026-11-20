@@ -70,6 +70,9 @@ assert.equal(result.cases, 16 / shards);
 if (shards === 4 && shard === 0) {
   assert.ok(result.proved > 0);
   assert.ok(result.constantCases > 0);
+  assert.equal(result.parameterCases, 1);
+  assert.equal(result.parameterCompared, 1);
+  assert.equal(result.parameterProved, 1);
 }
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) {
