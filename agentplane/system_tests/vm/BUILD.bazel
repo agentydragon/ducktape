@@ -721,6 +721,18 @@ py_library(
     srcs = ["env_flags.py"],
 )
 
+py_test(
+    name = "test_env_flags",
+    srcs = ["test_env_flags.py"],
+    deps = [
+        ":env_flags",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "iotlb_capture",
     srcs = ["iotlb_capture.py"],

@@ -1297,47 +1297,29 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
     assert any(args[:2] == ("get", "clusterpolicy") and stdout_only for args, stdout_only in k3s.calls)
 
 
-def test_virtiofs_policy_skip_is_opt_in_and_rejects_other_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_SKIP_VIRTIOFS_POLICY_ENV, raising=False)
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "1")
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is True
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "0")
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV)
-
-
-def test_shutdown_policy_cycle_count_and_debug_args_are_bounded_opt_ins(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shutdown_policy_cycle_count_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_CYCLES_ENV, raising=False)
-    monkeypatch.delenv(_DEBUG_KERNEL_ARGS_ENV, raising=False)
     assert _cycle_count() == 1
-    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is False
 
     monkeypatch.setenv(_CYCLES_ENV, "3")
-    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "1")
     assert _cycle_count() == 3
-    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is True
 
     for value in ("0", "4", "abc"):
         monkeypatch.setenv(_CYCLES_ENV, value)
         with pytest.raises(ValueError, match="integer from 1 to 3"):
             _cycle_count()
-    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
 
 
-def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None:
-    images = {
+@pytest.fixture
+def images() -> dict[str, str]:
+    return {
         "agentplane-vm-guest-boot:unset": "boot",
         "agentplane-vm-guest-root:unset": "root",
         "agentplane-runner-disk:unset": "runner",
     }
+
+
+def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args(images: dict[str, str]) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
     plain = _vmi(namespace, images)
     debug = _vmi(namespace, images, debug_kernel_args=True)
@@ -1349,41 +1331,19 @@ def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None
 
 
 @pytest.mark.parametrize(
-    ("environment", "vmi_options", "expected_arg"),
+    ("vmi_options", "expected_arg"),
     [
+        pytest.param(_BootOptionVMIArgs(boot_rcu_observe=True), "agentplane.boot-rcu-observe=1", id="boot_rcu"),
         pytest.param(
-            _BOOT_RCU_ENV, _BootOptionVMIArgs(boot_rcu_observe=True), "agentplane.boot-rcu-observe=1", id="boot_rcu"
+            _BootOptionVMIArgs(synthetic_slice_probe=True), "agentplane.synthetic-slice-probe=1", id="synthetic_slice"
         ),
-        pytest.param(
-            _SYNTHETIC_SLICE_ENV,
-            _BootOptionVMIArgs(synthetic_slice_probe=True),
-            "agentplane.synthetic-slice-probe=1",
-            id="synthetic_slice",
-        ),
-        pytest.param(
-            _CGROUP_PILOT_ENV, _BootOptionVMIArgs(cgroup_pilot=True), "agentplane.cgroup-pilot=1", id="cgroup_pilot"
-        ),
-        pytest.param(
-            _CGROUP_STRESS_ENV, _BootOptionVMIArgs(cgroup_stress=True), "agentplane.cgroup-stress=1", id="cgroup_stress"
-        ),
+        pytest.param(_BootOptionVMIArgs(cgroup_pilot=True), "agentplane.cgroup-pilot=1", id="cgroup_pilot"),
+        pytest.param(_BootOptionVMIArgs(cgroup_stress=True), "agentplane.cgroup-stress=1", id="cgroup_stress"),
     ],
 )
 def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
-    monkeypatch: pytest.MonkeyPatch, environment: str, vmi_options: _BootOptionVMIArgs, expected_arg: str
+    images: dict[str, str], vmi_options: _BootOptionVMIArgs, expected_arg: str
 ) -> None:
-    monkeypatch.delenv(environment, raising=False)
-    assert strict_env_flag(environment) is False
-    monkeypatch.setenv(environment, "1")
-    assert strict_env_flag(environment) is True
-    monkeypatch.setenv(environment, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(environment)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, **vmi_options)
     plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
@@ -1393,12 +1353,7 @@ def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
     assert observed == plain
 
 
-def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_boot_apic_observer_adds_only_the_launcher_discovery_label(images: dict[str, str]) -> None:
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_apic_observe=True)
 
@@ -1406,12 +1361,7 @@ def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
     assert observed == plain
 
 
-def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace() -> None:
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace(images: dict[str, str]) -> None:
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, early_boot_preset=True)
     domain = observed["spec"]["domain"]
@@ -1580,14 +1530,9 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     assert output.read_text() == complete
 
 
-def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script() -> None:
+def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script(images: dict[str, str]) -> None:
     guest_dir = Runfiles.CreateOrRaise().root() / "_main/agentplane/system_tests/vm/guest"
     script = (guest_dir / "cgroup_pilot_probe").read_text()
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
     for mode, kernel_arg in (("pilot", "agentplane.cgroup-pilot=1"), ("stress", "agentplane.cgroup-stress=1")):
         vmi = _vmi(
             _NAMESPACE_PREFIX + "unit-test", images, cgroup_pilot=mode == "pilot", cgroup_stress=mode == "stress"
@@ -1747,20 +1692,7 @@ def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pai
     )
 
 
-def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_DELEGATED_CGROUP_STRESS_ENV, raising=False)
-    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is False
-    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "1")
-    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is True
-    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(images: dict[str, str]) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
     plain = _vmi(namespace, images, boot_rcu_observe=True)
     observed = _vmi(namespace, images, boot_rcu_observe=True, delegated_cgroup_stress=True)
