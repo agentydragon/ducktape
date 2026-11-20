@@ -101,6 +101,28 @@ _PROOF_FIXTURE_SOURCES = [
 ]
 
 lean_axiom_test(
+    name = "local_call_axioms_test",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Semantics.lean",
+        "Experiments/LocalCall.lean",
+        "Experiments/MiniJS.lean",
+    ],
+    imports = ["Experiments.LocalCall"],
+    theorems = [
+        "MJS.inert_subst_num",
+        "MJS.local_call_world",
+        "MJS.local_call_inert_sound",
+        "MJS.local_call_reads",
+        "MJS.effectful_body_rejected",
+        "MJS.effectful_argument_rejected",
+        "MJS.effectful_call_changes_world",
+        "MJS.inert_identity_accepted",
+        "MJS.changed_binding_rejected",
+    ],
+)
+
+lean_axiom_test(
     name = "proof_fixture_axioms_test",
     srcs = _PROOF_FIXTURE_SOURCES,
     imports = ["Experiments.ProofFixture"],
