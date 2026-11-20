@@ -305,7 +305,7 @@ class EnvironmentSandboxTemplate(Construct):
             codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
             environment=PodEnvironment(
                 supervision="pid1",
-                executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)
+                executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET, implementation="native")
                 if self.env.isolated_codex_executor
                 else None,
             ),

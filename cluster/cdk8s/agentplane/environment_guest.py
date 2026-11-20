@@ -110,7 +110,9 @@ def guest_config_data(
             agent_uid=107,
             agent_gid=107,
             block_devices=block_devices,
-            executor=VMExecutor(url="ws://127.0.0.1:4501") if resources.executor is not None else None,
+            executor=VMExecutor(url="ws://127.0.0.1:4501", implementation="native")
+            if resources.executor is not None
+            else None,
         ),
     )
     return {

@@ -105,6 +105,11 @@ def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
     assert config.environment.console_autologin == rendered
 
 
+def test_executor_selects_native_implementation(scratch_app: App) -> None:
+    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
+    assert rendered["environment_runtime"]["environment"]["executor"]["implementation"] == "native"
+
+
 def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
     config = Configuration.model_validate(rendered["environment_runtime"])
