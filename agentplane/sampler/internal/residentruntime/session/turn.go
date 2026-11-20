@@ -17,7 +17,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 		return "", err
 	}
 	if len(interrupts) > 0 {
-		return r.applyInterrupt(ctx, sessionID, owner, live, interrupts)
+		return r.applyInterrupt(ctx, owner, live, interrupts)
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
 	type advanceResult struct {
@@ -80,7 +80,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 				cancel()
 				<-completed
 				joined = true
-				return r.applyInterrupt(ctx, sessionID, owner, live, interrupts, conversation.Pending)
+				return r.applyInterrupt(ctx, owner, live, interrupts, conversation.Pending)
 			}
 		}
 	}
