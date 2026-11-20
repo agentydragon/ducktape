@@ -14,9 +14,16 @@ const (
 )
 
 type requestProfile struct {
-	Model  string `json:"model"`
-	Tools  []tool `json:"tools"`
-	Stream bool   `json:"stream"`
+	Model         string         `json:"model"`
+	Tools         []tool         `json:"tools,omitempty"`
+	Stream        bool           `json:"stream"`
+	ToolChoice    string         `json:"tool_choice,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type tool struct {
@@ -44,7 +51,7 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 		return "", "", err
 	}
 	profile, err := json.Marshal(requestProfile{
-		Model: model, Stream: true,
+		Model: model, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
 		Tools: []tool{{Type: "function", Function: toolDefinition{Name: "exec", Description: surface.Description, Parameters: surface.Parameters}}},
 	})
 	if err != nil {
@@ -56,6 +63,69 @@ func PrepareRequest(store content.ContentWriter, model string, instructions *str
 	}
 	systemID, err := StoreRecord(store, systemRecord)
 	return profileID, systemID, err
+}
+
+// WithStreamUsage upgrades a retained sampling profile for new requests. Already
+// committed attempts still render their original profile on retry or inspection.
+func WithStreamUsage(store interface {
+	content.ContentReader
+	content.ContentWriter
+}, id content.ContentID,
+) (content.ContentID, error) {
+	raw, err := load(store, id, profileKind)
+	if err != nil {
+		return "", err
+	}
+	var profile requestProfile
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		return "", err
+	}
+	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage {
+		return id, nil
+	}
+	profile.StreamOptions = &streamOptions{IncludeUsage: true}
+	raw, err = json.Marshal(profile)
+	if err != nil {
+		return "", err
+	}
+	return store.PutContent(profileKind, raw)
+}
+
+// PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
+// disables their selection for the appended summary request.
+func PrepareCompactionRequest(store interface {
+	content.ContentReader
+	content.ContentWriter
+}, profileID content.ContentID, config CompactionConfig,
+) (content.ContentID, content.ContentID, error) {
+	raw, err := load(store, profileID, profileKind)
+	if err != nil {
+		return "", "", err
+	}
+	var profile requestProfile
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		return "", "", err
+	}
+	profile.ToolChoice = "none"
+	profile.MaxTokens = config.MaxTokens
+	raw, err = json.Marshal(profile)
+	if err != nil {
+		return "", "", err
+	}
+	profileID, err = store.PutContent(profileKind, raw)
+	if err != nil {
+		return "", "", err
+	}
+	instruction, err := config.summaryPrompt()
+	if err != nil {
+		return "", "", err
+	}
+	raw, err = json.Marshal(message{Role: "user", Content: instruction})
+	if err != nil {
+		return "", "", err
+	}
+	instructionID, err := StoreRecord(store, raw)
+	return profileID, instructionID, err
 }
 
 func StoreRecord(store content.ContentWriter, raw json.RawMessage) (content.ContentID, error) {

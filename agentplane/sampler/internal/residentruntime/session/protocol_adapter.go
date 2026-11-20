@@ -84,7 +84,7 @@ type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
-	AutoCompactTokens(*int) *int
+	AutoCompactTokens(*int, protocol.Context) *int
 	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
 
@@ -163,8 +163,10 @@ func readProviderCredential(connection samplersettings.ConnectionConfig) (string
 	}
 	return credential, nil
 }
-func (a responsesAdapter) AutoCompactTokens(fallback *int) *int { return fallback }
-func (a anthropicAdapter) AutoCompactTokens(_ *int) *int {
+
+func (a responsesAdapter) AutoCompactTokens(fallback *int, _ protocol.Context) *int { return fallback }
+
+func (a anthropicAdapter) AutoCompactTokens(_ *int, _ protocol.Context) *int {
 	if a.config.AnthropicMessages.Compaction == nil {
 		return nil
 	}
@@ -217,22 +219,38 @@ func (a chatAdapter) Prepare(_ *sessionstore.Session, attribution protocol.Sessi
 }
 
 func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
-	if compaction {
-		return nil, protocol.ErrPrecondition
-	}
 	authorization, headers, err := providerAuthorization(connection, attribution)
 	if err != nil {
 		return nil, err
 	}
-	response, err := chatcompletions.Sample(ctx, client, connection.BaseURL, authorization, wire, evidence, headers, hooks)
+	response, err := chatcompletions.Sample(ctx, client, connection.BaseURL, authorization, wire, evidence, headers, compaction, hooks)
 	if err != nil {
 		return nil, err
 	}
 	return &sampleResult{Records: []json.RawMessage{response.Record}, Audit: response.Audit, ContextTokens: response.ContextTokens}, nil
 }
 
-func (a chatAdapter) AutoCompactTokens(*int) *int { return nil }
+func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
+	config := a.config.ChatCompaction
+	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.KeepRecentTurns) {
+		return config.AutoCompactTokens
+	}
+	return nil
+}
 
-func (a chatAdapter) PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error) {
-	return nil, protocol.ErrPrecondition
+func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, _ *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+	config := a.config.ChatCompaction
+	if config == nil {
+		return nil, protocol.ErrPrecondition
+	}
+	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(*config, environment)
+	if err != nil {
+		return nil, err
+	}
+	return &compactionPlan{
+		Preparation: &providerrequest.Preparation{ModelConfig: a.config, Compaction: true},
+		Apply: func(result *sampleResult) (protocol.Context, error) {
+			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
+		},
+	}, nil
 }

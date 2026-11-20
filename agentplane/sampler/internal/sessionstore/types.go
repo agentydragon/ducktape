@@ -226,13 +226,15 @@ type ProviderRequest struct {
 	ProjectionKey providerrequest.ProjectionKey `json:"projection_key,omitempty"`
 	PrefixIDs     []content.ContentID           `json:"prefix_ids,omitempty"`
 	SuffixIDs     []content.ContentID           `json:"suffix_ids,omitempty"`
-	// CompactionControl pins the local policy used to apply a frozen Anthropic summary.
+	// CompactionControl pins the local policy used to apply a frozen summary.
 	CompactionControl *CompactionControl `json:"compaction_control,omitempty"`
 }
 
 type CompactionControl struct {
-	KeepRecentTurns  int  `json:"keep_recent_turns"`
-	PerMessageEffort bool `json:"per_message_effort"`
+	KeepRecentTurns     int    `json:"keep_recent_turns"`
+	PerMessageEffort    bool   `json:"per_message_effort"`
+	ReplacementRole     string `json:"replacement_role,omitempty"`
+	ReplacementTemplate string `json:"replacement_template,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested

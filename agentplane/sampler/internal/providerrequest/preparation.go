@@ -92,9 +92,6 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 	}
 	switch snapshot.API {
 	case protocol.APIStyleChatCompletions:
-		if preparation.Compaction {
-			return Recipe{}, protocol.ErrPrecondition
-		}
 		profile, system := snapshot.PreviousProfileID, snapshot.PreviousFirstID
 		if profile == "" {
 			tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
@@ -105,11 +102,29 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 			if err != nil {
 				return Recipe{}, err
 			}
+		} else {
+			var err error
+			profile, err = chatcompletions.WithStreamUsage(store, profile)
+			if err != nil {
+				return Recipe{}, err
+			}
 		}
 		if system == "" {
 			return Recipe{}, protocol.ErrInvalid
 		}
-		return Recipe{ProfileID: profile, PrefixIDs: []content.ContentID{system}, History: Projection{Key: chatProjectionKey}}, nil
+		recipe := Recipe{ProfileID: profile, PrefixIDs: []content.ContentID{system}, History: Projection{Key: chatProjectionKey}}
+		if preparation.Compaction {
+			if preparation.ModelConfig.ChatCompaction == nil {
+				return Recipe{}, protocol.ErrPrecondition
+			}
+			profile, instruction, err := chatcompletions.PrepareCompactionRequest(store, profile, *preparation.ModelConfig.ChatCompaction)
+			if err != nil {
+				return Recipe{}, err
+			}
+			recipe.ProfileID = profile
+			recipe.SuffixIDs = []content.ContentID{instruction}
+		}
+		return recipe, nil
 	case protocol.APIStyleResponses:
 		tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
 		if err != nil {

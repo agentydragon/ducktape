@@ -29,7 +29,11 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 	if metadata.API != preparation.ModelConfig.API || metadata.API != conversation.API {
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
-	previous, err := previousRequest(ctx, tx, conversation.ID)
+	var previousKind PendingIntentKind
+	if metadata.API == protocol.APIStyleChatCompletions {
+		previousKind = PendingIntentSampling
+	}
+	previous, err := previousRequest(ctx, tx, conversation.ID, previousKind)
 	if err != nil {
 		return ProviderRequest{}, nil, err
 	}
@@ -81,7 +85,7 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 		case protocol.APIStyleAnthropicMessages:
 			project = conversation.Context().(*anthropic.Context).ProjectRecords
 		case protocol.APIStyleChatCompletions:
-			project = conversation.Context().RecordsFrom
+			project = conversation.Context().(*chatcompletions.Context).ProjectRecords
 		default:
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
@@ -140,6 +144,13 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 	}}
 	if kind == PendingIntentCompaction {
 		request.ProjectionKey = providerrequest.ProjectionFor(config)
+		if config.API == protocol.APIStyleChatCompletions && config.ChatCompaction != nil {
+			request.CompactionControl = &CompactionControl{KeepRecentTurns: config.ChatCompaction.KeepRecentTurns}
+			if replacement := config.ChatCompaction.Replacement; replacement != nil {
+				request.CompactionControl.ReplacementRole = replacement.Role
+				request.CompactionControl.ReplacementTemplate = replacement.Template
+			}
+		}
 		if config.API == protocol.APIStyleAnthropicMessages && config.AnthropicMessages.Compaction != nil {
 			request.CompactionControl = &CompactionControl{
 				KeepRecentTurns:  config.AnthropicMessages.Compaction.KeepRecentTurns,

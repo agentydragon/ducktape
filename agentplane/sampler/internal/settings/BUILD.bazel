@@ -19,6 +19,7 @@ go_library(
         "//agentplane/net/peertls",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
     ],
 )

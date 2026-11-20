@@ -58,7 +58,7 @@ type frame struct {
 
 func (frame) Kind() eventpb.ExecutionProgress_Kind { return eventpb.ExecutionProgress_KIND_PROVIDER }
 
-func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, body []byte, evidence protocol.EvidenceSink, attribution map[string]string, hooks protocol.ProviderHooks) (*Result, error) {
+func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, body []byte, evidence protocol.EvidenceSink, attribution map[string]string, compaction bool, hooks protocol.ProviderHooks) (*Result, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+Path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -99,10 +99,11 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 		}
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"http_status": response.StatusCode, "body": string(body)}}
 	}
-	return readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, hooks)
+	return readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
 }
 
 type stream struct {
+	compaction    bool
 	audit         Audit
 	text          strings.Builder
 	reasoning     strings.Builder
@@ -111,8 +112,8 @@ type stream struct {
 	contextTokens *int
 }
 
-func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, hooks protocol.ProviderHooks) (*Result, error) {
-	var state stream
+func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, compaction bool, hooks protocol.ProviderHooks) (*Result, error) {
+	state := stream{compaction: compaction}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 16*1024), protocol.MaxProviderStreamBytes)
 	var lines []string
@@ -215,7 +216,7 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 		s.audit.FinishReason = choice.FinishReason
 		progress = d.Content != "" || d.Reasoning != "" || len(d.ToolCalls) > 0 || choice.FinishReason != ""
 	}
-	return progress, protocol.RecordProviderEvidence(ctx, evidence, frame{Data: raw}, observations...)
+	return progress, s.record(ctx, evidence, frame{Data: raw}, observations)
 }
 
 func mergeStable(dst *string, value string) bool {
@@ -265,10 +266,17 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 				ToolArguments: &eventpb.ToolArguments{ItemId: call.ID, ArgumentsJson: args},
 			}})
 	}
-	if err := protocol.RecordProviderEvidence(ctx, evidence, frame{Done: true}, observations...); err != nil {
+	if err := s.record(ctx, evidence, frame{Done: true}, observations); err != nil {
 		return nil, err
 	}
 	return &Result{Record: record, Audit: s.audit, ContextTokens: s.contextTokens}, nil
+}
+
+func (s *stream) record(ctx context.Context, evidence protocol.EvidenceSink, frame frame, observations []*eventpb.Event) error {
+	if s.compaction {
+		observations = nil
+	}
+	return protocol.RecordProviderEvidence(ctx, evidence, frame, observations...)
 }
 
 func startItem(id string, kind eventpb.ItemKind, toolName string) *eventpb.Event {

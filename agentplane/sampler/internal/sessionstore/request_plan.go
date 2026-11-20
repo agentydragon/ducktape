@@ -65,12 +65,14 @@ func (conversation *Conversation) projectHistory(ctx context.Context, tx *sql.Tx
 	return source.Head, head, err
 }
 
-func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string) (ProviderRequest, error) {
+func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string, kind PendingIntentKind) (ProviderRequest, error) {
 	var request ProviderRequest
 	var context sql.NullString
 	var prefix pq.StringArray
-	err := tx.QueryRowContext(ctx, `SELECT profile_id,context_id,prefix_ids FROM sampler_model_request
-        WHERE conversation_id=$1 ORDER BY position DESC LIMIT 1`, conversationID).Scan(&request.ProfileID, &context, &prefix)
+	err := tx.QueryRowContext(ctx, `SELECT mr.profile_id,mr.context_id,mr.prefix_ids FROM sampler_model_request mr
+        JOIN sampler_intent i ON i.id=mr.id
+        WHERE mr.conversation_id=$1 AND ($2='' OR i.request->>'kind'=$2)
+        ORDER BY mr.position DESC LIMIT 1`, conversationID, string(kind)).Scan(&request.ProfileID, &context, &prefix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProviderRequest{}, nil
 	}
