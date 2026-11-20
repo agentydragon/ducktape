@@ -461,9 +461,13 @@ describe("Action presentation slots", () => {
     const sent = answerApi((request) =>
       request.path === path ? Response.json({ references: [{ key: "products/11", name: "Coffee" }] }) : undefined
     );
-    const view = await mount(
-      renderDetailsArguments(identity("grocy_sf", "products_merge"), { productIdToKeep: 11, productIdToRemove: 22 }, id)
-    );
+    const action = identity("grocy_sf", "products_merge");
+    const args = { productIdToKeep: 11, productIdToRemove: 22 };
+    const receipt = await mount(renderDetailsArguments(action, args, id));
+    expect(receipt.textContent).toContain("Product #11");
+    expect(sent).toEqual([]);
+
+    const view = await mount(renderDetailsArguments(action, args, id, true));
     await vi.waitFor(() => {
       expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/11"]')?.textContent).toBe("Coffee");
     });
