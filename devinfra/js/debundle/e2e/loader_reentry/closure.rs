@@ -54,19 +54,7 @@ fn rejected_loader_derivation_with_priority(
             .with_extra_chunks(extra_chunks)
             .with_host_behavior(host),
     );
-    let conflicts = rejected.atomic_group_conflicts();
-    assert!(
-        conflicts.iter().any(|conflict| {
-            let modules: Vec<_> = conflict["claims"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|claim| claim["module"].as_str().unwrap())
-                .collect();
-            modules.contains(&"values/dynamic") && modules.contains(&"values/later")
-        }),
-        "{conflicts:#?}"
-    );
+    rejected.assert_atomic_conflict(&["values/dynamic", "values/later"], &[]);
     let report = export_reentry_report(&rejected.report_root);
     assert_eq!(report["policy"], "conservative");
     assert_eq!(report["loader"]["rule"], "loader_closure");
