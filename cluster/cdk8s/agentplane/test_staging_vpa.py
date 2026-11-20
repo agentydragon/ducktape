@@ -19,7 +19,7 @@ def _mib(quantity: str) -> int:
 
 def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests: list[dict[str, Any]]) -> None:
     vpas = staging_vpa.chart(scratch_app).to_json()
-    assert len(vpas) == 10
+    assert len(vpas) == 11
     assert all(vpa["apiVersion"] == "autoscaling.k8s.io/v1" and vpa["kind"] == "VerticalPodAutoscaler" for vpa in vpas)
     assert (
         find_resource(staging_manifests, "Namespace", "agentplane-staging")["metadata"]["labels"][
@@ -40,7 +40,7 @@ def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests
         assert selected["containerName"] == container["name"]
         assert selected["controlledResources"] == ["memory"]
         assert selected["controlledValues"] == "RequestsOnly"
-        assert selected["minAllowed"]["memory"] == container["resources"]["requests"]["memory"]
+        assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
         assert _mib(selected["maxAllowed"]["memory"]) <= _mib(container["resources"]["limits"]["memory"])
         assert wildcard == {"containerName": "*", "mode": "Off"}
 

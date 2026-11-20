@@ -22,11 +22,12 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 
-# (Deployment, container, existing request, maximum request). These bounded
+# (Deployment, container, minimum request, maximum request). These bounded
 # ceilings limit the effect on OVH scheduling; the Pod memory limits are unchanged.
 _WORKLOADS = (
     ("actions", "actions", "128Mi", "160Mi"),
     ("app", "app", "128Mi", "160Mi"),
+    ("electric", "electric", "448Mi", "576Mi"),
     ("environments", "environments", "64Mi", "112Mi"),
     ("frontend", "frontend", "32Mi", "40Mi"),
     ("history-service", "history-service", "128Mi", "256Mi"),
