@@ -23,8 +23,6 @@ from tana.query.nodes import get_image_url, get_tuple_value
 from tana.render.html_utils import DATE_SPAN_PATTERN, NODE_SPAN_PATTERN, find_inline_node_refs, html_to_markdown
 from tana.render.inline_refs import parse_inline_date
 
-# ──────────────────────────  Headline  ────────────────────────── #
-
 
 def _journal_headline(name: str) -> str:
     # pattern: YYYY-MM-DD - Weekday
@@ -55,10 +53,6 @@ class RenderContext:
     visited: set[NodeId] = field(default_factory=set)
     roots: set[NodeId] = field(default_factory=set)
 
-    # ──────────────────────────────────────────────────────────────
-    # Helper: return a scalar text representation of a node
-    #         or None if the node is actually a container.
-    # ──────────────────────────────────────────────────────────────
     def _scalar_text(self, node: BaseNode) -> str | None:
         # Check if the node itself is a checkbox value
         if node.id == CHECKBOX_CHECKED_ID:
@@ -109,6 +103,10 @@ class RenderContext:
         if self.style == "tana":
             return str(html_to_markdown(txt))
         return str(html.unescape(txt))
+
+    def _render_reference(self, node: BaseNode) -> str:
+        name = self._strip_md_formatting(self._inline_to_text(node.name or node.id))
+        return f"{self.indent}- [[{name}^{node.id}]]"
 
     @contextmanager
     def add_indent(self):
@@ -166,9 +164,7 @@ class RenderContext:
                 # (i.e., it's a reference to an existing node)
                 with self.add_indent():
                     if self.style == "tana" and val_node.name and val_node.props.owner_id != t.id:
-                        name = self._inline_to_text(val_node.name)
-                        name = self._strip_md_formatting(name)
-                        yield f"{self.indent}- [[{name}^{val_node.id}]]"
+                        yield self._render_reference(val_node)
                     else:
                         yield from self.render_node(val_node)
             return
@@ -188,7 +184,7 @@ class RenderContext:
                     yield from self.render_node(child)
             return
 
-        # ── non-scalar: fall back to nested layout ────────────────
+        # Non-scalar: fall back to nested layout.
         # Check if this is an empty value node (no name, no children)
         # Common for unset checkbox attributes
         yield prefix
@@ -254,15 +250,13 @@ class RenderContext:
 
         # Check if this node has an associationMap - if so, render children as references with associated data
         with self.add_indent():
-            emitted: set[NodeId] = set()
             for c in self.store.child_nodes(n):
                 if (self.style == "tana") and (n.props.doc_type == "search" or (n.association_map is not None)):
                     # Render children as plain references; if association_map is provided,
                     # include associated data tuples for that child.
                     if isinstance(c, TupleNode):
                         continue
-                    name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
-                    yield f"{self.indent}- [[{name}^{c.id}]]"
+                    yield self._render_reference(c)
                     if n.association_map and c.id in n.association_map:
                         assoc_node = self.store.get(n.association_map[c.id])
                         if assoc_node:
@@ -275,18 +269,9 @@ class RenderContext:
                     continue
                 # Render all children in their original order
                 elif not isinstance(c, TupleNode):
-                    # In a search node (tana style), render every non-tuple child as a plain reference once
-                    if n.props.doc_type == "search" and self.style == "tana":
-                        if c.id not in emitted:
-                            name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
-                            yield f"{self.indent}- [[{name}^{c.id}]]"
-                            emitted.add(c.id)
-                        continue
-                    # Otherwise: render as reference if non-owned AND already visited; else recurse
+                    # Render as reference if non-owned AND already visited; else recurse
                     if c.props.owner_id != n.id and c.id in self.visited:
-                        name = self._strip_md_formatting(self._inline_to_text(c.name or c.id))
-                        yield f"{self.indent}- [[{name}^{c.id}]]"
-                        emitted.add(c.id)
+                        yield self._render_reference(c)
                     else:
                         yield from self.render_node(c)
                 elif not (_is_url_tuple(c) or _is_supertag_tuple(c)):
@@ -294,20 +279,19 @@ class RenderContext:
                     yield from self.render_tuple(c)
             # Under a search node, also surface wrapper grandchildren (non-tuple) as plain references (no recursion)
             if n.props.doc_type == "search" and self.style == "tana":
+                emitted: set[NodeId] = set()
                 for c in self.store.child_nodes(n):
                     if isinstance(c, TupleNode):
                         continue
-                    if c.props.doc_type in {"viewDef", "layout", "workspace"}:
+                    if is_wrapper(c):
                         for gc in self.store.child_nodes(c):
                             if isinstance(gc, TupleNode):
                                 continue
                             if gc.id not in emitted:
-                                name = self._strip_md_formatting(self._inline_to_text(gc.name or gc.id))
-                                yield f"{self.indent}- [[{name}^{gc.id}]]"
+                                yield self._render_reference(gc)
                                 emitted.add(gc.id)
 
 
-# Root selection
 def _collect_inline_refs(store: TanaGraph) -> set[NodeId]:
     ids: set[NodeId] = set()
     for n in store.values():
@@ -342,7 +326,6 @@ def _roots(store: TanaGraph) -> list[BaseNode]:
     )
 
 
-# ──────────────────────────  Exporters  ────────────────────────── #
 def _export(store: TanaGraph, style: str) -> str:
     lines: list[str] = []
     if style == "tana":
@@ -368,7 +351,6 @@ def _export(store: TanaGraph, style: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-# ──────────────────────────  CLI  ────────────────────────── #
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("dump", help="Tana JSON dump")

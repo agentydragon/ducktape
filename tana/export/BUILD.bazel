@@ -27,6 +27,7 @@ py_binary(
 py_library(
     name = "export_node_subset",
     srcs = ["export_node_subset.py"],
+    visibility = ["//tana:__subpackages__"],
     deps = [
         ":convert",
         "//tana/domain:nodes",
