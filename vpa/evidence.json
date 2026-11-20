@@ -20040,7 +20040,7 @@
       "memory": "448Mi"
     },
     "dry_run_memory_limit": "1Gi",
-    "inventory_observed_at_utc": "2026-11-20T22:05:20Z"
+    "inventory_observed_at_utc": "2026-11-20T22:09:30Z"
   },
   "cainjector_recreate": {
     "observed_at_utc": "2026-11-20T21:56:14Z",
@@ -20081,6 +20081,11 @@
     "nodes": ["ovh-ns102453", "ovh-ns103711"],
     "pdb_allowed_disruptions": 1,
     "constraint": "revision-scoped hard hostname spread, maxSkew=1, minDomains=2",
-    "vpa_mode": "Initial"
+    "vpa_mode": "Recreate",
+    "vpa_update_pull_request": "https://github.com/agentydragon/ducktape/pull/18305",
+    "vpa_update_observed_at_utc": "2026-11-20T22:09:30Z",
+    "vpa_generation": 2,
+    "vpa_observed_generation": 1,
+    "note": "VPA promotion was observed; no eviction or disruption was tested."
   }
 }

@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/06f2eec31c43e9ec081b1f4e5a83d8e2edb73d7a/";
+const currentSource = github + "blob/244b14cd063024bd6ac0e6077c7d13c746fdc8e1/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2205`).then((r) => {
+        fetch(`${url}?v=20261120-2209`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -254,7 +254,7 @@ function Report() {
         <${Stat}
           value="11"
           label="Staging service VPAs"
-          detail="Initial, memory requests only; each has a recommendation."
+          detail="Ten Initial, one Recreate; memory requests only."
         />
       <//>
       <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
@@ -269,7 +269,7 @@ function Report() {
             gridAxis="y"
           />
           <${Text} size="sm" c="dimmed"
-            >${`${counts.vpa_modes.Initial ?? 0} Initial · ${counts.vpa_modes.Off ?? 0} Off · ${counts.vpa_modes.Recreate ?? 0} Recreate.`}
+            >${`${counts.vpa_modes.Initial ?? 0} Initial · ${counts.vpa_modes.Off ?? 0} Off · ${counts.vpa_modes.Recreate ?? 0} Recreate.`}${" "}
             These are objects, not the number of active controllers covered;
             Jobs and CronJobs are included.<//
           >
@@ -328,21 +328,25 @@ function Report() {
         <${Paper} id="agentplane-staging-initial" withBorder p="md" radius="md"
           ><${Title} order=${4}>Singletons and staging<//>
           <${Text} component="p"
-            >Staging has eleven explicitly targeted Initial VPAs while
-            namespace-wide Goldilocks remains disabled for dynamic Sandboxes.
-            ${" "}<${Anchor} href=${github + "pull/18293"}>Electric<//>${" "}has
-            a 448–576 MiB memory-request range. Its 448 MiB target was applied
-            in an owner-backed admission dry run, preserving its 100m CPU
-            request and 1 GiB memory limit. Its existing singleton remained
-            Ready. A second Electric on the same stream can pass health checks
-            while refusing new shapes, so VPA must not evict the running Pod.<//
+            >Staging has eleven explicitly targeted VPAs while namespace-wide
+            Goldilocks remains disabled for dynamic Sandboxes. ${" "}<${Anchor}
+              href=${github + "pull/18293"}
+              >Electric<//
+            >${" "}has a 448–576 MiB memory-request range. Its 448 MiB target
+            was applied in an owner-backed admission dry run, preserving its
+            100m CPU request and 1 GiB memory limit. Its existing singleton
+            remained Ready. A second Electric on the same stream can pass health
+            checks while refusing new shapes, so VPA must not evict the running
+            Pod.<//
           >
           <${Text} component="p"
             >The ${" "}<${Anchor} href=${github + "pull/18301"}
               >staging frontend<//
             >${" "}has two Ready replicas on distinct nodes, a PDB allowing one
-            disruption, and revision-scoped required hostname spread. Its VPA
-            remains Initial while an automatic update proposal is reviewed.<//
+            disruption, and revision-scoped required hostname spread. Its
+            ${" "}<${Anchor} href=${github + "pull/18305"}>VPA<//>${" "}uses
+            Recreate with memory requests bounded to 32–40 MiB; no eviction or
+            disruption was tested.<//
           >
           <${Text} component="p" mb=${0}
             >Loki read-proxy is Initial with a 128–160 MiB memory request range
@@ -412,7 +416,7 @@ function Report() {
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${4}>Resource evidence<//>
           <${Text} component="p" mb=${0}
-            >${`In this inventory, ${counts.missing_requests_cpu} of ${counts.regular_containers} regular containers in Running or Pending, non-terminating Pods lacked CPU requests and ${counts.missing_requests_memory} lacked memory requests; ${counts.missing_limits_cpu} lacked CPU limits and ${counts.missing_limits_memory} lacked memory limits.`}
+            >${`In this inventory, ${counts.missing_requests_cpu} of ${counts.regular_containers} regular containers in Running or Pending, non-terminating Pods lacked CPU requests and ${counts.missing_requests_memory} lacked memory requests; ${counts.missing_limits_cpu} lacked CPU limits and ${counts.missing_limits_memory} lacked memory limits.`}${" "}
             These are admitted Pod specs, including defaults and mutations, and
             exclude init and ephemeral containers. Missing fields alone do not
             show usage or an OOM cause.<//
@@ -505,8 +509,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        22:05 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at 06f2eec31c<//
+        22:09 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at 244b14cd06<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
