@@ -198,7 +198,7 @@
                 <${Anchor} href=${"reliability/"}> ${"Reliability"} <//>
               <//>
               <${Text} component="p" my="sm">
-                ${" 10–16 November UTC: 32 failures / 883 completed mainline test invocations; VM cache and physical-attempt audit, the 375-second setup breakdown, an interim 380-result baseline census, and merge-time checks. The 17 November follow-up verifies merged case accounting, captures native profiles around 25 cold imports, narrows the browser snapshot boundary, and exercises a focused VM topology control; kernel and provider causes remain open. The paired VM review found 23 managed and two KVM first-attempt failures across 100 manual pairs. Five managed failures persisted on retry. Both KVM failures recovered. Both routes passed all four fresh devel pairs collected before the shadow was retired. "}
+                ${"13–19 November UTC: 242 of 350 PR heads passed all required checks on their first attempt. Nineteen of 63 mainline failures shared a repaired fixture authorization regression. After required VM CI moved to KVM, one of 13 fresh VM target outcomes needed a retry because a recycled Docker runner could not rebuild its baseline."}
               <//>
               <${ManifestStamp} src=${"reliability/manifest.json"} />
               <${Text} component="p" my="sm">
