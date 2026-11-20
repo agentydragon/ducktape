@@ -47,11 +47,5 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)
 # that validate in __new__. Consider migrating to the validating constructor pattern for consistency.
 
 
-# NewType creates nominal types for mypy (compile-time type safety)
-# At runtime, these are just BaseIssueID strings (work as JSON dict keys)
-# Type is implied by position in data structure
-
-"""Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
-
 DefinitionId = NewType("DefinitionId", str)
 """Agent definition ID. Compile-time distinct from str, runtime is string."""
