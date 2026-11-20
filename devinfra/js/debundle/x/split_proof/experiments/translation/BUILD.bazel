@@ -101,3 +101,14 @@ exports_files(
     ["fixtures/callback/bundle.js"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
+
+js_binary(
+    name = "frontend_lean",
+    data = [
+        "frontend.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+    entry_point = "frontend_lean.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)

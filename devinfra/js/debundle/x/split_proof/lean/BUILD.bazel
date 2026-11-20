@@ -281,19 +281,54 @@ sh_test(
 lean_axiom_test(
     name = "source_identity_axioms_test",
     srcs = _PROOF_SOURCES + [
+        "Experiments/FrontendIdentityFixture.lean",
         "Experiments/IdentityFixture.lean",
+        "Experiments/IdentityScan.lean",
         "Experiments/InferredIdentity.lean",
         "Experiments/LocalCall.lean",
+        "Experiments/Lower.lean",
         "Experiments/MiniJS.lean",
         "Experiments/MiniJSSource.lean",
         "Experiments/QuietCrossing.lean",
         "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_fixture",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_frontend",
     ],
-    imports = ["Experiments.IdentityFixture"],
+    imports = [
+        "Experiments.FrontendIdentityFixture",
+        "Experiments.IdentityFixture",
+    ],
     theorems = [
+        "FrontendIdentityFixture.discovered",
+        "FrontendIdentityFixture.crossing_preserves",
         "IdentityFixture.source_accepted",
         "IdentityFixture.extracted_footprints",
         "IdentityFixture.automatically_discovered",
         "IdentityFixture.crossing_preserves",
+    ],
+)
+
+lean_axiom_test(
+    name = "identity_scan_axioms_test",
+    srcs = [
+        "Experiments/IdentityScan.lean",
+        "Experiments/Lower.lean",
+    ],
+    imports = ["Experiments.IdentityScan"],
+    theorems = [
+        "IdentityScan.declaration_found",
+        "IdentityScan.malformed_binder_rejected",
+        "IdentityScan.different_binder_rejected",
+        "IdentityScan.call_found",
+        "IdentityScan.candidate_inferred",
+        "IdentityScan.candidate_extra_use_rejected",
+        "IdentityScan.candidate_eval_rejected",
+        "IdentityScan.no_candidate",
+        "IdentityScan.candidate_fuel_exhaustion",
+        "IdentityScan.count_two",
+        "IdentityScan.count_extra",
+        "IdentityScan.counts_saturate",
+        "IdentityScan.finds_eval",
+        "IdentityScan.exhaustion_refused",
+        "IdentityScan.no_candidate_needed",
     ],
 )

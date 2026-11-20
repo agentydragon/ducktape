@@ -21,3 +21,11 @@ genrule(
     cmd = "sed 's/namespace Example/namespace IdentityExample/; s/end Example/end IdentityExample/' $(location //devinfra/js/debundle/x/split_proof:identity_fixture_instance) > $@",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
+
+genrule(
+    name = "generate_identity_frontend",
+    srcs = ["//devinfra/js/debundle/x/split_proof:identity_frontend_instance"],
+    outs = ["IdentityFixture/Annotated.lean"],
+    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:identity_frontend_instance) $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
