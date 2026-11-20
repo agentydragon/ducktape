@@ -12,7 +12,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -102,17 +102,7 @@ def chart(app: App) -> Chart:
             },
             "metricsServer": {"replicaCount": 2},
             "topologySpreadConstraints": {
-                "metricsServer": [
-                    {
-                        "maxSkew": 1,
-                        "minDomains": 2,
-                        "topologyKey": "kubernetes.io/hostname",
-                        "whenUnsatisfiable": "DoNotSchedule",
-                        "nodeTaintsPolicy": "Honor",
-                        "labelSelector": {"matchLabels": {"app": METRICS_SERVER_NAME}},
-                        "matchLabelKeys": ["pod-template-hash"],
-                    }
-                ]
+                "metricsServer": [node_scheduling.hostname_spread({"app": METRICS_SERVER_NAME})]
             },
             "podDisruptionBudget": {"webhooks": {"minAvailable": 1}, "metricServer": {"minAvailable": 1}},
             "resources": {

@@ -13,7 +13,6 @@ from cdk8s_plus_34 import (
     MemoryResources,
     Pods as PodSelector,
     Service,
-    k8s,
 )
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
@@ -26,7 +25,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
 )
 
-from cluster.cdk8s import disruption_budget, namespaces, pod_policy, probes
+from cluster.cdk8s import disruption_budget, namespaces, node_scheduling, pod_policy, probes
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
@@ -84,18 +83,7 @@ def chart(app: App) -> Chart:
     # Each revision spreads independently, so old Pods do not block a two-node rollout.
     ApiObject.of(deployment).add_json_patch(
         JsonPatch.add(
-            "/spec/template/spec/topologySpreadConstraints",
-            [
-                k8s.TopologySpreadConstraint(
-                    topology_key="kubernetes.io/hostname",
-                    max_skew=1,
-                    min_domains=2,
-                    when_unsatisfiable="DoNotSchedule",
-                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
-                    match_label_keys=["pod-template-hash"],
-                    node_taints_policy="Honor",
-                )
-            ],
+            "/spec/template/spec/topologySpreadConstraints", [node_scheduling.hostname_spread(_SERVICE.pods.selector)]
         )
     )
     deployment.add_container(

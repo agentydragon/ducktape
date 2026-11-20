@@ -47,7 +47,6 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
-    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -358,17 +357,7 @@ class Console(Construct):
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/topologySpreadConstraints",
-                [
-                    k8s.TopologySpreadConstraint(
-                        topology_key="kubernetes.io/hostname",
-                        max_skew=1,
-                        min_domains=2,
-                        when_unsatisfiable="DoNotSchedule",
-                        label_selector=k8s.LabelSelector(match_labels=_STATIC.pods.selector),
-                        match_label_keys=["pod-template-hash"],
-                        node_taints_policy="Honor",
-                    )
-                ],
+                [node_scheduling.hostname_spread(_STATIC.pods.selector)],
             )
         )
         container = deployment.add_container(

@@ -81,3 +81,16 @@ def zone_spread(zones: Sequence[str], labels: Mapping[str, str]) -> k8s.Topology
         label_selector=k8s.LabelSelector(match_labels=dict(labels)),
         match_label_keys=["pod-template-hash"],
     )
+
+
+def hostname_spread(labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
+    """Spread each revision across two hosts, leaving a replica Pending if only one is eligible."""
+    return k8s.TopologySpreadConstraint(
+        topology_key="kubernetes.io/hostname",
+        max_skew=1,
+        min_domains=2,
+        when_unsatisfiable="DoNotSchedule",
+        label_selector=k8s.LabelSelector(match_labels=dict(labels)),
+        match_label_keys=["pod-template-hash"],
+        node_taints_policy="Honor",
+    )
