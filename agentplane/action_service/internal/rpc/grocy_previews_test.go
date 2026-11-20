@@ -60,6 +60,12 @@ func TestGrocyPreviewReferenceBounds(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("references %v, want %v", got, want)
 	}
+	if got := grocyPreviewReferences("shopping_list_items_remove", json.RawMessage(`{"item_ids":[52,52,53,"54"],"product":99}`)); !slices.Equal(got, []string{"shopping_list/52", "shopping_list/53"}) {
+		t.Errorf("shopping item references %v", got)
+	}
+	if got := grocyPreviewReferences("products_edit", json.RawMessage(`{"items":[{"product":2,"location":4},{"product":"2"}]}`)); !slices.Equal(got, []string{"product_edits/2", "locations/4"}) {
+		t.Errorf("edited product references %v", got)
+	}
 	if got := grocyPreviewReferences("entity_delete", json.RawMessage(`{"entity":"api_keys","objectId":5}`)); len(got) != 0 {
 		t.Errorf("sensitive record references %v", got)
 	}

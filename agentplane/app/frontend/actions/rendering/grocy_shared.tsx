@@ -3,7 +3,7 @@ import { createContext, type JSX, type ReactNode, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
-import { getGrocyReferenceNames } from "../client";
+import { getGrocyReferenceSummaries } from "../client";
 import { definePreview, type PreviewProps } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import type { ResultPreview } from "./result_entry";
@@ -43,17 +43,21 @@ export function GrocyReview({ requestId, children }: { requestId?: string; child
   return <review.Provider value={requestId}>{children}</review.Provider>;
 }
 
-function GrocyReference({ kind, id }: { kind: GrocyReferenceKind; id: number }): JSX.Element {
+export function useGrocyReferences() {
   const requestId = useContext(review);
-  const query = useQuery({
+  return useQuery({
     queryKey: ["action-integration-preview", "grocy_sf", requestId],
-    queryFn: ({ signal }) => getGrocyReferenceNames(requestId ?? "", signal),
+    queryFn: ({ signal }) => getGrocyReferenceSummaries(requestId ?? "", signal),
     enabled: Boolean(requestId),
     retry: false,
     staleTime: 30_000,
-  });
+  }).data;
+}
+
+function GrocyReference({ kind, id }: { kind: GrocyReferenceKind; id: number }): JSX.Element {
+  const refs = useGrocyReferences();
   const [path, fallback] = referenceRoutes[kind];
-  return objectLink(path, id, query.data?.get(`${kind}/${id}`) ?? `${fallback} #${id}`);
+  return objectLink(path, id, refs?.get(`${kind}/${id}`)?.name || `${fallback} #${id}`);
 }
 
 export function displayRef(value: string | number, kind?: GrocyReferenceKind): ReactNode {

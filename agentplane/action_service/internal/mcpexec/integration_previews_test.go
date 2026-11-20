@@ -176,7 +176,7 @@ func TestGrocySummariesMatchExactTypedReferences(t *testing.T) {
 	result := &mcp.CallToolResult{StructuredContent: map[string]any{
 		"result": []map[string]any{{"kind": "ok", "entity_type": "locations", "object_id": 7, "data": map[string]any{"name": "Pantry", "description": "internal"}}},
 	}}
-	if got := grocyEntitySummary("locations/7", result); got.GetName() != "Pantry" || got.GetKey() != "locations/7" {
+	if got := grocyEntitySummary("locations/7", result); got == nil || got.summary.GetName() != "Pantry" || got.summary.GetKey() != "locations/7" {
 		t.Errorf("summary = %v", got)
 	}
 	for _, key := range []string{"products/7", "locations/8"} {
@@ -256,4 +256,48 @@ func TestGmailMailLabelsRequireTheRecordedResourceInTheCurrentMailbox(t *testing
 	if len(ids) != 2 || ids[0] != "Label_19" || ids[1] != "Label_19" {
 		t.Errorf("label reads = %q, want exactly two Label_19 reads", ids)
 	}
+}
+
+func TestGrocyApprovalValuesFromExactRows(t *testing.T) {
+	product := grocyEntitySummary("product_edits/2", textResultForPreview(`[
+	  {"kind":"ok","entity_type":"products","object_id":2,"data":{
+	    "name":"Rolled oats","location_id":"4","min_stock_amount":"0.5","default_best_before_days":"-1",
+	    "due_type":1,"parent_product_id":null,"description":"Keep dry","calories":911
+	  }}
+	]`))
+	if product == nil {
+		t.Fatal("no product summary")
+	}
+	got := product.summary.GetProductEditCurrent()
+	if got.GetLocationId() != 4 || got.GetMinimumStock() != 0.5 ||
+		got.GetShelfLifeDays() != -1 || got.GetParentProductId() != 0 ||
+		got.GetDescription() != "Keep dry" || got.GetCalories() != 911 {
+		t.Errorf("unexpected product values: %v", got)
+	}
+	if product.links[0] != "locations/4" {
+		t.Errorf("unexpected product refs: %v", product.links)
+	}
+	result := textResultForPreview(`[
+	  {"kind":"ok","entity_type":"shopping_list","object_id":52,"data":{
+	    "product_id":"2","shopping_list_id":7,"qu_id":4,"amount":"2.5","done":false,"note":"Plain"
+	  }}
+	]`)
+	item := grocyEntitySummary("shopping_list/52", result)
+	if item == nil {
+		t.Fatal("no shopping item summary")
+	}
+	if len(item.links) != 3 || item.links[0] != "products/2" || item.links[1] != "shopping_lists/7" || item.links[2] != "quantity_units/4" {
+		t.Errorf("unexpected shopping refs: %v", item.links)
+	}
+	current := item.summary.GetShoppingItemCurrent()
+	if current.GetAmount() != 2.5 || current.Done == nil || current.GetDone() || current.GetNote() != "Plain" {
+		t.Errorf("unexpected shopping fields: %v", current)
+	}
+	if item := grocyEntitySummary("shopping_list/53", result); item != nil {
+		t.Errorf("mismatched item returned %v", item)
+	}
+}
+
+func textResultForPreview(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }

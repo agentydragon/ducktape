@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
+from grocy_mcp.grocy_types import GettableEntityType, WriteableEntityType
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
 from util.yaml_file_settings import YamlFileSettings
@@ -133,7 +133,7 @@ class CreateError(BaseModel):
 
 
 class GetResultBase(BaseModel):
-    entity_type: ReadableEntityType
+    entity_type: GettableEntityType
     object_id: int
 
 

@@ -732,6 +732,16 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     product_plus_note = [i for i in our_items if i.get("note") == "get the organic brand"]
     assert len(product_plus_note) == 1
 
+    exact = unwrap_result(
+        await mcp_client.call_tool("entities_get", {"entity_type": "shopping_list", "object_ids": [sl_item_id]})
+    )
+    assert len(exact) == 1
+    assert exact[0]["kind"] == "ok"
+    assert exact[0]["entity_type"] == "shopping_list"
+    assert exact[0]["object_id"] == sl_item_id
+    assert int(exact[0]["data"]["id"]) == sl_item_id
+    assert float(exact[0]["data"]["amount"]) == 2
+
     # Edit item — mark as done
     edit_sl = unwrap_result(
         await mcp_client.call_tool("shopping_list_item_edit", {"item_id": sl_item_id, "done": True})
