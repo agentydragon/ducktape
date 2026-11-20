@@ -15,11 +15,13 @@
   buildBuddyRunnerTools,
   preCommitPackages,
   devToolPackages,
+  rustfmt,
 }:
 
 ducktapePkgs
 // gafferPkgs
 // {
+  inherit rustfmt;
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";
@@ -126,9 +128,9 @@ ducktapePkgs
   # Shared by the image and its Nix check, so validation cannot drift to another tool list.
   # Size reference: environment-tools:devel-20261008225612-c58bc67 measured 5.93 GiB
   # unpacked (whole image, not just these tools), with a 1.86 GiB Kubernetes image size.
-  # Unpacked: Rust/Cargo/rustfmt/LLVM 2,242 MiB; Ansible/core 703 MiB; Codex 547 MiB;
+  # Historical snapshot before the Fenix rustfmt switch: Rust/Cargo/rustfmt/LLVM
+  # 2,242 MiB; Ansible/core 703 MiB; Codex 547 MiB;
   # Python interpreters 419 MiB; Claude Code 230 MiB; other tools/libraries 1,929 MiB.
-  # rustfmt retains rustc -> LLVM and cargo -> cargo-bootstrap -> rustc-bootstrap.
   environment-tools = pkgs.buildEnv {
     name = "environment-tools";
     paths = preCommitPackages;
