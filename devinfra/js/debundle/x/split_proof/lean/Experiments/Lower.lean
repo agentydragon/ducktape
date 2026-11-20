@@ -323,6 +323,17 @@ def scanIdentifiers (fuel : Nat) (wanted : IdentityNames) (sources : Array Json)
     Option IdentityCounts :=
   sources.foldlM (fun counts source => countIdentifiers fuel wanted source counts) {}
 
+/-- Factory inference needs exact counts when a factory has multiple direct calls. -/
+partial def countFactoryIdentifiers (wanted : Std.HashSet String) (j : Json)
+    (counts : Std.HashMap String Nat) : Std.HashMap String Nat := Id.run do
+  let mut counts := counts
+  if typ j == "Identifier" then
+    let n := str (fld j "name")
+    if n == "eval" || wanted.contains n then
+      counts := counts.insert n (counts.getD n 0 + 1)
+  for c in children j do counts := countFactoryIdentifiers wanted c counts
+  return counts
+
 /-- A module-scoped, hoisted function whose whole body returns its only parameter.
 The frontend's binder IDs must agree; raw, unannotated ESTree does not qualify. -/
 def identityDeclaration (s : Json) : Option String := do
@@ -355,6 +366,31 @@ def identityCall (s : Json) : Option String := do
   guard ((["n:0", "n:1", "n:2", "n:3", "n:4", "n:5", "n:6", "n:7", "n:8", "n:9"] : List String).contains (str (fld args[0]! "lit")))
   some (str (fld callee "name"))
 
+/-- Ordinary function whose sole statement creates a fresh deferred arrow. -/
+def factoryDeclaration (s : Json) : Option String := do
+  guard (typ s == "FunctionDeclaration" && !flag s "async" && !flag s "generator")
+  let id := fld s "id"
+  let params := items (fld s "params")
+  guard (typ id == "Identifier" && str (fld id "k") == "T" && !isNull (fld id "d"))
+  guard (params.size == 1 && typ params[0]! == "Identifier" && str (fld params[0]! "k") == "L" && !isNull (fld params[0]! "b"))
+  let body := fld s "body"
+  let ss := items (fld body "body")
+  guard (typ body == "BlockStatement" && ss.size == 1 && typ ss[0]! == "ReturnStatement")
+  guard (typ (fld ss[0]! "argument") == "ArrowFunctionExpression")
+  some (str (fld id "name"))
+
+/-- A direct call with exactly one module binding as argument. -/
+def factoryCall (s : Json) : Option (String × String) := do
+  guard (typ s == "VariableDeclaration" && str (fld s "kind") == "const")
+  let ds := items (fld s "declarations")
+  guard (ds.size == 1 && typ (fld ds[0]! "id") == "Identifier")
+  let call := fld ds[0]! "init"
+  let callee := fld call "callee"
+  let args := items (fld call "arguments")
+  guard (typ call == "CallExpression" && !flag call "optional" && typ callee == "Identifier" && str (fld callee "k") == "T")
+  guard (args.size == 1 && typ args[0]! == "Identifier" && str (fld args[0]! "k") == "T")
+  some (str (fld callee "name"), str (fld args[0]! "name"))
+
 structure Top where
   defs     : List String
   rawEager : Array String
@@ -364,6 +400,8 @@ structure Top where
   fallback : Array String
   hoisted  : Bool
   inert    : Bool
+  factoryDef : Option String
+  factoryCall : Option (String × String)
   identityDef : Option String
   identityCall : Option String
   source : Json
@@ -372,6 +410,7 @@ def analyzeTop (s : Json) : Top :=
   let acc := (visit [] false s).run {} |>.2
   { defs := topDefs s, rawEager := acc.eager, rawLazy := acc.lazy, assignedEager := acc.assignedEager, assignedLazy := acc.assignedLazy,
     fallback := acc.fallback, hoisted := isHoisted s, inert := inertTop s,
+    factoryDef := factoryDeclaration s, factoryCall := factoryCall s,
     identityDef := identityDeclaration s, identityCall := identityCall s,
     source := s }
 
@@ -390,6 +429,7 @@ structure Footprint where
   rawLazy  : List String
   /-- A source-derived trusted identity-call inference, if used for this unit. -/
   inferredIdentity : Option String := none
+  inferredFactory : Option String := none
 
 def dedupe (a : Array String) : List String := a.toList.eraseDups
 
@@ -431,6 +471,27 @@ itself and by every function body it can reach. -/
 def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
   let scan := inferredIdentities identityScanFuel tops
   let identities := scan.getD {}
+  let factories := tops.foldl (fun seen t => match t.factoryDef with
+    | some n => seen.insert n
+    | none => seen) ({} : Std.HashSet String)
+  let candidates := tops.foldl (fun seen t =>
+    match t.factoryCall with
+    | some (n, _) => if factories.contains n then seen.insert n else seen
+    | none => seen) ({} : Std.HashSet String)
+  let factoryIdentifiers := if candidates.isEmpty then ({} : Std.HashMap String Nat) else
+    tops.foldl (fun counts t => countFactoryIdentifiers candidates t.source counts) ({} : Std.HashMap String Nat)
+  let factoryCalls : Std.HashMap String Nat := tops.foldl (fun counts t =>
+    match t.factoryCall with
+    | some (n, _) => counts.insert n (counts.getD n 0 + 1)
+    | none => counts) {}
+  let defCounts : Std.HashMap String Nat := tops.foldl (fun counts t =>
+    t.defs.foldl (fun counts n => counts.insert n (counts.getD n 0 + 1)) counts) {}
+  let assigned : Std.HashSet String := tops.foldl (fun seen t =>
+    (t.assignedEager ++ t.assignedLazy).foldl (fun seen n => seen.insert n) seen) {}
+  let stableArgs : Std.HashSet String := tops.foldl (fun seen t =>
+    if t.hoisted then t.defs.foldl (fun seen n =>
+      if defCounts.getD n 0 == 1 && !assigned.contains n then seen.insert n else seen) seen
+    else seen) {}
   let declared : Std.HashSet String := tops.foldl (fun s t => t.defs.foldl (·.insert ·) s) {}
   let mentions : Std.HashMap String (Array String) := tops.foldl (fun m t =>
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.rawEager ++ t.rawLazy)) m) {}
@@ -438,7 +499,8 @@ def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
     t.defs.foldl (fun m d => m.insert d (m.getD d #[] ++ t.assignedLazy.filter declared.contains)) m) {}
   let footprints := tops.map fun t =>
     let identityInert := t.identityCall.any identities.contains
-    let effect := !(t.inert || identityInert) || t.rawEager.any (!declared.contains ·)
+    let factoryInert := !factoryIdentifiers.contains "eval" && t.factoryCall.any (fun (n, arg) => factories.contains n && stableArgs.contains arg && factoryIdentifiers.getD n 0 == factoryCalls.getD n 0 + 1)
+    let effect := !(t.inert || identityInert || factoryInert) || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
@@ -446,7 +508,8 @@ def finalizeWithScanStatus (tops : Array Top) : Array Footprint × Bool :=
       assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
       fallback := dedupe t.fallback,
       rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
-      inferredIdentity := if identityInert && !effect then t.identityCall else none }
+      inferredIdentity := if identityInert && !effect then t.identityCall else none,
+      inferredFactory := if factoryInert && !effect then t.factoryCall.map Prod.fst else none }
   (footprints, scan.isNone)
 
 def finalize (tops : Array Top) : Array Footprint := (finalizeWithScanStatus tops).1

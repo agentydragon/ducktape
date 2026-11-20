@@ -144,3 +144,9 @@ The target generates 16 bundles with four split attempts each at seed 1. It runs
 The callback fixture exercises the initialization-order regression where a callback passed to `map` reads a
 constant before its module initializes it. The checker reports obligations, and Node throws `ReferenceError`
 when loading the unsafe output. The extractor also has a separate regression test for the callback's eager read.
+
+## Closure factories
+
+The trusted source-to-footprint analysis also recognizes a direct call to a hoisted ordinary function with one plain parameter whose entire body returns an arrow function. The call must initialize a `const` and pass one uniquely defined, unassigned hoisted function binding. Every textual occurrence of the factory must be its declaration or a recognized direct initializer call; any `eval` identifier disables the rule. Deferred bodies are not executed at factory invocation. Eager reads of the factory and argument are retained, and the dependency closure preserves references of the returned arrow and callback.
+
+Creating the returned function allocates a fresh identity. This inference assumes allocation and identity are unobservable except through values subsequently made reachable by the program; it does not preserve an entire concrete JavaScript heap, finalization timing, resource exhaustion, or debugger observations. It is not a Lean semantic theorem about JavaScript: parser annotations, name and write analysis, and the footprint correspondence are trusted.
