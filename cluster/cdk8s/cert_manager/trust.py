@@ -51,9 +51,16 @@ def chart(app: App) -> Chart:
         interval="30m",
         install=RETRY_FAILED_INSTALL,
         values={
-            "replicaCount": 1,
-            # Backs a failurePolicy: Fail webhook on Bundle, so its absence rejects writes
-            # rather than degrading. Same treatment as the other blocking-webhook backends.
+            # Each replica serves the Bundle webhook. A leader lease serializes reconciliation.
+            "replicaCount": 2,
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+            "affinity": {
+                "podAntiAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": [
+                        {"labelSelector": {"matchLabels": {"app": NAME}}, "topologyKey": "kubernetes.io/hostname"}
+                    ]
+                }
+            },
             "priorityClassName": "system-cluster-critical",
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         },
