@@ -27,7 +27,7 @@ from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     FundingPolicy,
-    ProjectionSamplingRequest,
+    ProductProjectionRequest,
     ScenarioKey,
     SecuritySleeveWeight,
     SpendIndex,
@@ -108,11 +108,16 @@ async def _product_for_ipo_probability(
 def _private_equity_spread(product: ProductService) -> tuple[int, int]:
     """Terminal PE value's p10-to-p90 spread, plus the failure count."""
 
-    response = product.terminal_distribution(
-        ProjectionSamplingRequest(
-            scenario=_SCENARIO, first_seed=0, rollout_count=64, metric="private_equity_value", percentiles=(10.0, 90.0)
+    response = product.projection_summary(
+        ProductProjectionRequest(
+            scenario=_SCENARIO,
+            first_seed=0,
+            rollout_count=64,
+            metric="private_equity_value",
+            fan_percentiles=(10.0, 90.0),
+            terminal_percentiles=(10.0, 90.0),
         )
-    )
+    ).terminal_distribution
     low, high = (int(str(value)) for value in response.terminal_metric_percentiles["value_quanta"])
     return high - low, response.failed_count
 

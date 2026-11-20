@@ -78,7 +78,6 @@ from finance.augur.product.wire import (
     PrivateEquityMarkerEvent,
     PrivateEquityOpportunityEvent,
     ProductProjectionRequest,
-    ProjectionSamplingRequest,
     PropertyMaintenancePaymentEvent,
     PropertyPurchase,
     PropertyPurchaseEvent,
@@ -224,18 +223,24 @@ def scenario_key() -> ScenarioKey:
     return _scenario_key()
 
 
-def _sampling_request(
+def _projection_request(
     scenario: ScenarioKey,
     *,
     first_seed: int = 7,
-    rollout_count: int = 1,
-    metric: MetricName = "net_worth",
-    percentiles: tuple[float, ...] = (50.0,),
-) -> ProjectionSamplingRequest:
-    """Build a product fan request while keeping seed/batch/metric overrides visible."""
+    rollout_count: int = 2,
+    metric: MetricName = "cash",
+    fan_percentiles: tuple[float, ...] = (5, 50, 95),
+    terminal_percentiles: tuple[float, ...] = (0, 50, 100),
+) -> ProductProjectionRequest:
+    """Build a product projection request while keeping seed/batch/metric/percentile overrides visible."""
 
-    return ProjectionSamplingRequest(
-        scenario=scenario, first_seed=first_seed, rollout_count=rollout_count, metric=metric, percentiles=percentiles
+    return ProductProjectionRequest(
+        scenario=scenario,
+        first_seed=first_seed,
+        rollout_count=rollout_count,
+        metric=metric,
+        fan_percentiles=fan_percentiles,
+        terminal_percentiles=terminal_percentiles,
     )
 
 
@@ -245,14 +250,16 @@ def _rollout_request(scenario: ScenarioKey, *, seed: int = 7) -> RolloutRequest:
     return RolloutRequest(scenario=scenario, seed=seed)
 
 
-def test_metric_fan_simulates_requested_horizon(product: service.ProductService, counting_model: CountingModel) -> None:
+def test_projection_simulates_requested_horizon(product: service.ProductService, counting_model: CountingModel) -> None:
     """Product projections run at the requested horizon, not the server max horizon."""
 
-    def fan_request(horizon_months: int) -> ProjectionSamplingRequest:
-        return _sampling_request(_scenario_key(horizon_months=horizon_months))
+    def fan_request(horizon_months: int) -> ProductProjectionRequest:
+        return _projection_request(
+            _scenario_key(horizon_months=horizon_months), rollout_count=1, metric="net_worth", fan_percentiles=(50.0,)
+        )
 
-    short = product.metric_fan(fan_request(2))
-    long = product.metric_fan(fan_request(5))
+    short = product.projection_summary(fan_request(2)).metric_fan
+    long = product.projection_summary(fan_request(5)).metric_fan
 
     assert [request.horizon_months for request in counting_model.sample_requests] == [2, 5]
     # horizon h → snapshots 0..h, i.e. h+1 monthly points.
@@ -267,10 +274,10 @@ def test_metric_fan_simulates_requested_horizon(product: service.ProductService,
     assert one(short.terminal_metric_percentiles["value_quanta"]) == pytest.approx(short_by_month[2])
 
 
-def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductService, augur_config: Config) -> None:
-    request = _sampling_request(_scenario_key(horizon_months=augur_config.max_horizon_months + 1))
+def test_projection_rejects_horizon_above_server_max(product: service.ProductService, augur_config: Config) -> None:
+    request = _projection_request(_scenario_key(horizon_months=augur_config.max_horizon_months + 1))
     with pytest.raises(ValueError, match=f"exceeds server max {augur_config.max_horizon_months}"):
-        product.metric_fan(request)
+        product.projection_summary(request)
 
 
 def test_product_fails_when_sample_is_missing_required_series(
@@ -327,9 +334,17 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
-    fan = product.metric_fan(
-        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100))
+    summary = product.projection_summary(
+        _projection_request(
+            scenario_key,
+            first_seed=7,
+            rollout_count=2,
+            metric="cash",
+            fan_percentiles=(0, 50, 100),
+            terminal_percentiles=(0, 1, 2, 50, 100),
+        )
     )
+    fan = summary.metric_fan
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
     assert counting_model.sample_requests[0].required_level_series == frozenset(
@@ -375,11 +390,8 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         "value_quanta": [_usd_quanta(248_875.0)] * 3,
     }
 
-    terminal_distribution = product.terminal_distribution(
-        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 1, 2, 50, 100))
-    )
+    terminal_distribution = summary.terminal_distribution
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
     assert terminal_distribution.currency_code == "USD"
     assert terminal_distribution.currency_quantum == "0.01"
     assert terminal_distribution.metric == "cash"
@@ -396,7 +408,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
 
     detail = product.rollout(_rollout_request(scenario_key))
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
     assert detail.rollout.seed == 7
     assert detail.currency_code == "USD"
     assert detail.currency_quantum == "0.01"
@@ -416,24 +428,18 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         _usd_quanta(1_000.0),
     ]
 
-    holding_fan = product.metric_fan(
-        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="holding_value", percentiles=(50,))
-    )
+    holding_fan = product.projection_summary(
+        _projection_request(scenario_key, first_seed=7, rollout_count=2, metric="holding_value", fan_percentiles=(50,))
+    ).metric_fan
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,), (7, 8)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,), (7, 8)]
     assert holding_fan.monthly_metric_fan["value_quanta"][0] == _usd_quanta(835_500.0)
 
-    fan_with_one_new_seed = product.metric_fan(
-        _sampling_request(scenario_key, first_seed=7, rollout_count=3, metric="cash", percentiles=(50,))
-    )
+    fan_with_one_new_seed = product.projection_summary(
+        _projection_request(scenario_key, first_seed=7, rollout_count=3, metric="cash", fan_percentiles=(50,))
+    ).metric_fan
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [
-        (7, 8),
-        (7, 8),
-        (7,),
-        (7, 8),
-        (7, 8, 9),
-    ]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,), (7, 8), (7, 8, 9)]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
@@ -444,9 +450,9 @@ def test_a_single_rollout_fan_agrees_with_the_selected_rollout_for_every_metric(
 
     for metric in get_args(MetricName):
         column = monthly_metrics[f"{metric}_quanta"]
-        fan = product.metric_fan(
-            _sampling_request(scenario_key, first_seed=7, rollout_count=1, metric=metric, percentiles=(50.0,))
-        )
+        fan = product.projection_summary(
+            _projection_request(scenario_key, first_seed=7, rollout_count=1, metric=metric, fan_percentiles=(50.0,))
+        ).metric_fan
         assert fan.monthly_metric_fan["value_quanta"] == column, metric
         # Terminal shortfall is cumulative over the horizon; every other metric is the end snapshot.
         terminal = str(sum(_quanta_int(value) for value in column)) if metric == "shortfall" else column[-1]
@@ -483,26 +489,22 @@ class OverlapRecordingSampler:
                 self.active -= 1
 
 
-def test_concurrent_fan_and_terminal_requests_run_serially(
+def test_concurrent_projection_and_rollout_requests_run_serially(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     overlap = OverlapRecordingSampler(counting_model.inner)
     counting_model.inner = overlap
 
-    fan_request = _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(5, 50, 95))
-    terminal_request = _sampling_request(
-        scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
-    )
     with ThreadPoolExecutor(max_workers=2) as executor:
-        fan_future = executor.submit(product.metric_fan, fan_request)
+        projection_future = executor.submit(product.projection_summary, _projection_request(scenario_key))
         assert overlap.started.wait(timeout=5)
-        terminal_future = executor.submit(product.terminal_distribution, terminal_request)
+        rollout_future = executor.submit(product.rollout, _rollout_request(scenario_key))
         overlap.release.set()
-        fan_future.result(timeout=10)
-        terminal_future.result(timeout=10)
+        projection_future.result(timeout=10)
+        rollout_future.result(timeout=10)
 
     assert overlap.max_active == 1
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
 
 
 def test_terminal_distribution_samples_identify_rollout_terminal_values(
@@ -523,11 +525,11 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     product = make_product_service(model)
     scenario = _scenario_key(horizon_months=2)
 
-    distribution = product.terminal_distribution(
-        _sampling_request(
-            scenario, first_seed=101, rollout_count=3, metric="private_equity_value", percentiles=(0, 50, 100)
+    distribution = product.projection_summary(
+        _projection_request(
+            scenario, first_seed=101, rollout_count=3, metric="private_equity_value", terminal_percentiles=(0, 50, 100)
         )
-    )
+    ).terminal_distribution
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
     assert distribution.terminal_metric_percentiles == {
@@ -539,19 +541,6 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
         "value_quanta": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
         "failed": [False, False, False],
     }
-
-
-def _projection_request(
-    scenario: ScenarioKey, *, first_seed: int = 7, rollout_count: int = 2, metric: MetricName = "cash"
-) -> ProductProjectionRequest:
-    return ProductProjectionRequest(
-        scenario=scenario,
-        first_seed=first_seed,
-        rollout_count=rollout_count,
-        metric=metric,
-        fan_percentiles=(5, 50, 95),
-        terminal_percentiles=(0, 50, 100),
-    )
 
 
 def _with_cache_entries(config: Config, entries: int) -> Config:
@@ -893,7 +882,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     # scenario_key carries no rent.
-    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=1, metric="cash", percentiles=(50,)))
+    product.rollout(_rollout_request(scenario_key))
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
