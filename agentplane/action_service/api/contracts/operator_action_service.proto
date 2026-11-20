@@ -50,6 +50,11 @@ service OperatorActionService {
     option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-thread-summaries"};
   }
 
+  // Live display metadata for draft, message, label and filter IDs in a recorded Gmail Action.
+  rpc GetGmailResourceSummaries(GetGmailResourceSummariesRequest) returns (GetGmailResourceSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-resource-summaries"};
+  }
+
   // Live names of nodes or a workspace named by a supported recorded Tana request.
   // An unavailable node or backend is omitted. The receipt's arguments remain authoritative.
   rpc GetTanaNodeSummaries(GetTanaNodeSummariesRequest) returns (GetTanaNodeSummariesResponse) {
@@ -109,6 +114,46 @@ message GetGmailThreadSummariesResponse {
 message GmailThreadSummary {
   string thread_id = 1;
   string subject = 2;
+}
+
+message GetGmailResourceSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGmailResourceSummariesResponse {
+  repeated GmailResourceTitle drafts = 1;
+  repeated GmailResourceTitle messages = 2;
+  repeated GmailResourceTitle labels = 3;
+  repeated GmailFilterSummary filters = 4;
+}
+
+message GmailResourceTitle {
+  string id = 1;
+  string title = 2;
+}
+
+message GmailFilterSummary {
+  string id = 1;
+  GmailFilterCriteria criteria = 2;
+  GmailFilterAction action = 3;
+}
+
+message GmailFilterCriteria {
+  optional string from = 1;
+  optional string to = 2;
+  optional string subject = 3;
+  optional string query = 4;
+  optional string negated_query = 5;
+  optional bool has_attachment = 6;
+  optional bool exclude_chats = 7;
+  optional int32 size = 8;
+  optional string size_comparison = 9;
+}
+
+message GmailFilterAction {
+  repeated string add_label_ids = 1;
+  repeated string remove_label_ids = 2;
+  optional string forward = 3;
 }
 
 message GetTanaNodeSummariesRequest {

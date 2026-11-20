@@ -1,57 +1,27 @@
-import { Anchor, Code, Stack, Text } from "@mantine/core";
-import type { JSX, ReactNode } from "react";
+import { Stack, Text } from "@mantine/core";
+import type { JSX } from "react";
 import { z } from "zod";
 
 import { TextBlock } from "../../ui/text_block";
 import { modifyThreadLabelsArguments } from "../schemas/integration_previews";
 import { defineCallPreview, definePreview, type CallPreviewProps, type PreviewProps } from "./entry";
+import {
+  draftHref,
+  EmailField,
+  GmailLink,
+  labelName,
+  listArguments,
+  systemLabels,
+  ThreadTarget,
+  useGmailSummaries,
+  wrap,
+} from "./gmail/common";
+import { draftResult, mailReadRenderers, DraftTarget, messageHeader } from "./gmail/mail";
+import { labelRenderers } from "./gmail/labels";
+import { filterRenderers } from "./gmail/filters";
 import { useIntegrationPreviewNames } from "./integration_previews";
-import { expandsForRejectedArguments, type ActionPresentation } from "./presentation";
+import { type ActionPresentation } from "./presentation";
 import { defineResultPreview, type ResultPreviewProps } from "./result_entry";
-
-const gmail = "https://mail.google.com/mail/u/0/";
-const threadHref = (id: string) => `${gmail}#all/${encodeURIComponent(id)}`;
-const draftHref = (id: string) => `${gmail}#drafts?compose=${encodeURIComponent(id)}`;
-const wrap = { overflowWrap: "anywhere" } as const;
-
-function GmailLink({ href, children }: { href: string; children: ReactNode }): JSX.Element {
-  return (
-    <Anchor href={href} target="_blank" rel="noreferrer" inherit style={wrap}>
-      {children}
-    </Anchor>
-  );
-}
-
-function ThreadTarget({ id, subject }: { id: string; subject?: string | null }): JSX.Element {
-  return <GmailLink href={threadHref(id)}>{subject || <Code>{id}</Code>}</GmailLink>;
-}
-
-const systemLabels: ReadonlyMap<string, string> = new Map([
-  ["INBOX", "Inbox"],
-  ["SPAM", "Spam"],
-  ["TRASH", "Trash"],
-  ["UNREAD", "Unread"],
-  ["STARRED", "Starred"],
-  ["IMPORTANT", "Important"],
-  ["SENT", "Sent"],
-  ["DRAFT", "Drafts"],
-  ["CATEGORY_PERSONAL", "Primary"],
-  ["CATEGORY_SOCIAL", "Social"],
-  ["CATEGORY_PROMOTIONS", "Promotions"],
-  ["CATEGORY_UPDATES", "Updates"],
-  ["CATEGORY_FORUMS", "Forums"],
-]);
-
-function EmailField({ name, value }: { name: string; value?: string | null }): JSX.Element | null {
-  return value ? (
-    <Text size="sm" style={wrap}>
-      <Text component="span" fw={600} inherit>
-        {name}
-      </Text>{" "}
-      {value}
-    </Text>
-  ) : null;
-}
 
 const draftArguments = z.strictObject({
   to: z.array(z.string()).min(1),
@@ -69,11 +39,6 @@ const messageSummary = z.object({
   snippet: z.string().nullish(),
   payload: z.object({ headers: headers.nullish() }).nullish(),
 });
-const draftResult = z.object({ id: z.string().min(1), message: messageSummary.nullish() });
-
-function header(message: z.infer<typeof messageSummary> | null | undefined, name: string): string | undefined {
-  return message?.payload?.headers?.find((item) => item.name.toLowerCase() === name)?.value;
-}
 
 function DraftFields({
   args,
@@ -124,15 +89,16 @@ function DraftCall({
   args,
   result,
   requestId,
-}: CallPreviewProps<DraftArguments, z.infer<typeof draftResult>>): JSX.Element {
-  const subject = header(result?.message, "subject") || args.subject || "(no subject)";
+  updating = false,
+}: CallPreviewProps<DraftArguments, z.infer<typeof draftResult>> & { updating?: boolean }): JSX.Element {
+  const subject = messageHeader(result?.message, "subject") || args.subject || "(no subject)";
   return (
     <Stack gap="xs">
       <Text size="sm" fw={600} style={wrap}>
         {result ? <GmailLink href={draftHref(result.id)}>{subject}</GmailLink> : subject}
       </Text>
       <Text size="sm" c="dimmed">
-        {result ? "Saved as an unsent draft." : "Creates an unsent draft."}
+        {result ? "Saved as an unsent draft." : updating ? "Replaces the unsent draft." : "Creates an unsent draft."}
       </Text>
       {args.thread_id && <DraftReply id={args.thread_id} requestId={requestId} />}
       <DraftFields args={args} clamp={result !== undefined} />
@@ -145,43 +111,23 @@ function DraftCallArguments({ args, requestId }: PreviewProps<DraftArguments>): 
   return <DraftCall args={args} requestId={requestId} result={undefined} />;
 }
 
-const draftPresentation: ActionPresentation = {
-  fallbackLabel: "Gmail: Draft email",
-  call: defineCallPreview(draftArguments, draftResult, DraftCall),
-  pane: { collapsed: definePreview(draftArguments, DraftCollapsed), opened: draftPreview },
-  details: {
-    arguments: draftPreview,
-    result: defineResultPreview(draftResult, ({ result }) => (
-      <Text size="sm">
-        Saved as an unsent draft.{" "}
-        <GmailLink href={draftHref(result.id)}>{header(result.message, "subject") || "Open draft in Gmail"}</GmailLink>
-      </Text>
-    )),
-  },
-  offersCardDecisionButtons: (args) => {
-    const parsed = draftArguments.safeParse(args);
-    return parsed.success && !parsed.data.thread_id;
-  },
-};
+const searchArguments = listArguments.extend({ labelIds: z.array(z.string()).nullish() });
 
-const searchArguments = z.strictObject({
-  q: z.string().nullish(),
-  labelIds: z.array(z.string()).nullish(),
-  maxResults: z.int().nonnegative().nullish(),
-  pageToken: z.string().nullish(),
-  includeSpamTrash: z.boolean().nullish(),
-});
-
-function SearchScope({ args }: PreviewProps<z.infer<typeof searchArguments>>): JSX.Element {
+function SearchScope({ args, requestId }: PreviewProps<z.infer<typeof searchArguments>>): JSX.Element {
+  const summaries = useGmailSummaries(needsLabelLookup(args) ? requestId : undefined);
   return (
     <Stack gap={4}>
       {args.q ? <EmailField name="Query" value={args.q} /> : <Text size="sm">All threads</Text>}
-      <EmailField name="All labels" value={args.labelIds?.map((id) => systemLabels.get(id) ?? id).join(", ")} />
+      <EmailField name="All labels" value={args.labelIds?.map((id) => labelName(id, summaries?.labels)).join(", ")} />
       {args.maxResults != null && <Text size="sm">Up to {args.maxResults} threads</Text>}
       {args.includeSpamTrash && <Text size="sm">Includes spam and trash</Text>}
       {args.pageToken && <Text size="sm">Continues a previous search</Text>}
     </Stack>
   );
+}
+
+function needsLabelLookup(args: z.infer<typeof searchArguments>): boolean {
+  return args.labelIds?.some((id) => !systemLabels.has(id)) ?? false;
 }
 
 const searchPreview = definePreview(searchArguments, SearchScope);
@@ -205,7 +151,7 @@ function ThreadResults({ result, context }: ResultPreviewProps<z.infer<typeof se
   const threads = result.threads ?? [];
   const names = useIntegrationPreviewNames(
     "gmail",
-    threads.some((thread) => !header(thread.messages?.[0], "subject")) ? context?.requestId : undefined
+    threads.some((thread) => !messageHeader(thread.messages?.[0], "subject")) ? context?.requestId : undefined
   );
   return (
     <Stack gap="xs">
@@ -217,14 +163,14 @@ function ThreadResults({ result, context }: ResultPreviewProps<z.infer<typeof se
       {threads.map((thread) => {
         const message = thread.messages?.[0];
         const snippet = thread.snippet || message?.snippet;
-        const title = header(message, "subject") || names?.get(thread.id) || snippet;
+        const title = messageHeader(message, "subject") || names?.get(thread.id) || snippet;
         return (
           <Stack key={thread.id} gap={2}>
             <Text size="sm" fw={600}>
               <ThreadTarget id={thread.id} subject={title} />
             </Text>
-            <EmailField name="From" value={header(message, "from")} />
-            <EmailField name="Date" value={header(message, "date")} />
+            <EmailField name="From" value={messageHeader(message, "from")} />
+            <EmailField name="Date" value={messageHeader(message, "date")} />
             {snippet && title !== snippet && (
               <Text size="sm" c="dimmed" style={wrap}>
                 {snippet}
@@ -240,10 +186,16 @@ function ThreadResults({ result, context }: ResultPreviewProps<z.infer<typeof se
 
 const searchPresentation: ActionPresentation = {
   fallbackLabel: "Gmail: Search threads",
-  pane: { collapsed: searchPreview },
+  pane: { collapsed: searchPreview, opened: searchPreview },
   details: { arguments: searchPreview, result: defineResultPreview(searchResult, ThreadResults) },
-  compactCardExpands: expandsForRejectedArguments(searchArguments),
-  offersCardDecisionButtons: (args) => searchArguments.safeParse(args).success,
+  compactCardExpands: (args) => {
+    const parsed = searchArguments.safeParse(args);
+    return !parsed.success || needsLabelLookup(parsed.data);
+  },
+  offersCardDecisionButtons: (args) => {
+    const parsed = searchArguments.safeParse(args);
+    return parsed.success && !needsLabelLookup(parsed.data);
+  },
 };
 
 function LabelChanges({ add, remove }: { add?: string[] | null; remove?: string[] | null }): JSX.Element {
@@ -306,8 +258,83 @@ const relabelPresentation: ActionPresentation = {
   },
 };
 
-export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const draftPresentation: ActionPresentation = {
+  fallbackLabel: "Gmail: Draft email",
+  call: defineCallPreview(draftArguments, draftResult, DraftCall),
+  pane: { collapsed: definePreview(draftArguments, DraftCollapsed), opened: draftPreview },
+  details: {
+    arguments: draftPreview,
+    result: defineResultPreview(draftResult, ({ result }) => (
+      <Text size="sm">
+        Saved as an unsent draft.{" "}
+        <GmailLink href={draftHref(result.id)}>
+          {messageHeader(result.message, "subject") || "Open draft in Gmail"}
+        </GmailLink>
+      </Text>
+    )),
+  },
+  offersCardDecisionButtons: (args) => {
+    const parsed = draftArguments.safeParse(args);
+    return parsed.success && !parsed.data.thread_id;
+  },
+};
+
+const draftUpdateArguments = draftArguments.extend({ draft_id: z.string().min(1) });
+type DraftUpdateArguments = z.infer<typeof draftUpdateArguments>;
+
+function DraftUpdateCall({
+  args,
+  result,
+  requestId,
+}: CallPreviewProps<DraftUpdateArguments, z.infer<typeof draftResult>>): JSX.Element {
+  return (
+    <Stack gap="xs">
+      {!result && (
+        <Text size="sm">
+          Replace <DraftTarget id={args.draft_id} requestId={requestId} />
+        </Text>
+      )}
+      <DraftCall args={args} result={result} requestId={requestId} updating />
+    </Stack>
+  );
+}
+const draftUpdatePreview = definePreview(draftUpdateArguments, ({ args, requestId }) => (
+  <DraftUpdateCall args={args} result={undefined} requestId={requestId} />
+));
+const draftDeleteArguments = z.strictObject({ draft_id: z.string().min(1) });
+const draftDeletePreview = definePreview(draftDeleteArguments, ({ args, requestId }) => (
+  <Text size="sm">
+    Permanently delete the unsent draft <DraftTarget id={args.draft_id} requestId={requestId} />.
+  </Text>
+));
+
+export const gmailRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ["drafts_create", draftPresentation],
+  [
+    "drafts_update",
+    {
+      fallbackLabel: "Replace Gmail draft",
+      call: defineCallPreview(draftUpdateArguments, draftResult, DraftUpdateCall),
+      pane: { collapsed: definePreview(draftUpdateArguments, DraftCollapsed), opened: draftUpdatePreview },
+      details: { arguments: draftUpdatePreview, result: draftPresentation.details?.result },
+    },
+  ],
+  [
+    "drafts_delete",
+    {
+      fallbackLabel: "Delete Gmail draft",
+      pane: {
+        collapsed: definePreview(draftDeleteArguments, () => (
+          <Text size="sm">Permanently delete one unsent draft.</Text>
+        )),
+        opened: draftDeletePreview,
+      },
+      details: { arguments: draftDeletePreview, emptyResult: <Text size="sm">Unsent draft deleted.</Text> },
+    },
+  ],
+  ...mailReadRenderers,
+  ...labelRenderers,
+  ...filterRenderers,
   ["threads_list", searchPresentation],
   ["threads_modify_labels", relabelPresentation],
 ]);

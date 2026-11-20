@@ -1,5 +1,6 @@
 """One named set of real-host screenshots per registered Action renderer."""
 
+import base64
 import json
 from dataclasses import dataclass
 
@@ -142,6 +143,44 @@ ENVIRONMENT_VIEW = {
     "observed_state": {"operating_mode": "OPERATING_MODE_RUNNING", "readiness": {"state": "READINESS_STATE_READY"}},
 }
 
+
+GMAIL_MESSAGE = {
+    "id": "demo-message",
+    "threadId": "demo-thread",
+    "labelIds": ["INBOX", "UNREAD"],
+    "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+            {"name": "Subject", "value": "Deployment approval"},
+            {"name": "From", "value": "Release bot <deployments@example.com>"},
+            {"name": "To", "value": "reviewer@example.com"},
+            {"name": "Date", "value": "Thu, 19 Nov 2026 19:00:00 +0000"},
+        ],
+        "body": {"data": base64.urlsafe_b64encode(b"The staging deployment passed.").decode()},
+    },
+}
+GMAIL_DRAFT = {"id": "demo-draft", "message": GMAIL_MESSAGE}
+GMAIL_LABEL = {
+    "id": "Label_19",
+    "name": "Deployments/Reviewed",
+    "type": "user",
+    "threadsTotal": 3,
+    "threadsUnread": 0,
+    "labelListVisibility": "labelShowIfUnread",
+    "messageListVisibility": "show",
+}
+GMAIL_FILTER = {
+    "id": "demo-filter",
+    "criteria": {
+        "from": "deployments@example.com",
+        "subject": "Staging",
+        "negatedQuery": "is:starred",
+        "hasAttachment": True,
+        "size": 2000,
+        "sizeComparison": "larger",
+    },
+    "action": {"addLabelIds": ["STARRED"], "removeLabelIds": ["INBOX"], "forward": "archive@example.com"},
+}
 
 # Authored examples, not defaults generated from schemas: show meaningful optional arguments and
 # domain results. Names are also the gallery identities. The test checks these against the registry.
@@ -598,6 +637,98 @@ EXAMPLES = (
             "Deployment review",
         ),
     ),
+    ActionExample("gmail", "drafts_get", {"id": GMAIL_DRAFT["id"]}, GMAIL_DRAFT, "Unsent draft"),
+    ActionExample(
+        "gmail",
+        "drafts_list",
+        {"q": "subject:deployment", "maxResults": 10},
+        {
+            "drafts": [{"id": GMAIL_DRAFT["id"], "message": {"id": GMAIL_MESSAGE["id"], "threadId": "demo-thread"}}],
+            "resultSizeEstimate": 1,
+            "nextPageToken": "opaque-drafts-page",
+        },
+        "More drafts available.",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "gmail",
+        "drafts_update",
+        {
+            "draft_id": GMAIL_DRAFT["id"],
+            "to": ["release-reviewer@example.com"],
+            "subject": "Revised deployment approval",
+            "body": "Please approve the revised deployment.",
+        },
+        {"id": GMAIL_DRAFT["id"], "message": {"id": "updated-message"}},
+        "Saved as an unsent draft.",
+    ),
+    ActionExample("gmail", "drafts_delete", {"draft_id": GMAIL_DRAFT["id"]}, None, "Unsent draft deleted."),
+    ActionExample(
+        "gmail",
+        "threads_get",
+        {"id": "demo-thread", "format": "full"},
+        {"id": "demo-thread", "messages": [GMAIL_MESSAGE]},
+        "The staging deployment passed.",
+    ),
+    ActionExample(
+        "gmail",
+        "messages_get",
+        {"id": GMAIL_MESSAGE["id"], "format": "metadata", "metadataHeaders": ["Subject", "From"]},
+        {
+            "id": GMAIL_MESSAGE["id"],
+            "threadId": "demo-thread",
+            "labelIds": ["INBOX", "UNREAD"],
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Deployment notice metadata"},
+                    {"name": "From", "value": "Release bot <deployments@example.com>"},
+                ]
+            },
+        },
+        "Deployment notice metadata",
+    ),
+    ActionExample(
+        "gmail",
+        "labels_list",
+        {},
+        {"labels": [{"id": "INBOX", "name": "INBOX", "type": "system"}, GMAIL_LABEL]},
+        "Deployments/Reviewed",
+        compact_card_expands=False,
+    ),
+    ActionExample("gmail", "labels_get", {"id": GMAIL_LABEL["id"]}, GMAIL_LABEL, "3 total, 0 unread"),
+    ActionExample(
+        "gmail",
+        "labels_create",
+        {"name": GMAIL_LABEL["name"], "label_list_visibility": "labelShowIfUnread"},
+        GMAIL_LABEL,
+        "Gmail created the label.",
+        compact_card_expands=False,
+    ),
+    ActionExample(
+        "gmail",
+        "labels_patch",
+        {"label_id": GMAIL_LABEL["id"], "label_list_visibility": "labelShowIfUnread"},
+        GMAIL_LABEL,
+        "Gmail saved the label changes.",
+        live_preview=(
+            "gmail-resource-summaries",
+            {"labels": [{"id": GMAIL_LABEL["id"], "title": GMAIL_LABEL["name"]}]},
+            "Deployments/Reviewed",
+        ),
+    ),
+    ActionExample("gmail", "labels_delete", {"label_id": GMAIL_LABEL["id"]}, None, "Label deleted."),
+    ActionExample(
+        "gmail", "filters_list", {}, {"filter": [GMAIL_FILTER]}, "archive@example.com", compact_card_expands=False
+    ),
+    ActionExample("gmail", "filters_get", {"id": GMAIL_FILTER["id"]}, GMAIL_FILTER, "archive@example.com"),
+    ActionExample(
+        "gmail",
+        "filters_create",
+        {"criteria": GMAIL_FILTER["criteria"], "action": GMAIL_FILTER["action"]},
+        GMAIL_FILTER,
+        "Gmail created the filter.",
+    ),
+    ActionExample("gmail", "filters_delete", {"filter_id": GMAIL_FILTER["id"]}, None, "Filter deleted."),
     ActionExample(
         "grocy_sf",
         "products_list",

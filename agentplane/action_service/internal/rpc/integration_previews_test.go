@@ -17,10 +17,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type gmailSummariesFunc func(context.Context, []string) []*operator_action_servicepb.GmailThreadSummary
+type gmailSummariesFunc struct {
+	// Embed unused preview methods so the test fails if it calls an unrelated resource.
+	gmailPreviewProvider
+	threads func(context.Context, []string) []*operator_action_servicepb.GmailThreadSummary
+}
 
 func (f gmailSummariesFunc) GmailThreadSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
-	return f(ctx, ids)
+	return f.threads(ctx, ids)
 }
 
 type tanaSummariesFuncs struct {
@@ -40,14 +44,14 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 	gmailIDs := make(chan []string, 1)
 	tanaIDs := make(chan []string, 2)
 	previews := IntegrationPreviews{
-		Gmail: gmailSummariesFunc(func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
+		Gmail: gmailSummariesFunc{threads: func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
 			select {
 			case gmailIDs <- ids:
 			default:
 				t.Error("unexpected extra Gmail lookup")
 			}
 			return []*operator_action_servicepb.GmailThreadSummary{{ThreadId: "thread-1", Subject: "Deployment review"}}
-		}),
+		}},
 		Tana: tanaSummariesFuncs{nodes: func(_ context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
 			select {
 			case tanaIDs <- ids:
@@ -146,12 +150,12 @@ func TestGmailThreadSummariesForStoredReplyAndSearch(t *testing.T) {
 	var lookedUp []string
 	var mu sync.Mutex
 	previews := IntegrationPreviews{
-		Gmail: gmailSummariesFunc(func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
+		Gmail: gmailSummariesFunc{threads: func(_ context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
 			mu.Lock()
 			defer mu.Unlock()
 			lookedUp = append(lookedUp, ids...)
 			return nil
-		}),
+		}},
 	}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
@@ -270,5 +274,80 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 	case got := <-lookups:
 		t.Errorf("unexpected lookup %q", got)
 	default:
+	}
+}
+
+type gmailResourceRecorder struct {
+	gmailPreviewProvider
+	labels chan []string
+	drafts chan []string
+}
+
+func (r gmailResourceRecorder) GmailLabelNames(_ context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+	r.labels <- ids
+	return nil
+}
+
+func (r gmailResourceRecorder) GmailDraftSubjects(_ context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+	r.drafts <- ids
+	return nil
+}
+
+func TestGmailResourceSummariesLookUpOnlyRecordedResources(t *testing.T) {
+	gmail := gmailResourceRecorder{labels: make(chan []string, 4), drafts: make(chan []string, 4)}
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(
+		t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, IntegrationPreviews{Gmail: gmail},
+	)
+	submit := func(name, args string) store.ActionRequest {
+		t.Helper()
+		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+			IdempotencyKey: name, Action: store.ActionIdentity{Group: "gmail", Name: name},
+			Arguments: json.RawMessage(args), Title: name,
+		}, store.Admission{RequestID: uuid.New()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	lookup := func(receipt store.ActionRequest) *operator_action_servicepb.GetGmailResourceSummariesRequest {
+		t.Helper()
+		request := &operator_action_servicepb.GetGmailResourceSummariesRequest{RequestId: receipt.ID.String()}
+		_, err := s.operators.GetGmailResourceSummaries(as(t, s.operatorToken), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+
+	filter := submit("filters_create", `{"criteria":{"subject":"review"},"action":{"addLabelIds":["Label_19"],"removeLabelIds":["INBOX"]},"label_id":"unrelated-label"}`)
+	request := lookup(filter)
+	_, err := s.operators.GetGmailResourceSummaries(as(t, callerCertificate), request)
+	wantCode(t, "workload cannot read Gmail resource summaries", err, codes.Unauthenticated)
+	draft := submit("drafts_delete", `{"draft_id":"test-draft","id":"unrelated-draft"}`)
+	lookup(draft)
+	s.decide(t, draft, store.VerdictDeny)
+	lookup(draft)
+
+	for _, check := range []struct {
+		calls chan []string
+		want  []string
+	}{
+		{gmail.labels, []string{"Label_19", "INBOX"}},
+		{gmail.drafts, []string{"test-draft"}},
+	} {
+		select {
+		case got := <-check.calls:
+			if !slices.Equal(got, check.want) {
+				t.Errorf("looked up %q; want %q", got, check.want)
+			}
+		default:
+			t.Errorf("did not look up %q", check.want)
+		}
+		select {
+		case got := <-check.calls:
+			t.Errorf("unexpected lookup %q", got)
+		default:
+		}
 	}
 }

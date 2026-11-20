@@ -10,12 +10,78 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (e *Executor) GmailThreadSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.GmailThreadSummary {
 	return readSummaries(ctx, e, ids, "gmail", "threads_get", func(id string) map[string]any {
 		return map[string]any{"id": id, "format": "metadata"}
 	}, gmailThreadSummary)
+}
+
+func (e *Executor) GmailDraftSubjects(ctx context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+	return readSummaries(ctx, e, ids, "gmail", "drafts_get", func(id string) map[string]any {
+		return map[string]any{"id": id, "format": "metadata"}
+	}, func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
+		var draft struct {
+			ID      string
+			Message gmailMessageHeaders
+		}
+		if !decodeGmailSummary(result, &draft) || draft.ID != id {
+			return nil
+		}
+		return gmailResourceTitle(id, draft.Message.subject())
+	})
+}
+
+func (e *Executor) GmailMessageSubjects(ctx context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+	return readSummaries(ctx, e, ids, "gmail", "messages_get", func(id string) map[string]any {
+		return map[string]any{"id": id, "format": "metadata", "metadataHeaders": []string{"Subject"}}
+	}, func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
+		var message struct {
+			ID string
+			gmailMessageHeaders
+		}
+		if !decodeGmailSummary(result, &message) || message.ID != id {
+			return nil
+		}
+		return gmailResourceTitle(id, message.subject())
+	})
+}
+
+func (e *Executor) GmailLabelNames(ctx context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+	return readSummaries(ctx, e, ids, "gmail", "labels_get", gmailIDArgument,
+		func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
+			var label struct{ ID, Name string }
+			if !decodeGmailSummary(result, &label) || label.ID != id {
+				return nil
+			}
+			return gmailResourceTitle(id, label.Name)
+		})
+}
+
+func (e *Executor) GmailFilters(ctx context.Context, ids []string) []*operator_action_servicepb.GmailFilterSummary {
+	return readSummaries(ctx, e, ids, "gmail", "filters_get", gmailIDArgument,
+		func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailFilterSummary {
+			filter := new(operator_action_servicepb.GmailFilterSummary)
+			payload := gmailSummaryJSON(result)
+			if protojson.Unmarshal(payload, filter) != nil ||
+				filter.GetId() != id || filter.Criteria == nil || filter.Action == nil {
+				return nil
+			}
+			return filter
+		})
+}
+
+func gmailIDArgument(id string) map[string]any {
+	return map[string]any{"id": id}
+}
+
+func gmailResourceTitle(id, title string) *operator_action_servicepb.GmailResourceTitle {
+	if strings.TrimSpace(title) == "" {
+		return nil
+	}
+	return &operator_action_servicepb.GmailResourceTitle{Id: id, Title: title}
 }
 
 func (e *Executor) TanaNodeSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
@@ -169,21 +235,51 @@ func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group,
 	return summaries
 }
 
+type gmailMessageHeaders struct {
+	Payload struct {
+		Headers []struct{ Name, Value string }
+	}
+}
+
+func (message gmailMessageHeaders) subject() string {
+	for _, header := range message.Payload.Headers {
+		if strings.EqualFold(header.Name, "Subject") && strings.TrimSpace(header.Value) != "" {
+			return header.Value
+		}
+	}
+	return ""
+}
+
 func gmailThreadSummary(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailThreadSummary {
 	var thread struct {
 		ID       string
-		Messages []struct {
-			Payload struct {
-				Headers []struct{ Name, Value string }
-			}
-		}
+		Messages []gmailMessageHeaders
 	}
-	if !parsePreviewObject(result, &thread) || thread.ID != id || len(thread.Messages) == 0 {
+	if !decodeGmailSummary(result, &thread) || thread.ID != id || len(thread.Messages) == 0 {
 		return nil
 	}
-	for _, header := range thread.Messages[0].Payload.Headers {
-		if strings.EqualFold(header.Name, "Subject") && strings.TrimSpace(header.Value) != "" {
-			return &operator_action_servicepb.GmailThreadSummary{ThreadId: id, Subject: header.Value}
+	subject := thread.Messages[0].subject()
+	if subject == "" {
+		return nil
+	}
+	return &operator_action_servicepb.GmailThreadSummary{ThreadId: id, Subject: subject}
+}
+
+func decodeGmailSummary(result *mcp.CallToolResult, summary any) bool {
+	return json.Unmarshal(gmailSummaryJSON(result), summary) == nil
+}
+
+func gmailSummaryJSON(result *mcp.CallToolResult) []byte {
+	if result.StructuredContent != nil {
+		payload, err := json.Marshal(result.StructuredContent)
+		if err == nil {
+			return payload
+		}
+		return nil
+	}
+	if len(result.Content) == 1 {
+		if text, ok := result.Content[0].(*mcp.TextContent); ok {
+			return []byte(text.Text)
 		}
 	}
 	return nil

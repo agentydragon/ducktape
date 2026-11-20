@@ -144,6 +144,8 @@ async def test_labels_patch_dispatches_partial_request(gmail: Mock, client):
 async def test_labels_delete_dispatches_and_returns_no_error(gmail: Mock, client):
     result = await client.call_tool("labels_delete", {"label_id": "L9"}, raise_on_error=False)
     assert not result.is_error
+    assert result.content == []
+    assert result.structured_content == {"result": None}
     gmail.labels_delete.assert_called_once_with("L9")
 
 

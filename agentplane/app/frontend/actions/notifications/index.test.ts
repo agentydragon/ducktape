@@ -264,6 +264,35 @@ describe("action notification formatting", () => {
     });
   });
 
+  it.each([
+    ["drafts_delete", "Delete Gmail draft"],
+    ["drafts_get", "Read Gmail draft"],
+    ["drafts_list", "Search Gmail drafts"],
+    ["drafts_update", "Replace Gmail draft"],
+    ["filters_create", "Create Gmail filter"],
+    ["filters_delete", "Delete Gmail filter"],
+    ["filters_get", "Read Gmail filter"],
+    ["filters_list", "List Gmail filters"],
+    ["labels_create", "Create Gmail label"],
+    ["labels_delete", "Delete Gmail label"],
+    ["labels_get", "Read Gmail label"],
+    ["labels_list", "List Gmail labels"],
+    ["labels_patch", "Update Gmail label"],
+    ["messages_get", "Read Gmail message"],
+    ["threads_get", "Read Gmail thread"],
+  ])("formats the Gmail notification for %s using caller-approved copy", (name, title) => {
+    const request = actionRequest({
+      action: { group: "gmail", name },
+      arguments: { to: ["test-address@example.com"], subject: "Private example subject" },
+      title: "Review Gmail access",
+      description: null,
+    });
+    expect(formatActionNotification(request, new Map([["target", "Private example name"]]))).toEqual({
+      title: `Review Gmail access · ${title}`,
+      text: "Action requires approval",
+    });
+  });
+
   it.each(kubernetesNotificationCases)(
     "formats the Kubernetes notification for %s",
     (name, args, actionTitle, text = "The controller is waiting for this change.") => {
