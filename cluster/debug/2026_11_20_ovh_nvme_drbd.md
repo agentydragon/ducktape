@@ -2,8 +2,9 @@
 
 **Status: open.** A data NVMe stopped responding, and reattaching its DRBD
 volumes after a node reboot restored most services. A second reboot cleared a
-stalled CLI Proxy resync. The physical fault remains unexplained, and a
-SeaweedFS volume copy reported an index/data inconsistency.
+stalled CLI Proxy resync. A damaged SeaweedFS replica was removed after its
+files were preserved; the physical fault remains unexplained and one older
+SeaweedFS record still needs a filer-reference check.
 
 ## Timeline
 
@@ -21,6 +22,7 @@ later time at which the log collector received it.
 | 06:11–06:22       | Reattached the affected existing volumes. Authentik's former primary ran `pg_rewind` and rejoined as a standby. At the last check all CNPG clusters reported their configured instances ready. |
 | 07:32–07:43       | After normal DRBD disconnect was refused, drained the node except for stuck CLI Proxy pods. Graceful Talos reboot stalled; OVH hard reboot completed at 07:43.                                 |
 | By 07:48          | The node returned, CLI Proxy's two diskful replicas resynced to `UpToDate`, and the application became Ready and served model-list requests.                                                   |
+| 08:23             | Removed the quarantined SeaweedFS replica after preserving its files. Two writable copies remained, matching the configured replication count.                                                 |
 
 ## Incident and recovery
 
@@ -59,10 +61,22 @@ reported their configured instances ready; an Authentik standby's replay
 position matched its primary. Casino's login route reached the Authentik flow;
 an authenticated login was not tested.
 
-One returned SeaweedFS copy reported an index pointing beyond its data file and
-was marked read-only. Two other locations advertised writable copies with
-matching size and counts. Those status reports do not establish content
-integrity. Preserve the damaged copy and verify the others before repair.
+One returned SeaweedFS copy of the collector spool reported an index pointing
+beyond its data file and was marked read-only. Its index contained one live
+entry absent from the two writable copies; it may be a deletion removed during
+compaction. A two-way index check and full scrub found no problems in the two
+writable copies. Their captured files had different whole-file hashes, but all
+80 live indexed records had matching headers and bodies at the time of the
+check. A three-minute filer-wide reference scan timed out, so whether the extra
+record was referenced elsewhere remained unknown.
+
+At the owner's request, the damaged extra replica was removed at 08:23 after
+its four volume files had been preserved privately and checked against the
+original hashes. The two writable copies remained, satisfying the configured
+two-copy policy; no automatic replacement is needed. The collector stayed
+Ready, and a 4 KiB read of an existing spool file through the filer succeeded.
+That did not test a read through the collector's own FUSE mount. The preserved
+files are local sensitive recovery material, not a verified durable backup.
 
 ## DRBD resync ordering wait
 
@@ -133,7 +147,8 @@ it did not establish this same mechanism.
 - Verify CLI Proxy's real credential operations; investigate or reauthorize the
   Claude credential with the invalid refresh token. Decide retention of the
   sensitive temporary recovery copies.
-- Assess SeaweedFS copies and application data before repairing the read-only
-  copy; investigate the physical NVMe and node with OVH.
+- Complete the filer-wide reference check for the preserved SeaweedFS record,
+  verify reads through the collector's mount, and decide recovery-copy
+  retention. Investigate the physical NVMe and node with OVH.
 - Investigate the misleading database health signal, stuck Talos shutdown,
   and incident alerting. Preserve the exact incident evidence separately.
