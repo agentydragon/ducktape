@@ -68,8 +68,8 @@ impl ModulesNs {
             return verify_proposal_graphs(args, roots);
         }
         let context = match &self.command {
-            ModulesNsCommand::Merge(args) => verify_edit(&args.edit, roots),
-            ModulesNsCommand::Delete(args) => verify_edit(&args.edit, roots),
+            ModulesNsCommand::Merge(args) => args.edit.verify_graph(roots),
+            ModulesNsCommand::Delete(args) => args.edit.verify_graph(roots),
             ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
@@ -147,23 +147,6 @@ fn verify_proposal_graphs(
         contexts.insert(chunk_id, context);
     }
     Ok(contexts)
-}
-
-fn verify_edit(
-    edit: &crate::edit_gate::GraphEditArgs,
-    roots: &CurrentRoots,
-) -> Result<Option<VerifiedGraphSourceContext>> {
-    if let Some(graph) = &edit.dependency_graph_path {
-        return crate::verify_graph_compatibility(
-            graph,
-            &edit.modules_root,
-            edit.source_root.as_deref(),
-            roots,
-            None,
-        )
-        .map(Some);
-    }
-    Ok(None)
 }
 
 #[derive(Debug, Subcommand)]

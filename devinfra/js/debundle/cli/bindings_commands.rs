@@ -1,19 +1,19 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, Rename, UnassignOutcome, parse_batch_json,
-    parse_move_triple, rename_binding, rename_bindings, run_bindings_assign, run_bindings_list,
-    run_bindings_unassign,
+    BindingsListFilters, Move, Rename, parse_batch_json, parse_move_triple, rename_binding,
+    rename_bindings, run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::outcome::{MutationVerb, emit_gate_rejection_json};
+use crate::outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
+use serde::Serialize;
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -53,22 +53,11 @@ impl BindingsNs {
         &self,
         roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
-        let edit = match &self.command {
-            BindingsNsCommand::Assign(args) => &args.edit,
-            BindingsNsCommand::Unassign(args) => &args.edit,
-            _ => return Ok(None),
-        };
-        if let Some(graph) = &edit.dependency_graph_path {
-            return crate::verify_graph_compatibility(
-                graph,
-                &edit.modules_root,
-                edit.source_root.as_deref(),
-                roots,
-                None,
-            )
-            .map(Some);
+        match &self.command {
+            BindingsNsCommand::Assign(args) => args.edit.verify_graph(roots),
+            BindingsNsCommand::Unassign(args) => args.edit.verify_graph(roots),
+            _ => Ok(None),
         }
-        Ok(None)
     }
 }
 
@@ -372,26 +361,25 @@ fn run_bindings_assign_cmd(
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
     let gate = args.edit.gate(source_context)?;
-    let out = match run_bindings_assign(
+    let out = run_bindings_assign(
         stderr,
         &args.edit.modules_root,
         moves,
         args.edit.dry_run,
         gate,
         candidate_context.as_ref(),
-    ) {
-        Ok(out) => out,
-        Err(err) => {
-            return Err(emit_gate_rejection_json(
-                output,
-                MutationVerb::Assign,
-                args.edit.format,
-                err,
-            ));
-        }
-    };
+    )
+    .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Assign, args.edit.format, err))?;
     let format = OutputFormat::resolve(args.edit.format);
-    print_assign_outcome(output, stderr, &out, format)
+    print_edit_outcome(
+        output,
+        stderr,
+        &out.outcome,
+        &out,
+        out.moves_applied,
+        "move",
+        format,
+    )
 }
 
 fn run_bindings_unassign_cmd(
@@ -405,78 +393,54 @@ fn run_bindings_unassign_cmd(
         args.effect_assessment
             .resolve(&args.edit, source_context, analysis_engine_sha256)?;
     let gate = args.edit.gate(source_context)?;
-    let out = match run_bindings_unassign(
+    let out = run_bindings_unassign(
         stderr,
         &args.edit.modules_root,
         args.syms,
         args.edit.dry_run,
         gate,
         candidate_context.as_ref(),
-    ) {
-        Ok(out) => out,
-        Err(err) => {
-            return Err(emit_gate_rejection_json(
-                output,
-                MutationVerb::Unassign,
-                args.edit.format,
-                err,
-            ));
-        }
-    };
+    )
+    .map_err(|err| {
+        emit_gate_rejection_json(output, MutationVerb::Unassign, args.edit.format, err)
+    })?;
     let format = OutputFormat::resolve(args.edit.format);
-    print_unassign_outcome(output, stderr, &out, format)
+    print_edit_outcome(
+        output,
+        stderr,
+        &out.outcome,
+        &out,
+        out.unassigned,
+        "unassign",
+        format,
+    )
 }
 
-fn print_unassign_outcome(
+fn print_edit_outcome(
     output: &mut dyn std::io::Write,
     stderr: &mut (dyn std::io::Write + Send),
-    out: &UnassignOutcome,
+    outcome: &MutationOutcome,
+    report: &impl Serialize,
+    count: usize,
+    noun: &str,
     format: OutputFormat,
 ) -> Result<()> {
-    out.outcome.warn_if_unassessed_write(stderr)?;
+    outcome.warn_if_unassessed_write(stderr)?;
     match format {
         OutputFormat::Text => {
             command_output::write_line(
                 output,
                 format_args!(
-                    "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
-                    out.outcome.action,
-                    out.unassigned,
-                    out.outcome.files_written.len(),
-                    out.outcome.files_deleted.len()
+                    "{}: {count} {noun}(s); {} file(s) written, {} file(s) deleted",
+                    outcome.action,
+                    outcome.files_written.len(),
+                    outcome.files_deleted.len()
                 ),
             )?;
             Ok(())
         }
         format => {
-            command_output::write_report(out, format, output, |_, _| Ok(())).map_err(Into::into)
-        }
-    }
-}
-
-fn print_assign_outcome(
-    output: &mut dyn std::io::Write,
-    stderr: &mut (dyn std::io::Write + Send),
-    out: &AssignOutcome,
-    format: OutputFormat,
-) -> Result<()> {
-    out.outcome.warn_if_unassessed_write(stderr)?;
-    match format {
-        OutputFormat::Text => {
-            command_output::write_line(
-                output,
-                format_args!(
-                    "{}: {} move(s); {} file(s) written, {} file(s) deleted",
-                    out.outcome.action,
-                    out.moves_applied,
-                    out.outcome.files_written.len(),
-                    out.outcome.files_deleted.len()
-                ),
-            )?;
-            Ok(())
-        }
-        format => {
-            command_output::write_report(out, format, output, |_, _| Ok(())).map_err(Into::into)
+            command_output::write_report(report, format, output, |_, _| Ok(())).map_err(Into::into)
         }
     }
 }

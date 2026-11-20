@@ -52,7 +52,7 @@ use anonymous_resolution::{
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
-use graph_provenance::VerifiedGraphSourceContext;
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
@@ -106,6 +106,20 @@ impl GraphEditArgs {
                 .map(|bytes| serde_json::from_slice(&bytes))
                 .transpose()?,
         )
+    }
+
+    pub fn verify_graph(&self, roots: &CurrentRoots) -> Result<Option<VerifiedGraphSourceContext>> {
+        let Some(graph) = &self.dependency_graph_path else {
+            return Ok(None);
+        };
+        crate::verify_graph_compatibility(
+            graph,
+            &self.modules_root,
+            self.source_root.as_deref(),
+            roots,
+            None,
+        )
+        .map(Some)
     }
 }
 
