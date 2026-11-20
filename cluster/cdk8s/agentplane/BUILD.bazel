@@ -769,7 +769,6 @@ py_library(
         "//agentplane/env/runtime:harness",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//cluster/cdk8s:agent_access_profiles",
-        "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//model_catalog:catalog",
     ],

@@ -156,8 +156,7 @@ def settings(
     *,
     namespace: str,
     sandbox_template: str,
-    models: HarnessRoutes,
-    runtime_catalog: Catalog | None = None,
+    runtime_catalog: Catalog,
     thread_preset_codex_model: Route,
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
@@ -165,16 +164,11 @@ def settings(
     basic_policy_set: str,
     app_origin: str,
     oidc_issuer: str,
-    electric_url: HttpEndpointUrl | None = None,
-    frontend_config: FrontendConfig | None = None,
-    central_sampler_enabled: bool = False,
+    electric_url: HttpEndpointUrl,
+    frontend_config: FrontendConfig,
 ) -> Settings:
     configured = Settings(
-        models=(
-            runtime_catalog.models
-            if runtime_catalog is not None
-            else model_catalog(models, central_sampler_enabled=central_sampler_enabled)
-        ),
+        models=runtime_catalog.models,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
@@ -240,8 +234,7 @@ def settings(
         electric_url=electric_url,
         oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),
     )
-    if frontend_config is not None:
-        configured.frontend_config = frontend_config
+    configured.frontend_config = frontend_config
     return configured
 
 

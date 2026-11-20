@@ -444,9 +444,7 @@ def _app_config(*, identity_catalog: bool) -> Settings:
     return staging_config.config(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
-        models=STAGING_APP_MODELS,
         runtime=_RUNTIME_CATALOG,
-        central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.fqdn}:{_CONNECTION_SERVICE.port.number}"),
         app_origin=f"https://{_HOSTNAME}",

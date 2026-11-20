@@ -30,7 +30,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     SSH_READS_SET,
     coinbase_egress_rules,
 )
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runtime_catalog, settings
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -45,7 +45,6 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_FINANCE_AGENT_POLICY,
     PLAID_PGWEB_CREDENTIAL,
 )
-from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 from util.urls import HttpEndpointUrl
@@ -123,27 +122,19 @@ def config(
     *,
     namespace: str,
     sandbox_template: str,
-    models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
-    runtime: Catalog | None = None,
-    central_sampler_enabled: bool = False,
+    runtime: Catalog,
     app_origin: str,
     oidc_issuer: str,
     electric_url: HttpEndpointUrl,
     identity_catalog: bool,
 ) -> Settings:
     basic_policy_set = BASIC_POLICY
-    if runtime is None:
-        runtime = runtime_catalog(
-            models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
-        )
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
-        models=models,
         runtime_catalog=runtime,
-        central_sampler_enabled=central_sampler_enabled,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         connection_service_url=connection_service_url,
