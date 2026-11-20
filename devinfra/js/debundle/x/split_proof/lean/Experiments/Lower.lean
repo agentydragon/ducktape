@@ -528,7 +528,12 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     let refs := t.rawLazy ++ (if t.inert || !t.fallback.isEmpty then t.rawEager else #[])
     refs.foldl (fun seen n => seen.insert n) seen)
       (externallyVisible.foldl (fun seen n => seen.insert n) {})
-  let footprints := tops.map fun t =>
+  -- Hoisted declarations are initialized at instantiation. Other local names
+  -- enter `initialized` only after their defining source unit: an accepted
+  -- plan preserves every eager read/definition ordering dependency.
+  let hoisted := tops.foldl (fun seen t =>
+    if t.hoisted then t.defs.foldl (·.insert ·) seen else seen) ({} : Std.HashSet String)
+  let (_, footprints) := tops.foldl (fun (initialized, footprints) t =>
     let unobserved := t.defs.all (!indirect.contains ·)
     let identityInert := t.identityCall.any identities.contains && unobserved
     let factoryInert := unobserved && !factoryIdentifiers.contains "eval" &&
@@ -538,16 +543,23 @@ def finalizeWithScanStatus (tops : Array Top) (externallyVisible : Array String 
     let observedInert := t.inert && !t.hoisted && !unobserved
     let observedInit := observedInert && primitiveConstant t.source
     let nonReentrant := directArrowConstant t.source
-    let effect := !(t.inert || identityInert || factoryInert) || (observedInert && !observedInit) || t.rawEager.any (!declared.contains ·)
+    -- Even a syntactically inert eager identifier read can throw (for
+    -- example by reading a lexical binding in its temporal dead zone). If it
+    -- throws, an escaped observer may see which earlier bindings initialized.
+    -- Keep the read ordered against observed initializers and other effects.
+    let mayThrowRead := t.inert && !t.hoisted && t.rawEager.any (!initialized.contains ·)
+    let effect := !(t.inert || identityInert || factoryInert) || (observedInert && !observedInit) || mayThrowRead || t.rawEager.any (!declared.contains ·)
     let eager := if effect then dedupe (t.rawEager ++ t.rawLazy) else dedupe t.rawEager
     let own := dedupe (t.assignedEager.filter declared.contains)
     let writes := if effect then (own ++ (reachWrites mentions lazyW eager {} {}).toList).eraseDups else own
-    { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, observedInit, nonReentrant, writes,
-      assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
-      fallback := dedupe t.fallback,
-      rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
-      inferredIdentity := if identityInert && !effect then t.identityCall else none,
-      inferredFactory := if factoryInert && !effect then t.factoryCall.map Prod.fst else none }
+    let footprint : Footprint :=
+      { defs := t.defs, eager, lazy := dedupe t.rawLazy, hoisted := t.hoisted, effect, observedInit, nonReentrant, writes,
+        assigns := dedupe ((t.assignedEager ++ t.assignedLazy).filter declared.contains),
+        fallback := dedupe t.fallback,
+        rawEager := dedupe t.rawEager, rawLazy := dedupe t.rawLazy,
+        inferredIdentity := if identityInert && !effect then t.identityCall else none,
+        inferredFactory := if factoryInert && !effect then t.factoryCall.map Prod.fst else none }
+    (t.defs.foldl (·.insert ·) initialized, footprints.push footprint)) (hoisted, #[])
   (footprints, scan.isNone)
 
 def finalize (tops : Array Top) : Array Footprint := (finalizeWithScanStatus tops).1
