@@ -281,16 +281,25 @@ sh_test(
 lean_axiom_test(
     name = "source_identity_axioms_test",
     srcs = _PROOF_SOURCES + [
+        "Experiments/FrontendIdentityFixture.lean",
         "Experiments/IdentityFixture.lean",
+        "Experiments/IdentityScan.lean",
         "Experiments/InferredIdentity.lean",
         "Experiments/LocalCall.lean",
+        "Experiments/Lower.lean",
         "Experiments/MiniJS.lean",
         "Experiments/MiniJSSource.lean",
         "Experiments/QuietCrossing.lean",
         "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_fixture",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_frontend",
     ],
-    imports = ["Experiments.IdentityFixture"],
+    imports = [
+        "Experiments.FrontendIdentityFixture",
+        "Experiments.IdentityFixture",
+    ],
     theorems = [
+        "FrontendIdentityFixture.discovered",
+        "FrontendIdentityFixture.crossing_preserves",
         "IdentityFixture.source_accepted",
         "IdentityFixture.extracted_footprints",
         "IdentityFixture.automatically_discovered",
