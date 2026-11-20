@@ -3,8 +3,8 @@
 The standalone `mcp-edge` binary is the external MCP endpoint and Connection/OAuth authority. It
 owns its PostgreSQL schema, serves the operator [`ConnectionService`](api/connection/connection_service.proto)
 over gRPC and HTTP/JSON, and, when OAuth is configured, serves `/mcp` and the OAuth protocol routes.
-It calls the Action Service over gRPC with its own projected workload token and a method-scoped,
-Connection-backed Identity delegation.
+It calls the Action Service over gRPC with its own service SVID (or a projected workload token where
+`actions_token_file` is configured) and a method-scoped, Connection-backed Identity delegation.
 The Action Service keeps upstream MCP linkage and CIMD, but does not serve external `/mcp`, OAuth,
 or ConnectionService endpoints.
 
@@ -47,8 +47,10 @@ Action policy namespace and pin its exact Kubernetes UID. Resolution checks that
 unavailable, deleted or replaced Identity refuses the request. The operator-facing picker also
 requires a current Identity watch.
 
-For each admitted Action RPC, the edge sends its own projected `agentplane-egress` audience token
-plus typed Connection ID, grant ID and effective Identity provenance. The edge resolves the external
+For each admitted Action RPC the edge either presents its `spiffe://agentplane/mcp-edge` service SVID,
+pinning `spiffe://agentplane/actions` as the server, or sends the audience token named by
+`actions_token_file`; `actions_tls.ValidateCaller` refuses both at once. It adds typed Connection ID, grant
+ID and effective Identity provenance. The edge resolves the external
 bearer against its live grant and Connection binding and checks the exact Identity UID before
 dispatch. Action middleware separately admits the configured edge actor, accepts typed Connection
 provenance only on explicitly configured methods, and validates the effective Identity; it does not
@@ -77,9 +79,9 @@ Secret and is not part of the file model. `actions_target` is the internal Actio
 endpoint. OAuth deployments set `policy_namespace` to the namespace whose live Identities may be
 selected. `actions_tls` verifies the Action Service SVID and can also present the edge's service
 SVID. When that client certificate is configured, `actions_token_file` must be absent; there is no
-bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects the
-mounted projected Action audience token. Staging keeps the token mount and ServiceAccount RBAC for
-rollback while selecting the SVID in config, so the projected token is not sent to Actions.
+bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects a
+mounted projected Action audience token. Staging configures the edge's service SVID and has no Action
+audience token mount: the `mcp-edge` Role grants only `identities` reads.
 `operator_oidc` requires the
 issuer, audience, JWKS URI and token profile used by the app's operator tokens. `oauth` is an
 optional typed inline object for synthetic deployments. Staging instead sets `oauth_file` to the

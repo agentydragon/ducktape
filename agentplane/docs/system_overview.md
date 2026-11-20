@@ -356,7 +356,7 @@ platform gRPC listener at `http://<local gateway>:3130`. Its History method rout
 `history-service.<namespace>.svc.cluster.local:8080` with TLS. The sidecar presents the Sandbox
 Workload SVID and verifies `HISTORY_SERVICE_URI`; the central proxy carries that TLS connection
 opaquely. History authorizes the read against the exact Identity name and UID in the SVID. This path
-uses no History bearer credential or projected audience token and adds no `reader_accounts` grant.
+uses no History bearer credential or projected audience token and adds no `reader_service_callers` grant.
 
 ### Sessions and Environments admission
 
