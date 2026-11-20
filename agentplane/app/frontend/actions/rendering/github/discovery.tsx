@@ -15,7 +15,7 @@ import {
   repoInput,
   ResultRows,
 } from "./display";
-import { githubHref } from "./receipts";
+import { githubHref, repositoryHref } from "./receipts";
 
 const user = z.object({
   login: z.string().min(1),
@@ -85,6 +85,22 @@ const code = z
     text_matches: z.array(z.object({ fragment: z.string().optional() })).nullish(),
   })
   .refine((hit) => Boolean(hit.path || hit.name || hit.html_url));
+function codeRepository(hit: z.infer<typeof code>): string | undefined {
+  return typeof hit.repository === "string" ? hit.repository : hit.repository?.full_name;
+}
+
+function codeHref(hit: z.infer<typeof code>): string | undefined {
+  const direct = githubHref(hit.html_url);
+  if (direct) return direct;
+  const name = codeRepository(hit);
+  const segments = hit.path?.split("/");
+  if (!name || !segments || segments.some((segment) => !segment || segment === "." || segment === ".."))
+    return undefined;
+  const match = /^([\w-]+)\/([\w.-]+)$/.exec(name);
+  if (!match || match[2] === "." || match[2] === "..") return undefined;
+  // Code search indexes default branches. The hit carries a blob SHA, which is not a commit ref.
+  return `${repositoryHref({ owner: match[1], repo: match[2] })}/blob/HEAD/${segments.map(encodeURIComponent).join("/")}`;
+}
 const repo = z.object({
   name: z.string().optional(),
   full_name: z.string().min(1),
@@ -207,9 +223,9 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
           {result.items.map((hit, index) => (
             <GitHubItem
               key={hit.html_url ?? index}
-              href={hit.html_url}
+              href={codeHref(hit)}
               title={hit.path || hit.name || "Matching file"}
-              info={[typeof hit.repository === "string" ? hit.repository : hit.repository?.full_name]}
+              info={[codeRepository(hit)]}
             >
               {hit.text_matches?.map((match, index) =>
                 match.fragment ? <TextBlock key={index} text={match.fragment} heading="Matching snippet" /> : null

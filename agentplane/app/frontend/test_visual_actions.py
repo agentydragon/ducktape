@@ -1128,7 +1128,6 @@ EXAMPLES = (
                     "path": "docs/readiness.md",
                     "sha": GITHUB_COMMIT["sha"],
                     "repository": "example/service",
-                    "html_url": "https://github.com/example/service/blob/devel/docs/readiness.md",
                     "text_matches": [{"fragment": "Wait for staging readiness."}],
                 }
             ],
