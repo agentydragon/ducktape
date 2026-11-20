@@ -24,7 +24,7 @@ async def list_runs(caller_db: CallerDb) -> list[Run]:
 - Connection disposed after request
 - RLS policies filter data automatically
 
-### AdminDb (Pooled)
+### AdminDb (Shared)
 
 ```python
 from props.backend.deps import AdminDb, get_admin_db
@@ -35,7 +35,7 @@ async def trigger_validation(admin_db: AdminDb) -> Job:
     ...
 ```
 
-- Uses connection pool
+- Uses the backend's single admin `Database` (`app.state.admin_db`), also on NullPool
 - Full database access
 - Required for: launching agents
 
@@ -62,7 +62,7 @@ async def trigger_validation(admin_db: AdminDb) -> Job:
 
 Backend uses Jupyter-style token authentication (no localhost exception):
 
-1. Backend prints admin token URL on startup
+1. With `dev_mode = true`, the backend logs the admin token URL on startup
 2. Frontend captures token from URL → `localStorage`
 3. Requests include `Authorization: Bearer {token}` header
 

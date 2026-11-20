@@ -10,7 +10,7 @@ Tests never touch production data: they run against their own databases.
 
 - **Purpose**: Real evaluation results, persistent storage
 - **DO NOT DROP/RECREATE**: Contains valuable data
-- **Connection**: Uses standard `PG*` environment variables (set by devenv)
+- **Connection**: Uses standard `PG*` environment variables (set by `props/.envrc`)
 
 ### Test Databases: `props_test_<test id>`
 
