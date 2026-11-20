@@ -33,7 +33,7 @@ def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests
         target = spec["targetRef"]
         assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": vpa["metadata"]["name"]}
         assert vpa["metadata"]["namespace"] == "agentplane-staging"
-        assert spec["updatePolicy"] == {"updateMode": "Initial"}
+        assert spec["updatePolicy"] == {"updateMode": "Recreate" if target["name"] == "frontend" else "Initial"}
         deployment = find_resource(staging_manifests, "Deployment", target["name"])
         container = one(deployment["spec"]["template"]["spec"]["containers"])
         selected, wildcard = spec["resourcePolicy"]["containerPolicies"]
