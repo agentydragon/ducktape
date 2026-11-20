@@ -8,17 +8,10 @@ function clampLine(line: string): string {
   return line.length > COMPACT_LINE_CHARS ? `${line.slice(0, COMPACT_LINE_CHARS)}…` : line;
 }
 
-// The first `n` non-blank lines of a text block, for compact bodies (email drafts, applied
-// manifests) that would otherwise render in full. Each kept line is also clamped by character
-// count. `truncated` says whether whole lines were dropped (a per-line clamp shows its own "…").
-export function firstLines(text: string, n: number): { text: string; truncated: boolean } {
-  const nonBlank = text.split("\n").filter((line) => line.trim() !== "");
-  return { text: nonBlank.slice(0, n).map(clampLine).join("\n"), truncated: nonBlank.length > n };
-}
-
-/** First `n` lines of a text block for a compact `<pre>`, with a trailing "…" line when more
- * was dropped. For prose (not a code block) use `firstLines` and append the ellipsis inline. */
+/** First `n` non-blank lines of a text block for a compact `<pre>`, each clamped by character
+ * count, with a trailing "…" line when whole lines were dropped. */
 export function clampBlock(text: string, n: number): string {
-  const { text: head, truncated } = firstLines(text, n);
-  return truncated ? `${head}\n…` : head;
+  const nonBlank = text.split("\n").filter((line) => line.trim() !== "");
+  const head = nonBlank.slice(0, n).map(clampLine).join("\n");
+  return nonBlank.length > n ? `${head}\n…` : head;
 }
