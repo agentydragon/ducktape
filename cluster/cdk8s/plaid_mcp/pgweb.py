@@ -44,8 +44,6 @@ AUTH_KEY = "password"
 # 0.17.0's multi-arch index digest.
 _IMAGE = "ghcr.io/sosedoff/pgweb:0.17.0@sha256:a5256d416e2e8b92d69a4459058e3eca33a9f075d8325491644411d0bc3bd70b"
 _QUERY_TIMEOUT_SECONDS = 60
-# The CNPG Cluster in db.py.
-_DB_CLUSTER = "plaid-mcp-db"
 
 
 def _deployment(chart: Chart) -> None:
@@ -168,6 +166,6 @@ def chart(app: App) -> Chart:
         endpoint_selector=_LABELS,
         ingress=[cilium.AGENTPLANE_STAGING_PROXY.admit(SERVICE.pod_port)],
         # Cilium exposes Kubernetes pod labels with the k8s: prefix.
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _DB_CLUSTER}, 5432)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": db.POSTGRES.name}, 5432)],
     )
     return chart

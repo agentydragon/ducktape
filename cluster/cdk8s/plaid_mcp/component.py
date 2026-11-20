@@ -33,9 +33,7 @@ def write_directory(root: Path, artifact: ArtifactGeneratorSpecArtifacts) -> Ren
         spend.chart,
         siblings=["plaid-client-credentials.sops.yaml"],
         components=["image-pins"],
-        config_map_generator=[
-            ConfigMapArgs(name="plaid-mcp-db-readonly-sql", namespace=_NAMESPACE, files=["readonly-role.sql"])
-        ],
+        config_map_generator=[ConfigMapArgs(name=db.SQL_CONFIG_MAP, namespace=_NAMESPACE, files=[db.SQL_FILE])],
     )
 
 
