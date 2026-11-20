@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -97,116 +97,89 @@ func TestEnvironmentResumeUsesExactTargetAndToken(t *testing.T) {
 	}
 }
 
-func TestEnvironmentResumeDoesNotRetryAnUncertainReply(t *testing.T) {
-	assessment := &environmentlifecyclepb.WakeAssessment{
-		State:  environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
-		Reason: environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
-		Error:  &statuspb.Status{Code: int32(codes.Unavailable), Message: "patch result unknown"},
-	}
-	resumeStatus, err := status.New(codes.Unavailable, "private backend detail").WithDetails(assessment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
-	endpoint := environmentEndpoint(t, fixture)
-	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != invocation.ExitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 || !strings.Contains(stderr, "outcome is unknown") {
-		t.Fatalf("uncertain resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
-	}
-	var result struct {
-		Error struct {
-			WakeAssessment json.RawMessage `json:"wake_assessment"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(stderr), &result); err != nil {
-		t.Fatalf("decode uncertain resume error: %v (%q)", err, stderr)
-	}
-	if !strings.Contains(string(result.Error.WakeAssessment), `"state":"WAKE_STATE_OUTCOME_UNKNOWN"`) ||
-		!strings.Contains(string(result.Error.WakeAssessment), `"reason":"WAKE_REASON_OUTCOME_UNKNOWN"`) ||
-		!strings.Contains(string(result.Error.WakeAssessment), `"message":"patch result unknown"`) {
-		t.Fatalf("uncertain resume dropped wake details: %s", stderr)
-	}
-}
-
-func TestEnvironmentResumeReportsInvalidDetailsWithoutLosingUnknownOutcome(t *testing.T) {
-	assessment := &environmentlifecyclepb.WakeAssessment{
-		State:      environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
-		ObservedAt: &timestamppb.Timestamp{Seconds: 253402300800},
-	}
-	resumeStatus, err := status.New(codes.Unavailable, "patch result unknown").WithDetails(assessment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
-	endpoint := environmentEndpoint(t, fixture)
-	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	failure := errorOf(t, stderr)
-	if code != invocation.ExitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 ||
-		!strings.Contains(failure.Message, "outcome is unknown") || !strings.Contains(failure.Message, "encode wake assessment") {
-		t.Fatalf("invalid resume detail: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
-	}
-}
-
-func TestEnvironmentResumePreservesEligibilityDenial(t *testing.T) {
-	eligibility := &environmentlifecyclepb.ResumeEligibility{
-		State:  environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED,
-		Reason: environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED,
-	}
-	resumeStatus, err := status.New(codes.PermissionDenied, "resume denied").WithDetails(eligibility)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
-	endpoint := environmentEndpoint(t, fixture)
-	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != invocation.ExitRefused || stdout != "" || fixture.resumeCalls != 1 {
-		t.Fatalf("denied resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
-	}
-	var result struct {
-		Error struct {
-			Code              string          `json:"code"`
-			ResumeEligibility json.RawMessage `json:"resume_eligibility"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(stderr), &result); err != nil {
-		t.Fatalf("decode denied resume error: %v (%q)", err, stderr)
-	}
-	if result.Error.Code != "PERMISSION_DENIED" ||
-		!strings.Contains(string(result.Error.ResumeEligibility), `"state":"RESUME_ELIGIBILITY_STATE_DENIED"`) ||
-		!strings.Contains(string(result.Error.ResumeEligibility), `"reason":"RESUME_ELIGIBILITY_REASON_POLICY_DISABLED"`) {
-		t.Fatalf("denied resume dropped eligibility details: %s", stderr)
-	}
-}
-
-func TestEnvironmentResumePreservesRateLimitRetryTime(t *testing.T) {
-	retryAt := timestamppb.New(time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC))
-	assessment := &environmentlifecyclepb.WakeAssessment{
-		State:   environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED,
-		Reason:  environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
-		RetryAt: retryAt,
-	}
-	resumeStatus, err := status.New(codes.ResourceExhausted, "wake budget exhausted").WithDetails(assessment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
-	endpoint := environmentEndpoint(t, fixture)
-	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != invocation.ExitTransient || stdout != "" || fixture.resumeCalls != 1 {
-		t.Fatalf("rate limited resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
-	}
-	var result struct {
-		Error struct {
-			WakeAssessment json.RawMessage `json:"wake_assessment"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(stderr), &result); err != nil {
-		t.Fatalf("decode rate limited resume error: %v (%q)", err, stderr)
-	}
-	if !strings.Contains(string(result.Error.WakeAssessment), `"state":"WAKE_STATE_RATE_LIMITED"`) ||
-		!strings.Contains(string(result.Error.WakeAssessment), `"reason":"WAKE_REASON_WAKE_BUDGET_EXHAUSTED"`) ||
-		!strings.Contains(string(result.Error.WakeAssessment), `"retry_at":"2026-11-01T12:00:00Z"`) {
-		t.Fatalf("rate limited resume dropped wake details: %s", stderr)
+func TestEnvironmentResumeFailuresKeepTheBackendsDetails(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		code            codes.Code
+		message         string
+		detail          protoadapt.MessageV1
+		wantExit        int
+		wantCode        string
+		wantMessage     []string
+		wantWake        []string
+		wantEligibility []string
+	}{
+		{
+			name: "an uncertain reply is reported as unknown and not retried", code: codes.Unavailable, message: "private backend detail",
+			detail: &environmentlifecyclepb.WakeAssessment{
+				State:  environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
+				Reason: environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
+				Error:  &statuspb.Status{Code: int32(codes.Unavailable), Message: "patch result unknown"},
+			},
+			wantExit:    invocation.ExitExecutionUnknown,
+			wantMessage: []string{"outcome is unknown"},
+			wantWake:    []string{`"state":"WAKE_STATE_OUTCOME_UNKNOWN"`, `"reason":"WAKE_REASON_OUTCOME_UNKNOWN"`, `"message":"patch result unknown"`},
+		},
+		{
+			name: "details that cannot be encoded do not hide an unknown outcome", code: codes.Unavailable, message: "patch result unknown",
+			detail: &environmentlifecyclepb.WakeAssessment{
+				State:      environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
+				ObservedAt: &timestamppb.Timestamp{Seconds: 253402300800},
+			},
+			wantExit:    invocation.ExitExecutionUnknown,
+			wantMessage: []string{"outcome is unknown", "encode wake assessment"},
+		},
+		{
+			name: "an eligibility denial keeps its reason", code: codes.PermissionDenied, message: "resume denied",
+			detail: &environmentlifecyclepb.ResumeEligibility{
+				State:  environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED,
+				Reason: environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED,
+			},
+			wantExit:        invocation.ExitRefused,
+			wantCode:        "PERMISSION_DENIED",
+			wantEligibility: []string{`"state":"RESUME_ELIGIBILITY_STATE_DENIED"`, `"reason":"RESUME_ELIGIBILITY_REASON_POLICY_DISABLED"`},
+		},
+		{
+			name: "a rate limit keeps its retry time", code: codes.ResourceExhausted, message: "wake budget exhausted",
+			detail: &environmentlifecyclepb.WakeAssessment{
+				State:   environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED,
+				Reason:  environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
+				RetryAt: timestamppb.New(time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC)),
+			},
+			wantExit: invocation.ExitTransient,
+			wantWake: []string{`"state":"WAKE_STATE_RATE_LIMITED"`, `"reason":"WAKE_REASON_WAKE_BUDGET_EXHAUSTED"`, `"retry_at":"2026-11-01T12:00:00Z"`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resumeStatus, err := status.New(tc.code, tc.message).WithDetails(tc.detail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
+			code, stdout, stderr := invoke(environmentVars(environmentEndpoint(t, fixture)), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
+			if code != tc.wantExit || stdout != "" || fixture.resumeCalls != 1 {
+				t.Fatalf("exit %d stdout %q stderr %q calls %d, want exit %d after one call", code, stdout, stderr, fixture.resumeCalls, tc.wantExit)
+			}
+			failure := errorOf(t, stderr)
+			if tc.wantCode != "" && failure.Code != tc.wantCode {
+				t.Errorf("error code %q, want %q", failure.Code, tc.wantCode)
+			}
+			for _, field := range []struct {
+				name string
+				got  string
+				want []string
+			}{
+				{"message", failure.Message, tc.wantMessage},
+				{"wake_assessment", string(failure.WakeAssessment), tc.wantWake},
+				{"resume_eligibility", string(failure.ResumeEligibility), tc.wantEligibility},
+			} {
+				for _, want := range field.want {
+					if !strings.Contains(field.got, want) {
+						t.Errorf("error %s = %q, want it to contain %s", field.name, field.got, want)
+					}
+				}
+			}
+		})
 	}
 }
 
