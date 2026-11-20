@@ -1353,12 +1353,7 @@ function Report() {
             <strong>Crossplane core.</strong>${" "}Flux and Helm reported Ready.
             Two Ready webhook endpoints served from${" "}
             ${crossplaneHA.ready_endpoints.map(({ node }) => node).join(" and ")}.
-            The disruption budget allowed
-            ${crossplaneHA.disruptions_allowed}${" "} disruption, and the core
-            leader lease was renewing. Both Pods received a
-            ${quantityMiB(crossplaneHA.admitted_memory_request)}${" "} memory
-            request with a${" "}
-            ${quantityMiB(crossplaneHA.admitted_memory_limit)}${" "}
+            ${`The disruption budget allowed ${crossplaneHA.disruptions_allowed} disruption, and the core leader lease was renewing. Both Pods received a ${quantityMiB(crossplaneHA.admitted_memory_request)} memory request with a ${quantityMiB(crossplaneHA.admitted_memory_limit)}`}${" "}
             limit.${" "}<${Anchor} href=${crossplaneHA.pr_url}>PR #18145<//>
           <//>
           <${Text} component="p" mt="sm">
