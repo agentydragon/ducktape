@@ -19,6 +19,35 @@ package(default_visibility = [
 ])
 
 py_library(
+    name = "staging_vpa",
+    srcs = ["staging_vpa.py"],
+    deps = [
+        ":namespaces",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_test(
+    name = "test_staging_vpa",
+    size = "medium",
+    srcs = ["test_staging_vpa.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":staging_vpa",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "kubernetes_grants",
     srcs = ["kubernetes_grants.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

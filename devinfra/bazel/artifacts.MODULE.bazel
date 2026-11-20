@@ -427,6 +427,14 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/external-dns/v0.22.0/config/crd/standard/dnsendpoints.externaldns.k8s.io.yaml"],
 )
 
+# Match the VPA controller release deployed by the Fairwinds chart.
+http_file(
+    name = "vpa_verticalpodautoscaler_crd",
+    downloaded_file_path = "vpa-v1-crd-gen.yaml",
+    sha256 = "92240d0f43a78bc9d64ce70825e84e0cd32d2793b0b605df4772cdcfc36d3fca",
+    urls = ["https://raw.githubusercontent.com/kubernetes/autoscaler/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/deploy/vpa-v1-crd-gen.yaml"],
+)
+
 http_file(
     name = "gateway_api_gateway_crd",
     downloaded_file_path = "gateway.networking.k8s.io_gateways.yaml",

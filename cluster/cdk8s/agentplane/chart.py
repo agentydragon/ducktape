@@ -64,7 +64,7 @@ class Namespace(Construct):
             self,
             "namespace",
             name=env.namespace,
-            # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
+            # Runner Pods are Sandbox-owned, not Deployments. Static staging services opt in separately.
             vpa=Vpa.DISABLED,
             # Standing agent access to metadata and logs (Kyverno-generated bindings).
             # Environment-specific write access is layered on by its chart.
