@@ -473,6 +473,7 @@ function parameterCase(seed, index) {
 function capturedCase(seed, index) {
   const rand = random(seed ^ 0xcafe, index);
   const count = 2 + rand(2);
+  const unsafe = index % 128 === 92;
   const factory = functionNode(
     "make",
     ["start"],
@@ -497,7 +498,9 @@ function capturedCase(seed, index) {
     sourceType: "module",
     body: [
       variable("seed", 1 + rand(8)),
+      ...(unsafe ? [variable("amount", 1 + rand(3)), fn("bump", add("seed", "amount"))] : []),
       factory,
+      ...(unsafe ? [expr(call(id("bump")))] : []),
       ...closures,
       {
         type: "ExportNamedDeclaration",
@@ -506,16 +509,22 @@ function capturedCase(seed, index) {
     ],
   };
   const combined = rand(2) === 0;
-  const modules = combined
+  const modules = unsafe
     ? {
-        "state.mjs": { imports: [], statements: [0, 1, ...closures.map((_, i) => i + 2)] },
-        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 5) },
+        "entry.mjs": { imports: ["state.mjs", "closures.mjs"], statements: [4] },
       }
-    : {
-        "state.mjs": { imports: [], statements: [0, 1] },
-        "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 2) },
-        "entry.mjs": { imports: ["closures.mjs"], statements: [] },
-      };
+    : combined
+      ? {
+          "state.mjs": { imports: [], statements: [0, 1, ...closures.map((_, i) => i + 2)] },
+          "entry.mjs": { imports: ["state.mjs"], statements: [] },
+        }
+      : {
+          "state.mjs": { imports: [], statements: [0, 1] },
+          "closures.mjs": { imports: ["state.mjs"], statements: closures.map((_, i) => i + 2) },
+          "entry.mjs": { imports: ["closures.mjs"], statements: [] },
+        };
   const calls = [...names, ...names.slice().reverse()].map((name) => ({ name, args: [1 + rand(5)] }));
   return {
     ast,
@@ -523,6 +532,7 @@ function capturedCase(seed, index) {
     spec: { kind: "bindings", entry: "entry.mjs", modules },
     calls,
     grammar: "captured",
+    expectUnsafe: unsafe,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -819,6 +829,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     capturedCases: 0,
     capturedCompared: 0,
     capturedProved: 0,
+    capturedUnsafe: 0,
     parameterCases: 0,
     parameterCompared: 0,
     parameterProved: 0,
@@ -976,7 +987,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         )
           throw new Error("generated parameter branch did not preserve the primitive throw and return prefix");
       }
-      if (input.grammar === "captured") summary.capturedCompared++;
+      if (input.grammar === "captured") {
+        summary.capturedCompared++;
+        if (equal === input.expectUnsafe) throw new Error("captured split differed from intended Node behavior");
+      }
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
@@ -1005,6 +1019,12 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         summary.validated++;
         verdictName = verdict.result;
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
+        if (input.grammar === "captured") {
+          const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
+          if (verdict.result !== expected)
+            throw new Error(`captured validation expected ${expected}, got ${verdict.result}: ${verdict.reason ?? ""}`);
+          if (input.expectUnsafe) summary.capturedUnsafe++;
+        }
         if (input.grammar === "modeledClosure") {
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
           if (verdict.result !== expected)
