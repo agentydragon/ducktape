@@ -137,6 +137,18 @@ class SecurityDistributionConfig(ApiModel):
     symbol: SecuritySymbol
     tax_character: tuple[DistributionTaxShareConfig, ...] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _allocate_the_whole_payout(self) -> SecurityDistributionConfig:
+        total = sum(share.fraction for share in self.tax_character)
+        # Exactly 1, not "at most 1": a short split pays out less than the fund distributes,
+        # which reads as a lower yield rather than as the misconfiguration it is.
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(
+                f"security distribution on {self.symbol!r} allocates {total} of its payout; "
+                "the tax-character fractions must sum to 1"
+            )
+        return self
+
 
 class LocationConfig(ApiModel):
     """A deployment-owned location identity and where its properties are taxed.
@@ -237,15 +249,6 @@ class Config(ApiModel):
         duplicate_symbols = _duplicates(str(entry.symbol) for entry in self.security_distributions)
         if duplicate_symbols:
             raise ValueError(f"security_distributions must name each symbol once: {duplicate_symbols}")
-        for entry in self.security_distributions:
-            total = sum(share.fraction for share in entry.tax_character)
-            # Exactly 1, not "at most 1": a short split pays out less than the fund distributes,
-            # which reads as a lower yield rather than as the misconfiguration it is.
-            if abs(total - 1.0) > 1e-9:
-                raise ValueError(
-                    f"security_distributions[{entry.symbol}] allocates {total} of its payout; "
-                    "the tax-character fractions must sum to 1"
-                )
         return self
 
     @model_validator(mode="after")

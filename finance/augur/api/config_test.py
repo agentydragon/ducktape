@@ -258,18 +258,14 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, 
     )
 
 
-def test_a_security_distribution_must_allocate_its_whole_payout(minimal_config: MinimalConfig) -> None:
+def test_a_security_distribution_must_allocate_its_whole_payout() -> None:
     """A short split pays out less than the fund distributes, which reads as a lower yield
     rather than as the misconfiguration it is."""
 
     with pytest.raises(ValidationError):
-        minimal_config(
-            security_distributions=(
-                SecurityDistributionConfig(
-                    symbol=SecuritySymbol("bnd"),
-                    tax_character=(DistributionTaxShareConfig(fraction=0.4, character=Treasury()),),
-                ),
-            )
+        SecurityDistributionConfig(
+            symbol=SecuritySymbol("bnd"),
+            tax_character=(DistributionTaxShareConfig(fraction=0.4, character=Treasury()),),
         )
 
 
