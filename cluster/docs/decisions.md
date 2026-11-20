@@ -51,7 +51,7 @@ An overflow exception must satisfy all of these rules:
   review any generated child pod template as part of the same change.
 
 This is a scheduling fallback, not a general invitation to place application
-workloads on control planes. The Langfuse web/worker pods, Paperless app,
+workloads on control planes. The Langfuse web/worker pods,
 cli-proxy-api, Gatus, study-casino, and grocy-mcp-server are explicit exceptions
 because their manifests use no local-path, hostPath, or emptyDir storage.
 
@@ -93,7 +93,7 @@ The DB manifests select `piraeus-ssd-local` for individual CNPG instances
 **Proxmox-dependent services** (tolerate downtime by design): Ollama,
 ActivityWatch (central store on wyrm2, `piraeus-hdd-local`; device-side
 importers buffer and re-push through downtime), the opt-in BuildBuddy KVM executor
-on wyrm2, and suspended InvenTree. Not the Nix cache: attic runs pinned to
+on wyrm2. Not the Nix cache: attic runs pinned to
 `hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live on a replicated OVH
 Piraeus volume (<nix_cache.md>).
 
@@ -353,8 +353,8 @@ applications").
 
 - **OpenClaw (public-coder-agent)**: `cluster/parked/public-coder-agent/` — the instance
   is off with its PVCs and data kept. Its KubeVirt devbox and Iron proxy are retired; the
-  app Kustomization stays active at zero replicas, and the backup Kustomization stays
-  suspended.
+  app and backup Kustomizations are suspended, and the app's `deletionPolicy: Orphan` keeps
+  its retained resources.
   `public-coder-agent-access` stays active for the Namespace and the Roles Haku and
   Agentplane Sandboxes read.
 - **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its

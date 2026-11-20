@@ -11,9 +11,9 @@ the UI is unavailable while paused.
 Keep the namespace and existing Flux owners. OpenClaw PVC names and specs remain
 unchanged. The VolSync backup's ReplicationSource is paused (`spec.paused`); its
 Restic repository and controller-owned cache PVC are kept. The
-`public-coder-agent-app` Flux owner remains active and annotated
-`ducktape.org/parked`: it keeps the Deployment at zero replicas and preserves the
-declared PVCs. The backup owner stays suspended. The devbox and Public Coder secret
+`public-coder-agent-app` Flux owner is annotated `ducktape.org/parked`, suspended, and
+set to `deletionPolicy: Orphan` with its artifact omitted, so the declared PVCs survive. The
+backup owner is suspended too. The devbox and Public Coder secret
 cleanup inventories were removed after reconciliation in PR #11457. The
 `public-coder-agent-access` owner
 (`cluster/generated/agents/public-coder-agent/access/`) stays active: it owns the

@@ -10,6 +10,6 @@ The current topology and operating contract are the single source of truth in
   another way to avoid destination reads, restrict the write route to write methods;
   until then, a leaked write token can read history as well as ingest.
 
-Agent credential hygiene (rotator-issued short-lived read tokens) and moving the central
-DB off `local-path-proxmox` remain storage/deployment debt in the README, not blockers
+Agent credential hygiene (rotator-issued short-lived read tokens) and the node-local central
+DB (`piraeus-hdd-local`) remain storage/deployment debt in the README, not blockers
 for ingestion.

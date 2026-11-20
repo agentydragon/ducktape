@@ -59,8 +59,8 @@ into a central aw-server (<docs/activitywatch/README.md>).
 ## Storage
 
 All storage is region-local (no cross-site synchronous replication). Curated; SSOT is the
-`StorageClass` manifests (e.g. `generated/{local-path-provisioner,openebs-lvm}/`) plus CSI
-Helm values.
+`StorageClass` manifests (e.g. `generated/seaweedfs-csi/`) plus CSI and Piraeus Helm values
+(`generated/piraeus/`).
 
 Storage-class inventory: [storage](docs/topology.md#storage).
 
