@@ -277,6 +277,18 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: claude-session-sync
+  namespace: claude-session-sync
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: web
+      app.kubernetes.io/name: claude-session-sync
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

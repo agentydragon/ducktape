@@ -1084,6 +1084,17 @@ spec:
             name: config
           name: configmap-config
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm
+  namespace: litellm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+---
 apiVersion: v1
 kind: Service
 metadata:
