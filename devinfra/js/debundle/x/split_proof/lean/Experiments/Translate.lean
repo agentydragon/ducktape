@@ -432,6 +432,8 @@ def main (args : List String) : IO UInt32 := do
       if let some f := fps[i]? then
         if let some name := f.inferredIdentity then
           IO.println s!"  inferred identity call: unit {i}, binding `{name}` (trusted source analysis)"
+        if let some name := f.inferredFactory then
+          IO.println s!"  inferred closure factory: unit {i}, binding `{name}` (trusted source analysis; fresh allocation)"
     IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units are effects"
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder
