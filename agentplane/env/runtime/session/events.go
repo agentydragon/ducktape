@@ -13,7 +13,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type pendingReconciliation struct {
@@ -22,21 +21,6 @@ type pendingReconciliation struct {
 	sources   []uint64
 	ready     bool
 	inputOnly bool
-}
-
-// observation wraps one generated observation in the Event vocabulary. The generated
-// descriptor owns the mapping, avoiding a second list of observation field names.
-func observation(value proto.Message) *eventpb.Event {
-	e := &eventpb.Event{}
-	d := e.ProtoReflect().Descriptor().Fields()
-	for i := 0; i < d.Len(); i++ {
-		f := d.Get(i)
-		if f.ContainingOneof() != nil && f.Message() != nil && f.Message().FullName() == value.ProtoReflect().Descriptor().FullName() {
-			e.ProtoReflect().Set(f, protoreflect.ValueOfMessage(value.ProtoReflect()))
-			return e
-		}
-	}
-	panic(fmt.Sprintf("%T is not an Environment Runtime observation", value))
 }
 
 func (s *Session) RecordNativeRequest(ctx context.Context, requestID string, kind harness.NativeRequestKind, commandIDs []string) error {
@@ -183,7 +167,7 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		s.reconciliations = slices.DeleteFunc(s.reconciliations, func(p *pendingReconciliation) bool { return p == nil })
 		s.mu.Unlock()
 	}
-	entry, err := s.recordEventUnderWriteGate(ctx, observation(completed), sources, ids)
+	entry, err := s.recordEventUnderWriteGate(ctx, harness.Observation(completed), sources, ids)
 	if err != nil || entry == nil {
 		removeReconciliation()
 		s.writeMu.Unlock()
@@ -207,7 +191,7 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(ctx, observation(harness.UnknownReport(completed.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(harness.UnknownReport(completed.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
 			return err
 		}
 	}
@@ -221,22 +205,22 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 }
 
 func (s *Session) FailCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id})
+	_, err := s.recordEvent(ctx, harness.Observation(&eventpb.CommandFailed{CommandId: id, Reason: reason}), sources, []string{id})
 	return err
 }
 
 func (s *Session) NoopCommand(ctx context.Context, id, reason string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id})
+	_, err := s.recordEvent(ctx, harness.Observation(&eventpb.CommandNoop{CommandId: id, Reason: reason}), sources, []string{id})
 	return err
 }
 
 func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: s.record.InitialModel, Model: model}), sources, []string{id})
+	_, err := s.recordEvent(ctx, harness.Observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: s.record.InitialModel, Model: model}), sources, []string{id})
 	return err
 }
 
 func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string, sources []uint64) error {
-	_, err := s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: s.record.InitialReasoningEffort, Effort: effort}), sources, []string{id})
+	_, err := s.recordEvent(ctx, harness.Observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: s.record.InitialReasoningEffort, Effort: effort}), sources, []string{id})
 	return err
 }
 
@@ -261,7 +245,7 @@ func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageC
 	if err := s.checkpoint(ctx, "before-user-message-confirmed", c.OriginCommandIDs[0]); err != nil {
 		return err
 	}
-	_, err := s.recordEvent(ctx, observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs)
+	_, err := s.recordEvent(ctx, harness.Observation(&eventpb.HarnessUserMessageConfirmed{HarnessMessageId: c.HarnessMessageID, Text: c.Text, OriginCommandIds: c.OriginCommandIDs, TurnId: c.TurnID}), sources, c.OriginCommandIDs)
 	if err != nil {
 		return err
 	}
@@ -277,7 +261,7 @@ func (s *Session) checkpoint(ctx context.Context, name, id string) error {
 	if err != nil || reached {
 		return err
 	}
-	if err := s.Emit(ctx, observation(&eventpb.DebugCheckpoint{Name: name, CommandId: id}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.DebugCheckpoint{Name: name, CommandId: id}), nil); err != nil {
 		return err
 	}
 	if err := s.journal.CommitBatch(ctx); err != nil {

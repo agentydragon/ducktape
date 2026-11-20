@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
@@ -44,7 +45,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,10 +58,10 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	if err := s.FailCommand(ctx, "command-1", "test completed", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn-1", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "turn-1", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.SetupFinished{ExitCode: 0}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := lifecycle.Publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Dormant}, lifecycle.EnvironmentOwner); err != nil {
@@ -166,7 +167,7 @@ func TestHarnessHostSharedProcessDoesNotAttachDormantSession(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.Emit(t.Context(), observation(&eventpb.TurnStarted{TurnId: "running"}), nil); err != nil {
+	if err := s.Emit(t.Context(), harness.Observation(&eventpb.TurnStarted{TurnId: "running"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	busy := s.Observe().HarnessHostSession()
@@ -182,7 +183,7 @@ func TestHarnessHostSharedProcessDoesNotAttachDormantSession(t *testing.T) {
 	if err := s.NoopCommand(t.Context(), "queued-2", "settled", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(t.Context(), observation(&eventpb.TurnCompleted{TurnId: "running", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+	if err := s.Emit(t.Context(), harness.Observation(&eventpb.TurnCompleted{TurnId: "running", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
 	idle = s.Observe().HarnessHostSession()
@@ -197,7 +198,7 @@ func TestHarnessHostSetupAndAttachmentFailure(t *testing.T) {
 	if got := s.Observe().HarnessHostSession().GetEnvironmentHosted().GetSetup(); got != sessionpb.SetupState_SETUP_STATE_RUNNING {
 		t.Fatalf("setup = %v, want running", got)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 1}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.SetupFinished{ExitCode: 1}), nil); err != nil {
 		t.Fatal(err)
 	}
 	hosted := s.Observe().HarnessHostSession().GetEnvironmentHosted()
@@ -210,7 +211,7 @@ func TestHarnessHostSetupAndAttachmentFailure(t *testing.T) {
 	if got := s.Observe().HarnessHostSession().GetEnvironmentHosted().Harness.State; got != harnesshostpb.HarnessAttachment_STATE_STARTING {
 		t.Fatalf("preparing attachment = %v", got)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessLaunchFailed{Reason: "launch failed"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessLaunchFailed{Reason: "launch failed"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	failure := s.journal.LastCursor()
@@ -224,9 +225,9 @@ func TestHarnessHostSetupAndAttachmentFailure(t *testing.T) {
 	// Recovery must include failures after the initial launch prefix, and a later
 	// HarnessStarted must clear them rather than resurrecting an earlier failure.
 	for _, event := range []*eventpb.Event{
-		observation(&eventpb.HarnessStarted{}),
-		observation(&eventpb.HarnessExited{ExitCode: 17}),
-		observation(&eventpb.HarnessStarted{}),
+		harness.Observation(&eventpb.HarnessStarted{}),
+		harness.Observation(&eventpb.HarnessExited{ExitCode: 17}),
+		harness.Observation(&eventpb.HarnessStarted{}),
 	} {
 		if err := s.Emit(ctx, event, nil); err != nil {
 			t.Fatal(err)

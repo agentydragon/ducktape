@@ -350,7 +350,7 @@ func (a *claudeAdapter) answeredMessages(ctx context.Context, turnID string) (ma
 func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) error {
 	if a.host.Session().ActiveTurnID == "" {
 		turnID := newTurnID()
-		if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, nil); err != nil {
+		if err := a.host.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}), nil); err != nil {
 			return err
 		}
 	}
@@ -651,7 +651,7 @@ func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireF
 			if !delta.JSON.Text.Valid() {
 				return errors.New("Claude text_delta is missing text")
 			}
-			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: delta.Text}}, sources)
+			return a.host.Emit(ctx, harness.Observation(&eventpb.TextDelta{ItemId: itemID, Text: delta.Text}), sources)
 		case anthropic.ThinkingDelta:
 			type fields anthropic.ThinkingDelta
 			var strict fields
@@ -661,7 +661,7 @@ func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireF
 			if !delta.JSON.Thinking.Valid() {
 				return errors.New("Claude thinking_delta is missing thinking")
 			}
-			return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: itemID, Text: delta.Thinking}}, sources)
+			return a.host.Emit(ctx, harness.Observation(&eventpb.TextDelta{ItemId: itemID, Text: delta.Thinking}), sources)
 		case anthropic.InputJSONDelta:
 			type fields anthropic.InputJSONDelta
 			var strict fields
@@ -671,7 +671,7 @@ func (a *claudeAdapter) handleStreamEvent(ctx context.Context, frame claudeWireF
 			if !delta.JSON.PartialJSON.Valid() {
 				return errors.New("Claude input_json_delta is missing partial_json")
 			}
-			return a.emit(ctx, &eventpb.Event_ToolArgumentsDelta{ToolArgumentsDelta: &eventpb.ToolArgumentsDelta{ItemId: itemID, PartialJson: delta.PartialJSON}}, sources)
+			return a.host.Emit(ctx, harness.Observation(&eventpb.ToolArgumentsDelta{ItemId: itemID, PartialJson: delta.PartialJSON}), sources)
 		}
 	}
 	return nil
@@ -727,16 +727,16 @@ func (a *claudeAdapter) handleAssistant(ctx context.Context, frame claudeWireFra
 		}
 		switch block := block.AsAny().(type) {
 		case anthropic.TextBlock:
-			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Text}}}, sources); err != nil {
+			if err := a.host.Emit(ctx, harness.Observation(&eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Text}}), sources); err != nil {
 				return err
 			}
 		case anthropic.ThinkingBlock:
-			if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Thinking}}}, sources); err != nil {
+			if err := a.host.Emit(ctx, harness.Observation(&eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: block.Thinking}}), sources); err != nil {
 				return err
 			}
 		case anthropic.ToolUseBlock:
 			arguments := block.JSON.Input.Raw()
-			if err := a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: arguments}}, sources); err != nil {
+			if err := a.host.Emit(ctx, harness.Observation(&eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: arguments}), sources); err != nil {
 				return err
 			}
 		}
@@ -758,9 +758,9 @@ func (a *claudeAdapter) handleUser(ctx context.Context, frame claudeWireFrame, s
 		if err != nil {
 			return err
 		}
-		if err := a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+		if err := a.host.Emit(ctx, harness.Observation(&eventpb.ItemCompleted{
 			ItemId: block.ToolUseID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: output, Succeeded: !block.IsError}},
-		}}, []uint64{sourceSequence}); err != nil {
+		}), []uint64{sourceSequence}); err != nil {
 			return err
 		}
 	}
@@ -847,7 +847,7 @@ func (a *claudeAdapter) handleResult(ctx context.Context, frame claudeWireFrame,
 		status = eventpb.TurnStatus_TURN_STATUS_FAILED
 		errorText = frame.Result
 	}
-	return a.emit(ctx, &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: session.ActiveTurnID, Status: status, Error: errorText}}, sources)
+	return a.host.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: session.ActiveTurnID, Status: status, Error: errorText}), sources)
 }
 
 func (a *claudeAdapter) startItem(ctx context.Context, itemID string, block anthropic.ContentBlockUnion, sources []uint64) error {
@@ -869,7 +869,7 @@ func (a *claudeAdapter) startItem(ctx context.Context, itemID string, block anth
 	if _, err := a.turnID(ctx, sources); err != nil {
 		return err
 	}
-	return a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: itemID, Kind: kind, ToolName: toolName}}, sources)
+	return a.host.Emit(ctx, harness.Observation(&eventpb.ItemStarted{ItemId: itemID, Kind: kind, ToolName: toolName}), sources)
 }
 
 func (a *claudeAdapter) turnID(ctx context.Context, sources []uint64) (string, error) {
@@ -877,36 +877,13 @@ func (a *claudeAdapter) turnID(ctx context.Context, sources []uint64) (string, e
 		return turnID, nil
 	}
 	turnID := newTurnID()
-	if err := a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}}, sources); err != nil {
+	if err := a.host.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}), sources); err != nil {
 		return "", err
 	}
 	if active := a.host.Session().ActiveTurnID; active != "" {
 		return active, nil
 	}
 	return turnID, nil
-}
-
-func (a *claudeAdapter) emit(ctx context.Context, observation any, sources []uint64) error {
-	event := &eventpb.Event{SourceSequences: append([]uint64(nil), sources...)}
-	switch value := observation.(type) {
-	case *eventpb.Event_TurnStarted:
-		event.Observation = value
-	case *eventpb.Event_TurnCompleted:
-		event.Observation = value
-	case *eventpb.Event_ItemStarted:
-		event.Observation = value
-	case *eventpb.Event_ItemCompleted:
-		event.Observation = value
-	case *eventpb.Event_TextDelta:
-		event.Observation = value
-	case *eventpb.Event_ToolArgumentsDelta:
-		event.Observation = value
-	case *eventpb.Event_ToolArguments:
-		event.Observation = value
-	default:
-		return fmt.Errorf("unsupported Claude observation type %T", observation)
-	}
-	return a.host.Emit(ctx, event, sources)
 }
 
 func (a *claudeAdapter) send(ctx context.Context, value any) error {

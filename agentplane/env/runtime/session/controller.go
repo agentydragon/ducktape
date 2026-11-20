@@ -199,7 +199,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
 			if err == nil {
-				err = s.Emit(ctx, observation(report), pending.sources)
+				err = s.Emit(ctx, harness.Observation(report), pending.sources)
 			}
 			if err != nil {
 				s.mu.Lock()
@@ -387,7 +387,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 						s.deps.fail(failure)
 						return failure
 					}
-					if failure := s.Emit(s.deps.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+					if failure := s.Emit(s.deps.ctx, harness.Observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
 						s.deps.fail(failure)
 						return failure
 					}

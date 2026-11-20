@@ -503,7 +503,7 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 		if knownStatus && turn.Error != nil {
 			errorText = turn.Error.Message
 		}
-		return a.emit(ctx, &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: turn.ID, Status: status, Error: errorText}}, sources)
+		return a.host.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: turn.ID, Status: status, Error: errorText}), sources)
 	case "item/started":
 		return a.projectItemStarted(ctx, routing["item"], sources)
 	case "item/completed":
@@ -516,19 +516,19 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
 			return err
 		}
-		return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
+		return a.host.Emit(ctx, harness.Observation(&eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}), sources)
 	case "item/reasoning/summaryTextDelta":
 		var params protocol.ReasoningSummaryTextDeltaNotification
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
 			return err
 		}
-		return a.emit(ctx, &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
+		return a.host.Emit(ctx, harness.Observation(&eventpb.TextDelta{ItemId: params.ItemID, Text: params.Delta}), sources)
 	case "item/commandExecution/outputDelta":
 		var params protocol.CommandExecutionOutputDeltaNotification
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
 			return err
 		}
-		return a.emit(ctx, &eventpb.Event_ToolOutputDelta{ToolOutputDelta: &eventpb.ToolOutputDelta{ItemId: params.ItemID, Text: params.Delta}}, sources)
+		return a.host.Emit(ctx, harness.Observation(&eventpb.ToolOutputDelta{ItemId: params.ItemID, Text: params.Delta}), sources)
 	}
 	return nil
 }
@@ -682,7 +682,7 @@ func (a *codexAdapter) startTurn(ctx context.Context, turnID, model string, sour
 	if err != nil || started {
 		return err
 	}
-	return a.emit(ctx, &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: turnID, Model: model}}, sources)
+	return a.host.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: turnID, Model: model}), sources)
 }
 
 func (a *codexAdapter) projectItemStarted(ctx context.Context, raw json.RawMessage, sources []uint64) error {
@@ -811,9 +811,7 @@ func (a *codexAdapter) startItem(ctx context.Context, itemID string, kind eventp
 		ctx, span = observability.Start(ctx, "agentplane.codex.tool.start", trace.WithAttributes(attribute.String("thread.id", threadID)))
 		defer func() { observability.End(span, resultErr) }()
 	}
-	return true, a.emit(ctx, &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
-		ItemId: itemID, Kind: kind, ToolName: toolName,
-	}}, sources)
+	return true, a.host.Emit(ctx, harness.Observation(&eventpb.ItemStarted{ItemId: itemID, Kind: kind, ToolName: toolName}), sources)
 }
 
 func (a *codexAdapter) toolArguments(ctx context.Context, itemID string, value any, sources []uint64) error {
@@ -821,17 +819,17 @@ func (a *codexAdapter) toolArguments(ctx context.Context, itemID string, value a
 	if err != nil {
 		return err
 	}
-	return a.emit(ctx, &eventpb.Event_ToolArguments{ToolArguments: &eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: string(encoded)}}, sources)
+	return a.host.Emit(ctx, harness.Observation(&eventpb.ToolArguments{ItemId: itemID, ArgumentsJson: string(encoded)}), sources)
 }
 
 func (a *codexAdapter) itemCompletedText(ctx context.Context, itemID, text string, sources []uint64) error {
-	return a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: text}}}, sources)
+	return a.host.Emit(ctx, harness.Observation(&eventpb.ItemCompleted{ItemId: itemID, Outcome: &eventpb.ItemCompleted_Text{Text: text}}), sources)
 }
 
 func (a *codexAdapter) itemCompletedTool(ctx context.Context, itemID, output string, succeeded bool, sources []uint64) error {
-	return a.emit(ctx, &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+	return a.host.Emit(ctx, harness.Observation(&eventpb.ItemCompleted{
 		ItemId: itemID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: output, Succeeded: succeeded}},
-	}}, sources)
+	}), sources)
 }
 
 func (a *codexAdapter) answerServerRequest(ctx context.Context, frame jsonrpc.Message) error {
@@ -873,29 +871,6 @@ func (a *codexAdapter) send(ctx context.Context, value any) error {
 		return err
 	}
 	return a.host.SendNative(ctx, frame)
-}
-
-func (a *codexAdapter) emit(ctx context.Context, observation any, sources []uint64) error {
-	event := &eventpb.Event{SourceSequences: append([]uint64(nil), sources...)}
-	switch value := observation.(type) {
-	case *eventpb.Event_TurnStarted:
-		event.Observation = value
-	case *eventpb.Event_TurnCompleted:
-		event.Observation = value
-	case *eventpb.Event_ItemStarted:
-		event.Observation = value
-	case *eventpb.Event_ItemCompleted:
-		event.Observation = value
-	case *eventpb.Event_TextDelta:
-		event.Observation = value
-	case *eventpb.Event_ToolArguments:
-		event.Observation = value
-	case *eventpb.Event_ToolOutputDelta:
-		event.Observation = value
-	default:
-		return fmt.Errorf("unsupported Codex observation type %T", observation)
-	}
-	return a.host.Emit(ctx, event, sources)
 }
 
 type codexUnknownItem struct {

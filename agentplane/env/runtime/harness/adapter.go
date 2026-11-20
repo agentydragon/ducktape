@@ -9,6 +9,8 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 // MaxFrameLineBytes bounds native frames and retained transcript lines.
@@ -117,6 +119,22 @@ type AdapterHost interface {
 	ReasoningEffortChanged(context.Context, string, string, []uint64) error
 	FailCommand(context.Context, string, string, []uint64) error
 	NoopCommand(context.Context, string, string, []uint64) error
+}
+
+// Observation wraps one generated observation in the Event vocabulary. The generated
+// descriptor owns the mapping, avoiding a second list of observation field names. It panics
+// on a message that is not one of the Event observations.
+func Observation(value proto.Message) *eventpb.Event {
+	e := &eventpb.Event{}
+	d := e.ProtoReflect().Descriptor().Fields()
+	for i := 0; i < d.Len(); i++ {
+		f := d.Get(i)
+		if f.ContainingOneof() != nil && f.Message() != nil && f.Message().FullName() == value.ProtoReflect().Descriptor().FullName() {
+			e.ProtoReflect().Set(f, protoreflect.ValueOfMessage(value.ProtoReflect()))
+			return e
+		}
+	}
+	panic(fmt.Sprintf("%T is not an Environment Runtime observation", value))
 }
 
 // Adapter prepares one Session's native conversation and translates its raw frames into durable
