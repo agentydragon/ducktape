@@ -45,7 +45,10 @@ const messageResult = z.object({
   raw: z.string().nullish(),
 });
 type Message = z.infer<typeof messageResult>;
-export const draftResult = z.object({ id: z.string().min(1), message: messageResult.nullish() });
+export const draftResult: z.ZodType<{ id: string; message?: Message | null }> = z.object({
+  id: z.string().min(1),
+  message: messageResult.nullish(),
+});
 const threadResult = z.object({
   id: z.string().min(1),
   snippet: z.string().nullish(),

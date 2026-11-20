@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
+import type { GetGmailResourceSummariesResponse } from "../../../../../action_service/api/contracts/operator_action_service_pb";
 import { getGmailResourceSummaries } from "../../client";
 
 export const gmail = "https://mail.google.com/mail/u/0/";
@@ -49,16 +50,21 @@ export function EmailField({ name, value }: { name: string; value?: string | nul
   ) : null;
 }
 
-export const emptyArguments = z.strictObject({});
-export const idArguments = z.strictObject({ id: z.string().min(1) });
-export const listArguments = z.strictObject({
+export const emptyArguments: z.ZodType<Record<string, never>> = z.strictObject({});
+export const idArguments: z.ZodObject<{ id: z.ZodString }> = z.strictObject({ id: z.string().min(1) });
+export const listArguments: z.ZodObject<{
+  q: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+  maxResults: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+  pageToken: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+  includeSpamTrash: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
+}> = z.strictObject({
   q: z.string().nullish(),
   maxResults: z.int().nonnegative().nullish(),
   pageToken: z.string().nullish(),
   includeSpamTrash: z.boolean().nullish(),
 });
 
-export function useGmailSummaries(requestId?: string) {
+export function useGmailSummaries(requestId?: string): GetGmailResourceSummariesResponse | undefined {
   return useQuery({
     queryKey: ["action-gmail-resource-summaries", requestId],
     queryFn: ({ signal }) => getGmailResourceSummaries(requestId ?? "", signal),
