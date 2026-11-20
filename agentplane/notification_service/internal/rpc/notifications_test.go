@@ -59,7 +59,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	inbox := inboxes.GetInboxes()[0]
 	if inbox.GetId() != subscription.GetInboxId() || inbox.GetSessionId() != testSession ||
-		inbox.GetDestinationRef() != nil || inbox.GetLastCursor() != 0 || inbox.GetRetired() {
+		inbox.GetLastCursor() != 0 || inbox.GetRetired() {
 		t.Errorf("inbox = %v", inbox)
 	}
 }
@@ -226,7 +226,7 @@ func TestSessionWithoutPlacementCanSubscribeReadAndAcknowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || page.GetInbox().GetId() != created.GetSubscription().GetInboxId() || page.GetInbox().GetDestinationRef() != nil {
+	if err != nil || page.GetInbox().GetId() != created.GetSubscription().GetInboxId() {
 		t.Fatalf("unplaced Session inbox = %v, %v", page, err)
 	}
 	if _, err := server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession}); err != nil {

@@ -477,8 +477,10 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Fatalf("send = %s %v", code, sent)
 	}
 	id := at(t, sent, "message", "id").(string)
-	if at(t, sent, "message", "destinationRef", "uid") != "" {
-		t.Errorf("Session-addressed message exposed a Sandbox UID: %v", at(t, sent, "message", "destinationRef"))
+	if message, ok := at(t, sent, "message").(map[string]any); ok {
+		if _, present := message["destinationRef"]; present {
+			t.Errorf("Session-addressed message exposed a Sandbox destination: %v", message["destinationRef"])
+		}
 	}
 
 	// The recipient Session is told of its inbox and nothing more: neither the notice nor its retry after the lost

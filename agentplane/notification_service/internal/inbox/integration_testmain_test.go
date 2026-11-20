@@ -73,19 +73,6 @@ func newOwner() model.ServiceAccount {
 	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
-func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
-	t.Helper()
-	id := uuid.New()
-	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
-			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
-		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
-	return id
-}
-
 func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
 	t.Helper()
 	var value any
@@ -142,16 +129,12 @@ func (f fixture) incarnation() Owner {
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
 func (f fixture) body(key string) sourceadapter.Subscribe {
-	body := sessionBody(key, f.sessionID)
-	body.DestinationRef.Namespace, body.DestinationRef.Name = f.owner.Namespace, f.owner.Name
-	body.DestinationRef.UID = f.sandboxUID
-	return body
+	return sessionBody(key, f.sessionID)
 }
 
 // sessionBody is a creation for the given Session.
 func sessionBody(key, sessionID string) sourceadapter.Subscribe {
 	return sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
 		SessionID:      sessionID,
 		IdempotencyKey: key,
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
@@ -161,9 +144,7 @@ func sessionBody(key, sessionID string) sourceadapter.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) Subscription {
 	t.Helper()
-	owner := f.incarnation()
-	owner.SandboxUID = creation.DestinationRef.UID
-	subscription, err := f.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
+	subscription, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}

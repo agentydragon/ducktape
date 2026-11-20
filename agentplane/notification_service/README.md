@@ -20,10 +20,14 @@ against its exact Sandbox. Persisted subscriptions, inbox cursors and notices re
 the placement migration.
 Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session. Workloads running
 as that exact Identity can read and manage its Session-keyed inbox across Sandbox incarnations; a
-same-name replacement Identity cannot inherit it. New inboxes store the Session ID as their key and
-do not write Sandbox destination metadata. The separate migration rekeys existing rows in place;
-legacy destination columns remain through the cutover. Legacy ownerless and ServiceAccount-owned
-inboxes were deleted from staging; the service has no legacy owner representation or backfill path.
+same-name replacement Identity cannot inherit it. An inbox is keyed by its Session ID alone: the
+Session-derived Sandbox key and the Sandbox destination and owner columns are retired, so the store
+neither reads nor writes Sandbox addressing. Migration 21 rekeyed retained rows in place and
+migration 22 dropped the retired columns. Migration 22 refuses the rollout only when a row has no
+Session ID; a row a pre-cutover writer re-derived from its Sandbox is keyed from its Session ID again
+and named in a migration notice, because that key carries nothing the Session does not already name.
+Legacy ownerless and ServiceAccount-owned inboxes were deleted from staging; the service has no
+legacy owner representation or backfill path.
 An Action source additionally requires the request's exact `caller_identity`; retained ServiceAccount
 caller attribution grants no source access.
 
@@ -31,8 +35,9 @@ Identity callers subscribe to any Dispatcher Session recorded as executing as th
 regardless of placement. Message sends use the sender's current `session_inbox_access` grant, or the
 existing same-Identity rule. Retired ServiceAccount credentials confer no sender or receipt access.
 Accepted sender attribution, payloads, cursors and runner receipts stay intact.
-The existing inbox quota follows the execution Identity across Sandbox incarnations. Historical
-destination columns remain for migrated rows and rollback compatibility.
+The existing inbox quota follows the execution Identity across Sandbox incarnations. A message send
+still resolves the recipient Session's live Sandbox, but only to authorize the send; that
+resolution is per-request and is never stored or echoed back.
 
 Source workers continue processing due subscriptions and store unread entries and prepared notices.
 For delivery, the worker checks that the Dispatcher still records the inbox's exact Identity and
@@ -87,28 +92,40 @@ sends with their original idempotency keys.
 The SessionSpec placement cutover also changes the Dispatcher Session projection consumed here;
 roll the Notification service with the matching Dispatcher and sampler contract. Pre-cutover
 Sandbox/service binaries are not a supported compatibility tier. The Session-key migration preserves
-existing inboxes, subscriptions, entries, acknowledgements and receipts in place; legacy destination
-columns remain until the contract step. A rollback restores the prior image and its Sandbox-pinned
-routing for rows with destination metadata. Session-only rows stay stored and pending until the
-Session-keyed image is restored.
+existing inboxes, subscriptions, entries, acknowledgements and receipts in place. Migration 22 is
+the contract step: it drops the Sandbox key, destination and owner columns, so rolling the image
+back to a pre-contract binary restores Sandbox-pinned routing over columns that no longer exist.
+Roll back by restoring a database backup taken before migration 22 alongside the prior images; do
+not roll the image back alone. The same applies to the CLI: send and subscribe requests accept no
+destination field once the API drops it, so old and new spellings must not overlap the contract
+step.
 New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
 does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
 prompt frozen when they were opened, which may still show a Sandbox reference and name the old
 variable. Use `--session ID` from such a Session or open a new Session for the current prompt and
 environment. Stored prompts and History are preserved unchanged.
 Rollback rolls both API and CLI images back together. Existing subscriptions, inbox entries,
-acknowledgements and notices are not deleted. The separate key migration changes each row in place;
-the legacy destination columns remain until the contract step.
+acknowledgements and notices are not deleted by migration 22; only the retired columns are, and the
+data they carried was already redundant with the Session ID.
 
 Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
 empty database. A database with completed version 12 and the required final schema is adopted
 without copying rows or rewriting its Goose history. A partial predecessor must first finish
 migrating with the previous image. Subsequent schema changes use new Goose versions.
 
-The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
-requests while replacement replicas apply migrations and start. The migration lock serializes schema
-updates, while migration changes must keep old and new service versions compatible throughout the
-rollout.
+The Notification Deployment normally rolls replicas. Existing replicas continue to accept webhooks and
+serve requests while replacement replicas apply migrations and start. The migration lock serializes
+schema updates, while migration changes must keep old and new service versions compatible throughout
+the rollout.
+
+The Session key contract is the exception that rule cannot cover: migration 22 drops columns the
+previous image still reads, so a surged old replica would fail its inbox queries. The Deployment is
+held at `Recreate` in [`notifications.py`](../../cluster/cdk8s/agentplane/notifications.py) with a
+`CLEANUP` marker, the rollout hold
+[staging data preservation](../docs/staging_data_preservation.md) requires for a dropped column. It
+briefly takes Notifications offline while the replacement starts; restore the rolling profile once
+each environment runs and passes its checks on the contract schema. Rollback needs a backup taken
+before migration 22, not only the previous image.
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.

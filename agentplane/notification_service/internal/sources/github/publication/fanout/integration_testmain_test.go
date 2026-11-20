@@ -101,16 +101,15 @@ func (f fixture) transaction(ctx context.Context, run func(transaction.Tx) error
 	return f.runner.Run(ctx, run)
 }
 
-func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
+func (f fixture) insertInbox(t *testing.T, sessionID string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
+		INSERT INTO inbox (id, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
-		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
+		VALUES ($1, $2, 0, 0, 0, 0, false, now(), now(), now(), $3, $4)`,
+		id, sessionID, f.identity.Name, f.identity.UID)
 	return id
 }
 
@@ -122,7 +121,6 @@ func (f fixture) incarnation() inboxstore.Owner {
 
 func (f fixture) body(key string) sourceadapter.Subscribe {
 	body := sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: f.owner.Namespace, Name: f.owner.Name, UID: f.sandboxUID},
 		SessionID:      f.sessionID,
 		IdempotencyKey: key,
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
@@ -133,9 +131,7 @@ func (f fixture) body(key string) sourceadapter.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) inboxstore.Subscription {
 	t.Helper()
-	owner := f.incarnation()
-	owner.SandboxUID = creation.DestinationRef.UID
-	subscription, err := f.Store.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
+	subscription, err := f.Store.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}

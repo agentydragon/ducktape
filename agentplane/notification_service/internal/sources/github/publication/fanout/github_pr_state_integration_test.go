@@ -124,9 +124,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 				t.Errorf("normalized raw review matches = %d, want zero", got)
 			}
 
-			lateDestination := g.destination
-			lateDestination.Name = "late-review-observer"
-			late := g.followIn(t, lateDestination, source, "review-late")
+			late := g.followIn(t, "late-review-observer", source, "review-late")
 			g.reconcileSubscription(t, late)
 			lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 			if len(lateEntries) != 1 {
@@ -196,9 +194,7 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 		t.Errorf("review transitions submitted=%d dismissed=%d, want one each", submittedCount, dismissedCount)
 	}
 
-	lateDestination := g.destination
-	lateDestination.Name = "dismissed-review-current"
-	late := g.followIn(t, lateDestination, g.source(githubmodel.PullRequestSubject{Number: 7},
+	late := g.followIn(t, "dismissed-review-current", g.source(githubmodel.PullRequestSubject{Number: 7},
 		githubmodel.EventFilter{Event: githubmodel.EventPullRequestReview}), "dismissed-current")
 	g.reconcileSubscription(t, late)
 	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
@@ -219,9 +215,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	closedSource := g.source(githubmodel.PullRequestSubject{Number: 7}, githubmodel.EventFilter{
 		Event: githubmodel.EventPullRequest, Actions: []string{"closed"},
 	})
-	closedDestination := g.destination
-	closedDestination.Name = "closed-pr"
-	closed := g.followIn(t, closedDestination, closedSource, "closed-pr")
+	closed := g.followIn(t, "closed-pr", closedSource, "closed-pr")
 	g.observePullRequest(t, closed, githubmodel.PullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
 		State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown,
@@ -259,9 +253,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	reopenedSource := g.source(githubmodel.PullRequestSubject{Number: 8}, githubmodel.EventFilter{
 		Event: githubmodel.EventPullRequest, Actions: []string{"reopened"},
 	})
-	reopenedDestination := g.destination
-	reopenedDestination.Name = "reopened-pr"
-	reopened := g.followIn(t, reopenedDestination, reopenedSource, "reopened-pr")
+	reopened := g.followIn(t, "reopened-pr", reopenedSource, "reopened-pr")
 	g.observePullRequest(t, reopened, githubmodel.PullRequestObservation{
 		BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB,
 		State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown,
@@ -358,9 +350,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 		t.Errorf("retained inbox observation copies = %d, want one", got)
 	}
 
-	lateDestination := g.destination
-	lateDestination.Name = "after-review-retention"
-	late := g.followIn(t, lateDestination, source, "late-after-retention")
+	late := g.followIn(t, "after-review-retention", source, "late-after-retention")
 	g.reconcileSubscription(t, late)
 	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(lateEntries) != 1 || lateEntries[0].Event.(sourceadapter.GitHubObservationEvent).Sequence != sequence {

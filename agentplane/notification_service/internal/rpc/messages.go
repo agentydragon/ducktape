@@ -58,18 +58,17 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	// Grants and attribution use the authenticated Identity incarnation.
 	sender := inboxstore.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
 	grantee := reader.Identity{Name: caller.identity.Name, UID: types.UID(caller.identity.UID)}
+	// destination authorizes the send and pins the Sandbox incarnation; the inbox itself is keyed by
+	// Session ID, so nothing stores it.
+	destination := model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
 	message := inboxstore.Message{
-		Sender: sender,
-		DestinationRef: model.DestinationRef{
-			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
-		},
-		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Body: request.GetBody(),
-		FromSession: request.FromSession,
+		Sender: sender, SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(),
+		Body: request.GetBody(), FromSession: request.FromSession,
 	}
 	if err := message.Validate(s.messageBodyLimit); err != nil {
 		return nil, err
 	}
-	view, err := s.sandbox(ctx, message.DestinationRef)
+	view, err := s.sandbox(ctx, destination)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +76,7 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 	// learn the same itself. Any other recipient needs a `session_inbox_access` rule bound to the sender.
 	// TODO(SESSION_IDENTITY_AUTHZ): target that grant at the recipient Session's Identity, not the
 	// Sandbox hosting it (agentplane/plans/task_dag.md).
-	if !sameIdentity(caller, session.GetSession(), message.SessionID, message.DestinationRef) {
+	if !sameIdentity(caller, session.GetSession(), message.SessionID, destination) {
 		if !s.policy.Health.Available() {
 			return nil, errSendPolicyUnavailable
 		}
@@ -86,9 +85,9 @@ func (s *Notifications) sendMessage(ctx context.Context, caller identityActor, r
 		}
 	}
 	sandbox := view.Identity
-	message.DestinationRef.UID = sandbox.Uid
+	destination.UID = sandbox.Uid
 	// The recipient is the exact Identity the Session authority recorded, which the destination Sandbox must name.
-	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, message.DestinationRef); ok {
+	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, destination); ok {
 		message.Recipient = inboxstore.Owner{Identity: identity, SandboxUID: sandbox.Uid}
 	} else {
 		return nil, inboxstore.ErrNotFound
@@ -168,7 +167,7 @@ func (s *Notifications) getMessage(ctx context.Context, caller identityActor, re
 
 func sentMessageView(sent inboxstore.SentMessage) *notificationspb.Message {
 	return &notificationspb.Message{
-		Id: sent.ID.String(), DestinationRef: destinationRefView(sent.DestinationRef), SessionId: sent.SessionID,
+		Id: sent.ID.String(), SessionId: sent.SessionID,
 		IdempotencyKey: sent.IdempotencyKey, AcceptedAt: timestamppb.New(sent.AcceptedAt), Covered: sent.Covered,
 		Acknowledged: sent.Acknowledged, InboxRetired: sent.InboxRetired,
 	}

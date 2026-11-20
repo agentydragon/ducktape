@@ -21,7 +21,9 @@ def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[d
     notifications_deployment = find_resource(staging_manifests, "Deployment", notifications.NAME)
     pod = notifications_deployment["spec"]["template"]["spec"]
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
-    assert notifications_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+    # The contract migration drops inbox columns the previous image reads, so the rollout holds at
+    # Recreate: no replica of that image can serve beside the migrated schema.
+    assert notifications_deployment["spec"]["strategy"]["type"] == "Recreate"
     assert not pod.get("initContainers")
     startup = server["startupProbe"]["exec"]["command"]
     readiness = server["readinessProbe"]["exec"]["command"]

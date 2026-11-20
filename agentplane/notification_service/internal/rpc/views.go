@@ -281,17 +281,9 @@ func subscriptionView(subscription inboxstore.Subscription) (*notificationspb.Su
 	}, nil
 }
 
-func destinationRefView(ref model.DestinationRef) *notificationspb.DestinationRef {
-	return &notificationspb.DestinationRef{Namespace: ref.Namespace, Name: ref.Name, Uid: ref.UID}
-}
-
 func inboxView(inbox inboxstore.Inbox) *notificationspb.Inbox {
-	var destination *notificationspb.DestinationRef
-	if inbox.DestinationRef.Namespace != "" || inbox.DestinationRef.Name != "" || inbox.DestinationRef.UID != "" {
-		destination = destinationRefView(inbox.DestinationRef)
-	}
 	return &notificationspb.Inbox{
-		Id: inbox.ID.String(), DestinationRef: destination, SessionId: inbox.SessionID,
+		Id: inbox.ID.String(), SessionId: inbox.SessionID,
 		LastCursor: inbox.LastCursor, Acknowledged: inbox.Acknowledged, Covered: inbox.Covered,
 		ExpiredThrough: inbox.ExpiredThrough, Retired: inbox.Retired, DeliveryError: inbox.DeliveryError,
 	}

@@ -554,9 +554,7 @@ func TestLateSubscriberGetsCurrentConflictSnapshotAfterHeadChanges(t *testing.T)
 		t.Fatalf("same conflict at a new head generated transition sequences %v, want only the original conflict", got)
 	}
 
-	destination := g.destination
-	destination.Name = "late-subscriber"
-	newSubscriber := g.followIn(t, destination, g.source(githubmodel.PullRequestSubject{Number: 7}), "late-subscriber")
+	newSubscriber := g.followIn(t, "late-subscriber", g.source(githubmodel.PullRequestSubject{Number: 7}), "late-subscriber")
 	g.reconcileSubscription(t, newSubscriber)
 	allEntries := g.read(t, newSubscriber.InboxID, 0).Entries
 	if len(allEntries) != 2 {
@@ -609,9 +607,7 @@ func TestNewInstallationGetsInitialConflictSnapshot(t *testing.T) {
 
 	// A new installation identity gets its own access fence and must observe the current conflict.
 	g.installation += 100
-	destination := g.destination
-	destination.Name = "new-installation-subscriber"
-	recreated := g.followIn(t, destination, g.source(githubmodel.PullRequestSubject{Number: 7}), "recreated")
+	recreated := g.followIn(t, "new-installation-subscriber", g.source(githubmodel.PullRequestSubject{Number: 7}), "recreated")
 	g.observePullRequest(t, recreated, observation)
 	g.reconcileSubscription(t, recreated)
 	if got := len(g.read(t, recreated.InboxID, 0).Entries); got != 1 {

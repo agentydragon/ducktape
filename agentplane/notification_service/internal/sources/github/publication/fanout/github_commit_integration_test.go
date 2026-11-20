@@ -148,9 +148,7 @@ func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
 			if !bytes.Equal(eventPayload, currentPayload) {
 				t.Errorf("immutable event payload %s differs from current payload %s", eventPayload, currentPayload)
 			}
-			lateDestination := g.destination
-			lateDestination.Name = "late"
-			late := g.followIn(t, lateDestination, source, "late")
+			late := g.followIn(t, "late", source, "late")
 			g.reconcileSubscription(t, late)
 			lateEntries := commitObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 			if len(lateEntries) != 1 || lateEntries[0].Event.(sourceadapter.GitHubObservationEvent).Sequence != entries[0].Event.(sourceadapter.GitHubObservationEvent).Sequence {
@@ -174,9 +172,7 @@ func TestGitHubCheckRunSnapshotUsesLatestAttemptPerAppOnCurrentHead(t *testing.T
 		g.ingest(t, normalizedCheckRunDelivery(g, run))
 	}
 
-	lateDestination := g.destination
-	lateDestination.Name = "latest-check-runs"
-	late := g.followIn(t, lateDestination, sub.Source, "latest-check-runs")
+	late := g.followIn(t, "latest-check-runs", sub.Source, "latest-check-runs")
 	g.reconcileSubscription(t, late)
 	entries := commitObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(entries) != 2 {
@@ -430,9 +426,7 @@ func TestGitHubCommitObservationRetentionKeepsCurrentAndInboxCopies(t *testing.T
 	if got := len(commitObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)); got != 1 {
 		t.Errorf("inbox copies after cleanup = %d, want one", got)
 	}
-	lateDestination := g.destination
-	lateDestination.Name = "late"
-	late := g.followIn(t, lateDestination, g.source(githubmodel.PullRequestSubject{Number: 7}), "late")
+	late := g.followIn(t, "late", g.source(githubmodel.PullRequestSubject{Number: 7}), "late")
 	g.reconcileSubscription(t, late)
 	if got := len(commitObservationEntries(t, g.read(t, late.InboxID, 0).Entries)); got != 1 {
 		t.Errorf("late current state = %d, want one", got)

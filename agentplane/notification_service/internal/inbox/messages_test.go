@@ -30,11 +30,10 @@ func TestMessagePayloadKeepsItsStableDigestEncoding(t *testing.T) {
 func TestAMessageIsRefusedOutsideItsBounds(t *testing.T) {
 	const limit = 8
 	valid := Message{
-		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox"},
-		SessionID:      "test-session", IdempotencyKey: "test-key", Body: "12345678",
+		SessionID: "test-session", IdempotencyKey: "test-key", Body: "12345678",
 	}
 	if err := valid.Validate(limit); err != nil {
-		t.Fatalf("a body at the limit, with no UID: %v", err)
+		t.Fatalf("a body at the limit: %v", err)
 	}
 	for name, change := range map[string]func(*Message){
 		"empty body":          func(m *Message) { m.Body = "" },
@@ -45,10 +44,8 @@ func TestAMessageIsRefusedOutsideItsBounds(t *testing.T) {
 			long := strings.Repeat("s", 201)
 			m.FromSession = &long
 		},
-		"no Session":           func(m *Message) { m.SessionID = "" },
-		"no idempotency key":   func(m *Message) { m.IdempotencyKey = "" },
-		"no destination name":  func(m *Message) { m.DestinationRef.Name = "" },
-		"long destination UID": func(m *Message) { m.DestinationRef.UID = strings.Repeat("u", 129) },
+		"no Session":         func(m *Message) { m.SessionID = "" },
+		"no idempotency key": func(m *Message) { m.IdempotencyKey = "" },
 	} {
 		message := valid
 		change(&message)

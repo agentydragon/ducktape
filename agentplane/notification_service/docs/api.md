@@ -24,12 +24,14 @@ placement and check the sender's scoped grant against its exact Sandbox. Inbox a
 identify subsequent operations.
 The caller's inboxes and subscriptions must match the exact execution Identity name and UID recorded
 by the Dispatcher Session. Any admitted workload running as that Identity can manage the Session-keyed
-inbox across Sandbox incarnations; a same-name replacement Identity cannot inherit it. New inboxes
-use the Session ID as their key and omit Sandbox destination metadata. The separate data migration
-rekeys existing rows in place before writer cutover; legacy destination columns remain during the
-cutover. The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned
-inboxes were deleted from staging. Operator diagnostic reads remain available for Identity-owned
-inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
+inbox across Sandbox incarnations; a same-name replacement Identity cannot inherit it. An inbox is
+keyed by its Session ID alone: the Session-derived Sandbox key and the Sandbox destination and
+owner columns are retired, so no request or view carries Sandbox addressing. The data migration
+rekeyed retained rows in place and the contract migration dropped those columns; it refuses to run
+only when a row has no Session ID, and rekeys from its Session ID a row a pre-cutover writer derived
+from its Sandbox again. The database requires a complete Identity owner; legacy ownerless and
+ServiceAccount-owned inboxes were deleted from staging. Operator diagnostic reads remain available
+for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
 ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
 Existing subscription, inbox and retained History data remain subject to their current retention rules.
 Delivery checks the current Dispatcher Session's recorded Identity and placement, then submits by
@@ -67,7 +69,7 @@ different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
 
 Subscription creation and views use a `source` that is a oneof: `actions` or `github`. The common envelope
-owns destination, session, idempotency, and lifetime. Actions owns its request ID and starting sequence.
+owns session, idempotency, and lifetime. Actions owns its request ID and starting sequence.
 The App facade maps the annotated `/v1/...` routes under `/upstream/notifications`; it writes JSON field names
 in camelCase and 64-bit integers as strings, and accepts either spelling in requests (`notifications.proto` is the contract):
 

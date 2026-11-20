@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -42,7 +41,6 @@ var (
 type githubFixture struct {
 	fixture
 	app, installation, repository int64
-	destination                   model.DestinationRef
 	inbox                         uuid.UUID
 	state                         *githubstate.State
 	coordinator                   *Coordinator
@@ -57,10 +55,9 @@ func newGitHubFixture(t *testing.T) githubFixture {
 func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	t.Helper()
 	base := 1<<41 + rand.Int64N(1<<40)
-	ref := f.body("github-fixture").DestinationRef
 	return githubFixture{
-		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
-		inbox:       f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
+		fixture: f, app: base, installation: base + 1, repository: base + 2,
+		inbox:       f.insertInbox(t, f.sessionID),
 		state:       githubstate.New(f.db, f.runner, testFreshness, publication.Adapter{}),
 		coordinator: New(f.db, f.runner, f.Store),
 	}
@@ -180,11 +177,12 @@ type githubSubscription struct {
 // follow subscribes the fixture's inbox to the source, under the fixture's grant.
 func (g githubFixture) follow(t *testing.T, source githubmodel.Source, key string) githubSubscription {
 	t.Helper()
-	return g.followIn(t, g.destination, source, key)
+	return g.followIn(t, "", source, key)
 }
 
-// followIn subscribes the inbox of another destination of the fixture's owner to the source.
-func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, source githubmodel.Source, key string) githubSubscription {
+// followIn subscribes another Session of the fixture's owner, keyed by label, to the source. An empty label
+// is the fixture's own inbox.
+func (g githubFixture) followIn(t *testing.T, label string, source githubmodel.Source, key string) githubSubscription {
 	t.Helper()
 	subject, err := githubstate.NewSubjectKey(g.repository, source.Subject)
 	if err != nil {
@@ -192,7 +190,7 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	}
 	access := g.access()
 	subscription, err := g.Subscribe(t.Context(), g.incarnation(), sourceadapter.Subscribe{
-		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key,
+		SessionID: g.sessionForLabel(label), IdempotencyKey: key,
 		Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
 	}, sourceadapter.GitHubAuthorization{Access: access})
 	if err != nil {
@@ -201,12 +199,12 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	return githubSubscription{ID: subscription.ID, InboxID: subscription.InboxID, Source: source, Subject: subject}
 }
 
-// sessionForDestination uses a distinct Session identity for each destination.
-func (g githubFixture) sessionForDestination(destination model.DestinationRef) string {
-	if destination == g.destination {
+// sessionForLabel gives each label its own distinct Session identity.
+func (g githubFixture) sessionForLabel(label string) string {
+	if label == "" {
 		return g.sessionID
 	}
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(g.sessionID+"/"+destination.Namespace+"/"+destination.Name+"/"+destination.UID)).String()
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(g.sessionID+"/"+label)).String()
 }
 
 // claimInbox makes the inbox claimed by a worker, as a claim of the inbox does.

@@ -31,9 +31,8 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 type Message struct {
 	Sender Sender
 	// Recipient is the exact Identity and Sandbox incarnation the inbox belongs to.
-	Recipient      Owner
-	DestinationRef model.DestinationRef
-	SessionID      string
+	Recipient Owner
+	SessionID string
 	// IdempotencyKey is unique per sender and inbox: an identical retry answers with the message it sent.
 	IdempotencyKey string
 	Body           string
@@ -81,13 +80,9 @@ type messagePayload struct {
 	FromSession *string `json:"from_session,omitempty"`
 }
 
-// Validate checks the bounds of the message, its body against limit UTF-8 bytes. The destination's UID may be
-// empty, for the Sandbox of that name as it is now.
+// Validate checks the bounds of the message, its body against limit UTF-8 bytes.
 func (m Message) Validate(limit int) error {
 	if err := errors.Join(
-		model.CheckText("destination_ref.namespace", m.DestinationRef.Namespace, 1, 63),
-		model.CheckText("destination_ref.name", m.DestinationRef.Name, 1, 63),
-		model.CheckText("destination_ref.uid", m.DestinationRef.UID, 0, 128),
 		model.CheckText("session_id", m.SessionID, 1, 200),
 		model.CheckText("idempotency_key", m.IdempotencyKey, 1, 200),
 	); err != nil {
@@ -116,7 +111,6 @@ func (m Message) payload() ([]byte, error) {
 // past it, never the inbox's cursors or other entries.
 type SentMessage struct {
 	ID             uuid.UUID
-	DestinationRef model.DestinationRef
 	SessionID      string
 	IdempotencyKey string
 	AcceptedAt     time.Time
@@ -249,8 +243,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return err
 		}
 		sent = SentMessage{
-			ID: id, DestinationRef: inbox.DestinationRef, SessionID: inbox.SessionID, IdempotencyKey: message.IdempotencyKey,
-			AcceptedAt: accepted,
+			ID: id, SessionID: inbox.SessionID, IdempotencyKey: message.IdempotencyKey, AcceptedAt: accepted,
 		}
 		return notify(ctx, tx)
 	})
@@ -271,15 +264,13 @@ func (s *Store) SentMessage(ctx context.Context, sender Sender, id uuid.UUID) (S
 func sentMessage(ctx context.Context, tx transaction.Tx, sender Sender, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
 	var inboxID uuid.UUID
-	var namespace, name, uid sql.NullString
 	predicate, args := senderPredicate(sender, 2)
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.id, i.destination_namespace, i.destination_name, i.destination_uid,
-			i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.id, i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
 		WHERE m.id = $1 AND `+predicate,
-		append([]any{id}, args...)...).Scan(&inboxID, &namespace, &name, &uid,
+		append([]any{id}, args...)...).Scan(&inboxID,
 		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
 		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -289,9 +280,5 @@ func sentMessage(ctx context.Context, tx transaction.Tx, sender Sender, id uuid.
 		return SentMessage{}, err
 	}
 	sent.AcceptedAt = sent.AcceptedAt.UTC()
-	sent.DestinationRef, err = destinationRefFromColumns(inboxID, namespace, name, uid)
-	if err != nil {
-		return SentMessage{}, err
-	}
 	return sent, nil
 }

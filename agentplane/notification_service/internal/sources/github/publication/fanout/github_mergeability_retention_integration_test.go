@@ -72,9 +72,7 @@ func TestCleanupGitHubDeliveriesRetainsSnapshotsAndInboxCopies(t *testing.T) {
 	}
 
 	// The current conflict remains available for an initial notice after every transition row has expired.
-	destination := g.destination
-	destination.Name = "after-retention"
-	late := g.followIn(t, destination, g.source(githubmodel.PullRequestSubject{Number: 7}), "after-retention")
+	late := g.followIn(t, "after-retention", g.source(githubmodel.PullRequestSubject{Number: 7}), "after-retention")
 	g.reconcileSubscription(t, late)
 	if got := len(g.read(t, late.InboxID, 0).Entries); got != 2 {
 		t.Fatalf("late subscriber received %d total entries after retention, want current conflict and lifecycle snapshots", got)

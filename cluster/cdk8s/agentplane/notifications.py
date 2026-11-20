@@ -2,6 +2,7 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -9,6 +10,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    DeploymentStrategy,
     EnvValue,
     MemoryResources,
     Role,
@@ -143,7 +145,13 @@ class Notifications(Construct):
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
-            replica_profile=env.replicas,
+            # Migration 22 drops the inbox columns the previous image reads, so a surged replica of that
+            # image could query columns the migration already removed. Recreate keeps every replica off
+            # the new schema until the replacement serves
+            # ([staging data preservation](../../docs/staging_data_preservation.md)).
+            # CLEANUP(added 2026-11-20): restore `replica_profile=env.replicas` once each environment
+            #   runs and passes its checks on the Session-key contract schema.
+            replica_profile=replace(env.replicas, strategy=DeploymentStrategy.recreate()),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

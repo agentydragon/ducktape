@@ -24,7 +24,7 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 }
 
 func (g githubFixture) creation(source githubmodel.Source, key string) sourceadapter.Subscribe {
-	return sourceadapter.Subscribe{DestinationRef: g.destination, SessionID: g.sessionID, IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7}
+	return sourceadapter.Subscribe{SessionID: g.sessionID, IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {

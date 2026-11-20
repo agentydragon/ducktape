@@ -20,7 +20,7 @@ func TestFinalSchemaStoresNativeContentWithoutLegacyColumns(t *testing.T) {
 		assertColumnExists(t, f.db, column.table, column.name, false)
 	}
 	for _, column := range []struct{ table, name string }{
-		{"inbox", "destination_namespace"}, {"subscription", "creation_proto"}, {"entry", "identity_provider"}, {"entry", "action_at"},
+		{"subscription", "creation_proto"}, {"entry", "identity_provider"}, {"entry", "action_at"},
 	} {
 		assertColumnExists(t, f.db, column.table, column.name, true)
 	}

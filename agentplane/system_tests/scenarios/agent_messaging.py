@@ -132,7 +132,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         sending = await sender_agent.run_shell(sender_model, send)
         sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
     assert sent.session_id == str(recipient_agent.thread_id), sending.transcript
-    assert not sent.destination_ref.uid, sending.transcript
+    assert "destination_ref" not in sending.tool_outputs[-1], sending.transcript
 
     async with asyncio.TaskGroup() as turns:
         turns.create_task(recipient_agent.next_turn())

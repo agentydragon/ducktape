@@ -7,7 +7,8 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/notification_se
 // SubscriptionCreation is the immutable typed configuration a subscription was created with.
 // Its discriminator and idempotency key live in relational columns.
 message SubscriptionCreation {
-  DestinationRef destination_ref = 1;
+  reserved 1;
+  reserved "destination_ref";
   string session_id = 2;
   int64 lifetime_days = 3;
 
@@ -15,12 +16,6 @@ message SubscriptionCreation {
     ActionsSource actions = 4;
     GitHubSource github = 5;
   }
-}
-
-message DestinationRef {
-  string namespace = 1;
-  string name = 2;
-  string uid = 3;
 }
 
 message ActionsSource {
