@@ -92,7 +92,12 @@ actual output imports and reexports, rather than assuming those in the spec.
 This subset supports up to 20 statements and 12 modules: `let` declarations
 initialized with nonnegative safe integers, parameterless functions with a
 single `target += source` or `return binding` statement, calls to those functions, and
-`globalThis.record(binding)`. Public exports must be functions. Imports and
+`globalThis.record(binding)`. It also recognizes a closure factory shaped like
+`function make() { let local = seed; return () => ++local; }`, a top-level
+`let` or `const` initialized by `make()`, and a no-argument wrapper returning a
+call to that closure. Initialization may call the wrapper or record its return.
+The captured variable must have a different name from `seed`, and other closure
+shapes remain unsupported. Public exports must be functions. Imports and
 exports use unaliased names, source declarations have unique names, function
 writes must target a local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
@@ -108,7 +113,10 @@ declaration equals the source-side declaration. The axiom-free general theorem
 accepted graph. This is a checked sufficient condition on the restricted AST,
 not a proof of the Acorn conversion or ECMAScript's linking rules. The module
 scheduler and the shared named-cell
-execution state then model initialization and future exported calls. A safe
+execution state then model initialization and future exported calls. Each
+recognized closure instance has a private modeled cell initialized when its
+factory is called; closure identity, arbitrary allocation and escaping beyond
+the accepted calls are excluded. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results

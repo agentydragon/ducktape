@@ -3,6 +3,10 @@ inductive BindingStmt where
   | variable (name : String) (initial : Nat)
   | function (name target source : String)
   | reader (name source : String)
+  | factory (name localName source : String)
+  | closure (name factory : String)
+  | wrapper (name target : String)
+  | recordCall (name : String)
   | call (name : String)
   | record (name : String)
   deriving DecidableEq, Repr
@@ -24,6 +28,10 @@ def declaredName : BindingStmt → Option String
   | .variable name _ => some name
   | .function name _ _ => some name
   | .reader name _ => some name
+  | .factory name _ _ => some name
+  | .closure name _ => some name
+  | .wrapper name _ => some name
+  | .recordCall _ => none
   | .call _ => none
   | .record _ => none
 
@@ -39,6 +47,10 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .variable _ _ => true
     | .function _ _ _ => false
     | .reader _ _ => false
+    | .factory _ _ _ => false
+    | .closure _ _ => false
+    | .wrapper _ _ => false
+    | .recordCall _ => false
     | .call _ => false
     | .record _ => false
 
@@ -49,8 +61,24 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .variable _ _ => false
     | .function _ _ _ => true
     | .reader _ _ => true
+    | .factory _ _ _ => false
+    | .closure _ _ => true
+    | .wrapper _ _ => true
+    | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+
+def isFactory (source : List BindingStmt) (name : String) : Bool :=
+  match findDefinition source name with
+  | some (.factory _ _ _) => true
+  | _ => false
+
+def isClosure (source : List BindingStmt) (name : String) : Bool :=
+  match findDefinition source name with
+  | some (.closure _ _) => true
+  | _ => false
+
+def closureCell (name : String) : String := "#closure:" ++ name
 
 def localDefinition (module : BindingModule) (name : String) : Bool :=
   module.statements.any (fun statement => declaredName statement == some name)
@@ -74,6 +102,10 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
   | .reader _ sourceName => isVariable source sourceName && visible modules index sourceName
+  | .factory _ localName sourceName => localName != sourceName && isVariable source sourceName && visible modules index sourceName
+  | .closure _ factory => isFactory source factory && visible modules index factory
+  | .wrapper _ target => isClosure source target && visible modules index target
+  | .recordCall name => isFunction source name && visible modules index name
   | .call name => isFunction source name && visible modules index name
   | .record name => isVariable source name && visible modules index name
 
@@ -115,6 +147,10 @@ def referenceNames : BindingStmt → List String
   | .variable _ _ => []
   | .function _ target source => [target, source]
   | .reader _ source => [source]
+  | .factory _ _ source => [source]
+  | .closure _ factory => [factory]
+  | .wrapper _ target => [target]
+  | .recordCall name => [name]
   | .call name => [name]
   | .record name => [name]
 
@@ -221,6 +257,10 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .function _ target sourceName =>
       some (if observeReturn then [.addBinding target sourceName, .returnUndefined] else [.addBinding target sourceName])
     | .reader _ sourceName => some [if observeReturn then .returnBinding sourceName else .readBinding sourceName]
+    | .closure closureName _ => some (if observeReturn then [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)] else [.incrementBinding (closureCell closureName)])
+    | .wrapper _ target => if isClosure source target then some (if observeReturn then [.incrementBinding (closureCell target), .returnBinding (closureCell target)] else [.incrementBinding (closureCell target)]) else none
+    | .factory _ _ _ => none
+    | .recordCall _ => none
     | .variable _ _ => none
     | .call _ => none
     | .record _ => none
@@ -230,6 +270,19 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
   | .variable name initial => some [.declareBinding name initial]
   | .function _ _ _ => some []
   | .reader _ _ => some []
+  | .factory _ _ _ => some []
+  | .closure name factory => do
+    match findDefinition source factory with
+    | some (.factory _ _ sourceName) => some [.copyBinding (closureCell name) sourceName]
+    | _ => none
+  | .wrapper _ _ => some []
+  | .recordCall name => do
+    let ops ← functionOperations source name false
+    let target ← match findDefinition source name with
+      | some (.closure closureName _) => some closureName
+      | some (.wrapper _ closureName) => some closureName
+      | _ => none
+    some (ops ++ [.observeBinding (closureCell target)])
   | .record name => some [.observeBinding name]
   | .call name => functionOperations source name false
 
@@ -244,6 +297,10 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .variable name _ => some name
     | .function _ _ _ => none
     | .reader _ _ => none
+    | .factory _ _ _ => none
+    | .closure name _ => some (closureCell name)
+    | .wrapper _ _ => none
+    | .recordCall _ => none
     | .call _ => none
     | .record _ => none)
   let bindings ← names.mapM (fun name => (lookupBinding state.bindings name).map (fun value => (name, value)))

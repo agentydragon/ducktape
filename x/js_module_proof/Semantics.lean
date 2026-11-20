@@ -14,6 +14,8 @@ inductive Operation where
   | recordText (value : String)
   | recordCell
   | declareBinding (name : String) (value : Nat)
+  | copyBinding (target source : String)
+  | incrementBinding (name : String)
   | addBinding (target source : String)
   | observeBinding (name : String)
   | readBinding (name : String)
@@ -78,6 +80,10 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       let value ← state.cell
       pure (recordObservation state (.number value))
     | .declareBinding name value => declare state name value
+    | .copyBinding target source => do
+      let value ← lookupBinding state.bindings source
+      declare state target value
+    | .incrementBinding name => incrementBy state name 1
     | .addBinding target source => do
       let value ← lookupBinding state.bindings source
       incrementBy state target value

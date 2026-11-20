@@ -58,6 +58,7 @@ test_suite(
     tests = [
         ":binding_graph_corpus_test",
         ":bindings_test",
+        ":closure_test",
         ":combined_behavior_test",
         ":corpus_test",
         ":effect_graph_corpus_test",
@@ -226,4 +227,35 @@ js_test(
         "@lean_dist//:runtime",
     ],
     shard_count = 4,
+)
+
+js_test(
+    name = "closure_test",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "fuzz.mjs",
+        "main.mjs",
+        "@acorn_dist//:dist/acorn.js",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "closure_test.mjs",
+    env = {
+        "ACORN_RLOCATION": "$(rlocationpath @acorn_dist//:dist/acorn.js)",
+        "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
+    },
+    no_copy_to_bin = [
+        "@acorn_dist//:dist/acorn.js",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 2,
 )

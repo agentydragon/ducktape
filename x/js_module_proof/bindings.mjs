@@ -21,9 +21,19 @@ const str = JSON.stringify;
 // output extraction. It does not compare output against generator text.
 function statement(node) {
   if (node.type === "VariableDeclaration") {
-    check(node.kind === "let" && node.declarations.length === 1, "expected a single let declaration");
+    check(node.declarations.length === 1, "expected a single declaration");
     const d = node.declarations[0];
     const name = identifier(d.id);
+    if (
+      (node.kind === "let" || node.kind === "const") &&
+      d.init?.type === "CallExpression" &&
+      !d.init.optional &&
+      d.init.arguments.length === 0
+    ) {
+      check(name !== "globalThis", "globalThis cannot be locally declared");
+      return { kind: "closure", name, factory: identifier(d.init.callee) };
+    }
+    check(node.kind === "let", "expected a let declaration");
     check(
       name !== "globalThis" && d.init?.type === "Literal" && Number.isSafeInteger(d.init.value) && d.init.value >= 0,
       "expected a nonnegative safe integer initializer"
@@ -31,14 +41,39 @@ function statement(node) {
     return { kind: "variable", name, value: d.init.value };
   }
   if (node.type === "FunctionDeclaration") {
-    check(
-      !node.async && !node.generator && node.params.length === 0 && node.body.body.length === 1,
-      "expected a simple function"
-    );
+    check(!node.async && !node.generator && node.params.length === 0, "expected a simple function");
     const name = identifier(node.id);
     check(name !== "globalThis", "globalThis cannot be locally declared");
+    if (node.body.body.length === 2) {
+      const [localDecl, ret] = node.body.body;
+      check(
+        localDecl.type === "VariableDeclaration" && localDecl.kind === "let" && localDecl.declarations.length === 1,
+        "expected a captured let"
+      );
+      const local = identifier(localDecl.declarations[0].id);
+      const source = identifier(localDecl.declarations[0].init);
+      const arrow = ret.type === "ReturnStatement" && ret.argument;
+      check(
+        local !== source &&
+          local !== "globalThis" &&
+          arrow?.type === "ArrowFunctionExpression" &&
+          !arrow.async &&
+          arrow.params.length === 0 &&
+          arrow.body.type === "UpdateExpression" &&
+          arrow.body.operator === "++" &&
+          arrow.body.prefix &&
+          identifier(arrow.body.argument) === local,
+        "expected a captured increment closure"
+      );
+      return { kind: "factory", name, local, source };
+    }
+    check(node.body.body.length === 1, "expected a simple function");
     const stmt = node.body.body[0];
-    if (stmt.type === "ReturnStatement") return { kind: "reader", name, source: identifier(stmt.argument) };
+    if (stmt.type === "ReturnStatement") {
+      if (stmt.argument?.type === "CallExpression" && !stmt.argument.optional && stmt.argument.arguments.length === 0)
+        return { kind: "wrapper", name, target: identifier(stmt.argument.callee) };
+      return { kind: "reader", name, source: identifier(stmt.argument) };
+    }
     const expr = stmt.type === "ExpressionStatement" && stmt.expression;
     check(expr?.type === "AssignmentExpression" && expr.operator === "+=", "expected an addition assignment");
     return { kind: "function", name, target: identifier(expr.left), source: identifier(expr.right) };
@@ -59,7 +94,10 @@ function statement(node) {
       expr.arguments.length === 1,
     "expected globalThis.record(binding)"
   );
-  return { kind: "record", name: identifier(expr.arguments[0]) };
+  const arg = expr.arguments[0];
+  if (arg?.type === "CallExpression" && !arg.optional && arg.arguments.length === 0)
+    return { kind: "recordCall", name: identifier(arg.callee) };
+  return { kind: "record", name: identifier(arg) };
 }
 
 function exportNames(node) {
@@ -75,7 +113,12 @@ function sourceAst(text) {
   const exports = [];
   for (const node of parseModule(text)) {
     if (node.type === "ExportNamedDeclaration" && !node.declaration && !node.source) exports.push(...exportNames(node));
-    else statements.push({ ast: statement(node), source: text.slice(node.start, node.end) });
+    else if (node.type === "ExportNamedDeclaration" && node.declaration && !node.source) {
+      const item = statement(node.declaration);
+      check(declarationName(item), "expected an exported declaration");
+      exports.push(declarationName(item));
+      statements.push({ ast: item, source: text.slice(node.declaration.start, node.declaration.end) });
+    } else statements.push({ ast: statement(node), source: text.slice(node.start, node.end) });
   }
   check(
     statements.length > 0 && statements.length <= 20 && exports.length > 0,
@@ -115,10 +158,14 @@ function readSpec(spec, count) {
   return names;
 }
 
-const declarationName = (item) => (["variable", "function", "reader"].includes(item.kind) ? item.name : null);
+const declarationName = (item) =>
+  ["variable", "function", "reader", "factory", "closure", "wrapper"].includes(item.kind) ? item.name : null;
 function references(item) {
   if (item.kind === "function") return [item.target, item.source];
-  if (item.kind === "reader") return [item.source];
+  if (item.kind === "reader" || item.kind === "factory") return [item.source];
+  if (item.kind === "closure") return [item.factory];
+  if (item.kind === "wrapper") return [item.target];
+  if (item.kind === "recordCall") return [item.name];
   if (item.kind === "call" || item.kind === "record") return [item.name];
   return [];
 }
@@ -222,6 +269,14 @@ function leanStatement(item) {
       return `.function ${str(item.name)} ${str(item.target)} ${str(item.source)}`;
     case "reader":
       return `.reader ${str(item.name)} ${str(item.source)}`;
+    case "factory":
+      return `.factory ${str(item.name)} ${str(item.local)} ${str(item.source)}`;
+    case "closure":
+      return `.closure ${str(item.name)} ${str(item.factory)}`;
+    case "wrapper":
+      return `.wrapper ${str(item.name)} ${str(item.target)}`;
+    case "recordCall":
+      return `.recordCall ${str(item.name)}`;
     case "call":
       return `.call ${str(item.name)}`;
     case "record":
