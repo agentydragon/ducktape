@@ -591,9 +591,11 @@ a gap against the selected lifetime direction.
 ### Decision: Session and inbox lifetimes after environment deletion
 
 The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime
-together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/internal/worker/deliver.go), then [retires an inbox and cancels its subscriptions](../notification_service/internal/inbox/claims.go)
-after confirming a missing or replaced destination, independently of Dispatcher's retained Session
-row. An inbox can therefore still retire when its environment disappears.
+together. The Notification worker [resolves the Session by ID
+and checks the Identity it records against the inbox owner](../notification_service/internal/worker/worker.go),
+and a missing or unplaced destination only postpones delivery. [Retiring an inbox and cancelling its
+subscriptions](../notification_service/internal/inbox/inboxes.go) stays an explicit `RetireInbox` call
+that the worker never makes, so a disappearing environment cannot retire an inbox.
 
 The selected policy is an independent Session lifetime: deleting a native Session's required
 Environment leaves its Session addressable while the native harness is unavailable. History remains
@@ -601,8 +603,9 @@ in its separate store and follows its own retention and read policy. Dispatcher 
 Session row; the selected inbox/subscription retention is not implemented. Do not silently bind a replacement or claim native continuation
 without its actual state and a separately authorized recovery path.
 The intended inbox behavior is to keep subscriptions active and collect authorized events and
-messages while delivery is unavailable, but current Notification cleanup still retires stale
-destinations. Sustained collection efficiency can be revisited if costs warrant it. Central V1 still
+messages while delivery is unavailable, which is what the worker does today: it retains the inbox and
+its subscriptions and retries on the long unavailable-destination interval. Sustained collection
+efficiency can be revisited if costs warrant it. Central V1 still
 requires its exact executor Environment; retained identity is not environment-independent execution.
 Explicit Session deletion, deletion of inbox contents and History, and subscription behavior after
 explicit deletion remain separate work. Suspension, an unavailable Runtime, and a deleted or

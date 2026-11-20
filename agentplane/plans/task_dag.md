@@ -3068,8 +3068,9 @@ after the required Sandbox UID is deleted. Cleanup tombstones the deleted UID an
 `IN_PROGRESS` becomes `UNKNOWN`, and accepted or terminal evidence remains. A replacement cannot
 receive the retained Session's work. Central V1 still requires its exact executor Environment;
 retaining its Session row does not provide environment-free admission or an alternate target.
-Notification's worker keeps the inbox and subscriptions live while the recorded Sandbox is absent or
-replaced and waits for the exact UID (`store.ObserveStale`); explicit retirement stays an API call.
+Notification's worker keeps the inbox and subscriptions live while its Dispatcher Session is missing,
+unplaced or owned by another Identity, and retries on `unavailable_destination_retry_s`; it addresses the
+current Session by ID with no exact-UID wait, and explicit retirement stays an API call.
 Those transitions are not a cross-service transaction. The central Session lifetime direction is indefinite, and app archive is separate. The
 selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
 deletion; that API is not implemented. The treatment of other services' data remains open.

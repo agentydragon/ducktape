@@ -409,7 +409,8 @@ Held until one is chosen:
   ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#deletion-admission-fence)). Independent
   Session-lifetime work is in the [Session/environment plan](session_environment_model.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
-  survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
+  stay readable after a retirement, which is an explicit API call, and a deleted Environment only
+  postpones delivery. The service split stays unscheduled;
   the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).
 - **Action requests, Decisions, connections** (Actions database), **egress admission decisions**
   (egress database), **launch presets** (app configuration, with a label and a compact annotation on
