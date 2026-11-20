@@ -320,8 +320,8 @@ export async function generateBindings(sourcePath, specPath, out) {
   for (const name of names) await writeFile(resolve(out, name), files[name], { flag: "wx" });
 }
 
-function execute(path) {
-  const script = `const events=[];globalThis.record=v=>events.push(v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>console.log(JSON.stringify({events,exports:Object.keys(m)})));`;
+function execute(path, calls = []) {
+  const script = `const events=[];globalThis.record=v=>events.push(v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(name=>m[name]());console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -406,7 +406,25 @@ export async function validateBindings(sourcePath, specPath, out) {
     };
   const original = execute(sourcePath);
   const output = execute(resolve(out, spec.entry));
-  if (JSON.stringify(original) === JSON.stringify(output))
-    return { result: "unknown", reason: "modeled difference was not reproduced in Node" };
-  return { result: "unsafe", original, output, certificate: prefix + different };
+  if (JSON.stringify(original) !== JSON.stringify(output))
+    return { result: "unsafe", original, output, certificate: prefix + different };
+
+  // Initialization can leave the same visible trace but different captured
+  // state. Search short public-call sequences in fresh Node processes. The
+  // conservative growth bound keeps every possible intermediate in range.
+  const maximum = source.statements.reduce(
+    (max, item) => (item.ast.kind === "variable" || item.ast.kind === "constant" ? Math.max(max, item.ast.value) : max),
+    1
+  );
+  const initialCalls = source.statements.filter((item) => ["call", "recordCall"].includes(item.ast.kind)).length;
+  const candidates = source.exports.map((name) => [name]);
+  for (const first of source.exports) for (const second of source.exports) candidates.push([first, second]);
+  for (const calls of candidates.slice(0, 64)) {
+    if (BigInt(maximum) << BigInt(initialCalls + calls.length) > BigInt(Number.MAX_SAFE_INTEGER)) break;
+    const before = execute(sourcePath, calls);
+    const after = execute(resolve(out, spec.entry), calls);
+    if (JSON.stringify(before) !== JSON.stringify(after))
+      return { result: "unsafe", original: before, output: after, calls, certificate: prefix + different };
+  }
+  return { result: "unknown", reason: "modeled difference was not reproduced in Node" };
 }

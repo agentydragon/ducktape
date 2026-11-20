@@ -119,3 +119,42 @@ export { readFirst, readSecond };
   );
   assert.equal(cli("generate", shadowSource, spec, join(root, "shadow-out")).result, "unknown");
 }
+
+if (unsafe) {
+  const laterSource = join(root, "later.mjs");
+  const laterSpec = join(root, "later.json");
+  const laterOut = join(root, "later-out");
+  await writeFile(
+    laterSource,
+    `let seed = 1;
+let amount = 1;
+function bump() { seed += amount; }
+function make() { let value = seed; return () => ++value; }
+bump();
+const next = make();
+function read() { return next(); }
+export { read };
+`
+  );
+  await writeFile(
+    laterSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2] },
+        "factory.mjs": { imports: ["state.mjs"], statements: [3, 5] },
+        "reader.mjs": { imports: ["factory.mjs"], statements: [6] },
+        "entry.mjs": { imports: ["state.mjs", "reader.mjs"], statements: [4] },
+      },
+    })
+  );
+  assert.equal(cli("generate", laterSource, laterSpec, laterOut).result, "generated");
+  const witness = cli("validate", laterSource, laterSpec, laterOut);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, ["read"]);
+  assert.deepEqual(witness.original, { events: [], exports: ["read"], results: [3] });
+  assert.deepEqual(witness.output, { events: [], exports: ["read"], results: [2] });
+  assert.deepEqual(execute(laterSource, witness.calls).results, [{ value: 3 }]);
+  assert.deepEqual(execute(join(laterOut, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
+}

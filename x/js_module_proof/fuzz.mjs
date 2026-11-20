@@ -583,10 +583,20 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
           if (!equal || before.error || after.error) throw new Error("proved case differs or fails in Node");
         } else if (verdict.result === "unsafe") {
           summary.unsafe++;
+          const witnessCalls = verdict.calls ?? [];
+          const witnessBefore = witnessCalls.length ? execute(source, witnessCalls) : before;
+          const witnessAfter = witnessCalls.length ? execute(join(out, input.spec.entry), witnessCalls) : after;
+          const witness = (trace) => ({
+            events: trace.events,
+            exports: trace.exports,
+            ...(witnessCalls.length ? { results: trace.results.map((v) => (v.undefined ? null : v.value)) } : {}),
+          });
           if (
-            equal ||
-            JSON.stringify(verdict.original) !== JSON.stringify({ events: before.events, exports: before.exports }) ||
-            JSON.stringify(verdict.output) !== JSON.stringify({ events: after.events, exports: after.exports })
+            witnessBefore.error ||
+            witnessAfter.error ||
+            JSON.stringify(witnessBefore) === JSON.stringify(witnessAfter) ||
+            JSON.stringify(verdict.original) !== JSON.stringify(witness(witnessBefore)) ||
+            JSON.stringify(verdict.output) !== JSON.stringify(witness(witnessAfter))
           )
             throw new Error("unsafe witness does not match Node");
         } else if (verdict.result === "unknown") {

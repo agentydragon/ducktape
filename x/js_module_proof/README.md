@@ -123,7 +123,9 @@ result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results
 are not included in the return trace. An unsafe result includes a Lean proof of
-different modeled initialization and a Node witness. Semantically equivalent
+different modeled initialization and a Node witness. When initialization traces
+match, the validator also searches up to 64 sequences of one or two exported
+calls, provided a conservative numeric bound keeps every intermediate safe. Semantically equivalent
 rewrites beyond this AST subset can return `unknown`.
 
 This result assumes correct Acorn conversion and correspondence between the
