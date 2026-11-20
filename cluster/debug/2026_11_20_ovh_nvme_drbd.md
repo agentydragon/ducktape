@@ -1,8 +1,9 @@
 # OVH NVMe dropout and DRBD resync stall — 2026-11-20
 
 **Status: open.** A data NVMe stopped responding, and reattaching its DRBD
-volumes after a node reboot restored most services. One DRBD resync remained
-stalled, and a SeaweedFS volume copy reported an index/data inconsistency.
+volumes after a node reboot restored most services. A second reboot cleared a
+stalled CLI Proxy resync. The physical fault remains unexplained, and a
+SeaweedFS volume copy reported an index/data inconsistency.
 
 ## Timeline
 
@@ -18,6 +19,8 @@ later time at which the log collector received it.
 | 05:14–05:17       | Talos began shutting down but could not unmount busy CSI volumes. A later forced reboot request failed to acquire the existing reboot lock.                                                    |
 | 05:52–05:54       | The OVH hard-reboot task completed, and the NVMe was rediscovered during boot.                                                                                                                 |
 | 06:11–06:22       | Reattached the affected existing volumes. Authentik's former primary ran `pg_rewind` and rejoined as a standby. At the last check all CNPG clusters reported their configured instances ready. |
+| 07:32–07:43       | After normal DRBD disconnect was refused, drained the node except for stuck CLI Proxy pods. Graceful Talos reboot stalled; OVH hard reboot completed at 07:43.                                 |
+| By 07:48          | The node returned, CLI Proxy's two diskful replicas resynced to `UpToDate`, and the application became Ready and served model-list requests.                                                   |
 
 ## Incident and recovery
 
@@ -93,16 +96,43 @@ did not expose each queued request's dependency value, and no pre-attach
 counter snapshot was captured. A raw superblock snapshot taken while attached
 can also be stale. A specific DRBD defect or upstream fix is not yet proven.
 
+To recover, we made a read-only thin snapshot of the `UpToDate` replica on the
+other node and copied it off-node; the image checksum matched the snapshot.
+The image was crash-consistent and its ext4 filesystem required journal
+recovery. A normal peer disconnect was refused because the primary needed the
+remote up-to-date data. We moved database primaries off the affected node and
+evicted its other workloads; the CLI Proxy pods remained stuck terminating.
+Graceful Talos shutdown also stalled on those containers, so an OVH hard reboot
+was used. On return, the queued requests had cleared and the two diskful
+copies resynced to `UpToDate` with zero out-of-sync data. CLI Proxy became
+Ready, loaded three credential files and served `/v1/models` requests; an
+actual model inference was not verified. One Claude credential reported an
+invalid refresh token. The read-only snapshot and a private image in temporary
+storage were retained as recovery copies.
+
+### Tentative lesson
+
+The evidence points to reattaching a disk to an already active diskless
+primary as a possible trigger, not to the manner of the original node reboot.
+We cleared `SkipDisk` on 44 resources in a batch. In a future incident, inventory
+each resource and its authoritative copy, quiesce consumers of replicated
+resources before reattachment, and proceed one resource at a time. Capture
+DRBD state before and after attachment and verify the replica is `UpToDate`
+with no out-of-sync data before returning its application to service. This is
+a precaution: the missing pre-attach counters and request dependencies mean we
+cannot say that this sequence would have prevented the stall.
+
 Reproduce the diskless-primary reattachment on disposable three-node storage,
 capture per-request dependencies and counters before and after attach, and
-validate ordering before attempting a production remedy. The earlier
+validate ordering before claiming a cause or fix. The earlier
 [FILE_THIN resync stall](drbd_canary/thin_resync.md) showed socket backpressure;
 it did not establish this same mechanism.
 
 ## Follow-up
 
-- Check the stalled DRBD resync and verify CLI Proxy's persistent state and
-  real credential operations before claiming redundancy is restored.
+- Verify CLI Proxy's real credential operations; investigate or reauthorize the
+  Claude credential with the invalid refresh token. Decide retention of the
+  sensitive temporary recovery copies.
 - Assess SeaweedFS copies and application data before repairing the read-only
   copy; investigate the physical NVMe and node with OVH.
 - Investigate the misleading database health signal, stuck Talos shutdown,
