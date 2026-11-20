@@ -3,8 +3,6 @@ export const SAMPLE_TANA_NODES: { nodes: { id: string; name: string }[] } = {
   nodes: [
     { id: "inbox", name: "Inbox" },
     { id: "task", name: "Quarterly planning" },
-    { id: "project", name: "Console project" },
-    { id: "old-parent", name: "Backlog" },
   ],
 };
 

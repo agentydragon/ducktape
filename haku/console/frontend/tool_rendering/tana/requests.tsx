@@ -16,7 +16,6 @@ import {
   type zEditOperation,
   zEditNodeArgs,
   zImportTanaPasteArgs,
-  zMoveNodeArgs,
   zSetFieldOptionArgs,
   zTrashNodeArgs,
 } from "./schemas";
@@ -24,7 +23,6 @@ import {
 type ImportTanaPasteArgs = z.infer<typeof zImportTanaPasteArgs>;
 type TrashNodeArgs = z.infer<typeof zTrashNodeArgs>;
 type EditNodeArgs = z.infer<typeof zEditNodeArgs>;
-type MoveNodeArgs = z.infer<typeof zMoveNodeArgs>;
 type SetFieldOptionArgs = z.infer<typeof zSetFieldOptionArgs>;
 
 function tanaNodeUrl(nodeId: string): string {
@@ -116,33 +114,6 @@ function EditNodePreview({ args }: PreviewProps<EditNodeArgs>) {
   );
 }
 
-function MoveNodePreview({ args }: PreviewProps<MoveNodeArgs>) {
-  const previews = useTanaNodePreviews(
-    [args.nodeId, args.targetNodeId, args.sourceParentId, args.referenceNodeId].filter(
-      (id): id is string => id !== undefined
-    )
-  );
-  return (
-    <Stack gap={4}>
-      <Group gap={6}>
-        <TanaNodeLink nodeId={args.nodeId} previews={previews} />
-        <PreviewText c="dimmed">→</PreviewText>
-        <TanaNodeLink nodeId={args.targetNodeId} previews={previews} />
-      </Group>
-      <Group gap={6}>
-        <PreviewBadge variant="outline">{args.position}</PreviewBadge>
-        {args.referenceNodeId && <TanaNodeLink nodeId={args.referenceNodeId} previews={previews} />}
-        {args.sourceParentId && (
-          <PreviewText c="dimmed">
-            from <TanaNodeLink nodeId={args.sourceParentId} previews={previews} />
-          </PreviewText>
-        )}
-        {args.keepSourceReference && <PreviewBadge variant="outline">keep reference</PreviewBadge>}
-      </Group>
-    </Stack>
-  );
-}
-
 function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
   const previews = useTanaNodePreviews([args.nodeId, args.attributeId, args.optionId]);
   return (
@@ -167,12 +138,10 @@ export const tanaPreviews: {
   import_tana_paste: ToolPreview<typeof zImportTanaPasteArgs>;
   trash_node: ToolPreview<typeof zTrashNodeArgs>;
   edit_node: ToolPreview<typeof zEditNodeArgs>;
-  move_node: ToolPreview<typeof zMoveNodeArgs>;
   set_field_option: ToolPreview<typeof zSetFieldOptionArgs>;
 } = {
   import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview),
   trash_node: definePreview(zTrashNodeArgs, TrashNodePreview),
   edit_node: definePreview(zEditNodeArgs, EditNodePreview),
-  move_node: definePreview(zMoveNodeArgs, MoveNodePreview),
   set_field_option: definePreview(zSetFieldOptionArgs, SetFieldOptionPreview),
 } satisfies Record<string, ToolPreview>;

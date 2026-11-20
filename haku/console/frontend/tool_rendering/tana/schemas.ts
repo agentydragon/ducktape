@@ -24,21 +24,6 @@ export const zEditNodeArgs: z.ZodType<{
 }> = z
   .object({ nodeId: z.string(), name: zEditOperation.optional(), description: zEditOperation.optional() })
   .refine((args) => args.name !== undefined || args.description !== undefined);
-export const zMoveNodeArgs: z.ZodType<{
-  nodeId: string;
-  targetNodeId: string;
-  sourceParentId?: string;
-  position: "start" | "end" | "after" | "before";
-  referenceNodeId?: string;
-  keepSourceReference: boolean;
-}> = z.object({
-  nodeId: z.string(),
-  targetNodeId: z.string(),
-  sourceParentId: z.string().optional(),
-  position: z.enum(["start", "end", "after", "before"]).default("end"),
-  referenceNodeId: z.string().optional(),
-  keepSourceReference: z.boolean().default(false),
-});
 export const zSetFieldOptionArgs: z.ZodType<{
   nodeId: string;
   attributeId: string;

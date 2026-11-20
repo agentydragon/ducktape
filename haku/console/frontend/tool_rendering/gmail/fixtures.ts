@@ -8,8 +8,6 @@ const GMAIL_LABELS: GmailLabels = {
   labels: [
     { id: "INBOX", name: "Inbox", type: "system" },
     { id: "Label_Work", name: "Work", type: "user" },
-    { id: "Label_Receipts", name: "Receipts", type: "user" },
-    { id: "Label_Newsletters", name: "Newsletters", type: "user" },
   ],
 };
 
@@ -38,14 +36,6 @@ const GMAIL_THREADS: Readonly<Record<string, GmailThread>> = {
   ),
   t2: thread("t2", "Re: dentist appointment confirmation", "Your appointment is confirmed for Tuesday morning.", [
     "INBOX",
-  ]),
-  t3: thread("t3", "Your Thrive Market order shipped", "Your order is on its way and should arrive this week.", [
-    "INBOX",
-    "Label_Receipts",
-  ]),
-  t4: thread("t4", "This week in your neighborhood", "Events and updates from around the neighborhood this week.", [
-    "INBOX",
-    "Label_Newsletters",
   ]),
 };
 

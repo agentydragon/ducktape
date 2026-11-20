@@ -8,14 +8,13 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { Field } from "../../field";
-import { fetchGmailLabelNames, messageSubject } from "../../gmail_client";
+import { fetchGmailLabelNames, gmailThreadUrl, messageSubject } from "../../gmail_client";
 import { GmailIcon, MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { GMAIL_SERVER_ID } from "../server_ids";
 import { firstLines, plural, PreviewBadge, PreviewText } from "../vocabulary";
-import { gmailThreadUrl } from "./requests";
 
 const zThread: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "threads_get">> = mcpToolResultSchema(
   GMAIL_SERVER_ID,
@@ -30,9 +29,7 @@ type GmailThread = z.infer<typeof zThread>;
 type GmailMessage = z.infer<typeof zMessage>;
 
 // A message/thread's `labelIds` are opaque ids; resolve display names via the read-only
-// `labels_list` tool, same composition `gmail_client.ts`'s `fetchGmailThreadPreviews` uses for
-// the `threads_modify_labels` preview. Fetched once per rendered widget; while loading (or on
-// failure) label pills fall back to the raw id.
+// `labels_list` tool. While loading or if that read fails, label pills show the recorded id.
 function useGmailLabelNames(): ReadonlyMap<string, string> | null {
   const [names, setNames] = useState<ReadonlyMap<string, string> | null>(null);
 

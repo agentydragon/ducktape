@@ -9,7 +9,7 @@ describe("toolActionDescription", () => {
       toolActionDescription(GMAIL_SERVER_ID, "threads_modify_labels", {
         thread_ids: ["t1", "t2"],
         add: ["urgent"],
-        remove: [],
+        remove: null,
       })?.text
     ).toBe("Gmail: Relabel 2 threads");
   });
