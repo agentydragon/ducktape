@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
+import { literalKey, resolveIdentifiers } from "./scope_metadata.mjs";
 
 const DROP = new Set(["start", "end", "range", "loc", "raw", "sourceType"]);
 
@@ -29,37 +30,6 @@ function parse(code, file) {
     throw new Error(`${file}: ${error.message}`);
   }
   return { ast, scopes: eslintScope.analyze(ast, { ecmaVersion: 2024, sourceType: "module", ignoreEval: true }) };
-}
-
-/** Identifier node -> what it means. `isExternal(source)` says whether an import comes from outside the tree. */
-function resolveIdentifiers({ scopes }, isExternal) {
-  const meaning = new Map();
-  const classOf = (variable) => {
-    if (!variable) return "G";
-    const definition = variable.defs[0];
-    if (definition?.type === "ImportBinding" && isExternal(String(definition.parent.source.value))) return "V";
-    return variable.scope.type === "module" ? "T" : variable.scope.type === "global" ? "G" : "L";
-  };
-  for (const scope of scopes.scopes) {
-    for (const variable of scope.variables) {
-      const declaresModuleBinding =
-        variable.scope.type === "module" && variable.defs.some((d) => d.type !== "ImportBinding");
-      // A class declaration binds its name twice (outside and inside it). The outer scope comes first and wins.
-      for (const id of variable.identifiers)
-        if (!meaning.has(id)) meaning.set(id, { cls: classOf(variable), variable, declares: declaresModuleBinding });
-    }
-    for (const ref of scope.references)
-      if (!meaning.has(ref.identifier))
-        meaning.set(ref.identifier, { cls: classOf(ref.resolved), variable: ref.resolved, declares: false });
-  }
-  return meaning;
-}
-
-function literalKey(node) {
-  if (node.regex) return `r:${node.regex.pattern}/${node.regex.flags}`;
-  if (node.bigint !== undefined) return `bi:${node.bigint}`;
-  if (node.value === null) return "null";
-  return `${{ string: "s", number: "n", boolean: "b" }[typeof node.value]}:${node.value}`;
 }
 
 function convert(node, meaning, binders) {

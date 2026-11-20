@@ -7,6 +7,7 @@ _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _CHECKER_RUNFILES = [
     "frontend.mjs",
+    "scope_metadata.mjs",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     _TRANSLATE,
@@ -30,6 +31,7 @@ js_test(
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
         "pair.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
     entry_point = "identity_emission_test.mjs",
