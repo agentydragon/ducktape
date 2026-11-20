@@ -6,6 +6,8 @@ an amount the quantum cannot represent exactly. The authoring quantum is an exac
 and need not be a power of ten: five-rappen and fifth-unit currencies remain valid.
 Public money counts preserve their declared signed range; Python's arbitrary-size
 integers permit safe intermediate products, not silent widening of that contract.
+Checks on raw values run before quantization, because rounding can hide an invalid
+value (a small negative rounds to zero).
 
 <../money.py> owns checked addition, subtraction, ratios, lot-basis apportionment,
 and **nearest-integer rounding with exact ties away from zero**. Python `round`
