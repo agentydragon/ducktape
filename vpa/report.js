@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2116`).then((r) => {
+        fetch(`${url}?v=20261120-2120`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -329,9 +329,11 @@ function Report() {
             and CDviz also need a non-evicting approach while singletons.<//
           >
           <${Text} component="p" mb=${0}
-            >At 21:20 UTC, Study Casino had an Initial memory-request VPA with
-            224–240 MiB bounds; its recommendation was pending and the existing
-            singleton remained Ready. This VPA postdates the inventory below.<//
+            >At 21:20 UTC, ${" "}<${Anchor} href=${github + "pull/18274"}
+              >Study Casino<//
+            >${" "} had an Initial memory-request VPA with 224–240 MiB bounds;
+            its recommendation was pending and the existing singleton remained
+            Ready. This VPA postdates the inventory below.<//
           >
         <//>
         <${Paper}
