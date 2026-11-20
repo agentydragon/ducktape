@@ -251,6 +251,7 @@ js_test(
         "@lean_dist//:runtime",
     ],
     entry_point = "closure_test.mjs",
+    exec_properties = {"test.EstimatedMemory": "1GiB"},
     env = {
         "ACORN_RLOCATION": "$(rlocationpath @acorn_dist//:dist/acorn.js)",
         "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",

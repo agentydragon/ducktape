@@ -226,6 +226,7 @@ js_test(
     env = {
         "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
     },
+    exec_properties = {"test.EstimatedMemory": "1GiB"},
     no_copy_to_bin = [
         "@lean_dist//:lean_bin",
         "@lean_dist//:runtime",
