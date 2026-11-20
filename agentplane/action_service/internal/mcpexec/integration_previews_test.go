@@ -137,3 +137,69 @@ func TestGrocySummariesMatchExactTypedReferences(t *testing.T) {
 		t.Errorf("entry summary = %v", got)
 	}
 }
+
+func TestGmailMailLabelsRequireTheRecordedResourceInTheCurrentMailbox(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "gmail-preview-test"}, nil)
+	for _, name := range []string{"messages_get", "threads_get"} {
+		server.AddTool(&mcp.Tool{Name: name, InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {"id": {"type": "string"}, "format": {"const": "minimal"}},
+			"required": ["id", "format"],
+			"additionalProperties": false
+		}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			var params struct{ ID string }
+			if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
+				return nil, err
+			}
+			if params.ID == "former-account" {
+				return &mcp.CallToolResult{StructuredContent: map[string]any{"id": "other-message"}}, nil
+			}
+			return &mcp.CallToolResult{StructuredContent: map[string]any{"id": params.ID}}, nil
+		})
+	}
+	labelCalls := make(chan string, 3)
+	server.AddTool(&mcp.Tool{Name: "labels_get", InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {"id": {"type": "string"}},
+		"required": ["id"],
+		"additionalProperties": false
+	}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var params struct{ ID string }
+		if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
+			return nil, err
+		}
+		select {
+		case labelCalls <- params.ID:
+		default:
+			t.Error("unexpected label read")
+		}
+		return &mcp.CallToolResult{StructuredContent: map[string]any{"id": params.ID, "name": "Deployments/Reviewed"}}, nil
+	})
+	upstream := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	defer upstream.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "preview-client"}, nil)
+	connected, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: upstream.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connected.Close()
+
+	executor := &Executor{key: "gmail", available: true, current: &session{client: connected}}
+	for _, thread := range []bool{false, true} {
+		got := executor.GmailMailLabelNames(t.Context(), "current-account", thread, []string{"Label_19"})
+		if len(got) != 1 || got[0].GetTitle() != "Deployments/Reviewed" {
+			t.Errorf("Gmail labels (thread=%v) = %v", thread, got)
+		}
+	}
+	if got := executor.GmailMailLabelNames(t.Context(), "former-account", false, []string{"Label_19"}); len(got) != 0 {
+		t.Errorf("receipt from former mailbox produced %v", got)
+	}
+	close(labelCalls)
+	var ids []string
+	for id := range labelCalls {
+		ids = append(ids, id)
+	}
+	if len(ids) != 2 || ids[0] != "Label_19" || ids[1] != "Label_19" {
+		t.Errorf("label reads = %q, want exactly two Label_19 reads", ids)
+	}
+}

@@ -344,6 +344,37 @@ describe("Action presentation slots", () => {
     expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
   });
 
+  it.each(["messages_get", "threads_get"])(
+    "resolves custom labels in the combined and standalone Gmail %s results",
+    async (name) => {
+      const action = identity("gmail", name);
+      const requestId = "70000000-0000-4000-8000-000000000007";
+      const path = `/upstream/actions/v1/operator/action-requests/${requestId}/gmail-resource-summaries`;
+      const sent = answerApi((request) =>
+        request.path === path
+          ? Response.json({ labels: [{ id: "Label_19", title: "Deployments/Reviewed" }] })
+          : undefined
+      );
+      const message = { id: "message-1", labelIds: ["INBOX", "Label_19", "Label_99"] };
+      const value = name === "messages_get" ? message : { id: "thread-1", messages: [message] };
+      const args = { id: value.id };
+      const receipt: CallToolResult = { content: [], structuredContent: value, isError: false };
+
+      for (const preview of [
+        renderActionCall(action, args, receipt, requestId)?.content,
+        renderDetailsResult(action, receipt, { requestId, arguments: args }),
+      ]) {
+        const view = await mount(preview);
+        await vi.waitFor(() => expect(view.textContent).toContain("Inbox, Deployments/Reviewed, Label_99"));
+        expect(view.textContent).not.toContain("Label_19");
+      }
+      expect(sent.map((request) => [request.method, request.path, request.query.toString(), request.body])).toEqual([
+        ["GET", path, "", undefined],
+        ["GET", path, "", undefined],
+      ]);
+    }
+  );
+
   it("shows a Gmail filter's exceptions and forwarding destination before approval", async () => {
     const action = identity("gmail", "filters_create");
     const args = {

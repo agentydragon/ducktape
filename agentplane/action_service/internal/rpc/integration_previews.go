@@ -19,6 +19,7 @@ type gmailPreviewProvider interface {
 	GmailDraftSubjects(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
 	GmailMessageSubjects(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
 	GmailLabelNames(context.Context, []string) []*operator_action_servicepb.GmailResourceTitle
+	GmailMailLabelNames(ctx context.Context, id string, thread bool, labelIDs []string) []*operator_action_servicepb.GmailResourceTitle
 	GmailFilters(context.Context, []string) []*operator_action_servicepb.GmailFilterSummary
 }
 
@@ -129,8 +130,14 @@ func (s *OperatorService) GetGmailResourceSummaries(ctx context.Context, request
 			}
 			response.Drafts = provider.GmailDraftSubjects(ctx, previewIDs(ids))
 		}
-	case "messages_get":
-		response.Messages = provider.GmailMessageSubjects(ctx, previewIDs([]string{args.ID}))
+	case "messages_get", "threads_get":
+		thread := receipt.Action.Name == "threads_get"
+		ids := gmailReadLabelIDs(receipt, args.ID, thread)
+		if len(ids) != 0 {
+			response.Labels = provider.GmailMailLabelNames(ctx, args.ID, thread, ids)
+		} else if !thread {
+			response.Messages = provider.GmailMessageSubjects(ctx, previewIDs([]string{args.ID}))
+		}
 	case "threads_list":
 		response.Labels = provider.GmailLabelNames(ctx, previewIDs(args.LabelIDs))
 	case "labels_get":
@@ -151,6 +158,42 @@ func (s *OperatorService) GetGmailResourceSummaries(ctx context.Context, request
 		return nil, invalidRequest("request has no matching Gmail preview")
 	}
 	return response, nil
+}
+
+// Gmail stores label IDs on messages. Only the exact read's saved result can authorize a lookup
+// for one of those IDs, including all recorded messages for a thread.
+func gmailReadLabelIDs(receipt store.ActionRequest, id string, thread bool) []string {
+	if !previewID.MatchString(id) {
+		return nil
+	}
+	type message struct {
+		LabelIDs []string `json:"labelIds"`
+	}
+	var result struct {
+		ID string
+		message
+		Messages []message
+	}
+	if !recordedPreviewResult(receipt, &result) || result.ID != id {
+		return nil
+	}
+	messages := result.Messages
+	if !thread {
+		messages = []message{result.message}
+	}
+	var ids []string
+	for _, message := range messages {
+		for _, id := range message.LabelIDs {
+			switch id {
+			case "INBOX", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT", "SENT", "DRAFT",
+				"CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS":
+				// These names are already available in the browser.
+			default:
+				ids = append(ids, id)
+			}
+		}
+	}
+	return previewIDs(ids)
 }
 
 func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *operator_action_servicepb.GetTanaNodeSummariesRequest) (*operator_action_servicepb.GetTanaNodeSummariesResponse, error) {

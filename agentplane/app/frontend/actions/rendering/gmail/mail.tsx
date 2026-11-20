@@ -15,6 +15,7 @@ import {
   idArguments,
   labelName,
   listArguments,
+  systemLabels,
   ThreadTarget,
   threadHref,
   useGmailSummaries,
@@ -133,7 +134,13 @@ function messageDate(message: MessageDetailsFields): string | undefined {
     : undefined;
 }
 
-function MessageDetails({ message }: { message: MessageDetailsFields }): JSX.Element {
+function MessageDetails({
+  message,
+  labels,
+}: {
+  message: MessageDetailsFields;
+  labels?: Parameters<typeof labelName>[1];
+}): JSX.Element {
   const raw = message.raw ? decodeBase64Url(message.raw) : undefined;
   const body = raw ?? messageText(message.payload) ?? message.snippet;
   return (
@@ -143,14 +150,19 @@ function MessageDetails({ message }: { message: MessageDetailsFields }): JSX.Ele
       <EmailField name="Cc" value={messageHeader(message, "cc")} />
       <EmailField name="Bcc" value={messageHeader(message, "bcc")} />
       <EmailField name="Date" value={messageDate(message)} />
-      <EmailField name="Labels" value={message.labelIds?.map((id) => labelName(id)).join(", ")} />
+      <EmailField name="Labels" value={message.labelIds?.map((id) => labelName(id, labels)).join(", ")} />
       {body && <TextBlock text={body} heading={raw ? "Email source" : "Message"} format="prose" />}
     </Stack>
   );
 }
 
-function ThreadView({ result }: ResultPreviewProps<z.infer<typeof threadResult>>): JSX.Element {
+function hasCustomLabels(message: MessageDetailsFields): boolean {
+  return message.labelIds?.some((id) => !systemLabels.has(id)) ?? false;
+}
+
+function ThreadView({ result, context }: ResultPreviewProps<z.infer<typeof threadResult>>): JSX.Element {
   const messages = result.messages ?? [];
+  const summaries = useGmailSummaries(messages.some(hasCustomLabels) ? context?.requestId : undefined);
   const subject = messageHeader(messages[0], "subject");
   return (
     <Stack gap="xs">
@@ -163,7 +175,7 @@ function ThreadView({ result }: ResultPreviewProps<z.infer<typeof threadResult>>
         </Text>
       )}
       {messages.map((message) => (
-        <MessageDetails key={message.id} message={message} />
+        <MessageDetails key={message.id} message={message} labels={summaries?.labels} />
       ))}
       {messages.length === 0 && result.snippet && (
         <Text size="sm" style={wrap}>
@@ -174,7 +186,8 @@ function ThreadView({ result }: ResultPreviewProps<z.infer<typeof threadResult>>
   );
 }
 
-function MessageView({ result }: ResultPreviewProps<Message>): JSX.Element {
+function MessageView({ result, context }: ResultPreviewProps<Message>): JSX.Element {
+  const summaries = useGmailSummaries(hasCustomLabels(result) ? context?.requestId : undefined);
   return (
     <Stack gap="xs">
       <Text size="sm" fw={600}>
@@ -182,7 +195,7 @@ function MessageView({ result }: ResultPreviewProps<Message>): JSX.Element {
           {messageHeader(result, "subject") || "Open message in Gmail"}
         </GmailLink>
       </Text>
-      <MessageDetails message={result} />
+      <MessageDetails message={result} labels={summaries?.labels} />
     </Stack>
   );
 }
@@ -272,7 +285,7 @@ function mailRead<Args extends z.ZodType<MailReadArguments>, Result extends z.Zo
     ) : (
       <Stack gap="xs">
         <ReadScope args={args} />
-        <ResultView result={result} />
+        <ResultView result={result} context={requestId ? { requestId, arguments: args } : undefined} />
       </Stack>
     );
   }

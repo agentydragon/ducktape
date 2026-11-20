@@ -50,14 +50,69 @@ func (e *Executor) GmailMessageSubjects(ctx context.Context, ids []string) []*op
 }
 
 func (e *Executor) GmailLabelNames(ctx context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
-	return readSummaries(ctx, e, ids, "gmail", "labels_get", gmailIDArgument,
-		func(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
-			var label struct{ ID, Name string }
-			if !decodeGmailSummary(result, &label) || label.ID != id {
-				return nil
-			}
-			return gmailResourceTitle(id, label.Name)
-		})
+	return readSummaries(ctx, e, ids, "gmail", "labels_get", gmailIDArgument, gmailLabelName)
+}
+
+func gmailLabelName(id string, result *mcp.CallToolResult) *operator_action_servicepb.GmailResourceTitle {
+	var label struct{ ID, Name string }
+	if !decodeGmailSummary(result, &label) || label.ID != id {
+		return nil
+	}
+	return gmailResourceTitle(id, label.Name)
+}
+
+// Label IDs are mailbox-local. Before resolving a saved receipt's IDs in the current Gmail
+// mailbox, confirm that it contains the recorded message or thread, using the same MCP session.
+func (e *Executor) GmailMailLabelNames(ctx context.Context, id string, thread bool, labelIDs []string) []*operator_action_servicepb.GmailResourceTitle {
+	if e == nil || e.key != "gmail" || len(labelIDs) == 0 {
+		return nil
+	}
+	s := e.pin()
+	if s == nil {
+		return nil
+	}
+	defer s.calls.Done()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	// A linked token can change underneath a pinned MCP session. Discard metadata if its
+	// authorization changed during this lookup.
+	account, linked := linkedAccountOf(e.server)
+	var initialToken string
+	if linked {
+		token, err := requestToken(ctx, e.linkages, account.serverID)
+		if err != nil {
+			return nil
+		}
+		initialToken = token
+	}
+	tools, _, err := e.list(ctx, s)
+	if err != nil {
+		return nil
+	}
+	name := "messages_get"
+	if thread {
+		name = "threads_get"
+	}
+	matches := readOfferedSummaries(ctx, e, s, tools, []string{id}, name, func(id string) map[string]any {
+		return map[string]any{"id": id, "format": "minimal"}
+	}, func(id string, result *mcp.CallToolResult) *string {
+		var resource struct{ ID string }
+		if !decodeGmailSummary(result, &resource) || resource.ID != id {
+			return nil
+		}
+		return &resource.ID
+	})
+	if len(matches) != 1 {
+		return nil
+	}
+	labels := readOfferedSummaries(ctx, e, s, tools, labelIDs, "labels_get", gmailIDArgument, gmailLabelName)
+	if linked {
+		currentToken, err := requestToken(ctx, e.linkages, account.serverID)
+		if err != nil || currentToken != initialToken {
+			return nil
+		}
+	}
+	return labels
 }
 
 func (e *Executor) GmailFilters(ctx context.Context, ids []string) []*operator_action_servicepb.GmailFilterSummary {
@@ -200,11 +255,17 @@ func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group,
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	tools, _, err := e.list(ctx, s)
-	tool, offered := tools[name]
-	if err != nil || !offered {
+	if err != nil {
 		return nil
 	}
+	return readOfferedSummaries(ctx, e, s, tools, ids, name, arguments, summary)
+}
 
+func readOfferedSummaries[T any](ctx context.Context, e *Executor, s *session, tools map[string]tool, ids []string, name string, arguments func(string) map[string]any, summary func(string, *mcp.CallToolResult) *T) []*T {
+	tool, offered := tools[name]
+	if !offered {
+		return nil
+	}
 	results := make([]*T, len(ids))
 	var calls sync.WaitGroup
 	for i, id := range ids {

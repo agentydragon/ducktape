@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -279,8 +280,9 @@ func TestGoogleCalendarEventPreviewUsesOnlyPendingRecordedTargets(t *testing.T) 
 
 type gmailResourceRecorder struct {
 	gmailPreviewProvider
-	labels chan []string
-	drafts chan []string
+	labels     chan []string
+	drafts     chan []string
+	mailLabels func(string, bool, []string) []*operator_action_servicepb.GmailResourceTitle
 }
 
 func (r gmailResourceRecorder) GmailLabelNames(_ context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
@@ -291,6 +293,10 @@ func (r gmailResourceRecorder) GmailLabelNames(_ context.Context, ids []string) 
 func (r gmailResourceRecorder) GmailDraftSubjects(_ context.Context, ids []string) []*operator_action_servicepb.GmailResourceTitle {
 	r.drafts <- ids
 	return nil
+}
+
+func (r gmailResourceRecorder) GmailMailLabelNames(_ context.Context, id string, thread bool, labelIDs []string) []*operator_action_servicepb.GmailResourceTitle {
+	return r.mailLabels(id, thread, labelIDs)
 }
 
 func TestGmailResourceSummariesLookUpOnlyRecordedResources(t *testing.T) {
@@ -349,5 +355,73 @@ func TestGmailResourceSummariesLookUpOnlyRecordedResources(t *testing.T) {
 			t.Errorf("unexpected lookup %q", got)
 		default:
 		}
+	}
+}
+
+func TestGmailMailLabelsUseOnlyTheMatchingSuccessfulReceipt(t *testing.T) {
+	var labelCalls atomic.Int32
+	gmail := gmailResourceRecorder{mailLabels: func(id string, thread bool, ids []string) []*operator_action_servicepb.GmailResourceTitle {
+		labelCalls.Add(1)
+		expectedID, expectedLabels := "message-1", []string{"Label_19"}
+		if thread {
+			expectedID, expectedLabels = "thread-1", []string{"Label_19", "Label_23"}
+		}
+		if id != expectedID || !slices.Equal(ids, expectedLabels) {
+			t.Errorf("looked up %q on %q, thread=%v", ids, id, thread)
+		}
+		return []*operator_action_servicepb.GmailResourceTitle{{Id: "Label_19", Title: "Deployments/Reviewed"}}
+	}}
+	namespace := newPolicyNamespace(t)
+	s := serveWithPolicyOptions(
+		t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, IntegrationPreviews{Gmail: gmail},
+	)
+	for _, tc := range []struct {
+		name, args, rawResult string
+		wantLabels            bool
+	}{
+		{
+			"messages_get", `{"id":"message-1","labelIds":["Label_43"]}`,
+			`{"content":[],"structuredContent":{"id":"message-1","labelIds":["INBOX","Label_19","Label_19"]}}`, true,
+		},
+		{
+			"threads_get", `{"id":"thread-1"}`,
+			`{"content":[{"type":"text","text":"{\"id\":\"thread-1\",\"messages\":[{\"labelIds\":[\"Label_19\",\"../invalid\"]},{\"labelIds\":[\"Label_23\",\"SENT\"]}]}"}]}`, true,
+		},
+		{
+			"threads_get", `{"id":"thread-2"}`,
+			`{"content":[],"structuredContent":{"id":"other-thread","messages":[{"labelIds":["Label_82"]}]}}`, false,
+		},
+		{
+			"threads_get", `{"id":"thread-3"}`,
+			`{"content":[],"isError":true,"structuredContent":{"id":"thread-3","messages":[{"labelIds":["Label_82"]}]}}`, false,
+		},
+	} {
+		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+			IdempotencyKey: tc.args, Action: store.ActionIdentity{Group: "gmail", Name: tc.name},
+			Arguments: json.RawMessage(tc.args), Title: tc.name,
+		}, store.Admission{RequestID: uuid.New()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.decide(t, request, store.VerdictAllow)
+		claim, err := s.store.ClaimExecution(t.Context(), request.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
+		if err != nil || claim == nil {
+			t.Fatalf("claim: %v, %v", claim, err)
+		}
+		if _, err := s.store.MarkRunning(t.Context(), request.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.store.FinishExecution(t.Context(), request.ID, claim.Lease, store.ExecutionOutcome{
+			State: store.ExecutionSucceeded, Result: json.RawMessage(tc.rawResult),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		response, err := s.operators.GetGmailResourceSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetGmailResourceSummariesRequest{RequestId: request.ID.String()})
+		if err != nil || (len(response.GetLabels()) != 0) != tc.wantLabels {
+			t.Fatalf("receipt %s: %v, %v", tc.args, response, err)
+		}
+	}
+	if count := labelCalls.Load(); count != 2 {
+		t.Errorf("provider received %d label calls, want 2", count)
 	}
 }
