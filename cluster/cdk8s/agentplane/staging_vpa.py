@@ -1,4 +1,4 @@
-"""Admission-time memory sizing for the static Agentplane staging services.
+"""Memory request sizing for the static Agentplane staging services.
 
 The namespace opts out of Goldilocks because it also contains dynamic Sandboxes.
 These VPAs are Flux-owned and target only the listed Deployments.
@@ -50,7 +50,9 @@ def chart(app: App) -> Chart:
                 target_ref=VerticalPodAutoscalerSpecTargetRef(
                     api_version="apps/v1", kind="Deployment", name=deployment
                 ),
-                update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
+                update_policy=VerticalPodAutoscalerSpecUpdatePolicy(
+                    update_mode="Recreate" if deployment == "frontend" else "Initial"
+                ),
                 resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
                     container_policies=[
                         VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
