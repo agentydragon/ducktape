@@ -2,10 +2,22 @@ import { Stack } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
-import { defineCallPreview, definePreview } from "./entry";
+import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
+
+import { definePreview, defineReceiptPreview } from "./entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
-import { batchError, batchOutcome, displayRef, GrocyReview, Line, objectLink, reference } from "./grocy_shared";
+import {
+  batchError,
+  batchOutcome,
+  displayRef,
+  GrocyReview,
+  type GrocyReferenceKind,
+  Line,
+  objectLink,
+  reference,
+  useGrocyReferences,
+} from "./grocy_shared";
 import { grocyCatalogRenderers } from "./grocy_catalog";
 import { grocyEntityRenderers } from "./grocy_entities";
 import { grocyShoppingRenderers } from "./grocy_shopping";
@@ -145,51 +157,123 @@ const clearLabels: Record<z.infer<typeof editField>, string> = {
   calories: "Calories",
 };
 
-function editChanges(item: z.infer<typeof editProduct>): [string, ReactNode][] {
+function oldReference(id: bigint | undefined, kind: GrocyReferenceKind, optional = false): ReactNode {
+  if (id == null || id <= 0n) return optional ? "None" : undefined;
+  const value = Number(id);
+  return Number.isSafeInteger(value) && value > 0 ? displayRef(value, kind) : undefined;
+}
+
+function oldText(text: string | undefined): string {
+  return text === undefined ? "None" : text || "(empty text)";
+}
+
+function editChanges(
+  item: z.infer<typeof editProduct>,
+  summary?: GrocyReferenceSummary
+): [string, ReactNode, ReactNode][] {
   const clears = new Set(item.clear_fields);
-  const fields: [string, ReactNode][] = [
-    ["Name", item.name],
-    ["Default location", item.location != null && displayRef(item.location, "locations")],
-    ["Stock unit", item.stock_qu != null && displayRef(item.stock_qu, "quantity_units")],
-    ["Purchase unit", item.purchase_qu != null && displayRef(item.purchase_qu, "quantity_units")],
-    ["Consume unit", item.consume_qu != null && displayRef(item.consume_qu, "quantity_units")],
+  const current = summary?.productEditCurrent;
+  const fields: [string, ReactNode, ReactNode][] = [
+    ["Name", item.name, summary?.name || undefined],
+    [
+      "Default location",
+      item.location != null && displayRef(item.location, "locations"),
+      oldReference(current?.locationId, "locations"),
+    ],
+    [
+      "Stock unit",
+      item.stock_qu != null && displayRef(item.stock_qu, "quantity_units"),
+      oldReference(current?.stockUnitId, "quantity_units"),
+    ],
+    [
+      "Purchase unit",
+      item.purchase_qu != null && displayRef(item.purchase_qu, "quantity_units"),
+      oldReference(current?.purchaseUnitId, "quantity_units"),
+    ],
+    [
+      "Consume unit",
+      item.consume_qu != null && displayRef(item.consume_qu, "quantity_units"),
+      oldReference(current?.consumeUnitId, "quantity_units"),
+    ],
     [
       "Minimum stock",
       item.min_stock_amount != null &&
         (item.min_stock_amount === 0 ? "Disable low-stock threshold" : `${item.min_stock_amount} stock units`),
+      current?.minimumStock === undefined ? undefined : `${current.minimumStock} stock units`,
     ],
-    ["Default shelf life", item.default_best_before_days != null && defaultShelfLife(item.default_best_before_days)],
-    ["Due date means", item.due_type != null && (item.due_type === 2 ? "Expiration" : "Best before")],
+    [
+      "Default shelf life",
+      item.default_best_before_days != null && defaultShelfLife(item.default_best_before_days),
+      current?.shelfLifeDays === undefined ? undefined : defaultShelfLife(Number(current.shelfLifeDays)),
+    ],
+    [
+      "Due date means",
+      item.due_type != null && (item.due_type === 2 ? "Expiration" : "Best before"),
+      current?.dueType === 2n ? "Expiration" : current?.dueType === 1n ? "Best before" : undefined,
+    ],
     [
       "Parent product",
       !clears.has("parent_product") && item.parent_product != null && displayRef(item.parent_product, "products"),
+      current && oldReference(current.parentProductId, "products", true),
     ],
     [
       "Product group",
       !clears.has("product_group") && item.product_group != null && displayRef(item.product_group, "product_groups"),
+      current && oldReference(current.productGroupId, "product_groups", true),
     ],
-    ["Description", !clears.has("description") ? item.description : undefined],
+    ["Description", !clears.has("description") ? item.description : undefined, current && oldText(current.description)],
   ];
+  const clearValues: Record<keyof typeof clearLabels, ReactNode> = {
+    description: current && oldText(current.description),
+    product_group: current && oldReference(current.productGroupId, "product_groups", true),
+    parent_product: current && oldReference(current.parentProductId, "products", true),
+    calories: current && (current.calories ?? "None"),
+  };
   return [
     ...fields.filter(([, value]) => value !== false && value != null),
-    ...[...clears].map((key): [string, string] => [clearLabels[key], "Clear"]),
+    ...[...clears].map((key): [string, string, ReactNode] => [clearLabels[key], "Clear", clearValues[key]]),
   ];
 }
 
-function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }): JSX.Element {
+const editProductResult = z.array(
+  z.union([z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
+);
+
+function recordedRename(
+  item: z.infer<typeof editProduct> | undefined,
+  row: z.infer<typeof editProductResult>[number] | undefined
+): string | undefined {
+  return row?.kind === "ok" && item?.product === row.object_id && item.name?.trim() ? item.name : undefined;
+}
+
+function ProductChanges({
+  args,
+  result,
+}: {
+  args: z.infer<typeof editProductArguments>;
+  result?: z.infer<typeof editProductResult>;
+}): JSX.Element {
+  const refs = useGrocyReferences();
   return (
     <Stack gap="sm">
       {args.items.length === 0 && <Line>No product edits submitted</Line>}
       {args.items.map((item, index) => {
-        const changes = editChanges(item);
+        const summary = typeof item.product === "number" ? refs?.get(`product_edits/${item.product}`) : undefined;
+        const changes = editChanges(item, summary);
+        const title = summary?.name || recordedRename(item, result?.[index]);
         return (
           <Stack gap={2} key={index}>
             <Line>
-              <strong>{displayRef(item.product, "products")}</strong>
+              <strong>
+                {typeof item.product === "number" && title
+                  ? objectLink("product", item.product, title)
+                  : displayRef(item.product, "products")}
+              </strong>
             </Line>
-            {changes.map(([label, value]) => (
+            {changes.map(([label, value, old]) => (
               <Line key={label}>
-                {label} · {value === "" ? "(empty text)" : value}
+                {label} · {old != null && <>{old} → </>}
+                {value === "" ? "(empty text)" : value}
               </Line>
             ))}
             {changes.length === 0 && <Line>No field changes</Line>}
@@ -199,10 +283,6 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
     </Stack>
   );
 }
-
-const editProductResult = z.array(
-  z.union([z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
-);
 
 function editedProductsLabel(rows: z.infer<typeof editProductResult>): string {
   const count = rows.filter((row) => row.kind === "ok").length;
@@ -220,18 +300,18 @@ const editProductReceipt = defineResultPreview(editProductResult, ({ result }) =
   </Stack>
 ));
 
-const editProductCall = defineCallPreview(editProductArguments, editProductResult, ({ args, result }) => {
-  if (!result) return null;
+const editProductCall = defineReceiptPreview(editProductArguments, editProductResult, ({ args, result }) => {
   const sameItems = result.length === args.items.length;
   return (
     <Stack gap="sm">
-      <ProductChanges args={args} />
+      <ProductChanges args={args} result={sameItems ? result : undefined} />
       <Stack gap={4}>
         <Line>
           <strong>{editedProductsLabel(result)}</strong>
         </Line>
         {result.map((row, index) => {
           const item = sameItems ? args.items[index] : undefined;
+          if (recordedRename(item, row)) return null;
           const name = typeof item?.product === "string" ? item.product : undefined;
           return (
             <Line key={index}>

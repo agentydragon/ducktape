@@ -30,10 +30,10 @@ retire. There is no low-privilege console write tier: haku-ui writes its own sta
 The Console no longer accepts, executes, lists, or decides tool calls. Its tool-call tables,
 status enum, grants, and migrations remain in Postgres and in the ORM schema so historical data is
 preserved and deployments continue to validate the existing database. There are no live
-application readers or writers for those records. The enriched per-server renderers
-(`frontend/tool_call_card.tsx`, `frontend/tool_rendering/`) remain a buildable development
-component with their MCP schema exports, lookup clients, and per-server preview harnesses. They are
-excluded from the production frontend bundle and static image. The cluster's generic Agent Sandbox
+application readers or writers for those records. The development-only historical card retains a
+custom preview for `haku_routine.launch_routine`. Agentplane owns the Gmail, Tana, Google Calendar,
+and Grocy action views. The Console's production frontend excludes its historical card.
+The cluster's generic Agent Sandbox
 constructs remain for other workspaces.
 
 ### Canonical Agent authority

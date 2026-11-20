@@ -7,6 +7,7 @@ not to the MCP tool I/O types (see mcp_types.py for those).
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 
 class EntityType(StrEnum):
@@ -103,6 +104,10 @@ class ReadableEntityType(StrEnum):
     BATTERY_CHARGE_CYCLES = "battery_charge_cycles"
     PRODUCT_BARCODES_VIEW = "product_barcodes_view"
     PERMISSION_HIERARCHY = "permission_hierarchy"
+
+
+# Shopping-list items support exact lookups. Keep them out of generic collection reads.
+type GettableEntityType = ReadableEntityType | Literal["shopping_list"]
 
 
 # Sanity check: every WriteableEntityType must be a valid ReadableEntityType.

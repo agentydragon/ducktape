@@ -13,7 +13,6 @@ import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operato
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
 // the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
-// MCP preview clients share this one instance.
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while

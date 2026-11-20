@@ -32,7 +32,7 @@ from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from grocy_mcp.client import GrocyClient, ResolvedQU
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, ReadableEntityType
+from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
     MAX_BATCH_SIZE,
@@ -429,7 +429,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def entities_get(
-        entity_type: ReadableEntityType,
+        entity_type: GettableEntityType,
         object_ids: Annotated[list[int], Field(description=f"Object IDs to fetch. Max {MAX_BATCH_SIZE} per call.")],
         client: GrocyClient = client_dependency,
     ) -> list[GetOk | GetError]:

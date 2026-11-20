@@ -53,6 +53,8 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 		Products        []json.RawMessage      `json:"products"`
 		Locations       []json.RawMessage      `json:"locations"`
 		EntryIDs        []json.RawMessage      `json:"entry_ids"`
+		ShoppingItemID  json.RawMessage        `json:"item_id"`
+		ShoppingItemIDs []json.RawMessage      `json:"item_ids"`
 		ProductID       json.RawMessage        `json:"productId"`
 		ProductToKeep   json.RawMessage        `json:"productIdToKeep"`
 		ProductToRemove json.RawMessage        `json:"productIdToRemove"`
@@ -96,7 +98,7 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 	case "products_create", "products_edit":
 		for _, item := range args.Items {
 			if action == "products_edit" {
-				add("products", item.Product)
+				add("product_edits", item.Product)
 			}
 			add("products", item.ParentProduct)
 			add("locations", item.Location)
@@ -129,6 +131,10 @@ func grocyPreviewReferences(action string, raw json.RawMessage) []string {
 		add("quantity_units", args.QuantityUnit)
 	case "shopping_list_get", "shopping_list_clear":
 		add("shopping_lists", args.ShoppingList)
+	case "shopping_list_item_edit":
+		add("shopping_list", args.ShoppingItemID)
+	case "shopping_list_items_remove":
+		add("shopping_list", args.ShoppingItemIDs...)
 	case "shopping_list_items_add":
 		for _, item := range args.Items {
 			add("shopping_lists", item.ShoppingList)

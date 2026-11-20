@@ -498,6 +498,27 @@ describe("Action presentation slots", () => {
     );
   });
 
+  it("names removed Grocy items only when the recorded successful result matches the requested ID", async () => {
+    const action = identity("grocy_sf", "shopping_list_items_remove");
+    const result = {
+      content: [],
+      structuredContent: [
+        { kind: "ok", item_id: 52, product_name: "Kefir", amount: 2, qu_name: "Bottle" },
+        { kind: "error", error: "Item missing" },
+        { kind: "ok", item_id: 88, product_name: "Bananas", amount: 3, qu_name: null },
+      ],
+      isError: false,
+    };
+    const args = { item_ids: [51, 52, 53] };
+    expect(renderActionCall(action, args)?.content).toBeNull();
+    const rendered = await mount(renderActionCall(action, args, result)?.content);
+    expect(rendered.textContent).toContain("Kefir · 2 Bottle");
+    expect(rendered.textContent).not.toContain("Shopping item #52");
+    expect(rendered.textContent).toContain("Shopping item #51");
+    expect(rendered.textContent).toContain("Shopping item #53");
+    expect(rendered.textContent).toContain("Failed · Item missing");
+  });
+
   it("shows total inventory stock with the opened subset and matched location", async () => {
     const action = identity("grocy_sf", "stock_get");
     const args = { products: ["Kefir"], locations: ["Fridge"] };

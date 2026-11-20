@@ -268,6 +268,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
     ],
 )
 
@@ -317,6 +318,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app/frontend/actions:action_client",
     ],
 )

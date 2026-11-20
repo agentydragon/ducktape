@@ -11,7 +11,7 @@ import type { ToolCallRecord } from "./tool_call_record";
 import { ClockIcon, CloseIcon, SyncCurrentIcon, SyncErrorIcon } from "./icons";
 import { ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";
-import { toolActionDescription } from "./tool_rendering/actions";
+import { isDestructiveToolCall } from "./tool_rendering/actions";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 import { ToolResultField } from "./tool_result_field";
 import { VariantControl } from "./variant_control";
@@ -67,7 +67,7 @@ export function ToolCallCard({
   containerRef?: Ref<HTMLElement>;
 }): JSX.Element {
   const detailed = variant === "detailed";
-  const action = toolActionDescription(fields.serverId, fields.toolName, args);
+  const destructive = isDestructiveToolCall(fields.serverId, fields.toolName);
   return (
     <section className="haku-tool-call" ref={containerRef}>
       <Stack gap="sm">
@@ -76,7 +76,7 @@ export function ToolCallCard({
             fw={600}
             size="sm"
             className="haku-tool-call-title"
-            c={action?.destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
+            c={destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
           >
             {fields.title}
           </Text>
@@ -124,7 +124,7 @@ export function ToolCallCard({
             {error}
           </Text>
         )}
-        <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
+        <ToolResultField result={result} variant={variant} />
         {detailed && (
           <ToolCallMeta
             serverId={fields.serverId}

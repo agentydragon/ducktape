@@ -231,6 +231,30 @@ message GrocyReferenceSummary {
   // An entity type and exact ID, for example "products/42".
   string key = 1;
   string name = 2;
+  GrocyProductEditCurrent product_edit_current = 3;
+  GrocyShoppingItemCurrent shopping_item_current = 4;
+}
+
+message GrocyProductEditCurrent {
+  optional int64 location_id = 1;
+  optional int64 stock_unit_id = 2;
+  optional int64 purchase_unit_id = 3;
+  optional int64 consume_unit_id = 4;
+  optional double minimum_stock = 5;
+  optional int64 shelf_life_days = 6;
+  optional int64 due_type = 7;
+  optional int64 parent_product_id = 8;
+  optional int64 product_group_id = 9;
+  optional string description = 10;
+  optional double calories = 11;
+}
+
+message GrocyShoppingItemCurrent {
+  string list_name = 1;
+  optional double amount = 2;
+  string unit_name = 3;
+  optional bool done = 4;
+  optional string note = 5;
 }
 
 message WatchMcpServersRequest {}

@@ -1,8 +1,0 @@
-// The MCP server ids the console renders widgets for. A leaf module (no imports at all) so both
-// the React widget registry and the React-free action registry (`actions.ts`, which the service
-// worker bundles) can key off the same constants without either pulling in the other's deps.
-//
-// A tool call's `server_id` is compared against these constants verbatim.
-
-export const GROCY_SERVER_ID = "grocy-sf";
-export const HAKU_ROUTINE_SERVER_ID = "haku_routine";

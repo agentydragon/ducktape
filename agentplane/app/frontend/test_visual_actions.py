@@ -278,6 +278,16 @@ _KEFIR_ENTRY = {
     "open": True,
     "note": "Cultured",
 }
+_GROCY_ITEM_PREVIEW: dict[str, object] = {
+    "references": [
+        {
+            "key": "shopping_list/52",
+            "name": "Kefir",
+            "shoppingItemCurrent": {"listName": "Weekly groceries", "amount": 2, "unitName": "Bottle", "done": False},
+        }
+    ]
+}
+
 _KEFIR_CHANGE = {
     "kind": "ok",
     "product_name": "Kefir",
@@ -2442,9 +2452,23 @@ EXAMPLES = (
     ActionExample(
         "grocy_sf",
         "products_edit",
-        {"items": [{"product": "Oats", "name": "Rolled oats", "location": "Pantry", "clear_fields": ["description"]}]},
+        {"items": [{"product": 2, "name": "Rolled oats", "location": "Pantry", "clear_fields": ["description"]}]},
         [{"kind": "ok", "object_id": 2}],
         "1 product edited",
+        live_preview=(
+            "grocy-reference-summaries",
+            {
+                "references": [
+                    {
+                        "key": "product_edits/2",
+                        "name": "Oats",
+                        "productEditCurrent": {"locationId": "4", "description": "Keep dry"},
+                    },
+                    {"key": "locations/4", "name": "Cupboard"},
+                ]
+            },
+            "Cupboard",
+        ),
     ),
     ActionExample(
         "grocy_sf",
@@ -2609,6 +2633,7 @@ EXAMPLES = (
         {"item_ids": [52]},
         [{"kind": "ok", "item_id": 52, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"}],
         "1 item removed",
+        live_preview=("grocy-reference-summaries", _GROCY_ITEM_PREVIEW, "Kefir"),
     ),
     ActionExample(
         "grocy_sf",
@@ -2616,6 +2641,7 @@ EXAMPLES = (
         {"item_id": 52, "done": True, "clear_fields": ["note"]},
         {"kind": "ok", "item_id": 52, "product_name": "Kefir", "amount": 2, "qu_name": "Bottle"},
         "1 item updated",
+        live_preview=("grocy-reference-summaries", _GROCY_ITEM_PREVIEW, "Kefir"),
     ),
     ActionExample(
         "grocy_sf",
@@ -3233,6 +3259,13 @@ async def test_action_presentations(
         subject_link = pending.get_by_role("link", name="Deployment review", exact=True)
         await expect(subject_link).to_have_attribute("href", "https://mail.google.com/mail/u/0/#all/thread-123")
         await expect(subject_link).to_have_attribute("target", "_blank")
+    elif example.key == "grocy_sf.products_edit":
+        await expect(pending).to_contain_text("Cupboard → Pantry")
+        await expect(pending).to_contain_text("Keep dry → Clear")
+    elif example.key == "grocy_sf.shopping_list_item_edit":
+        await expect(pending).to_contain_text("Not done → Done")
+    elif example.key == "grocy_sf.shopping_list_items_remove":
+        await expect(pending).to_contain_text("Weekly groceries · 2 Bottle")
     elif example.key == "tana.move_node":
         await expect(pending).to_contain_text(
             "Move Draft notes to the start of Website project, keeping the source reference."
@@ -3275,6 +3308,19 @@ async def test_action_presentations(
     if gmail_labeled_read:
         await expect(receipt).to_contain_text("Inbox, Deployments/Reviewed, Label_99")
         await expect(receipt).not_to_contain_text("Label_19")
+    if example.key == "grocy_sf.products_edit":
+        await expect(receipt.get_by_role("link", name="Rolled oats", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/product/2"
+        )
+        await expect(receipt.get_by_text("Product #2", exact=True)).to_have_count(0)
+    elif example.key == "grocy_sf.shopping_list_item_edit":
+        await expect(receipt.get_by_role("link", name="Kefir", exact=True)).to_have_attribute(
+            "href", "https://grocy-sf.allegedly.works/shoppinglistitem/52"
+        )
+        await expect(receipt.get_by_text("Shopping item #52", exact=True)).to_have_count(0)
+    elif example.key == "grocy_sf.shopping_list_items_remove":
+        await expect(receipt.get_by_text("Kefir · 2 Bottle", exact=True)).to_be_visible()
+        await expect(receipt.get_by_text("Shopping item #52", exact=True)).to_have_count(0)
     if example.key == "home_assistant.ha_get_state":
         await expect(receipt.get_by_role("link", name="Greenhouse temperature", exact=True)).to_be_visible()
         await expect(receipt.get_by_text("sensor.greenhouse_temperature", exact=True)).to_have_count(0)
@@ -3360,6 +3406,12 @@ async def test_action_presentations(
         await expect(receipt).to_contain_text(f'"calendar_id": "{CALENDAR_ID}"')
         await expect(receipt).to_contain_text('"content": []')
         await expect(receipt).to_contain_text('"result": null')
+    elif example.key == "grocy_sf.shopping_list_items_remove":
+        raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
+        await raw_switch.press("Space")
+        await expect(raw_switch).to_be_checked()
+        await expect(receipt).to_contain_text('"item_ids": [')
+        await expect(receipt).to_contain_text(r"\"item_id\": 52")
 
 
 if __name__ == "__main__":

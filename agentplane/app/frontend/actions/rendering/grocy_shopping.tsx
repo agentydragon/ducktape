@@ -1,8 +1,18 @@
 import { Stack } from "@mantine/core";
+import type { JSX } from "react";
 import { z } from "zod";
 
-import { defineCallPreview } from "./entry";
-import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
+import { defineCallPreview, defineReceiptPreview } from "./entry";
+import {
+  batchError,
+  batchOutcome,
+  displayRef,
+  grocyRequest,
+  Line,
+  objectLink,
+  reference,
+  useGrocyReferences,
+} from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
@@ -46,6 +56,34 @@ const listItems = defineResultPreview(getList, ({ result }) => (
   </Stack>
 ));
 
+function shoppingAmount(amount: number, unit?: string): string {
+  return unit ? `${amount} ${unit}` : String(amount);
+}
+
+function shoppingItemChange(before: string | undefined, after: string): string {
+  return before === undefined ? after : `${before} → ${after}`;
+}
+
+function ShoppingTarget({
+  id,
+  showAmount = false,
+  recordedName,
+}: {
+  id: number;
+  showAmount?: boolean;
+  recordedName?: string;
+}): JSX.Element {
+  const item = useGrocyReferences()?.get(`shopping_list/${id}`);
+  const current = item?.shoppingItemCurrent;
+  return (
+    <Line>
+      {objectLink("shoppinglistitem", id, item?.name || recordedName || `Shopping item #${id}`)}
+      {current?.listName && ` · ${current.listName}`}
+      {showAmount && current?.amount !== undefined && ` · ${shoppingAmount(current.amount, current.unitName)}`}
+    </Line>
+  );
+}
+
 const editItem = z.strictObject({
   item_id: id,
   amount: z.number().nullish(),
@@ -53,6 +91,38 @@ const editItem = z.strictObject({
   done: z.boolean().nullish(),
   clear_fields: z.array(z.literal("note")).nullish(),
 });
+function ShoppingEdit({ args, recordedName }: { args: z.infer<typeof editItem>; recordedName?: string }): JSX.Element {
+  const current = useGrocyReferences()?.get(`shopping_list/${args.item_id}`)?.shoppingItemCurrent;
+  const clearNote = args.clear_fields?.includes("note");
+  const oldNote = current && (current.note === undefined ? "None" : current.note || "(empty text)");
+  return (
+    <Stack gap={4}>
+      <ShoppingTarget id={args.item_id} recordedName={recordedName} />
+      {args.amount != null && (
+        <Line>
+          Quantity ·{" "}
+          {shoppingItemChange(
+            current?.amount === undefined ? undefined : shoppingAmount(current.amount, current.unitName),
+            shoppingAmount(args.amount, current?.unitName)
+          )}
+        </Line>
+      )}
+      {args.done != null && (
+        <Line>
+          {current?.done === undefined
+            ? args.done
+              ? "Mark done"
+              : "Mark not done"
+            : shoppingItemChange(current.done ? "Done" : "Not done", args.done ? "Done" : "Not done")}
+        </Line>
+      )}
+      {(clearNote || args.note != null) && (
+        <Line>Note · {shoppingItemChange(oldNote, clearNote ? "Clear" : args.note || "(empty text)")}</Line>
+      )}
+    </Stack>
+  );
+}
+
 const addItems = z.strictObject({
   items: z.array(
     z
@@ -113,6 +183,32 @@ function itemBatchOutcome(value: unknown) {
 }
 
 const editedItem = defineResultPreview(itemOutcome, ({ result }) => itemReceipt("updated", [result]));
+const editShoppingItemCall = defineReceiptPreview(editItem, itemOutcome, ({ args, result }) => {
+  const matching = result.kind === "ok" && result.item_id === args.item_id ? result : undefined;
+  return (
+    <Stack gap="xs">
+      <ShoppingEdit args={args} recordedName={matching ? matching.product_name || "Note-only item" : undefined} />
+      {matching ? (
+        <Line>1 item updated · {shoppingAmount(matching.amount, matching.qu_name ?? undefined)}</Line>
+      ) : (
+        itemReceipt("updated", [result])
+      )}
+    </Stack>
+  );
+});
+const removeShoppingItemsCall = defineReceiptPreview(removeItems, itemOutcomes, ({ args, result }) => {
+  const named = new Set(result.flatMap((row) => (row.kind === "ok" && row.product_name ? [row.item_id] : [])));
+  return (
+    <Stack gap={4}>
+      {args.item_ids
+        .filter((itemId) => !named.has(itemId))
+        .map((itemId, index) => (
+          <ShoppingTarget key={index} id={itemId} />
+        ))}
+      {itemReceipt("removed", result)}
+    </Stack>
+  );
+});
 const cleared = defineResultPreview(z.strictObject({ kind: z.literal("ok"), cleared: id }), ({ result }) => (
   <Line>
     {result.cleared} {result.cleared === 1 ? "item" : "items"} removed · Shopping list kept
@@ -236,35 +332,21 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
               {args.item_ids.length} selected {args.item_ids.length === 1 ? "item" : "items"}
             </Line>
             {args.item_ids.map((itemId, i) => (
-              <Line key={i}>{objectLink("shoppinglistitem", itemId, `Item #${itemId}`)}</Line>
+              <ShoppingTarget key={i} id={itemId} showAmount />
             ))}
           </Stack>
         ),
         itemBatchReceipt("removed")
       ),
+      call: removeShoppingItemsCall,
       outcome: itemBatchOutcome,
     },
   ],
   [
     "shopping_list_item_edit",
     {
-      ...grocyRequest(
-        "Edit Grocy shopping item",
-        editItem,
-        ({ args }) => (
-          <Stack gap={4}>
-            <Line>{objectLink("shoppinglistitem", args.item_id, `Item #${args.item_id}`)}</Line>
-            {args.amount != null && <Line>Set quantity to {args.amount}</Line>}
-            {args.done != null && <Line>{args.done ? "Mark done" : "Mark not done"}</Line>}
-            {args.clear_fields?.includes("note") ? (
-              <Line>Clear note</Line>
-            ) : (
-              args.note != null && <Line>Note · {args.note || "(empty text)"}</Line>
-            )}
-          </Stack>
-        ),
-        editedItem
-      ),
+      ...grocyRequest("Edit Grocy shopping item", editItem, ShoppingEdit, editedItem),
+      call: editShoppingItemCall,
       outcome: (value) => {
         const parsed = itemOutcome.safeParse(value);
         return parsed.success ? batchOutcome([parsed.data]) : undefined;

@@ -1,8 +1,4 @@
-// `haku_routine` preview fixtures: the only list of this server's preview cards. The `:previews` target
-// mounts them (`preview_harness.tsx`) and derives its screenshot scenarios from them
-// (`screenshot/emit_fixtures.mjs`). `RegisteredToolPreviewFixture` ties each (serverId, toolName,
-// args, result?) to the registry's real Zod schemas, so a stale id, argument, or result shape is a
-// type error.
+// Focused samples for the historical routine card and its stored result.
 import type { RegisteredToolPreviewFixture } from "../index";
 
 export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string })[] = [
@@ -11,5 +7,18 @@ export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string }
     serverId: "haku_routine",
     toolName: "launch_routine",
     args: { text: "Scan Gmail for anything needing a reply, draft responses, and flag time-sensitive items." },
+  },
+  {
+    title: "Launch the default routine",
+    serverId: "haku_routine",
+    toolName: "launch_routine",
+    args: {},
+  },
+  {
+    title: "Review the incoming queue",
+    serverId: "haku_routine",
+    toolName: "launch_routine",
+    args: { text: "Summarize new requests." },
+    result: { session_url: "https://claude.ai/code/session_example" },
   },
 ];
