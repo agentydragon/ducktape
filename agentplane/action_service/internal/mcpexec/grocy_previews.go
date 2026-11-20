@@ -56,36 +56,24 @@ func grocyEntities(ctx context.Context, e *Executor, keys []string) []*grocyEnti
 // and keep a separate total bound on these optional display-name reads.
 func grocyRelatedSummaries(ctx context.Context, e *Executor, entities []*grocyEntityPreview) []*operator_action_servicepb.GrocyReferenceSummary {
 	const limit = 8
-	names := make(map[string]string)
+	seen := make(map[string]bool)
 	var summaries []*operator_action_servicepb.GrocyReferenceSummary
 	for _, entity := range entities {
 		summary := entity.summary
 		summaries = append(summaries, summary)
-		if summary.Name != "" {
-			names[summary.Key] = summary.Name
-		}
+		seen[summary.Key] = true
 	}
 	var keys []string
 	for _, entity := range entities {
 		for _, key := range entity.links {
-			if _, seen := names[key]; key != "" && !seen && len(keys) < limit {
-				names[key] = ""
+			if key != "" && !seen[key] && len(keys) < limit {
+				seen[key] = true
 				keys = append(keys, key)
 			}
 		}
 	}
 	for _, related := range grocyEntities(ctx, e, keys) {
 		summaries = append(summaries, related.summary)
-		names[related.summary.Key] = related.summary.Name
-	}
-	for _, entity := range entities {
-		if item := entity.summary.ShoppingItemCurrent; item != nil {
-			if name := names[entity.links[0]]; name != "" {
-				entity.summary.Name = name
-			}
-			item.ListName = names[entity.links[1]]
-			item.UnitName = names[entity.links[2]]
-		}
 	}
 	return summaries
 }
@@ -103,10 +91,15 @@ func grocyEntitySummary(key string, result *mcp.CallToolResult) *grocyEntityPrev
 		entityType = "products"
 	}
 	var rows []struct {
-		Kind       string
-		EntityType string `json:"entity_type"`
-		ObjectID   int64  `json:"object_id"`
-		Data       map[string]json.RawMessage
+		Kind              string
+		EntityType        string `json:"entity_type"`
+		ObjectID          int64  `json:"object_id"`
+		Data              map[string]json.RawMessage
+		ShoppingItemNames struct {
+			ProductName string `json:"product_name"`
+			ListName    string `json:"list_name"`
+			UnitName    string `json:"unit_name"`
+		} `json:"shopping_item_names"`
 	}
 	if !parseGrocyRows(result, &rows) || len(rows) != 1 {
 		return nil
@@ -123,20 +116,20 @@ func grocyEntitySummary(key string, result *mcp.CallToolResult) *grocyEntityPrev
 	preview := &grocyEntityPreview{summary: summary}
 	switch kind {
 	case "shopping_list":
-		preview.links = []string{
-			grocyLinkedKey("products", grocyInt(row.Data["product_id"])),
-			grocyLinkedKey("shopping_lists", grocyInt(row.Data["shopping_list_id"])),
-			grocyLinkedKey("quantity_units", grocyInt(row.Data["qu_id"])),
-		}
+		names := row.ShoppingItemNames
 		item := &operator_action_servicepb.GrocyShoppingItemCurrent{
-			Amount: grocyNumber(row.Data["amount"]),
-			Note:   grocyString(row.Data["note"]),
+			Amount:   grocyNumber(row.Data["amount"]),
+			Note:     grocyString(row.Data["note"]),
+			ListName: names.ListName,
+			UnitName: names.UnitName,
 		}
 		if done := grocyInt(row.Data["done"]); done != nil && (*done == 0 || *done == 1) {
 			value := *done == 1
 			item.Done = &value
 		}
-		if item.Note != nil && preview.links[0] == "" {
+		if names.ProductName != "" {
+			summary.Name = names.ProductName
+		} else if productID := grocyInt(row.Data["product_id"]); item.Note != nil && (productID == nil || *productID <= 0) {
 			summary.Name = *item.Note
 		}
 		summary.ShoppingItemCurrent = item

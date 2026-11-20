@@ -137,9 +137,16 @@ class GetResultBase(BaseModel):
     object_id: int
 
 
+class ShoppingItemNames(BaseModel):
+    product_name: str | None = None
+    list_name: str | None = None
+    unit_name: str | None = None
+
+
 class GetOk(GetResultBase):
     kind: Literal["ok"] = "ok"
     data: dict[str, Any]
+    shopping_item_names: ShoppingItemNames | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class GetError(GetResultBase):

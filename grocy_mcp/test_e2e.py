@@ -741,6 +741,8 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert exact[0]["object_id"] == sl_item_id
     assert int(exact[0]["data"]["id"]) == sl_item_id
     assert float(exact[0]["data"]["amount"]) == 2
+    assert exact[0]["shopping_item_names"]["product_name"] == product
+    assert exact[0]["shopping_item_names"]["list_name"] == sl_data["name"]
 
     # Edit item — mark as done
     edit_sl = unwrap_result(
