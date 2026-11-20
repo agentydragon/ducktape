@@ -7,6 +7,7 @@ import { type ActionPresentation, expandsForRejectedArguments } from "./presenta
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 import { batchError, batchOutcome, displayRef, Line, objectLink, reference } from "./grocy_shared";
 import { grocyCatalogRenderers } from "./grocy_catalog";
+import { grocyEntityRenderers } from "./grocy_entities";
 import { grocyShoppingRenderers } from "./grocy_shopping";
 import { grocyStockRenderers } from "./grocy_stock";
 
@@ -17,7 +18,15 @@ const namedRow = z.object({ id: z.number().int(), name: z.string() });
 const productsListResult = defineResultPreview(
   z.array(
     namedRow.extend({
-      min_stock_amount: z.number().optional(),
+      min_stock_amount: z
+        .union([
+          z.number(),
+          z
+            .string()
+            .regex(/^\d+(?:\.\d+)?$/)
+            .transform(Number),
+        ])
+        .optional(),
       description: z.string().nullish(),
     })
   ),
@@ -321,6 +330,7 @@ export const grocyRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ...grocyStockRenderers,
   ...grocyShoppingRenderers,
   ...grocyCatalogRenderers,
+  ...grocyEntityRenderers,
   ["products_list", listPresentation("List Grocy products", listArguments, productsListResult)],
   ["quantity_units_list", listPresentation("List quantity units", listArguments, quantityUnitsListResult)],
   ["get_system_info", listPresentation("Show Grocy system information", noArguments, systemInfoResult)],

@@ -441,6 +441,16 @@ describe("Action presentation slots", () => {
     expect(view.textContent).toContain("Best before 2026-11-25");
   });
 
+  it("shows Grocy 204 acknowledgements only for successful empty receipts", async () => {
+    const action = identity("grocy_sf", "transaction_undo");
+    const empty: CallToolResult = { content: [], isError: false };
+    expect((await mount(renderDetailsResult(action, empty))).textContent).toContain("Transaction undone");
+    expect(renderDetailsResult(action, { ...empty, isError: true })).toBeUndefined();
+    expect(
+      renderDetailsResult(action, { content: [{ type: "text", text: "Unknown outcome" }], isError: false })
+    ).toBeUndefined();
+  });
+
   it("falls back to the recorded Tana workspace ID when a name is unavailable", async () => {
     const action = identity("tana", "get_or_create_calendar_node");
     const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };

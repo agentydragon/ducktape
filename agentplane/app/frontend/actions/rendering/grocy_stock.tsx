@@ -2,6 +2,7 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { definePreview } from "./entry";
 import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
 import type { ActionPresentation } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
@@ -406,6 +407,7 @@ const openedReceipt = defineResultPreview(
 );
 
 const undoReceipt = defineResultPreview(z.null(), () => <Line>Transaction undone</Line>);
+const undoReview = definePreview(undoArgs, ({ args }) => <Line>Transaction · {args.transactionId}</Line>);
 
 const unknownStockOutcome = (value: unknown) => {
   const parsed = entries.safeParse(value);
@@ -630,11 +632,10 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
   ],
   [
     "transaction_undo",
-    grocyRequest(
-      "Undo Grocy stock transaction",
-      undoArgs,
-      ({ args }) => <Line>Transaction · {args.transactionId}</Line>,
-      undoReceipt
-    ),
+    {
+      fallbackLabel: "Undo Grocy stock transaction",
+      pane: { opened: undoReview },
+      details: { arguments: undoReview, result: undoReceipt, emptyResult: <Line>Transaction undone</Line> },
+    },
   ],
 ]);

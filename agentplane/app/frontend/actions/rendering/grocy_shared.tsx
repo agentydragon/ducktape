@@ -6,7 +6,7 @@ import { definePreview, type PreviewProps } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import type { ResultPreview } from "./result_entry";
 
-const GROCY_BASE = "https://grocy-sf.allegedly.works";
+export const GROCY_BASE: string = "https://grocy-sf.allegedly.works";
 export const reference: z.ZodType<string | number> = z.union([z.number().int(), z.string()]);
 
 export function Line({ children }: { children: ReactNode }): JSX.Element {

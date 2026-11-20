@@ -2,7 +2,7 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { defineCallPreview } from "./entry";
+import { defineCallPreview, definePreview } from "./entry";
 import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview } from "./result_entry";
@@ -142,6 +142,12 @@ function deletionRequest({ args }: { args: z.infer<typeof removeProduct> }) {
 
 const merge = z.strictObject({ productIdToKeep: id, productIdToRemove: id });
 const merged = defineResultPreview(z.null(), () => <Line>Products merged</Line>);
+const mergeReview = definePreview(merge, ({ args }) => (
+  <Stack gap={4}>
+    <Line>Keep {objectLink("product", args.productIdToKeep, `Product #${args.productIdToKeep}`)}</Line>
+    <Line>Merge and remove {objectLink("product", args.productIdToRemove, `Product #${args.productIdToRemove}`)}</Line>
+  </Stack>
+));
 
 export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   [
@@ -195,19 +201,11 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
   ],
   [
     "products_merge",
-    grocyRequest(
-      "Merge Grocy products",
-      merge,
-      ({ args }) => (
-        <Stack gap={4}>
-          <Line>Keep {objectLink("product", args.productIdToKeep, `Product #${args.productIdToKeep}`)}</Line>
-          <Line>
-            Merge and remove {objectLink("product", args.productIdToRemove, `Product #${args.productIdToRemove}`)}
-          </Line>
-        </Stack>
-      ),
-      merged
-    ),
+    {
+      fallbackLabel: "Merge Grocy products",
+      pane: { opened: mergeReview },
+      details: { arguments: mergeReview, result: merged, emptyResult: <Line>Products merged</Line> },
+    },
   ],
   [
     "locations_create",
