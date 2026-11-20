@@ -9,22 +9,13 @@ Renders each agent type's system prompt and writes the result to TEST_UNDECLARED
 
 from __future__ import annotations
 
-import importlib.resources
-
 import pytest_bazel
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from props.agents.runtime import render_template_string
+from props.agents.runtime import render_system_prompt
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
-
-
-def _render(template_path: str, helpers: dict | None = None) -> str:
-    """Render a template from package resources using the standard pipeline."""
-    package, _, pkg_path = template_path.partition("/")
-    content = (importlib.resources.files(package) / pkg_path).read_text()
-    return render_template_string(content, helpers)
 
 
 def _write_output(name: str, content: str) -> None:
@@ -34,7 +25,7 @@ def _write_output(name: str, content: str) -> None:
 
 
 def test_critic_prompt():
-    rendered = _render(
+    rendered = render_system_prompt(
         "props/agents/critic/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001", "scope_files": None}
     )
     _write_output("critic_whole_snapshot.md", rendered)
@@ -42,7 +33,7 @@ def test_critic_prompt():
 
 
 def test_critic_prompt_scoped():
-    rendered = _render(
+    rendered = render_system_prompt(
         "props/agents/critic/prompt.md.mako",
         helpers={"snapshot_slug": "test/snapshot-001", "scope_files": ["src/foo.py", "src/bar.py"]},
     )
@@ -51,13 +42,15 @@ def test_critic_prompt_scoped():
 
 
 def test_grader_prompt():
-    rendered = _render("props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001"})
+    rendered = render_system_prompt(
+        "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001"}
+    )
     _write_output("grader.md", rendered)
     assert "test/snapshot-001" in rendered
 
 
 def test_critic_dev_optimize_prompt():
-    rendered = _render(
+    rendered = render_system_prompt(
         "props/agents/critic_dev/prompt.md.mako",
         helpers={
             "type_config": CriticDevOptimizeTypeConfig(
@@ -69,7 +62,7 @@ def test_critic_dev_optimize_prompt():
 
 
 def test_critic_dev_improve_prompt():
-    rendered = _render(
+    rendered = render_system_prompt(
         "props/agents/critic_dev/prompt.md.mako",
         helpers={
             "type_config": CriticDevImproveTypeConfig(
