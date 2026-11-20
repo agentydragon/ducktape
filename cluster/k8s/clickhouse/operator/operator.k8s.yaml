@@ -51,8 +51,10 @@ spec:
                   goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName":
                     "metrics-exporter", "controlledValues": "RequestsOnly", "minAllowed": {"cpu":
                     "25m", "memory": "96Mi"}, "maxAllowed": {"cpu": "25m", "memory": "128Mi"}, "controlledResources":
-                    ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode":
-                    "Off"}]}'
+                    ["memory"]}, {"containerName": "altinity-clickhouse-operator", "controlledValues":
+                    "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed":
+                    {"cpu": "50m", "memory": "128Mi"}, "mode": "Off"}, {"containerName": "*", "controlledValues":
+                    "RequestsOnly", "mode": "Off"}]}'
   timeout: 10m
   values:
     crdHook:

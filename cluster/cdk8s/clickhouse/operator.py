@@ -25,7 +25,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "clickhouse-operator"
 NAMESPACE = "clickhouse"
@@ -38,6 +38,7 @@ _RESTRICTED_CONTAINER = {
     "seccompProfile": {"type": "RuntimeDefault"},
 }
 _KUBECTL_UID = 65532
+_OPERATOR_REQUESTS = {"cpu": "50m", "memory": "128Mi"}
 
 
 def _values() -> dict[str, object]:
@@ -59,7 +60,7 @@ def _values() -> dict[str, object]:
             "containerSecurityContext": {**_RESTRICTED_CONTAINER, "runAsUser": _KUBECTL_UID},
         },
         "operator": {
-            "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}},
+            "resources": {"requests": _OPERATOR_REQUESTS, "limits": {"cpu": "500m", "memory": "512Mi"}},
             "containerSecurityContext": _RESTRICTED_CONTAINER,
         },
         "metrics": {
@@ -95,11 +96,19 @@ def namespace_chart(app: App) -> Chart:
 
 def helmrelease_chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
-    # The operator hit its present memory limit. Size only the separate exporter.
     annotations = namespaces.initial_memory_request_annotations(
         ContainerPolicy.memory_requests_only(
             "metrics-exporter", cpu_request="25m", memory_floor="96Mi", memory_limit="128Mi"
-        )
+        ),
+        # The operator was previously OOMKilled under its current limit. Leave
+        # it out of new sizing, and pin requests against cached recommendations.
+        ContainerPolicy(
+            container_name=_CHART_NAME,
+            controlled_values=ControlledValues.REQUESTS_ONLY,
+            min_allowed=_OPERATOR_REQUESTS,
+            max_allowed=_OPERATOR_REQUESTS,
+            mode="Off",
+        ),
     )
     helm_release(
         chart,
