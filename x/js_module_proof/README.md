@@ -96,6 +96,11 @@ single `target += source` or `return binding` statement, calls to those function
 `function make() { let local = seed; return () => ++local; }`, a top-level
 `let` or `const` initialized by `make()`, and a no-argument wrapper returning a
 call to that closure. Initialization may call the wrapper or record its return.
+Parameterless exported functions with a single `throw` of a nonnegative safe
+integer are also supported after successful initialization. A throw terminates
+the observed call sequence, and the certificate proves matching thrown values.
+Top-level calls to such functions remain unsupported.
+
 The captured variable must have a different name from `seed`: the shared Lean
 lexical lookup treats a nearer uninitialized binding as a temporal-dead-zone
 reference rather than falling through to an outer one. Other closure shapes

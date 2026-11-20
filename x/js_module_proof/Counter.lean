@@ -125,7 +125,7 @@ def counterState (shared : ExecutionState Unit) : Option State := do
   pure ⟨← shared.cell, ← shared.snapshot⟩
 
 def initializeCounter (initial : Nat) : Option State := do
-  let shared ← runExecution (⟨[], [], [], none, []⟩ : ExecutionState Unit)
+  let shared ← runExecution (⟨[], [], [], none, [], none⟩ : ExecutionState Unit)
     [.initialize initial, .captureSnapshot]
   counterState shared
 
@@ -142,7 +142,7 @@ def scheduledCounterInit (initial : Nat) (modules : List EffectModule) (entry : 
     if operation == "init" then some (.initialize initial)
     else if operation == "snapshot" then some .captureSnapshot
     else none)
-  let shared ← runExecution (⟨[], [], [], none, []⟩ : ExecutionState Unit) operations
+  let shared ← runExecution (⟨[], [], [], none, [], none⟩ : ExecutionState Unit) operations
   counterState shared
 
 def sourceCounterInit (initial : Nat) : Option State :=
@@ -155,7 +155,7 @@ def outputCounterInit (initial : Nat) : Option State :=
 def initialState (p : Program) : State := (initializeCounter p.initial).getD ⟨0, 0⟩
 
 def counterOperation (state : State) (operation : Operation) : State × Option Nat :=
-  let shared : ExecutionState Unit := ⟨[("$live", state.live), ("$snapshot", state.snapshot)], [], [], none, []⟩
+  let shared : ExecutionState Unit := ⟨[("$live", state.live), ("$snapshot", state.snapshot)], [], [], none, [], none⟩
   match executeStep shared operation with
   | none => (state, none)
   | some result =>

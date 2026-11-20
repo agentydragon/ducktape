@@ -4,6 +4,7 @@ inductive BindingStmt where
   | constant (name : String) (initial : Nat)
   | function (name target source : String)
   | reader (name source : String)
+  | thrower (name : String) (value : Nat)
   | factory (name localName source : String)
   | closure (name factory : String)
   | wrapper (name target : String)
@@ -30,6 +31,7 @@ def declaredName : BindingStmt → Option String
   | .constant name _ => some name
   | .function name _ _ => some name
   | .reader name _ => some name
+  | .thrower name _ => some name
   | .factory name _ _ => some name
   | .closure name _ => some name
   | .wrapper name _ => some name
@@ -50,6 +52,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
+    | .thrower _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -65,6 +68,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .constant _ _ => true
     | .function _ _ _ => false
     | .reader _ _ => false
+    | .thrower _ _ => false
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
@@ -80,9 +84,26 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .constant _ _ => false
     | .function _ _ _ => true
     | .reader _ _ => true
+    | .thrower _ _ => true
     | .factory _ _ _ => false
     | .closure _ _ => true
     | .wrapper _ _ => true
+    | .recordCall _ => false
+    | .call _ => false
+    | .record _ => false
+
+def isThrower (source : List BindingStmt) (name : String) : Bool :=
+  match findDefinition source name with
+  | none => false
+  | some statement => match statement with
+    | .thrower _ _ => true
+    | .variable _ _ => false
+    | .constant _ _ => false
+    | .function _ _ _ => false
+    | .reader _ _ => false
+    | .factory _ _ _ => false
+    | .closure _ _ => false
+    | .wrapper _ _ => false
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
@@ -96,6 +117,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
+    | .thrower _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
@@ -112,6 +134,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
+    | .thrower _ _ => false
     | .wrapper _ _ => false
     | .recordCall _ => false
     | .call _ => false
@@ -182,12 +205,13 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
     isVariable source target && isReadableBinding source sourceName &&
       (match elementAt modules index with | none => false | some m => localDefinition m target) &&
       visible modules index sourceName
+  | .thrower _ _ => true
   | .reader _ sourceName => isReadableBinding source sourceName && visible modules index sourceName
   | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
   | .wrapper _ target => isClosure source target && visible modules index target
   | .recordCall name => isFunction source name && visible modules index name
-  | .call name => isFunction source name && visible modules index name
+  | .call name => isFunction source name && !(isThrower source name) && visible modules index name
   | .record name => isReadableBinding source name && visible modules index name
 
 def moduleValid (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (module : BindingModule) : Bool :=
@@ -228,6 +252,7 @@ def referenceNames : BindingStmt → List String
   | .variable _ _ => []
   | .constant _ _ => []
   | .function _ target source => [target, source]
+  | .thrower _ _ => []
   | .reader _ source => [source]
   | .factory _ _ source => [source]
   | .closure _ factory => [factory]
@@ -339,6 +364,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .function _ target sourceName =>
       some (if observeReturn then [.addBinding target sourceName, .returnUndefined] else [.addBinding target sourceName])
     | .reader _ sourceName => some [if observeReturn then .returnBinding sourceName else .readBinding sourceName]
+    | .thrower _ value => some [.throwNumber value]
     | .closure closureName _ => some (if observeReturn then [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)] else [.incrementBinding (closureCell closureName)])
     | .wrapper _ target => if isClosure source target then some (if observeReturn then [.incrementBinding (closureCell target), .returnBinding (closureCell target)] else [.incrementBinding (closureCell target)]) else none
     | .factory _ _ _ => none
@@ -354,6 +380,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
   | .constant name initial => some [.declareBinding name initial]
   | .function _ _ _ => some []
   | .reader _ _ => some []
+  | .thrower _ _ => some []
   | .factory _ _ _ => some []
   | .closure name factory => do
     let definition ← findDefinition source factory
@@ -363,6 +390,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .constant _ _ => none
     | .function _ _ _ => none
     | .reader _ _ => none
+    | .thrower _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
     | .recordCall _ => none
@@ -380,6 +408,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .constant _ _ => none
       | .function _ _ _ => none
       | .reader _ _ => none
+      | .thrower _ _ => none
       | .recordCall _ => none
       | .call _ => none
       | .record _ => none
@@ -389,7 +418,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do
   let operations ← statements.mapM (bindingOperations source)
-  runExecution ⟨[], [], [], none, []⟩ operations.flatten
+  runExecution ⟨[], [], [], none, [], none⟩ operations.flatten
 
 /- Binding allocation order is not observable in this subset. Compare cells
    in source declaration order, so independent module ordering is permitted. -/
@@ -399,6 +428,7 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .constant name _ => some name
     | .function _ _ _ => none
     | .reader _ _ => none
+    | .thrower _ _ => none
     | .factory _ _ _ => none
     | .closure name _ => some (closureCell name)
     | .wrapper _ _ => none

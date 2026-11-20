@@ -158,3 +158,48 @@ export { read };
   assert.deepEqual(execute(laterSource, witness.calls).results, [{ value: 3 }]);
   assert.deepEqual(execute(join(laterOut, "entry.mjs"), witness.calls).results, [{ value: 2 }]);
 }
+
+if (!unsafe) {
+  const throwSource = join(root, "throw-source.mjs");
+  const throwSpec = join(root, "throw-spec.json");
+  const throwOut = join(root, "throw-out");
+  await writeFile(
+    throwSource,
+    `let value = 1;
+function read() { return value; }
+function fail() { throw 7; }
+export { read, fail };
+`
+  );
+  await writeFile(
+    throwSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "read.mjs": { imports: ["state.mjs"], statements: [1] },
+        "fail.mjs": { imports: [], statements: [2] },
+        "entry.mjs": { imports: ["read.mjs", "fail.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", throwSource, throwSpec, throwOut).result, "generated");
+  const proof = cli("validate", throwSource, throwSpec, throwOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = ["read", "fail", "read"];
+  const beforeThrow = execute(throwSource, calls);
+  assert.deepEqual(beforeThrow.results, [{ value: 1 }]);
+  assert.deepEqual(beforeThrow.error, { name: null, phase: "call", index: 1, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(execute(join(throwOut, "entry.mjs"), calls), beforeThrow);
+  const throwReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(throwReplay.status, 0, throwReplay.stdout + throwReplay.stderr);
+  assert.match(throwReplay.stdout, /'binding_throw_values' does not depend on any axioms/);
+  const emitted = join(throwOut, "fail.mjs");
+  await writeFile(emitted, (await readFile(emitted, "utf8")).replace("throw 7", "throw 8"));
+  assert.equal(cli("validate", throwSource, throwSpec, throwOut).result, "unknown");
+  assert.notDeepEqual(execute(join(throwOut, "entry.mjs"), calls).error, beforeThrow.error);
+}

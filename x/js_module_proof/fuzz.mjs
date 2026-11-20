@@ -47,6 +47,8 @@ function print(node) {
       return `{ ${node.body.map(print).join(" ")} }`;
     case "ReturnStatement":
       return `return ${print(node.argument)};`;
+    case "ThrowStatement":
+      return `throw ${print(node.argument)};`;
     case "ExpressionStatement":
       return `${print(node.expression)};`;
     case "AssignmentExpression":
@@ -310,10 +312,15 @@ function modeledClosureCase(seed, index) {
     rand
   );
   const unsafe = index % 32 === 19;
+  const expectThrow = !unsafe;
+  const thrownValue = 1 + rand(8);
   const items = [
     ...first,
     [closureDecl, closureOwner],
     [reader, readerOwner],
+    ...(expectThrow
+      ? [[functionNode("fail", [], [{ type: "ThrowStatement", argument: literal(thrownValue) }]), readerOwner]]
+      : []),
     [expr(call(id("read"))), unsafe ? entry : readerOwner],
     [
       expr(
@@ -333,7 +340,11 @@ function modeledClosureCase(seed, index) {
       ...items.map(([node]) => node),
       {
         type: "ExportNamedDeclaration",
-        specifiers: [{ type: "ExportSpecifier", local: id("read"), exported: id("read") }],
+        specifiers: ["read", ...(expectThrow ? ["fail"] : [])].map((name) => ({
+          type: "ExportSpecifier",
+          local: id(name),
+          exported: id(name),
+        })),
       },
     ],
   };
@@ -341,7 +352,9 @@ function modeledClosureCase(seed, index) {
     ast,
     source: print(ast),
     spec: { kind: "bindings", entry, modules },
-    calls: Array.from({ length: 2 + rand(4) }, () => "read"),
+    calls: expectThrow ? ["read", "fail", "read"] : Array.from({ length: 2 + rand(4) }, () => "read"),
+    expectThrow,
+    thrownValue,
     grammar: "modeledClosure",
     crossModuleCapture: seedOwner !== factoryOwner,
     expectUnsafe: unsafe,
@@ -486,6 +499,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     modeledClosureCompared: 0,
     modeledClosureProved: 0,
     modeledClosureUnsafe: 0,
+    modeledClosureThrows: 0,
     closureCases: 0,
     closureSourceExecuted: 0,
     closureRefused: 0,
@@ -609,8 +623,18 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       summary.compared++;
       if (input.grammar === "modeledClosure") {
         summary.modeledClosureCompared++;
-        if (equal === input.expectUnsafe || before.error || after.error)
+        if (equal === input.expectUnsafe || (!input.expectThrow && (before.error || after.error)))
           throw new Error("closure split differed from its intended Node behavior");
+        if (input.expectThrow) {
+          if (
+            before.error?.thrown?.kind !== "number" ||
+            before.error.thrown.value !== input.thrownValue ||
+            before.error.index !== 1 ||
+            before.results.length !== 1
+          )
+            throw new Error("generated throw did not preserve the trace prefix");
+          summary.modeledClosureThrows++;
+        }
       }
       summary[equal ? "equal" : "different"]++;
       if (!mutated) summary.splitCompared++;
@@ -632,7 +656,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
-          if (!equal || before.error || after.error) throw new Error("proved case differs or fails in Node");
+          if (!equal || ((before.error || after.error) && !input.expectThrow))
+            throw new Error("proved case differs or fails in Node");
         } else if (verdict.result === "unsafe") {
           summary.unsafe++;
           const witnessCalls = verdict.calls ?? [];

@@ -69,6 +69,13 @@ function statement(node) {
     }
     check(node.body.body.length === 1, "expected a simple function");
     const stmt = node.body.body[0];
+    if (stmt.type === "ThrowStatement") {
+      check(
+        stmt.argument?.type === "Literal" && Number.isSafeInteger(stmt.argument.value) && stmt.argument.value >= 0,
+        "expected a nonnegative numeric throw"
+      );
+      return { kind: "thrower", name, value: stmt.argument.value };
+    }
     if (stmt.type === "ReturnStatement") {
       if (stmt.argument?.type === "CallExpression" && !stmt.argument.optional && stmt.argument.arguments.length === 0)
         return { kind: "wrapper", name, target: identifier(stmt.argument.callee) };
@@ -159,7 +166,7 @@ function readSpec(spec, count) {
 }
 
 const declarationName = (item) =>
-  ["variable", "constant", "function", "reader", "factory", "closure", "wrapper"].includes(item.kind)
+  ["variable", "constant", "function", "reader", "thrower", "factory", "closure", "wrapper"].includes(item.kind)
     ? item.name
     : null;
 function references(item) {
@@ -282,6 +289,8 @@ function leanStatement(item) {
       return `.function ${str(item.name)} ${str(item.target)} ${str(item.source)}`;
     case "reader":
       return `.reader ${str(item.name)} ${str(item.source)}`;
+    case "thrower":
+      return `.thrower ${str(item.name)} ${item.value}`;
     case "factory":
       return `.factory ${str(item.name)} ${str(item.local)} ${str(item.source)}`;
     case "closure":
@@ -334,7 +343,7 @@ export async function validateBindings(sourcePath, specPath, out) {
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
   const prefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_graph_valid\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
-  const same = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
+  const same = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
   const model = (
     await Promise.all(
       ["Semantics.lean", "Effects.lean", "Bindings.lean"].map((name) =>
@@ -377,6 +386,7 @@ export async function validateBindings(sourcePath, specPath, out) {
       "binding_public_table_ready",
       "binding_future_calls",
       "binding_return_values",
+      "binding_throw_values",
     ].every((name) => has(proof, name))
   )
     return {
@@ -388,6 +398,7 @@ export async function validateBindings(sourcePath, specPath, out) {
         "All binding values and intermediate sums remain nonnegative safe integers",
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
+        "Supported thrown values are nonnegative safe integers; a throw ends the observed call sequence",
       ],
     };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
@@ -417,8 +428,11 @@ export async function validateBindings(sourcePath, specPath, out) {
     1
   );
   const initialCalls = source.statements.filter((item) => ["call", "recordCall"].includes(item.ast.kind)).length;
-  const candidates = source.exports.map((name) => [name]);
-  for (const first of source.exports) for (const second of source.exports) candidates.push([first, second]);
+  const callable = source.exports.filter(
+    (name) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === name)
+  );
+  const candidates = callable.map((name) => [name]);
+  for (const first of callable) for (const second of callable) candidates.push([first, second]);
   for (const calls of candidates.slice(0, 64)) {
     if (BigInt(maximum) << BigInt(initialCalls + calls.length) > BigInt(Number.MAX_SAFE_INTEGER)) break;
     const before = execute(sourcePath, calls);
