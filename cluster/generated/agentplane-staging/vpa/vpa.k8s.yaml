@@ -51,6 +51,31 @@ spec:
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
 metadata:
+  name: electric
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: electric
+        controlledResources:
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          memory: 576Mi
+        minAllowed:
+          memory: 448Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: electric
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
   name: environments
   namespace: agentplane-staging
 spec:
