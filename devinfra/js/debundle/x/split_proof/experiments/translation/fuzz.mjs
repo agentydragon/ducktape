@@ -1,6 +1,6 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
-//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--out DIR] [--keep] [--require-accepted]
+//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--out DIR] [--keep] [--require-accepted]
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -687,6 +687,66 @@ function generate(r, leaks) {
   return { units: g.units, exports: [...new Set(exportable)] };
 }
 
+/** Two controlled schedules of a callback saved before an inferred call.
+Tree 0 is a same-module control; tree 1 evaluates the callback before initialization.
+The global and module-local storage variants exercise distinct escape paths. */
+function callbackBundle(r, round, seed) {
+  const factory = round % 4 >= 2;
+  const alias = round % 2 === 1;
+  const localSlot = round % 8 >= 4;
+  const aliasForm = alias ? (round < 8 ? "alias" : seed % 2 ? "object" : "array") : "direct";
+  const units = [];
+  const side = [];
+  const add = (tmpl, src, defs = [], inSide = false) => {
+    if (inSide) side.push(units.length);
+    units.push({ tmpl, src, defs });
+  };
+  const value = 1 + r.int(8);
+  if (localSlot) {
+    add("callbackSlot", `let ${top("slot")};`, ["slot"], true);
+    add("callbackRegister", `function ${top("register")}(f) { ${top("slot")} = f; }`, ["register"], true);
+    add("callbackTrigger", `function ${top("trigger")}() { return ${top("slot")}(); }`, ["trigger"], true);
+  }
+  if (factory) {
+    add("closureFactory", `function ${top("factory")}(f) { return () => f(); }`, ["factory"]);
+    add("callbackTarget", `function ${top("target")}() { return ${value}; }`, ["target"]);
+  } else add("identityFunction", `function ${top("identity")}(x) { return x; }`, ["identity"]);
+  if (round >= 8) add("shadow", `function ${top("shadow")}(result) { return result; }`, ["shadow"]);
+  const observed =
+    top(alias ? "alias" : "result") +
+    (aliasForm === "object" ? ".value" : aliasForm === "array" ? "[0]" : "") +
+    (factory ? "()" : "");
+  if (localSlot) add("callbackEscape", `${top("register")}(() => ${observed});`, [], true);
+  else add("callbackEscape", `globalThis.savedCallback = () => ${observed};`, [], true);
+  add(
+    "inferredCall",
+    `const ${top("result")} = ${factory ? `${top("factory")}(${top("target")})` : `${top("identity")}(${value})`};`,
+    ["result"]
+  );
+  if (alias) {
+    const value =
+      aliasForm === "object"
+        ? `{value: ${top("result")}}`
+        : aliasForm === "array"
+          ? `[${top("result")}]`
+          : top("result");
+    add("callbackAlias", `const ${top("alias")} = ${value};`, ["alias"]);
+  }
+  add(
+    "callbackInvoke",
+    `console.log("value", ${localSlot ? `${top("trigger")}()` : "globalThis.savedCallback()"});`,
+    [],
+    true
+  );
+  for (const u of units) u.uses = [...new Set(mentioned(u.src))].filter((n) => !u.defs.includes(n));
+  return {
+    units,
+    exports: [],
+    side,
+    caseName: `${factory ? "factory" : "identity"}/${aliasForm}/${localSlot ? "slot" : "global"}`,
+  };
+}
+
 /** The bundle, one module, in the generator's spelling. */
 function renderBundle(bundle) {
   const spell = (src) =>
@@ -702,11 +762,12 @@ function renderBundle(bundle) {
 /** A random split of the bundle into modules (`entry.js`, `m1.js`, ...), with the unit mapping the checker's certificate needs. */
 function split(bundle, r, opts) {
   const n = bundle.units.length;
-  const modules = 1 + r.int(5);
+  const modules = opts.place ? Math.max(...opts.place) + 1 : 1 + r.int(5);
   const effectful = (u) => u.tmpl !== "constLit" && !/^(const|function|class|let|var) /.test(u.src);
-  const strategy = r.pick(["effectsInEntry", "random", "ranges"]);
+  const strategy = opts.place ? "callbackCorpus" : r.pick(["effectsInEntry", "random", "ranges"]);
   // the entry imports m1, m2, ... in ascending order and runs last, so range k of the bundle goes to module (k + 1) % modules
   const place = bundle.units.map((u, i) => {
+    if (opts.place) return opts.place[i];
     if (modules === 1) return 0;
     if (strategy === "effectsInEntry") return effectful(u) ? 0 : r.int(modules);
     if (strategy === "ranges") return (Math.floor((i * modules) / n) + 1) % modules;
@@ -718,7 +779,7 @@ function split(bundle, r, opts) {
   const names = (i) => new Set([...bundle.units[i].defs, ...bundle.units[i].uses]);
   const shares = (a, b) => [...names(a)].some((name) => names(b).has(name));
   const crowded = order.filter((list) => list.length > 1);
-  for (let k = 0, moves = r.chance(0.6) ? 1 + r.int(3) : 0; k < moves && crowded.length > 0; k++) {
+  for (let k = 0, moves = !opts.place && r.chance(0.6) ? 1 + r.int(3) : 0; k < moves && crowded.length > 0; k++) {
     const list = r.pick(crowded);
     let [from, to] = [r.int(list.length), r.int(list.length)];
     if (r.chance(0.6)) {
@@ -731,8 +792,8 @@ function split(bundle, r, opts) {
   }
   const owner = new Map();
   bundle.units.forEach((u, i) => u.defs.forEach((d) => owner.set(d, place[i])));
-  const rename = r.chance(0.6);
-  const taken = r.chance(0.06) ? r.pick([...owner.keys()]) : null; // renamed to a global that the units use
+  const rename = !opts.place && r.chance(0.6);
+  const taken = !opts.place && r.chance(0.06) ? r.pick([...owner.keys()]) : null; // renamed to a global that the units use
   const topName = (name) => (name === taken ? "JSON" : rename ? `r_${name}` : name);
   const localName = (name) => (opts.renameLocals ? `l_${name}` : name);
   const aliasOf = new Map();
@@ -740,10 +801,10 @@ function split(bundle, r, opts) {
   const nameIn = (m, name) => {
     if (owner.get(name) === m) return topName(name);
     const key = `${m}/${name}`;
-    if (!aliasOf.has(key)) aliasOf.set(key, r.chance(0.3) ? `a${m}_${name}` : topName(name));
+    if (!aliasOf.has(key)) aliasOf.set(key, !opts.place && r.chance(0.3) ? `a${m}_${name}` : topName(name));
     return aliasOf.get(key);
   };
-  if (r.chance(0.08)) {
+  if (!opts.place && r.chance(0.08)) {
     // an import alias that equals a local name of a unit that also uses the import: the local captures it
     search: for (const m of r.shuffle([...order.keys()])) {
       for (const i of order[m]) {
@@ -782,7 +843,7 @@ function split(bundle, r, opts) {
     const sources = new Set(needs[m].keys());
     if (m === 0) for (let k = 1; k < modules; k++) if (used[k]) sources.add(k);
     let importOrder = [...sources].sort((a, b) => a - b);
-    if (r.chance(0.3)) importOrder = r.shuffle(importOrder);
+    if (!opts.place && r.chance(0.3)) importOrder = r.shuffle(importOrder);
     for (const d of importOrder) {
       const names = [...(needs[m].get(d) ?? [])];
       const specs = names.map((name) =>
@@ -862,6 +923,7 @@ async function main() {
   const trees = Number(option("trees", 6));
   const jobs = Number(option("jobs", Math.max(1, os.cpus().length)));
   const leaks = args.includes("--leaks");
+  const callbackCorpus = args.includes("--callback-corpus");
   const outDir = option("out", process.env.TEST_UNDECLARED_OUTPUTS_DIR);
   const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "translation_fuzz_"));
   const tally = {};
@@ -874,7 +936,7 @@ async function main() {
 
   const oneBundle = async (round) => {
     const r = rng(seed * 100003 + round);
-    const bundle = generate(r, leaks);
+    const bundle = callbackCorpus ? callbackBundle(r, round, seed) : generate(r, leaks);
     const dir = path.join(work, `b${round}`);
     mkdirSync(dir, { recursive: true });
     const bundleFile = path.join(dir, "bundle.mjs");
@@ -894,7 +956,10 @@ async function main() {
     }
     for (let t = 0; t < trees; t++) {
       const tr = rng(seed * 7919 + round * 131 + t);
-      const plan = split(bundle, tr, { renameLocals: tr.chance(0.5) });
+      const place = callbackCorpus
+        ? bundle.units.map((_, i) => (t % 2 === 1 ? Number(bundle.side.includes(i)) : round % 2))
+        : undefined;
+      const plan = split(bundle, tr, { renameLocals: !callbackCorpus && tr.chance(0.5), place });
       const treeDir = path.join(dir, `t${t}`, "out");
       mkdirSync(treeDir, { recursive: true });
       writeFileSync(path.join(treeDir, "package.json"), '{"type":"module"}');
@@ -920,6 +985,13 @@ async function main() {
           `bundle ${round} tree ${t}: unexpected translate exit ${checked.status}\n${checked.stdout}${checked.stderr}`
         );
       const verdict = outcome.name;
+      if (callbackCorpus && t % 2 === 0 && (!same || verdict !== "accept"))
+        throw new Error(`${bundle.caseName}: safe control failed: ${verdict}, same=${same}`);
+      if (callbackCorpus && t % 2 === 1 && same)
+        throw new Error(`${bundle.caseName}: intended unsafe move did not change Node behavior`);
+      if (callbackCorpus && t % 2 === 1 && verdict === "reject")
+        throw new Error(`${bundle.caseName}: unsafe move was rejected for a structural reason: ${checked.stdout}`);
+      if (callbackCorpus) bump(`${bundle.caseName}/${t % 2 ? "unsafe" : "safe"}`);
       const intent = plan.capture ? "capture" : "relocation";
       bump(`${verdict}/${same ? "same" : "differs"}`);
       const record = {
@@ -960,6 +1032,21 @@ async function main() {
   if (!args.includes("--keep")) rmSync(work, { recursive: true, force: true });
   else console.log(`kept ${work}`);
 
+  if (callbackCorpus && (count < 1 || trees < 2))
+    throw new Error("--callback-corpus needs at least one bundle and two trees");
+  if (callbackCorpus && (invalidBundles || refused))
+    throw new Error(`callback corpus incomplete: ${invalidBundles} invalid bundles; ${refused} refused trees`);
+  if (callbackCorpus)
+    console.log(
+      "callback corpus:",
+      JSON.stringify(
+        Object.fromEntries(
+          Object.entries(tally)
+            .filter(([k]) => k.includes("/global/") || k.includes("/slot/"))
+            .sort(([a], [b]) => a.localeCompare(b))
+        )
+      )
+    );
   const cell = (v, s) => tally[`${v}/${s}`] ?? 0;
   console.log(
     `${count} bundles x ${trees} trees, seed ${seed}${leaks ? ", with leak templates" : ""}; ${invalidBundles} invalid bundles skipped, ${refused} trees the front end refused`

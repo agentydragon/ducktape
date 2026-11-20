@@ -77,6 +77,46 @@ js_run_binary(
 )
 
 js_test(
+    name = "callback_fuzz_test",
+    size = "small",
+    args = [
+        "--callback-corpus",
+        "--count",
+        "16",
+        "--seed",
+        "1",
+        "--trees",
+        "2",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "callback_fuzz_second_seed_test",
+    size = "small",
+    args = [
+        "--callback-corpus",
+        "--count",
+        "16",
+        "--seed",
+        "2026",
+        "--trees",
+        "2",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
     name = "fuzz_test",
     size = "small",
     args = [
