@@ -188,7 +188,7 @@ const labelsView = defineResultPreview(labelsResult, ({ result }) => (
   </Stack>
 ));
 
-export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   [
     "labels_list",
     {

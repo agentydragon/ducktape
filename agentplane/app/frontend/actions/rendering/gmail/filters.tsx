@@ -144,7 +144,7 @@ const filtersView = defineResultPreview(filtersResult, ({ result }) => (
   </Stack>
 ));
 
-export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+export const filterRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   [
     "filters_list",
     {

@@ -335,7 +335,7 @@ function DraftList({ result, context }: ResultPreviewProps<z.infer<typeof draftL
   );
 }
 
-export const mailReadRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+export const mailReadRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
   ["threads_get", mailRead("thread", threadArguments, threadResult, ThreadView)],
   ["messages_get", mailRead("message", messageArguments, messageResult, MessageView)],
   ["drafts_get", mailRead("draft", draftGetArguments, draftResult, DraftView)],
