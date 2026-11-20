@@ -5,7 +5,9 @@
 use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::source_unit_for_binding;
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
+use debundle_e2e_support::saved_analysis::{
+    assert_same_invocation_trees, assert_staged_entry_output, path, staged as stage,
+};
 use debundle_e2e_support::*;
 
 fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]) {
@@ -89,7 +91,7 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
                       return wrappers.wrap(callback);\n\
                     }\n\
                     export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
-    let (staged, _fixture) = stage(
+    assert_staged_entry_output(
         FixtureOpts::new(
             source,
             vec![
@@ -108,26 +110,8 @@ fn audited_factory_carrier_with_multiple_source_origins_keeps_a_valid_cut() {
             .with_namespace_independent_members("api", &["make"])
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
+        "42 7\n",
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
-
-    let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "a source-valid retained-factory cut was rejected:\n{}",
-            invocation.result.stderr
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
-    for invocation in [&direct, &saved] {
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7\n",
-            "",
-        );
-    }
 }
 
 #[test]
@@ -372,23 +356,10 @@ console.log(observed, later);
 fn metadata_only_inline_calls_preserve_output_without_inventing_value_readiness() {
     let source = r#"(function (value) { value(); })(function () { console.log('ready'); });
 "#;
-    let (staged, _fixture) =
-        stage(FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()));
-    let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "ready\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    assert_staged_entry_output(
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        "ready\n",
+    );
 }
 
 #[test]
