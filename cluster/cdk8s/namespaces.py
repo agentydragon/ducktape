@@ -83,6 +83,7 @@ def _vpa_annotations(
         metadata_annotations.update(vpa_annotations)
         vpa = vpa.mode
     if vpa is Vpa.AUTO:
+        # Proportional CPU limits caused the 2026-08-09 LiteLLM crashloop; see cluster/k8s/TODO.md.
         metadata_annotations = metadata_annotations or {}
         metadata_annotations.setdefault(VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation(REQUESTS_ONLY))
     return vpa, metadata_annotations

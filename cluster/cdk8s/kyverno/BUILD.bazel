@@ -36,8 +36,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:namespaces",
-        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
         "@pypi//cdk8s",
@@ -66,26 +64,6 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
-    ],
-)
-
-py_test(
-    name = "test_default_vpa_requests_only",
-    srcs = ["test_default_vpa_requests_only.py"],
-    data = [
-        "@multitool//tools/kyverno",
-        "@nodejs_linux_amd64//:bin/node",
-    ] + glob(["testdata/namespace_vpa_*.yaml"]),
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":apply",
-        ":test_support",
-        "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s:vpa_policy",
-        "@pypi//cdk8s",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

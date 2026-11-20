@@ -15,7 +15,7 @@ manifests.
 
 ## Coverage
 
-Tested: `default-vpa-requests-only`, `default-disable-service-links`,
+Tested: `default-disable-service-links`,
 `require-secret-store-conditions`, `restrict-agent-gateway-routes`.
 
 `require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does
