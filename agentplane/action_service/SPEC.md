@@ -107,6 +107,12 @@ lookup budget and omits unavailable results. The reads create no Action request,
 Execution. Names and subjects reflect current provider data and can change after the request
 was recorded. The original IDs remain on the receipt.
 
+`GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar event get, update, delete,
+or list-instances request. It sends at most one `get_event` to the configured Calendar MCP group
+within the same two-second budget. The calendar and event or series IDs come from the stored
+arguments. The response projects only identity, title, provider link, time and scope. An unavailable
+preview leaves the IDs visible. Receipts draw their event details from the recorded result.
+
 An external MCP
 bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
 the edge delegates as its own component caller and carries typed Connection/grant provenance. It

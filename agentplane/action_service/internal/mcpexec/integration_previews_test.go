@@ -93,3 +93,27 @@ func TestTanaSummariesCallTheReadToolAndKeepPartialResults(t *testing.T) {
 		t.Errorf("Tana summaries = %v", got)
 	}
 }
+
+func TestCalendarEventPreviewProjectsOccurrenceMetadata(t *testing.T) {
+	response := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{
+        "event_id":"occurrence-1",
+        "summary":"Facilities coordination",
+        "html_link":"https://calendar.google.com/calendar/event?eid=occurrence-1",
+        "start":{"date_time":"2026-11-23T09:30:00-08:00","time_zone":"America/Los_Angeles"},
+        "original_start_time":{"date_time":"2026-11-23T09:00:00-08:00","time_zone":"America/Los_Angeles"},
+        "recurring_event_id":"series-1",
+        "description":"Private description",
+        "attendees":[{"email":"person@example.test"}]
+    }`}}}
+	got := googleCalendarEventPreview("occurrence-1", response)
+	if got.GetEventId() != "occurrence-1" || got.GetSummary() != "Facilities coordination" ||
+		got.GetScope().String() != "GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE" ||
+		got.GetStart().GetTimeZone() != "America/Los_Angeles" ||
+		got.GetOriginalStartTime().GetDateTime() != "2026-11-23T09:00:00-08:00" ||
+		got.GetHtmlLink() != "https://calendar.google.com/calendar/event?eid=occurrence-1" {
+		t.Errorf("Calendar event preview = %v", got)
+	}
+	if got := googleCalendarEventPreview("wrong-event", response); got != nil {
+		t.Errorf("mismatched event produced %v", got)
+	}
+}

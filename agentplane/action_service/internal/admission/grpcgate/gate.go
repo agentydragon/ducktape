@@ -116,6 +116,8 @@ func New(options Options) *Gate {
 		healthpb.Health_Check_FullMethodName:                              nil,
 		healthpb.Health_List_FullMethodName:                               nil,
 		healthpb.Health_Watch_FullMethodName:                              nil,
+
+		operator_action_servicepb.OperatorActionService_GetGoogleCalendarEventPreview_FullMethodName: g.authenticateOperator,
 	}
 	return g
 }

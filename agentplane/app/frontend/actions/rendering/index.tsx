@@ -15,6 +15,7 @@ import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
 import { gmailRenderers } from "./gmail";
+import { googleCalendarRenderers } from "./google_calendar";
 import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
@@ -25,6 +26,7 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["kubernetes_admin", kubernetesAdminRenderers],
   ["github", githubRenderers],
   ["gmail", gmailRenderers],
+  ["google_calendar", googleCalendarRenderers],
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],
@@ -84,11 +86,13 @@ export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unkno
 export function renderDetailsArguments(
   action: ActionIdentity,
   args: unknown,
-  requestId?: string
+  requestId?: string,
+  pending = false
 ): ReactNode | null | undefined {
-  const preview = presentation(action)?.details?.arguments;
+  const details = presentation(action)?.details;
+  const preview = details?.arguments;
   if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args, requestId);
+  const rendered = renderPreview(preview, args, details?.pendingPreviewOnly && !pending ? undefined : requestId);
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 

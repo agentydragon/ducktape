@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
@@ -14,6 +16,9 @@ import (
 
 // IntegrationPreviews binds operator lookups to the configured providers.
 type IntegrationPreviews struct {
+	GoogleCalendar interface {
+		GoogleCalendarEventPreview(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
+	}
 	Gmail interface {
 		GmailThreadSummaries(context.Context, []string) []*operator_action_servicepb.GmailThreadSummary
 	}
@@ -144,6 +149,46 @@ func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *ope
 			})
 		}
 		lookups.Wait()
+	}
+	return response, nil
+}
+
+func (s *OperatorService) GetGoogleCalendarEventPreview(ctx context.Context, input *operator_action_servicepb.GetGoogleCalendarEventPreviewRequest) (*operator_action_servicepb.GetGoogleCalendarEventPreviewResponse, error) {
+	request, err := s.previewRequest(ctx, input.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	var args struct {
+		CalendarID       json.RawMessage `json:"calendar_id"`
+		EventID          string          `json:"event_id"`
+		RecurringEventID string          `json:"recurring_event_id"`
+	}
+	if request.Action.Group != "google_calendar" || json.Unmarshal(request.Arguments, &args) != nil {
+		return nil, invalidRequest("request has no matching Calendar preview")
+	}
+	var eventID string
+	switch request.Action.Name {
+	case "get_event", "update_event", "delete_event":
+		eventID = args.EventID
+	case "list_event_instances":
+		eventID = args.RecurringEventID
+	default:
+		return nil, invalidRequest("request has no matching Calendar preview")
+	}
+	calendarID := "primary"
+	if len(args.CalendarID) != 0 {
+		var explicit *string
+		if json.Unmarshal(args.CalendarID, &explicit) != nil || explicit == nil {
+			return nil, invalidRequest("request has no valid calendar ID")
+		}
+		calendarID = *explicit
+	}
+	response := &operator_action_servicepb.GetGoogleCalendarEventPreviewResponse{}
+	if !previewID.MatchString(eventID) || strings.TrimSpace(calendarID) == "" || len(calendarID) > 1024 {
+		return nil, invalidRequest("request has no valid calendar or event ID")
+	}
+	if request.State == action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING && s.previews.GoogleCalendar != nil {
+		response.Event = s.previews.GoogleCalendar.GoogleCalendarEventPreview(ctx, calendarID, eventID)
 	}
 	return response, nil
 }

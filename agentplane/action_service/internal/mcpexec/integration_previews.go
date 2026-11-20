@@ -55,6 +55,71 @@ func tanaWorkspaceSummary(id string, result *mcp.CallToolResult) *operator_actio
 	return nil
 }
 
+func (e *Executor) GoogleCalendarEventPreview(ctx context.Context, calendarID, eventID string) *operator_action_servicepb.GoogleCalendarEventPreview {
+	results := readSummaries(ctx, e, []string{eventID}, "google_calendar", "get_event", func(id string) map[string]any {
+		return map[string]any{"calendar_id": calendarID, "event_id": id}
+	}, googleCalendarEventPreview)
+	if len(results) == 0 {
+		return nil
+	}
+	return results[0]
+}
+
+type calendarEventTime struct {
+	Date     string `json:"date"`
+	DateTime string `json:"date_time"`
+	TimeZone string `json:"time_zone"`
+}
+
+func (t *calendarEventTime) preview() *operator_action_servicepb.GoogleCalendarEventTime {
+	if t == nil || (t.Date == "") == (t.DateTime == "") {
+		return nil
+	}
+	return &operator_action_servicepb.GoogleCalendarEventTime{Date: t.Date, DateTime: t.DateTime, TimeZone: t.TimeZone}
+}
+
+func googleCalendarEventPreview(id string, result *mcp.CallToolResult) *operator_action_servicepb.GoogleCalendarEventPreview {
+	var event struct {
+		EventID           string             `json:"event_id"`
+		Summary           string             `json:"summary"`
+		HTMLLink          string             `json:"html_link"`
+		Start             *calendarEventTime `json:"start"`
+		End               *calendarEventTime `json:"end"`
+		OriginalStartTime *calendarEventTime `json:"original_start_time"`
+		Recurrence        []string           `json:"recurrence"`
+		RecurringEventID  string             `json:"recurring_event_id"`
+	}
+	if !parsePreviewObject(result, &event) || event.EventID != id {
+		return nil
+	}
+	scope := operator_action_servicepb.GoogleCalendarEventScope_GOOGLE_CALENDAR_EVENT_SCOPE_UNSPECIFIED
+	start, end := event.Start.preview(), event.End.preview()
+	switch {
+	case event.RecurringEventID != "":
+		scope = operator_action_servicepb.GoogleCalendarEventScope_GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE
+	case len(event.Recurrence) != 0:
+		scope = operator_action_servicepb.GoogleCalendarEventScope_GOOGLE_CALENDAR_EVENT_SCOPE_SERIES
+	case start != nil && end != nil:
+		scope = operator_action_servicepb.GoogleCalendarEventScope_GOOGLE_CALENDAR_EVENT_SCOPE_SINGLE_EVENT
+	}
+	return &operator_action_servicepb.GoogleCalendarEventPreview{
+		EventId: id, Summary: event.Summary, HtmlLink: event.HTMLLink, Scope: scope,
+		Start: start, End: end, OriginalStartTime: event.OriginalStartTime.preview(),
+	}
+}
+
+func parsePreviewObject(result *mcp.CallToolResult, target any) bool {
+	if result.StructuredContent != nil {
+		payload, err := json.Marshal(result.StructuredContent)
+		return err == nil && json.Unmarshal(payload, target) == nil
+	}
+	if len(result.Content) != 1 {
+		return false
+	}
+	block, ok := result.Content[0].(*mcp.TextContent)
+	return ok && json.Unmarshal([]byte(block.Text), target) == nil
+}
+
 // These operator lookups share the supervisor's MCP session. Each method fixes its provider and
 // tool in code. A discovery annotation alone cannot authorize a tool call.
 func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group, name string, arguments func(string) map[string]any, summary func(string, *mcp.CallToolResult) *T) []*T {
@@ -113,21 +178,7 @@ func gmailThreadSummary(id string, result *mcp.CallToolResult) *operator_action_
 			}
 		}
 	}
-	if result.StructuredContent != nil {
-		payload, err := json.Marshal(result.StructuredContent)
-		if err != nil || json.Unmarshal(payload, &thread) != nil {
-			return nil
-		}
-	} else {
-		if len(result.Content) != 1 {
-			return nil
-		}
-		text, ok := result.Content[0].(*mcp.TextContent)
-		if !ok || json.Unmarshal([]byte(text.Text), &thread) != nil {
-			return nil
-		}
-	}
-	if thread.ID != id || len(thread.Messages) == 0 {
+	if !parsePreviewObject(result, &thread) || thread.ID != id || len(thread.Messages) == 0 {
 		return nil
 	}
 	for _, header := range thread.Messages[0].Payload.Headers {

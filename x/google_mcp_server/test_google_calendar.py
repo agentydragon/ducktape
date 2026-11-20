@@ -95,6 +95,10 @@ async def test_delete_event_dispatches_to_calendar_client():
     async with Client(_mcp(calendar=calendar)) as client:
         result = await client.call_tool("delete_event", {"event_id": "evt1", "calendar_id": "team"})
     assert not result.is_error
+    assert result.content == []
+    assert result.structured_content == {"result": None}
+    assert result.meta is not None
+    assert result.meta["fastmcp"] == {"wrap_result": True}
     (args,), _kwargs = calendar.delete_event.call_args
     assert args.event_id == "evt1"
     assert args.calendar_id == "team"
