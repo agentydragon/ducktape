@@ -1,0 +1,101 @@
+rule_files:
+  - client-cert.yaml
+evaluation_interval: 1m
+tests:
+  - name: short-lived Talos traffic does not mask or create another client alert
+    interval: 1m
+    input_series:
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="1800"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="3600"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="86400"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="604800"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="15552000"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="healthy",le="+Inf"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_count{job="apiserver",instance="healthy"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="1800"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="3600"}
+        values: 0+11x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="86400"}
+        values: 0+11x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="604800"}
+        values: 0+11x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="15552000"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="critical",le="+Inf"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_count{job="apiserver",instance="critical"}
+        values: 0+100x15
+    promql_expr_test:
+      - expr: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing",job="apiserver",instance="critical",severity="critical"}
+            value: 1
+          - labels: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing",job="apiserver",instance="critical",severity="warning"}
+            value: 1
+
+  - name: expiring client over one day away fires only warning
+    interval: 1m
+    input_series:
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="1800"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="86400"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="345600"}
+        values: 0+11x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="604800"}
+        values: 0+11x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="15552000"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="warning",le="+Inf"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_count{job="apiserver",instance="warning"}
+        values: 0+100x15
+    promql_expr_test:
+      - expr: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing",job="apiserver",instance="warning",severity="warning"}
+            value: 1
+
+  - name: short-lived clients alone do not alert
+    interval: 1m
+    input_series:
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="short-only",le="1800"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="short-only",le="86400"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="short-only",le="+Inf"}
+        values: 0+10x15
+      - series: apiserver_client_certificate_expiration_seconds_count{job="apiserver",instance="short-only"}
+        values: 0+10x15
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KubeClientCertificateExpiration
+        exp_alerts: []
+
+  - name: a missing cutoff bucket falls back to the stock histogram
+    interval: 1m
+    input_series:
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="no-cutoff",le="3600"}
+        values: 0+1x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="no-cutoff",le="86400"}
+        values: 0+1x15
+      - series: apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",instance="no-cutoff",le="+Inf"}
+        values: 0+100x15
+      - series: apiserver_client_certificate_expiration_seconds_count{job="apiserver",instance="no-cutoff"}
+        values: 0+100x15
+    promql_expr_test:
+      - expr: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing",severity="critical"}
+        eval_time: 10m
+        exp_samples:
+          - labels: ALERTS{alertname="KubeClientCertificateExpiration",alertstate="firing",job="apiserver",instance="no-cutoff",severity="critical"}
+            value: 1

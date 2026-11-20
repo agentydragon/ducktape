@@ -135,6 +135,68 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
+  name: client-certificate-expiry-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: client-certificate-expiry
+      rules:
+        - alert: KubeClientCertificateExpiration
+          annotations:
+            description: The first percentile of API client certificate remaining lifetimes is below 7 days. Observations with 30 minutes or less remaining are excluded.
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeclientcertificateexpiration
+            summary: Client certificate is about to expire.
+          expr: |-
+            histogram_quantile(
+              0.01,
+              clamp_min(
+                sum without (namespace, service, endpoint) (
+                  rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+                )
+                  - ignoring (le) group_left ()
+                sum without (namespace, service, endpoint, le) (
+                  rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",le="1800.0"}[5m])
+                ),
+                0
+              )
+                or
+              sum without (namespace, service, endpoint) (
+                rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+              )
+            ) < 604800 and on (job, cluster, instance) apiserver_client_certificate_expiration_seconds_count{job="apiserver"} > 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: KubeClientCertificateExpiration
+          annotations:
+            description: The first percentile of API client certificate remaining lifetimes is below 24 hours. Observations with 30 minutes or less remaining are excluded.
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeclientcertificateexpiration
+            summary: Client certificate is about to expire.
+          expr: |-
+            histogram_quantile(
+              0.01,
+              clamp_min(
+                sum without (namespace, service, endpoint) (
+                  rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+                )
+                  - ignoring (le) group_left ()
+                sum without (namespace, service, endpoint, le) (
+                  rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",le="1800.0"}[5m])
+                ),
+                0
+              )
+                or
+              sum without (namespace, service, endpoint) (
+                rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+              )
+            ) < 86400 and on (job, cluster, instance) apiserver_client_certificate_expiration_seconds_count{job="apiserver"} > 0
+          for: 5m
+          labels:
+            severity: critical
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
   name: control-plane-io-alerts
   namespace: monitoring
 spec:

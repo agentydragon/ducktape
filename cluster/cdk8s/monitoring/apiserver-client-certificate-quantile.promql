@@ -1,0 +1,17 @@
+histogram_quantile(
+  0.01,
+  clamp_min(
+    sum without (namespace, service, endpoint) (
+      rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+    )
+      - ignoring (le) group_left ()
+    sum without (namespace, service, endpoint, le) (
+      rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver",le="1800.0"}[5m])
+    ),
+    0
+  )
+    or
+  sum without (namespace, service, endpoint) (
+    rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m])
+  )
+)
