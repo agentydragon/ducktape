@@ -1521,6 +1521,7 @@ py_library(
         ":artifact_generators",
         ":helm",
         ":manifest_roots",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
     ],
 )
