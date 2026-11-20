@@ -1489,11 +1489,13 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
+        ":disruption_budget",
         ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":service_ref",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/redis_operator:redisreplication",

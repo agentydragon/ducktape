@@ -367,6 +367,17 @@ spec:
             storage: 5Gi
         storageClassName: piraeus-hdd-local
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gitlab-valkey
+  namespace: gitlab-spike
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gitlab-valkey
+---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:

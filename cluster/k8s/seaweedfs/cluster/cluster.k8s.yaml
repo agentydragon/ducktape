@@ -388,6 +388,18 @@ spec:
       app.kubernetes.io/component: filer
       app.kubernetes.io/name: seaweedfs
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: s3
+  namespace: seaweedfs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: s3
+      app.kubernetes.io/name: seaweedfs
+---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: ResourceReferenceGrant
 metadata:

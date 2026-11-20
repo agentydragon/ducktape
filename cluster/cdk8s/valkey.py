@@ -23,12 +23,13 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecTolerations,
 )
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import disruption_budget, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
+from cluster.cdk8s.service_ref import Pods
 
 NAME = "valkey"
 NAMESPACE = "valkey-system"
@@ -82,12 +83,12 @@ def valkey_instance(
     storage_size: Size,
     tolerations: Sequence[RedisReplicationSpecTolerations] | None = None,
 ) -> RedisReplication:
-    """A two-replica Valkey `RedisReplication` in `hil-ovh`, one replica per node.
+    """A two-replica Valkey `RedisReplication` in `hil-ovh`, one replica per node, with a PodDisruptionBudget.
 
     `max_memory_percent_of_limit=None` leaves `maxmemory` unset. `tolerations=None`
     leaves the pod untolerant of any taint.
     """
-    return RedisReplication(
+    replication = RedisReplication(
         scope,
         name,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations={"description": description}),
@@ -120,6 +121,11 @@ def valkey_instance(
             )
         ],
     )
+    # The operator labels its Pods `app: <name>`.
+    disruption_budget.add_disruption_budget(
+        scope, f"{name}-disruption-budget", name=name, pods=Pods(namespace=namespace, labels=(("app", name),))
+    )
+    return replication
 
 
 def valkey(chart: Chart, directory: RenderedDirectory) -> Kustomization:
