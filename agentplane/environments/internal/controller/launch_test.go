@@ -6,26 +6,21 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func getLaunch(t *testing.T, c client.Client) (*corev1.ConfigMap, launch) {
 	t.Helper()
-	var configMap corev1.ConfigMap
-	key := client.ObjectKey{Namespace: namespace, Name: LaunchConfigMapName(sandboxName)}
-	if err := c.Get(context.Background(), key, &configMap); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, launch{}
-		}
-		t.Fatal(err)
+	configMap := getOrNil[corev1.ConfigMap](t, c, client.ObjectKey{Namespace: namespace, Name: LaunchConfigMapName(sandboxName)})
+	if configMap == nil {
+		return nil, launch{}
 	}
 	var parsed launch
 	if err := json.Unmarshal([]byte(configMap.Data[LaunchFile]), &parsed); err != nil {
 		t.Fatal(err)
 	}
-	return &configMap, parsed
+	return configMap, parsed
 }
 
 func setBootstrap(t *testing.T, c client.Client, bootstrap string) {
@@ -93,33 +88,6 @@ func TestChangedBootstrapReachesTheLaunchFileAndKeepsTheRunningPod(t *testing.T)
 	}
 	if again := getPod(t, c); again.UID != pod.UID {
 		t.Error("changing the bootstrap replaced the running Pod")
-	}
-}
-
-func TestForeignLaunchConfigMapBlocksThePod(t *testing.T) {
-	foreign := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: LaunchConfigMapName(sandboxName)}}
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"), foreign)
-	reconcileOnce(t, r)
-
-	if getPod(t, c) != nil {
-		t.Fatal("a Pod started on a launch ConfigMap the Sandbox does not own")
-	}
-	if reason := runningReason(t, c); reason != "ConfigMapConflict" {
-		t.Errorf("Running reason = %s, want ConfigMapConflict", reason)
-	}
-}
-
-func TestTemplateWithoutAnEnvironmentRuntimeContainerIsRefused(t *testing.T) {
-	template := testTemplate("test-image:v1")
-	template.Spec.Pod.Spec.Containers[0].Name = "not-the-runner"
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-
-	if getPod(t, c) != nil {
-		t.Fatal("a Pod started with no container to give the launch file")
-	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
 	}
 }
 

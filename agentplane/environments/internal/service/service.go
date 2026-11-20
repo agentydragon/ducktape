@@ -149,11 +149,6 @@ func WithServiceCallers(
 	}
 	methods, err = methods.WithServiceCallers([]string{
 		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName,
-	}, templateCallers)
-	if err != nil {
-		return nil, err
-	}
-	methods, err = methods.WithServiceCallers([]string{
 		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
 	}, templateCallers)
 	if err != nil {
@@ -178,23 +173,30 @@ type environmentCaller struct {
 	identity *auth.Identity
 }
 
+// environmentSubject is the admitted effective caller, refused unless it names a complete service
+// or Identity.
 func environmentSubject(ctx context.Context) (environmentCaller, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return environmentCaller{}, err
 	}
+	var caller environmentCaller
 	switch admitted := admission.(type) {
 	case auth.IdentityAdmission:
 		identity := admitted.Caller.Identity
-		return environmentCaller{identity: &identity}, nil
+		caller = environmentCaller{identity: &identity}
 	case auth.ServiceAdmission:
-		return environmentCaller{service: &admitted.Caller}, nil
+		caller = environmentCaller{service: &admitted.Caller}
 	case auth.DelegatedServiceIdentityAdmission:
 		identity := admitted.EffectiveCaller
-		return environmentCaller{identity: &identity}, nil
+		caller = environmentCaller{identity: &identity}
 	default:
 		return environmentCaller{}, status.Error(codes.Unauthenticated, "environment caller is not admitted")
 	}
+	if !caller.valid() {
+		return environmentCaller{}, status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
+	}
+	return caller, nil
 }
 
 func (caller environmentCaller) valid() bool {
@@ -239,9 +241,6 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	identity, err := environmentSubject(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if !identity.valid() {
-		return nil, status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
 	}
 	if s.broadReader(ctx, identity) {
 		return s.listAll(ctx, request, identity)
@@ -343,9 +342,6 @@ func (s *Service) GetEnvironment(ctx context.Context, request *environmentpb.Get
 	identity, err := environmentSubject(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if !identity.valid() {
-		return nil, status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
 	}
 	descriptor, _, err := s.getEnvironment(ctx, request, identity)
 	return descriptor, err

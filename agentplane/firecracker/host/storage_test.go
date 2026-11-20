@@ -65,7 +65,7 @@ func TestCreateExt4LeavesExistingDestinationAlone(t *testing.T) {
 	if err := os.WriteFile(destination, want, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := createExt4(context.Background(), destination, bytesPerMiB, "APSTATE", ""); err != nil {
+	if err := createExt4(context.Background(), destination, bytesPerMiB, "APSTATE"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(destination)
@@ -91,7 +91,7 @@ func TestCreateExt4CreatesImageAtRequestedSize(t *testing.T) {
 
 	destination := filepath.Join(root, "state.img")
 	wantSize := int64(2*bytesPerMiB + 17)
-	if err := createExt4(context.Background(), destination, wantSize, "APSTATE", ""); err != nil {
+	if err := createExt4(context.Background(), destination, wantSize, "APSTATE"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(destination)

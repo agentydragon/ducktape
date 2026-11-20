@@ -29,7 +29,7 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 	if err != nil {
 		return nil, err
 	}
-	if request == nil || len(request.GetPolicySets()) == 0 {
+	if len(request.GetPolicySets()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "at least one PolicySet is required")
 	}
 	if err := validSandboxName(target.Name); err != nil {
@@ -119,7 +119,7 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if err != nil {
 		return nil, err
 	}
-	if request == nil || request.GetBindingName() == "" || request.GetBindingUid() == "" {
+	if request.GetBindingName() == "" || request.GetBindingUid() == "" {
 		return nil, status.Error(codes.InvalidArgument, "PolicyBinding name and UID are required")
 	}
 	if err := validSandboxName(target.Name); err != nil {
@@ -190,9 +190,6 @@ func validSandboxName(name string) error {
 	}
 	return nil
 }
-
-// sandboxIdentity is the live Identity the exact Sandbox incarnation acts as: the one its
-// spec.identity names. An operator grant on a Sandbox binds that Identity.
 
 // sandboxIdentity is the live Identity the exact Sandbox incarnation acts as: the one its
 // spec.identity names. An operator grant on a Sandbox binds that Identity.

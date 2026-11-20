@@ -16,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -47,8 +46,6 @@ const (
 	sandboxUID   = "sandbox-uid-current"
 	executionUID = "service-account-uid-current"
 
-	actionRequestID       = "00000000-0000-4000-8000-000000000001"
-	actionExecutionID     = "00000000-0000-4000-8000-000000000002"
 	delegatedIdentityName = "delegated-agent"
 	delegatedIdentityUID  = "delegated-identity-uid"
 )
@@ -275,15 +272,7 @@ func serviceContext(t *testing.T, uri string) context.Context {
 
 func delegatedServiceContext(t *testing.T, uri string, identity auth.Identity) context.Context {
 	t.Helper()
-	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
-	}
-	encoded, err := auth.MarshalDelegation(envelope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.AppendToOutgoingContext(serviceContext(t, uri), auth.DelegationMetadataKey, string(encoded))
+	return grpcmethods.WithActionDelegation(t, serviceContext(t, uri), identity)
 }
 
 func serveIdentityDiscovery(

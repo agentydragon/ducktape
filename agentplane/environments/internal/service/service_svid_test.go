@@ -12,15 +12,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,20 +145,6 @@ const (
 	actionsID  = peertls.ActionsURI
 )
 
-func serviceDelegationContext(t *testing.T, identity auth.Identity) context.Context {
-	t.Helper()
-	envelope, err := auth.MarshalDelegation(&delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{
-			RequestId: uuid.NewString(), ExecutionId: uuid.NewString(),
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(auth.DelegationMetadataKey, string(envelope)))
-}
-
 func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAuthority(t *testing.T) {
 	const (
 		identityName = "agent"
@@ -220,7 +203,7 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 	if err != nil || len(direct.GetItems()) != 2 {
 		t.Fatalf("direct Actions component reader = %v, %v; want both Environments", direct, err)
 	}
-	delegated := serviceDelegationContext(t, auth.Identity{Name: identityName, UID: identityUID})
+	delegated := grpcmethods.WithActionDelegation(t, t.Context(), auth.Identity{Name: identityName, UID: identityUID})
 	listed, err := client.ListEnvironments(delegated, &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil || len(listed.GetItems()) != 1 || listed.GetItems()[0].GetTarget().GetName() != sandboxName {
 		t.Fatalf("delegated Actions list = %v, %v; want only effective Identity's Environment", listed, err)
@@ -232,7 +215,7 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 	if _, err := client.GetEnvironment(delegated, &environmentpb.GetEnvironmentRequest{Target: foreignTarget}); status.Code(err) != codes.NotFound {
 		t.Fatalf("delegated Actions read crossed Identity binding: %v", err)
 	}
-	stale := serviceDelegationContext(t, auth.Identity{Name: identityName, UID: "agent-uid-replaced"})
+	stale := grpcmethods.WithActionDelegation(t, t.Context(), auth.Identity{Name: identityName, UID: "agent-uid-replaced"})
 	if _, err := client.ListEnvironments(stale, &environmentpb.ListEnvironmentsRequest{Limit: 10}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("stale delegated Identity UID was admitted: %v", err)
 	}

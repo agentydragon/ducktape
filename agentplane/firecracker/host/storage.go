@@ -158,14 +158,14 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := createExt4(ctx, storage.Paths["state"], int64(storage.config.StateSizeMiB)*bytesPerMiB, "APSTATE", ""); err != nil {
+	if err := createExt4(ctx, storage.Paths["state"], int64(storage.config.StateSizeMiB)*bytesPerMiB, "APSTATE"); err != nil {
 		return err
 	}
 	if storage.config.WorkspaceKind == WorkspaceKindRawDiskImage {
 		if err := os.MkdirAll(filepath.Dir(storage.Paths["workspace"]), 0o700); err != nil {
 			return err
 		}
-		if err := createExt4(ctx, storage.Paths["workspace"], int64(storage.config.WorkspaceSizeMiB)*bytesPerMiB, "APWORKSPACE", ""); err != nil {
+		if err := createExt4(ctx, storage.Paths["workspace"], int64(storage.config.WorkspaceSizeMiB)*bytesPerMiB, "APWORKSPACE"); err != nil {
 			return err
 		}
 	} else if err := prepareWorkspaceBlock(ctx, storage.Paths["workspace"]); err != nil {
@@ -593,7 +593,7 @@ func allZero(data []byte) bool {
 	return true
 }
 
-func createExt4(ctx context.Context, destination string, sizeBytes int64, label, source string) error {
+func createExt4(ctx context.Context, destination string, sizeBytes int64, label string) error {
 	if _, err := os.Stat(destination); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -610,12 +610,7 @@ func createExt4(ctx context.Context, destination string, sizeBytes int64, label,
 		_ = os.Remove(staging)
 		return err
 	}
-	args := []string{"-F", "-q", "-m", "0", "-L", label}
-	if source != "" {
-		args = append(args, "-d", source)
-	}
-	args = append(args, staging)
-	if _, err := runCommand(ctx, "mkfs.ext4", args...); err != nil {
+	if _, err := runCommand(ctx, "mkfs.ext4", "-F", "-q", "-m", "0", "-L", label, staging); err != nil {
 		_ = os.Remove(staging)
 		return err
 	}

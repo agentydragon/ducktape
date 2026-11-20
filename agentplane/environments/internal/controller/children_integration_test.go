@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -39,14 +39,6 @@ import (
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
-
-func eventually(t *testing.T, check func() bool) {
-	t.Helper()
-	if err := wait.PollUntilContextTimeout(context.Background(), 10*time.Millisecond, 30*time.Second, true,
-		func(context.Context) (bool, error) { return check(), nil }); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func withCertificateCRD(t *testing.T) kubeapiserver.Option {
 	t.Helper()
@@ -308,12 +300,12 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Create(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
+	eventually.Eventually(t, "the Sandbox's Pod", func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
 	// The app and Runner Gateway hold patch on Sandboxes but not sandboxes/status: neither the main
 	// resource's status nor credential annotations on the Sandbox can rebind the Environment Runtime credential.
 	var pod corev1.Pod
 	var bound sandboxapi.RunnerCredential
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the Sandbox to bind its Pod's credential", func() bool {
 		var current sandboxapi.Sandbox
 		if objects.Get(ctx, key, &pod) != nil || objects.Get(ctx, key, &current) != nil || current.Status.RunnerCredential == nil {
 			return false
@@ -363,7 +355,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Update(ctx, &launch); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the launch ConfigMap to be repaired", func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.Data[LaunchFile] == wantLaunch && launch.Data["unrelated"] == "keep"
 	})
 	version := launch.ResourceVersion
@@ -377,7 +369,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Delete(ctx, &launch); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the launch ConfigMap to be recreated", func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
 	})
 	for _, test := range []struct {
@@ -395,7 +387,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 				t.Fatal(err)
 			}
 			otherKey := client.ObjectKeyFromObject(other)
-			eventually(t, func() bool {
+			eventually.Eventually(t, "the Running reason "+test.reason, func() bool {
 				if objects.Get(ctx, otherKey, other) != nil {
 					return false
 				}
@@ -419,7 +411,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 			t.Fatal(err)
 		}
 		otherKey := client.ObjectKeyFromObject(other)
-		eventually(t, func() bool {
+		eventually.Eventually(t, "the Running reason TemplateInvalid", func() bool {
 			if objects.Get(ctx, otherKey, other) != nil {
 				return false
 			}
@@ -430,7 +422,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		if err := objects.Update(ctx, changed); err != nil {
 			t.Fatal(err)
 		}
-		eventually(t, func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
+		eventually.Eventually(t, "the Pod of the repaired template", func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
 	})
 	t.Run("cache-holds-only-labeled-objects", func(t *testing.T) {
 		for _, test := range []struct {
@@ -453,7 +445,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 				if err := objects.Create(ctx, test.labeled); err != nil {
 					t.Fatal(err)
 				}
-				eventually(t, func() bool {
+				eventually.Eventually(t, "the labeled "+test.kind+" to be cached", func() bool {
 					return mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.labeled), test.labeled.DeepCopyObject().(client.Object)) == nil
 				})
 				if err := mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.unlabeled), test.unlabeled.DeepCopyObject().(client.Object)); !apierrors.IsNotFound(err) {
@@ -477,7 +469,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	vmKey := client.ObjectKeyFromObject(vmSandbox)
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the Running reason KubeVirtMissing", func() bool {
 		if objects.Get(ctx, vmKey, vmSandbox) != nil {
 			return false
 		}

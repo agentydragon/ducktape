@@ -3,6 +3,7 @@ package serving
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"google.golang.org/grpc"
@@ -33,7 +35,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -233,8 +234,8 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	}
 	t.Cleanup(func() { stopReplica(first) })
 	t.Cleanup(func() { stopReplica(second) })
-	eventually(t, func() bool { return first.server.Check(nil) == nil })
-	eventually(t, func() bool { return second.server.Check(nil) == nil })
+	eventually.Eventually(t, "the first replica to be ready", func() bool { return first.server.Check(nil) == nil })
+	eventually.Eventually(t, "the second replica to be ready", func() bool { return second.server.Check(nil) == nil })
 
 	// A valid Kubernetes service-account bearer still gets no EnvironmentService admission.
 	bearerToken, err := kube.WorkloadToken(t.Context(), auth.Account{Namespace: servingTestNamespace, Name: "bearer-only"}, testBearerAudience)
@@ -348,7 +349,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 
 	// The readiness check and delegated authorization both follow the replica-local policy watch health.
 	second.server.policyHealth.RecordFailure("policysets", errors.New("injected policy watch failure"))
-	eventually(t, func() bool { return second.server.Check(nil) != nil })
+	eventually.Eventually(t, "the second replica to report not ready", func() bool { return second.server.Check(nil) != nil })
 	healthClient := grpc_health_v1.NewHealthClient(secondConnection)
 	waitForHealthStatus(t, healthClient, grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 	callCtx, cancel = callContext(t)
@@ -364,7 +365,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		t.Fatalf("policy failure changed wake generation to %d", sandbox.Spec.WakeGeneration)
 	}
 	second.server.policyHealth.RecordSuccess("policysets")
-	eventually(t, func() bool { return second.server.Check(nil) == nil })
+	eventually.Eventually(t, "the second replica to be ready again", func() bool { return second.server.Check(nil) == nil })
 	waitForHealthStatus(t, healthClient, grpc_health_v1.HealthCheckResponse_SERVING)
 	eventuallyResumeOutcome(t, delegatedClient, delegatedRequest, environmentpb.ResumeOutcome_RESUME_OUTCOME_ALREADY_RUNNING)
 	if err := objects.Delete(t.Context(), policyBinding); err != nil {
@@ -617,27 +618,14 @@ func resumeRequest(target *identitypb.EnvironmentTarget, generation int64) *envi
 	}
 }
 
-func eventually(t *testing.T, check func() bool) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 30*time.Second, true, func(context.Context) (bool, error) {
-		return check(), nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func waitForHealthStatus(t *testing.T, health grpc_health_v1.HealthClient, expected grpc_health_v1.HealthCheckResponse_ServingStatus) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+	eventually.Eventually(t, "gRPC health status "+expected.String(), func() bool {
+		ctx, cancel := callContext(t)
+		defer cancel()
 		response, err := health.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-		return err == nil && response.GetStatus() == expected, nil
-	}); err != nil {
-		t.Fatalf("gRPC health status did not become %s: %v", expected, err)
-	}
+		return err == nil && response.GetStatus() == expected
+	})
 }
 
 func eventuallyResumeOutcome(
@@ -647,18 +635,14 @@ func eventuallyResumeOutcome(
 	expected environmentpb.ResumeOutcome,
 ) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
 	var lastResponse *environmentpb.ResumeEnvironmentResponse
 	var lastErr error
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-		callCtx, callCancel := context.WithTimeout(ctx, time.Second)
-		defer callCancel()
-		lastResponse, lastErr = rpc.ResumeEnvironment(callCtx, request)
-		return lastErr == nil && lastResponse.GetOutcome() == expected, nil
-	}); err != nil {
-		t.Fatalf("delegated resume outcome = %v, %v; want %s: %v", lastResponse, lastErr, expected, err)
-	}
+	eventually.Eventually(t, "delegated resume outcome "+expected.String(), func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		lastResponse, lastErr = rpc.ResumeEnvironment(ctx, request)
+		return lastErr == nil && lastResponse.GetOutcome() == expected
+	}, func() string { return fmt.Sprintf("delegated resume outcome = %v, %v", lastResponse, lastErr) })
 }
 
 func eventuallyRPCCode(
@@ -668,17 +652,13 @@ func eventuallyRPCCode(
 	expected codes.Code,
 ) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
 	var lastErr error
-	if err := wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-		callCtx, callCancel := context.WithTimeout(ctx, time.Second)
-		defer callCancel()
-		_, lastErr = rpc.ResumeEnvironment(callCtx, request)
-		return status.Code(lastErr) == expected, nil
-	}); err != nil {
-		t.Fatalf("delegated resume error = %v; want %s: %v", lastErr, expected, err)
-	}
+	eventually.Eventually(t, "delegated resume error code "+expected.String(), func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, lastErr = rpc.ResumeEnvironment(ctx, request)
+		return status.Code(lastErr) == expected
+	}, func() string { return fmt.Sprintf("delegated resume error = %v", lastErr) })
 }
 
 func callContext(t *testing.T) (context.Context, context.CancelFunc) {

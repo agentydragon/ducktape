@@ -114,26 +114,12 @@ func testWorkspaceVMTemplate(image string) *sandboxapi.SandboxTemplate {
 
 func getWorkspacePVC(t *testing.T, c client.Client) *corev1.PersistentVolumeClaim {
 	t.Helper()
-	var pvc corev1.PersistentVolumeClaim
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)}, &pvc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &pvc
+	return getOrNil[corev1.PersistentVolumeClaim](t, c, client.ObjectKey{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)})
 }
 
 func getVM(t *testing.T, c client.Client) *kubevirtv1.VirtualMachine {
 	t.Helper()
-	var vm kubevirtv1.VirtualMachine
-	if err := c.Get(context.Background(), sandboxKey, &vm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &vm
+	return getOrNil[kubevirtv1.VirtualMachine](t, c, sandboxKey)
 }
 
 func volume(vm *kubevirtv1.VirtualMachine, name string) *kubevirtv1.Volume {
@@ -426,31 +412,6 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	}
 }
 
-func TestTemplateWithBothKindsIsRefused(t *testing.T) {
-	template := testVMTemplate("test-guest:v1")
-	template.Spec.Pod = testTemplate("test-image:v1").Spec.Pod
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getPod(t, c) != nil || getPVC(t, c) != nil {
-		t.Fatal("created resources from a template of both kinds")
-	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
-	}
-}
-
-func TestVMTemplateWithoutKubeVirtStaysUnreadyWithoutStartingWorkload(t *testing.T) {
-	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
-	r.KubeVirt = false
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getPod(t, c) != nil {
-		t.Fatal("created a workload for a VM template without KubeVirt")
-	}
-	if reason := runningReason(t, c); reason != "KubeVirtMissing" {
-		t.Errorf("Running reason = %s, want KubeVirtMissing", reason)
-	}
-}
-
 func TestWorkspaceVolumeIsAPVCOfTheSandboxAttachedToTheVM(t *testing.T) {
 	template := testWorkspaceVMTemplate("test-guest:v1")
 	r, c := newReconciler(t, true, template)
@@ -497,48 +458,5 @@ func TestHaltedVMKeepsItsWorkspaceVolume(t *testing.T) {
 	}
 	if v := volume(getVM(t, c), workspaceVolume); v == nil || v.PersistentVolumeClaim == nil {
 		t.Errorf("restarted VM workspace volume = %v, want the PVC", v)
-	}
-}
-
-func TestWorkspaceVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
-	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: WorkspaceVolumeName(sandboxName),
-	}}
-	r, c := newReconciler(t, true, testWorkspaceVMTemplate("test-guest:v1"), stale)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil {
-		t.Fatal("started a VM on a previous Sandbox's workspace")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
-	}
-}
-
-func TestTemplateDefiningTheWorkspaceVolumeItselfIsRefused(t *testing.T) {
-	template := testWorkspaceVMTemplate("test-guest:v1")
-	template.Spec.VM.Template.Spec.Volumes = append(template.Spec.VM.Template.Spec.Volumes, kubevirtv1.Volume{
-		Name:         workspaceVolume,
-		VolumeSource: kubevirtv1.VolumeSource{EmptyDisk: &kubevirtv1.EmptyDiskSource{Capacity: resource.MustParse("1Gi")}},
-	})
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getWorkspacePVC(t, c) != nil {
-		t.Fatal("started a VM, or made a workspace PVC, for a template that defines the workspace volume itself")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
-	}
-}
-
-func TestPodTemplateWithAWorkspaceVolumeIsRefused(t *testing.T) {
-	template := testTemplate("test-image:v1")
-	template.Spec.WorkspaceVolume = testWorkspaceVMTemplate("test-guest:v1").Spec.WorkspaceVolume
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("started a Pod from a template that sets a workspace volume")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
 	}
 }

@@ -295,7 +295,7 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	if err != nil || pending != nil {
 		t.Fatalf("accepted VMI: pending=%v err=%v", pending, err)
 	}
-	if !w.runtimeCredentialAccepted || !w.runtimeIncarnationPublished || w.credential.ID != issued.ID {
+	if !w.runtimeIncarnationPublished || w.credential.ID != issued.ID {
 		t.Fatalf("matching, issued VMI was not published: workload=%#v", w)
 	}
 	if pod := readRecord(t, c, sandbox).Spec.Pod; pod == nil || pod.UID != launcher.UID || pod.Name != launcher.Name {
@@ -345,7 +345,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	if pending == nil || pending.reason != "RunnerCredentialMismatch" {
 		t.Fatalf("unexpected VMI replacement must be fenced: %v", pending)
 	}
-	if w.runtimeCredentialAccepted || w.runtimeIncarnationPublished {
+	if w.runtimeIncarnationPublished {
 		t.Fatal("unexpected replacement VMI must not be accepted or published")
 	}
 	var gotVM kubevirtv1.VirtualMachine
@@ -408,7 +408,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if gotVM.Annotations[runtimecredentials.VMIUIDAnnotation] != "" || gotVM.Annotations[runtimecredentials.LastVMIUIDAnnotation] != "vmi-old" {
 		t.Fatalf("stopped VM lost the prior VMI fence: %#v", gotVM.Annotations)
 	}
-	if w.runtimeCredentialAccepted || w.runtimeIncarnationPublished {
+	if w.runtimeIncarnationPublished {
 		t.Fatalf("new VM identity was accepted before a VMI bound it: %#v", w)
 	}
 }
@@ -478,7 +478,7 @@ func TestPodWithARotatedCredentialIsReplaced(t *testing.T) {
 		issueCredential(t, c, client.ObjectKeyFromObject(sandbox))
 		w, pending, err = r.ensureRuntimeCredential(ctx, getSandboxObject(t, c, sandbox), workload{pod: first}, true)
 	}
-	if err != nil || pending != nil || !w.runtimeCredentialAccepted || w.credential.ID != started.ID {
+	if err != nil || pending != nil || !w.runtimeIncarnationPublished || w.credential.ID != started.ID {
 		t.Fatalf("the first Pod was not accepted with the ID it started with: %+v, pending=%v err=%v", w, pending, err)
 	}
 	if _, err := r.updateStatus(ctx, getSandboxObject(t, c, sandbox), w, nil, nil); err != nil {
@@ -551,7 +551,7 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, pending, err := r.ensureRuntimeCredential(ctx, current, workload{pod: pod}, true)
-	if err != nil || pending != nil || !w.runtimeCredentialAccepted {
+	if err != nil || pending != nil || !w.runtimeIncarnationPublished {
 		t.Fatalf("annotations unbound the Environment Runtime credential: pending=%v err=%v", pending, err)
 	}
 	if got := getRuntimeCredential(t, c, sandbox); got != *current.Status.RunnerCredential {
