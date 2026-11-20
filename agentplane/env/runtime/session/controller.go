@@ -122,11 +122,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return op.Err()
 		}
 	}
-	if input.SetupRequested && current.SetupOperationID == "" {
+	if input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING && current.SetupOperationID == "" {
 		s.mu.Lock()
 		script, job := string(s.record.SetupScript), s.setupJob
 		s.mu.Unlock()
-		if script != "" && job == nil && input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		if script != "" && job == nil {
 			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
 			if op != nil {
 				current.SetupOperationID = op.ID()

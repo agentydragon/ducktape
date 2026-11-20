@@ -32,7 +32,6 @@ type ReconcileSnapshot struct {
 	Harness           sessionpb.Harness
 	Demand            uint64
 	OperationRevision uint64
-	SetupRequested    bool
 	Setup             sessionpb.SetupState
 	Pending           int
 	ProcessID         string
