@@ -391,7 +391,7 @@ EXAMPLES = (
 
 async def _expect_live_preview(surface: Locator, example: ActionExample) -> None:
     if example.live_preview is not None:
-        await expect(surface.get_by_role("link", name=example.live_preview[2], exact=True)).to_be_visible()
+        await expect(surface.get_by_role("link", name=example.live_preview[2], exact=True).first).to_be_visible()
 
 
 @DESKTOP_AND_MOBILE
