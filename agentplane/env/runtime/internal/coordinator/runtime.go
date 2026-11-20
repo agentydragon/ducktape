@@ -41,9 +41,8 @@ import (
 )
 
 const (
-	RuntimeUnitName                            = "agentplane-environment-runtime.service"
-	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HarnessScopeID  supervision.SystemdScopeID = "harness"
+	RuntimeScopeID supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
+	HarnessScopeID supervision.SystemdScopeID = "harness"
 )
 
 // Config contains the resolved environment configuration.
@@ -294,22 +293,16 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	r.lifecycleEngine = engine
 	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, supervision.RuntimeDomain, &r.lifecycleWorkers, r.fail)
 	if r.config.Supervision == "systemd" {
-		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: RuntimeScopeID,
-		})
+		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(RuntimeScopeID))
 		if err != nil {
 			return err
 		}
-		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HarnessScopeID,
-		})
+		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(HarnessScopeID))
 		if err != nil {
 			return err
 		}
 		if r.config.CodexExecServer != nil {
-			r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-				Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: "execution-service",
-			})
+			r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
 			if err != nil {
 				return err
 			}

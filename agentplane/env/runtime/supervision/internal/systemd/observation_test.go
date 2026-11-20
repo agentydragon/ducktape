@@ -28,7 +28,7 @@ func TestUnconfirmedStartSurvivesLaterManagerObservations(t *testing.T) {
 	handle.observeUnit(UnitSnapshot{LoadState: "not-found"}, nil)
 	var got Observation
 	handle.Observe(func(observation Observation) { got = observation })
-	if handle.Accepted() || !handle.Unconfirmed() || got.StartState != StartUnconfirmed || got.StartError != "reply lost" || got.Snapshot.LoadState != "not-found" {
+	if got.StartState != StartUnconfirmed || got.StartError != "reply lost" || got.Snapshot.LoadState != "not-found" {
 		t.Fatalf("unconfirmed start observation = %+v", got)
 	}
 }

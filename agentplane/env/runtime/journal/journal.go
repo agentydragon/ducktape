@@ -228,8 +228,6 @@ var journalTemporarySchema = []string{
 	)`,
 }
 
-func (j *Journal) SourceID() string { return j.sourceID }
-
 func (j *Journal) RecoveryState() RecoveryState {
 	state := j.publishedState.Load()
 	if state == nil {

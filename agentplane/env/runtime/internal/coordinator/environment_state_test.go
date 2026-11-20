@@ -48,6 +48,15 @@ func openPersistentEnvironmentState(t *testing.T, stateDir string) (state.State,
 	return lifecycleState, environmentState, closeBackingOnCleanup(t, backing)
 }
 
+// requireIncarnation checks the adopted incarnation UID (empty: none adopted) and lameduck state.
+func requireIncarnation(t *testing.T, environmentState *EnvironmentState, want string, wantLameduck bool) {
+	t.Helper()
+	uid, known := environmentState.IncarnationUID()
+	if uid != want || known != (want != "") || environmentState.Lameduck() != wantLameduck {
+		t.Fatalf("incarnation = (%q, %t), lameduck = %t; want %q, lameduck = %t", uid, known, environmentState.Lameduck(), want, wantLameduck)
+	}
+}
+
 func TestEnvironmentStatePersistsSealedUIDAcrossRestartAndSuccessorAdoption(t *testing.T) {
 	stateDir := t.TempDir()
 	lifecycleState, environmentState, backing := openPersistentEnvironmentState(t, stateDir)
@@ -68,9 +77,7 @@ func TestEnvironmentStatePersistsSealedUIDAcrossRestartAndSuccessorAdoption(t *t
 	}
 
 	lifecycleState, environmentState, backing = openPersistentEnvironmentState(t, stateDir)
-	if snapshot := environmentState.Snapshot(); snapshot.IncarnationUID != "" || snapshot.Known || !snapshot.Quiesced {
-		t.Fatalf("snapshot after restart = %+v", snapshot)
-	}
+	requireIncarnation(t, environmentState, "", true)
 	if uid, found, err := environmentState.SealedUID(); err != nil || !found || uid != "incarnation-one" {
 		t.Fatalf("sealed UID after restart = %q, found=%t, err=%v", uid, found, err)
 	}
@@ -83,9 +90,7 @@ func TestEnvironmentStatePersistsSealedUIDAcrossRestartAndSuccessorAdoption(t *t
 	if err := environmentState.AdoptIncarnation("incarnation-two"); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot := environmentState.Snapshot(); snapshot.IncarnationUID != "incarnation-two" || !snapshot.Known || snapshot.Quiesced {
-		t.Fatalf("snapshot after successor adoption = %+v", snapshot)
-	}
+	requireIncarnation(t, environmentState, "incarnation-two", false)
 	if _, found, err := cosistate.ReadEnvironmentSeal(context.Background(), lifecycleState); err != nil || found {
 		t.Fatalf("seal after successor adoption found=%t, err=%v; want absent", found, err)
 	}
@@ -94,9 +99,7 @@ func TestEnvironmentStatePersistsSealedUIDAcrossRestartAndSuccessorAdoption(t *t
 	}
 
 	_, environmentState, _ = openPersistentEnvironmentState(t, stateDir)
-	if snapshot := environmentState.Snapshot(); snapshot.IncarnationUID != "" || snapshot.Known || snapshot.Quiesced {
-		t.Fatalf("snapshot after successor restart = %+v", snapshot)
-	}
+	requireIncarnation(t, environmentState, "", false)
 }
 
 type uncertainEnvironmentSealState struct {
@@ -143,7 +146,7 @@ func TestUncertainEnvironmentSealPersistenceFailsClosedUntilRestart(t *testing.T
 	if err := environmentState.EnterLameduck(); err == nil {
 		t.Fatal("EnterLameduck succeeded despite a COSI persistence failure")
 	}
-	if !environmentState.Lameduck() || !environmentState.Snapshot().Quiesced {
+	if !environmentState.Lameduck() {
 		t.Fatal("uncertain seal write did not fail closed")
 	}
 	if _, _, err := environmentState.SealedUID(); err == nil {
@@ -157,9 +160,7 @@ func TestUncertainEnvironmentSealPersistenceFailsClosedUntilRestart(t *testing.T
 	}
 
 	reopenedState, reopened, reopenedBacking := openPersistentEnvironmentState(t, stateDir)
-	if snapshot := reopened.Snapshot(); snapshot.IncarnationUID != "" || snapshot.Known || !snapshot.Quiesced {
-		t.Fatalf("state reloaded after uncertain seal write = %+v", snapshot)
-	}
+	requireIncarnation(t, reopened, "", true)
 	if uid, found, err := reopened.SealedUID(); err != nil || !found || uid != "incarnation-one" {
 		t.Fatalf("sealed UID reloaded after uncertain seal write = %q, found=%t, err=%v", uid, found, err)
 	}
@@ -175,7 +176,7 @@ func TestUncertainEnvironmentSealPersistenceFailsClosedUntilRestart(t *testing.T
 	if err := reopened.AdoptIncarnation("incarnation-two"); err == nil {
 		t.Fatal("successor adoption succeeded despite an uncertain seal deletion")
 	}
-	if !reopened.Lameduck() || !reopened.Snapshot().Quiesced {
+	if !reopened.Lameduck() {
 		t.Fatal("uncertain seal deletion did not fail closed")
 	}
 	if _, _, err := reopened.SealedUID(); err == nil {
@@ -186,9 +187,7 @@ func TestUncertainEnvironmentSealPersistenceFailsClosedUntilRestart(t *testing.T
 	}
 
 	_, recovered, _ := openPersistentEnvironmentState(t, stateDir)
-	if snapshot := recovered.Snapshot(); snapshot.IncarnationUID != "" || snapshot.Known || snapshot.Quiesced {
-		t.Fatalf("state reloaded after uncertain seal deletion = %+v", snapshot)
-	}
+	requireIncarnation(t, recovered, "", false)
 	if err := recovered.AdoptIncarnation("incarnation-two"); err != nil {
 		t.Fatalf("adoption after restart and COSI reload: %v", err)
 	}
@@ -227,12 +226,12 @@ func TestEnvironmentStateSerializesConcurrentSealAndSuccessorAdoption(t *testing
 		}
 	}
 
-	snapshot := environmentState.Snapshot()
-	if snapshot.IncarnationUID != "incarnation-two" || !snapshot.Known {
-		t.Fatalf("snapshot after concurrent seal and adoption = %+v", snapshot)
+	uid, known := environmentState.IncarnationUID()
+	if uid != "incarnation-two" || !known {
+		t.Fatalf("incarnation after concurrent seal and adoption = (%q, %t)", uid, known)
 	}
 	persisted, found, err := cosistate.ReadEnvironmentSeal(context.Background(), lifecycleState)
-	if err != nil || found != snapshot.Quiesced || found && persisted.IncarnationUID != snapshot.IncarnationUID {
-		t.Fatalf("persisted state = %+v, found=%t, err=%v; snapshot=%+v", persisted, found, err, snapshot)
+	if err != nil || found != environmentState.Lameduck() || found && persisted.IncarnationUID != uid {
+		t.Fatalf("persisted state = %+v, found=%t, err=%v; incarnation=%q, lameduck=%t", persisted, found, err, uid, environmentState.Lameduck())
 	}
 }
