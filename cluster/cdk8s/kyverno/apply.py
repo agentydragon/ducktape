@@ -35,7 +35,12 @@ _SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*\d+,\s*erro
 
 
 def apply_policy(
-    policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None, *, json_payload: bool = False
+    policy_path: Path,
+    resource_path: Path,
+    set_vars: dict[str, str] | None = None,
+    *,
+    json_payload: bool = False,
+    userinfo_path: Path | None = None,
 ) -> KyvernoApplyResult:
     """Run `kyverno apply` against a resource, parse summary and mutated output.
 
@@ -62,6 +67,8 @@ def apply_policy(
             "-o",
             tmpdir,
         ]
+        if userinfo_path:
+            args += ["--userinfo", str(userinfo_path)]
         if set_vars:
             args += ["--set", ",".join(f"{name}={value}" for name, value in set_vars.items())]
         result = subprocess.run(args, check=False, capture_output=True, text=True)

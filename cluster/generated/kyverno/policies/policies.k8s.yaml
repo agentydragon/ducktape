@@ -1,5 +1,5 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   annotations:
     policies.kyverno.io/category: Best Practices
@@ -9,77 +9,36 @@ metadata:
     policies.kyverno.io/title: Require GitOps
   name: require-gitops
 spec:
-  background: false
-  rules:
-    - exclude:
-        any:
-          - subjects:
-              - kind: ServiceAccount
-                name: kustomize-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: helm-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: source-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: haku-state-reconciler
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: kyverno-admission-controller
-                namespace: kyverno
-          - subjects:
-              - kind: ServiceAccount
-                name: monitoring-operator
-                namespace: monitoring
-          - subjects:
-              - kind: ServiceAccount
-                name: grafana-operator
-                namespace: monitoring
-          - subjects:
-              - kind: ServiceAccount
-                name: seaweedfs-operator
-                namespace: seaweedfs
-          - subjects:
-              - kind: ServiceAccount
-                name: authentik
-                namespace: authentik
-          - subjects:
-              - kind: ServiceAccount
-                name: reloader-reloader
-                namespace: kube-system
-          - resources:
-              namespaces:
-                - crossplane-system
-            subjects:
-              - kind: ServiceAccount
-                name: crossplane
-                namespace: crossplane-system
-          - resources:
-              namespaces:
-                - kube-system
-                - kyverno
-                - flux-system
-      match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-              operations:
-                - CREATE
-                - UPDATE
-      name: block-direct-workload-changes
-      validate:
-        deny: {}
-        message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
-  validationFailureAction: audit
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConditions:
+    - expression: "!(request.userInfo.username in ['system:serviceaccount:flux-system:kustomize-controller', 'system:serviceaccount:flux-system:helm-controller', 'system:serviceaccount:flux-system:source-controller', 'system:serviceaccount:flux-system:haku-state-reconciler', 'system:serviceaccount:kyverno:kyverno-admission-controller', 'system:serviceaccount:monitoring:monitoring-operator', 'system:serviceaccount:monitoring:grafana-operator', 'system:serviceaccount:seaweedfs:seaweedfs-operator', 'system:serviceaccount:authentik:authentik', 'system:serviceaccount:kube-system:reloader-reloader'])"
+      name: not-exempt-service-account
+    - expression: "!(request.userInfo.username == 'system:serviceaccount:crossplane-system:crossplane' && request.namespace == 'crossplane-system')"
+      name: not-crossplane-in-its-namespace
+    - expression: "!(request.namespace in ['kube-system', 'kyverno', 'flux-system'])"
+      name: not-system-namespace
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - deployments
+          - statefulsets
+          - daemonsets
+  validationActions:
+    - Audit
+  validations:
+    - expression: "false"
+      messageExpression: "'Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: ' + object.kind + '/' + object.metadata.name + ' User: ' + request.userInfo.username"
 ---
 apiVersion: policies.kyverno.io/v1
 kind: MutatingPolicy

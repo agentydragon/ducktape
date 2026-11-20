@@ -14,6 +14,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.kyverno import policies
 
 _POLICY_BUILDERS = {
+    "require-gitops": policies.require_gitops_chart,
     "default-disable-service-links": policies.default_disable_service_links_chart,
     "require-secret-store-conditions": policies.require_secret_store_conditions_chart,
 }

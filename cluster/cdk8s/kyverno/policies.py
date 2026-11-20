@@ -1,28 +1,15 @@
-"""The cluster's Kyverno ClusterPolicies and the RBAC aggregated into Kyverno's
-controllers so the policies here and elsewhere are admitted.
+"""The cluster's Kyverno policies and the RBAC aggregated into Kyverno's controllers so the
+policies here and elsewhere are admitted.
 
 One chart, and so one file, per policy: //cluster/cdk8s/kyverno synthesizes each
-constructor alone before its tests run the `kyverno` CLI against fixtures. Fields
-the ClusterPolicy CRD leaves untyped (`preconditions`, `deny.conditions`,
-`patchStrategicMerge`, `generate.data`) are plain dicts.
+constructor alone before its tests run the `kyverno` CLI against fixtures. CEL
+policy kinds are `policies.kyverno.io/v1`.
 """
 
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from kyverno_clusterpolicy_crds.io.kyverno import (
-    ClusterPolicy,
-    ClusterPolicySpec,
-    ClusterPolicySpecRules,
-    ClusterPolicySpecRulesExclude,
-    ClusterPolicySpecRulesExcludeAny,
-    ClusterPolicySpecRulesExcludeAnyResources,
-    ClusterPolicySpecRulesExcludeAnySubjects,
-    ClusterPolicySpecRulesMatchAnyResources,
-    ClusterPolicySpecRulesMatchAnyResourcesOperations,
-    ClusterPolicySpecValidationFailureAction,
-)
 from kyverno_mutatingpolicy_crds.io.kyverno.policies import (
     MutatingPolicy,
     MutatingPolicySpec,
@@ -42,6 +29,7 @@ from kyverno_validatingpolicy_crds.io.kyverno.policies import (
     ValidatingPolicySpecEvaluation,
     ValidatingPolicySpecEvaluationAdmission,
     ValidatingPolicySpecEvaluationBackground,
+    ValidatingPolicySpecMatchConditions,
     ValidatingPolicySpecMatchConstraints,
     ValidatingPolicySpecMatchConstraintsResourceRules,
     ValidatingPolicySpecValidationActions,
@@ -50,14 +38,18 @@ from kyverno_validatingpolicy_crds.io.kyverno.policies import (
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
 
-_CREATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.CREATE
-_UPDATE = ClusterPolicySpecRulesMatchAnyResourcesOperations.UPDATE
 _CLEANUP_VERBS = ["get", "list", "watch", "delete"]
 _AGGREGATE_TO_CLEANUP_CONTROLLER = {"rbac.kyverno.io/aggregate-to-cleanup-controller": "true"}
+
+
+_SYSTEM_NAMESPACES = ["kube-system", "kyverno", "flux-system"]
+
+
+def _cel_list(items: list[str]) -> str:
+    return "[" + ", ".join(f"'{item}'" for item in items) + "]"
 
 
 def _chart(app: App, name: str) -> Chart:
@@ -75,12 +67,6 @@ def _annotations(
         "policies.kyverno.io/subject": subject,
         "policies.kyverno.io/description": description,
     }
-
-
-def _cluster_policy_chart(app: App, name: str, *, annotations: dict[str, str], spec: ClusterPolicySpec) -> Chart:
-    chart = _chart(app, name)
-    ClusterPolicy(chart, "policy", metadata=ApiObjectMetadata(name=name, annotations=annotations), spec=spec)
-    return chart
 
 
 def _cleanup_controller_cluster_role_chart(
@@ -118,74 +104,73 @@ def require_gitops_chart(app: App) -> Chart:
         # Stakater Reloader (triggers rolling restarts on secret changes)
         ("reloader-reloader", "kube-system"),
     ]
-    return _cluster_policy_chart(
-        app,
-        "require-gitops",
-        annotations=_annotations(
-            title="Require GitOps",
-            category="Best Practices",
-            severity="medium",
-            subject="Deployment, StatefulSet, DaemonSet",
-            description=(
-                "Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or "
-                "modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked."
+    exempt_usernames = [f"system:serviceaccount:{namespace}:{name}" for name, namespace in exempt_service_accounts]
+    chart = _chart(app, "require-gitops")
+    ValidatingPolicy(
+        chart,
+        "policy",
+        metadata=ApiObjectMetadata(
+            name="require-gitops",
+            annotations=_annotations(
+                title="Require GitOps",
+                category="Best Practices",
+                severity="medium",
+                subject="Deployment, StatefulSet, DaemonSet",
+                description=(
+                    "Enforces that workload resources (Deployments, StatefulSets, DaemonSets) can only be created or "
+                    "modified by Flux GitOps controllers. Direct kubectl apply/create/patch is blocked."
+                ),
             ),
         ),
-        # background: false because this policy uses subjects for exclusions,
-        # which requires admission context (request.userInfo) not available in background scans
-        spec=ClusterPolicySpec(
-            background=False,
-            # Start in Audit mode - change to Enforce after validation
-            validation_failure_action=ClusterPolicySpecValidationFailureAction.AUDIT,
-            rules=[
-                ClusterPolicySpecRules(
-                    name="block-direct-workload-changes",
-                    match=match_resources(
-                        ClusterPolicySpecRulesMatchAnyResources(
-                            kinds=["Deployment", "StatefulSet", "DaemonSet"], operations=[_CREATE, _UPDATE]
-                        )
+        spec=ValidatingPolicySpec(
+            # Start in Audit mode - change to Deny after validation.
+            validation_actions=[ValidatingPolicySpecValidationActions.AUDIT],
+            # No background scan: the exemptions read request.userInfo, which only admission has.
+            evaluation=ValidatingPolicySpecEvaluation(
+                admission=ValidatingPolicySpecEvaluationAdmission(enabled=True),
+                background=ValidatingPolicySpecEvaluationBackground(enabled=False),
+            ),
+            match_constraints=ValidatingPolicySpecMatchConstraints(
+                resource_rules=[
+                    ValidatingPolicySpecMatchConstraintsResourceRules(
+                        api_groups=["apps"],
+                        api_versions=["v1"],
+                        operations=["CREATE", "UPDATE"],
+                        resources=["deployments", "statefulsets", "daemonsets"],
+                    )
+                ]
+            ),
+            # A matchCondition that is false skips the policy for that request.
+            match_conditions=[
+                ValidatingPolicySpecMatchConditions(
+                    name="not-exempt-service-account",
+                    expression=f"!(request.userInfo.username in {_cel_list(exempt_usernames)})",
+                ),
+                # Crossplane installs provider Deployments from GitOps-managed packages.
+                ValidatingPolicySpecMatchConditions(
+                    name="not-crossplane-in-its-namespace",
+                    expression=(
+                        "!(request.userInfo.username == 'system:serviceaccount:crossplane-system:crossplane' "
+                        "&& request.namespace == 'crossplane-system')"
                     ),
-                    exclude=ClusterPolicySpecRulesExclude(
-                        any=[
-                            *(
-                                ClusterPolicySpecRulesExcludeAny(
-                                    subjects=[
-                                        ClusterPolicySpecRulesExcludeAnySubjects(
-                                            kind="ServiceAccount", name=name, namespace=namespace
-                                        )
-                                    ]
-                                )
-                                for name, namespace in exempt_service_accounts
-                            ),
-                            # Crossplane installs provider Deployments from GitOps-managed packages.
-                            ClusterPolicySpecRulesExcludeAny(
-                                subjects=[
-                                    ClusterPolicySpecRulesExcludeAnySubjects(
-                                        kind="ServiceAccount", name="crossplane", namespace="crossplane-system"
-                                    )
-                                ],
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=["crossplane-system"]),
-                            ),
-                            # System namespaces
-                            ClusterPolicySpecRulesExcludeAny(
-                                resources=ClusterPolicySpecRulesExcludeAnyResources(
-                                    namespaces=["kube-system", "kyverno", "flux-system"]
-                                )
-                            ),
-                        ]
-                    ),
-                    validate=Validate.deny(
-                        message=(
-                            "Direct resource creation/modification blocked. All changes must go through GitOps "
-                            "(commit to git repository). "
-                            "Resource: {{request.object.kind}}/{{request.object.metadata.name}} "
-                            "User: {{request.userInfo.username}}"
-                        )
+                ),
+                ValidatingPolicySpecMatchConditions(
+                    name="not-system-namespace", expression=f"!(request.namespace in {_cel_list(_SYSTEM_NAMESPACES)})"
+                ),
+            ],
+            validations=[
+                ValidatingPolicySpecValidations(
+                    expression="false",
+                    message_expression=(
+                        "'Direct resource creation/modification blocked. All changes must go through GitOps "
+                        "(commit to git repository). Resource: ' + object.kind + '/' + object.metadata.name "
+                        "+ ' User: ' + request.userInfo.username"
                     ),
                 )
             ],
         ),
     )
+    return chart
 
 
 def default_disable_service_links_chart(app: App) -> Chart:
