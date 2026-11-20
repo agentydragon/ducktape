@@ -5,7 +5,6 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -300,7 +299,6 @@ class Actions(Construct):
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         """`history` and `dispatcher` serve orchestration_v1 directly and session_delegation with forwarded
         caller identity, when those groups are configured."""
@@ -310,7 +308,6 @@ class Actions(Construct):
         self.history = history
         self.dispatcher = dispatcher
         self.environment_service_endpoint = environment_service_endpoint
-        self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
@@ -559,7 +556,7 @@ class Actions(Construct):
                 .key("private-key-pem")
                 .env_value(self, "web-push-secret")
             )
-        return env | dict(self.container_env)
+        return env
 
     def _reload_secrets(self) -> list[str]:
         """The Secrets `_container_env` and `_add_workload` wire in, so rotating any rolls the Deployment."""

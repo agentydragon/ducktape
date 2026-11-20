@@ -81,14 +81,12 @@ class CommandSandbox(Construct):
         *,
         runner_zone: str | None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
-        sidecar_resources: k8s.ResourceRequirements | None = None,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.runner_zone = runner_zone
         self.image_pull_secret_name = image_pull_secret_name
-        self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         rules = platform_routes.egress_rules(env.namespace)
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
@@ -150,7 +148,6 @@ class CommandSandbox(Construct):
                         ),
                     ],
                     sidecar_settings=self.sidecar_settings,
-                    sidecar_resources=self.sidecar_resources,
                     sidecar_mounts=[
                         k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
                     ],
