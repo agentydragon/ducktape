@@ -18,6 +18,18 @@ def find_all_searches(store: TanaGraph) -> list[NodeId]:
     return [node.id for node in store.values() if node.props.doc_type == "search"]
 
 
+def _print_node_list(store: TanaGraph, title: str, node_ids: list[NodeId]) -> None:
+    if not node_ids:
+        return
+    print(f"\n{title} ({len(node_ids)}):")
+    for node_id in node_ids[:PRETTY_PRINT_LIMIT]:  # Show first N
+        node = store.get(node_id)
+        name = node.name if node else "<unknown>"
+        print(f"  - {name} ({node_id})")
+    if len(node_ids) > PRETTY_PRINT_LIMIT:
+        print(f"  ... and {len(node_ids) - PRETTY_PRINT_LIMIT} more")
+
+
 def print_search_info(store: TanaGraph, search_id: NodeId) -> None:
     """Print information about a search node."""
     search_node = store.get(search_id)
@@ -41,23 +53,8 @@ def print_search_info(store: TanaGraph, search_id: NodeId) -> None:
     print(f"\nStored results: {len(comparison['stored'])}")
     print(f"Materialized results: {len(comparison['materialized'])}")
 
-    if comparison["missing"]:
-        print(f"\nMissing from materialized ({len(comparison['missing'])}):")
-        for node_id in comparison["missing"][:PRETTY_PRINT_LIMIT]:  # Show first N
-            node = store.get(node_id)
-            name = node.name if node else "<unknown>"
-            print(f"  - {name} ({node_id})")
-        if len(comparison["missing"]) > PRETTY_PRINT_LIMIT:
-            print(f"  ... and {len(comparison['missing']) - PRETTY_PRINT_LIMIT} more")
-
-    if comparison["extra"]:
-        print(f"\nExtra in materialized ({len(comparison['extra'])}):")
-        for node_id in comparison["extra"][:PRETTY_PRINT_LIMIT]:  # Show first N
-            node = store.get(node_id)
-            name = node.name if node else "<unknown>"
-            print(f"  - {name} ({node_id})")
-        if len(comparison["extra"]) > PRETTY_PRINT_LIMIT:
-            print(f"  ... and {len(comparison['extra']) - PRETTY_PRINT_LIMIT} more")
+    _print_node_list(store, "Missing from materialized", comparison["missing"])
+    _print_node_list(store, "Extra in materialized", comparison["extra"])
 
     if not comparison["missing"] and not comparison["extra"]:
         print("\n✅ Stored and materialized results match!")

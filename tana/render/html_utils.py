@@ -11,49 +11,38 @@ NODE_SPAN_PATTERN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
 DATE_SPAN_PATTERN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
 
 
+# (opening, closing) delimiter per formatting tag; `mark`, `strike` and `code` stay HTML.
+_DELIMITERS = {
+    "b": ("**", "**"),
+    "strong": ("**", "**"),
+    "i": ("_", "_"),
+    "em": ("_", "_"),
+    "u": ("__", "__"),
+    "mark": ("<mark>", "</mark>"),
+    "strike": ("<strike>", "</strike>"),
+    "code": ("<code>", "</code>"),
+}
+
+
 class HTMLToMarkdownParser(HTMLParser):
     """Convert HTML formatting to Markdown syntax."""
 
     def __init__(self):
         super().__init__()
         self.output = StringIO()
-        self.tag_stack = []
 
     def handle_starttag(self, tag, attrs):
-        self.tag_stack.append(tag)
         prev = self.output.getvalue()
         # If a formatting tag follows a comma without a space, insert one (",**" -> ", **")
         if prev.endswith(",") and not prev.endswith(", "):
             # Only add a space if not already present
             self.output.write(" ")
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("<mark>")
-        elif tag == "strike":
-            self.output.write("<strike>")
-        elif tag == "code":
-            self.output.write("<code>")
+        if delimiters := _DELIMITERS.get(tag):
+            self.output.write(delimiters[0])
 
     def handle_endtag(self, tag):
-        if self.tag_stack and self.tag_stack[-1] == tag:
-            self.tag_stack.pop()
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("</mark>")
-        elif tag == "strike":
-            self.output.write("</strike>")
-        elif tag == "code":
-            self.output.write("</code>")
+        if delimiters := _DELIMITERS.get(tag):
+            self.output.write(delimiters[1])
 
     def handle_data(self, data):
         # If a data chunk begins with a space immediately after opening a formatting marker,

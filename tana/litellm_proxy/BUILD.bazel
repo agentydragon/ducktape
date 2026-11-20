@@ -1,4 +1,4 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -186,13 +186,6 @@ py_console_script_binary(
         ":custom_handler",
         ":provider",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
-)
-
-py_image_layer(
-    name = "layers",
-    binary = ":server_bin",
-    group = "1000",
-    owner = "1000",
 )
 
 # Keep the provider source in the same importable package path that the
