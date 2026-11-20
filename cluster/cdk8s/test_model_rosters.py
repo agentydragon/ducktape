@@ -28,7 +28,7 @@ from model_catalog.catalog import (
     RouteAlias,
     TokenLimits,
 )
-from model_catalog.policies import KEY_MODEL_LANES
+from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 
 def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
@@ -41,15 +41,11 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
 
 
 def test_staging_picker_does_not_widen_its_key() -> None:
-    admitted = (
-        *KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed,
-        *KEY_MODEL_LANES["claude_client_models"].allowed,
-        *KEY_MODEL_LANES["antigravity_client_models"].allowed,
-        *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
-    )
-    # Wrapped harness choices remain within their LiteLLM key lanes. Direct API models
-    # selected only by the central sampler bypass LLM ingress and use their own connection.
-    assert all(route in admitted for route in (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex))
+    admitted = {route for lane in AGENTPLANE_STAGING_MODEL_LANES for route in KEY_MODEL_LANES[lane].allowed}
+    ingress_routes = (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex, *STAGING_APP_MODELS.central_sampler_chat)
+    assert set(ingress_routes).issubset(admitted)
+
+    # Direct Anthropic API models use their own connection.
     central_only = (
         set(STAGING_APP_MODELS.central_sampler) - set(STAGING_APP_MODELS.claude) - set(STAGING_APP_MODELS.codex)
     )

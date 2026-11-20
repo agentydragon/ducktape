@@ -41,7 +41,7 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from model_catalog.policies import KEY_MODEL_LANES
+from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/crossplane-keys"
 NAME = "litellm-crossplane-keys"
@@ -240,13 +240,7 @@ def chart(app: App) -> Chart:
         ),
         _DynamicKey(
             name="agentplane-staging",
-            models=_lane_models(
-                "gpt6_oai_lane_models",
-                "claude_client_models",
-                "antigravity_client_models",
-                "ollama_chat_client_models",
-                "tabbyapi_chat_client_models",
-            ),
+            models=_lane_models(*AGENTPLANE_STAGING_MODEL_LANES),
             consumer="agentplane-staging",
         ),
         _DynamicKey(

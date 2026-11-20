@@ -80,3 +80,12 @@ KEY_MODEL_LANES = {
     "tabbyapi_chat_client_models": ModelLaneRoutes(allowed=(TABBYAPI_QWEN_ABLITERATED,)),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
 }
+
+# Agentplane staging uses one LiteLLM key for its ingress-backed routes.
+AGENTPLANE_STAGING_MODEL_LANES = (
+    "gpt6_oai_lane_models",
+    "claude_client_models",
+    "antigravity_client_models",
+    "ollama_chat_client_models",
+    "tabbyapi_chat_client_models",
+)
