@@ -20,7 +20,6 @@ import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";
 import { ThreadSyncContext } from "./thread_sync";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
 afterEach(async () => {

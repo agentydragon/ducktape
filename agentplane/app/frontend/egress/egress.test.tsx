@@ -10,8 +10,6 @@ import { ServiceAccountSchema } from "../../../proto/identity_pb";
 import { stubWatchFetch } from "../testing/watch";
 import { EgressLog } from "./egress";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();

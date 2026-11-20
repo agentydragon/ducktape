@@ -13,8 +13,6 @@ import {
   useStreamStatus,
 } from "./stream_status";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 const KEY = Symbol("test stream");
 const roots: ReturnType<typeof createRoot>[] = [];
 

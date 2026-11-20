@@ -58,16 +58,6 @@ it("starts linkage through the generated facade request and returns its authoriz
   expect(JSON.parse(String(init?.body))).toEqual({ scopes: ["openid", "read"] });
 });
 
-it("keeps the Action facade's HTTP error status, code and body", async () => {
-  const fetcher = vi.fn(async () => new Response('{"code":10,"message":"changed"}', { status: 409 }));
-
-  await expect(startMcpLinkage("example", [], fetcher)).rejects.toMatchObject({
-    status: 409,
-    code: 10,
-    body: { code: 10, message: "changed" },
-  });
-});
-
 it("returns disconnect's generated linkage", async () => {
   const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     Response.json({

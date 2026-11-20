@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import { create } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { IdentitySchema, PolicyBindingSchema, type Identity } from "../../../policy/v1/policy_service_pb";
 import { IdentityPage } from "./identity_page";
 
@@ -13,12 +12,9 @@ const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remov
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
 vi.mock("./client", () => ({ deleteIdentity: mocks.remove }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await cleanupMounted();
   vi.clearAllMocks();
 });
 
@@ -43,17 +39,10 @@ async function render(
 ) {
   mocks.identities.mockReturnValue({ identities: [subject], error: null });
   mocks.resources.mockReturnValue({ resources: { bindings, sets: [] }, error: null });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <IdentityPage name={subject.identity!.name} onBack={() => {}} onDeleted={onDeleted} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  container = await renderWithMantine(
+    <MemoryRouter>
+      <IdentityPage name={subject.identity!.name} onBack={() => {}} onDeleted={onDeleted} />
+    </MemoryRouter>
   );
 }
 function deleteButton(): HTMLButtonElement {

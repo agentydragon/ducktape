@@ -43,8 +43,6 @@ import {
 
 /** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 export const DECISION_NOTE = "test decision note";
 export const ACTION_REQUEST_WATCH = "/upstream/actions/v1/action-requests:watch?state=ACTION_STATE_DECISION_PENDING";
 export const ACTION_GROUP_WATCH = "/upstream/actions/v1/action-groups:watch";

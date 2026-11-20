@@ -42,7 +42,6 @@ vi.mock("./client", async (importOriginal) => ({
 vi.mock("../transport/session_dispatcher_client", () => ({ sessionDispatcherClient: { watchSessions: vi.fn() } }));
 vi.mock("../transport/watch_stream", () => ({ followWatch: vi.fn() }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot> | undefined;
 let container: HTMLDivElement | undefined;
 afterEach(async () => {

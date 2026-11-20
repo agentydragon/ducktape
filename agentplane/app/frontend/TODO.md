@@ -14,7 +14,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into Runtime's observation handling, History's `ReadSessionObservations` and
   `ReadNativeFrames` APIs, and the debug UI
-  (`sessions/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
+  (`sessions/thread_evidence.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.transcript-user-bubble`
   (`util/frontend/transcript/message.css` ~line 5) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
