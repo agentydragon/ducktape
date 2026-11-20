@@ -35,11 +35,8 @@ in the inference run record.
   experiment beyond the checkpoint's native 262,144 tokens. Evaluate
   retrieval at several positions and a long-context tool round trip
   against the native-context baseline, alongside prefill latency and VRAM.
-- **RAM and SSD prefix tiers.** Benchmark `memory.sysmem_kv_cache` alone,
-  then enable `memory.disk_cache_dir` with a bounded persistent directory
-  on the `/games` NVMe filesystem. Compare warm GPU, RAM, and SSD hits
-  against the same cold prompt. Force eviction and verify hits and
-  recurrent-state replay after both a pod restart and a checkpoint switch
-  away and back. Measure SSD writes and pinned RAM alongside latency.
-  See the [experiment runbook](prefix-cache-probe.md) and
-  [TabbyAPI memory options](https://github.com/theroyallab/tabbyAPI/wiki/02.-Server-options#memory-options).
+- **Measure prefix-cache overhead and restart recovery.** Use the
+  [211K-prefix results](../../docs/inference/runs/2026-11-19_tabby_prefix_cache/README.md)
+  for the current RAM and NVMe tiers. Compare RAM alone with both tiers
+  enabled to isolate writeback overhead. Check cached-token reuse and recurrent
+  replay across a pod restart. See the [experiment runbook](prefix-cache-probe.md).

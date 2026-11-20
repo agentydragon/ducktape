@@ -45,3 +45,9 @@ draft_model:
   draft_mode: mtp
   draft_num_tokens: 3
   draft_cache_mode: Q8
+
+memory:
+  sysmem_kv_cache: 8192
+  disk_cache_dir: /prefix-cache
+  disk_cache_size: 16384
+  disk_cache_flush_on_idle: true

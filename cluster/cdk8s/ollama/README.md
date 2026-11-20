@@ -5,8 +5,18 @@
 TabbyAPI starts with Qwen3.8 Flash-Next EXL3 2.68-bit and can switch to the
 abliterated 2.50-bit checkpoint by request. Both use the two 5090s, a configured
 262,144-token context, and one active generation stream. Switching checkpoints
-waits for the current request to finish, reloads weights from NVMe, and clears
-the in-memory prompt cache.
+waits for the current request to finish and reloads weights from NVMe.
+Matching prompt prefixes can be restored from the NVMe cache after the switch.
+
+TabbyAPI uses an 8 GiB pinned RAM prefix cache and a 16 GiB persistent NVMe
+prefix cache on `/games/tabbyapi-prefix-cache`. Kubernetes requests 20 GiB of
+RAM for the pod, including the pinned cache. The NVMe budget is enforced by
+TabbyAPI and shared across both checkpoints. The cache stores prompt token
+IDs and recurrent state from serving traffic. The dedicated local volume
+retains those files across pod replacement. Keep its directory accessible
+only to the host owner and TabbyAPI's UID 0. See the
+[211K-prefix measurements](../../docs/inference/runs/2026-11-19_tabby_prefix_cache/README.md)
+and [directory setup](prefix-cache-probe.md#prepare-the-gitops-rollout).
 
 With the original 28/30 GiB loader budgets, a 137K-token prefill ran out of
 memory with about 200 MiB free on GPU 0 and 11.3 GiB free on GPU 1. The

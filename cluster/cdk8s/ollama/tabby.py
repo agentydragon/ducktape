@@ -17,6 +17,8 @@ _CHECKPOINTS = (
     ("weights", MODEL_NAME, "tabbyapi-flash-next", "100Gi"),
     ("abliterated-weights", _ABLITERATED_MODEL, "tabbyapi-flash-next-abliterated", "61Gi"),
 )
+_PREFIX_CACHE = "tabbyapi-prefix-cache"
+_PREFIX_CACHE_PATH = "/prefix-cache"
 _HOSTNAME_LABEL = "kubernetes.io/hostname"
 _SWITCHING_LABEL = {"ducktape.org/tabbyapi-model-switching": "true"}
 _PODS = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
@@ -25,7 +27,7 @@ MODELS_PATH = "/v1/models"
 _SOURCE_DIR = "ducktape/cluster/cdk8s/ollama"
 
 
-def _weights(scope: Construct, model_name: str, claim: str, capacity: str) -> None:
+def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None:
     size = k8s.Quantity.from_string(capacity)
     volume = f"{_NODE}-{claim}"
     k8s.KubePersistentVolume(
@@ -36,8 +38,7 @@ def _weights(scope: Construct, model_name: str, claim: str, capacity: str) -> No
             access_modes=["ReadWriteOnce"],
             capacity={"storage": size},
             claim_ref=k8s.ObjectReference(name=claim, namespace=NAMESPACE),
-            # The pre-staged checkpoint is a read-only cache on the wyrm2 NVMe filesystem.
-            local=k8s.LocalVolumeSource(path=f"/games/llm-models/{model_name}"),
+            local=k8s.LocalVolumeSource(path=path),
             node_affinity=k8s.VolumeNodeAffinity(
                 required=k8s.NodeSelector(
                     node_selector_terms=[
@@ -71,7 +72,13 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
     k8s.KubeDeployment(
         scope,
         "tabbyapi-deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_PODS.selector),
+        metadata=k8s.ObjectMeta(
+            name=NAME,
+            namespace=NAMESPACE,
+            labels=_PODS.selector,
+            # The config and template use subPath mounts and need a pod restart.
+            annotations={"configmap.reloader.stakater.com/reload": config.name},
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -96,7 +103,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("4"),
-                                    "memory": k8s.Quantity.from_string("12Gi"),
+                                    "memory": k8s.Quantity.from_string("20Gi"),
                                 },
                                 limits={
                                     "memory": k8s.Quantity.from_string("48Gi"),
@@ -133,6 +140,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                                     )
                                     for _, name, _, _ in _CHECKPOINTS
                                 ],
+                                k8s.VolumeMount(name=_PREFIX_CACHE, mount_path=_PREFIX_CACHE_PATH),
                                 k8s.VolumeMount(name="shm", mount_path="/dev/shm"),
                             ],
                         )
@@ -147,6 +155,10 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                             )
                             for volume, _, claim, _ in _CHECKPOINTS
                         ],
+                        k8s.Volume(
+                            name=_PREFIX_CACHE,
+                            persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_PREFIX_CACHE),
+                        ),
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=config.name)),
                         k8s.Volume(
                             name="shm",
@@ -174,7 +186,8 @@ def add_tabbyapi(scope: Construct) -> None:
         },
     )
     for _, name, claim, capacity in _CHECKPOINTS:
-        _weights(scope, name, claim, capacity)
+        _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
+    _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
     _deploy(scope, config)
     k8s.KubeService(
         scope,

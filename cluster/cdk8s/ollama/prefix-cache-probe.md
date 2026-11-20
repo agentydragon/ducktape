@@ -21,8 +21,8 @@ The 16 GiB bound is enforced by
 
 Use GitOps for each arm. Start with the currently deployed config. For
 the RAM-only arm, apply the cache change with `memory.disk_cache_dir`
-omitted. For the NVMe arm, include it. The config hash rolls the pod when
-these settings change. For each rollout, verify the revision, new pod
+omitted. For the NVMe arm, include it. Reloader restarts the pod when
+its ConfigMap changes. For each rollout, verify the revision, new pod
 readiness, the bound claim, and cache initialization in TabbyAPI logs.
 A GitOps revert restores the original server. Retain only the synthetic
 cache artifacts needed for the experiment.
