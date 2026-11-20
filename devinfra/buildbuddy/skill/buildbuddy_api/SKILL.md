@@ -232,7 +232,7 @@ bbapi target log <invocation-id> <target-substring>
 ### Watching a running GitHub Actions Bazel job
 
 The `Bazel CI` workflow derives its test invocation ID from the Actions run ID
-and attempt before starting Bazel. Its `BuildBuddy / Bazel tests (live)` commit
+and attempt before starting Bazel. Its `BuildBuddy / Bazel ordinary tests (live)` commit
 status links to that invocation while the native `Test & Build` job is still
 running. Open that status and stream the same log locally with:
 
