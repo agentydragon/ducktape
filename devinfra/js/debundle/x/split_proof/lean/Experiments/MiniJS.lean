@@ -149,6 +149,7 @@ structure MStmt where
   defs    : List Name
   e       : Expr
   hoisted : Bool
+  deriving DecidableEq
 
 def Expr.eagerG : Expr → List Name
   | .gvar g => [g]
