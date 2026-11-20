@@ -293,7 +293,7 @@ function mailRead<Args extends z.ZodType<MailReadArguments>, Result extends z.Zo
   return {
     fallbackLabel: `Read Gmail ${kind}`,
     call: defineCallPreview(schema, resultSchema, Call),
-    pane: { collapsed: definePreview(schema, ({ args }) => <ReadScope args={args} />), opened: detail },
+    pane: { collapsed: null, opened: detail },
     details: { arguments: detail, result: defineResultPreview(resultSchema, ResultView) },
   };
 }
