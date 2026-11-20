@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
 
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
+from cluster.cdk8s.vpa_policy import (
+    REQUESTS_ONLY,
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    resource_policy_annotation,
+)
 
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
-VPA_RESOURCE_POLICY_ANNOTATION = "goldilocks.fairwinds.com/vpa-resource-policy"
+_VPA_MIN_REPLICAS_ANNOTATION = "goldilocks.fairwinds.com/vpa-min-replicas"
 
 
 class Vpa(StrEnum):
@@ -25,6 +33,27 @@ class Vpa(StrEnum):
     RECOMMEND = "off"
     INITIAL = "initial"
     AUTO = "auto"
+
+
+@dataclass(frozen=True)
+class VpaProfile:
+    """Explicit namespace policy, with the optional updater minimum shared by all of its VPAs."""
+
+    mode: Vpa
+    container_policies: tuple[ContainerPolicy, ...] = ()
+    min_replicas: int | None = None
+
+    @classmethod
+    def requests_only(cls, mode: Vpa, *, min_replicas: int | None = None) -> Self:
+        return cls(mode, (REQUESTS_ONLY,), min_replicas=min_replicas)
+
+    def annotations(self) -> dict[str, str]:
+        annotations = {}
+        if self.container_policies:
+            annotations[VPA_RESOURCE_POLICY_ANNOTATION] = resource_policy_annotation(*self.container_policies)
+        if self.min_replicas is not None:
+            annotations[_VPA_MIN_REPLICAS_ANNOTATION] = str(self.min_replicas)
+        return annotations
 
 
 _POLICY_LABELS = {_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable}
@@ -47,17 +76,23 @@ def namespace(
     id: str,
     *,
     name: str,
-    vpa: Vpa,
+    vpa: Vpa | VpaProfile,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
 ) -> Namespace:
     """A Namespace labeled for `vpa` and the shared diagnostics policy."""
+    metadata_annotations = None if annotations is None else dict(annotations)
+    if isinstance(vpa, VpaProfile):
+        vpa_annotations = vpa.annotations()
+        metadata_annotations = metadata_annotations or {}
+        if overlap := metadata_annotations.keys() & vpa_annotations.keys():
+            raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
+        metadata_annotations.update(vpa_annotations)
+        vpa = vpa.mode
     return Namespace(
         scope,
         id,
-        metadata=ApiObjectMetadata(
-            name=name, labels=_labels(name, vpa, labels), annotations=None if annotations is None else dict(annotations)
-        ),
+        metadata=ApiObjectMetadata(name=name, labels=_labels(name, vpa, labels), annotations=metadata_annotations),
     )
 
 

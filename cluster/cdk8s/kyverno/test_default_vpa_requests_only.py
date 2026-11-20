@@ -19,7 +19,7 @@ from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
 from cluster.cdk8s.kyverno.test_utils import manifest, policy
-from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION
+from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 
 @pytest.fixture

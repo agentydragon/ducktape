@@ -17,8 +17,9 @@ from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
-from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
+from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _OUTSIDE_ENTITIES = {"world", "remote-node", "host"}
 _HTTPS_PORT = "443"

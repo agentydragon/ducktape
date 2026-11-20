@@ -23,7 +23,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import api_resource, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
 NAMESPACE = "gitlab-spike"
 NAME = "gitlab-spike-bootstrap"
@@ -40,15 +40,9 @@ def namespace_chart(app: App) -> Chart:
         chart,
         "gitlab-spike-demo",
         name="gitlab-spike-demo",
-        vpa=Vpa.AUTO,
+        # Let VPA update the disposable single-replica demo without waiting for another rollout.
+        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
         labels={"pod-security.kubernetes.io/enforce": "baseline"},
-        annotations={
-            namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
-                '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
-            ),
-            # Let VPA update the disposable single-replica demo without waiting for another rollout.
-            "goldilocks.fairwinds.com/vpa-min-replicas": "1",
-        },
     )
     for name, key in (("gitlab-root-password", "password"), ("gitlab-bootstrap-token", "token")):
         mint_bearer_secret(chart, name, name=name, namespace=NAMESPACE, key=key)

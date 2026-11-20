@@ -388,6 +388,7 @@ py_library(
         ":cilium_rule_sections",
         ":namespaces",
         ":pod_policy",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//jsii",
@@ -403,6 +404,7 @@ py_test(
         ":conftest",
         ":fleet_rules",
         ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -437,10 +439,18 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":namespace_access",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "vpa_policy",
+    srcs = ["vpa_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(
@@ -452,6 +462,7 @@ py_test(
         ":conftest",
         ":namespace_access",
         ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -884,6 +895,7 @@ py_library(
         ":namespaces",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//airlock:settings",
         "//airlock/oauth:config",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -1065,6 +1077,7 @@ py_library(
         ":node_scheduling",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
