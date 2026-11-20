@@ -183,15 +183,12 @@ Configuration changes require a service restart.
 The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
 and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA.
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
-requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
-`runner_gateway` is retired and optional: the Session-keyed image makes no Runtime-proxy call and holds no
-Runtime-proxy reader grant, so omitting the block is the intended state. A supplied block still validates
-completely, which keeps a ConfigMap from before the cutover loadable during a rollback. The separate
-`session_dispatcher` connection pins
+requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme. The
+separate `session_dispatcher` connection pins
 `spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects
-service SVIDs for all four peers, with no bearer fallback: no peer sets `token_file` and the
+service SVIDs for all three peers, with no bearer fallback: no peer sets `token_file` and the
 Deployment projects no ServiceAccount token. A bearer-configured peer instead sets `token_file` to its rotating,
 audience-specific projected ServiceAccount token and sends no client certificate. The Action
 Service client rereads that token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed

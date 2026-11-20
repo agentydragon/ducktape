@@ -36,13 +36,8 @@ type config struct {
 	worker.Settings        `mapstructure:",squash"`
 	GitHubRetention        settings.Retention `mapstructure:",squash"`
 	Actions                actionPeer         `mapstructure:"actions"`
-	// RunnerGateway is retired: the Session-keyed binary dials no Runtime proxy and holds no
-	// Runtime-proxy reader grant. The block stays accepted so a pre-cutover ConfigMap still loads during a
-	// rollback; nothing reads it.
-	// CLEANUP(added 2026-11-20): delete this field once every rendered settings file omits the block.
-	RunnerGateway     *runnerGateway `mapstructure:"runner_gateway"`
-	HistoryService    peer           `mapstructure:"history_service"`
-	SessionDispatcher peer           `mapstructure:"session_dispatcher"`
+	HistoryService         peer               `mapstructure:"history_service"`
+	SessionDispatcher      peer               `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
 	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
@@ -53,18 +48,6 @@ type config struct {
 	// HTTPPort is reserved for the signed GitHub webhook.
 	HTTPPort int             `mapstructure:"http_port"`
 	RPC      listener.Config `mapstructure:"rpc"`
-}
-
-// runnerGateway is the retired Runtime-proxy peer block. `request_timeout_s` is optional there, so an
-// omitted value stays unchecked; a supplied one still has to be a finite number above 0.
-type runnerGateway struct {
-	TLS *peertls.ClientTLS `mapstructure:"tls"`
-	// ControlTarget is the Environments Runtime proxy Service, a template of `{namespace}` such as
-	// `environments.{namespace}.svc:8082`.
-	ControlTarget string `mapstructure:"control_target"`
-	// TokenFile is the projected token used when TLS does not present a client SVID.
-	TokenFile             string  `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
 
 // peer is another Agentplane service the service calls over gRPC as a workload.
@@ -204,18 +187,6 @@ func (c *config) validate() error {
 		{name: "history_service", tls: c.HistoryService.TLS, tokenFile: c.HistoryService.TokenFile, expectedServerURIs: []string{peertls.HistoryIngressURI}},
 		{name: "session_dispatcher", tls: c.SessionDispatcher.TLS, tokenFile: c.SessionDispatcher.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI}},
 	}
-	if gateway := c.RunnerGateway; gateway != nil {
-		// A supplied block is still a complete one: its target and caller credentials must hold.
-		if gateway.ControlTarget == "" {
-			return errors.New("runner_gateway.control_target is required when the block is set")
-		}
-		callers = append(callers, struct {
-			name               string
-			tls                *peertls.ClientTLS
-			tokenFile          string
-			expectedServerURIs []string
-		}{name: "runner_gateway", tls: gateway.TLS, tokenFile: gateway.TokenFile, expectedServerURIs: []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI}})
-	}
 	for _, caller := range callers {
 		if err := caller.tls.ValidateCaller(caller.tokenFile, peertls.NotificationsURI); err != nil {
 			return fmt.Errorf("%s caller authentication: %w", caller.name, err)
@@ -257,12 +228,6 @@ func (c *config) validate() error {
 		{"history_service.request_timeout_s", c.HistoryService.RequestTimeoutSeconds},
 		{"session_dispatcher.request_timeout_s", c.SessionDispatcher.RequestTimeoutSeconds},
 		{"request_timeout_s", c.RequestTimeoutSeconds},
-	}
-	if gateway := c.RunnerGateway; gateway != nil && gateway.RequestTimeoutSeconds != 0 {
-		timeouts = append(timeouts, struct {
-			name  string
-			value float64
-		}{name: "runner_gateway.request_timeout_s", value: gateway.RequestTimeoutSeconds})
 	}
 	for _, timeout := range timeouts {
 		if !(timeout.value > 0) || math.IsInf(timeout.value, 0) {

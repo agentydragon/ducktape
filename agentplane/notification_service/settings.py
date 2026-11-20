@@ -11,7 +11,6 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
     ServiceSPIFFEID,
@@ -74,25 +73,6 @@ class GitHubSettings(BaseModel):
         le=64,
         description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
     )
-
-
-class RunnerGatewaySettings(BaseModel):
-    tls: ClientTLS | None = None
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    control_target: str = Field(
-        description="Environments Runtime proxy target, typically `environments.{namespace}.svc:8082`; "
-        "the proxy routes each Runtime call using the Sandbox identity."
-    )
-    request_timeout_s: PositiveSeconds = 5
-    token_file: Path | None = Field(
-        default=None,
-        description="Path to the rotating projected token for the Runner Gateway when caller SVID TLS is not configured.",
-    )
-
-    @model_validator(mode="after")
-    def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, (SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI))
-        return self
 
 
 class HistoryServiceSettings(BaseModel):
@@ -169,14 +149,6 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     namespace: str = Field(description="Workload credential, Identity and destination Sandbox namespace.")
     actions: ActionsSettings
-    # Retired Runtime-proxy peer: the Session-keyed service dials no Runtime proxy and holds no
-    # Runtime-proxy reader grant. Absence is the intended state; a deployed ConfigMap that still carries the
-    # block must load, so an explicit block still validates completely.
-    # CLEANUP(added 2026-11-20): delete this field and RunnerGatewaySettings once every rendered settings
-    # file omits the block.
-    runner_gateway: RunnerGatewaySettings | None = Field(
-        default=None, exclude_if=lambda value: value is None, description="Retired; see RunnerGatewaySettings."
-    )
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
     operator_reader_services: list[ServiceSPIFFEID] = Field(
