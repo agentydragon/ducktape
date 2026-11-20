@@ -21,8 +21,9 @@ import { sandboxExecNotification } from "./sandbox/exec";
 import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import { gmailThreadLabelsNotification, tanaMoveNodeNotification } from "./integration_previews";
-export { notificationPreviewKind } from "./integration_previews";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
+
+export { notificationPreviewKind } from "./integration_previews";
 
 type ActionNotificationFormatter = (
   request: ActionRequest,
