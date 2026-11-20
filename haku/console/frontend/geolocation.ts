@@ -46,9 +46,6 @@ export function getGeolocation(options?: GeolocationOptions): Promise<GeoResult>
   });
 }
 
-// One streamed fix (or error) from a live watch — the payload the shell relays to the iframe.
-export type WatchEmit = { ok: true; position: GeoPosition } | { ok: false; code: number; message: string };
-
 // Manages shell-side `navigator.geolocation.watchPosition` streams keyed by the Agent UI bridge's
 // per-watch id (the iframe's correlation id). Each active watch pushes fixes/errors to
 // `emit(id, ...)` until stopped. The shell (not the iframe) holds every watch, so a
@@ -57,7 +54,7 @@ export type WatchEmit = { ok: true; position: GeoPosition } | { ok: false; code:
 export class GeolocationWatcher {
   private readonly watches = new Map<string, number>(); // Agent UI bridge watch ID → browser watch ID
 
-  constructor(private readonly emit: (id: string, e: WatchEmit) => void) {}
+  constructor(private readonly emit: (id: string, e: GeoResult) => void) {}
 
   // Idempotent per id: a duplicate start for a live id is ignored (the browser watch stays).
   start(id: string, options?: GeolocationOptions): void {
