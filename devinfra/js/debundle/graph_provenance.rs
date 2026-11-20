@@ -305,12 +305,6 @@ pub enum GraphMismatchReason {
         expected: PathBuf,
         actual: PathBuf,
     },
-    SelectorSource {
-        path: PathBuf,
-        chunk_id: String,
-        expected: String,
-        actual: String,
-    },
     SelectorSourceRoot {
         chunk_id: String,
         expected: PathBuf,

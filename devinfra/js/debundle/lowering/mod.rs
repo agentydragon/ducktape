@@ -19,7 +19,7 @@ use artifact::{
     prune_artifact_to_chunk_ids,
 };
 use gate::{
-    AssignmentReport, CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
+    CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
     StructuralPlacementAssessment, StructuralPlacementStatus, UnmatchedSpecClaim,
 };
 
@@ -303,7 +303,6 @@ pub struct SelectedOwnershipPreflight {
     pub source_unit_modules: BTreeMap<String, Option<spec::ModulePath>>,
     pub emitted_owner_paths: BTreeSet<spec::ModulePath>,
     pub source_unit_binding_exports: BTreeMap<String, Vec<SelectedBindingExport>>,
-    pub gate_report: AssignmentReport,
     pub gate_accepts: bool,
     pub structural_placement: StructuralPlacementAssessment,
     pub structural_accepts: bool,
@@ -450,7 +449,6 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
             });
         let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
         let gate_accepts = !candidate.is_rejected();
-        let gate_report = candidate.report().clone();
         let structural_placement = candidate.placement_assessment().clone();
         let structural_accepts = structural_placement.status
             == StructuralPlacementStatus::NoKnownBlocker
@@ -502,7 +500,6 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
             source_unit_modules,
             emitted_owner_paths,
             source_unit_binding_exports,
-            gate_report,
             gate_accepts,
             structural_placement,
             structural_accepts,
