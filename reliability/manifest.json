@@ -7,7 +7,7 @@
     "manual_test_source": "e00d362bfa2fd1c2e039caad92e23d47af7fbecd",
     "paired_evidence": "../vm-pairs.json",
     "paired_evidence_sha256": "e4e98b6d871c27b3fc1fbefa90d819ea42b0c614688359c3c9aabf3d4c310f91",
-    "browser_preview_invocation": "710e0ca5-dbaa-4ada-9f7d-a4604cbe3305"
+    "browser_preview_invocation": "1c662b3f-60e8-45f2-bac3-f59174b93a50"
   },
   "source_devel_commit": "55e1227d1f631b8e478321c84da66737bedef38c",
   "window_start_utc": "2026-11-10T00:00:00Z",
@@ -30,7 +30,7 @@
   "forensic_source_note_pr": "https://github.com/agentydragon/ducktape/pull/17290",
   "visual_validation": "visual-validation.json",
   "validation_invocation_url": "https://app.buildbuddy.io/invocation/82469e16-ba0c-484c-b9f4-60f53a96c9e8",
-  "report_sha256": "7ed653a0555daef592976804a3317d325ab6bb76a646ed0d1c0154d7de59e9b0",
+  "report_sha256": "d156b0ea3e1a065ec87bfcbf99185def3f2d8ca00fb4a1a1a2744dcda965bf62",
   "evidence_sha256": "16be975616af6a810d55cecee879013048ff2fee1beeb726348db28e2cf6bf60",
   "visual_validation_sha256": "3d5f1095779859d8952436ad98508a166c376bcd1001cbf6320725b4a5d69228",
   "selected_experiments_collected_at_utc": "2026-11-17T13:06:40.684966+00:00",

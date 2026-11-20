@@ -1685,16 +1685,12 @@
                 >${e.vm_shadow_review.selection_note}<//
               >
               <${Text} size="sm" mt="xs">
-                Manual batch on 20 November at
-                ${link("https://github.com/agentydragon/ducktape/commit/" + e.vm_shadow_review.manual.source_sha, e.vm_shadow_review.manual.source_sha.slice(0, 8))}.
-                Pushes reviewed through ${e.vm_shadow_review.cutoff_utc}.
-                ${link(e.vm_shadow_review.run_url, "Fresh push pair")} ·
-                ${link(e.vm_shadow_review.paired_evidence, "Per-pair measurements")}
-                ·
-                ${link("https://app.buildbuddy.io/invocation/ec5df37a-86d2-49b5-a8c8-8e4445616671", "Manual pair 6")}
-                ·
-                ${link("https://app.buildbuddy.io/invocation/3abf4228-5285-4c35-b7f1-1d2a694c3781", "Manual pair 12")}
-                ·
+                ${"Manual batch on 20 November at "}
+                ${link("https://github.com/agentydragon/ducktape/commit/" + e.vm_shadow_review.manual.source_sha, e.vm_shadow_review.manual.source_sha.slice(0, 8))}${". Pushes reviewed through "}${e.vm_shadow_review.cutoff_utc}${". "}
+                ${link(e.vm_shadow_review.run_url, "Fresh push pair")}${" · "}
+                ${link(e.vm_shadow_review.paired_evidence, "Per-pair measurements")}${" · "}
+                ${link("https://app.buildbuddy.io/invocation/ec5df37a-86d2-49b5-a8c8-8e4445616671", "Manual pair 6")}${" · "}
+                ${link("https://app.buildbuddy.io/invocation/3abf4228-5285-4c35-b7f1-1d2a694c3781", "Manual pair 12")}${" · "}
                 ${link("https://github.com/agentydragon/ducktape/blob/gh-pages/README.md#reviewing-paired-vm-runs", "Review procedure")}
               <//>
             </section>
