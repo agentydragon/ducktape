@@ -152,6 +152,13 @@ const rowFields = [
   "timestamp",
   "when",
   "trigger",
+  "theme",
+  "default_theme",
+  "default_dark_theme",
+  "connection_status",
+  "home_assistant_version",
+  "ha_mcp_version",
+  "entity_count",
   "condition",
   "action",
   "radius",
@@ -238,6 +245,9 @@ function RecordRow({ entry }: { entry: HaRecord }): JSX.Element {
     "sequence",
     "views",
     "cards",
+    "backups",
+    "devices",
+    "pipelines",
   ].filter((key) => Array.isArray(entry[key]));
   const error = asRecord(entry.error);
   const details = fields.length > 0 || nested.length > 0 || error !== undefined;
@@ -330,12 +340,19 @@ export function haResult(spec: HaResultSpec): ResultPreview {
     const messages = typeof result.message === "string" ? result.message : undefined;
     const printed = simpleFields(
       result,
-      (spec.fields ?? []).filter((key) => key !== "status" || status === undefined)
+      (spec.fields ?? []).filter(
+        (key) =>
+          (key !== "status" || status === undefined) &&
+          (key !== "message" || messages === undefined) &&
+          !spec.rows?.includes(key) &&
+          !spec.text?.includes(key) &&
+          !spec.objects?.includes(key)
+      )
     );
     const error = asRecord(result.error);
     return (
       <Stack gap="xs">
-        {status && (
+        {status && !spec.reportsPhase && (
           <Group>
             <Badge color={status.failed ? "red" : "gray"} variant="light">
               {status.label}

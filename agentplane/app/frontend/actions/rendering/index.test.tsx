@@ -1102,6 +1102,46 @@ describe("expanded Kubernetes Action coverage", () => {
   });
 });
 
+describe("Home Assistant provider outcomes", () => {
+  it("shows recurring calendar deletion scope and preserves unrecognized request fields", async () => {
+    const action = identity("home_assistant", "ha_config_remove_calendar_event");
+    const args = {
+      entity_id: "calendar.service",
+      uid: "item-1",
+      recurrence_id: "2026-10-12",
+      recurrence_range: "THIS_AND_FUTURE",
+    };
+    expect((await mount(renderActionLabel(action, args))).textContent).toContain("Delete this and future occurrences");
+    expect((await mount(renderDetailsArguments(action, args))).textContent).toContain("2026-10-12");
+    const future = await mount(renderDetailsArguments(action, { ...args, unknown: "preserve" }));
+    expect(future.textContent).toContain("Details shown as recorded data");
+    expect(future.textContent).toContain('"unknown": "preserve"');
+  });
+
+  it("distinguishes a pending operation from a completed action", () => {
+    const action = identity("home_assistant", "ha_get_operation_status");
+    const pending = {
+      isError: false,
+      content: [],
+      structuredContent: { status: "pending", operation_id: "operation-1" },
+    };
+    expect(renderActionOutcome(action, pending)).toEqual({ label: "Pending", failed: false });
+    expect(renderActionOutcome(action, { ...pending, isError: true })).toBeUndefined();
+  });
+
+  it("surfaces an energy preference dry run and explicit restore scope before approval", async () => {
+    const energy = identity("home_assistant", "ha_manage_energy_prefs");
+    const args = { mode: "set", dry_run: true, config: { device_consumption: [] } };
+    expect((await mount(renderActionLabel(energy, args))).textContent).toContain(
+      "Preview energy preferences replacement"
+    );
+    const backup = identity("home_assistant", "ha_manage_backup");
+    const restore = { scope: "snapshot", action: "restore", backup_id: "snapshot-1", restore_database: true };
+    const view = await mount(renderDetailsArguments(backup, restore));
+    expect(view.textContent).toContain("Restore database · Yes");
+  });
+});
+
 const cardDecisionButtonCases: Array<{
   group: string;
   name: string;
