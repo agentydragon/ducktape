@@ -261,3 +261,16 @@ trigger();`,
   assert.doesNotMatch(checkedExport.stdout, /inferred closure factory/);
   assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
 }
+
+// A fallback syntax node may hide deferred behavior; do not infer from a
+// statement that mentions the result and contains such a node.
+{
+  const code = `function factory(f) { return () => f(); }
+function callback() {}
+const result = factory(callback);
+console.log(import.meta.url, result);`;
+  const result = emit("fallback_factory", code, []);
+  assert.equal(result.result.status, 0, `${result.result.stdout}\n${result.result.stderr}`);
+  assert.doesNotMatch(result.result.stdout, /inferred closure factory/);
+  assert.match(result.result.stdout, /1 with fallback nodes/);
+}

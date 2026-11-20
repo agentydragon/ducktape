@@ -303,3 +303,21 @@ globalThis.cb();`,
   assert.doesNotMatch(checkedExport.stdout, /inferred identity call/);
   assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
 }
+
+// A fallback syntax node in a statement mentioning the result may hide a
+// deferred use. Conservatively decline inference even for this eager example.
+{
+  const codeWithFallback = `function identity(x) { return x; }
+const result = identity(1);
+console.log(import.meta.url, result);`;
+  const input = path.join(temp, "fallback-identity-ast.json");
+  const spec = path.join(temp, "fallback-identity-spec.json");
+  const dir = path.join(temp, "fallback-identity-out");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(input, JSON.stringify(lowerDump(codeWithFallback, acorn, eslintScope)));
+  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
+  const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.doesNotMatch(result.stdout, /inferred identity call/);
+  assert.match(result.stdout, /1 with fallback nodes/);
+}
