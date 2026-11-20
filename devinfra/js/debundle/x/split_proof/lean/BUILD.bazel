@@ -104,6 +104,27 @@ _PROOF_FIXTURE_SOURCES = [
 ]
 
 lean_axiom_test(
+    name = "inferred_identity_axioms_test",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Semantics.lean",
+        "Experiments/InferredIdentity.lean",
+        "Experiments/LocalCall.lean",
+        "Experiments/MiniJS.lean",
+    ],
+    imports = ["Experiments.InferredIdentity"],
+    theorems = [
+        "MJS.stable_cstep",
+        "MJS.stable_exec",
+        "MJS.inferred_identity_reachable_quiet",
+        "MJS.InferredIdentityExample.accepted",
+        "MJS.InferredIdentityExample.reassigned_rejected",
+        "MJS.InferredIdentityExample.effectful_body_rejected",
+        "MJS.InferredIdentityExample.effectful_argument_rejected",
+    ],
+)
+
+lean_axiom_test(
     name = "quiet_crossing_axioms_test",
     srcs = _PROOF_SOURCES + ["Experiments/QuietCrossing.lean"],
     imports = ["Experiments.QuietCrossing"],
