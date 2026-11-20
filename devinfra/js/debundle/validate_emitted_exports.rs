@@ -182,21 +182,12 @@ fn record_decl(
     sites: &mut BTreeMap<String, Vec<ExportSite>>,
 ) {
     match decl {
-        ModuleDecl::ExportDefaultDecl(d) => {
+        ModuleDecl::ExportDefaultDecl(_) | ModuleDecl::ExportDefaultExpr(_) => {
             sites
                 .entry("default".to_string())
                 .or_default()
                 .push(ExportSite {
-                    line: lines.line_for_span(d.span()),
-                    shape: ExportShape::Default,
-                });
-        }
-        ModuleDecl::ExportDefaultExpr(d) => {
-            sites
-                .entry("default".to_string())
-                .or_default()
-                .push(ExportSite {
-                    line: lines.line_for_span(d.span()),
+                    line: lines.line_for_span(decl.span()),
                     shape: ExportShape::Default,
                 });
         }

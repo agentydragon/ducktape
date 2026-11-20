@@ -35,13 +35,13 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::{imported_export_name, module_export_name, public_export_name};
-use js_ast::{set_str_value, str_value};
+use js_ast::{new_url_expr, set_str_value, str_value};
 use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
     DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, make_named_reexport, make_namespace_reexport, new_url_expr,
+    bundled_facade_import_source, make_named_reexport, make_namespace_reexport,
     resolve_partial_swap_import_target,
 };
 

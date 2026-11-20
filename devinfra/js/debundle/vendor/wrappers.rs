@@ -128,21 +128,10 @@ pub(super) fn generate_named_from_module_default_wrapper(
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
                 found_default = true;
-                body.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-                    span: DUMMY_SP,
-                    ctxt: SyntaxContext::empty(),
-                    kind: VarDeclKind::Const,
-                    declare: false,
-                    decls: vec![VarDeclarator {
-                        span: DUMMY_SP,
-                        name: Pat::Ident(BindingIdent {
-                            id: Ident::new_no_ctxt(default_local_name.as_str().into(), DUMMY_SP),
-                            type_ann: None,
-                        }),
-                        init: Some(default_expr.expr.clone()),
-                        definite: false,
-                    }],
-                })))));
+                body.push(const_init_with_expr(
+                    default_local_name,
+                    *default_expr.expr.clone(),
+                ));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) => {
                 found_default = true;
