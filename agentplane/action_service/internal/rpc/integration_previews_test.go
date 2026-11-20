@@ -22,10 +22,17 @@ func (f gmailSummariesFunc) GmailThreadSummaries(ctx context.Context, ids []stri
 	return f(ctx, ids)
 }
 
-type tanaSummariesFunc func(context.Context, []string) []*operator_action_servicepb.TanaNodeSummary
+type tanaSummariesFuncs struct {
+	nodes     func(context.Context, []string) []*operator_action_servicepb.TanaNodeSummary
+	workspace func(context.Context, string) *operator_action_servicepb.TanaWorkspaceSummary
+}
 
-func (f tanaSummariesFunc) TanaNodeSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
-	return f(ctx, ids)
+func (f tanaSummariesFuncs) TanaNodeSummaries(ctx context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
+	return f.nodes(ctx, ids)
+}
+
+func (f tanaSummariesFuncs) TanaWorkspaceSummary(ctx context.Context, id string) *operator_action_servicepb.TanaWorkspaceSummary {
+	return f.workspace(ctx, id)
 }
 
 func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
@@ -40,20 +47,25 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 			}
 			return []*operator_action_servicepb.GmailThreadSummary{{ThreadId: "thread-1", Subject: "Deployment review"}}
 		}),
-		Tana: tanaSummariesFunc(func(_ context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
+		Tana: tanaSummariesFuncs{nodes: func(_ context.Context, ids []string) []*operator_action_servicepb.TanaNodeSummary {
 			select {
 			case tanaIDs <- ids:
 			default:
 				t.Error("unexpected extra Tana lookup")
 			}
 			return []*operator_action_servicepb.TanaNodeSummary{{NodeId: "target", Name: "Destination"}}
-		}),
+		}, workspace: func(_ context.Context, id string) *operator_action_servicepb.TanaWorkspaceSummary {
+			if id != "workspace-123" {
+				t.Errorf("looked up unexpected workspace %q", id)
+			}
+			return &operator_action_servicepb.TanaWorkspaceSummary{WorkspaceId: id, Name: "Product"}
+		}},
 	}
 	namespace := newPolicyNamespace(t)
 	s := serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), nil, previews)
 	submit := func(group, name, args string) store.ActionRequest {
 		request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
-			IdempotencyKey: group, Action: store.ActionIdentity{Group: group, Name: name},
+			IdempotencyKey: group + "/" + name, Action: store.ActionIdentity{Group: group, Name: name},
 			Arguments: json.RawMessage(args), Title: name,
 		}, store.Admission{RequestID: uuid.New()})
 		if err != nil {
@@ -81,6 +93,19 @@ func TestIntegrationSummariesUseOnlyRecordedIDs(t *testing.T) {
 	tanaResponse, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), tanaCall)
 	if err != nil || len(tanaResponse.Nodes) != 1 || tanaResponse.Nodes[0].GetName() != "Destination" {
 		t.Fatalf("Tana lookup: %v, %v", tanaResponse, err)
+	}
+
+	calendar := submit("tana", "get_or_create_calendar_node", `{"workspaceId":"workspace-123","nodeId":"unrelated"}`)
+	calendarResponse, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetTanaNodeSummariesRequest{RequestId: calendar.ID.String()})
+	if err != nil || calendarResponse.GetWorkspace().GetName() != "Product" || len(calendarResponse.GetNodes()) != 0 {
+		t.Fatalf("workspace lookup: %v, %v", calendarResponse, err)
+	}
+
+	invalid := submit("tana", "list_workspaces", `{"workspaceId":"../other"}`)
+	response, err := s.operators.GetTanaNodeSummaries(as(t, s.operatorToken), &operator_action_servicepb.GetTanaNodeSummariesRequest{RequestId: invalid.ID.String()})
+	wantCode(t, "unsupported Tana action", err, codes.InvalidArgument)
+	if response != nil {
+		t.Fatalf("unsupported action returned %v", response)
 	}
 
 	for _, tc := range []struct {

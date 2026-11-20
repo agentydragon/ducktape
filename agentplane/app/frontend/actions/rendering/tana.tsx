@@ -1,12 +1,12 @@
-import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
-
 import { moveNodeArguments } from "../schemas/integration_previews";
+import { definePreview, type PreviewProps } from "./entry";
 import { LiveResourceLink, useIntegrationPreviewNames } from "./integration_previews";
+import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
+import { defineResultPreview } from "./result_entry";
 
 const calendarNodeArguments = z.strictObject({
   workspaceId: z.string(),
@@ -14,46 +14,48 @@ const calendarNodeArguments = z.strictObject({
   date: z.string().optional(),
 });
 
-export function offersCardDecisionButtonsCalendarNode(args: unknown): boolean {
-  return calendarNodeArguments.safeParse(args).success;
+function calendarPeriod(args: z.infer<typeof calendarNodeArguments>): string {
+  if (args.date) {
+    return args.granularity === "day" ? args.date : `${args.granularity} containing ${args.date}`;
+  }
+  return args.granularity === "day" ? "today" : `this ${args.granularity}`;
 }
 
-function CalendarNodeArguments({ args }: { args: z.infer<typeof calendarNodeArguments> }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-      Get or create the <Code>{args.granularity}</Code> calendar node
-      {args.date && (
-        <>
-          {" "}
-          for <Code>{args.date}</Code>
-        </>
-      )}
-      {" in workspace "}
-      <Code>{args.workspaceId}</Code>.
-    </Text>
-  );
+function TanaNodeLink({ id, name }: { id: string; name?: string }): JSX.Element {
+  return <LiveResourceLink id={id} name={name} href={`https://app.tana.inc?nodeid=${encodeURIComponent(id)}`} />;
 }
 
-function CalendarNodeLabel({ args }: { args: z.infer<typeof calendarNodeArguments> }): JSX.Element {
-  void args;
-  return (
-    <Text size="sm" fw={600}>
-      Get or create Tana calendar node
-    </Text>
-  );
-}
-
-export const calendarNodeLabel: ArgumentsPreview = definePreview(calendarNodeArguments, CalendarNodeLabel);
-export const calendarNodeArgumentsPreview: ArgumentsPreview = definePreview(
+const calendarNode = definePreview(
   calendarNodeArguments,
-  CalendarNodeArguments
+  function CalendarNode({ args, requestId }: PreviewProps<z.infer<typeof calendarNodeArguments>>): JSX.Element {
+    const workspace = useIntegrationPreviewNames("tana", requestId)?.get(args.workspaceId);
+    return (
+      <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+        For {calendarPeriod(args)} in {workspace ?? <Code>{args.workspaceId}</Code>}
+      </Text>
+    );
+  }
 );
 
-export const calendarNodePresentation: ActionPresentation = {
-  label: calendarNodeLabel,
-  pane: { collapsed: calendarNodeArgumentsPreview },
-  details: { arguments: calendarNodeArgumentsPreview },
-  offersCardDecisionButtons: offersCardDecisionButtonsCalendarNode,
+const calendarResult = defineResultPreview(z.strictObject({ nodeId: z.string().min(1) }), ({ result, context }) => {
+  const args = calendarNodeArguments.safeParse(context?.arguments);
+  const label = args.success
+    ? args.data.date
+      ? `Calendar node for ${calendarPeriod(args.data)}`
+      : `Open ${args.data.granularity} calendar node`
+    : "Open calendar node";
+  return (
+    <Text size="sm">
+      <TanaNodeLink id={result.nodeId} name={label} />
+    </Text>
+  );
+});
+
+const calendarNodePresentation: ActionPresentation = {
+  fallbackLabel: "Get or create Tana calendar node",
+  pane: { collapsed: calendarNode },
+  details: { arguments: calendarNode, result: calendarResult },
+  offersCardDecisionButtons: (args) => calendarNodeArguments.safeParse(args).success,
   compactCardExpands: expandsForRejectedArguments(calendarNodeArguments),
 };
 
@@ -61,9 +63,7 @@ const moveNode = definePreview(
   moveNodeArguments,
   function MoveNode({ args, requestId }: PreviewProps<z.infer<typeof moveNodeArguments>>): JSX.Element {
     const names = useIntegrationPreviewNames("tana", requestId);
-    const node = (id: string) => (
-      <LiveResourceLink id={id} name={names?.get(id)} href={`https://app.tana.inc?nodeid=${encodeURIComponent(id)}`} />
-    );
+    const node = (id: string) => <TanaNodeLink id={id} name={names?.get(id)} />;
     const atEdge = args.position === "start" || args.position === "end";
     const reference = args.referenceNodeId ? node(args.referenceNodeId) : null;
     return (
@@ -86,10 +86,44 @@ const moveNode = definePreview(
   }
 );
 
+// Tana Desktop emits the renderer's confirmation followed by labeled IDs and placement.
+const moveResultPattern =
+  /^Moved "(.*)\n\nNode ID: (\S+)\nPrevious parent: (.*) \((\S+)\)\nNew parent: (.*) \((\S+)\)\nPosition: (start|end|before|after)$/;
+
+const moveResult = z.string().transform((text, ctx) => {
+  const match = moveResultPattern.exec(text);
+  if (match) {
+    const [, message, nodeId, previousName, previousId, targetName, targetId, position] = match;
+    const suffix = `" from "${previousName}" to "${targetName}" (${position})`;
+    // The first line repeats the parent names and placement. Match them before extracting the node title.
+    if (message?.endsWith(suffix) && nodeId && previousId && targetId && position) {
+      return {
+        nodeId,
+        nodeName: message.slice(0, -suffix.length),
+        previousId,
+        previousName,
+        targetId,
+        targetName,
+        position,
+      };
+    }
+  }
+  ctx.addIssue({ code: "custom", message: "Unrecognized Tana move receipt" });
+  return z.NEVER;
+});
+
+const moveReceipt = defineResultPreview(moveResult, ({ result }) => (
+  <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+    Moved <TanaNodeLink id={result.nodeId} name={result.nodeName} /> from{" "}
+    <TanaNodeLink id={result.previousId} name={result.previousName} /> to{" "}
+    <TanaNodeLink id={result.targetId} name={result.targetName} /> ({result.position}).
+  </Text>
+));
+
 const moveNodePresentation: ActionPresentation = {
   fallbackLabel: "Move Tana node",
   pane: { opened: moveNode },
-  details: { arguments: moveNode },
+  details: { arguments: moveNode, result: moveReceipt },
 };
 
 export const tanaRenderers: ReadonlyMap<string, ActionPresentation> = new Map([

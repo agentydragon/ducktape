@@ -24,6 +24,37 @@ func (e *Executor) TanaNodeSummaries(ctx context.Context, ids []string) []*opera
 	}, tanaNodeSummary)
 }
 
+// list_workspaces takes no filter. Return metadata only for the workspace in the recorded request.
+func (e *Executor) TanaWorkspaceSummary(ctx context.Context, id string) *operator_action_servicepb.TanaWorkspaceSummary {
+	summaries := readSummaries(ctx, e, []string{id}, "tana", "list_workspaces", func(string) map[string]any {
+		return map[string]any{}
+	}, tanaWorkspaceSummary)
+	if len(summaries) == 0 {
+		return nil
+	}
+	return summaries[0]
+}
+
+func tanaWorkspaceSummary(id string, result *mcp.CallToolResult) *operator_action_servicepb.TanaWorkspaceSummary {
+	if len(result.Content) != 1 {
+		return nil
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		return nil
+	}
+	var workspaces []struct{ ID, Name string }
+	if json.Unmarshal([]byte(text.Text), &workspaces) != nil {
+		return nil
+	}
+	for _, workspace := range workspaces {
+		if workspace.ID == id && strings.TrimSpace(workspace.Name) != "" {
+			return &operator_action_servicepb.TanaWorkspaceSummary{WorkspaceId: id, Name: workspace.Name}
+		}
+	}
+	return nil
+}
+
 // These operator lookups share the supervisor's MCP session. Each method fixes its provider and
 // tool in code. A discovery annotation alone cannot authorize a tool call.
 func readSummaries[T any](ctx context.Context, e *Executor, ids []string, group, name string, arguments func(string) map[string]any, summary func(string, *mcp.CallToolResult) *T) []*T {

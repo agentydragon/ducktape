@@ -45,6 +45,19 @@ func TestTanaNodeSummary(t *testing.T) {
 	}
 }
 
+func TestTanaWorkspaceSummaryReturnsOnlyTheRequestedWorkspace(t *testing.T) {
+	response := &mcp.CallToolResult{Content: []mcp.Content{
+		&mcp.TextContent{Text: `[{"id":"other","name":"Unrelated","homeNodeId":"other-home"},{"id":"product","name":"Product","homeNodeId":"product-home"}]`},
+	}}
+	got := tanaWorkspaceSummary("product", response)
+	if got.GetWorkspaceId() != "product" || got.GetName() != "Product" {
+		t.Errorf("summary = %v", got)
+	}
+	if got := tanaWorkspaceSummary("missing", response); got != nil {
+		t.Errorf("missing workspace produced %v", got)
+	}
+}
+
 func TestTanaSummariesCallTheReadToolAndKeepPartialResults(t *testing.T) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "tana-preview-test"}, nil)
 	server.AddTool(&mcp.Tool{Name: "read_node", InputSchema: json.RawMessage(`{

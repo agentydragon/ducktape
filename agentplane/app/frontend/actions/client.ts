@@ -140,11 +140,13 @@ export async function getIntegrationPreviewNames(
     );
     return new Map(threads.map(({ threadId, subject }) => [threadId, subject]));
   }
-  const { nodes } = fromJsonString(
+  const { nodes, workspace } = fromJsonString(
     GetTanaNodeSummariesResponseSchema,
     await fetchText(`${path}/tana-node-summaries`, options, fetch)
   );
-  return new Map(nodes.map(({ nodeId, name }) => [nodeId, name]));
+  const names = new Map(nodes.map(({ nodeId, name }) => [nodeId, name]));
+  if (workspace !== undefined) names.set(workspace.workspaceId, workspace.name);
+  return names;
 }
 
 export async function actionHistory(

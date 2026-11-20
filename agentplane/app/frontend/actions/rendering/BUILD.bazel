@@ -205,6 +205,7 @@ ts_library(
         ":entry",
         ":integration_previews",
         ":presentation",
+        ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
