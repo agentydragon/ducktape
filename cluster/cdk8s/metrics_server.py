@@ -34,10 +34,7 @@ def chart(app: App) -> Chart:
                     "requiredDuringSchedulingIgnoredDuringExecution": [
                         {
                             "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/instance": NAME,
-                                    "app.kubernetes.io/name": NAME,
-                                }
+                                "matchLabels": {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": NAME}
                             },
                             "topologyKey": "kubernetes.io/hostname",
                         }
