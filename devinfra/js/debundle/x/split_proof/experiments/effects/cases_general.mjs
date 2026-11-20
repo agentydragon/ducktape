@@ -437,7 +437,7 @@ Promise.resolve().then(() => console.log(log.join()));
 `,
     [0, 1, 2, 3, 4, 6, 5, 7]
   ),
-  // `x.constructor` of an instance of a class of the program
+  // `x.constructor` of an instance of a class or a function of the program
   c(
     "inst.constructor reads class statics",
     `
@@ -445,6 +445,18 @@ let inst;
 class C {}
 inst = new C();
 C.x = 5;
+const r = inst.constructor.x;
+console.log(r);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  c(
+    "inst.constructor reads the properties of a function",
+    `
+let inst;
+function F() {}
+inst = new F();
+F.x = 5;
 const r = inst.constructor.x;
 console.log(r);
 `,
@@ -597,6 +609,19 @@ console.log(re.lastIndex);
     [0, 1, 3, 2]
   ),
   // `arguments` inside an arrow function is the enclosing function's
+  {
+    // precision: `arguments` is a binding of the function, so two calls that only read it commute
+    name: "two calls that read their own arguments commute",
+    source: `
+const a = { n: 0 };
+const b = { n: 0 };
+const first = function () { return arguments[0]; };
+const x = first(a);
+const y = first(b);
+console.log(x === a, y === b);
+`.trimStart(),
+    reorders: [{ order: [0, 1, 2, 4, 3, 5], behavior: "same", accepted: true }],
+  },
   c(
     "arguments inside an arrow function",
     `
