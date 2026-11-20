@@ -20,6 +20,7 @@ from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -27,13 +28,9 @@ def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [doc for doc in docs if workload_kind(doc) == (GROUP, "SandboxTemplate") and "pod" in doc["spec"]]
 
 
-def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
-    return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
-
-
 def _runner_configuration(docs: list[dict[str, Any]], pod: dict[str, Any]) -> dict[str, Any]:
     volume = one(volume for volume in pod["volumes"] if volume["name"] == "environment-runtime-config")
-    config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
+    config_map = find_resource(docs, "ConfigMap", volume["configMap"]["name"])
     return cast(dict[str, Any], json.loads(config_map["data"]["environment-runtime.json"]))
 
 
@@ -75,7 +72,7 @@ def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict
 
 
 def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_manifests: list[dict[str, Any]]) -> None:
-    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
+    template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod = template["spec"]["pod"]["spec"]
     containers = {container["name"]: container for container in pod["containers"]}
     runner = containers["environment-runtime"]
@@ -267,7 +264,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     """The canonical key reaches the runner container and its isolated executor, and by name the harness
     children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
     holds a Session's bearers, gets neither. Every launch preset names this one template."""
-    presets = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
+    presets = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
         "sandbox_presets"
     ]
     assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
@@ -304,7 +301,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 
 
 def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
-    app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    app_config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     ollama_routes = {model["model"] for model in app_config["models"]["models"] if model["model"].startswith("ollama/")}
     offered_routes = {route for routes in app_config["models"]["harnesses"].values() for route in routes}
     assert ollama_routes & offered_routes, "Agentplane staging must offer at least one Ollama route for smoke tests"
@@ -316,7 +313,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
 
     def settings(name: str) -> dict[str, Any]:
         return cast(
-            dict[str, Any], yaml.safe_load(_by_name(staging_manifests, "ConfigMap", name)["data"]["settings.yaml"])
+            dict[str, Any], yaml.safe_load(find_resource(staging_manifests, "ConfigMap", name)["data"]["settings.yaml"])
         )
 
     runner_settings = settings(f"{staging.POD_TEMPLATE}-egress-sidecar")
@@ -334,7 +331,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
         assert rendered["service_prefixes"] == list(route.service_prefixes)
         assert rendered["upstream"] == f"{route.service.fqdn}:{route.service.pod_port}"
         assert rendered["transport"] == route.transport.model_dump(mode="json", exclude_none=True)
-    template = _by_name(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
+    template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod = template["spec"]["pod"]["spec"]
     runner = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     env = {entry["name"]: entry.get("value") for entry in runner["env"]}
@@ -348,7 +345,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
     launcher_settings["listen_address"] = runner_settings["listen_address"]
     assert launcher_settings == runner_settings
 
-    policy = _by_name(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
+    policy = find_resource(staging_manifests, "ClusterPolicy", f"{staging.ENV.namespace}-launcher-relay")
     inject = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
     volumes = inject["mutate"]["patchStrategicMerge"]["spec"]["volumes"]
     assert {"name": "egress-sidecar-settings", "configMap": {"name": "launcher-relay-egress-sidecar"}} in volumes
@@ -360,7 +357,7 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
 def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
     pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    settings_doc = _by_name(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
+    settings_doc = find_resource(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
     settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
     origin = llm_ingress.service(staging.ENV.namespace)
     destination = llm_ingress.service(staging.ENV.namespace)
@@ -370,9 +367,9 @@ def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[s
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:
-    tool_config = _by_name(staging_manifests, "ConfigMap", "sandbox-tool-config")
+    tool_config = find_resource(staging_manifests, "ConfigMap", "sandbox-tool-config")
     assert set(tool_config["data"]) == {"bazel.bazelrc"}
-    role = _by_name(staging_manifests, "Role", "agentplane-sandbox-tool-config-reader")
+    role = find_resource(staging_manifests, "Role", "agentplane-sandbox-tool-config-reader")
     assert role["rules"] == [
         {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
     ]

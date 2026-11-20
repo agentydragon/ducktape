@@ -34,17 +34,16 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
-
-
-def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
-    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
     """The Gateway's static settings come from its mounted file, without scalar environment overrides."""
     file = cast(
         dict[str, Any],
-        yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]),
+        yaml.safe_load(
+            find_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+        ),
     )
     allowed_runtime_envs = {Settings.config_file_env, Settings.dispatcher_database_url_env}
     gateway_envs = {entry["name"] for entry in container["env"] if entry["name"].startswith("AGENTPLANE_SESSIONS_")}
@@ -86,7 +85,7 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     workload_issuer = {"kind": WORKLOAD_ISSUER.kind, "name": WORKLOAD_ISSUER.name}
-    workload_certificate = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
+    workload_certificate = find_resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
     workload_spec = workload_certificate["spec"]
     assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
     assert workload_spec["issuerRef"] == workload_issuer
@@ -94,7 +93,7 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     assert set(workload_spec["usages"]) == {"digital signature", "client auth", "server auth"}
     assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
 
-    client_spec = _resource(staging_manifests, "Certificate", "sessions-client-workload")["spec"]
+    client_spec = find_resource(staging_manifests, "Certificate", "sessions-client-workload")["spec"]
     assert client_spec["secretName"] == "sessions-client-workload-tls"
     assert client_spec["issuerRef"] == workload_issuer
     assert client_spec["uris"] == [GATEWAY_SESSIONS_URI]
@@ -108,7 +107,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     runner_gateway_workload.add_service(root, staging.ENV)
     root_docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(root))
     assert not [doc for doc in docs if doc["kind"] == "Service"]
-    deployment = _resource(docs, "Deployment", runner_gateway.NAME)
+    deployment = find_resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
     assert not pod.get("initContainers")
     container = one(c for c in pod["containers"] if c["name"] == runner_gateway.NAME)
@@ -145,7 +144,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "protocol": "TCP",
         "targetPort": listener_ports["grpc"],
     }
-    policy = _resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
+    policy = find_resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
     ingress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), port["port"])
         for rule in policy["ingress"]
@@ -166,7 +165,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
     assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) not in runner_egress
-    role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
+    role = find_resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     resources = {resource for rule in role["rules"] for resource in rule["resources"]}
     assert resources >= {
         "serviceaccounts",
@@ -189,10 +188,10 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
     namespace = staging.ENV.namespace
     gateway = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+        find_resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
     )
     history = yaml.safe_load(
-        _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
+        find_resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
     assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["dispatcher_service_delegation"]
@@ -239,13 +238,15 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     )
     chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = yaml.safe_load(_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    settings = yaml.safe_load(
+        find_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+    )
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert ACTIONS_URI not in settings.get("wake_service_callers", [])
 
 
 def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: list[dict[str, Any]]) -> None:
-    routes = _resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
+    routes = find_resource(staging_manifests, "CiliumNetworkPolicy", "platform-route-clients")["spec"]
     routed_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")
         for rule in routes["egress"]
@@ -253,7 +254,7 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
     }
     assert runner_gateway.NAME not in routed_services
 
-    gateway = _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"]
+    gateway = find_resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"]
     assert all(
         port["port"] != "8090"
         for rule in gateway["ingress"]
@@ -271,7 +272,7 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for rule in gateway["egress"]
         for endpoint in rule.get("toEndpoints", [])
     )
-    runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
+    runner_listener = find_resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
     gateway_label = runner_gateway.sessions_service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
     assert not any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label
