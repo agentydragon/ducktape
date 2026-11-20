@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, workspace, &script, "/bin/false")
 	config.StateDir = stateDir
-	r := newLifecycleRuntime(t, config)
+	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 
 	waitForFile(t, started)
@@ -72,6 +73,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 		t.Fatalf("canceled bootstrap waiter error = %v, want context.Canceled", err)
 	}
 
+	read.arm(r)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, r.isClosing, "Runtime close request")
@@ -80,21 +82,8 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	if err := r.Close(callerCtx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Close waiter = %v, want context cancellation", err)
 	}
-	waitRuntime(t, r, func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.desired.Mode == lifecycle.Closing
-	}, "published Runtime closing generation")
-	r.mu.Lock()
-	closeGeneration := r.desired.Generation
-	r.mu.Unlock()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Generation == closeGeneration && progress.Stage == runtimeCloseBootstrapSettling
-	}, "generation-bound Runtime bootstrap settlement")
-	progress := mustRuntimeCloseStatus(t, r)
-	if progress.Stage == runtimeCloseReadyToJoin {
-		t.Fatalf("Close progress during accepted bootstrap = %+v", progress)
-	}
+	waitSignal(t, read.entered, "Close did not read the accepted bootstrap status")
+	read.unblock()
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned while the accepted bootstrap was running: %v", err)
@@ -153,14 +142,14 @@ func TestCloseWaitsForFailedBootstrapOutcome(t *testing.T) {
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nexit 7", shellQuote(started), shellQuote(release))
 	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
-	r := newLifecycleRuntime(t, config)
+	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
+	read.arm(r)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Stage == runtimeCloseBootstrapSettling
-	}, "Close waiting for failed bootstrap outcome")
+	waitSignal(t, read.entered, "Close did not read the accepted bootstrap status")
+	read.unblock()
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned before bootstrap finished: %v", err)
@@ -184,13 +173,38 @@ func TestCloseWithoutBootstrap(t *testing.T) {
 
 type bootstrapStatusReadInterleavingState struct {
 	state.State
-	interrupt atomic.Bool
-	entered   chan struct{}
-	release   chan struct{}
+	closeContext context.Context
+	interrupt    atomic.Bool
+	entered      chan struct{}
+	release      chan struct{}
+	releaseOnce  sync.Once
+}
+
+func newHeldCloseBootstrapRead(t *testing.T, config runtimeTestConfig) (*Runtime, *bootstrapStatusReadInterleavingState) {
+	t.Helper()
+	resources, backing, err := cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backing.Close() })
+	config.testBacking = backing
+	read := &bootstrapStatusReadInterleavingState{State: resources, entered: make(chan struct{}), release: make(chan struct{})}
+	r := newLifecycleRuntimeWithState(t, config, read)
+	t.Cleanup(read.unblock)
+	return r, read
+}
+
+func (s *bootstrapStatusReadInterleavingState) arm(r *Runtime) {
+	s.closeContext = r.lifecycleContext
+	s.interrupt.Store(true)
+}
+
+func (s *bootstrapStatusReadInterleavingState) unblock() {
+	s.releaseOnce.Do(func() { close(s.release) })
 }
 
 func (s *bootstrapStatusReadInterleavingState) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
-	if ptr.Type() == bootstrap.StatusType && s.interrupt.CompareAndSwap(true, false) {
+	if ptr.Type() == bootstrap.StatusType && s.interrupt.Load() && ctx == s.closeContext && s.interrupt.CompareAndSwap(true, false) {
 		close(s.entered)
 		select {
 		case <-s.release:
@@ -208,23 +222,13 @@ func TestCloseObservesBootstrapCompletionDuringStatusRead(t *testing.T) {
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done", shellQuote(started), shellQuote(releaseScript))
 	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
-	resources := &bootstrapStatusReadInterleavingState{
-		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
-	}
-	r := newLifecycleRuntimeWithState(t, config, resources)
-	t.Cleanup(func() {
-		select {
-		case <-resources.release:
-		default:
-			close(resources.release)
-		}
-		_ = os.WriteFile(releaseScript, nil, 0o600)
-	})
+	r, read := newHeldCloseBootstrapRead(t, config)
+	t.Cleanup(func() { _ = os.WriteFile(releaseScript, nil, 0o600) })
 	waitForFile(t, started)
-	resources.interrupt.Store(true)
+	read.arm(r)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitSignal(t, resources.entered, "Close did not read pending bootstrap status")
+	waitSignal(t, read.entered, "Close did not read pending bootstrap status")
 	if err := os.WriteFile(releaseScript, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +249,7 @@ func TestCloseObservesBootstrapCompletionDuringStatusRead(t *testing.T) {
 			t.Fatal("bootstrap did not settle while Close status read was held")
 		}
 	}
-	close(resources.release)
+	read.unblock()
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatal(err)
 	}
@@ -281,9 +285,6 @@ func TestCloseBootstrapStatusReadFailureRetainsOwner(t *testing.T) {
 	if err := r.Close(context.Background()); !errors.Is(err, failure) {
 		t.Fatalf("Close status observation = %v, want %v", err, failure)
 	}
-	if progress := mustRuntimeCloseStatus(t, r); progress.Stage != runtimeCloseFailed {
-		t.Fatalf("Close progress after read failure = %+v", progress)
-	}
 	if owner, err := openTestRuntimeStore(stateDir); err == nil {
 		_ = owner.Close()
 		t.Fatal("bootstrap status read failure released environment owner")
@@ -300,14 +301,13 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	config.expectCloseError = true
-	r := newLifecycleRuntime(t, config)
+	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
+	read.arm(r)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Stage == runtimeCloseBootstrapSettling
-	}, "Runtime bootstrap settlement barrier")
+	waitSignal(t, read.entered, "Close did not observe the accepted bootstrap")
 	r.lifecycleCancel()
 	waitSignal(t, r.lifecycleDone, "Close worker held the canceled COSI engine waiting for bootstrap status")
 	if err := waitClose(t, closeDone); err == nil {

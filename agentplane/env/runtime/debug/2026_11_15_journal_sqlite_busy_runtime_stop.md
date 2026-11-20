@@ -163,7 +163,7 @@ the in-flight turn's `PROCESS_LOST` is consistent with loss of native execution,
 
 ## Why cleanup consumes its deadline
 
-[`runtimeCloseController.prepare`](../internal/coordinator/lifecycle_controller.go) creates one
+The [Close worker](../internal/coordinator/close.go) creates one
 `executionFenceGrace` context, defined as **150 seconds** in
 [`execution_service.go`](../internal/coordinator/execution_service.go). Native-stop observation,
 Execution fencing and subsequent bounded Close stages share that budget. `Run` and its deferred
@@ -185,7 +185,7 @@ At the incident revision, the failed Session could prevent native-stop proof as 
    the reconcile does not repair that state.
 4. The [aggregate controller](../internal/coordinator/session_lifecycle_controller.go) needs every
    retained Session's current-generation `Halted` status before advancing to `Stopping` and proving
-   `NativeStopped`. `nativeStopSettled` waits for that proof or the shared deadline; Close then
+   `NativeStopped`. The Close worker waits for that proof or the shared deadline. Close then
    reports failure rather than releasing unproved ownership.
 
 A temporary diagnostic test reproduced steps 1–3 against the inspected source: create a real

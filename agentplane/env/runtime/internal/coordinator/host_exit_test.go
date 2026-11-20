@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -152,18 +151,5 @@ func TestInitialSessionWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 				t.Fatalf("Runtime %s did not wake initial wait", name)
 			}
 		})
-	}
-}
-
-func TestClosePreparationRetainsSessionCleanupAfterRecoveryFailure(t *testing.T) {
-	r := &Runtime{sessions: &session.Manager{}, sessionWorkerDone: make(chan struct{}), sessionWorkerErr: errors.New("Session recovery failed")}
-	close(r.sessionWorkerDone)
-	coordinator := &runtimeCloseController{r: r}
-	if err := coordinator.prepare(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	defer coordinator.plan.cancelFence()
-	if !coordinator.plan.sessionsStarted {
-		t.Fatal("Close lost ownership of Session cleanup after recovery failed")
 	}
 }

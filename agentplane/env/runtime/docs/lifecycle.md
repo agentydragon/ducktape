@@ -108,11 +108,11 @@ Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
 component status cannot satisfy a successor revision. Execution fencing associates its own attempt
 generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
 Close observes the accepted bootstrap request and terminal status directly through COSI. A pending
-request holds the bootstrap settlement stage until a status change wakes reconciliation; a terminal
+request holds the Close worker until a status change wakes it. A terminal
 failure or interruption is settled because the bootstrap owner has completed cleanup.
 
 Close observes the exact-generation aggregate Session status for `NativeStopped` directly through
-COSI. Its existing fence deadline wakes reconciliation if that status never arrives. Native-stop
+COSI. The fence deadline wakes the Close worker to make a final observation. Native-stop
 errors are saved while Close attempts the Execution fence and reported at the History barrier if
 that fence succeeds.
 
@@ -135,15 +135,13 @@ Quiesce use direct requests to a Go-owned operation coordinator; per-operation c
 private request/status resources. Each accepted operation has one worker that calls adoption or
 Quiesce barriers sequentially, checking caller and engine cancellation before the next effect.
 Execution start and fence failures retain their settlement barriers before another operation can
-be accepted. Runtime starts that coordinator with its COSI engine. The Close controller cancels the
-shared lifecycle context on its first exit, even if Runtime's serving loop has not handled a fatal
-error. Runtime joins the coordinator on every engine exit, including early failure. The coordinator
-signals stopped before joining an accepted worker, so callers release the transition mutex. Close is the only COSI lifecycle
-controller: it observes the Closing generation after Runtime has settled the accepted operation and
-its prior fence under the transition mutex. Its workers never take that mutex, so an engine failure
-cannot wait on a Close worker blocked behind the operation caller. Close waits for the controller's
-exact-generation live COSI status before joining the engine. Accepted work and uncertain starts remain
-owned until joined or fenced.
+be accepted. Runtime starts that coordinator with its COSI engine. A lifecycle guard observes
+desired-state read failures and propagates engine cancellation before COSI joins its controllers,
+independently of the serving loop. The coordinator signals stopped before joining an accepted worker,
+so transition callers release the mutex even when an effect is still settling. Runtime joins the
+coordinator on every engine exit. The Close worker publishes the Closing generation under the
+transition mutex and waits on component proofs before joining the engine. Accepted work and
+uncertain starts remain owned until joined or fenced.
 
 Session recovery or History delivery failure closes admission and starts local cleanup without
 inventing a seal. Failed native cleanup, engine failure or failed sealed delivery remains a failure.
