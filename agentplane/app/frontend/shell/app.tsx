@@ -110,8 +110,8 @@ function AppRoutes(): JSX.Element {
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
   const actionsRoute = useMatch("/actions/*");
-  // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
-  // on completion, and it needs to land showing the result rather than the Sandboxes list.
+  // Not legacy-path compatibility: the MCP-linkage OAuth callback (agentplane/app/internal/httpapi/operator/routes.go)
+  // redirects the browser here on completion, and it needs to land showing the result rather than the Sandboxes list.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );

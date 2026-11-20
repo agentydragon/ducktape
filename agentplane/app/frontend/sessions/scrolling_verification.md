@@ -30,7 +30,7 @@ timing:
 - In the production UI, Thread view recorder > Start recording enables the same `agentplane:thread-view:*`
   `performance.mark()` calls in the browser Performance timeline, plus supported browser timing
   entries. Stop and download writes JSON for analysis, **not** an importable Chrome profile.
-  Version 3 also records bounded layout snapshots at virtual-size changes, React commits, before
+  The recording also holds bounded layout snapshots at virtual-size changes, React commits, before
   and after component scroll writes, and animation frames whose geometry changed. Each snapshot
   identifies the Thread and mounted view, compares planned row keys with planned positions,
   estimates and measurements, and captures mounted row rectangles plus viewport/content geometry.
