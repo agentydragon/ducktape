@@ -82,6 +82,7 @@ py_library(
         ":net_worth",
         ":pace_history",
         ":pace_history_models",
+        ":plaid_valuation",
         ":policy_queries",
         ":portfolio",
         ":portfolio_models",
@@ -231,6 +232,7 @@ py_test(
         ":configuration",
         ":conftest",
         ":models",
+        ":plaid_valuation",
         ":portfolio_models",
         ":service",
         ":sustainability",
@@ -487,6 +489,7 @@ py_library(
     deps = [
         ":account_history",
         ":allowance",
+        ":models",
         ":sustainability",
         "//finance:yaml_decimal",
         "@pypi//pydantic",

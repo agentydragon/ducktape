@@ -47,6 +47,7 @@ from finance.plaid.spend.models import (
     SpendTransactionRow,
     StatementReason,
 )
+from finance.plaid.spend.plaid_valuation import unavailable_source
 from finance.plaid.spend.portfolio_models import (
     HoldingValueCorrection,
     PlaidSourcePolicy,
@@ -771,21 +772,8 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
         if attempts == 1:
             if failure_mode == "postgres_error":
                 raise SQLAlchemyError("synthetic transient database failure")
-            return PortfolioView(
-                status="unavailable",
-                net_minor_units=None,
-                assets_minor_units=None,
-                liabilities_minor_units=None,
-                excluded_minor_units=None,
-                sources=[
-                    SourceValuation(
-                        name="coinbase",
-                        status="unavailable",
-                        amount_minor_units=None,
-                        as_of=None,
-                        issues=["Coinbase could not provide a current valuation."],
-                    )
-                ],
+            return PortfolioView.unavailable(
+                [unavailable_source("coinbase", "Coinbase could not provide a current valuation.")]
             )
         return _synthetic_portfolio()
 

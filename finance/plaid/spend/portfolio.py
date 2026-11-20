@@ -258,14 +258,7 @@ async def read_portfolio(
             assets_minor_units += coinbase_assets
 
     if not sources or not sources_ready:
-        return PortfolioView(
-            status="unavailable",
-            net_minor_units=None,
-            assets_minor_units=None,
-            liabilities_minor_units=None,
-            excluded_minor_units=None,
-            sources=sources,
-        )
+        return PortfolioView.unavailable(sources)
     return PortfolioView(
         status="ready",
         net_minor_units=assets_minor_units - liabilities_minor_units - excluded_minor_units,
