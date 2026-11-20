@@ -37,6 +37,19 @@ spec:
     remediation:
       retries: 3
   interval: 15m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: keda-admission-webhooks
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: keda-admission-webhooks
   upgrade:
     crds: CreateReplace
     remediation:

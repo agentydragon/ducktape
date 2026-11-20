@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
@@ -82,6 +88,29 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(
             crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
         ),
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                kind="Deployment", name="keda-admission-webhooks"
+                            ),
+                            # The chart lacks per-Deployment annotations. Keep the Pod template
+                            # unchanged and inherit the namespace's memory-only VPA policy.
+                            patch=dedent(f"""\
+                                apiVersion: apps/v1
+                                kind: Deployment
+                                metadata:
+                                  name: keda-admission-webhooks
+                                  annotations:
+                                    {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
+                                """),
+                        )
+                    ]
+                )
+            )
+        ],
         values={
             # Keep the watch list limited: Helm binds the operator's ClusterRole through
             # namespaced RoleBindings in each watched namespace and the KEDA namespace.
