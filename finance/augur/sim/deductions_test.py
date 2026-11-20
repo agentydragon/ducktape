@@ -27,7 +27,6 @@ from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, ScheduledPurchase
@@ -35,11 +34,10 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -191,7 +189,6 @@ def small_home(*, mortgage_interest_policies: tuple[MortgageInterestDeduction, .
 
 
 def compose(case: Situation) -> World:
-    jurisdictions = {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)}
     world = World(
         MarketPath((), 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
@@ -204,21 +201,7 @@ def compose(case: Situation) -> World:
         account(COLLECTOR),
     ):
         world.declare_account(account=opened, opening_balance=balance)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(
-                    agent_id=ALICE,
-                    filing_status=FilingStatus.SINGLE,
-                    jurisdiction_ids=[FEDERAL, CALIFORNIA],
-                    tax_authority_agent_id=IRS,
-                ),
-                jurisdictions,
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL, CALIFORNIA], authority=IRS))
     for salt in case.salt_policies:
         world.declare_deduction(salt)
     for interest in case.mortgage_interest_policies:

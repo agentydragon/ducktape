@@ -64,10 +64,9 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
-from finance.augur.sim.tax_authority import SaltDeduction, TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.tax_authority import SaltDeduction
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 OWNER, EMPLOYER, TENANT, SELLER, BANK, COUNTY, IRS = (
@@ -181,16 +180,7 @@ def compose(case: Expected) -> World:
         world.declare_account(account=ref(agent), opening_balance=dollars(balance))
     for agent in (SELLER, BANK, COUNTY, IRS):
         world.declare_account(account=ref(agent), opening_balance=0)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=IRS),
-                {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(OWNER, [FEDERAL, CALIFORNIA], authority=IRS))
     world.declare_deduction(SaltDeduction(profile_id=OWNER, federal_jurisdiction_id=FEDERAL, cap_schedule=()))
     world.declare_housing(
         Housing(

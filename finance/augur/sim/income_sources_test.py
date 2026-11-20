@@ -30,17 +30,13 @@ from finance.augur.sim.income import (
     Treasury,
     income_source_sort_key,
 )
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import USD
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.rollouts import book, tax_by_jurisdiction
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -95,7 +91,6 @@ def compose(payments: tuple[Payment, ...]) -> World:
     """Every recipient a California resident with their own tax profile, paid from `payer`."""
 
     recipients = sorted({payment.to_agent_id for payment in payments})
-    jurisdictions = {id_: load_jurisdiction(id_) for id_ in FILED_IN}
     world = World(
         MarketPath((), 0, rollout_count=1),
         horizon_months=HORIZON_MONTHS,
@@ -110,16 +105,7 @@ def compose(payments: tuple[Payment, ...]) -> World:
     ):
         _account(world, agent_id, balance)
     for recipient in recipients:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=recipient, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
-                    jurisdictions,
-                    currency=USD,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(recipient, FILED_IN, authority=IRS))
     for index, payment in enumerate(payments):
         world.declare_flow(
             schedule=Once(month=payment.month),

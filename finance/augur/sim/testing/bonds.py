@@ -22,14 +22,10 @@ from finance.augur.sim.income import (
     Treasury,
     income_source_sort_key,
 )
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
-from finance.augur.sim.money import USD
 from finance.augur.sim.observations import FixedCoupon, IndexedCoupon
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.series import level_series
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -135,8 +131,7 @@ class Situation:
 
 
 def compose(case: Situation, rollout_id: int = 0) -> World:
-    filed_in = (JurisdictionId("federal_us"), JurisdictionId("california")) if case.taxpayers else ()
-    rules = {id_: load_jurisdiction(id_) for id_ in filed_in}
+    filed_in = (JurisdictionId("federal_us"), JurisdictionId("california"))
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
@@ -150,8 +145,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
     for account, balance in case.accounts:
         world.declare_account(account=account, opening_balance=balance)
     for agent_id in case.taxpayers:
-        profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
-        world.track(TaxAuthority(compile_profile(profile, rules, currency=USD), indexation=FixedNominalLaw()))
+        world.track(filer(agent_id, filed_in, authority=AgentId("irs")))
     for bond in case.bonds:
         world.hold_bond(
             bond_id=bond.bond_id,

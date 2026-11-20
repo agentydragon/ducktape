@@ -61,15 +61,13 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import START_YEAR
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
@@ -255,7 +253,6 @@ def property_sale_world() -> World:
     """
 
     home_values = [Decimal(1)] * PROPERTY_SALE_MONTH + [Decimal("1.5")] * (PROPERTY_HORIZON + 1 - PROPERTY_SALE_MONTH)
-    jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)}
     world = World(
         MarketPath(
             path(
@@ -275,16 +272,7 @@ def property_sale_world() -> World:
         (COUNTY, 0),
     ):
         account(world, agent_id, balance)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=AgentId("irs")),
-                jurisdictions,
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL], authority=AgentId("irs")))
     world.declare_housing(
         Housing(
             purchases=(
