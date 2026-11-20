@@ -40,16 +40,41 @@ def sourceExpr (cs : List Char) : Option Expr :=
            else if ident cs then some (.gvar (String.ofList cs)) else none
   | _ => if ident cs then some (.gvar (String.ofList cs)) else none
 
-/-- Recognize exactly `const <identifier> = <expression>;` with one ASCII space
-between tokens. Unknown syntax is refused rather than approximated. -/
-def sourceStmt (s : String) : Option MStmt := do
-  let 'c' :: 'o' :: 'n' :: 's' :: 't' :: ' ' :: rest := s.toList | none
+/-- A single literal argument call or the existing atomic expression grammar. -/
+private def sourceInit (cs : List Char) : Option Expr := do
+  let (word, rest) := takeWord cs
+  match rest with
+  | [] => sourceExpr word
+  | ['(', c, ')'] =>
+    if ident word && digit c then
+      some (.app (.gvar (String.ofList word)) (.num (Int.ofNat (c.toNat - '0'.toNat))))
+    else none
+  | _ => none
+
+/-- A function declaration with an exact identity body. -/
+private def sourceIdentity (cs : List Char) : Option MStmt := do
+  let 'f' :: 'u' :: 'n' :: 'c' :: 't' :: 'i' :: 'o' :: 'n' :: ' ' :: rest := cs | none
   let (name, rest) := takeWord rest
-  let ' ' :: '=' :: ' ' :: rest := rest | none
-  let (init, rest) := takeWord rest
-  let [';'] := rest | none
-  if !ident name then none else
-    (sourceExpr init).map fun e => ⟨[String.ofList name], e, false⟩
+  let '(' :: rest := rest | none
+  let (param, rest) := takeWord rest
+  let ')' :: ' ' :: '{' :: '\n' :: ' ' :: ' ' :: 'r' :: 'e' :: 't' :: 'u' :: 'r' :: 'n' :: ' ' :: rest := rest | none
+  let (returned, rest) := takeWord rest
+  let [';', '\n', '}'] := rest | none
+  if ident name && ident param && returned == param then
+    some ⟨[String.ofList name], .lam (String.ofList param) (.lvar (String.ofList param)), true⟩
+  else none
+
+/-- Recognize a narrow constant declaration or identity function. Unknown syntax is refused. -/
+def sourceStmt (s : String) : Option MStmt :=
+  match s.toList with
+  | 'c' :: 'o' :: 'n' :: 's' :: 't' :: ' ' :: rest => do
+    let (name, rest) := takeWord rest
+    let ' ' :: '=' :: ' ' :: rest := rest | none
+    let init := rest.dropLast
+    let some ';' := rest.getLast? | none
+    if !ident name then none else
+      (sourceInit init).map fun e => ⟨[String.ofList name], e, false⟩
+  | cs => sourceIdentity cs
 
 /-- Translate the source slices supplied to the real renderer. -/
 def sourceBundle (B : Bundle) : Option (List MStmt) := B.mapM fun s => sourceStmt s.src

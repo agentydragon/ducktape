@@ -13,3 +13,11 @@ genrule(
     cmd = "cp $(location //devinfra/js/debundle/x/split_proof:proof_fixture_instance) $@",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
+
+genrule(
+    name = "generate_identity_fixture",
+    srcs = ["//devinfra/js/debundle/x/split_proof:identity_fixture_instance"],
+    outs = ["IdentityFixture/Instance.lean"],
+    cmd = "sed 's/namespace Example/namespace IdentityExample/; s/end Example/end IdentityExample/' $(location //devinfra/js/debundle/x/split_proof:identity_fixture_instance) > $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)

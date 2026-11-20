@@ -82,3 +82,22 @@ js_run_binary(
     tool = ":extract",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
 )
+
+js_run_binary(
+    name = "identity_fixture_instance",
+    srcs = [
+        "identity_fixture/bundle.mjs",
+        "identity_fixture/crossing.json",
+        "identity_fixture/spec.json",
+    ],
+    args = [
+        "identity_fixture/bundle.mjs",
+        "identity_fixture/spec.json",
+        "--control",
+        "identity_fixture/crossing.json",
+    ],
+    chdir = package_name(),
+    stdout = "generated/IdentityFixture.lean",
+    tool = ":extract",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
+)
