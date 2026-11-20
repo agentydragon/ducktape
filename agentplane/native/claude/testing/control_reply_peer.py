@@ -1,4 +1,4 @@
-"""Pipe peer that interleaves unrelated frames before the facade's control reply."""
+"""Pipe peer that interleaves unrelated frames before the control reply to `initialize`."""
 
 import json
 import sys

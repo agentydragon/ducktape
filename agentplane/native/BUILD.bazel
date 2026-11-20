@@ -3,12 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "transport",
-    srcs = ["transport.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "tagged",
     srcs = ["tagged.py"],
 )

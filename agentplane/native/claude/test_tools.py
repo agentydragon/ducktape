@@ -161,11 +161,7 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
 
             # The parent gets an async-launch result independently of the child's first request.
             # Hold the child at the model boundary until the parent has finished its initial turn.
-            async with (
-                await anthropic_messages.await_next_request() as first,
-                await anthropic_messages.await_next_request() as second,
-            ):
-                parent, child = (first, second) if first.request.tool_results else (second, first)
+            async with anthropic_messages.await_parent_and_child() as (parent, child):
                 (launched,) = parent.request.tool_results
                 assert launched.tool_use_id == "toolu_spawn_child"
                 assert launched.is_error is False
@@ -264,11 +260,7 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 )
                 await exchange.send(*stream.events)
 
-            async with (
-                await anthropic_messages.await_next_request() as first,
-                await anthropic_messages.await_next_request() as second,
-            ):
-                parent, child = (first, second) if first.request.tool_results else (second, first)
+            async with anthropic_messages.await_parent_and_child() as (parent, child):
                 (launched,) = parent.request.tool_results
                 assert launched.tool_use_id == "toolu_spawn_message_child"
                 assert launched.is_error is False
@@ -306,11 +298,7 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 )
                 await exchange.send(*stream.events)
 
-            async with (
-                await anthropic_messages.await_next_request() as first,
-                await anthropic_messages.await_next_request() as second,
-            ):
-                parent, child = (first, second) if first.request.tool_results else (second, first)
+            async with anthropic_messages.await_parent_and_child() as (parent, child):
                 (sent,) = parent.request.tool_results
                 assert sent.tool_use_id == "toolu_followup"
                 assert sent.is_error is False
@@ -422,9 +410,7 @@ async def test_concurrent_children_forward_live_items_and_persist_separate_trans
                         ).events
                     )
                     await parent.close()
-                    first = await exchanges.enter_async_context(await anthropic_messages.await_next_request())
-                    second = await exchanges.enter_async_context(await anthropic_messages.await_next_request())
-                    parent, child = (first, second) if first.request.tool_results else (second, first)
+                    parent, child = await exchanges.enter_async_context(anthropic_messages.await_parent_and_child())
                     assert parent.request.tool_results[-1].tool_use_id == f"spawn_{name}"
                     assert parent.request.tool_results[-1].is_error is False
                     assert f"CHILD_{name}_PROMPT" in "\n".join(child.request.texts("user"))
@@ -599,11 +585,7 @@ async def test_child_failure_or_parent_crash_does_not_invent_child_completion(
                         model=MODEL,
                     ).events
                 )
-            async with (
-                await anthropic_messages.await_next_request() as first,
-                await anthropic_messages.await_next_request() as second,
-            ):
-                parent, child = (first, second) if first.request.tool_results else (second, first)
+            async with anthropic_messages.await_parent_and_child() as (parent, child):
                 assert parent.request.tool_results[-1].tool_use_id == "spawn_failure"
                 assert "CHILD_FAILURE_PROBE" in "\n".join(child.request.texts("user"))
                 await parent.send(
@@ -691,9 +673,7 @@ async def test_nested_child_tool_frames_identify_the_immediate_parent_call(
                         ).events
                     )
                     await current.close()
-                    first = await exchanges.enter_async_context(await anthropic_messages.await_next_request())
-                    second = await exchanges.enter_async_context(await anthropic_messages.await_next_request())
-                    parent, current = (first, second) if first.request.tool_results else (second, first)
+                    parent, current = await exchanges.enter_async_context(anthropic_messages.await_parent_and_child())
                     assert parent.request.tool_results[-1].tool_use_id == f"spawn_{name}"
                     assert f"NESTED_{name}" in "\n".join(current.request.texts("user"))
                     parents.append(parent)
