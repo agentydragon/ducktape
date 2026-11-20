@@ -1,35 +1,17 @@
 """Exercise PolicySet unions and opaque JSON through Kubernetes admission and CEL."""
 
-from typing import Any, cast
+from typing import Any
 
-import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+from agentplane.testing.crd_admission import crd_namespace
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 NAMESPACE = "policyset-admission"
 
 
 async def test_policyset_admission() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        api = k8s_client.CustomObjectsApi(server.api)
-
-        async def create(rule: dict[str, Any]) -> dict[str, Any]:
-            body = {
-                "apiVersion": f"{GROUP}/{VERSION}",
-                "kind": "PolicySet",
-                "metadata": {"generateName": "policy-"},
-                "spec": {"rules": [rule]},
-            }
-            return cast(
-                dict[str, Any], await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "policysets", body)
-            )
+    async with crd_namespace(NAMESPACE) as namespace:
+        policy_sets = namespace.kind("policysets", "PolicySet")
 
         def action(kind: str, **fields: Any) -> dict[str, Any]:
             return {"type": "action_auto_approve", "policy": {"type": kind, "actions": {"g": ["a"]}, **fields}}
@@ -77,8 +59,8 @@ async def test_policyset_admission() -> None:
             ),
             environment([{"sandbox": {"name": "worker"}}, {"boundIdentity": {"self": True}}]),
         )
-        for rule in rules:
-            created = await create(rule)
+        for index, rule in enumerate(rules):
+            created = await policy_sets.create(f"policy-{index}", {"rules": [rule]})
             policy = rule.get("policy", {})
             if "schema" in policy:
                 assert created["spec"]["rules"][0]["policy"]["schema"] == policy["schema"]
@@ -123,9 +105,7 @@ async def test_policyset_admission() -> None:
             environment([{"sandbox": {"name": "worker"}}], targets={"allSandboxes": True}),
         )
         for rule in invalid_rules:
-            with pytest.raises(ApiException) as rejected:
-                await create(rule)
-            assert rejected.value.status == 422, rejected.value.body
+            await policy_sets.rejects_create({"rules": [rule]})
 
 
 if __name__ == "__main__":

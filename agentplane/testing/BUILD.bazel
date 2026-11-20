@@ -208,3 +208,14 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "crd_admission",
+    srcs = ["crd_admission.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        "//agentplane:crd_group",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+    ],
+)

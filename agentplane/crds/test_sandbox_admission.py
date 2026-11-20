@@ -1,17 +1,11 @@
 """Exercise the generated Sandbox schemas through Kubernetes admission, including CEL."""
 
-from copy import deepcopy
-from typing import Any, cast
+from typing import Any
 
-import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 NAMESPACE = "sandbox-admission"
 
 
@@ -38,28 +32,17 @@ def _template_spec(*, pod: bool = False, vm: bool = True, firecracker: bool = Fa
     return spec
 
 
-async def _create(
-    api: k8s_client.CustomObjectsApi, plural: str, name: str, spec: dict[str, Any], valid: bool
-) -> dict[str, Any] | None:
-    body = {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "SandboxTemplate" if plural == "sandboxtemplates" else "Sandbox",
-        "metadata": {"name": name},
-        "spec": spec,
-    }
+async def _create(kind: CrdAdmission, name: str, spec: dict[str, Any], valid: bool) -> dict[str, Any] | None:
     if not valid:
-        with pytest.raises(ApiException) as rejected:
-            await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
-        assert rejected.value.status == 422, f"{name}: {rejected.value.status}: {rejected.value.body!r}"
+        await kind.rejects_create(spec, name)
         return None
-    return cast(dict[str, Any], await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body))
+    return await kind.create(name, spec)
 
 
 async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        api = k8s_client.CustomObjectsApi(server.api)
+    async with crd_namespace(NAMESPACE) as namespace:
+        templates = namespace.kind("sandboxtemplates", "SandboxTemplate")
+        sandboxes = namespace.kind("sandboxes", "Sandbox")
 
         for index, (pod, vm, firecracker) in enumerate(
             [
@@ -74,7 +57,7 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             ]
         ):
             spec = _template_spec(pod=pod, vm=vm, firecracker=firecracker)
-            created = await _create(api, "sandboxtemplates", f"kind-{index}", spec, sum((pod, vm, firecracker)) == 1)
+            created = await _create(templates, f"kind-{index}", spec, sum((pod, vm, firecracker)) == 1)
             if firecracker and created is not None:
                 assert created["spec"]["firecracker"]["pod"] == spec["firecracker"]["pod"]
 
@@ -99,11 +82,11 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
                     "claim": {"volumeMode": fc_mode},
                     "layout": fc_workspace_layout,
                 }
-            await _create(api, "sandboxtemplates", f"firecracker-layout-{index}", spec, valid)
+            await _create(templates, f"firecracker-layout-{index}", spec, valid)
 
         no_workspace = _template_spec(vm=False, firecracker=True)
         del no_workspace["workspaceVolume"]
-        await _create(api, "sandboxtemplates", "firecracker-no-workspace", no_workspace, False)
+        await _create(templates, "firecracker-no-workspace", no_workspace, False)
 
         workspace_cases: list[tuple[dict[str, str], str | None, bool]] = [
             ({"type": "DirectoryTree"}, None, True),
@@ -123,7 +106,7 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             workspace: dict[str, Any] = {"name": "workspace", "claim": {} if mode is None else {"volumeMode": mode}}
             workspace["layout"] = layout
             spec["workspaceVolume"] = workspace
-            await _create(api, "sandboxtemplates", f"workspace-{index}", spec, valid)
+            await _create(templates, f"workspace-{index}", spec, valid)
 
         for index, (layout, valid) in enumerate(
             [
@@ -134,7 +117,7 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
         ):
             spec = _template_spec()
             spec["stateVolume"]["layout"] = layout
-            await _create(api, "sandboxtemplates", f"state-{index}", spec, valid)
+            await _create(templates, f"state-{index}", spec, valid)
 
         pod_workspace = _template_spec(pod=True, vm=False)
         pod_workspace["workspaceVolume"] = {
@@ -142,13 +125,12 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             "claim": {},
             "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
         }
-        await _create(api, "sandboxtemplates", "pod-disk-workspace", pod_workspace, False)
+        await _create(templates, "pod-disk-workspace", pod_workspace, False)
 
         opaque_spec = _template_spec(pod=True, vm=False)
         opaque_spec["pod"] = {"metadata": {"labels": {"retained": "yes"}}}
         opaque_spec["stateVolume"]["claim"] = {"resources": {"requests": {"storage": "1Gi"}}}
-        opaque = await _create(api, "sandboxtemplates", "opaque", opaque_spec, True)
-        assert opaque is not None
+        opaque = await templates.create("opaque", opaque_spec)
         assert opaque["spec"]["pod"] == opaque_spec["pod"]
         assert opaque["spec"]["stateVolume"]["claim"] == opaque_spec["stateVolume"]["claim"]
 
@@ -157,8 +139,7 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             "claim": {"resources": {"requests": {"storage": "2Gi"}}},
             "layout": {"type": "DirectoryTree"},
         }
-        opaque_workspace = await _create(api, "sandboxtemplates", "opaque-workspace", opaque_spec, True)
-        assert opaque_workspace is not None
+        opaque_workspace = await templates.create("opaque-workspace", opaque_spec)
         assert opaque_workspace["spec"]["workspaceVolume"]["claim"] == opaque_spec["workspaceVolume"]["claim"]
 
         # The controller records Firecracker's raw state layout through the status subresource.
@@ -172,145 +153,77 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
                 ({"type": "BlockFilesystem", "filesystem": "ext4"}, False),
             ]
         ):
-            name = f"state-binding-{index}"
-            bound = await _create(api, "sandboxes", name, {"template": "firecracker-layout-2"}, True)
-            assert bound is not None
-            candidate = {
-                **bound,
-                "status": {"volumes": {"state": {"name": "state", "uid": "state-uid", "layout": layout}}},
-            }
+            bound = await sandboxes.create(f"state-binding-{index}", {"template": "firecracker-layout-2"})
+            state_status = {"volumes": {"state": {"name": "state", "uid": "state-uid", "layout": layout}}}
             if valid:
-                accepted = await api.replace_namespaced_custom_object_status(
-                    GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
-                )
+                accepted = await sandboxes.replace_status(bound, state_status)
                 assert accepted["status"]["volumes"]["state"]["layout"] == layout
             else:
-                with pytest.raises(ApiException) as rejected:
-                    await api.replace_namespaced_custom_object_status(
-                        GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
-                    )
-                assert rejected.value.status == 422, f"{layout}: {rejected.value.body!r}"
+                await sandboxes.rejects_status(bound, state_status)
 
-        sandbox = await _create(api, "sandboxes", "suspension", {"template": "opaque"}, True)
-        assert sandbox is not None
-        with_status = deepcopy(sandbox)
-        with_status["status"] = {"suspendedBy": "Idle"}
-        with pytest.raises(ApiException) as rejected:
-            await api.replace_namespaced_custom_object_status(
-                GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", with_status
-            )
-        assert rejected.value.status == 422, repr(rejected.value.body)
+        sandbox = await sandboxes.create("suspension", {"template": "opaque"})
+        await sandboxes.rejects_status(sandbox, {"suspendedBy": "Idle"})
+        current = await sandboxes.replace_status(sandbox, {"suspendedBy": "Idle", "suspendedAtWakeGeneration": 0})
 
-        with_status["status"]["suspendedAtWakeGeneration"] = 0
-        current = cast(
-            dict[str, Any],
-            await api.replace_namespaced_custom_object_status(
-                GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", with_status
-            ),
-        )
-
-        for status, valid in [
+        status_cases: list[tuple[dict[str, Any], bool]] = [
             ({"suspendedBy": "Requested"}, True),
             ({"idleSuspendBlockers": [{"reason": "ExecutorRelay"}]}, True),
             ({"suspendedBy": "Requested", "suspendedAtWakeGeneration": 0}, False),
             ({"suspendedAtWakeGeneration": 0}, False),
             ({"suspendedBy": "Unrecognised"}, False),
-        ]:
-            candidate = {**current, "status": status}
+        ]
+        for status, valid in status_cases:
             if valid:
-                current = cast(
-                    dict[str, Any],
-                    await api.replace_namespaced_custom_object_status(
-                        GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", candidate
-                    ),
-                )
-                continue
-            with pytest.raises(ApiException) as rejected:
-                await api.replace_namespaced_custom_object_status(
-                    GROUP, VERSION, NAMESPACE, "sandboxes", "suspension", candidate
-                )
-            assert rejected.value.status == 422, f"{status}: {rejected.value.body!r}"
+                current = await sandboxes.replace_status(current, status)
+            else:
+                await sandboxes.rejects_status(current, status)
 
         for index, (idle_suspend_after, valid) in enumerate(
             [("30m", True), ("1h30m0s", True), ("1m", True), ("59s", False), ("0s", False), ("soon", False)]
         ):
             await _create(
-                api, "sandboxes", f"idle-{index}", {"template": "opaque", "idleSuspendAfter": idle_suspend_after}, valid
+                sandboxes, f"idle-{index}", {"template": "opaque", "idleSuspendAfter": idle_suspend_after}, valid
             )
 
 
 async def test_identity_changes_only_while_nothing_runs() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        api = k8s_client.CustomObjectsApi(server.api)
-        await _create(api, "sandboxtemplates", "template", _template_spec(pod=True, vm=False), True)
-        sandbox = await _create(api, "sandboxes", "bound", {"template": "template"}, True)
-        assert sandbox is not None
-
-        async def replace_spec(spec: dict[str, Any]) -> dict[str, Any]:
-            nonlocal sandbox
-            assert sandbox is not None
-            sandbox = cast(
-                dict[str, Any],
-                await api.replace_namespaced_custom_object(
-                    GROUP, VERSION, NAMESPACE, "sandboxes", "bound", {**sandbox, "spec": spec}
-                ),
-            )
-            return sandbox
-
-        async def report(status: dict[str, Any]) -> None:
-            nonlocal sandbox
-            assert sandbox is not None
-            sandbox = cast(
-                dict[str, Any],
-                await api.replace_namespaced_custom_object_status(
-                    GROUP, VERSION, NAMESPACE, "sandboxes", "bound", {**sandbox, "status": status}
-                ),
-            )
+    async with crd_namespace(NAMESPACE) as namespace:
+        templates = namespace.kind("sandboxtemplates", "SandboxTemplate")
+        sandboxes = namespace.kind("sandboxes", "Sandbox")
+        await templates.create("template", _template_spec(pod=True, vm=False))
+        sandbox = await sandboxes.create("bound", {"template": "template"})
 
         first: dict[str, Any] = {"template": "template", "identity": {"name": "first"}}
         second: dict[str, Any] = {"template": "template", "identity": {"name": "second"}}
         # Never reconciled: nothing has run.
-        await replace_spec(first)
+        sandbox = await sandboxes.replace_spec(sandbox, first)
 
-        await report({"operatingMode": "Running"})
+        sandbox = await sandboxes.replace_status(sandbox, {"operatingMode": "Running"})
         unbound: dict[str, Any] = {"template": "template"}
         for spec in [second, unbound]:
-            with pytest.raises(ApiException) as rejected:
-                await replace_spec(spec)
-            assert rejected.value.status == 422, f"{spec}: {rejected.value.body!r}"
-        assert (await replace_spec({**first, "running": True}))["spec"]["identity"] == first["identity"]
+            await sandboxes.rejects_spec(sandbox, spec)
+        sandbox = await sandboxes.replace_spec(sandbox, {**first, "running": True})
+        assert sandbox["spec"]["identity"] == first["identity"]
 
-        await report({"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Quiescing"})
-        with pytest.raises(ApiException) as rejected:
-            await replace_spec(second)
-        assert rejected.value.status == 422, repr(rejected.value.body)
+        sandbox = await sandboxes.replace_status(
+            sandbox, {"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Quiescing"}
+        )
+        await sandboxes.rejects_spec(sandbox, second)
 
-        await report({"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Stopped"})
-        assert (await replace_spec(second))["spec"]["identity"] == second["identity"]
-        assert "identity" not in (await replace_spec(unbound))["spec"]
+        sandbox = await sandboxes.replace_status(
+            sandbox, {"operatingMode": "Suspended", "suspendedBy": "Requested", "stopStage": "Stopped"}
+        )
+        sandbox = await sandboxes.replace_spec(sandbox, second)
+        assert sandbox["spec"]["identity"] == second["identity"]
+        assert "identity" not in (await sandboxes.replace_spec(sandbox, unbound))["spec"]
 
 
 async def test_egress_credential_source_and_target_validation() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        api = k8s_client.CustomObjectsApi(server.api)
+    async with crd_namespace(NAMESPACE) as namespace:
+        credentials = namespace.kind("egresscredentials", "EgressCredential")
 
         async def create(name: str, source: dict[str, Any], targets: list[dict[str, str]], valid: bool) -> None:
-            body = {
-                "apiVersion": f"{GROUP}/{VERSION}",
-                "kind": "EgressCredential",
-                "metadata": {"name": name},
-                "spec": {"description": "API token", "source": source, "targets": targets},
-            }
-            if not valid:
-                with pytest.raises(ApiException) as rejected:
-                    await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "egresscredentials", body)
-                assert rejected.value.status == 422, f"{name}: {rejected.value.status}: {rejected.value.body!r}"
-                return
-            await api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, "egresscredentials", body)
+            await _create(credentials, name, {"description": "API token", "source": source, "targets": targets}, valid)
 
         source_cases: list[tuple[dict[str, Any], bool]] = [
             ({"secretRef": {"name": "api-token", "key": "token"}}, True),
