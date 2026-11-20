@@ -9,7 +9,6 @@ describe("tanaPreviews", () => {
       ["import_tana_paste", { parentNodeId: "parent", content: "- One\n  - Two" }],
       ["trash_node", { nodeId: "node" }],
       ["edit_node", { nodeId: "node", name: { old_string: "Old", new_string: "New" } }],
-      ["move_node", { nodeId: "node", targetNodeId: "target", position: "end", keepSourceReference: false }],
       ["set_field_option", { nodeId: "node", attributeId: "status", optionId: "done", mode: "replace" }],
     ];
     for (const [tool, args] of cases) {
@@ -20,7 +19,6 @@ describe("tanaPreviews", () => {
   });
 
   it("rejects malformed tool arguments", () => {
-    expect(renderPreview(tanaPreviews.move_node, { nodeId: "node" }, "detailed")).toBeNull();
     expect(renderPreview(tanaPreviews.edit_node, { nodeId: "node" }, "detailed")).toBeNull();
   });
 });

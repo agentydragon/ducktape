@@ -927,7 +927,7 @@ haku_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":gmail_client",
-        ":mcp_tool_result_schema",
+        ":mcp_client",
         "//:node_modules/vitest",
     ],
 )

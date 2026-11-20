@@ -1,44 +1,34 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { gmailThreadPreview } from "./gmail_client";
-import type { McpToolResultFor } from "./mcp_tool_result_schema";
+import { fetchGmailThreadPreview } from "./gmail_client";
+import { callOperatorMcpTool } from "./mcp_client";
 
-describe("gmailThreadPreview", () => {
-  it("derives preview fields from threads_get and labels_list results", () => {
-    const thread = {
+vi.mock("./mcp_client", () => ({ callOperatorMcpTool: vi.fn() }));
+
+const callTool = vi.mocked(callOperatorMcpTool);
+
+beforeEach(() => {
+  callTool.mockReset();
+});
+
+describe("fetchGmailThreadPreview", () => {
+  it("reads the subject and link using only the requested thread", async () => {
+    callTool.mockResolvedValue({
       id: "t1",
-      messages: [
-        {
-          id: "m1",
-          labelIds: ["Label_2", "UNKNOWN", "Label_1"],
-          snippet: "hello world",
-          payload: { headers: [{ name: "subject", value: "Test subject" }] },
-        },
-      ],
-    } satisfies McpToolResultFor<"gmail", "threads_get">;
+      messages: [{ id: "m1", payload: { headers: [{ name: "subject", value: "Test subject" }] } }],
+    });
 
-    expect(
-      gmailThreadPreview(
-        "t1",
-        thread,
-        new Map([
-          ["Label_1", "Alpha"],
-          ["Label_2", "Zulu"],
-        ])
-      )
-    ).toEqual({
+    await expect(fetchGmailThreadPreview("t1")).resolves.toEqual({
       subject: "Test subject",
-      snippet: "hello world",
-      current_label_names: ["Alpha", "Zulu"],
       gmail_url: "https://mail.google.com/mail/u/0/#all/t1",
     });
+    expect(callTool.mock.calls).toEqual([["gmail__threads_get", { id: "t1", format: "metadata" }]]);
   });
 
-  it("keeps the display fallbacks for an empty thread", () => {
-    expect(gmailThreadPreview("missing-content", { id: "missing-content" }, new Map())).toEqual({
+  it("keeps the link when the provider omits the subject", async () => {
+    callTool.mockResolvedValue({ id: "missing-content" });
+    await expect(fetchGmailThreadPreview("missing-content")).resolves.toEqual({
       subject: null,
-      snippet: "",
-      current_label_names: [],
       gmail_url: "https://mail.google.com/mail/u/0/#all/missing-content",
     });
   });

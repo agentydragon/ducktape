@@ -27,16 +27,4 @@ export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string }
     toolName: "edit_node",
     args: { nodeId: "task", name: { old_string: "Quarterly", new_string: "Q3", replace_all: false } },
   },
-  {
-    title: "Move the task into its project",
-    serverId: "tana",
-    toolName: "move_node",
-    args: {
-      nodeId: "task",
-      targetNodeId: "project",
-      sourceParentId: "old-parent",
-      position: "end",
-      keepSourceReference: true,
-    },
-  },
 ];

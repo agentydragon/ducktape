@@ -7,9 +7,7 @@ import { toolCallPreview, toolPreview, toolResultPreview } from "./index";
 describe("toolPreview registry", () => {
   it("dispatches to the registered renderer for a known serverId, in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
-      expect(
-        toolPreview("gmail", "threads_modify_labels", { thread_ids: ["t1"], add: ["urgent"], remove: [] }, variant)
-      ).not.toBeNull();
+      expect(toolPreview("gmail", "threads_get", { id: "t1" }, variant)).not.toBeNull();
       expect(toolPreview("tana", "trash_node", { nodeId: "node" }, variant)).not.toBeNull();
     }
   });
@@ -20,6 +18,15 @@ describe("toolPreview registry", () => {
 
   it("returns null when the server is registered but the tool has no widget", () => {
     expect(toolPreview("gmail", "labels_list", {}, "detailed")).toBeNull();
+  });
+
+  it("uses recorded arguments for the previews moved to Agentplane", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(
+        toolPreview("gmail", "threads_modify_labels", { thread_ids: ["t1"], add: ["urgent"] }, variant)
+      ).toBeNull();
+      expect(toolPreview("tana", "move_node", { nodeId: "node", targetNodeId: "target" }, variant)).toBeNull();
+    }
   });
 
   it("returns null for a tool that's a combined widget (call registry) instead", () => {

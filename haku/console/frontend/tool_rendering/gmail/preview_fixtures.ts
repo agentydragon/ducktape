@@ -7,12 +7,6 @@ import type { RegisteredToolPreviewFixture } from "../index";
 
 export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string })[] = [
   {
-    title: "File planning threads for follow-up",
-    serverId: "gmail",
-    toolName: "threads_modify_labels",
-    args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
-  },
-  {
     title: "Get the Q3 planning thread",
     serverId: "gmail",
     toolName: "threads_get",

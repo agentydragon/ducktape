@@ -45,10 +45,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend:code_block",
-        "//haku/console/frontend:field",
         "//haku/console/frontend:gmail_client",
-        "//haku/console/frontend:icons",
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_schema",
         "//haku/console/frontend/tool_rendering:entry",
@@ -63,7 +60,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":requests",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -127,19 +123,6 @@ ts_library(
     deps = [
         ":fixtures",
         "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
-    ],
-)
-
-haku_vitest_test(
-    name = "requests_test",
-    srcs = ["requests.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":requests",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering:actions",
-        "//haku/console/frontend/tool_rendering:entry",
-        "//haku/console/frontend/tool_rendering:server_ids",
     ],
 )
 
