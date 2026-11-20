@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=rollout-20261120-1004")
+    fetch("./evidence.json?v=rollout-20261120-1038")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -225,6 +225,8 @@ function Report() {
   const latest = data.third_cohort;
   const followup = data.latest_rollout_followup;
   const followupTime = followup.observed_at_utc.slice(11, 16);
+  const wave = data.latest_rollout_wave;
+  const waveTime = wave.observed_at_utc.slice(11, 16);
   const latestTime = latest.observed_at_utc.slice(11, 16);
   const verifiedCount = latest.workloads.filter(
     (row) => row.dry_run_admitted_resources,
@@ -256,13 +258,14 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime} and ${followupTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Rollout checks at 09:10, 09:21, ${latestTime}, ${followupTime} and ${waveTime} UTC keep their own observations. Inventory and charts use the original snapshot.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
         ><${Anchor} href="./manifest.json">Manifest<//
         ><${Anchor} href="#architecture">Policy refactor<//
-        ><${Anchor} href="#batches">Rollout batches<//
+        ><${Anchor} href="#remaining-work">Remaining work<//
+        ><${Anchor} href="#batches">Rollout evidence<//
         ><${Anchor} href="#inventory">Search inventory<//><//
       >
     </header>
@@ -379,18 +382,24 @@ function Report() {
         The intended direction is broader VPA request coverage and, eventually,
         no Kyverno. Author the common behavior in cdk8s once, keep Goldilocks as
         the owner of VPAs it generates, and remove each Kyverno responsibility
-        only after its remaining runtime inputs have another owner. The shared
-        profile refactor and Kyverno VPA default removal are merged; adoption
-        can proceed in coherent, independently reviewable cohorts.
+        once replacement owners pass the relevant admission or cleanup tests.
+        Shared VPA profile and memory-policy authoring are complete. The Kyverno
+        VPA fallback is removed, and the remaining eight Kyverno policies still
+        need independent cutovers.
       <//>
       <${Title} order=${3} size="h4" mt="md"
         >Small profiles, explicit exceptions<//
       >
       <${Text} component="p">
-        The merged <${Code}>VpaProfile<//> and <${Code}>ContainerPolicy<//>
-        helpers express modes, request/limit ownership, bounds and exclusions.
-        Apply shared profiles at the namespace level where every workload is
-        eligible; use workload-level overrides or split namespaces where they
+        The merged <${Code}>VpaProfile<//> and
+        <${Code}>ContainerPolicy<//> helpers express modes, request/limit
+        ownership, bounds and exclusions. The shared memory-request helper
+        replaced repeated workload code with byte-identical generated manifests.
+        ${" "}<${Anchor} href=${github + "pull/18132"}
+          >Shared memory policies<//
+        >
+        ${" "}Apply shared profiles at the namespace level where every workload
+        is eligible; use workload-level overrides or split namespaces where they
         are not. Preserve policies that already control limits. ${" "}
         <${Anchor} href=${currentSource + "cluster/cdk8s/namespaces.py"}>
           Namespace profiles<//
@@ -442,18 +451,21 @@ function Report() {
             <${Table.Tr}
               ><${Table.Td}>1 · Done: profiles<//
               ><${Table.Td}
-                >Shared typed profile and annotation builders merged in
-                #18021.<//
+                >Typed profile and annotation builders landed in #18021. Shared
+                memory policy adoption landed in #18132 with identical generated
+                manifests.<//
               ><${Table.Td}
                 >Compare rendered metadata and effective VPA specs; preserve
                 modes, values, overrides and single ownership.<//
               ><//
             >
             <${Table.Tr}
-              ><${Table.Td}>2 · Adopt<//
+              ><${Table.Td}>2 · In progress: adoption<//
               ><${Table.Td}
-                >Apply cohort-wide Initial profiles, then enable Recreate for
-                suitable replicated workloads in batches.<//
+                >Initial cohorts and post-recommendation admission checks are
+                recorded below. GitLab Shell and the External Secrets controller
+                are in Recreate. Review remaining candidates against the rollout
+                gates.<//
               ><${Table.Td}
                 >Check admission, HPA, node fit, bounds and disruption; compare
                 actual pod resources after a normal creation.<//
@@ -471,7 +483,7 @@ function Report() {
               ><//
             >
             <${Table.Tr}
-              ><${Table.Td}>4 · Remove Kyverno<//
+              ><${Table.Td}>4 · Open: Kyverno retirement<//
               ><${Table.Td}
                 >Migrate its remaining defaults, security enforcement, dynamic
                 injection and cleanup separately.<//
@@ -486,12 +498,11 @@ function Report() {
       <//>
       <${Title} order=${3} size="h4" mt="lg">What Kyverno still owns<//>
       <${Text} component="p">
-        The 03:36 UTC inventory found 7 ClusterPolicies and 2 namespaced
-        CleanupPolicies. The Goldilocks default was subsequently removed; six
-        ClusterPolicies and both cleanup policies remained at 08:24 UTC. This is
-        not an inventory of every test cluster or private repository. cdk8s can
-        render its own inputs, but cannot retroactively author Pods created by
-        KubeVirt or another operator.
+        The 03:36 UTC inventory found seven ClusterPolicies and two namespaced
+        CleanupPolicies. The 10:37 UTC inventory still shows six ClusterPolicies
+        and two CleanupPolicies after removal of the VPA default. The table
+        covers the production cluster. Operator-created Pods need coverage from
+        their owner or admission.
       <//>
       <${Table.ScrollContainer}
         minWidth=${980}
@@ -502,7 +513,7 @@ function Report() {
         <${Table} striped withTableBorder verticalSpacing="sm">
           <${Table.Thead}
             ><${Table.Tr}
-              ><${Table.Th}>Live policy<//
+              ><${Table.Th}>Live policy<//><${Table.Th}>State<//
               ><${Table.Th}>Current responsibility<//
               ><${Table.Th}>Candidate direction<//
               ><${Table.Th}>Before removal<//><//
@@ -515,7 +526,8 @@ function Report() {
                 (p) =>
                   html`<${Table.Tr} key=${p.name}>
                     <${Table.Td}><${Code}>${p.name}<//><//
-                    ><${Table.Td}>${p.role}<//><${Table.Td}>${p.direction}<//
+                    ><${Table.Td}>Open<//><${Table.Td}>${p.role}<//
+                    ><${Table.Td}>${p.direction}<//
                     ><${Table.Td}>${cutoverProof[p.name]}<//>
                   <//>`,
               )}
@@ -523,6 +535,7 @@ function Report() {
               <${Table.Td}
                 ><${Code}>sandbox-janitor<//> / <${Code}>reap-wedged-jobs<//><//
               >
+              <${Table.Td}>Open<//>
               <${Table.Td}
                 >Scheduled cleanup in claude-sandbox and thrive-scraper.<//
               >
@@ -538,6 +551,13 @@ function Report() {
             <//>
           <//>
         <//>
+      <//>
+      <${Text} component="p">
+        Test a native replacement for the enforced agent-gateway route rule
+        first. Evaluate the audit-only GitOps rule’s consumers and the two
+        defaults separately. Keep the SecretStore background checks, launcher
+        relay and both cleanup policies until their replacements pass the full
+        behavior listed above.
       <//>
       <${Text} component="p">
         The existing revision-history policy intends to default to 3, but 224 of
@@ -759,9 +779,10 @@ function Report() {
         annotations landed after its last reconciliation and its VPA stayed Off
         until a namespace update at 08:17 UTC. Verify every intended VPA after
         each batch and trigger a namespace update when needed. GitLab spike also
-        required a namespace update in the third cohort. CDviz is now Initial,
-        memory-only and RequestsOnly; new-Pod admission remains unverified for
-        that collector. ${" "}
+        required a namespace update in the third cohort. CDviz’s real-owner dry
+        run at 10:37 UTC confirmed Initial memory admission from 128 MiB to
+        about 259 MiB, preserving 100m CPU, its 512 MiB limit and init
+        resources. ${" "}
         <${Anchor}
           href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go"
         >
@@ -1060,28 +1081,121 @@ function Report() {
             The webhook recognized the five selected containers in server dry
             runs and retained their existing requests and limits. At this
             observation none of the five VPAs had a recommendation, so request
-            sizing remains unverified. ${" "}<${Anchor}
+            sizing was verified in the later checks below. ${" "}<${Anchor}
               href=${followup.prs[2].html_url}
               >PR #18127<//
             >
           <//>
         <//>
+        <${Paper} id="rollout-wave" withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4">
+            Initial memory requests and disruption protection
+          <//>
+          <${Text} size="sm" c="dimmed" mt="xs">
+            Verified 20 November 2026 through ${waveTime} UTC
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>MCP and Plaid admission.</strong>${" "} At 10:17 UTC, server
+            dry runs with the live ReplicaSet owners applied 224 MiB to Google
+            MCP, 256 MiB to the HA MCP backend, 144 MiB to SSH MCP, 100 MiB to
+            Plaid pgweb and 384 MiB to Plaid Spend. CPU requests, all limits and
+            HA MCP facade resources were preserved. Plaid web received no VPA
+            mutation. ${" "}<${Anchor} href=${wave.prs[18127].html_url}
+              >PR #18127<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>kubectl passthrough MCP.</strong>${" "} After a recorded
+            cgroup OOM at the previous 256 MiB limit, the replacement was Ready
+            at 10:21 UTC with a 192 MiB request and 384 MiB limit from its
+            Deployment template. Every recorded rollout event had a Ready
+            endpoint. VPA is Initial. ${" "}<${Anchor}
+              href=${wave.prs[18134].html_url}
+              >PR #18134<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>Platform Sessions.</strong>${" "} At 10:30 UTC, Initial
+            admission applied about 156 MiB to Anthropic, 416 MiB to Blue
+            Shield, 96 MiB to Gateway and 576 MiB to Quest Scheduler in server
+            dry runs. The five other Deployments stayed recommendation-only. All
+            nine existing Pod identities were preserved, and dry runs preserved
+            CPU requests, limits and all init resources, including recorder
+            sidecars. The 4 GiB GitLab Sidekiq surge fits at the observed OVH
+            placements. Moving two capped Crossplane providers can consume that
+            headroom even before these Platform Sessions changes.
+            ${" "}<${Anchor} href=${wave.prs[18136].html_url}>PR #18136<//>
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>CoreDNS and Cilium operator.</strong>${" "} Each budget had
+            two healthy Pods and permitted one disruption. All four Pods kept
+            their identities. Cluster DNS lookup succeeded and the Cilium
+            operator lease was renewing. ${" "}<${Anchor}
+              href=${wave.prs[18133].html_url}
+              >PR #18133<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>Certificate admission.</strong>${" "} The cert-manager
+            webhook had three Ready endpoints on three nodes, and trust-manager
+            had two on two nodes. Both budgets permitted one disruption and both
+            VPAs stayed Initial. Certificate and Bundle server dry runs passed
+            and all six trust Bundles were synced. ${" "}<${Anchor}
+              href=${wave.prs[18135].html_url}
+              >PR #18135<//
+            >
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>External Secrets admission.</strong>${" "} The webhook had
+            two Ready endpoints on separate nodes and its budget permitted one
+            disruption. Its VPA stayed Initial and the two controller replicas
+            stayed Ready in Recreate mode. The validating webhook accepted a
+            server dry-run update and 198 of 198 ExternalSecrets were Ready.
+            ${" "}<${Anchor} href=${wave.prs[18139].html_url}>PR #18139<//>
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>KubeVirt operator.</strong>${" "} The new operator budget
+            had two healthy Pods and permitted one disruption. Both unchanged
+            Pods and their webhook endpoints were Ready on separate nodes. The
+            operator lease was renewing and a KubeVirt server dry-run update
+            passed. ${" "}<${Anchor} href=${wave.prs[18140].html_url}
+              >PR #18140<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <strong>Kyverno webhooks.</strong>${" "} The cleanup webhook now has
+            two Ready endpoints on two nodes and the admission webhook has three
+            on separate control-plane nodes. Helm was Ready at 10:38 UTC. Both
+            disruption budgets permit one disruption, and both VPAs stay
+            Initial. ${" "}<${Anchor} href=${wave.prs[18142].html_url}
+              >Cleanup HA<//
+            >
+            ${" · "}<${Anchor} href=${wave.prs[18143].html_url}
+              >Admission placement<//
+            >
+          <//>
+        <//>
+      <//>
+      <${Title} id="remaining-work" order=${3} mt="xl">Remaining work<//>
+      <${Stack} gap="sm" mt="sm">
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="blue" variant="light">Coverage by class<//>
+          <${Badge} color="blue" variant="light"
+            >Initial coverage · in progress<//
+          >
           <${Title} order=${3} size="h4" mt="xs"
-            >Expand to eligible namespaces, not a bespoke change per workload<//
+            >Audit the next eligible workload cohorts<//
           >
           <${Text} component="p" mb=${0}>
-            Inventory all recommendation-only and unprotected controllers; apply
-            shared Initial request profiles in cohorts where every affected
-            workload is understood. The 02:58 snapshot had 89 Off VPA objects
-            and 68 of 237 controller templates without a direct VPA target;
-            these populations overlap imperfectly and include different resource
-            kinds. Separate existing requests-and-limits VPAs, HPAs, singleton
-            delivery receivers, unsupported target owners and disabled
-            namespaces into explicit exceptions. Add recommendations first for
-            eligible uncovered controllers; do not treat lack of a VPA as proof
-            that namespace mode alone will cover a custom operator target.
+            Reconcile the remaining recommendation-only and uncovered
+            controllers against the deployed cohorts above. The 02:58 snapshot
+            had 89 Off VPA objects and 68 of 237 controller templates without a
+            direct target. These overlapping inventories count different
+            resource kinds. Prioritize supported Deployments with credible
+            startup history and request headroom. Preserve existing
+            requests-and-limits policies and CPU-utilization HPA ownership.
+            GitLab webservice stays excluded pending surge capacity, Redis
+            operator stays Off to preserve its QoS class, and the five
+            unselected Platform Sessions Deployments stay Off.
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
@@ -1090,19 +1204,15 @@ function Report() {
             >Promote replicated workloads to Recreate in groups<//
           >
           <${Text} component="p" mb=${0}>
-            External Secrets’ controller now uses Recreate. Future candidates
-            include kubeapi-proxy and the Kyverno admission controller. Check
-            each cohort’s rollout topology, PDB, redundancy, availability
-            budget, startup and node fit before enabling eviction; avoid
-            simultaneous changes across tightly coupled control-plane
-            dependencies. VPA’s installed two-replica minimum is a guard, not a
-            guarantee of service availability. Preserve existing
-            request-and-limit ownership. Do not lower namespace-wide
-            <${Code}>minReplicas<//> for a singleton without reviewing every VPA
-            in that namespace. CDviz and ntfy remain non-evicting until their
-            delivery and availability requirements are addressed. For CPU HPA
-            targets, keep CPU ownership separate or prove the interaction;
-            memory-only policies are a useful default.
+            GitLab Shell and the External Secrets controller are already
+            Recreate. kubeapi-proxy, CoreDNS, Cilium operator and the
+            certificate and External Secrets webhooks have disruption budgets
+            and remain Initial. Evaluate eviction on each dependency
+            independently, including replacement placement, endpoint readiness,
+            client behavior and failure recovery. Kyverno admission also remains
+            Initial. CDviz and ntfy stay non-evicting pending delivery and
+            availability proof. Review every VPA in a namespace before lowering
+            its minimum replica count.
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
@@ -1111,13 +1221,12 @@ function Report() {
             >Cover databases and dynamic workloads through their owners<//
           >
           <${Text} component="p" mb=${0}>
-            Group CNPG, CSI and other operator-managed workloads by owner. A
-            Goldilocks namespace switch does not prove custom targets are
-            covered; establish one VPA owner and prove admission and operator
-            reconciliation, or set explicit requests in the owning resource. For
-            sandboxes, Terraform runners, VMs and short-lived Jobs, account for
-            transient peaks and admission paths before broadening coverage.
-            Coordinate storage workloads with the separate storage work.
+            Start with one explicitly owned CNPG recommendation pilot and check
+            reconciliation and admission against the operator’s templates.
+            Coordinate CSI and other storage sizing with the storage plan.
+            Decide on explicit owner resources for operator-created sandboxes,
+            Terraform runners, VMs and short-lived Jobs where transient peaks or
+            admission paths preclude a shared VPA.
           <//>
         <//>
       <//>
