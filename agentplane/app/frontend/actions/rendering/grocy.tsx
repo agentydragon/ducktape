@@ -4,13 +4,14 @@ import { z } from "zod";
 
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 
-import { defineCallPreview, definePreview } from "./entry";
+import { definePreview } from "./entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 import {
   batchError,
   batchOutcome,
   displayRef,
+  grocyCompletedCall,
   GrocyReview,
   type GrocyReferenceKind,
   Line,
@@ -300,8 +301,7 @@ const editProductReceipt = defineResultPreview(editProductResult, ({ result }) =
   </Stack>
 ));
 
-const editProductCall = defineCallPreview(editProductArguments, editProductResult, ({ args, result }) => {
-  if (!result) return null;
+const editProductCall = grocyCompletedCall(editProductArguments, editProductResult, ({ args, result }) => {
   const sameItems = result.length === args.items.length;
   return (
     <Stack gap="sm">

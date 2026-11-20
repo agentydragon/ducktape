@@ -3318,6 +3318,9 @@ async def test_action_presentations(
             "href", "https://grocy-sf.allegedly.works/shoppinglistitem/52"
         )
         await expect(receipt.get_by_text("Shopping item #52", exact=True)).to_have_count(0)
+    elif example.key == "grocy_sf.shopping_list_items_remove":
+        await expect(receipt.get_by_text("Kefir · 2 Bottle", exact=True)).to_be_visible()
+        await expect(receipt.get_by_text("Shopping item #52", exact=True)).to_have_count(0)
     if example.key == "home_assistant.ha_get_state":
         await expect(receipt.get_by_role("link", name="Greenhouse temperature", exact=True)).to_be_visible()
         await expect(receipt.get_by_text("sensor.greenhouse_temperature", exact=True)).to_have_count(0)
@@ -3403,6 +3406,12 @@ async def test_action_presentations(
         await expect(receipt).to_contain_text(f'"calendar_id": "{CALENDAR_ID}"')
         await expect(receipt).to_contain_text('"content": []')
         await expect(receipt).to_contain_text('"result": null')
+    elif example.key == "grocy_sf.shopping_list_items_remove":
+        raw_switch = receipt.get_by_role("switch", name="Raw", exact=True)
+        await raw_switch.press("Space")
+        await expect(raw_switch).to_be_checked()
+        await expect(receipt).to_contain_text('"item_ids": [')
+        await expect(receipt).to_contain_text('"item_id": 52')
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import {
   batchError,
   batchOutcome,
   displayRef,
+  grocyCompletedCall,
   grocyRequest,
   Line,
   objectLink,
@@ -183,8 +184,7 @@ function itemBatchOutcome(value: unknown) {
 }
 
 const editedItem = defineResultPreview(itemOutcome, ({ result }) => itemReceipt("updated", [result]));
-const editShoppingItemCall = defineCallPreview(editItem, itemOutcome, ({ args, result }) => {
-  if (!result) return null;
+const editShoppingItemCall = grocyCompletedCall(editItem, itemOutcome, ({ args, result }) => {
   const matching = result.kind === "ok" && result.item_id === args.item_id ? result : undefined;
   return (
     <Stack gap="xs">
@@ -194,6 +194,19 @@ const editShoppingItemCall = defineCallPreview(editItem, itemOutcome, ({ args, r
       ) : (
         itemReceipt("updated", [result])
       )}
+    </Stack>
+  );
+});
+const removeShoppingItemsCall = grocyCompletedCall(removeItems, itemOutcomes, ({ args, result }) => {
+  const named = new Set(result.flatMap((row) => (row.kind === "ok" && row.product_name ? [row.item_id] : [])));
+  return (
+    <Stack gap={4}>
+      {args.item_ids
+        .filter((itemId) => !named.has(itemId))
+        .map((itemId, index) => (
+          <ShoppingTarget key={index} id={itemId} />
+        ))}
+      {itemReceipt("removed", result)}
     </Stack>
   );
 });
@@ -326,6 +339,7 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
         ),
         itemBatchReceipt("removed")
       ),
+      call: removeShoppingItemsCall,
       outcome: itemBatchOutcome,
     },
   ],
