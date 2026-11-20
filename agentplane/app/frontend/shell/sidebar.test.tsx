@@ -5,14 +5,10 @@ import {
   SandboxPhase,
   EnvironmentDescriptorSchema,
   OperatingMode,
-  type EnvironmentActions,
-  type EnvironmentConfiguration,
   type EnvironmentDescriptor,
-  type EnvironmentObservedState,
-  type KubernetesDiagnostics,
 } from "../../../environments/v1/environment_service_pb";
 
-import { readySandbox } from "../testing/sandbox";
+import { changedSandbox, readySandbox, type SandboxChanges } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
@@ -64,26 +60,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-type SandboxChanges = Omit<
-  Partial<EnvironmentDescriptor>,
-  "configuration" | "observedState" | "actions" | "kubernetesDiagnostics"
-> & {
-  configuration?: Partial<EnvironmentConfiguration>;
-  observedState?: Partial<EnvironmentObservedState>;
-  actions?: Partial<EnvironmentActions>;
-  kubernetesDiagnostics?: Partial<KubernetesDiagnostics>;
-};
-
 function sandbox(name: string, overrides: SandboxChanges = {}): EnvironmentDescriptor {
   const uid = `00000000-0000-4000-8000-${name.padStart(12, "0").slice(-12)}`;
-  const value = readySandbox(name, uid);
-  const { configuration, observedState, actions, kubernetesDiagnostics, ...topLevel } = overrides;
-  Object.assign(value, topLevel);
-  if (configuration) Object.assign(value.configuration!, configuration);
-  if (observedState) Object.assign(value.observedState!, observedState);
-  if (actions) Object.assign(value.actions!, actions);
-  if (kubernetesDiagnostics) Object.assign(value.kubernetesDiagnostics!, kubernetesDiagnostics);
-  return value;
+  return changedSandbox(readySandbox(name, uid), overrides);
 }
 
 function thread({ metadata = {}, summary = {}, ...init }: ThreadViewInit): ThreadView {

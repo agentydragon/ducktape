@@ -1,22 +1,17 @@
-import { clone, create } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 
 import {
   SandboxPhase,
   SandboxPodSchema,
-  EnvironmentDescriptorSchema,
-  type EnvironmentActions,
-  type EnvironmentConfiguration,
-  type EnvironmentObservedState,
-  type KubernetesDiagnostics,
   OperatingMode,
   ReadinessSchema,
   ReadinessState,
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 
-import { testSandbox } from "../testing/sandbox";
+import { changedSandbox, type SandboxChanges, testSandbox } from "../testing/sandbox";
 import {
   hasVmConsole,
   podIp,
@@ -31,27 +26,6 @@ import {
 } from "./sandbox_status";
 
 const UID = "00000000-0000-4000-8000-000000000001";
-
-type DescriptorChanges = Omit<
-  Partial<EnvironmentDescriptor>,
-  "configuration" | "observedState" | "actions" | "kubernetesDiagnostics"
-> & {
-  configuration?: Partial<EnvironmentConfiguration>;
-  observedState?: Partial<EnvironmentObservedState>;
-  actions?: Partial<EnvironmentActions>;
-  kubernetesDiagnostics?: Partial<KubernetesDiagnostics>;
-};
-
-function updateSandbox(base: EnvironmentDescriptor, changes: DescriptorChanges): EnvironmentDescriptor {
-  const updated = clone(EnvironmentDescriptorSchema, base);
-  const { configuration, observedState, actions, kubernetesDiagnostics, ...topLevel } = changes;
-  Object.assign(updated, topLevel);
-  if (configuration) Object.assign(updated.configuration!, configuration);
-  if (observedState) Object.assign(updated.observedState!, observedState);
-  if (actions) Object.assign(updated.actions!, actions);
-  if (kubernetesDiagnostics) Object.assign(updated.kubernetesDiagnostics!, kubernetesDiagnostics);
-  return updated;
-}
 
 function sandbox(conditions: { type: string; status: string }[]): EnvironmentDescriptor {
   const value = testSandbox("test-sandbox", UID);
@@ -68,14 +42,14 @@ function sandbox(conditions: { type: string; status: string }[]): EnvironmentDes
   return value;
 }
 
-function protoSandbox(overrides: DescriptorChanges = {}): EnvironmentDescriptor {
-  return updateSandbox(testSandbox("test-sandbox", UID), overrides);
+function protoSandbox(overrides: SandboxChanges = {}): EnvironmentDescriptor {
+  return changedSandbox(testSandbox("test-sandbox", UID), overrides);
 }
 
 describe("a Sandbox exposes the VM console only for a VMI-backed incarnation", () => {
   it("distinguishes its own Pod from a KubeVirt launcher Pod", () => {
     const podSandbox = sandbox([{ type: "Ready", status: "True" }]);
-    const vmSandbox = updateSandbox(podSandbox, {
+    const vmSandbox = changedSandbox(podSandbox, {
       kubernetesDiagnostics: {
         pod: create(SandboxPodSchema, {
           name: "test-sandbox-launcher",
@@ -97,7 +71,7 @@ describe("a Sandbox exposes the VM console only for a VMI-backed incarnation", (
     });
     expect(hasVmConsole(podSandbox)).toBe(false);
     expect(hasVmConsole(vmSandbox)).toBe(true);
-    expect(hasVmConsole(updateSandbox(podSandbox, { kubernetesDiagnostics: { pod: undefined } }))).toBe(false);
+    expect(hasVmConsole(changedSandbox(podSandbox, { kubernetesDiagnostics: { pod: undefined } }))).toBe(false);
   });
 });
 
@@ -193,12 +167,12 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
     [SandboxPhase.SUSPENDED, { label: "Suspended", kind: "suspended" }],
   ] as const)("%s", (phase, summary) => {
     expect(
-      sandboxSummary(updateSandbox(sandbox([{ type: "Ready", status: "False" }]), { observedState: { phase } }))
+      sandboxSummary(changedSandbox(sandbox([{ type: "Ready", status: "False" }]), { observedState: { phase } }))
     ).toEqual(summary);
   });
 
   it("does not report an unreconciled Sandbox as suspended", () => {
-    const unknown = updateSandbox(sandbox([{ type: "Ready", status: "True" }]), {
+    const unknown = changedSandbox(sandbox([{ type: "Ready", status: "True" }]), {
       observedState: { operatingMode: OperatingMode.UNSPECIFIED, phase: SandboxPhase.UNSPECIFIED },
       kubernetesDiagnostics: { pod: undefined },
     });
@@ -208,7 +182,7 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
     });
     expect(
       sandboxReady(
-        updateSandbox(sandbox([{ type: "Ready", status: "True" }]), {
+        changedSandbox(sandbox([{ type: "Ready", status: "True" }]), {
           observedState: { operatingMode: OperatingMode.UNSPECIFIED },
         })
       )
@@ -217,13 +191,13 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
 });
 
 describe("a suspended Sandbox says why it is suspended", () => {
-  const suspended = updateSandbox(sandbox([]), {
+  const suspended = changedSandbox(sandbox([]), {
     observedState: { operatingMode: OperatingMode.SUSPENDED, phase: SandboxPhase.SUSPENDED },
     kubernetesDiagnostics: { pod: undefined },
   });
 
   it("names an idle suspension and the time that triggered it", () => {
-    const idle = updateSandbox(suspended, {
+    const idle = changedSandbox(suspended, {
       observedState: { ...suspended.observedState, suspendedBy: "Idle" },
       configuration: { idleSuspendAfter: create(DurationSchema, { seconds: 5400n }) },
     });
@@ -232,7 +206,7 @@ describe("a suspended Sandbox says why it is suspended", () => {
   });
 
   it("names a suspension a requester made", () => {
-    const requested = updateSandbox(suspended, { observedState: { suspendedBy: "Requested" } });
+    const requested = changedSandbox(suspended, { observedState: { suspendedBy: "Requested" } });
     expect(sandboxSummary(requested)).toEqual({ label: "Suspended (on request)", kind: "suspended" });
     expect(sandboxStatusDetail(requested)).toContain("Suspended on request");
   });
@@ -240,7 +214,7 @@ describe("a suspended Sandbox says why it is suspended", () => {
   it("names it while the Sandbox is still suspending, and says nothing before the controller reports", () => {
     expect(
       sandboxSummary(
-        updateSandbox(suspended, { observedState: { phase: SandboxPhase.SUSPENDING, suspendedBy: "Idle" } })
+        changedSandbox(suspended, { observedState: { phase: SandboxPhase.SUSPENDING, suspendedBy: "Idle" } })
       ).label
     ).toBe("Suspending (idle)");
     expect(sandboxSummary(suspended).label).toBe("Suspended");

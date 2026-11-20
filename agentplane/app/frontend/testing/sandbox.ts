@@ -1,4 +1,4 @@
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
   SandboxPhase,
@@ -7,7 +7,11 @@ import {
   OperatingMode,
   ReadinessSchema,
   ReadinessState,
+  type EnvironmentActions,
+  type EnvironmentConfiguration,
   type EnvironmentDescriptor,
+  type EnvironmentObservedState,
+  type KubernetesDiagnostics,
 } from "../../../environments/v1/environment_service_pb";
 
 /** A fresh Sandbox with a fixed creation time, identity, and execution account. */
@@ -52,4 +56,27 @@ export function suspendedSandbox(name: string, uid: string): EnvironmentDescript
   sandbox.observedState!.phase = SandboxPhase.SUSPENDED;
   sandbox.kubernetesDiagnostics!.sandboxStatus = {};
   return sandbox;
+}
+
+/** Field changes for `changedSandbox`; a nested message takes a partial that merges into the existing one. */
+export type SandboxChanges = Omit<
+  Partial<EnvironmentDescriptor>,
+  "configuration" | "observedState" | "actions" | "kubernetesDiagnostics"
+> & {
+  configuration?: Partial<EnvironmentConfiguration>;
+  observedState?: Partial<EnvironmentObservedState>;
+  actions?: Partial<EnvironmentActions>;
+  kubernetesDiagnostics?: Partial<KubernetesDiagnostics>;
+};
+
+/** A copy of `base` with `changes` merged over it, one nested message at a time. */
+export function changedSandbox(base: EnvironmentDescriptor, changes: SandboxChanges): EnvironmentDescriptor {
+  const changed = clone(EnvironmentDescriptorSchema, base);
+  const { configuration, observedState, actions, kubernetesDiagnostics, ...topLevel } = changes;
+  Object.assign(changed, topLevel);
+  if (configuration) Object.assign(changed.configuration!, configuration);
+  if (observedState) Object.assign(changed.observedState!, observedState);
+  if (actions) Object.assign(changed.actions!, actions);
+  if (kubernetesDiagnostics) Object.assign(changed.kubernetesDiagnostics!, kubernetesDiagnostics);
+  return changed;
 }
