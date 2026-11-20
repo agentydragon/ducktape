@@ -188,7 +188,7 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
 }
 
 const editProductResult = z.array(
-  z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
+  z.union([z.strictObject({ kind: z.literal("ok"), object_id: z.number().int() }), batchError])
 );
 
 function editedProductsLabel(rows: z.infer<typeof editProductResult>): string {
