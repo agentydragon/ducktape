@@ -124,6 +124,15 @@ than duplicating this convention.
 - `sim/`: the `World` — declared books, tracked actors, deterministic monthly execution
 - `frontend/`: React + Tailwind app, generated snake_case API schema, columnar-table helpers,
   scenario-set state, backend client
+- `product/`: the product service: lowers a request onto a `World`, steps one world per path,
+  reduces outcomes to metric fans and terminal distributions (<product/README.md>)
+- `policy/`: optional policy helpers and the household policies `product/` composes
+  (<policy/README.md>)
+- `calibration/`: prediction-market calibration of model paths (<docs/calibration.md>)
+- `study/`: reproductions of published results, one subdirectory per paper (<study/README.md>)
+- `docs/`: design notes: <docs/spending_model.md>, <docs/rental_and_lifecycle.md>,
+  <docs/private_equity_model.md>, <docs/private_equity_realization_failure.md>,
+  <docs/mare_island_special_taxes.md>, <docs/prior_art_audit.md>
 
 ## Deployment
 

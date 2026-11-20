@@ -259,13 +259,3 @@ These follow naturally from the prior art and were rejected; the reasons are in
   simulator; exogenous paths flow one way.
 - Do not add core options for agreements between actors. An agreement is a
   tracked counterparty or contract (`Biller`, `Mortgage`).
-
-## Source Categories Covered
-
-- Quant/risk architecture: QuantLib and ORE.
-- Tax-benefit/rule microsimulation: OpenFisca and PolicyEngine.
-- Public tax microsimulation: Tax-Calculator/Policy Simulation Library.
-- Dynamic microsimulation literature: International Journal of Microsimulation
-  survey and challenge papers.
-- General simulation frameworks: Mesa and SimPy.
-- Model and risk-data governance: SR 11-7 and BCBS 239.
