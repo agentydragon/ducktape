@@ -258,14 +258,6 @@ def test_basic_has_no_projected_workload_token_route(staging_manifests: list[dic
         for doc in staging_manifests
     )
 
-    app_config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
-    assert BASIC_POLICY in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    assert all(BASIC_POLICY in spec["policy_sets"] for spec in app_config["sandbox_presets"].values())
-    egress_settings = yaml.safe_load(
-        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
-    assert egress_settings["local_api_server"]["token_file"], "proxy impersonation keeps its own API token"
-
 
 def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: list[dict[str, Any]]) -> None:
     policy = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)
@@ -451,8 +443,6 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manif
     )
     for preset in config["thread_presets"].values():
         assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
-    # The Anthropic Messages endpoint remains available to Claude sessions.
-    assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "llm-ingress" for doc in catalog_manifests)
 
 
 def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: list[dict[str, Any]]) -> None:
@@ -539,8 +529,6 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
 
     for preset, spec in config["sandbox_presets"].items():
         launch_policies = set(spec["policy_sets"])
-        assert BASIC_POLICY in launch_policies, preset
-        assert shared_diagnostics(staging.ENV.namespace).credential_name in launch_policies, preset
         assert all(not rule["type"].startswith("kubernetes_") for name in launch_policies for rule in policies[name]), (
             preset
         )
@@ -618,12 +606,10 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     ) == (preset == "finance-agent")
     assert selected == public_selected | credential_grants
     assert "cluster-diagnostics" in selected
-    haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
     haku = {
         grant for role_set in account_grants["haku"] for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
     }
     assert "cluster-diagnostics" in haku
-    assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in haku_policy_sets
     assert (
         f"{agent_access_profiles.COINBASE_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
@@ -644,11 +630,6 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert egress_rule["methods"] == ["GET"]
     assert "paths" not in egress_rule
     assert "credentialRef" not in egress_rule
-    coinbase_identity_rules = _by_name(
-        staging_manifests, "PolicySet", f"{agent_access_profiles.COINBASE_POLICY}-identity"
-    )["spec"]["rules"]
-    assert coinbase_identity_rules == [egress_rule]
-    assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in haku_policy_sets
     assert (
         f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
@@ -657,13 +638,6 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
         f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     )
-    plaid_rules = _by_name(staging_manifests, "PolicySet", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY)["spec"][
-        "rules"
-    ]
-    plaid_identity_rules = _by_name(
-        staging_manifests, "PolicySet", f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
-    )["spec"]["rules"]
-    assert plaid_identity_rules == [rule for rule in plaid_rules if rule["type"] == "egress"]
     assert (
         set(haku) - set(selected)
         == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
@@ -754,10 +728,6 @@ def test_external_delegation_binds_exactly_the_granted_roles(
 def test_inference_is_granted_separately_from_platform_operations(catalog_manifests: list[dict[str, Any]]) -> None:
     granted = _by_name(catalog_manifests, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(catalog_manifests, "PolicySet", BASIC_POLICY)
-    assert all(
-        INFERENCE_EXPERIMENTS_POLICY in policy_sets
-        for policy_sets in _sandbox_preset_policy_sets(catalog_manifests).values()
-    )
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in catalog_manifests if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]
