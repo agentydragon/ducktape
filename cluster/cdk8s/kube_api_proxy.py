@@ -70,6 +70,25 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    affinity=k8s.Affinity(
+                        pod_anti_affinity=k8s.PodAntiAffinity(
+                            required_during_scheduling_ignored_during_execution=[
+                                k8s.PodAffinityTerm(
+                                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                                    topology_key="kubernetes.io/hostname",
+                                )
+                            ],
+                            preferred_during_scheduling_ignored_during_execution=[
+                                k8s.WeightedPodAffinityTerm(
+                                    pod_affinity_term=k8s.PodAffinityTerm(
+                                        label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                                        topology_key="topology.kubernetes.io/zone",
+                                    ),
+                                    weight=100,
+                                )
+                            ],
+                        )
+                    ),
                     # nginx forwards each caller's own bearer and needs only the cluster CA.
                     automount_service_account_token=False,
                     containers=[
