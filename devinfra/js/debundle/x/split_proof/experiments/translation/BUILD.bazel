@@ -3,6 +3,46 @@ load("@npm_split_proof_translation//:defs.bzl", "npm_link_all_packages")
 
 npm_link_all_packages(name = "node_modules")
 
+_SHIFT_FUZZ_DATA = [
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    ":node_modules/shift-codegen",
+    ":node_modules/shift-fuzzer",
+    ":node_modules/shift-parser",
+    "shift_fuzz_worker.mjs",
+    "scope_metadata.mjs",
+    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+js_test(
+    name = "shift_fuzz_test",
+    size = "small",
+    args = [
+        "--seed",
+        "1",
+        "--count",
+        "128",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "shift_fuzz_second_seed_test",
+    size = "small",
+    args = [
+        "--seed",
+        "2026",
+        "--count",
+        "128",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
 _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _CHECKER_RUNFILES = [
