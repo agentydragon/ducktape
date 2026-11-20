@@ -3,7 +3,9 @@ import { type JSX, useEffect, useState } from "react";
 
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../transport/client";
-import { type ThreadView, getThread } from "./client";
+import { type ThreadView, getThread, sessionEnvironment } from "./client";
+import { Harness } from "../../../proto/session_pb";
+import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { attachedHarness, harnessBehavior } from "./harness_behavior";
 import { harnessLabel } from "./model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
@@ -13,7 +15,7 @@ import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { installThreadFavicon } from "./thread_favicon";
-import { sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
+import { sessionActivityFresh, sessionMaterializationLabel, threadStatusFromSnapshot } from "./thread_status";
 import {
   sandboxReady,
   sandboxStarting,
@@ -73,36 +75,56 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
+  const target = sessionEnvironment(thread?.session) ?? thread?.summary.sandbox;
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
   const sandbox = environment.snapshot?.find(
     (candidate) =>
       thread !== null &&
-      Boolean(thread.summary.sandbox?.uid) &&
+      Boolean(target?.uid) &&
       candidate.target !== undefined &&
-      candidate.target.name === thread.summary.sandbox?.name &&
-      candidate.target.uid === thread.summary.sandbox?.uid
+      candidate.target.name === target?.name &&
+      candidate.target.uid === target?.uid
   );
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sessionActivityFresh(threadsLive));
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.traceSearch ?? null;
   const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
-  const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread?.summary.attached));
+  const placement = thread?.session?.placement?.kind;
+  const harness =
+    attachedHarness(thread?.summary.attached) ??
+    (placement?.case === "centralSamplerV1"
+      ? Harness.CENTRAL_SAMPLER
+      : placement?.case === "environmentHosted"
+        ? placement.value.harness
+        : undefined);
+  const { commandsRequireReadySandbox } = harnessBehavior(harness);
+  const materializationFailed =
+    thread?.session?.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED;
   const notice =
-    !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
+    !materializationFailed && !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
-      : thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
+      : thread &&
+        environment.snapshot &&
+        (target?.uid
+          ? sandboxNotice(sandbox, inventoryFresh)
+          : "Sandbox identity unavailable. Current availability unknown; controls are disabled.");
   const suspended = sandboxSuspended(sandbox);
   const composerPlaceholder = !commandsRequireReadySandbox
     ? DEFAULT_COMPOSER_PLACEHOLDER
     : sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands =
+    !materializationFailed &&
     commandsRequireReadySandbox &&
     inventoryFresh &&
     sandbox !== undefined &&
     ((suspended && sandbox.configuration?.wakeOnSend) || sandboxStarting(sandbox));
   const canResumeSandbox =
-    commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.configuration?.wakeOnSend === false;
+    !materializationFailed &&
+    commandsRequireReadySandbox &&
+    inventoryFresh &&
+    suspended &&
+    sandbox?.configuration?.wakeOnSend === false;
   useEffect(() => {
     let current = true;
     setError(null);
@@ -159,7 +181,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             />
             {thread && (
               <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
-                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(attachedHarness(thread.summary.attached))}
+                {target?.name ?? ""} · {harnessLabel(harness)}
               </Text>
             )}
           </Box>
@@ -169,6 +191,11 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
         {error && (
           <Text role="alert" c="red">
             {error}
+          </Text>
+        )}
+        {thread && materializationFailed && (
+          <Text role="alert" c="red">
+            {sessionMaterializationLabel(thread)}
           </Text>
         )}
         {thread?.metadata.archived && (
@@ -181,13 +208,15 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {notice}
           </Text>
         )}
-        {thread && (
+        {thread && (!materializationFailed || thread.summary.projectionEpoch) && (
           <sync.Thread key={threadId} threadId={threadId}>
             <ThreadConversation
               threadId={threadId}
               thread={thread}
               available={
-                inventoryFresh && (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
+                !materializationFailed &&
+                inventoryFresh &&
+                (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
               }
               canQueueCommands={canQueueCommands}
               canResumeSandbox={canResumeSandbox}

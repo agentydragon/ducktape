@@ -56,6 +56,31 @@ async def test_dispatcher_sessions_without_history(view: VisualPage, app: Agentp
     await view.capture(target=navigation)
 
 
+async def test_failed_materialization_without_history(view: VisualPage, app: AgentplaneFixture) -> None:
+    thread_id = "10000000-0000-4000-8000-000000000032"
+    await app.add_session(
+        {
+            "sessionId": thread_id,
+            "createdAt": "2026-01-01T12:00:00Z",
+            "placement": {
+                "centralSamplerV1": {
+                    "executorEnvironment": {"name": "ready-sandbox", "uid": "0f9c1d2e-0000-4000-8000-00000000a1b2"}
+                }
+            },
+            "status": {
+                "materialization": "SESSION_MATERIALIZATION_FAILED",
+                "requiredEnvironment": "REQUIRED_ENVIRONMENT_AVAILABLE",
+                "reason": "invalid model",
+            },
+        }
+    )
+    await app.mount_thread(thread_id)
+    await expect(view.page.get_by_role("alert").filter(has_text="invalid model")).to_be_visible()
+    await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
+    await expect(view.page.get_by_text("Thread sync failed", exact=False)).to_have_count(0)
+    await view.capture()
+
+
 async def test_dispatcher_activity_overrides_history_and_blocks_archive(
     view: VisualPage, app: AgentplaneFixture
 ) -> None:

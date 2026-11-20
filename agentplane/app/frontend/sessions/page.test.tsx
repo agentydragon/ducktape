@@ -41,7 +41,10 @@ import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
-import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import {
+  SessionSchema,
+  SessionStatus_Materialization,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
 import * as appConfigClient from "../app_config/client";
@@ -1200,6 +1203,59 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
 
   expect(getThread).toHaveBeenCalledExactlyOnceWith(THREAD.metadata.threadId);
   expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it("shows a materialization failure without treating missing History as a deleted Sandbox", async () => {
+  sharedThread = {
+    summary: { sandbox: undefined, attached: undefined },
+    session: {
+      sessionId: THREAD.metadata.threadId,
+      placement: {
+        kind: {
+          case: "centralSamplerV1",
+          value: {
+            executorEnvironment: { name: COMMAND_TARGET.sandbox, uid: COMMAND_TARGET.sandboxUid },
+          },
+        },
+      },
+      status: {
+        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED,
+        reason: "invalid model",
+      },
+    },
+  };
+  const container = await renderAfterThreadsSnapshot();
+  expect(container.textContent).toContain("Session materialization failed · invalid model");
+  expect(container.textContent).not.toContain("Sandbox no longer exists");
+  expect(container.textContent).toContain("composer-test · Central sampler");
+  expect(container.querySelector("textarea")).toBeNull();
+});
+
+it("keeps retained History visible and the composer disabled after a materialization failure", async () => {
+  sharedThread = {
+    summary: { projectionEpoch: "retained-epoch" },
+    session: {
+      sessionId: THREAD.metadata.threadId,
+      status: {
+        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED,
+        reason: "invalid model",
+      },
+    },
+  };
+  const container = await renderAfterThreadsSnapshot(
+    threadState({ rows: [viewState(), testItem(1, ItemKind.TOOL_CALL, { toolName: "retained-tool" })] })
+  );
+  expect(container.textContent).toContain("Session materialization failed · invalid model");
+  expect(container.textContent).toContain("retained-tool");
+  expect(composer(container).disabled).toBe(true);
+});
+
+it("does not infer deletion when no exact Sandbox identity is known", async () => {
+  sharedThread = { summary: { sandbox: undefined, attached: undefined }, session: undefined };
+  const container = await renderAfterThreadsSnapshot();
+  expect(container.textContent).toContain("Sandbox identity unavailable");
+  expect(container.textContent).not.toContain("Sandbox no longer exists");
+  expect(composer(container).disabled).toBe(true);
 });
 
 // The Sandbox inventory controls whether commands can run or queue; Dispatcher activity owns the
