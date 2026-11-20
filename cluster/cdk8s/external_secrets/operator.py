@@ -36,6 +36,12 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # together with this flag.
         "replicaCount": 2,
         "leaderElect": True,
+        # Guard VPA evictions with a ready standby. Enabling the probe also rolls
+        # the Pods, which Goldilocks watches to pick up the Deployment annotation.
+        "readinessProbe": {"enabled": True},
+        "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+        # Keep the namespace's resource policy and the singleton webhook's Initial mode.
+        "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
         "concurrent": 8,
         # Size the limit above heap + the mapped binary, not just the heap. This
         # controller never OOM-kills when it runs out: the kernel can always meet the
