@@ -137,7 +137,6 @@ class TestGatewayContinuity:
         ) as replica:
             replica_client = SandboxControlClient(
                 control_target=replica.target,
-                token_file=None,
                 request_timeout_s=20,
                 channel_credentials=replica.channel_credentials(APP_URI),
             )
@@ -157,7 +156,6 @@ class TestGatewayContinuity:
         gateway_a_client = gateway_service.environment_runtime_client()
         gateway_b_client = SandboxControlClient(
             control_target=sibling_environment_service.target,
-            token_file=None,
             request_timeout_s=20,
             channel_credentials=sibling_environment_service.channel_credentials(APP_URI),
         )

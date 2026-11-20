@@ -77,7 +77,7 @@ async def session_dispatcher_client(gateway: GatewayProcess) -> AsyncIterator[Se
     async with dial(
         gateway.target, channel_credentials=gateway.service_credentials("spiffe://agentplane/app")
     ) as channel:
-        yield SessionDispatcherClient(channel, token_file=None, request_timeout_s=10)
+        yield SessionDispatcherClient(channel, request_timeout_s=10)
 
 
 @pytest.fixture

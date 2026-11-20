@@ -229,7 +229,6 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
-                token_file=None,
                 request_timeout_s=2,
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"environments.{cluster.namespace}.svc.cluster.local",

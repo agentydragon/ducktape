@@ -36,7 +36,7 @@ class EnvironmentServiceClient:
             yield cls(channel)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
-        return await call_unary(call, request, token_file=None, timeout_s=REQUEST_TIMEOUT_SECONDS)
+        return await call_unary(call, request, timeout_s=REQUEST_TIMEOUT_SECONDS)
 
     async def create_environment(
         self, request: environment_service_pb2.CreateEnvironmentRequest

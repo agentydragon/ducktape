@@ -84,7 +84,6 @@ async def native_client(cluster: Cluster) -> AsyncIterator[SessionDispatcherClie
         forward(cluster) as target,
         SessionDispatcherClient.connect(
             target,
-            token_file=None,
             request_timeout_s=30,
             channel_credentials=caller.channel_credentials,
             server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
