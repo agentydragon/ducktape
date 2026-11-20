@@ -39,6 +39,7 @@ py_test(
         ":conftest",
         ":schema",
         ":sql_read_model",
+        ":wire",
         "//:conftest",
         "//finance/plaid/db:models",
         "@pypi//pydantic",
